@@ -40,6 +40,7 @@ class AgentContext(BaseContext):
     agent_name: str = Field(default="", description="Name of the agent being called.")
     task_id: Optional[str] = Field(default=None, description="Task identifier for tracing.")
     parent_agent: Optional[str] = Field(default=None, description="Name of the parent agent if this is a sub-agent call.")
+    workdir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 class InputArgs(BaseModel):

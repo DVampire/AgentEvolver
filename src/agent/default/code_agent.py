@@ -13,6 +13,8 @@ from src.skill.server import skill_manager
 from src.memory import memory_manager, EventType
 from src.model import model_manager
 from src.registry import AGENT
+from src.hook.server import hook_manager
+from src.hook.types import HookContext, HookEvent, HookDecision
 from src.agent.types import (
     Agent,
     AgentResponse,
@@ -65,8 +67,50 @@ class CodeAgent(Agent):
             **kwargs,
         )
 
+    # ------------------------------------------------------------------
+    # Hook helpers
+    # ------------------------------------------------------------------
+
+    async def _fire_hook(self, event: HookEvent, ctx: AgentContext, task_id: str, **extra_fields):
+        """Build a HookContext and dispatch it through hook_manager."""
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=self.name,
+            extra={"task_id": task_id, **extra_fields},
+        )
+        return await hook_manager(hook_ctx)
+
+    async def _fire_step_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
+                               step_number: int, **extra_fields):
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=self.name,
+            step_number=step_number,
+            extra={"task_id": task_id, **extra_fields},
+        )
+        return await hook_manager(hook_ctx)
+
+    async def _fire_action_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
+                                 step_number: int, action_dict: Dict[str, Any],
+                                 action_result: Optional[str] = None, error: Optional[str] = None):
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=self.name,
+            step_number=step_number,
+            action=action_dict,
+            action_result=action_result,
+            extra={"task_id": task_id, "error": error},
+        )
+        return await hook_manager(hook_ctx)
+
+    # ------------------------------------------------------------------
+    # Git status helper
+    # ------------------------------------------------------------------
+
     async def _get_git_status(self, workdir: str) -> str:
-        """Return a one-line git status summary for the step info block."""
         try:
             tool = await tool_manager.get("git_tool")
             if tool is None:
@@ -81,11 +125,14 @@ class CodeAgent(Agent):
             response = await tool(action="status", ctx=fake_ctx)
             if response.success and response.message:
                 lines = [l for l in response.message.splitlines() if l.strip()]
-                changed = [l for l in lines if l.startswith("\t") or l.startswith("modified") or "Changes" in l]
                 return "\n".join(lines[:8]) if lines else "(clean)"
         except Exception:
             pass
         return ""
+
+    # ------------------------------------------------------------------
+    # Context builder
+    # ------------------------------------------------------------------
 
     async def _get_agent_context(
         self,
@@ -94,26 +141,21 @@ class CodeAgent(Agent):
         ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Extend base agent context with git status."""
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        workdir = self.workdir
-        git_status = await self._get_git_status(workdir)
+        git_status = await self._get_git_status(self.workdir)
         if git_status:
             base["agent_context"] = base["agent_context"].replace(
-                "### Step Info",
-                "### Step Info",
-                1,
-            )
-            # Append git status right after the step info block
-            step_marker = "### Agent History"
-            base["agent_context"] = base["agent_context"].replace(
-                step_marker,
-                f"### Git Status\n{git_status}\n\n{step_marker}",
+                "### Agent History",
+                f"### Git Status\n{git_status}\n\n### Agent History",
                 1,
             )
 
         return base
+
+    # ------------------------------------------------------------------
+    # Core step
+    # ------------------------------------------------------------------
 
     async def _think_and_action(
         self,
@@ -123,10 +165,15 @@ class CodeAgent(Agent):
         ctx: AgentContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Think and execute actions for one step."""
         done = False
         result = None
         reasoning = None
+
+        # PRE_STEP
+        await self._fire_step_hook(HookEvent.PRE_STEP, ctx, task_id, step_number=step_number)
+
+        thinking = ""
+        next_goal = ""
 
         try:
             think_output = await model_manager(
@@ -157,43 +204,70 @@ class CodeAgent(Agent):
                 logger.info(f"| 📝 Action {i+1}/{len(actions)}: [{action_type}] {action_name}")
                 logger.info(f"| 📝 Args: {action_args}")
 
-                if action_type == "text":
-                    action_result = action_args.get("content", "")
-                    logger.info(f"| 💬 Text: {str(action_result)}")
-                    action_dict = action.model_dump()
-                    action_dict["output"] = action_result
-                    action_results.append(action_dict)
+                action_dict = {
+                    "index": i,
+                    "type": action_type,
+                    "name": action_name,
+                    "args": action_args_str,
+                    "args_parsed": action_args,
+                }
 
-                elif action_type == "skill":
-                    response = await skill_manager(
-                        name=action_name,
-                        input=action_args,
-                        ctx=ctx,
-                    )
-                    action_result = response.message
-                    logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
-                    action_dict = action.model_dump()
-                    action_dict["output"] = action_result
-                    action_results.append(action_dict)
+                # PRE_ACTION
+                pre_result = await self._fire_action_hook(
+                    HookEvent.PRE_ACTION, ctx, task_id, step_number, action_dict
+                )
+                if pre_result.decision == HookDecision.BLOCK:
+                    logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
+                    action_results.append({**action_dict, "output": f"[blocked] {pre_result.reason}"})
+                    continue
 
-                else:
-                    tool_response = await tool_manager(
-                        name=action_name,
-                        input=action_args,
-                        ctx=ctx,
-                    )
-                    action_result = tool_response.message
-                    logger.info(f"| ✅ Tool '{action_name}' completed")
-                    action_dict = action.model_dump()
-                    action_dict["output"] = action_result
-                    action_results.append(action_dict)
+                action_result = None
+                error = None
 
-                    if action_name == "done_tool":
-                        done = True
-                        result = action_result
-                        action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
-                        reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
-                        break
+                try:
+                    if action_type == "text":
+                        action_result = action_args.get("content", "")
+                        logger.info(f"| 💬 Text: {str(action_result)}")
+
+                    elif action_type == "skill":
+                        response = await skill_manager(
+                            name=action_name,
+                            input=action_args,
+                            ctx=ctx,
+                        )
+                        action_result = response.message
+                        logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
+
+                    else:
+                        tool_response = await tool_manager(
+                            name=action_name,
+                            input=action_args,
+                            ctx=ctx,
+                        )
+                        action_result = tool_response.message
+                        logger.info(f"| ✅ Tool '{action_name}' completed")
+
+                        if action_name == "done_tool":
+                            done = True
+                            result = action_result
+                            action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
+                            reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
+
+                except Exception as e:
+                    error = str(e)
+                    logger.error(f"| ❌ Action '{action_name}' failed: {e}")
+
+                # POST_ACTION
+                await self._fire_action_hook(
+                    HookEvent.POST_ACTION, ctx, task_id, step_number, action_dict,
+                    action_result=action_result, error=error,
+                )
+
+                action_dict["output"] = action_result
+                action_results.append(action_dict)
+
+                if done:
+                    break
 
             event_data = {
                 "thinking": thinking,
@@ -217,7 +291,17 @@ class CodeAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in think_and_action: {e}")
 
+        # POST_STEP
+        await self._fire_step_hook(
+            HookEvent.POST_STEP, ctx, task_id, step_number=step_number,
+            thinking=thinking, next_goal=next_goal,
+        )
+
         return {"done": done, "result": result, "reasoning": reasoning}
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
 
     async def __call__(
         self,
@@ -225,12 +309,15 @@ class CodeAgent(Agent):
         files: Optional[List[str]] = None,
         **kwargs,
     ) -> AgentResponse:
-        """Run the code agent on the given task."""
         logger.info(f"| 🚀 Starting CodeAgent: {task}")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
+
+        # Inject workdir so git_tool and file tools can resolve paths
+        if not ctx.workdir:
+            ctx.workdir = self.workdir
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")
@@ -241,6 +328,12 @@ class CodeAgent(Agent):
 
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
+
+        # ON_START
+        await self._fire_hook(
+            HookEvent.ON_START, ctx, task_id,
+            task=enhanced_task,
+        )
 
         if self.use_memory and self.memory_name:
             await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
@@ -288,6 +381,12 @@ class CodeAgent(Agent):
                 ctx=ctx,
             )
             await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
+
+        # ON_STOP
+        await self._fire_hook(
+            HookEvent.ON_STOP, ctx, task_id,
+            result=response.get("result"),
+        )
 
         logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")
 

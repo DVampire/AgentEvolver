@@ -1165,7 +1165,8 @@ class ToolContextManager(BaseModel):
 
         if ctx is None:
             ctx = SessionContext()
-        tool_ctx = ToolContext.from_session(ctx, tool_name=name, timeout=timeout)
+        workdir = getattr(ctx, "workdir", None)
+        tool_ctx = ToolContext.from_session(ctx, tool_name=name, timeout=timeout, workdir=workdir)
 
         tool_info = await self.get_info(name)
         

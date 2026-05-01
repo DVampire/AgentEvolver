@@ -1,8 +1,8 @@
 import os
 import sys
 import json
-import argparse
 import asyncio
+import argparse
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -22,6 +22,9 @@ from src.memory import memory_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
+from src.hook import hook_manager, TraceHook
+from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
+from src.trace import trace_manager
 from src.session.types import SessionContext
 
 
@@ -32,11 +35,7 @@ def parse_args():
         default=os.path.join(root, "configs", "code_agent.py"),
         help="Config file path",
     )
-    parser.add_argument(
-        "--task",
-        default=None,
-        help="Override the task to run (optional)",
-    )
+    parser.add_argument("--task", default=None, help="Override the task to run")
     parser.add_argument(
         "--cfg-options",
         nargs="+",
@@ -46,6 +45,23 @@ def parse_args():
     return parser.parse_args()
 
 
+async def run_agent(record: TaskRecord):
+    """TaskManager handler: executes the code agent for a given TaskRecord."""
+    ctx = SessionContext()
+    ctx.id = record.task.session_id or ctx.id
+
+    response = await agent_manager(
+        name="code_agent",
+        input={
+            "task": record.task.content,
+            "files": record.task.files,
+            "workdir": config.workdir,
+        },
+        ctx=ctx,
+    )
+    return response
+
+
 async def main():
     args = parse_args()
 
@@ -53,7 +69,16 @@ async def main():
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
 
-    # Initialize all managers
+    # --- Trace ---
+    trace_workdir = os.path.join(config.workdir, "trace")
+    await trace_manager.initialize(workdir=trace_workdir)
+    await trace_manager.start()
+    logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
+
+    # --- Hooks ---
+    hook_manager.register(TraceHook())
+
+    # --- Core managers ---
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
 
@@ -84,25 +109,39 @@ async def main():
 
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
-    # Task — override via --task or --repo, otherwise use defaults below
-    task = "Generate fibonacci sequence generator in Python and calculate the 15th term."  # Default task
+    # --- TaskManager ---
+    task_workdir = os.path.join(config.workdir, "tasks")
+    await task_manager.initialize(workdir=task_workdir, handler=run_agent)
+    await task_manager.start(num_workers=1)
 
-    files = []
+    # --- Submit task ---
+    task_text = args.task or "Generate a Fibonacci sequence generator in Python and calculate the 15th term."
 
-    logger.info(f"| 📋 Task: {task}")
-    logger.info(f"| 📂 Files: {files}")
-
-    ctx = SessionContext()
-
-    await agent_manager(
-        name="code_agent",
-        input={
-            "task": task, 
-            "files": files,
-            "workdir": config.workdir,
-        },
-        ctx=ctx,
+    logger.info(f"| 📋 Submitting task: {task_text}")
+    task_id = await task_manager.submit(
+        content=task_text,
+        category=TaskCategory.USER,
+        priority=TaskPriority.HIGH,
     )
+    logger.info(f"| ✅ Task submitted: {task_id}")
+
+    # --- Wait for completion ---
+    while True:
+        record = await task_manager.get(task_id)
+        if record and record.task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED):
+            break
+        await asyncio.sleep(1)
+
+    record = await task_manager.get(task_id)
+    if record.task.status == TaskStatus.DONE:
+        logger.info(f"| ✅ Task completed: {task_id}")
+    else:
+        logger.error(f"| ❌ Task ended with status {record.task.status}: {record.error}")
+
+    # --- Teardown ---
+    await task_manager.stop()
+    await trace_manager.stop()
+    await asyncio.sleep(600)  # allow time for graceful shutdown
 
 
 if __name__ == "__main__":
