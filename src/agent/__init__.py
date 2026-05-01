@@ -1,6 +1,6 @@
 """Agents module for multi-agent system."""
 
-from .reason_act_agent import ReasonActAgent
+from .default import ReasonActAgent
 from .server import agent_manager
 
 

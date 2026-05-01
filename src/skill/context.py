@@ -18,7 +18,7 @@ from src.utils import assemble_project_path, file_lock
 from src.version import version_manager
 
 
-DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent / "default_skills"
+DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent / "default"
 
 
 class SkillContextManager(BaseModel):
@@ -74,7 +74,7 @@ class SkillContextManager(BaseModel):
         """
         discovered: Dict[str, SkillConfig] = {}
 
-        # 1. Load from built-in default_skills directory
+        # 1. Load from built-in default directory
         default_configs = await self._load_from_directory(DEFAULT_SKILLS_DIR)
         discovered.update(default_configs)
 

@@ -1,13 +1,13 @@
 from .types import Tool, ToolResponse
-from .default_tools import (WebFetcherTool, 
+from .default import (WebFetcherTool, 
                             WebSearcherTool,
                             DoneTool,
                             PythonInterpreterTool,
                             BashTool)
-from .workflow_tools import (SkillGeneratorTool,
+from .workflow import (SkillGeneratorTool,
                             TodoTool)
-from .mcp_tools import MCPImportTool
-from .other_tools import (
+from .mcp import MCPImportTool
+from .other import (
     ReformulatorTool
 )
 from .server import tool_manager
