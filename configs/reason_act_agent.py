@@ -6,7 +6,6 @@ with read_base():
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
     from .memory.general_memory_system import memory_system as general_memory_system
-    from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
 
 tag = "reason_act_agent"
 workdir = f"workdir/{tag}"
@@ -15,7 +14,6 @@ log_path = "agent.log"
 use_local_proxy = True
 version = "0.1.0"
 model_name = "openrouter/gemini-3-flash-preview"
-# model_name = "openrouter/claude-sonnet-4.5"
 
 memory_names = [
     "general_memory_system",
@@ -47,41 +45,13 @@ todo_tool.update(
     base_dir="tool/todo",
     require_grad=False,
 )
-#-----------------BROWSER TOOL CONFIG-----------------
-# browser_tool.update(
-#     model_name="openrouter/gpt-4.1",
-#     base_dir="tool/browser",
-# )
-#-----------------DEEP RESEARCHER TOOL CONFIG-----------------
-# deep_researcher_tool.update(
-#     model_name="openai/o3",
-#     base_dir="tool/deep_researcher",
-# )
 
-#-----------------DEEP ANALYZER TOOL CONFIG-----------------
-# deep_analyzer_tool.update(
-#     model_name="openai/o3",
-#     base_dir="tool/deep_analyzer",
-#     require_grad=False,
-# )
-
-#-----------------PLOTTER TOOL CONFIG-----------------
-# plotter_tool.update(
-#     model_name="openai/o3",
-#     base_dir="tool/plotter",
-# )
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
     base_dir="memory/general_memory_system",
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
-    require_grad=False,
-)
-optimizer_memory_system.update(
-    base_dir="memory/optimizer_memory_system",
-    model_name=model_name,
-    max_records_per_session=10,
     require_grad=False,
 )
 
