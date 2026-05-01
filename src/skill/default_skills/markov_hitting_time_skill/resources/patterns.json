@@ -1,0 +1,99 @@
+{
+  "skill_name": "markov_hitting_time_skill",
+  "display_name": "Markov Chain Hitting Time & Pattern Probability Skill",
+  "source_pattern_id": "markov_hitting_time",
+  "source_pattern_name_zh": "马尔可夫链命中时间/模式等待时间/逃逸概率",
+  "priority": "high",
+  "cluster_size": 38,
+  "activation_signals": [
+    "Problem asks for expected number of steps/trials until a specific sequence or pattern first appears.",
+    "Problem asks for probability of escaping a region or reaching a target before another absorbing state.",
+    "Problem involves continuous-time random walks on lattices/graphs with hitting or escape questions.",
+    "Key vocabulary: 'expected time', 'expected number of rolls/flips/steps until', 'probability to escape', 'first passage time', 'hitting time', 'absorption probability', 'waiting time for pattern'."
+  ],
+  "problem_signatures": [
+    "题目问某模式串（如TENETENET）在随机序列中首次出现的期望时间。",
+    "题目问随机游走从某起点逃逸某区域的概率或期望步数。",
+    "题目涉及多粒子随机游走系统的合并/碰撞时间。",
+    "题目问离散torus或有界格上的随机游走命中概率。"
+  ],
+  "likely_failure_modes": [
+    "For pattern-matching, using naive geometric series (ignoring overlaps) instead of Conway/Markov chain approach.",
+    "For multi-particle systems, treating particles as independent when they interact (coalescing random walks).",
+    "For continuous-time walks, applying discrete-time formulas without adjusting for exponential holding times.",
+    "Forgetting that on a torus or bounded domain, boundary conditions (periodic vs absorbing) fundamentally change the answer.",
+    "For pattern problems, missing the autocorrelation structure — overlapping prefixes reduce the expected time."
+  ],
+  "sop_phases": [
+    {
+      "title": "Phase 1 — State Space & Transition Matrix",
+      "steps": [
+        "Define the Markov chain state space. For pattern-matching: states = longest suffix of current history that is a prefix of the target pattern P.",
+        "Write the full transition matrix T explicitly. For small state spaces (≤ 20 states), write it as a Python numpy/sympy matrix.",
+        "Identify the initial state s₀ and the absorbing (target) states.",
+        "For pattern-matching problems: cross-check with Conway leading-number formula: C(P) = Σᵢ overlap(P, P[i:]) × |alphabet|^(len(P)-i).",
+        "Run: python scripts/markov_solver.py pattern <PATTERN> --alphabet <K>"
+      ]
+    },
+    {
+      "title": "Phase 2 — Recurrence System or Matrix Inversion",
+      "steps": [
+        "For expected hitting times: build system (I - Q) x = 1 where Q is the transient sub-matrix of T.",
+        "Solve with Python: x = np.linalg.solve(I - Q, ones) or sympy for exact rational arithmetic.",
+        "For escape/absorption probabilities: solve Q p = -r where r encodes direct absorption into target.",
+        "For continuous-time walks: use generator matrix Q; the mean hitting time satisfies Q̃ h = -1."
+      ]
+    },
+    {
+      "title": "Phase 3 — Solve & Extract",
+      "steps": [
+        "Run the linear system solver via script or inline Python.",
+        "Extract the value at the initial state s₀.",
+        "For multi-particle independent systems: use inclusion-exclusion or max/min of individual distributions.",
+        "For interacting particles: treat joint system as one large Markov chain; state = full configuration."
+      ]
+    },
+    {
+      "title": "Phase 4 — Verification & Format",
+      "steps": [
+        "Small-case check: compute the answer for a tiny instance and verify by brute-force simulation.",
+        "Run: python scripts/markov_solver.py simulate pattern <PATTERN> --alphabet <K> --runs 100000",
+        "Conway cross-check for pattern problems.",
+        "Output the answer in the problem's format (exact fraction, scientific integer, or closed-form expression)."
+      ]
+    }
+  ],
+  "subtype_playbook": [
+    "**Pattern matching (uniform alphabet size k)**: Use Conway formula C(P) = Σᵢ k^i · [P[1..i] == P[n-i+1..n]]. Run: `python scripts/markov_solver.py pattern TENETENET --alphabet 26`",
+    "**Alternating dice/roll pattern**: Build state machine tracking current position in required sequence. States encode (which group, how many collected). Script: `python scripts/markov_solver.py hitting --transitions ... --absorbing ... --initial 0`",
+    "**Gambler's ruin / 1D absorbing walk**: Use closed formulas for symmetric/biased walks.",
+    "**Random walk escape from 3D cube**: log(1/pₙ)/log(n) → 2/3 (known result for 3D capacity).",
+    "**Continuous-time multi-particle**: Use duality; solve generator system Q̃ h = -1.",
+    "**Discrete torus hitting**: Use Green's function / harmonic measure; known results for 2D torus."
+  ],
+  "output_rules": [
+    "Exact integers: bare numeral (e.g., 5429515560378).",
+    "Exact fractions: use the problem's LaTeX notation.",
+    "Closed-form expressions: use the variable names from the problem.",
+    "Multi-part answers: follow the order and separator from the problem."
+  ],
+  "source_task_ids": [
+    "0050",
+    "0063",
+    "0147",
+    "0218",
+    "0238",
+    "0478",
+    "1344",
+    "1564",
+    "0056",
+    "0425",
+    "0609",
+    "0933",
+    "0934",
+    "1163",
+    "1344",
+    "1362",
+    "1616"
+  ]
+}

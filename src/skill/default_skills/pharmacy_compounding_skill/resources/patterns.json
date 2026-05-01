@@ -1,0 +1,34 @@
+{
+  "skill_name": "pharmacy_compounding_skill",
+  "version": "1.0.0",
+  "task_signatures": [
+    {
+      "pattern": "BUD for single-dose container after puncture",
+      "correct_strategy": "Identify container type (single-dose) and environment (sterile vs non-sterile), then apply the USP <797> single-dose BUD rule for the stated environment",
+      "wrong_strategy": "Applying multi-dose vial rules to a single-dose container, or ignoring the environmental condition"
+    },
+    {
+      "pattern": "BUD for multi-dose vial after first puncture",
+      "correct_strategy": "Apply USP <797> multi-dose vial in-use period; check if manufacturer specifies a shorter period and use the more conservative value",
+      "wrong_strategy": "Using the manufacturer expiration date instead of the in-use BUD"
+    },
+    {
+      "pattern": "BUD for compounded sterile preparation",
+      "correct_strategy": "Classify the CSP by category (immediate use, Category 1, Category 2), then apply the corresponding BUD based on storage condition",
+      "wrong_strategy": "Applying a single BUD rule to all CSPs regardless of category or storage condition"
+    }
+  ],
+  "failure_modes": [
+    "confusing_expiration_with_BUD: using manufacturer expiration date instead of the post-opening or post-compounding BUD",
+    "ignoring_environment: not distinguishing between sterile and non-sterile environment when determining BUD",
+    "wrong_container_rule: applying multi-dose rules to single-dose containers or vice versa",
+    "wrong_usp_chapter: applying USP <800> rules to a non-hazardous drug scenario"
+  ],
+  "key_principles": [
+    "BUD is always determined by container type × environment × USP chapter — all three must be identified",
+    "Single-dose containers have stricter BUD limits than multi-dose containers",
+    "When environment is unstated, default to the more conservative BUD",
+    "Expiration date and BUD are distinct concepts — never confuse them"
+  ],
+  "source_cluster_ids": []
+}

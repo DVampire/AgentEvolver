@@ -1,0 +1,64 @@
+{
+  "skill_name": "novel_spec_simulation_skill",
+  "display_name": "Novel Spec Simulation Skill",
+  "source_pattern_id": "novel_spec_simulation",
+  "source_pattern_name_zh": "新奇虚构规范/架构的严格模拟执行",
+  "priority": "medium",
+  "cluster_size": 3,
+  "activation_signals": [
+    "The problem defines a fabricated ISA / storage model / encoding / numeric base from scratch (Bagua / Wuxing / a custom RISC).",
+    "The answer depends on strict spec execution; it commonly takes the form \"float_precision:integer\" or a specific number.",
+    "The problem contains many custom symbols, non-standard numeric bases, and unusual instruction names."
+  ],
+  "problem_signatures": [
+    "题面凭空定义了一个\"八卦架构\"\"五行架构\"等虚构计算体系，给出 ISA/编码/存储规则，要求在该体系下执行程序或给出参数。",
+    "信息全部来自题面，没有外部先验；记忆中的常识反而是干扰。",
+    "答案是严格依赖规范的数值或数值:整数对。"
+  ],
+  "likely_failure_modes": [
+    "Replacing the spec's octal / decimal quirks with familiar binary / hex intuition.",
+    "Missing \"corner\" rules (special registers, exception handling, carry rule).",
+    "Simulating without a state table and letting mental arithmetic errors accumulate."
+  ],
+  "sop_phases": [
+    {
+      "title": "Phase 1 — Transcribe the Full Spec",
+      "steps": [
+        "Transcribe the spec into a structured spec-card: {data unit, numeric base, register table, instruction set, memory model, I/O, exceptions}.",
+        "Flag every item that conflicts with x86 / IEEE-754 intuition — those are the pitfalls to watch.",
+        "Confirm the answer shape (bare number / \"a:b\" / long string)."
+      ]
+    },
+    {
+      "title": "Phase 2 — Build a Python Simulator (NOT mental math)",
+      "steps": [
+        "Implement the ISA in Python strictly; every register / memory cell / float precision follows the spec.",
+        "If the problem provides a worked example, reproduce its output as a self-test; if the self-test fails, return to Phase 1.",
+        "For custom floating-point precision, implement the mantissa / exponent field widths explicitly — never fall back to IEEE-754."
+      ]
+    },
+    {
+      "title": "Phase 3 — Run, Self-Audit, Format",
+      "steps": [
+        "Run the simulator on the target program; print a register / memory snapshot at each step if needed.",
+        "If your intuition says the answer \"should be X\", double-check the spec.",
+        "Emit the answer in the exact format of the problem's example (\"0.993:8\", \"747\"); no units, no prefixes."
+      ]
+    }
+  ],
+  "subtype_playbook": [
+    "**Bagua architecture**: base-8, 8 channels, ISA keyed on trigrams; all arithmetic runs in octal.",
+    "**Wuxing architecture**: decimal registers grouped by five-phase attributes; arithmetic follows the spec's decimal rules.",
+    "**Fabricated RISC**: decode strictly from the opcode table; never assume x86 / ARM semantics."
+  ],
+  "output_rules": [
+    "Output matches the problem's example exactly (\"0.993:8\" keeps both decimal places and separator).",
+    "Never replace the spec with intuition from a familiar numeric base."
+  ],
+  "source_task_ids": [
+    "1898",
+    "1903",
+    "1962"
+  ],
+  "eval_tasks_file": "hle_novel_spec_simulation_tasks.json"
+}

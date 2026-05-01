@@ -1,0 +1,61 @@
+{
+  "skill_name": "bio_med_experimental_design_skill",
+  "display_name": "Bio / Medical Experimental Design Skill",
+  "source_pattern_id": "bio_med_experimental_design",
+  "source_pattern_name_zh": "生物医学实验设计与机制选择",
+  "priority": "low",
+  "cluster_size": 2,
+  "activation_signals": [
+    "The problem asks \"how many controls are required\" or \"which sequence / which kinase family fits\".",
+    "The answer is a natural number or a single letter, but obtaining it requires listing the full set of required controls or matching the motif to the correct family.",
+    "The problem provides channel counts / sequence fragments / reagents and expects domain-convention-driven aggregation."
+  ],
+  "problem_signatures": [
+    "题目要求\"到底该准备多少对照\"\"该用哪种激酶/哪段序列\"这类针对具体实验的最小必要集合问题。",
+    "答案是一个自然数或一个选项字母，但决定答案的是对实验基线 + 专业惯例的完整覆盖。"
+  ],
+  "likely_failure_modes": [
+    "Counting only \"channels\" without adding negative / isotype / live-dead / bead-only controls.",
+    "Guessing a kinase family from a motif without aligning the motif against the family's consensus."
+  ],
+  "sop_phases": [
+    {
+      "title": "Phase 1 — Enumerate Baseline Requirements",
+      "steps": [
+        "For experiments such as flow sorting, list every baseline control (unstained / live-dead / FMO / isotype / single-stain / beads-only / substrate-free).",
+        "For kinase-selection problems, expand the motif's precise consensus sequence (e.g. CaMK: R-X-X-S/T).",
+        "Confirm the answer dimension (integer vs option letter)."
+      ]
+    },
+    {
+      "title": "Phase 2 — Apply Problem-Specific Dimensions",
+      "steps": [
+        "Expand \"one single-stain + one FMO per channel\"-style rules by the channel count.",
+        "Kinase matching: residue-by-residue against each candidate family's consensus, ruling out \"similar but wrong\" families.",
+        "Sum the necessary controls or score the candidate families."
+      ]
+    },
+    {
+      "title": "Phase 3 — Self-Audit & Output",
+      "steps": [
+        "Self-check: did you include generic controls intrinsic to the experiment type (FSC/SSC reference for flow sorting)?",
+        "For motif questions, re-verify that the problem's motif exactly matches the chosen family's variable-position consensus.",
+        "Integer answers as bare numerals; multiple-choice answers as a single uppercase letter."
+      ]
+    }
+  ],
+  "subtype_playbook": [
+    "**Flow-sorting controls**: baseline = unstained + live-dead + FMO_per_channel + single-stain_per_channel + beads-only + isotype; expand by channel count and sum.",
+    "**Kinase motif matching**: align against CAMK (R-X-X-S/T), PKC, CK2, etc. consensus sequences residue by residue.",
+    "**Gene regulatory map**: turn the problem's interaction map into an adjacency list before inferring."
+  ],
+  "output_rules": [
+    "Integer answers are bare numerals with no prefix or unit.",
+    "Multiple-choice answers are a single uppercase letter."
+  ],
+  "source_task_ids": [
+    "2136",
+    "2155"
+  ],
+  "eval_tasks_file": "hle_bio_med_experimental_design_tasks.json"
+}

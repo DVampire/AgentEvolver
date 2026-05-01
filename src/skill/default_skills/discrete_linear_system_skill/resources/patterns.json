@@ -1,0 +1,87 @@
+{
+  "skill_name": "discrete_linear_system_skill",
+  "display_name": "Discrete Linear System & Difference Equation Skill",
+  "source_pattern_id": "discrete_linear_system",
+  "source_pattern_name_zh": "差分方程/离散状态空间系统/死拍观测器设计",
+  "priority": "high",
+  "cluster_size": 12,
+  "activation_signals": [
+    "Problem presents a difference equation Σ aₖ y[n-k] = f[n] and asks for closed-form solution with initial conditions.",
+    "Problem presents a discrete-time state-space system x[n+1]=Ax[n]+Bu[n], y[n]=Cx[n] and asks for observer or controller design.",
+    "Problem asks to design a deadbeat observer (observation error reaches zero in minimum finite steps).",
+    "Problem asks to reduce a system to observer or controller canonical form.",
+    "Key vocabulary: 'difference equation', 'closed-form solution', 'observer canonical form', 'deadbeat', 'observation error identically zero', 'gain matrix', 'discrete-time system', 'z-transform'."
+  ],
+  "problem_signatures": [
+    "题目给出差分方程如 8y[n] - 6y[n-1] + y[n-2] = 1，初始条件 y[0]=1, y[-1]=2，求闭合解。",
+    "题目给出离散状态空间 A, B, C 矩阵，要求设计使观测误差在最短步数内为零的观测器。",
+    "题目要求将状态空间系统化为观测器/控制器标准形式。",
+    "题目涉及离散传递函数和 z-变换的分析。"
+  ],
+  "likely_failure_modes": [
+    "For difference equations, forgetting to find the particular solution when RHS is non-zero.",
+    "For deadbeat observer: choosing poles near zero rather than exactly at zero.",
+    "Applying continuous-time transformation formulas instead of discrete-time ones for canonical forms.",
+    "For repeated characteristic roots: missing n·rⁿ terms in the general solution.",
+    "Off-by-one with initial conditions: y[0] and y[-1] mapping incorrectly."
+  ],
+  "sop_phases": [
+    {
+      "title": "Phase 1 — Classify & Set Up",
+      "steps": [
+        "Difference equation: write in standard form, identify order m and coefficients {aₖ}.",
+        "Find characteristic roots: python scripts/discrete_system_solver.py charpoly --A '...' OR use sympy.solve on characteristic polynomial.",
+        "State-space: check controllability and observability ranks: python scripts/discrete_system_solver.py stability --A '...'",
+        "Identify the answer type: closed-form coefficients / gain matrix / canonical form matrices."
+      ]
+    },
+    {
+      "title": "Phase 2 — Solve Homogeneous + Particular",
+      "steps": [
+        "Homogeneous: for each distinct root rᵢ with multiplicity mᵢ, contribution = (c_{i,0} + c_{i,1}·n + …)·rᵢⁿ.",
+        "Particular solution: constant RHS → try y_p = K; if 1 is a root → try y_p = A·n. Exponential RHS → try y_p = A·αⁿ.",
+        "Run: python scripts/discrete_system_solver.py diffeq --coeffs '8,-6,1' --rhs 'constant:1' --init 'y0=1,ym1=2'",
+        "Apply initial conditions to solve for all constants using sympy."
+      ]
+    },
+    {
+      "title": "Phase 3 — State-Space Design",
+      "steps": [
+        "Deadbeat observer: all eigenvalues of (A-LC) placed exactly at 0. Run: python scripts/discrete_system_solver.py deadbeat --A '...' --C '...'",
+        "General observer: python scripts/discrete_system_solver.py observer --A '...' --C '...' --poles '[p1,p2,...]'",
+        "Canonical form reduction: python scripts/discrete_system_solver.py canonical --A '...' --B '...' --C '...' --form observer",
+        "Minimum deadbeat steps = observability index (smallest k with rank(O_k) = n)."
+      ]
+    },
+    {
+      "title": "Phase 4 — Verification & Format",
+      "steps": [
+        "Difference equation: substitute closed-form back into equation, check for n=0,1,2.",
+        "Run: python scripts/discrete_system_solver.py verify --diffeq '8,-6,1' --solution 'A,0.5,B,0.25,0.333' --init 'y0=1,ym1=2' --steps 5",
+        "Observer: verify eigenvalues of (A-LC) are exactly at desired locations.",
+        "Canonical form: verify A_tilde = T A T⁻¹ numerically."
+      ]
+    }
+  ],
+  "subtype_playbook": [
+    "**2nd-order diff eq with distinct real roots** (8y[n]-6y[n-1]+y[n-2]=1): roots=(1/2),(1/4), particular y_p=1/3, general=c₁(1/2)ⁿ+c₂(1/4)ⁿ+1/3.",
+    "**Deadbeat observer for nth-order system**: minimum steps = observability index ν. Use scipy.signal.place_poles with all poles at 0.",
+    "**z-transform approach**: Y(z) = H(z)·U(z) + I(z). Partial-fraction expand, inverse-transform.",
+    "**Observer canonical form**: build companion matrix from characteristic polynomial coefficients."
+  ],
+  "output_rules": [
+    "Closed-form: use the exact template from the problem (e.g., y[n] = A(B)ⁿ + C(D)ⁿ + E).",
+    "Gain matrix: list as a matrix matching the problem's notation.",
+    "Integer answers (e.g., minimum steps): bare numeral.",
+    "Multi-part: follow problem's ordering and separator exactly."
+  ],
+  "source_task_ids": [
+    "0991",
+    "0716",
+    "0864",
+    "0740",
+    "1953",
+    "2018",
+    "0716"
+  ]
+}

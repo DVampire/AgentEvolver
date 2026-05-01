@@ -1,0 +1,51 @@
+{
+  "skill_name": "protein_engineering_skill",
+  "version": "1.0.0",
+  "task_signatures": [
+    {
+      "pattern": "IDR acid patch substitution",
+      "keywords": ["IDR", "intrinsically disordered", "acid patch", "function as a unit", "prodomain"],
+      "correct_strategy": "Replace entire patch with Gly-Ser linker (e.g. GSGG/GSGSG) to eliminate charge and PTM sites while preserving backbone flexibility and segment length",
+      "wrong_strategy": "Individual conservative swaps (E→Q, D→N, S→A) that neutralize charge but may partially rigidify the IDR or leave phosphorylation context intact"
+    },
+    {
+      "pattern": "Phosphorylation site in ordered domain",
+      "keywords": ["phosphorylation", "kinase site", "S/T→A", "ordered domain"],
+      "correct_strategy": "S/T → A for the PTM-accepting residue; extend to flanking acidic residues only if they form a composite docking surface with evidence",
+      "wrong_strategy": "Replacing all nearby E/D residues without evidence they contribute to the kinase docking site"
+    },
+    {
+      "pattern": "Disulfide bond abolition",
+      "keywords": ["disulfide", "cysteine", "redox", "C→A", "C→S"],
+      "correct_strategy": "C → A for buried cysteines; C → S for surface-exposed cysteines where retaining a hydroxyl is more conservative",
+      "wrong_strategy": "C → G introduces excessive flexibility and may destabilize local structure"
+    },
+    {
+      "pattern": "Protein-protein interaction surface ablation",
+      "keywords": ["protein-protein interaction", "interface", "alanine scan", "contact residues", "binding surface"],
+      "correct_strategy": "Ala-scan strictly the identified contact residues; preserve all non-contact positions to avoid confounding structural effects",
+      "wrong_strategy": "Mutating entire surface patch including residues not in the contact map"
+    },
+    {
+      "pattern": "Hydrophobic patch mutation",
+      "keywords": ["hydrophobic", "buried residue", "surface exposed", "aggregation"],
+      "correct_strategy": "Confirm burial status first; buried hydrophobic → Ala; surface-exposed hydrophobic → Ser may be preferred to avoid aggregation",
+      "wrong_strategy": "Applying the same substitution regardless of burial depth"
+    }
+  ],
+  "failure_modes": [
+    "context_blind_charge_neutralization: treating IDR the same as ordered domain, choosing E→Q/D→N without considering disorder propensity",
+    "phospho_site_only: blocking S phosphorylation but ignoring flanking acidic residues that together form the inhibitory patch",
+    "ignoring_function_as_unit_clue: when the question states residues act together, individual swaps are weaker than a unified patch replacement",
+    "over_engineering_disordered_region: introducing structured or bulky residues that collapse IDR flexibility",
+    "length_altering_substitution: inserting or deleting residues when only substitution is appropriate"
+  ],
+  "key_principles": [
+    "Always determine region type (IDR vs ordered domain vs linker) before choosing substitution strategy",
+    "For IDR/linker: prefer whole-patch Gly-Ser replacement over individual conservative swaps",
+    "Gly and Ser have high disorder propensity; Ala has moderate beta-propensity and can nucleate structure in long runs — avoid poly-Ala in IDR contexts",
+    "Substitution should preserve residue count (no insertions/deletions unless asked)",
+    "Minimize perturbation: only mutate residues within the identified functional patch"
+  ],
+  "source_cluster_ids": []
+}

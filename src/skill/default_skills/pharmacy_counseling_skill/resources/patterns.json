@@ -1,0 +1,34 @@
+{
+  "skill_name": "pharmacy_counseling_skill",
+  "version": "1.0.0",
+  "task_signatures": [
+    {
+      "pattern": "Drug-disease contraindication identified from patient history",
+      "correct_strategy": "Identify the clinical condition from patient symptoms first, then check each drug for contraindication in that condition; prioritize over drug-drug interactions",
+      "wrong_strategy": "Jumping to drug-drug interactions without first diagnosing the condition implied by the patient's history"
+    },
+    {
+      "pattern": "OTC drug interaction with prescription",
+      "correct_strategy": "Evaluate OTC drugs mentioned in the patient narrative against the full prescription list for clinically significant interactions",
+      "wrong_strategy": "Only evaluating prescription-to-prescription interactions and ignoring OTC drugs"
+    },
+    {
+      "pattern": "Symptom triggers as diagnostic clues",
+      "correct_strategy": "Treat specific symptom triggers (sensory, positional, temporal) as diagnostic signals that point to a condition; use that condition to drive contraindication checking",
+      "wrong_strategy": "Treating patient story details as irrelevant background and proceeding directly to the drug list"
+    }
+  ],
+  "failure_modes": [
+    "missing_clinical_diagnosis: reading prescription list without first interpreting patient symptoms as a diagnosis",
+    "flavor_text_dismissal: treating symptom triggers and context clues as irrelevant story details",
+    "wrong_priority: reporting a minor drug interaction when a more serious contraindication exists",
+    "incomplete_history_read: not reading the full patient narrative before evaluating medications"
+  ],
+  "key_principles": [
+    "Always diagnose the clinical condition from the history before evaluating the drug list",
+    "Drug-disease contraindications take priority over drug-drug interactions",
+    "Symptom triggers and context clues are diagnostic signals, not flavor text",
+    "Give one recommendation only: the most clinically significant finding"
+  ],
+  "source_cluster_ids": []
+}

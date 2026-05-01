@@ -1,0 +1,4 @@
+{
+    "server_path": "bin/mediawiki-mcp-server",
+    "mediawiki_url": "https://en.wikipedia.org/w/api.php"
+}

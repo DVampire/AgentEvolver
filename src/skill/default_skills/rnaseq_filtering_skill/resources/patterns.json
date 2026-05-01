@@ -1,0 +1,29 @@
+{
+  "skill_name": "rnaseq_filtering_skill",
+  "version": "1.0.0",
+  "task_signatures": [
+    {
+      "pattern": "Asymmetric contamination in one condition of RNA-seq experiment",
+      "correct_strategy": "Identify contamination source and direction; choose a high LFC cutoff that captures only extreme contamination signals while preserving true biological differences in the moderate LFC range",
+      "wrong_strategy": "Using a low LFC cutoff that removes genuine biological signal, or applying the filter in the wrong direction"
+    },
+    {
+      "pattern": "LFC cutoff selection for quality control filtering",
+      "correct_strategy": "Reason about the expected LFC range of true signal vs contamination signal separately, then select a threshold that sits between them",
+      "wrong_strategy": "Applying a standard differential expression cutoff (e.g. LFC > 1) without considering whether it is appropriate for contamination removal"
+    }
+  ],
+  "failure_modes": [
+    "cutoff_too_lenient: removing genuine biological signal by using a threshold designed for DE analysis rather than contamination filtering",
+    "wrong_direction: filtering genes enriched in the clean condition instead of the contaminated condition",
+    "conflating_filtering_with_DE: treating this as a differential expression step rather than a QC step",
+    "ignoring_asymmetry: not explaining why contamination is present in one condition and not the other"
+  ],
+  "key_principles": [
+    "Contamination signals produce extreme LFC because the contaminant is present in one condition and absent in the other",
+    "True biological differences between conditions produce moderate LFC — the cutoff must be above this range",
+    "Always identify the contamination source and direction before selecting a threshold",
+    "The answer is a filtering criterion, not implementation code"
+  ],
+  "source_cluster_ids": []
+}

@@ -1,0 +1,28 @@
+{
+  "skill_name": "cancer_genomics_scoring_skill",
+  "version": "1.0.0",
+  "task_signatures": [
+    {
+      "pattern": "CNV weighted clonal expansion score",
+      "correct_strategy": "Oncogene weights apply only to gain events; tumor suppressor weights apply only to loss events; regulatory modifiers adjust specific gene contributions per chromosome",
+      "wrong_strategy": "Applying tumor suppressor weight to a gain chromosome, or treating 'normal copy number' as an exclusion from scoring"
+    },
+    {
+      "pattern": "Repressor overexpressed on specific chromosomes",
+      "correct_strategy": "For TS genes on affected chromosomes that contributed 0 in Phase 2 (TS on gain chromosome, direction mismatch), add the TS weight as an independent repressor penalty. For TS genes that already contributed their full weight in Phase 2 (TS on loss chromosome), no additional term is added.",
+      "wrong_strategy": "Applying the repressor penalty to all TS genes regardless of Phase 2 contribution, or skipping the penalty for TS genes that contributed 0 in Phase 2"
+    }
+  ],
+  "failure_modes": [
+    "applying_weight_in_wrong_direction: oncogene weight on loss chromosome or tumor suppressor weight on gain chromosome",
+    "misreading_normal_copy_number: treating it as exclusion from CNV scoring",
+    "ignoring_regulatory_modifiers: not adjusting score for repressor/activator overexpression",
+    "double_counting_modifier: applying modifier effect more than once"
+  ],
+  "key_principles": [
+    "Direction matching: only apply a gene's weight when the CNV direction matches the gene's role",
+    "Modifier scope: each modifier applies only to the chromosomes and gene types explicitly stated",
+    "Show arithmetic: enumerate each term before summing"
+  ],
+  "source_cluster_ids": []
+}
