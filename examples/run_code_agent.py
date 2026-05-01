@@ -141,7 +141,6 @@ async def main():
     # --- Teardown ---
     await task_manager.stop()
     await trace_manager.stop()
-    await asyncio.sleep(600)  # allow time for graceful shutdown
 
 
 if __name__ == "__main__":

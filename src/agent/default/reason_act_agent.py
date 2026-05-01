@@ -13,22 +13,29 @@ from src.skill.server import skill_manager
 from src.memory import memory_manager, EventType
 from src.model import model_manager
 from src.registry import AGENT
-from src.agent.types import (Agent,
-                             AgentResponse, 
-                             AgentExtra, 
-                             ThinkOutput, 
-                             AgentContext)
+from src.hook.server import hook_manager
+from src.hook.types import HookContext, HookEvent, HookDecision
+from src.agent.types import (
+    Agent,
+    AgentResponse,
+    AgentExtra,
+    ThinkOutput,
+    AgentContext,
+)
+
 
 @AGENT.register_module(force=True)
 class ReasonActAgent(Agent):
     """Iterative agent that reasons and acts via tools, skills, and direct text responses."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="reason_act_agent", description="The name of the reason-act agent.")
-    description: str = Field(default="An iterative agent that reasons and acts by using tools, skills, and direct responses to accomplish tasks accurately, safely, and efficiently.",
-                             description="The description of the reason-act agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the reason-act agent.")
-    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
+    name: str = Field(default="reason_act_agent")
+    description: str = Field(
+        default="An iterative agent that reasons and acts by using tools, skills, and direct "
+                "responses to accomplish tasks accurately, safely, and efficiently."
+    )
+    metadata: Dict[str, Any] = Field(default={})
+    require_grad: bool = Field(default=False)
 
     def __init__(
         self,
@@ -43,42 +50,87 @@ class ReasonActAgent(Agent):
         max_steps: int = 20,
         review_steps: int = 5,
         require_grad: bool = False,
-        **kwargs
+        **kwargs,
     ):
-        if not prompt_name:
-            prompt_name = "reason_act_agent"
-
         super().__init__(
             workdir=workdir,
             name=name,
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name,
+            prompt_name=prompt_name or "reason_act_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
             review_steps=review_steps,
             require_grad=require_grad,
-            **kwargs)
+            **kwargs,
+        )
 
-    async def _think_and_action(self,
-                                messages: List[Message],
-                                task_id: str,
-                                step_number: int,
-                                ctx: AgentContext,
-                                **kwargs) -> Dict[str, Any]:
-        """Think and execute actions for one step."""
+    # ------------------------------------------------------------------
+    # Hook helpers
+    # ------------------------------------------------------------------
 
+    async def _fire_hook(self, event: HookEvent, ctx: AgentContext, task_id: str, **extra_fields):
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=self.name,
+            extra={"task_id": task_id, **extra_fields},
+        )
+        return await hook_manager(hook_ctx)
+
+    async def _fire_step_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
+                               step_number: int, **extra_fields):
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=self.name,
+            step_number=step_number,
+            extra={"task_id": task_id, **extra_fields},
+        )
+        return await hook_manager(hook_ctx)
+
+    async def _fire_action_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
+                                 step_number: int, action_dict: Dict[str, Any],
+                                 action_result: Optional[str] = None, error: Optional[str] = None):
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=self.name,
+            step_number=step_number,
+            action=action_dict,
+            action_result=action_result,
+            extra={"task_id": task_id, "error": error},
+        )
+        return await hook_manager(hook_ctx)
+
+    # ------------------------------------------------------------------
+    # Core step
+    # ------------------------------------------------------------------
+
+    async def _think_and_action(
+        self,
+        messages: List[Message],
+        task_id: str,
+        step_number: int,
+        ctx: AgentContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
         done = False
         result = None
         reasoning = None
+
+        await self._fire_step_hook(HookEvent.PRE_STEP, ctx, task_id, step_number=step_number)
+
+        thinking = ""
+        next_goal = ""
 
         try:
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=ThinkOutput
+                response_format=ThinkOutput,
             )
             think_output = think_output.extra.parsed_model
 
@@ -103,43 +155,68 @@ class ReasonActAgent(Agent):
                 logger.info(f"| 📝 Action {i+1}/{len(actions)}: [{action_type}] {action_name}")
                 logger.info(f"| 📝 Args: {action_args}")
 
-                if action_type == "text":
-                    action_result = action_args.get("content", "")
-                    logger.info(f"| 💬 Text action: {str(action_result)}")
-                    action_dict = action.model_dump()
-                    action_dict["output"] = action_result
-                    action_results.append(action_dict)
+                action_dict = {
+                    "index": i,
+                    "type": action_type,
+                    "name": action_name,
+                    "args": action_args_str,
+                    "args_parsed": action_args,
+                }
 
-                elif action_type == "skill":
-                    response = await skill_manager(
-                        name=action_name,
-                        input=action_args,
-                        ctx=ctx,
-                    )
-                    action_result = response.message
-                    logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
-                    action_dict = action.model_dump()
-                    action_dict["output"] = action_result
-                    action_results.append(action_dict)
+                pre_result = await self._fire_action_hook(
+                    HookEvent.PRE_ACTION, ctx, task_id, step_number, action_dict
+                )
+                if pre_result.decision == HookDecision.BLOCK:
+                    logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
+                    action_results.append({**action_dict, "output": f"[blocked] {pre_result.reason}"})
+                    continue
 
-                else:
-                    tool_response = await tool_manager(
-                        name=action_name,
-                        input=action_args,
-                        ctx=ctx,
-                    )
-                    action_result = tool_response.message
-                    logger.info(f"| ✅ Tool '{action_name}' completed")
-                    action_dict = action.model_dump()
-                    action_dict["output"] = action_result
-                    action_results.append(action_dict)
+                action_result = None
+                error = None
 
-                    if action_name == "done_tool":
-                        done = True
-                        result = action_result
-                        action_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
-                        reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
-                        break
+                try:
+                    if action_type == "text":
+                        action_result = action_args.get("content", "")
+                        logger.info(f"| 💬 Text action: {str(action_result)}")
+
+                    elif action_type == "skill":
+                        response = await skill_manager(
+                            name=action_name,
+                            input=action_args,
+                            ctx=ctx,
+                        )
+                        action_result = response.message
+                        logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
+
+                    else:
+                        tool_response = await tool_manager(
+                            name=action_name,
+                            input=action_args,
+                            ctx=ctx,
+                        )
+                        action_result = tool_response.message
+                        logger.info(f"| ✅ Tool '{action_name}' completed")
+
+                        if action_name == "done_tool":
+                            done = True
+                            result = action_result
+                            action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
+                            reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
+
+                except Exception as e:
+                    error = str(e)
+                    logger.error(f"| ❌ Action '{action_name}' failed: {e}")
+
+                await self._fire_action_hook(
+                    HookEvent.POST_ACTION, ctx, task_id, step_number, action_dict,
+                    action_result=action_result, error=error,
+                )
+
+                action_dict["output"] = action_result
+                action_results.append(action_dict)
+
+                if done:
+                    break
 
             event_data = {
                 "thinking": thinking,
@@ -163,29 +240,43 @@ class ReasonActAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
 
+        await self._fire_step_hook(
+            HookEvent.POST_STEP, ctx, task_id, step_number=step_number,
+            thinking=thinking, next_goal=next_goal,
+        )
+
         return {"done": done, "result": result, "reasoning": reasoning}
 
-    async def __call__(self,
-                       task: str,
-                       files: Optional[List[str]] = None,
-                       **kwargs
-                       ) -> AgentResponse:
-        """Main entry point for the agent."""
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+
+    async def __call__(
+        self,
+        task: str,
+        files: Optional[List[str]] = None,
+        **kwargs,
+    ) -> AgentResponse:
         logger.info(f"| 🚀 Starting ReasonActAgent: {task}")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
 
+        if not ctx.workdir:
+            ctx.workdir = self.workdir
+
         if files:
             logger.info(f"| 📂 Attached files: {files}")
-            files = await asyncio.gather(*[self._extract_file_content(file) for file in files])
+            files = await asyncio.gather(*[self._extract_file_content(f) for f in files])
             enhanced_task = await self._generate_enhanced_task(task, files)
         else:
             enhanced_task = task
 
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
+
+        await self._fire_hook(HookEvent.ON_START, ctx, task_id, task=enhanced_task)
 
         if self.use_memory and self.memory_name:
             await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
@@ -233,6 +324,8 @@ class ReasonActAgent(Agent):
                 ctx=ctx,
             )
             await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
+
+        await self._fire_hook(HookEvent.ON_STOP, ctx, task_id, result=response.get("result"))
 
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
 
