@@ -6,16 +6,23 @@ import json
 
 from src.utils import dedent
 from src.dynamic import dynamic_manager
+from src.session import BaseContext
+
+
+class MemoryContext(BaseContext):
+    """Context passed into memory manager operations."""
+    memory_name: str = Field(default="", description="Name of the memory system.")
+    agent_name: Optional[str] = Field(default=None)
+    task_id: Optional[str] = Field(default=None)
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
 
 class EventType(Enum):
     
     # Agent Event Types
     TASK_START = "task_start"
-    TOOL_STEP = "tool_step"
+    ACTION_STEP = "action_step"
     TASK_END = "task_end"
-    
-    # Optimizer Event Types
-    OPTIMIZATION_STEP = "optimization_step"
 
 class ChatEvent(BaseModel):
     id: str = Field(..., description="The unique identifier for the event.")

@@ -20,6 +20,7 @@ from src.utils import (assemble_project_path,
                        )
 from src.memory.types import MemoryConfig, Memory
 from src.session import SessionContext
+from src.memory.types import MemoryContext
 from src.dynamic import dynamic_manager
 from src.registry import MEMORY_SYSTEM
 
@@ -1145,41 +1146,44 @@ class MemoryContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Error during memory context manager cleanup: {e}")
             
-    async def start_session(self, 
-                            memory_name: str, 
-                            agent_name: Optional[str] = None, 
-                            task_id: Optional[str] = None, 
+    async def start_session(self,
+                            memory_name: str,
+                            agent_name: Optional[str] = None,
+                            task_id: Optional[str] = None,
                             description: Optional[str] = None,
                             ctx: SessionContext = None,
                             **kwargs) -> str:
         """Start a memory session (delegates to memory system instance).
-        
+
         Args:
             memory_name: Name of the memory system
             agent_name: Optional agent name
             task_id: Optional task ID
             description: Optional description
             ctx: Memory context
-            
+
         Returns:
             Session ID
         """
+        if ctx is None:
+            ctx = SessionContext()
+        memory_ctx = MemoryContext.from_session(ctx, memory_name=memory_name, agent_name=agent_name, task_id=task_id)
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.start_session(agent_name=agent_name, task_id=task_id, description=description, ctx=ctx, **kwargs)
-    
-    async def add_event(self, 
+        return await instance.start_session(agent_name=agent_name, task_id=task_id, description=description, ctx=memory_ctx, **kwargs)
+
+    async def add_event(self,
                         memory_name: str,
-                        step_number: int, 
-                        event_type: Any, 
+                        step_number: int,
+                        event_type: Any,
                         data: Any,
-                        agent_name: str, 
-                        task_id: Optional[str] = None, 
+                        agent_name: str,
+                        task_id: Optional[str] = None,
                         ctx: SessionContext = None,
                         **kwargs):
         """Add an event to memory (delegates to memory system instance).
-        
+
         Args:
             memory_name: Name of the memory system
             step_number: Step number
@@ -1189,72 +1193,88 @@ class MemoryContextManager(BaseModel):
             task_id: Optional task ID
             ctx: Memory context
         """
+        if ctx is None:
+            ctx = SessionContext()
+        memory_ctx = MemoryContext.from_session(ctx, memory_name=memory_name, agent_name=agent_name, task_id=task_id)
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.add_event(step_number, event_type, data, agent_name, task_id, ctx=ctx, **kwargs)
-    
-    async def end_session(self, memory_name: str, 
+        return await instance.add_event(step_number, event_type, data, agent_name, task_id, ctx=memory_ctx, **kwargs)
+
+    async def end_session(self, memory_name: str,
                           ctx: SessionContext = None,
                           **kwargs):
         """End a memory session (delegates to memory system instance).
-        
+
         Args:
             memory_name: Name of the memory system
             ctx: Memory context
         """
+        if ctx is None:
+            ctx = SessionContext()
+        memory_ctx = MemoryContext.from_session(ctx, memory_name=memory_name)
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.end_session(ctx=ctx, **kwargs)
-    
-    async def get_session_info(self, memory_name: str, 
+        return await instance.end_session(ctx=memory_ctx, **kwargs)
+
+    async def get_session_info(self, memory_name: str,
                                ctx: SessionContext = None,
                                **kwargs):
         """Get session info (delegates to memory system instance).
-        
+
         Args:
             memory_name: Name of the memory system
             ctx: Memory context
-            
+
         Returns:
             SessionInfo or None
         """
+        if ctx is None:
+            ctx = SessionContext()
+        memory_ctx = MemoryContext.from_session(ctx, memory_name=memory_name)
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.get_session_info(ctx=ctx, **kwargs)
-    
-    async def clear_session(self, 
-                            memory_name: str, 
+        return await instance.get_session_info(ctx=memory_ctx, **kwargs)
+
+    async def clear_session(self,
+                            memory_name: str,
                             ctx: SessionContext = None,
                             **kwargs):
         """Clear a memory session (delegates to memory system instance).
-        
+
         Args:
             memory_name: Name of the memory system
             ctx: Memory context
         """
+        if ctx is None:
+            ctx = SessionContext()
+        memory_ctx = MemoryContext.from_session(ctx, memory_name=memory_name)
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.clear_session(ctx=ctx, **kwargs)
-    
-    async def get_state(self, 
-                        memory_name: str, 
-                        n: Optional[int] = None, 
+        return await instance.clear_session(ctx=memory_ctx, **kwargs)
+
+    async def get_state(self,
+                        memory_name: str,
+                        n: Optional[int] = None,
                         ctx: SessionContext = None,
                         **kwargs) -> Dict[str, Any]:
         """Get memory state (events, summaries, insights) for a memory system.
-        
+
         Args:
             memory_name: Name of the memory system
             n: Number of items to retrieve. If None, returns all items.
             ctx: Memory context
-            
+
         Returns:
             Dictionary containing 'events', 'summaries', and 'insights'
         """
+        if ctx is None:
+            ctx = SessionContext()
+        memory_ctx = MemoryContext.from_session(ctx, memory_name=memory_name)
+
         memory_info = await self.get_info(memory_name)
 
         version = memory_info.version
@@ -1262,9 +1282,9 @@ class MemoryContextManager(BaseModel):
         logger.info(f"| ✅ Using memory {memory_name}@{version}")
         
         # Get events, summaries, and insights from memory instance
-        events = await memory_instance.get_event(n=n, ctx=ctx, **kwargs)
-        summaries = await memory_instance.get_summary(n=n, ctx=ctx, **kwargs)
-        insights = await memory_instance.get_insight(n=n, ctx=ctx, **kwargs)
+        events = await memory_instance.get_event(n=n, ctx=memory_ctx, **kwargs)
+        summaries = await memory_instance.get_summary(n=n, ctx=memory_ctx, **kwargs)
+        insights = await memory_instance.get_insight(n=n, ctx=memory_ctx, **kwargs)
         
         return {
             "events": events,

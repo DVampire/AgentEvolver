@@ -18,7 +18,7 @@ from src.utils import (
     gather_with_concurrency,
     file_lock
 )
-from src.agent.types import Agent, AgentConfig
+from src.agent.types import Agent, AgentConfig, AgentContext
 from src.session import SessionContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
@@ -1140,7 +1140,7 @@ class AgentContextManager(BaseModel):
             
     async def __call__(self, name: str, input: Dict[str, Any], ctx: SessionContext = None, **kwargs) -> Any:
         """Call an agent by name
-        
+
         Args:
             name: Agent name
             input: Input for the agent
@@ -1151,12 +1151,13 @@ class AgentContextManager(BaseModel):
         """
         if ctx is None:
             ctx = SessionContext()
-        
+        agent_ctx = AgentContext.from_session(ctx, agent_name=name)
+
         agent_info = await self.get_info(name)
-        
+
         # Agent args: ctx + any extra kwargs from the caller
         agent_args = {
-            "ctx": ctx,
+            "ctx": agent_ctx,
             **kwargs,
         }
         

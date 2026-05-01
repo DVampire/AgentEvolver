@@ -8,7 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from src.utils import file_lock
-from src.session import SessionContext
+from src.session import BaseContext
 
 
 class Record(BaseModel):
@@ -90,7 +90,7 @@ class SessionRecords:
 class Tracer:
     """Tracer class for recording agent execution records.
 
-    Uses SessionContext instead of session_id for coroutine-safe concurrent access.
+    Uses BaseContext instead of session_id for coroutine-safe concurrent access.
     Per-session cache and locks for proper concurrency control (reference: memory system).
     """
 
@@ -105,7 +105,7 @@ class Tracer:
         # Current session ID for backward compatibility when ctx is None
         self._current_session_id: Optional[str] = None
 
-    def _get_id_from_ctx(self, ctx: Optional[SessionContext]) -> Optional[str]:
+    def _get_id_from_ctx(self, ctx: Optional[BaseContext]) -> Optional[str]:
         """Extract session id from ctx. Returns None if ctx is None."""
         if ctx is None:
             return None
@@ -143,7 +143,7 @@ class Tracer:
         action: Any = None,
         task_id: Optional[str] = None,
         timestamp: Optional[datetime] = None,
-        ctx: Optional[SessionContext] = None,
+        ctx: Optional[BaseContext] = None,
     ) -> None:
         """Add a new execution record.
 
@@ -155,7 +155,7 @@ class Tracer:
             ctx: Session context. If None, uses _no_session.
         """
         if ctx is None:
-            ctx = SessionContext()
+            ctx = BaseContext()
         id = ctx.id
 
         session_records, session_lock = await self._get_or_create_session_records(id)
@@ -170,7 +170,7 @@ class Tracer:
 
         self._current_session_id = id
 
-    async def get_records(self, ctx: Optional[SessionContext] = None) -> List[Record]:
+    async def get_records(self, ctx: Optional[BaseContext] = None) -> List[Record]:
         """Get execution records.
 
         Args:
@@ -193,7 +193,7 @@ class Tracer:
         return all_records
 
     async def get_record(
-        self, index: int, ctx: Optional[SessionContext] = None
+        self, index: int, ctx: Optional[BaseContext] = None
     ) -> Optional[Record]:
         """Get a specific execution record by index.
 
@@ -212,7 +212,7 @@ class Tracer:
         async with session_lock:
             return session_records.get_record(index)
 
-    async def get_last_record(self, ctx: Optional[SessionContext] = None) -> Optional[Record]:
+    async def get_last_record(self, ctx: Optional[BaseContext] = None) -> Optional[Record]:
         """Get the last record for a session.
 
         Args:
@@ -230,7 +230,7 @@ class Tracer:
             return session_records.get_last_record()
 
     async def get_record_by_id(
-        self, record_id: int, ctx: Optional[SessionContext] = None
+        self, record_id: int, ctx: Optional[BaseContext] = None
     ) -> Optional[Record]:
         """Get a specific execution record by ID.
 
@@ -255,7 +255,7 @@ class Tracer:
         return None
 
     async def get_records_by_task_id(
-        self, task_id: str, ctx: Optional[SessionContext] = None
+        self, task_id: str, ctx: Optional[BaseContext] = None
     ) -> List[Record]:
         """Get all records for a specific task ID.
 
@@ -278,7 +278,7 @@ class Tracer:
                 all_records.extend(session_records.get_records_by_task_id(task_id))
         return all_records
 
-    async def clear(self, ctx: Optional[SessionContext] = None) -> None:
+    async def clear(self, ctx: Optional[BaseContext] = None) -> None:
         """Clear execution records.
 
         Args:
@@ -419,7 +419,7 @@ class Tracer:
         """Return the total number of records across all sessions."""
         return sum(len(sr.records) for sr in self._session_records_cache.values())
 
-    async def get_count(self, ctx: Optional[SessionContext] = None) -> int:
+    async def get_count(self, ctx: Optional[BaseContext] = None) -> int:
         """Get the number of records."""
         id = self._get_id_from_ctx(ctx)
         if id:

@@ -17,7 +17,7 @@ from src.utils import assemble_project_path
 from src.utils import file_lock
 from src.registry import TOOL
 from src.logger import logger
-from src.session import SessionContext
+from src.tool.types import ToolContext
 
 
 class Step(BaseModel):
@@ -777,7 +777,7 @@ class TodoTool(Tool):
         except Exception as e:
             return ToolResponse(success=False, message=f"Error exporting todo.md: {str(e)}")
 
-    def get_todo_content(self, ctx: SessionContext, **kwargs) -> str:
+    def get_todo_content(self, ctx: ToolContext, **kwargs) -> str:
         """Get the content of the todo.md file for a specific id.
         
         Args:

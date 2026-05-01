@@ -4,6 +4,16 @@ from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from src.dynamic import dynamic_manager
+from src.session import BaseContext
+
+
+class ToolContext(BaseContext):
+    """Context passed into tool manager and individual tool instances."""
+    tool_name: str = Field(default="", description="Name of the tool being called.")
+    workdir: Optional[str] = Field(default=None, description="Working directory for file operations.")
+    timeout: Optional[float] = Field(default=None, description="Per-call timeout override.")
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
 
 class ToolExtra(BaseModel):
     """Extra data for a tool response"""

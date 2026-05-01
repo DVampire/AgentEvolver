@@ -14,6 +14,7 @@ from src.logger import logger
 from src.config import config
 from src.skill.types import SkillConfig, SkillResponse, SkillExtra
 from src.session import SessionContext
+from src.skill.types import SkillContext
 from src.utils import assemble_project_path, file_lock
 from src.version import version_manager
 
@@ -701,6 +702,7 @@ class SkillContextManager(BaseModel):
         """Execute a skill by returning its SKILL.md as instructions for the calling agent."""
         if ctx is None:
             ctx = SessionContext()
+        skill_ctx = SkillContext.from_session(ctx, skill_name=name, model_name=model_name)
 
         skill_config = self._skill_configs.get(name)
         if skill_config is None:

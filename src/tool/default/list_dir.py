@@ -1,0 +1,121 @@
+"""ListDirTool — list directory contents as a tree."""
+
+import os
+from typing import Dict, Any, List, Optional
+from pydantic import Field
+
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.registry import TOOL
+
+_LIST_DIR_TOOL_DESCRIPTION = """List the contents of a directory as a tree structure.
+
+Args:
+- path (str): Absolute path to the directory to list.
+- depth (int, optional): Maximum depth of the tree. Defaults to 3.
+- ignore (list[str], optional): Directory/file name patterns to ignore. Defaults to common noise dirs like .git, __pycache__, node_modules.
+
+Example: {"name": "list_dir_tool", "args": {"path": "/abs/path/to/project"}}
+Example: {"name": "list_dir_tool", "args": {"path": "/abs/path/to/project", "depth": 2, "ignore": [".git", "node_modules"]}}
+"""
+
+_DEFAULT_IGNORE = {
+    ".git", "__pycache__", "node_modules", ".venv", "venv", "env",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
+    "*.pyc", "*.pyo", ".DS_Store",
+}
+
+
+@TOOL.register_module(force=True)
+class ListDirTool(Tool):
+    """List directory contents as a readable tree."""
+
+    name: str = "list_dir_tool"
+    description: str = _LIST_DIR_TOOL_DESCRIPTION
+    metadata: Dict[str, Any] = Field(default={})
+    require_grad: bool = Field(default=False)
+
+    def __init__(self, require_grad: bool = False, **kwargs):
+        super().__init__(require_grad=require_grad, **kwargs)
+
+    def _should_ignore(self, name: str, ignore: set) -> bool:
+        if name in ignore:
+            return True
+        for pattern in ignore:
+            if pattern.startswith("*") and name.endswith(pattern[1:]):
+                return True
+        return False
+
+    def _build_tree(
+        self,
+        path: str,
+        ignore: set,
+        depth: int,
+        current_depth: int,
+        prefix: str,
+        lines: List[str],
+        file_count: List[int],
+    ) -> None:
+        if current_depth > depth:
+            return
+
+        try:
+            entries = sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower()))
+        except PermissionError:
+            lines.append(f"{prefix}[Permission denied]")
+            return
+
+        visible = [e for e in entries if not self._should_ignore(e.name, ignore)]
+
+        for i, entry in enumerate(visible):
+            is_last = i == len(visible) - 1
+            connector = "└── " if is_last else "├── "
+            child_prefix = prefix + ("    " if is_last else "│   ")
+
+            if entry.is_dir(follow_symlinks=False):
+                lines.append(f"{prefix}{connector}{entry.name}/")
+                self._build_tree(
+                    entry.path, ignore, depth, current_depth + 1,
+                    child_prefix, lines, file_count,
+                )
+            else:
+                lines.append(f"{prefix}{connector}{entry.name}")
+                file_count[0] += 1
+
+    async def __call__(
+        self,
+        path: str,
+        depth: int = 3,
+        ignore: Optional[List[str]] = None,
+        **kwargs,
+    ) -> ToolResponse:
+        """List directory as a tree.
+
+        Args:
+            path: Absolute path to the directory.
+            depth: Maximum recursion depth.
+            ignore: Names/patterns to skip.
+        """
+        try:
+            if not os.path.exists(path):
+                return ToolResponse(success=False, message=f"Error: Path not found: {path}")
+            if not os.path.isdir(path):
+                return ToolResponse(success=False, message=f"Error: Path is not a directory: {path}")
+
+            ignore_set = _DEFAULT_IGNORE.copy()
+            if ignore:
+                ignore_set.update(ignore)
+
+            lines = [f"{path}/"]
+            file_count = [0]
+            self._build_tree(path, ignore_set, depth, 1, "", lines, file_count)
+
+            return ToolResponse(
+                success=True,
+                message="\n".join(lines),
+                extra=ToolExtra(
+                    data={"file_count": file_count[0], "depth": depth}
+                ),
+            )
+
+        except Exception as e:
+            return ToolResponse(success=False, message=f"Error listing directory: {e}")

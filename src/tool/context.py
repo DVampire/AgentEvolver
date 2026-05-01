@@ -19,6 +19,7 @@ from src.utils import (assemble_project_path,
                        )
 from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.session import SessionContext
+from src.tool.types import ToolContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
@@ -1146,25 +1147,26 @@ class ToolContextManager(BaseModel):
     
     async def __call__(self,
                        name: str,
-                       input: Dict[str, Any], 
+                       input: Dict[str, Any],
                        timeout: Optional[float] = None,
                        ctx: SessionContext = None,
                        **kwargs
                        ) -> ToolResponse:
         """Call a tool by name with optional timeout
-        
+
         Args:
             name: Tool name
             input: Input for the tool
             timeout: Timeout in seconds for this specific call (overrides default_timeout if provided)
-            
+
         Returns:
             ToolResponse: Tool result
         """
-        
+
         if ctx is None:
             ctx = SessionContext()
-        
+        tool_ctx = ToolContext.from_session(ctx, tool_name=name, timeout=timeout)
+
         tool_info = await self.get_info(name)
         
         if tool_info is None:
@@ -1180,7 +1182,7 @@ class ToolContextManager(BaseModel):
         effective_timeout = timeout if timeout is not None else self.default_timeout
         
         # Other tool args
-        tool_kwargs = dict(ctx=ctx)
+        tool_kwargs = dict(ctx=tool_ctx)
         
         # If timeout is None (no timeout), call tool directly
         if effective_timeout is None:

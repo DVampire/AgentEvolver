@@ -17,6 +17,8 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
+from src.hook.server import hook_manager
+from src.hook.types import HookContext, HookEvent
 from src.dynamic import dynamic_manager
 from src.logger import logger
 from src.memory import EventType, memory_manager
@@ -30,7 +32,15 @@ from src.utils import (
     dedent,
     get_file_info,
 )
-from src.session import SessionContext
+from src.session import BaseContext
+
+
+class AgentContext(BaseContext):
+    """Context passed into agent manager and individual agent instances."""
+    agent_name: str = Field(default="", description="Name of the agent being called.")
+    task_id: Optional[str] = Field(default=None, description="Task identifier for tracing.")
+    parent_agent: Optional[str] = Field(default=None, description="Name of the parent agent if this is a sub-agent call.")
+    extra: Dict[str, Any] = Field(default_factory=dict)
 
 class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
@@ -288,8 +298,7 @@ class Agent(BaseModel):
         # Use LLM to summarize the file content
         system_prompt = "You are a helpful assistant that summarizes file content."
 
-        user_prompt = dedent(
-            f"""
+        user_prompt = dedent(f"""
             Summarize the following file content as 1-3 sentences:
             {file_content}
         """
@@ -326,27 +335,20 @@ class Agent(BaseModel):
     async def _get_agent_context(self, 
                                  task: str,
                                  step_number: int = 0,
-                                 ctx: SessionContext = None,
+                                 ctx: Optional[AgentContext] = None,
                                  **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
-        task = f"<task>{task}</task>"
-        
-        id = ctx.id if ctx else None
-
-        step_info_description = (
-            f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
-        )
         time_str = datetime.now().isoformat()
-        step_info_description += f"Current date and time: {time_str}"
-        step_info = dedent(f"""
-            <step_info>
-            {step_info_description}
-            </step_info>
-        """)
+        step_info = (
+            f"### Step Info\n"
+            f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
+            f"Current date and time: {time_str}"
+        )
 
-        # Get memory state if use_memory is enabled
-        memory = ""
-        active_sop = ""
+        task_section = f"### Task\n{task}"
+
+        history_section = ""
+        memory_section = ""
         if self.use_memory and self.memory_name:
             state = await memory_manager.get_state(
                 name=self.memory_name,
@@ -357,133 +359,61 @@ class Agent(BaseModel):
             summaries = state["summaries"]
             insights = state["insights"]
 
-            # Detect activated SOP skill from ALL events (not just review window),
-            # because the skill is typically invoked at step 0 and may fall outside
-            # the review_steps window in later steps.
-            all_events_state = await memory_manager.get_state(
-                name=self.memory_name,
-                n=None,  # all events
-                ctx=ctx
-            )
-            for event in all_events_state["events"]:
-                if event.event_type != EventType.TOOL_STEP:
-                    continue
-                for act in (event.data.get("actions") or []):
-                    if act.get("type") == "skill" and skill_manager.is_sop_skill(act.get("name", "")):
-                        sop_name = act.get("name", "unknown")
-                        sop_content = act.get("output", "")
-                        active_sop = dedent(f"""\
-                            <active_sop skill="{sop_name}">
-                            The following SOP (Standard Operating Procedure) has been activated for this task.
-                            You MUST follow these instructions step-by-step to complete the task.
-
-                            {sop_content}
-                            </active_sop>""")
-
-            # Generate agent history
-            memory += "<agent_history>"
+            history_lines = ["### Agent History"]
             for event in events:
-                memory += f"<step_{event.step_number}>\n"
+                history_lines.append(f"#### Step {event.step_number}")
                 if event.event_type == EventType.TASK_START:
-                    memory += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
+                    history_lines.append(f"Task Start: {event.data.get('task', event.data.get('message', ''))}")
                 elif event.event_type == EventType.TASK_END:
-                    memory += f"Task End: {event.data.get('result', '')}\n"
-                elif event.event_type == EventType.TOOL_STEP:
-                    memory += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
-                    memory += f"Memory: {event.data.get('memory', '')}\n"
-                    memory += f"Next Goal: {event.data.get('next_goal', '')}\n"
-                    # If active SOP exists, replace SOP action output with short reference to avoid redundancy
-                    actions_for_history = event.data.get('actions', event.data.get('tool', ''))
-                    if active_sop and isinstance(actions_for_history, list):
-                        actions_for_history = [
-                            {**act, "output": f"[SOP '{act.get('name', '')}' instructions — see \"active_sop\" block below in this prompt]"}
-                            if act.get("type") == "skill" and skill_manager.is_sop_skill(act.get("name", ""))
-                            else act
-                            for act in actions_for_history
-                        ]
-                    memory += f"Action Results: {actions_for_history}\n"
-                memory += "\n"
-                memory += f"</step_{event.step_number}>\n"
-            memory += "</agent_history>"
-            
-            # Generate memory
-            memory += "<memory>"
-            if len(summaries) > 0:
-                memory += dedent(
-                    f"""
-                    <summaries>
-                    {chr(10).join([str(summary) for summary in summaries])}
-                    </summaries>
-                """
-                )
-            else:
-                memory += "<summaries>[Current summaries are empty.]</summaries>\n"
-            if len(insights) > 0:
-                memory += dedent(
-                    f"""
-                    <insights>
-                    {chr(10).join([str(insight) for insight in insights])}
-                    </insights>
-                """
-                )
-            else:
-                memory += "<insights>[Current insights are empty.]</insights>\n"
-            memory += "</memory>"
+                    history_lines.append(f"Task End: {event.data.get('result', '')}")
+                elif event.event_type == EventType.ACTION_STEP:
+                    history_lines.append(f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}")
+                    history_lines.append(f"Memory: {event.data.get('memory', '')}")
+                    history_lines.append(f"Next Goal: {event.data.get('next_goal', '')}")
+                    history_lines.append(f"Action Results: {event.data.get('actions', '')}")
+                history_lines.append("")
+            history_section = "\n".join(history_lines)
+
+            memory_lines = ["### Memory"]
+            memory_lines.append("#### Summaries")
+            memory_lines.extend([str(s) for s in summaries] if summaries else ["[Current summaries are empty.]"])
+            memory_lines.append("#### Insights")
+            memory_lines.extend([str(i) for i in insights] if insights else ["[Current insights are empty.]"])
+            memory_section = "\n".join(memory_lines)
 
         else:
-            memory += "<agent_history>[Agent history is disabled.]</agent_history>\n"
-            memory += "<memory>[Memory is disabled.]</memory>\n"
+            history_section = "### Agent History\n[Agent history is disabled.]"
+            memory_section = "### Memory\n[Memory is disabled.]"
 
         if self.use_todo:
-            todo = "<todo>"
             todo_tool = await tool_manager.get("todo_tool")
-            todo_contents = todo_tool.get_todo_content(ctx=ctx)
-            todo += todo_contents
-            todo += "</todo>"
+            todo_section = f"### Todo\n{todo_tool.get_todo_content(ctx=ctx)}"
         else:
-            todo = "<todo>[Todo is disabled.]</todo>\n"
+            todo_section = "### Todo\n[Todo is disabled.]"
 
-        agent_context = dedent(f"""
-            <agent_context>
-            {task}
-            {step_info}
-            {memory}
-            {todo}
-            </agent_context>
-        """)
+        agent_context = "\n\n".join([
+            task_section,
+            step_info,
+            history_section,
+            memory_section,
+            todo_section,
+        ])
 
-        return {
-            "agent_context": agent_context,
-            "active_sop": active_sop,
-        }
+        return {"agent_context": agent_context}
 
-    async def _get_tool_context(self, ctx: SessionContext, **kwargs) -> Dict[str, Any]:
+    async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
-        tool_context = "<tool_context>"
+        contract = await tool_manager.get_contract()
+        tool_context = f"### Available Tools\n{contract}" if contract else "### Available Tools\n[No tools loaded.]"
+        return {"tool_context": tool_context}
 
-        tool_context += dedent(f"""
-            <available_tools>
-            {await tool_manager.get_contract()}
-            </available_tools>
-        """)
-
-        tool_context += "</tool_context>"
-        return {
-            "tool_context": tool_context,
-        }
-
-    async def _get_skill_context(self, ctx: SessionContext, **kwargs) -> Dict[str, Any]:
+    async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the skill context from loaded skills via skill manager."""
         skill_content = await skill_manager.get_context()
-        if not skill_content:
-            skill_context = "<skill_context>[No skills loaded.]</skill_context>\n"
-        else:
-            skill_context = f"<skill_context>\n{skill_content}\n</skill_context>"
-        return {
-            "skill_context": skill_context,
-        }
+        skill_context = f"### Available Skills\n{skill_content}" if skill_content else "### Available Skills\n[No skills loaded.]"
+        return {"skill_context": skill_context}
 
-    async def _resolve_workdir(self, ctx: SessionContext, **kwargs) -> str:
+    async def _resolve_workdir(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workdir surfaced in the prompt's `{{ workdir }}` slot.
 
         Default: absolutise `self.workdir` so the LLM always sees a real path
@@ -494,7 +424,7 @@ class Agent(BaseModel):
 
     async def _get_messages(self,
                             task: str,
-                            ctx: SessionContext,
+                            ctx: AgentContext,
                             **kwargs) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
@@ -512,12 +442,29 @@ class Agent(BaseModel):
             agent_modules=agent_message_modules,
         )
 
+        # Run PRE_MESSAGES middleware pipeline (token count, truncation, history summary)
+        hook_ctx = HookContext(
+            event=HookEvent.PRE_MESSAGES,
+            id=ctx.id,
+            agent_name=self.name,
+            messages=messages,
+            max_tokens=getattr(config, "max_tokens", 0),
+        )
+        result = await hook_manager(hook_ctx)
+        messages = result.modified_messages if result.modified_messages is not None else messages
+        additional_context = result.additional_context
+
+        # Inject additional_context (e.g. from history summary) as a system reminder
+        if additional_context:
+            from src.message import SystemMessage
+            messages = list(messages) + [SystemMessage(content=additional_context)]
+
         return messages
 
-    async def __call__(self, 
-                       task: str, 
+    async def __call__(self,
+                       task: str,
                        files: Optional[List[str]] = None,
-                       ctx: Optional[SessionContext] = None,
+                       ctx: Optional[AgentContext] = None,
                        **kwargs: Any,
                        ) -> AgentResponse:
         """Run the agent. This method should be implemented by the child classes."""

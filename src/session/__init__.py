@@ -1,3 +1,3 @@
-from .types import SessionContext 
+from .types import SessionContext, BaseContext
 
-__all__ = ["SessionContext"]
+__all__ = ["SessionContext", "BaseContext"]

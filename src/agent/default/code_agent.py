@@ -1,4 +1,4 @@
-"""ReasonActAgent implementation — iterative reasoning and action via tools, skills, and text."""
+"""CodeAgent — a code-focused agent that reads, edits, and commits code."""
 
 import asyncio
 from typing import List, Optional, Dict, Any
@@ -13,22 +13,27 @@ from src.skill.server import skill_manager
 from src.memory import memory_manager, EventType
 from src.model import model_manager
 from src.registry import AGENT
-from src.agent.types import (Agent,
-                             AgentResponse, 
-                             AgentExtra, 
-                             ThinkOutput, 
-                             AgentContext)
+from src.agent.types import (
+    Agent,
+    AgentResponse,
+    AgentExtra,
+    ThinkOutput,
+    AgentContext,
+)
+
 
 @AGENT.register_module(force=True)
-class ReasonActAgent(Agent):
-    """Iterative agent that reasons and acts via tools, skills, and direct text responses."""
+class CodeAgent(Agent):
+    """Code agent that reads, edits, and commits code using file and git tools."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="reason_act_agent", description="The name of the reason-act agent.")
-    description: str = Field(default="An iterative agent that reasons and acts by using tools, skills, and direct responses to accomplish tasks accurately, safely, and efficiently.",
-                             description="The description of the reason-act agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the reason-act agent.")
-    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
+    name: str = Field(default="code_agent")
+    description: str = Field(
+        default="A code agent that reads, writes, and edits source code files, "
+                "runs tests, and commits changes using git."
+    )
+    metadata: Dict[str, Any] = Field(default={})
+    require_grad: bool = Field(default=False)
 
     def __init__(
         self,
@@ -40,36 +45,85 @@ class ReasonActAgent(Agent):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_actions: int = 10,
-        max_steps: int = 20,
+        max_steps: int = 30,
         review_steps: int = 5,
         require_grad: bool = False,
-        **kwargs
+        **kwargs,
     ):
-        if not prompt_name:
-            prompt_name = "reason_act_agent"
-
         super().__init__(
             workdir=workdir,
             name=name,
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name,
+            prompt_name=prompt_name or "code_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
             review_steps=review_steps,
             require_grad=require_grad,
-            **kwargs)
+            **kwargs,
+        )
 
-    async def _think_and_action(self,
-                                messages: List[Message],
-                                task_id: str,
-                                step_number: int,
-                                ctx: AgentContext,
-                                **kwargs) -> Dict[str, Any]:
+    async def _get_git_status(self, workdir: str) -> str:
+        """Return a one-line git status summary for the step info block."""
+        try:
+            tool = await tool_manager.get("git_tool")
+            if tool is None:
+                return ""
+
+            class _FakeCtx:
+                pass
+
+            fake_ctx = _FakeCtx()
+            fake_ctx.workdir = workdir
+
+            response = await tool(action="status", ctx=fake_ctx)
+            if response.success and response.message:
+                lines = [l for l in response.message.splitlines() if l.strip()]
+                changed = [l for l in lines if l.startswith("\t") or l.startswith("modified") or "Changes" in l]
+                return "\n".join(lines[:8]) if lines else "(clean)"
+        except Exception:
+            pass
+        return ""
+
+    async def _get_agent_context(
+        self,
+        task: str,
+        step_number: int = 0,
+        ctx: Optional[AgentContext] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Extend base agent context with git status."""
+        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
+
+        workdir = self.workdir
+        git_status = await self._get_git_status(workdir)
+        if git_status:
+            base["agent_context"] = base["agent_context"].replace(
+                "### Step Info",
+                "### Step Info",
+                1,
+            )
+            # Append git status right after the step info block
+            step_marker = "### Agent History"
+            base["agent_context"] = base["agent_context"].replace(
+                step_marker,
+                f"### Git Status\n{git_status}\n\n{step_marker}",
+                1,
+            )
+
+        return base
+
+    async def _think_and_action(
+        self,
+        messages: List[Message],
+        task_id: str,
+        step_number: int,
+        ctx: AgentContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
         """Think and execute actions for one step."""
-
         done = False
         result = None
         reasoning = None
@@ -78,7 +132,7 @@ class ReasonActAgent(Agent):
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=ThinkOutput
+                response_format=ThinkOutput,
             )
             think_output = think_output.extra.parsed_model
 
@@ -90,7 +144,7 @@ class ReasonActAgent(Agent):
 
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions to execute: {actions}")
+            logger.info(f"| 🔧 Actions: {actions}")
 
             action_results = []
 
@@ -105,7 +159,7 @@ class ReasonActAgent(Agent):
 
                 if action_type == "text":
                     action_result = action_args.get("content", "")
-                    logger.info(f"| 💬 Text action: {str(action_result)}")
+                    logger.info(f"| 💬 Text: {str(action_result)}")
                     action_dict = action.model_dump()
                     action_dict["output"] = action_result
                     action_results.append(action_dict)
@@ -137,8 +191,8 @@ class ReasonActAgent(Agent):
                     if action_name == "done_tool":
                         done = True
                         result = action_result
-                        action_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
-                        reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
+                        action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
+                        reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
                         break
 
             event_data = {
@@ -161,17 +215,18 @@ class ReasonActAgent(Agent):
                 )
 
         except Exception as e:
-            logger.error(f"| Error in thinking and action step: {e}")
+            logger.error(f"| Error in think_and_action: {e}")
 
         return {"done": done, "result": result, "reasoning": reasoning}
 
-    async def __call__(self,
-                       task: str,
-                       files: Optional[List[str]] = None,
-                       **kwargs
-                       ) -> AgentResponse:
-        """Main entry point for the agent."""
-        logger.info(f"| 🚀 Starting ReasonActAgent: {task}")
+    async def __call__(
+        self,
+        task: str,
+        files: Optional[List[str]] = None,
+        **kwargs,
+    ) -> AgentResponse:
+        """Run the code agent on the given task."""
+        logger.info(f"| 🚀 Starting CodeAgent: {task}")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
@@ -179,7 +234,7 @@ class ReasonActAgent(Agent):
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")
-            files = await asyncio.gather(*[self._extract_file_content(file) for file in files])
+            files = await asyncio.gather(*[self._extract_file_content(f) for f in files])
             enhanced_task = await self._generate_enhanced_task(task, files)
         else:
             enhanced_task = task
@@ -199,7 +254,7 @@ class ReasonActAgent(Agent):
                 ctx=ctx,
             )
         else:
-            logger.info(f"| ⏭️ Memory disabled (use_memory={self.use_memory}), skipping session management")
+            logger.info(f"| ⏭️ Memory disabled, skipping session management")
 
         messages = await self._get_messages(enhanced_task, ctx=ctx)
 
@@ -215,7 +270,7 @@ class ReasonActAgent(Agent):
                 break
 
         if step_number >= self.max_steps and not response["done"]:
-            logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
+            logger.warning(f"| 🛑 Reached max steps ({self.max_steps})")
             response = {
                 "done": False,
                 "result": "The task has not been completed.",
@@ -234,7 +289,7 @@ class ReasonActAgent(Agent):
             )
             await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
 
-        logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
+        logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")
 
         return AgentResponse(
             success=response["done"],
