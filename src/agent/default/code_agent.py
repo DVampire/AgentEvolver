@@ -14,7 +14,7 @@ from src.memory import memory_manager, EventType
 from src.model import model_manager
 from src.registry import AGENT
 from src.hook.server import hook_manager
-from src.hook.types import HookContext, HookEvent, HookDecision
+from src.hook.types import HookEvent, HookDecision
 from src.agent.types import (
     Agent,
     AgentResponse,
@@ -68,61 +68,21 @@ class CodeAgent(Agent):
         )
 
     # ------------------------------------------------------------------
-    # Hook helpers
-    # ------------------------------------------------------------------
-
-    async def _fire_hook(self, event: HookEvent, ctx: AgentContext, task_id: str, **extra_fields):
-        """Build a HookContext and dispatch it through hook_manager."""
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=self.name,
-            extra={"task_id": task_id, **extra_fields},
-        )
-        return await hook_manager(hook_ctx)
-
-    async def _fire_step_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
-                               step_number: int, **extra_fields):
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=self.name,
-            step_number=step_number,
-            extra={"task_id": task_id, **extra_fields},
-        )
-        return await hook_manager(hook_ctx)
-
-    async def _fire_action_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
-                                 step_number: int, action_dict: Dict[str, Any],
-                                 action_result: Optional[str] = None, error: Optional[str] = None):
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=self.name,
-            step_number=step_number,
-            action=action_dict,
-            action_result=action_result,
-            extra={"task_id": task_id, "error": error},
-        )
-        return await hook_manager(hook_ctx)
-
-    # ------------------------------------------------------------------
     # Git status helper
     # ------------------------------------------------------------------
 
-    async def _get_git_status(self, workdir: str) -> str:
+    async def _get_git_status(self, workdir: str, ctx: Optional[AgentContext] = None) -> str:
         try:
             tool = await tool_manager.get("git_tool")
             if tool is None:
                 return ""
 
-            class _FakeCtx:
-                pass
+            if ctx is None:
+                ctx = AgentContext()
+            if not ctx.workdir:
+                ctx.workdir = workdir
 
-            fake_ctx = _FakeCtx()
-            fake_ctx.workdir = workdir
-
-            response = await tool(action="status", ctx=fake_ctx)
+            response = await tool(action="status", ctx=ctx)
             if response.success and response.message:
                 lines = [l for l in response.message.splitlines() if l.strip()]
                 return "\n".join(lines[:8]) if lines else "(clean)"
@@ -143,7 +103,7 @@ class CodeAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        git_status = await self._get_git_status(self.workdir)
+        git_status = await self._get_git_status(self.workdir, ctx=ctx)
         if git_status:
             base["agent_context"] = base["agent_context"].replace(
                 "### Agent History",
@@ -170,7 +130,12 @@ class CodeAgent(Agent):
         reasoning = None
 
         # PRE_STEP
-        await self._fire_step_hook(HookEvent.PRE_STEP, ctx, task_id, step_number=step_number)
+        await hook_manager(
+            ctx, HookEvent.PRE_STEP,
+            agent_name=self.name,
+            step_number=step_number,
+            extra={"task_id": task_id},
+        )
 
         thinking = ""
         next_goal = ""
@@ -213,8 +178,12 @@ class CodeAgent(Agent):
                 }
 
                 # PRE_ACTION
-                pre_result = await self._fire_action_hook(
-                    HookEvent.PRE_ACTION, ctx, task_id, step_number, action_dict
+                pre_result = await hook_manager(
+                    ctx, HookEvent.PRE_ACTION,
+                    agent_name=self.name,
+                    step_number=step_number,
+                    action=action_dict,
+                    extra={"task_id": task_id},
                 )
                 if pre_result.decision == HookDecision.BLOCK:
                     logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
@@ -258,9 +227,13 @@ class CodeAgent(Agent):
                     logger.error(f"| ❌ Action '{action_name}' failed: {e}")
 
                 # POST_ACTION
-                await self._fire_action_hook(
-                    HookEvent.POST_ACTION, ctx, task_id, step_number, action_dict,
-                    action_result=action_result, error=error,
+                await hook_manager(
+                    ctx, HookEvent.POST_ACTION,
+                    agent_name=self.name,
+                    step_number=step_number,
+                    action=action_dict,
+                    action_result=action_result,
+                    extra={"task_id": task_id, "error": error},
                 )
 
                 action_dict["output"] = action_result
@@ -292,9 +265,11 @@ class CodeAgent(Agent):
             logger.error(f"| Error in think_and_action: {e}")
 
         # POST_STEP
-        await self._fire_step_hook(
-            HookEvent.POST_STEP, ctx, task_id, step_number=step_number,
-            thinking=thinking, next_goal=next_goal,
+        await hook_manager(
+            ctx, HookEvent.POST_STEP,
+            agent_name=self.name,
+            step_number=step_number,
+            extra={"task_id": task_id, "thinking": thinking, "next_goal": next_goal},
         )
 
         return {"done": done, "result": result, "reasoning": reasoning}
@@ -330,9 +305,10 @@ class CodeAgent(Agent):
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
         # ON_START
-        await self._fire_hook(
-            HookEvent.ON_START, ctx, task_id,
-            task=enhanced_task,
+        await hook_manager(
+            ctx, HookEvent.ON_START,
+            agent_name=self.name,
+            extra={"task_id": task_id, "task": enhanced_task},
         )
 
         if self.use_memory and self.memory_name:
@@ -383,9 +359,10 @@ class CodeAgent(Agent):
             await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
 
         # ON_STOP
-        await self._fire_hook(
-            HookEvent.ON_STOP, ctx, task_id,
-            result=response.get("result"),
+        await hook_manager(
+            ctx, HookEvent.ON_STOP,
+            agent_name=self.name,
+            extra={"task_id": task_id, "result": response.get("result")},
         )
 
         logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")

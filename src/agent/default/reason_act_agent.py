@@ -14,7 +14,7 @@ from src.memory import memory_manager, EventType
 from src.model import model_manager
 from src.registry import AGENT
 from src.hook.server import hook_manager
-from src.hook.types import HookContext, HookEvent, HookDecision
+from src.hook.types import HookEvent, HookDecision
 from src.agent.types import (
     Agent,
     AgentResponse,
@@ -68,44 +68,6 @@ class ReasonActAgent(Agent):
         )
 
     # ------------------------------------------------------------------
-    # Hook helpers
-    # ------------------------------------------------------------------
-
-    async def _fire_hook(self, event: HookEvent, ctx: AgentContext, task_id: str, **extra_fields):
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=self.name,
-            extra={"task_id": task_id, **extra_fields},
-        )
-        return await hook_manager(hook_ctx)
-
-    async def _fire_step_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
-                               step_number: int, **extra_fields):
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=self.name,
-            step_number=step_number,
-            extra={"task_id": task_id, **extra_fields},
-        )
-        return await hook_manager(hook_ctx)
-
-    async def _fire_action_hook(self, event: HookEvent, ctx: AgentContext, task_id: str,
-                                 step_number: int, action_dict: Dict[str, Any],
-                                 action_result: Optional[str] = None, error: Optional[str] = None):
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=self.name,
-            step_number=step_number,
-            action=action_dict,
-            action_result=action_result,
-            extra={"task_id": task_id, "error": error},
-        )
-        return await hook_manager(hook_ctx)
-
-    # ------------------------------------------------------------------
     # Core step
     # ------------------------------------------------------------------
 
@@ -121,7 +83,13 @@ class ReasonActAgent(Agent):
         result = None
         reasoning = None
 
-        await self._fire_step_hook(HookEvent.PRE_STEP, ctx, task_id, step_number=step_number)
+        # PRE_STEP
+        await hook_manager(
+            ctx, HookEvent.PRE_STEP,
+            agent_name=self.name,
+            step_number=step_number,
+            extra={"task_id": task_id},
+        )
 
         thinking = ""
         next_goal = ""
@@ -163,8 +131,13 @@ class ReasonActAgent(Agent):
                     "args_parsed": action_args,
                 }
 
-                pre_result = await self._fire_action_hook(
-                    HookEvent.PRE_ACTION, ctx, task_id, step_number, action_dict
+                # PRE_ACTION
+                pre_result = await hook_manager(
+                    ctx, HookEvent.PRE_ACTION,
+                    agent_name=self.name,
+                    step_number=step_number,
+                    action=action_dict,
+                    extra={"task_id": task_id},
                 )
                 if pre_result.decision == HookDecision.BLOCK:
                     logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
@@ -207,9 +180,14 @@ class ReasonActAgent(Agent):
                     error = str(e)
                     logger.error(f"| ❌ Action '{action_name}' failed: {e}")
 
-                await self._fire_action_hook(
-                    HookEvent.POST_ACTION, ctx, task_id, step_number, action_dict,
-                    action_result=action_result, error=error,
+                # POST_ACTION
+                await hook_manager(
+                    ctx, HookEvent.POST_ACTION,
+                    agent_name=self.name,
+                    step_number=step_number,
+                    action=action_dict,
+                    action_result=action_result,
+                    extra={"task_id": task_id, "error": error},
                 )
 
                 action_dict["output"] = action_result
@@ -240,9 +218,12 @@ class ReasonActAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
 
-        await self._fire_step_hook(
-            HookEvent.POST_STEP, ctx, task_id, step_number=step_number,
-            thinking=thinking, next_goal=next_goal,
+        # POST_STEP
+        await hook_manager(
+            ctx, HookEvent.POST_STEP,
+            agent_name=self.name,
+            step_number=step_number,
+            extra={"task_id": task_id, "thinking": thinking, "next_goal": next_goal},
         )
 
         return {"done": done, "result": result, "reasoning": reasoning}
@@ -276,7 +257,12 @@ class ReasonActAgent(Agent):
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
-        await self._fire_hook(HookEvent.ON_START, ctx, task_id, task=enhanced_task)
+        # ON_START
+        await hook_manager(
+            ctx, HookEvent.ON_START,
+            agent_name=self.name,
+            extra={"task_id": task_id, "task": enhanced_task},
+        )
 
         if self.use_memory and self.memory_name:
             await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
@@ -325,7 +311,12 @@ class ReasonActAgent(Agent):
             )
             await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
 
-        await self._fire_hook(HookEvent.ON_STOP, ctx, task_id, result=response.get("result"))
+        # ON_STOP
+        await hook_manager(
+            ctx, HookEvent.ON_STOP,
+            agent_name=self.name,
+            extra={"task_id": task_id, "result": response.get("result")},
+        )
 
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
 

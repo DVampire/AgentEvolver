@@ -12,7 +12,7 @@ Design decisions:
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from src.logger import logger
 from src.utils import Singleton
@@ -60,12 +60,31 @@ class HookManager(metaclass=Singleton):
     # Hook dispatch
     # ------------------------------------------------------------------
 
-    async def __call__(self, ctx: HookContext) -> HookResult:
-        """Dispatch a hook event to all matching hooks, concurrently.
+    async def __call__(
+        self,
+        ctx,                          # SessionContext or any object with .id
+        event: HookEvent,
+        agent_name: str = "",
+        step_number: Optional[int] = None,
+        action: Optional[dict] = None,
+        action_result: Optional[str] = None,
+        extra: Optional[dict] = None,
+    ) -> HookResult:
+        """Dispatch a hook event.  Builds HookContext internally from a SessionContext.
 
         Returns a merged HookResult. Hooks that raise are logged and
         treated as ALLOW (non-fatal).
         """
+        hook_ctx = HookContext(
+            id=ctx.id,
+            event=event,
+            agent_name=agent_name,
+            step_number=step_number,
+            action=action,
+            action_result=action_result,
+            extra=extra or {},
+        )
+        ctx = hook_ctx
         candidates = [h for h in self._hooks if h.handles_event(ctx.event)]
         if not candidates:
             return HookResult.allow()
