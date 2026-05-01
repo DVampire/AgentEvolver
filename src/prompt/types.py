@@ -1,245 +1,204 @@
 """Prompt Context Protocol (PCP) Types
 
 Core type definitions for the Prompt Context Protocol.
+Prompts are loaded from .md files; each file defines one agent prompt (system + user).
 """
-from typing import Any, Dict, Optional, Type, Literal, List, Union, TYPE_CHECKING, Union
-from pydantic import BaseModel, Field, ConfigDict
+import re
+import yaml
+from typing import Any, Dict, Optional, TYPE_CHECKING
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
 
 from src.logger import logger
 from src.message import Message, SystemMessage, HumanMessage, ContentPartText
-from src.optimizer.types import Variable
-from src.dynamic import dynamic_manager
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
+
+try:
+    from jinja2 import Template as JinjaTemplate
+    _JINJA2_AVAILABLE = True
+except ImportError:
+    _JINJA2_AVAILABLE = False
+
+
+def _render_template(template_str: str, modules: Dict[str, Any]) -> str:
+    if not _JINJA2_AVAILABLE:
+        return template_str
+    return JinjaTemplate(template_str).render(**modules)
+
+
+def parse_prompt_text(text: str) -> "PromptConfig":
+    """Parse a full md file text into a PromptConfig."""
+    fm_match = re.match(r'^---\n(.*?)\n---\n(.*)', text, re.DOTALL)
+    if not fm_match:
+        raise ValueError("Invalid md format: missing YAML frontmatter delimiters")
+
+    yaml_block = fm_match.group(1)
+    body = fm_match.group(2)
+
+    fm = yaml.safe_load(yaml_block) or {}
+    name = fm.get("name", "")
+    description = fm.get("description", "")
+    version = str(fm.get("version", "1.0.0"))
+    require_grad = bool(fm.get("require_grad", False))
+
+    parts = re.split(r'<!--\s*role:\s*(system|user)\s*-->', body)
+    system_template = ""
+    user_template = ""
+    i = 0
+    while i < len(parts):
+        if parts[i].strip().lower() == "system" and i + 1 < len(parts):
+            # Strip trailing --- separator if present before <!-- role: user -->
+            system_template = re.sub(r'\n---\s*$', '', parts[i + 1]).strip()
+            i += 2
+        elif parts[i].strip().lower() == "user" and i + 1 < len(parts):
+            user_template = parts[i + 1].strip()
+            i += 2
+        else:
+            i += 1
+
+    return PromptConfig(
+        name=name,
+        description=description,
+        version=version,
+        require_grad=require_grad,
+        system_template=system_template,
+        user_template=user_template,
+    )
+
+
+def parse_prompt_file(path: str) -> "PromptConfig":
+    """Read and parse an .md file into a PromptConfig."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    try:
+        return parse_prompt_text(text)
+    except Exception as e:
+        raise ValueError(f"Failed to parse md file {path}: {e}") from e
+
+
+def reconstruct_prompt_text(prompt: "Prompt") -> str:
+    """Rebuild the canonical md file text from a Prompt instance's stored fields."""
+    fm = {
+        "name": prompt.name,
+        "description": prompt.description,
+        "version": prompt.version,
+        "require_grad": prompt.require_grad,
+    }
+    yaml_block = yaml.dump(fm, default_flow_style=False, allow_unicode=True).rstrip()
+    return (
+        f"---\n{yaml_block}\n---\n\n"
+        f"<!-- role: system -->\n{prompt.system_template}\n\n"
+        f"---\n\n"
+        f"<!-- role: user -->\n{prompt.user_template}\n"
+    )
+
 
 class Prompt(BaseModel):
-    """Base class for all prompt templates with rendering capabilities.
-    
-    This class serves two purposes:
-    1. Registration: Subclasses define system_prompt and agent_message_prompt properties
-    2. Instance: When initialized with prompt_config or prompt_dict, provides rendering methods
-    """
+    """A prompt loaded from an .md file, with system and user templates."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    type: str = Field(description="The type of the prompt, e.g. 'system_prompt' or 'agent_message_prompt'")
-    name: str = Field(description="The name of the prompt")
-    description: str = Field(description="The description of the prompt")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the prompt")
-    prompt_config: Optional[Dict[str, Any]] = Field(default=None, description="The prompt information")
-    
-    prompt_variable: Optional[Variable] = Field(default=None, description="The prompt variable")
-    message: Optional[Message] = Field(default=None, description="The message")
-    
-    def __init__(self, prompt_config: Optional[Dict[str, Any]] = None, **kwargs):
-        """Initialize Prompt with prompt configuration."""
-        super().__init__(**kwargs)
-        self.prompt_config = prompt_config if prompt_config is not None else self.prompt_config
-        
-    async def initialize(self) -> None:
-        """Initialize the prompt."""
-        pass
-    
-    async def _load_prompt_variable(self) -> None:
-        """Load prompt template asynchronously."""
-        if self.prompt_variable is not None:
-            return
-        
-        if self.prompt_config is None:
-            raise ValueError("Cannot load prompt: prompt_config is None")
-        
-        try:
-            self.prompt_variable = Variable.from_dict(self.prompt_config)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load prompt: {e}")
-    
-    async def get_variable(self, reload: bool = False) -> Variable:
-        """Get the prompt Variable instance.
-        
-        Args:
-            reload: Whether to reload the prompt
-            
-        Returns:
-            Variable: The prompt Variable instance
-        """
-        if self.prompt_variable is None or reload:
-            await self._load_prompt_variable()
-        return self.prompt_variable
-    
-    async def get_trainable_variable(self) -> Dict[str, Variable]:
-        """Get all trainable variables from the prompt.
-        
-        Returns:
-            Dict[str, Variable]: Dictionary mapping variable names to trainable Variable objects
-        """
-        if self.prompt_variable is None:
-            await self._load_prompt_variable()
-        return self.prompt_variable.get_trainable_variables()
-    
-    async def get_message(
-        self,
-        modules: Optional[Dict[str, Any]] = None,
-        reload: bool = False,
-        **kwargs
-    ):
-        """Get the rendered message.
-        
-        Args:
-            modules: Modules to render in the template
-            reload: Whether to reload the prompt
-            **kwargs: Additional arguments
-            
-        Returns:
-            SystemMessage or HumanMessage depending on prompt type
-        """
-        # Load prompt if not already loaded or if reloading
-        if self.prompt_variable is None or reload:
-            await self._load_prompt_variable()
-        
-        is_system_prompt = self.type == "system_prompt"
-        
-        # Cache check (only for system prompts)
-        if is_system_prompt and not reload and self.message is not None:
-            return self.message
-        
-        try:
-            # Build modules from variable tree if not provided
-            if modules is None or len(modules) == 0:
-                modules = self.prompt_variable.get_modules()
-            else:
-                # Merge provided modules with variable tree modules
-                variable_modules = self.prompt_variable.get_modules()
-                modules = {**variable_modules, **modules}
-            
-            prompt_str = self.prompt_variable.render(modules)
-            
-            # Return appropriate message type based on prompt type
-            if is_system_prompt:
-                self.message = SystemMessage(content=prompt_str)
-            else:
-                # Agent message prompt
-                contents = [
-                    ContentPartText(text=prompt_str),
-                ]
-                self.message = HumanMessage(content=contents)
-            
-            return self.message
-            
-        except Exception as e:
-            logger.warning(f"Failed to render prompt: {e}")
-            raise RuntimeError(f"Failed to render prompt: {e}")
+
+    name: str = Field(description="Prompt name, from md frontmatter")
+    description: str = Field(default="", description="Short description of the agent")
+    version: str = Field(default="1.0.0", description="Version string")
+    require_grad: bool = Field(default=False, description="Whether this prompt is a trainable variable")
+    system_template: str = Field(default="", description="System prompt text (Jinja2)")
+    user_template: str = Field(default="", description="User/agent message text (Jinja2)")
+    variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Static Jinja2 render-context defaults")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Miscellaneous metadata")
+
+    _system_message_cache: Optional[SystemMessage] = PrivateAttr(default=None)
+
+    def _merged_modules(self, modules: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        merged = dict(self.variables or {})
+        if modules:
+            merged.update(modules)
+        return merged
+
+    async def get_system_message(self, modules: Optional[Dict[str, Any]] = None, reload: bool = False) -> SystemMessage:
+        if self._system_message_cache is not None and not reload:
+            return self._system_message_cache
+        rendered = _render_template(self.system_template, self._merged_modules(modules))
+        self._system_message_cache = SystemMessage(content=rendered)
+        return self._system_message_cache
+
+    async def get_user_message(self, modules: Optional[Dict[str, Any]] = None, reload: bool = True) -> HumanMessage:
+        rendered = _render_template(self.user_template, self._merged_modules(modules))
+        return HumanMessage(content=[ContentPartText(text=rendered)])
+
+    async def get_trainable_variable(self) -> Optional["Variable"]:
+        """Returns a single Variable representing the whole md file, if require_grad=True."""
+        if not self.require_grad:
+            return None
+        from src.optimizer.types import Variable
+        return Variable(
+            name=self.name,
+            type="prompt",
+            description=self.description,
+            require_grad=True,
+            template=None,
+            variables=reconstruct_prompt_text(self),
+        )
 
     def __str__(self):
-        return f"Prompt(name={self.name}, description={self.description})"
+        return f"Prompt(name={self.name}, version={self.version})"
 
     def __repr__(self):
         return self.__str__()
 
 
 class PromptConfig(BaseModel):
-    """Prompt configuration for registration"""
+    """Prompt configuration — parsed from an .md file or loaded from JSON."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    name: str = Field(description="The name of the prompt")
-    type: str = Field(description="The type of the prompt")
-    description: str = Field(description="The description of the prompt")
-    version: str = Field(default="1.0.0", description="Version of the prompt")
-    template: str = Field(description="The template string for the prompt")
-    variables: Optional[Union[Dict[str, 'Variable'], 'Variable']] = Field(default=None, description="The variables used in the template. Can be Dict[str, Variable] or single Variable")
-    cls: Optional[Type[Prompt]] = Field(default=None, description="The class of the prompt")
-    instance: Optional[Any] = Field(default=None, description="The instance of the prompt")
-    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the prompt")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the prompt")
-    code: Optional[str] = Field(default=None, description="Source code for dynamically generated prompt classes (used when cls cannot be imported from a module)")
-    
+
+    name: str = Field(description="Prompt name")
+    description: str = Field(default="", description="Short description")
+    version: str = Field(default="1.0.0", description="Version string")
+    require_grad: bool = Field(default=False, description="Whether the whole prompt is a trainable variable")
+    system_template: str = Field(default="", description="System prompt text")
+    user_template: str = Field(default="", description="User/agent message text")
+    variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Static Jinja2 render-context defaults")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Miscellaneous metadata")
+
+    def to_prompt(self) -> Prompt:
+        return Prompt(
+            name=self.name,
+            description=self.description,
+            version=self.version,
+            require_grad=self.require_grad,
+            system_template=self.system_template,
+            user_template=self.user_template,
+            variables=self.variables or {},
+            metadata=self.metadata or {},
+        )
+
     def model_dump(self, **kwargs) -> Dict[str, Any]:
-        """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
-        def serialize_variables(vars_data: Any) -> Any:
-            """Recursively serialize Variable objects to dictionaries."""
-            if vars_data is None:
-                return None
-            elif isinstance(vars_data, Variable):
-                # Convert Variable to dict, excluding non-serializable fields
-                return {
-                    "name": vars_data.name,
-                    "type": vars_data.type,
-                    "description": vars_data.description,
-                    "require_grad": vars_data.require_grad,
-                    "template": vars_data.template,
-                    "variables": serialize_variables(vars_data.variables),
-                }
-            elif isinstance(vars_data, dict):
-                # Recursively process dictionary values
-                return {k: serialize_variables(v) for k, v in vars_data.items()}
-            elif isinstance(vars_data, (list, tuple)):
-                # Recursively process list items
-                return [serialize_variables(item) for item in vars_data]
-            else:
-                # Primitive types (str, int, etc.) - return as-is
-                return vars_data
-        
-        result = {
+        return {
             "name": self.name,
-            "type": self.type,
             "description": self.description,
             "version": self.version,
-            "template": self.template,
-            "variables": serialize_variables(self.variables),
-            "metadata": self.metadata,
-            "config": self.config,
-            "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
-            "instance": None,
-            "code": self.code,
+            "require_grad": self.require_grad,
+            "system_template": self.system_template,
+            "user_template": self.user_template,
+            "variables": self.variables or {},
+            "metadata": self.metadata or {},
         }
-        return result
-    
+
     @classmethod
-    def model_validate(cls, data: Dict[str, Any]) -> 'PromptConfig':
-        """Validate the model from a dictionary."""
-        name = data.get("name")
-        prompt_type = data.get("type")
-        description = data.get("description")
-        version = data.get("version", "1.0.0")
-        template = data.get("template", "")
-        variables = data.get("variables")
-        metadata = data.get("metadata", {})
-        config_dict = data.get("config", {})
-        
-        cls_ = None
-        code = data.get("code")
-        if code:
-            class_name = dynamic_manager.extract_class_name_from_code(code)
-            if class_name:
-                try:
-                    cls_ = dynamic_manager.load_class(
-                        code,
-                        class_name=class_name,
-                        base_class=Prompt,
-                        context="prompt"
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to load prompt class from code: {e}")
-                    cls_ = None
-            else:
-                cls_ = None
-        else:
-            cls_ = None
-        
-        instance = data.get("instance", None)
-        
+    def model_validate(cls, data: Dict[str, Any]) -> "PromptConfig":
         return cls(
-            name=name,
-            type=prompt_type,
-            description=description,
-            version=version,
-            template=template,
-            variables=variables,
-            cls=cls_,
-            instance=instance,
-            config=config_dict,
-            metadata=metadata,
-            code=code
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            version=data.get("version", "1.0.0"),
+            require_grad=data.get("require_grad", False),
+            system_template=data.get("system_template", ""),
+            user_template=data.get("user_template", ""),
+            variables=data.get("variables", {}),
+            metadata=data.get("metadata", {}),
         )
-    
+
     def __str__(self):
-        return f"PromptConfig(name={self.name}, type={self.type}, description={self.description}, version={self.version})"
-    
+        return f"PromptConfig(name={self.name}, version={self.version})"
+
     def __repr__(self):
         return self.__str__()

@@ -170,8 +170,8 @@ def format_actions(actions: List[BaseModel]) -> str:
 
 
 class ActionInputArgs(BaseModel):
-    type: str = Field(description='The type of this action: "tool" or "skill".')
-    name: str = Field(description="The name of the tool or skill.")
+    type: str = Field(description='The type of this action: "tool", "skill", or "text".')
+    name: str = Field(description='The name of the tool, skill, or "text" for plain-text responses.')
     args: str = Field(description='The arguments as a JSON string. Must be a valid JSON object string. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
 
 
@@ -227,7 +227,7 @@ class Agent(BaseModel):
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
-        max_tools: int = 10,
+        max_actions: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
         require_grad: bool = False,
@@ -254,7 +254,7 @@ class Agent(BaseModel):
 
         # Setup steps
         self.max_steps = max_steps if max_steps > 0 else int(1e8)
-        self.max_tools = max_tools
+        self.max_actions = max_actions
 
         self.review_steps = review_steps
         self.use_todo = use_todo
@@ -499,7 +499,7 @@ class Agent(BaseModel):
         """Build system+agent messages using prompt templates and context."""
 
         workdir = await self._resolve_workdir(ctx=ctx, **kwargs)
-        system_modules = dict(max_tools=self.max_tools, workdir=workdir)
+        system_modules = dict(max_actions=self.max_actions, workdir=workdir)
         agent_message_modules = dict(task=task)
         
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))

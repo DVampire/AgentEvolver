@@ -1,5 +1,6 @@
 import contextvars
 import logging
+import os
 import threading
 from enum import IntEnum
 from typing import Any, Optional
@@ -126,6 +127,7 @@ class Logger(logging.Logger, metaclass=Singleton):
 
         log_path = config.log_path
         self._log_path = log_path
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
         self.handlers.clear()
 

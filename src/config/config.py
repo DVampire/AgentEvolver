@@ -8,7 +8,6 @@ from src.utils import assemble_project_path, Singleton
 def process_general(config: MMConfig) -> MMConfig:
     """Process general configuration and ensure paths are strings"""
     workdir = str(assemble_project_path(config.workdir))
-    os.makedirs(workdir, exist_ok=True)
     config.workdir = workdir
     
     log_path = getattr(config, 'log_path', 'agent.log')

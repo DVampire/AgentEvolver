@@ -20,6 +20,11 @@ from .string_utils import (
 from .url_utils import fetch_url
 from .args_utils import parse_tool_args
 from .hvac_utils import hvac_client
+from .token_utils import (
+    count_tokens,
+    count_message_tokens,
+    truncate_text,
+)
 from .plan_utils import (
     make_plan_path,
     TodoStep,
@@ -48,6 +53,9 @@ __all__ = [
     "parse_tool_args",
     "is_same",
     "hvac_client",
+    "count_tokens",
+    "count_message_tokens",
+    "truncate_text",
     "make_plan_path",
     "TodoStep",
     "TodoList",

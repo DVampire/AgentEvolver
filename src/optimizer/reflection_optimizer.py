@@ -158,7 +158,7 @@ class ReflectionOptimizer(Optimizer):
         
         # Step1: Format prompt sub-variables (now flattened, no more nesting)
         prompt_variables_text = "<prompt_variables>\n"
-        prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
+        prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "prompt"}
         for prompt_name, prompt_variable in prompt_variables.items():
             prompt_variables_text += f"<{prompt_name}>\n"
             prompt_variables_text += f"{prompt_variable.variables}"
@@ -651,10 +651,10 @@ Historical Reflections from Previous Tasks:
                             # Extract the actual value string from ImprovedVariable
                             variable_value = improved_var['variables']
                             
-                            if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
-                                # Prompt sub-variables - collect for batch update
+                            if variable_type == "prompt":
+                                # Whole md text update — variable_value is the new md string
                                 prompt_updates[variable_name] = variable_value
-                                logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
+                                logger.debug(f"| 📝 Collected prompt update: {variable_name}")
                             elif variable_type == "tool_code":
                                 # tool_manager.set_variables expects {"name": tool_name, "variables": code_string}
                                 tool_variable_updates = {"name": variable_name, "variables": variable_value}
