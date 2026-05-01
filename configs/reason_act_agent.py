@@ -2,13 +2,9 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.reason_act_agent import reason_act_agent
-    # from .tools.deep_researcher import deep_researcher_tool
-    # from .tools.deep_analyzer import deep_analyzer_tool
     from .tools.mdify import mdify_tool
-    # from .tools.plotter import plotter_tool
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
-    from .tools.skill_generator import skill_generator_tool
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
 
@@ -33,7 +29,6 @@ tool_names = [
     'python_interpreter_tool',
     'done_tool',
     'todo_tool',
-    'skill_generator_tool',
 ]
 skill_names = [
     "hello_world_skill",
@@ -75,11 +70,6 @@ todo_tool.update(
 #     model_name="openai/o3",
 #     base_dir="tool/plotter",
 # )
-#-----------------SKILL GENERATOR TOOL CONFIG-----------------
-skill_generator_tool.update(
-    model_name="openrouter/gemini-3-flash-preview",
-    base_dir="skill",
-)
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
     base_dir="memory/general_memory_system",
