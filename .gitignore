@@ -208,6 +208,7 @@ __marimo__/
 
 others/
 workdir/
+.claude/
 
 # Frontend
 src/trace/ui/node_modules/
