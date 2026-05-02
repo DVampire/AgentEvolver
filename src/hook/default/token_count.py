@@ -10,8 +10,10 @@ from src.logger import logger
 from src.utils import count_message_tokens
 from src.hook.types import HookContext, HookEvent, HookResult, Hook
 from src.hook.context import HookSessionState
+from src.registry import HOOK
 
 
+@HOOK.register_module(force=True)
 class TokenCountHook(Hook):
     name: str = "token_count"
     description: str = "Counts total tokens in the current message list and updates session state."

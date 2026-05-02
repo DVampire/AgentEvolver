@@ -15,6 +15,7 @@ time per session.
 from __future__ import annotations
 
 from typing import List, Optional
+from src.registry import HOOK
 
 from src.logger import logger
 from src.message import Message, SystemMessage, HumanMessage
@@ -55,6 +56,7 @@ def _messages_to_text(messages: List[Message]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+@HOOK.register_module(force=True)
 class HistorySummaryHook(Hook):
     name: str = "history_summary"
     description: str = "Summarises old agent history when total tokens exceed the threshold."

@@ -20,6 +20,7 @@ from typing import Dict, Optional
 from pydantic import PrivateAttr
 
 from src.hook.types import Hook, HookContext, HookEvent, HookResult
+from src.registry import HOOK
 from src.trace.types import (
     TraceEvent,
     action_end_event,
@@ -31,6 +32,7 @@ from src.trace.types import (
 )
 
 
+@HOOK.register_module(force=True)
 class TraceHook(Hook):
     """Fire-and-forget probe: translates HookEvents → TraceEvents."""
 

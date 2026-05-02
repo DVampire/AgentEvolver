@@ -43,10 +43,16 @@ class TraceManager(metaclass=Singleton):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def initialize(self, workdir: str) -> None:
-        """Set workdir and create queue / writer.  Idempotent."""
+    async def initialize(self, workdir: Optional[str] = None) -> None:
+        """Set workdir and create queue / writer.  Idempotent.
+
+        If workdir is omitted, defaults to ``{config.workdir}/trace``.
+        """
         if self._initialized:
             return
+        if workdir is None:
+            from src.config import config
+            workdir = os.path.join(config.workdir, "trace")
         self._workdir = workdir
         os.makedirs(workdir, exist_ok=True)
 

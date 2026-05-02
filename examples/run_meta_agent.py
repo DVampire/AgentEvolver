@@ -37,7 +37,7 @@ from src.memory import memory_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
-from src.hook import hook_manager, TraceHook, EscalationHook
+from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
 from src.trace import trace_manager
 from src.session.types import SessionContext
@@ -82,19 +82,18 @@ async def main():
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
 
+    # --- Core managers ---
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Versions: {await version_manager.list()}")
+
     # --- Trace ---
-    trace_workdir = os.path.join(config.workdir, "trace")
-    await trace_manager.initialize(workdir=trace_workdir)
+    await trace_manager.initialize()
     await trace_manager.start()
     logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
     # --- Hooks ---
-    hook_manager.register(TraceHook())
-    hook_manager.register(EscalationHook())
-
-    # --- Core managers ---
-    logger.info("| 📁 Initializing version manager...")
-    await version_manager.initialize()
+    await hook_manager.initialize()
 
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize()
@@ -130,7 +129,7 @@ async def main():
 
     # --- Submit task ---
     task_text = args.task or (
-        "Write a Python module with two functions: "
+        "Write a Python script with two functions: "
         "(1) fibonacci(n) that returns the nth Fibonacci number, "
         "(2) is_prime(n) that checks if a number is prime. "
         "Then write unit tests for both functions and verify they pass."

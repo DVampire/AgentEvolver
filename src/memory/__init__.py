@@ -1,7 +1,7 @@
 """Memory module for managing agent execution history."""
 
 from .server import memory_manager
-from .types import ChatEvent, EventType, Memory, MemoryConfig
+from .types import Memory, MemoryConfig
 from .default.general_memory_system import GeneralMemorySystem
 
 __all__ = [
@@ -9,6 +9,4 @@ __all__ = [
     "Memory",
     "MemoryConfig",
     "GeneralMemorySystem",
-    "ChatEvent",
-    "EventType",
 ]

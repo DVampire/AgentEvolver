@@ -60,7 +60,7 @@ code_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
-    use_memory=False,
+    use_memory=True,
 )
 
 reason_act_agent.update(
@@ -68,7 +68,7 @@ reason_act_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
-    use_memory=False,
+    use_memory=True,
 )
 
 #-----------------META AGENT CONFIG-----------------

@@ -30,17 +30,16 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from src.agent.types import Agent, AgentContext, AgentResponse, AgentExtra
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent
 from src.logger import logger
-from src.memory import memory_manager, EventType
+from src.memory import memory_manager
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
-from src.session import SessionContext
 from src.task.types import TaskStatus, SubTaskCategory
 from src.trace.server import trace_manager
 from src.trace.types import TraceEvent, TraceEventType, agent_start_event, agent_end_event
@@ -191,7 +190,7 @@ class MetaPlanFile:
 
     def render(self) -> str:
         parts: List[str] = [
-            f"# Plan\n",
+            f"## Plan\n",
             f"Task: {self.task}\n",
             f"Session: `{self.session_id}`\n",
             "",
@@ -200,11 +199,11 @@ class MetaPlanFile:
             self._render_log(),
         ]
         if self._result is not None:
-            parts += ["", "## Result\n", self._result]
+            parts += ["", "### Result\n", self._result]
         return "\n".join(parts)
 
     def _render_subtasks(self) -> str:
-        lines = ["## Subtasks\n"]
+        lines = ["### Subtasks\n"]
         if not self._records:
             lines.append("*(no subtasks yet)*")
             return "\n".join(lines)
@@ -226,7 +225,7 @@ class MetaPlanFile:
         return "\n".join(lines)
 
     def _render_log(self) -> str:
-        lines = ["## Log\n"]
+        lines = ["### Log\n"]
         if not self._log:
             lines.append("*(empty)*")
         else:
@@ -264,10 +263,10 @@ class MetaState(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    # Transient concurrency state — not serialised.
-    inbox: asyncio.Queue = Field(default_factory=asyncio.Queue)
-    running_tasks: Dict[str, asyncio.Task] = Field(default_factory=dict)
-    pending_escalations: Dict[str, "MetaEvent"] = Field(default_factory=dict)
+    # Transient concurrency state — excluded from model_dump / serialization.
+    _inbox: asyncio.Queue = PrivateAttr(default_factory=asyncio.Queue)
+    _running_tasks: Dict[str, asyncio.Task] = PrivateAttr(default_factory=dict)
+    _pending_escalations: Dict[str, "MetaEvent"] = PrivateAttr(default_factory=dict)
 
     def pending(self) -> List[SubTaskRecord]:
         return [r for r in self.subtask_records.values() if r.status == TaskStatus.PENDING]
@@ -370,24 +369,12 @@ class MetaAgent(Agent):
         plan_path = os.path.join(self.workdir, f"{session_id}.plan.md")
         plan = MetaPlanFile(path=plan_path, task=task, session_id=session_id)
 
-        if self.use_memory and self.memory_name:
-            mem_ctx = SessionContext(id=session_id)
-            await memory_manager.start_session(memory_name=self.memory_name, ctx=mem_ctx)
-            await memory_manager.add_event(
-                memory_name=self.memory_name,
-                step_number=0,
-                event_type=EventType.TASK_START,
-                data={"task": task},
-                agent_name=self.name,
-                task_id=session_id,
-                ctx=mem_ctx,
-            )
-
         hook_ctx = AgentContext(id=session_id, agent_name=self.name)
         await hook_manager(
             hook_ctx, HookEvent.ON_START,
             agent_name=self.name,
-            extra={"task_id": session_id, "task": task},
+            extra={"task_id": session_id, "task": task,
+                   "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
         trace_manager.emit(agent_start_event(
             session_id=session_id,
@@ -400,7 +387,7 @@ class MetaAgent(Agent):
         _t0 = _time.monotonic()
 
         try:
-            final_answer = await self._run(state, plan)
+            final_answer = await self._run(state, plan, ctx=hook_ctx)
             success = True
         except Exception as exc:
             logger.error(f"| ❌ MetaAgent fatal error: {exc}", exc_info=True)
@@ -412,23 +399,11 @@ class MetaAgent(Agent):
         plan.finalize(final_answer)
         await plan.save()
 
-        if self.use_memory and self.memory_name:
-            mem_ctx = SessionContext(id=session_id)
-            await memory_manager.add_event(
-                memory_name=self.memory_name,
-                step_number=len(state.subtask_records),
-                event_type=EventType.TASK_END,
-                data={"result": final_answer, "success": success},
-                agent_name=self.name,
-                task_id=session_id,
-                ctx=mem_ctx,
-            )
-            await memory_manager.end_session(memory_name=self.memory_name, ctx=mem_ctx)
-
         await hook_manager(
             hook_ctx, HookEvent.ON_STOP,
             agent_name=self.name,
-            extra={"task_id": session_id, "result": final_answer},
+            extra={"task_id": session_id, "result": final_answer,
+                   "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
         trace_manager.emit(agent_end_event(
             session_id=session_id,
@@ -454,12 +429,12 @@ class MetaAgent(Agent):
     # Main run loop
     # ------------------------------------------------------------------
 
-    async def _run(self, state: MetaState, plan: MetaPlanFile) -> str:
+    async def _run(self, state: MetaState, plan: MetaPlanFile, ctx: Optional[AgentContext] = None) -> str:
         # Cold-start: no subtasks yet — first REACT call produces the initial plan.
         plan.log("START — requesting initial plan")
         await plan.save()
 
-        react = await self._react(state, plan, events=[], step=0)
+        react = await self._react(state, plan, events=[], step=0, ctx=ctx)
         await self._apply_react(state, plan, react, step=0)
 
         step = 0
@@ -470,7 +445,7 @@ class MetaAgent(Agent):
 
             # Escalations are high-priority: handle immediately without batching.
             if escalations:
-                await self._reply_escalations(state, plan, escalations, step=step)
+                await self._reply_escalations(state, plan, escalations, step=step, ctx=ctx)
 
             # Apply completion events to records and sync plan table.
             for event in completions:
@@ -488,13 +463,13 @@ class MetaAgent(Agent):
 
             if state.is_complete():
                 # Final synthesis: LLM reads full plan and writes the answer.
-                react = await self._react(state, plan, completions, step=step)
+                react = await self._react(state, plan, completions, step=step, ctx=ctx)
                 state.final_answer = react.final_answer or self._join_results(state)
                 if react.request_evolution and react.evolution_target_agent:
                     self._submit_evolution(react.evolution_target_agent, state.session_id)
                 break
 
-            react = await self._react(state, plan, completions, step=step)
+            react = await self._react(state, plan, completions, step=step, ctx=ctx)
             await self._apply_react(state, plan, react, step=step)
 
             if state.final_answer:
@@ -509,7 +484,7 @@ class MetaAgent(Agent):
     async def _drain(
         self, state: MetaState
     ) -> tuple[List[MetaEvent], List[MetaEvent]]:
-        first = await state.inbox.get()
+        first = await state._inbox.get()
         events: List[MetaEvent] = [first]
 
         deadline = asyncio.get_event_loop().time() + _BATCH_WINDOW_S
@@ -518,7 +493,7 @@ class MetaAgent(Agent):
             if remaining <= 0:
                 break
             try:
-                events.append(await asyncio.wait_for(state.inbox.get(), timeout=remaining))
+                events.append(await asyncio.wait_for(state._inbox.get(), timeout=remaining))
             except asyncio.TimeoutError:
                 break
 
@@ -532,10 +507,10 @@ class MetaAgent(Agent):
 
     async def _reply_escalations(
         self, state: MetaState, plan: MetaPlanFile, escalations: List[MetaEvent],
-        step: int = 0,
+        step: int = 0, ctx: Optional[AgentContext] = None,
     ) -> None:
         for e in escalations:
-            state.pending_escalations[e.task_id] = e
+            state._pending_escalations[e.task_id] = e
             plan.log(f"ESCALATE {e.task_id[:8]} ({e.agent_name}) — {(e.escalation_message or '')[:80]}")
             self._emit(state.session_id, step, "escalation", f"Escalation from {e.agent_name}", {
                 "task_id": e.task_id,
@@ -546,11 +521,13 @@ class MetaAgent(Agent):
         plan.update(state.subtask_records)
         await plan.save()
 
-        messages = await self._build_messages(
+        messages = await self._get_messages(
             task=state.user_task,
             available_agents=await self._agents_info(),
             situation=self._fmt_escalations(escalations),
             plan_context=plan.render(),
+            session_id=state.session_id,
+            ctx=ctx,
         )
         react = await self._llm_react(messages)
         logger.info(f"| 🤔 Escalation decision: {react.decision}")
@@ -580,16 +557,16 @@ class MetaAgent(Agent):
         state.touch()
 
     def _resolve_escalation(self, state: MetaState, task_id: str, reply: str) -> None:
-        e = state.pending_escalations.pop(task_id, None)
+        e = state._pending_escalations.pop(task_id, None)
         if e and e.reply_future and not e.reply_future.done():
             e.reply_future.set_result(reply)
             logger.info(f"| 💬 Escalation resolved: {task_id}")
             return
         # Fallback: resolve the first unresolved pending escalation.
-        for tid, e in list(state.pending_escalations.items()):
+        for tid, e in list(state._pending_escalations.items()):
             if e.reply_future and not e.reply_future.done():
                 e.reply_future.set_result(reply)
-                del state.pending_escalations[tid]
+                del state._pending_escalations[tid]
                 logger.warning(f"| 💬 Escalation fallback resolved: {tid}")
                 return
 
@@ -599,15 +576,17 @@ class MetaAgent(Agent):
 
     async def _react(
         self, state: MetaState, plan: MetaPlanFile, events: List[MetaEvent],
-        step: int = 0,
+        step: int = 0, ctx: Optional[AgentContext] = None,
     ) -> MetaReactOutput:
         import time as _time
         situation = self._fmt_situation(state, events) if events else "No events yet. Produce the initial plan."
-        messages = await self._build_messages(
+        messages = await self._get_messages(
             task=state.user_task,
             available_agents=await self._agents_info(),
             situation=situation,
             plan_context=plan.render(),
+            session_id=state.session_id,
+            ctx=ctx,
         )
         self._emit(state.session_id, step, "llm_start", f"React step {step}", {
             "message_count": len(messages),
@@ -675,7 +654,7 @@ class MetaAgent(Agent):
                 self._run_subtask(record, state),
                 name=f"subtask-{record.spec.id}",
             )
-            state.running_tasks[record.spec.id] = t
+            state._running_tasks[record.spec.id] = t
             plan.log(f"DISPATCH {record.spec.id[:8]} → {record.spec.agent_name} [{sid[-12:]}]")
             self._emit(state.session_id, 0, "subtask_dispatch",
                        f"Dispatch → {record.spec.agent_name}: {record.spec.description[:50]}", {
@@ -692,7 +671,7 @@ class MetaAgent(Agent):
             )
 
     async def _run_subtask(self, record: SubTaskRecord, state: MetaState) -> None:
-        from src.agent.context import agent_manager
+        from src.agent.server import agent_manager
 
         task_id = record.spec.id
         session_id = record.session_id or subtask_session_id(
@@ -708,7 +687,7 @@ class MetaAgent(Agent):
             # Per-session isolation is guaranteed by HookContextManager.
             session_state = await hook_manager.context.get_or_create(session_id)
             session_state.scratch["escalation"] = {
-                "meta_inbox": state.inbox,
+                "meta_inbox": state._inbox,
                 "reply_future": None,   # filled fresh on each escalation by the hook
                 "task_id": task_id,
                 "agent_name": agent_name,
@@ -719,19 +698,24 @@ class MetaAgent(Agent):
                 agent_name=agent_name,
                 task_id=task_id,
                 parent_agent=self.name,
+                workdir=getattr(sub_agent, "workdir", None),
                 extra={
                     "parent_session_id": state.session_id,
                     "subtask_id": task_id,
                 },
             )
 
+            # Only pass files that actually exist — LLM sometimes puts output
+            # files (not yet created) into the files list by mistake.
+            existing_files = [f for f in (record.spec.files or []) if os.path.exists(f)]
+
             response = await sub_agent(
                 task=record.spec.description,
-                files=record.spec.files or None,
+                files=existing_files or None,
                 ctx=ctx,
             )
 
-            await state.inbox.put(MetaEvent(
+            await state._inbox.put(MetaEvent(
                 event_type=MetaEventType.SUBTASK_DONE,
                 task_id=task_id,
                 agent_name=agent_name,
@@ -743,7 +727,7 @@ class MetaAgent(Agent):
             logger.info(f"| ✋ Subtask {task_id} cancelled")
         except Exception as exc:
             logger.error(f"| ❌ Subtask {task_id} failed: {exc}", exc_info=True)
-            await state.inbox.put(MetaEvent(
+            await state._inbox.put(MetaEvent(
                 event_type=MetaEventType.SUBTASK_FAILED,
                 task_id=task_id,
                 agent_name=agent_name,
@@ -763,18 +747,80 @@ class MetaAgent(Agent):
         )
         return response.extra.parsed_model
 
-    async def _build_messages(
+    async def _get_memory_context(self, session_id: str) -> str:
+        if not (self.use_memory and self.memory_name and session_id):
+            return ""
+        try:
+            memory_info = await memory_manager.get_info(self.memory_name)
+            if memory_info and memory_info.instance is not None:
+                return await memory_info.instance.get(session_id=session_id)
+        except Exception:
+            pass
+        return ""
+
+    async def _get_agent_context(
+        self,
+        task: str,
+        available_agents: str,
+        situation: str,
+        plan_context: str,
+        session_id: str,
+    ) -> str:
+        memory_context = await self._get_memory_context(session_id)
+        parts = [
+            f"### Task\n{task}",
+            f"### Available Sub-Agents\n{available_agents}",
+            f"### Current Situation\n{situation}",
+            f"### Plan\n{plan_context}",
+        ]
+        if memory_context:
+            parts.append(f"### Memory\n{memory_context}")
+        else:
+            parts.append("### Memory\n[No memory recorded yet.]")
+        return "\n\n".join(parts)
+
+    async def _get_messages(
         self,
         task: str,
         available_agents: str,
         situation: str = "",
         plan_context: str = "",
+        session_id: str = "",
+        ctx: Optional[AgentContext] = None,
     ) -> list:
-        return await prompt_manager.get_messages(
-            prompt_name=self.prompt_name,
-            system_modules=dict(available_agents=available_agents),
-            agent_modules=dict(task=task, situation=situation, plan_context=plan_context),
+        agent_context = await self._get_agent_context(
+            task=task,
+            available_agents=available_agents,
+            situation=situation,
+            plan_context=plan_context,
+            session_id=session_id,
         )
+
+        messages = await prompt_manager.get_messages(
+            prompt_name=self.prompt_name,
+            system_modules={},
+            agent_modules=dict(
+                agent_context=agent_context,
+                examples="",
+            ),
+        )
+
+        # Run PRE_MESSAGES hook pipeline (token count, truncation, history summary)
+        if ctx is not None:
+            hook_ctx = HookContext(
+                event=HookEvent.PRE_MESSAGES,
+                id=ctx.id,
+                agent_name=self.name,
+                messages=messages,
+                max_tokens=getattr(config, "max_tokens", 0),
+            )
+            result = await hook_manager(hook_ctx)
+            messages = result.modified_messages if result.modified_messages is not None else messages
+            if result.additional_context:
+                from src.message import SystemMessage
+                messages = list(messages) + [SystemMessage(content=result.additional_context)]
+
+        return messages
 
     # ------------------------------------------------------------------
     # Helpers
@@ -827,9 +873,15 @@ class MetaAgent(Agent):
         ))
 
     async def _agents_info(self) -> str:
-        from src.agent.context import agent_manager
-        configs = await agent_manager.list()
-        lines = [f"- {c.name}: {c.description}" for c in configs if c.name != self.name]
+        from src.agent.server import agent_manager
+        names = await agent_manager.list()
+        lines = []
+        for name in names:
+            if name == self.name:
+                continue
+            info = await agent_manager.get_info(name)
+            if info:
+                lines.append(f"- {info.name}: {info.description}")
         return "\n".join(lines) if lines else "[No sub-agents registered]"
 
     def _fmt_situation(self, state: MetaState, events: List[MetaEvent]) -> str:
@@ -860,12 +912,12 @@ class MetaAgent(Agent):
         ) or "Task completed."
 
     async def _cancel_running(self, state: MetaState) -> None:
-        for tid, t in list(state.running_tasks.items()):
+        for tid, t in list(state._running_tasks.items()):
             if not t.done():
                 t.cancel()
                 logger.info(f"| 🛑 Cancelled subtask {tid}")
-        if state.running_tasks:
-            await asyncio.gather(*state.running_tasks.values(), return_exceptions=True)
+        if state._running_tasks:
+            await asyncio.gather(*state._running_tasks.values(), return_exceptions=True)
 
     def _submit_evolution(self, agent_name: str, trigger_session_id: str) -> None:
         asyncio.create_task(self._do_evolution(agent_name, trigger_session_id))

@@ -12,7 +12,8 @@ Design decisions:
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, List, Optional
+import inflection
+from typing import Dict, List, Optional, Type
 
 from src.logger import logger
 from src.utils import Singleton
@@ -32,6 +33,38 @@ class HookManager(metaclass=Singleton):
     def __init__(self) -> None:
         self._hooks: List[Hook] = []
         self.context = HookContextManager()
+
+    # ------------------------------------------------------------------
+    # Initialization — auto-discover from HOOK registry
+    # ------------------------------------------------------------------
+
+    async def initialize(self, hook_names: Optional[List[str]] = None) -> None:
+        """Discover all @HOOK.register_module classes, instantiate them with config,
+        and register. Hooks already registered by name are skipped.
+
+        Args:
+            hook_names: If provided, only register hooks whose class name (underscored)
+                        is in this list. None means register all discovered hooks.
+        """
+        import src.hook.default  # ensure all default hooks are imported/registered
+        from src.registry import HOOK
+        from src.config import config
+
+        hook_classes: List[Type[Hook]] = list(HOOK._module_dict.values())
+        logger.info(f"| 🔍 Discovering {len(hook_classes)} hooks from HOOK registry")
+
+        for hook_cls in hook_classes:
+            key = inflection.underscore(hook_cls.__name__)
+            if hook_names is not None and key not in hook_names:
+                continue
+            hook_cfg: dict = getattr(config, key, {})
+            try:
+                instance = hook_cls(**hook_cfg) if hook_cfg else hook_cls()
+                self.register(instance)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to instantiate hook {hook_cls.__name__}: {e}")
+
+        logger.info(f"| ✅ Hooks initialized: {self.list()}")
 
     # ------------------------------------------------------------------
     # Registration
@@ -62,28 +95,37 @@ class HookManager(metaclass=Singleton):
 
     async def __call__(
         self,
-        ctx,                          # SessionContext or any object with .id
-        event: HookEvent,
+        ctx,                          # SessionContext, HookContext, or any object with .id
+        event: Optional[HookEvent] = None,
         agent_name: str = "",
         step_number: Optional[int] = None,
         action: Optional[dict] = None,
         action_result: Optional[str] = None,
         extra: Optional[dict] = None,
     ) -> HookResult:
-        """Dispatch a hook event.  Builds HookContext internally from a SessionContext.
+        """Dispatch a hook event.
+
+        Accepts either:
+        - A pre-built HookContext as the first argument (event omitted), or
+        - A plain SessionContext + explicit event keyword/positional.
 
         Returns a merged HookResult. Hooks that raise are logged and
         treated as ALLOW (non-fatal).
         """
-        hook_ctx = HookContext(
-            id=ctx.id,
-            event=event,
-            agent_name=agent_name,
-            step_number=step_number,
-            action=action,
-            action_result=action_result,
-            extra=extra or {},
-        )
+        if isinstance(ctx, HookContext):
+            hook_ctx = ctx
+        else:
+            if event is None:
+                raise ValueError("event is required when ctx is not a HookContext")
+            hook_ctx = HookContext(
+                id=ctx.id,
+                event=event,
+                agent_name=agent_name,
+                step_number=step_number,
+                action=action,
+                action_result=action_result,
+                extra=extra or {},
+            )
         ctx = hook_ctx
         candidates = [h for h in self._hooks if h.handles_event(ctx.event)]
         if not candidates:

@@ -21,7 +21,7 @@ from src.hook.server import hook_manager
 from src.hook.types import HookContext, HookEvent
 from src.dynamic import dynamic_manager
 from src.logger import logger
-from src.memory import EventType, memory_manager
+from src.memory import memory_manager
 from src.message.types import HumanMessage, Message, SystemMessage
 from src.model import model_manager
 from src.prompt import prompt_manager
@@ -348,43 +348,24 @@ class Agent(BaseModel):
 
         task_section = f"### Task\n{task}"
 
-        history_section = ""
-        memory_section = ""
+        history_section = "### Agent History\n[Agent history is disabled.]"
+        memory_section = "### Memory\n[Memory is disabled.]"
         if self.use_memory and self.memory_name:
-            state = await memory_manager.get_state(
-                name=self.memory_name,
-                n=self.review_steps,
-                ctx=ctx
-            )
-            events = state["events"]
-            summaries = state["summaries"]
-            insights = state["insights"]
-
-            history_lines = ["### Agent History"]
-            for event in events:
-                history_lines.append(f"#### Step {event.step_number}")
-                if event.event_type == EventType.TASK_START:
-                    history_lines.append(f"Task Start: {event.data.get('task', event.data.get('message', ''))}")
-                elif event.event_type == EventType.TASK_END:
-                    history_lines.append(f"Task End: {event.data.get('result', '')}")
-                elif event.event_type == EventType.ACTION_STEP:
-                    history_lines.append(f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}")
-                    history_lines.append(f"Memory: {event.data.get('memory', '')}")
-                    history_lines.append(f"Next Goal: {event.data.get('next_goal', '')}")
-                    history_lines.append(f"Action Results: {event.data.get('actions', '')}")
-                history_lines.append("")
-            history_section = "\n".join(history_lines)
-
-            memory_lines = ["### Memory"]
-            memory_lines.append("#### Summaries")
-            memory_lines.extend([str(s) for s in summaries] if summaries else ["[Current summaries are empty.]"])
-            memory_lines.append("#### Insights")
-            memory_lines.extend([str(i) for i in insights] if insights else ["[Current insights are empty.]"])
-            memory_section = "\n".join(memory_lines)
-
-        else:
-            history_section = "### Agent History\n[Agent history is disabled.]"
-            memory_section = "### Memory\n[Memory is disabled.]"
+            try:
+                memory_info = await memory_manager.get_info(self.memory_name)
+                if memory_info and memory_info.instance is not None:
+                    session_id = ctx.id if ctx else ""
+                    mem_text = await memory_info.instance.get(
+                        session_id=session_id,
+                        short_term_n=self.review_steps,
+                    )
+                    if mem_text:
+                        memory_section = f"### Memory\n{mem_text}"
+                    else:
+                        memory_section = "### Memory\n[No memory recorded yet.]"
+                    history_section = ""  # history is now embedded in memory context
+            except Exception:
+                pass
 
         if self.use_todo:
             todo_tool = await tool_manager.get("todo_tool")
@@ -392,13 +373,11 @@ class Agent(BaseModel):
         else:
             todo_section = "### Todo\n[Todo is disabled.]"
 
-        agent_context = "\n\n".join([
-            task_section,
-            step_info,
-            history_section,
-            memory_section,
-            todo_section,
-        ])
+        sections = [task_section, step_info]
+        if history_section:
+            sections.append(history_section)
+        sections.extend([memory_section, todo_section])
+        agent_context = "\n\n".join(sections)
 
         return {"agent_context": agent_context}
 

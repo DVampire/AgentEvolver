@@ -35,10 +35,12 @@ from typing import Any, Dict, Optional
 
 from src.hook.types import Hook, HookContext, HookEvent, HookResult
 from src.logger import logger
+from src.registry import HOOK
 
 _ESCALATION_TIMEOUT_S = 300.0
 
 
+@HOOK.register_module(force=True)
 class EscalationHook(Hook):
     """Global singleton hook that bridges sub-agent → MetaAgent escalation."""
 

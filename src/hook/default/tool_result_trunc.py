@@ -14,6 +14,7 @@ from src.message import Message, HumanMessage
 from src.message.types import ContentPartText
 from src.utils import count_tokens, truncate_text
 from src.hook.types import HookContext, HookEvent, HookResult, Hook
+from src.registry import HOOK
 
 _TRUNC_MARKER = "\n...[truncated — {kept} tokens kept of {total}]\n"
 _HEAD_TAIL_RATIO = 0.6
@@ -50,6 +51,7 @@ def _truncate_file_content(text: str, max_tokens: int, model: str) -> str:
     return "".join(head_lines) + marker + "".join(tail_lines)
 
 
+@HOOK.register_module(force=True)
 class ToolResultTruncHook(Hook):
     name: str = "tool_result_trunc"
     description: str = "Truncates individual tool result messages that exceed max_result_tokens."

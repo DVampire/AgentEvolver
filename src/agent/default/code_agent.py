@@ -10,7 +10,6 @@ from src.logger import logger
 from src.utils import parse_tool_args
 from src.tool.server import tool_manager
 from src.skill.server import skill_manager
-from src.memory import memory_manager, EventType
 from src.model import model_manager
 from src.registry import AGENT
 from src.hook.server import hook_manager
@@ -250,17 +249,6 @@ class CodeAgent(Agent):
                 "actions": action_results,
             }
 
-            if self.use_memory and self.memory_name:
-                await memory_manager.add_event(
-                    memory_name=self.memory_name,
-                    step_number=step_number,
-                    event_type=EventType.ACTION_STEP,
-                    data=event_data,
-                    agent_name=self.name,
-                    task_id=task_id,
-                    ctx=ctx,
-                )
-
         except Exception as e:
             logger.error(f"| Error in think_and_action: {e}")
 
@@ -308,22 +296,9 @@ class CodeAgent(Agent):
         await hook_manager(
             ctx, HookEvent.ON_START,
             agent_name=self.name,
-            extra={"task_id": task_id, "task": enhanced_task},
+            extra={"task_id": task_id, "task": enhanced_task,
+                   "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
-
-        if self.use_memory and self.memory_name:
-            await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
-            await memory_manager.add_event(
-                memory_name=self.memory_name,
-                step_number=0,
-                event_type=EventType.TASK_START,
-                data=dict(task=enhanced_task),
-                agent_name=self.name,
-                task_id=task_id,
-                ctx=ctx,
-            )
-        else:
-            logger.info(f"| ⏭️ Memory disabled, skipping session management")
 
         messages = await self._get_messages(enhanced_task, ctx=ctx)
 
@@ -346,23 +321,12 @@ class CodeAgent(Agent):
                 "reasoning": "Reached the maximum number of steps.",
             }
 
-        if self.use_memory and self.memory_name:
-            await memory_manager.add_event(
-                memory_name=self.memory_name,
-                step_number=step_number,
-                event_type=EventType.TASK_END,
-                data=response,
-                agent_name=self.name,
-                task_id=task_id,
-                ctx=ctx,
-            )
-            await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
-
         # ON_STOP
         await hook_manager(
             ctx, HookEvent.ON_STOP,
             agent_name=self.name,
-            extra={"task_id": task_id, "result": response.get("result")},
+            extra={"task_id": task_id, "result": response.get("result"),
+                   "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
 
         logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")
