@@ -1,6 +1,7 @@
 """CodeAgent — a code-focused agent that reads, edits, and commits code."""
 
 import asyncio
+import os
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import Field, ConfigDict
@@ -67,29 +68,6 @@ class CodeAgent(Agent):
         )
 
     # ------------------------------------------------------------------
-    # Git status helper
-    # ------------------------------------------------------------------
-
-    async def _get_git_status(self, workdir: str, ctx: Optional[AgentContext] = None) -> str:
-        try:
-            tool = await tool_manager.get("git_tool")
-            if tool is None:
-                return ""
-
-            if ctx is None:
-                ctx = AgentContext()
-            if not ctx.workdir:
-                ctx.workdir = workdir
-
-            response = await tool(action="status", ctx=ctx)
-            if response.success and response.message:
-                lines = [l for l in response.message.splitlines() if l.strip()]
-                return "\n".join(lines[:8]) if lines else "(clean)"
-        except Exception:
-            pass
-        return ""
-
-    # ------------------------------------------------------------------
     # Context builder
     # ------------------------------------------------------------------
 
@@ -102,21 +80,20 @@ class CodeAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        workdir = ctx.workdir if ctx and ctx.workdir else self.workdir
-        git_status = await self._get_git_status(workdir, ctx=ctx)
-        if git_status:
-            # Insert git status before the Memory section (or at the end if not found)
-            ctx_text = base["agent_context"]
-            insert_marker = "### Memory"
-            if insert_marker in ctx_text:
-                base["agent_context"] = ctx_text.replace(
-                    insert_marker,
-                    f"### Git Status\n{git_status}\n\n{insert_marker}",
-                    1,
-                )
-            else:
-                base["agent_context"] = ctx_text + f"\n\n### Git Status\n{git_status}"
+        # Inject a live workdir file snapshot so the agent can see current files
+        # without needing to call list_dir_tool just to confirm state.
+        workdir = os.path.abspath(ctx.workdir if ctx and ctx.workdir else self.workdir)
+        try:
+            entries = sorted(os.listdir(workdir))
+            lines = []
+            for name in entries:
+                suffix = "/" if os.path.isdir(os.path.join(workdir, name)) else ""
+                lines.append(f"  {name}{suffix}")
+            snapshot = "\n".join(lines) if lines else "  (empty)"
+        except Exception:
+            snapshot = "  (unavailable)"
 
+        base["agent_context"] += f"\n\n### Workdir\n{workdir}\n{snapshot}"
         return base
 
     # ------------------------------------------------------------------

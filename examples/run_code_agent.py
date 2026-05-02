@@ -69,18 +69,18 @@ async def main():
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
 
+    # --- Core managers ---
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Versions: {await version_manager.list()}")
+
     # --- Trace ---
-    trace_workdir = os.path.join(config.workdir, "trace")
-    await trace_manager.initialize(workdir=trace_workdir)
+    await trace_manager.initialize()
     await trace_manager.start()
     logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
     # --- Hooks ---
-    hook_manager.register(TraceHook())
-
-    # --- Core managers ---
-    logger.info("| 📁 Initializing version manager...")
-    await version_manager.initialize()
+    await hook_manager.initialize()
 
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize()

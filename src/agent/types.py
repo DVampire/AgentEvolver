@@ -333,7 +333,7 @@ class Agent(BaseModel):
         """)
         return enhanced_task
 
-    async def _get_agent_context(self, 
+    async def _get_agent_context(self,
                                  task: str,
                                  step_number: int = 0,
                                  ctx: Optional[AgentContext] = None,
@@ -363,7 +363,7 @@ class Agent(BaseModel):
                         memory_section = f"### Memory\n{mem_text}"
                     else:
                         memory_section = "### Memory\n[No memory recorded yet.]"
-                    history_section = ""  # history is now embedded in memory context
+                    history_section = ""
             except Exception:
                 pass
 
