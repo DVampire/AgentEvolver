@@ -1,40 +1,39 @@
-"""CodeAgent — a code-focused agent that reads, edits, and commits code."""
+"""ToolOptimizer — an agent that evolves tool source code given an evolution task."""
 
 import asyncio
-import os
-from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import Field, ConfigDict
+from typing import Any, Dict, List, Optional
 
-from src.message import Message
-from src.logger import logger
-from src.utils import parse_tool_args
-from src.tool.server import tool_manager
-from src.skill.server import skill_manager
-from src.model import model_manager
-from src.registry import AGENT
+from pydantic import ConfigDict, Field
+
+from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse, ThinkOutput
 from src.hook.server import hook_manager
-from src.hook.types import HookEvent, HookDecision
-from src.agent.types import (
-    Agent,
-    AgentResponse,
-    AgentExtra,
-    ThinkOutput,
-    AgentContext,
-)
+from src.hook.types import HookDecision, HookEvent
+from src.logger import logger
+from src.message import Message
+from src.model import model_manager
+from src.registry import OPTIMIZER
+from src.skill.server import skill_manager
+from src.tool.server import tool_manager
+from src.dynamic import dynamic_manager
+from src.utils import parse_tool_args
 
+@OPTIMIZER.register_module(force=True)
+class ToolOptimizer(Agent):
+    """Agent-style optimizer that evolves tool source code to satisfy an evolution task.
 
-@AGENT.register_module(force=True)
-class CodeAgent(Agent):
-    """Code agent that reads, edits, and commits code using file and git tools."""
+    Receives an evolution task from MetaAgent, iteratively reads / edits the target
+    tool's .py file under src/tool/extended/ using standard file/bash tools, verifies
+    the change, and reports back via done_tool — identical execution loop to CodeAgent.
+    """
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="code_agent")
+    name: str = Field(default="tool_optimizer")
     description: str = Field(
-        default="A code agent that reads, writes, and edits source code files, "
-                "runs tests, and commits changes using git."
+        default="An optimizer agent that evolves tool source code given an evolution task."
     )
-    metadata: Dict[str, Any] = Field(default={})
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     require_grad: bool = Field(default=False)
 
     def __init__(
@@ -58,7 +57,7 @@ class CodeAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "code_agent",
+            prompt_name=prompt_name or "tool_optimizer",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
@@ -68,7 +67,7 @@ class CodeAgent(Agent):
         )
 
     # ------------------------------------------------------------------
-    # Context builder
+    # Override: inject tool source file snapshot into agent context
     # ------------------------------------------------------------------
 
     async def _get_agent_context(
@@ -80,24 +79,25 @@ class CodeAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        # Inject a live workdir file snapshot so the agent can see current files
-        # without needing to call list_dir_tool just to confirm state.
-        workdir = os.path.abspath(ctx.workdir if ctx and ctx.workdir else self.workdir)
-        try:
-            entries = sorted(os.listdir(workdir))
-            lines = []
-            for name in entries:
-                suffix = "/" if os.path.isdir(os.path.join(workdir, name)) else ""
-                lines.append(f"  {name}{suffix}")
-            snapshot = "\n".join(lines) if lines else "  (empty)"
-        except Exception:
-            snapshot = "  (unavailable)"
+        tool_name = kwargs.get("tool_name")
+        if tool_name:
+            tool_config = await tool_manager.get_info(tool_name)
+            lines = [f"- **Tool Name**: {tool_name}"]
+            if tool_config:
+                lines.append(f"- **Description**: {tool_config.description}")
+                lines.append(f"- **Version**: {tool_config.version}")
+                if tool_config.path:
+                    lines.append(f"- **Source File**: {tool_config.path}")
+            else:
+                lines.append("- (tool not found in registry)")
+            base["optimization_target"] = "\n".join(lines)
+        else:
+            base["optimization_target"] = "(no tool_name provided)"
 
-        base["agent_context"] += f"\n\n### Workdir\n{workdir}\n{snapshot}"
         return base
 
     # ------------------------------------------------------------------
-    # Core step
+    # Core step — copied from CodeAgent
     # ------------------------------------------------------------------
 
     async def _think_and_action(
@@ -112,7 +112,6 @@ class CodeAgent(Agent):
         result = None
         reasoning = None
 
-        # PRE_STEP
         await hook_manager(
             ctx, HookEvent.PRE_STEP,
             agent_name=self.name,
@@ -162,7 +161,6 @@ class CodeAgent(Agent):
                     "args_parsed": action_args,
                 }
 
-                # PRE_ACTION
                 pre_result = await hook_manager(
                     ctx, HookEvent.PRE_ACTION,
                     agent_name=self.name,
@@ -211,7 +209,6 @@ class CodeAgent(Agent):
                     error = str(e)
                     logger.error(f"| ❌ Action '{action_name}' failed: {e}")
 
-                # POST_ACTION
                 await hook_manager(
                     ctx, HookEvent.POST_ACTION,
                     agent_name=self.name,
@@ -230,7 +227,6 @@ class CodeAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in think_and_action: {e}")
 
-        # POST_STEP
         await hook_manager(
             ctx, HookEvent.POST_STEP,
             agent_name=self.name,
@@ -241,53 +237,52 @@ class CodeAgent(Agent):
         return {"done": done, "result": result, "reasoning": reasoning}
 
     # ------------------------------------------------------------------
-    # Main entry point
+    # Main entry point — copied from CodeAgent, optimize() delegates here
     # ------------------------------------------------------------------
 
     async def __call__(
         self,
         task: str,
-        files: Optional[List[str]] = None,
+        tool_name: str,
         **kwargs,
     ) -> AgentResponse:
-        logger.info(f"| 🚀 Starting CodeAgent: {task}")
+        logger.info(f"| 🚀 Starting ToolOptimizer: {task} (tool={tool_name})")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
 
-        # Inject workdir so git_tool and file tools can resolve paths
         if not ctx.workdir:
             ctx.workdir = self.workdir
 
-        if files:
-            logger.info(f"| 📂 Attached files: {files}")
-            files = await asyncio.gather(*[self._extract_file_content(f) for f in files])
-            enhanced_task = await self._generate_enhanced_task(task, files)
-        else:
-            enhanced_task = task
+        tool_config = await tool_manager.get_info(tool_name)
+        if tool_config is None:
+            logger.warning(f"| ⚠️ Tool '{tool_name}' not found in registry, refusing optimization")
+            return AgentResponse(success=False, message=f"Tool '{tool_name}' not found in registry.")
+        if not tool_config.require_grad:
+            logger.warning(f"| ⚠️ Tool '{tool_name}' has require_grad=False, refusing optimization")
+            return AgentResponse(success=False, message=f"Tool '{tool_name}' is not evolvable (require_grad=False).")
 
-        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        task_id = "opt_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
-        # ON_START
         await hook_manager(
             ctx, HookEvent.ON_START,
             agent_name=self.name,
-            extra={"task_id": task_id, "task": enhanced_task,
+            extra={"task_id": task_id, "task": task, "tool_name": tool_name,
                    "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
 
-        messages = await self._get_messages(enhanced_task, ctx=ctx)
+        messages = await self._get_messages(task, ctx=ctx, tool_name=tool_name)
 
         step_number = 0
         response = {"done": False, "result": None, "reasoning": None}
 
         while step_number < self.max_steps:
-            logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
+            logger.info(f"| 🔄 Step {step_number + 1}/{self.max_steps}")
             response = await self._think_and_action(messages, task_id, step_number, ctx=ctx)
             step_number += 1
-            messages = await self._get_messages(enhanced_task, ctx=ctx)
+            messages = await self._get_messages(task, ctx=ctx, tool_name=tool_name)
             if response["done"]:
                 break
 
@@ -295,11 +290,10 @@ class CodeAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps})")
             response = {
                 "done": False,
-                "result": "The task has not been completed.",
+                "result": "Tool optimization did not complete within max steps.",
                 "reasoning": "Reached the maximum number of steps.",
             }
 
-        # ON_STOP
         await hook_manager(
             ctx, HookEvent.ON_STOP,
             agent_name=self.name,
@@ -307,10 +301,31 @@ class CodeAgent(Agent):
                    "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
 
-        logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")
+        logger.info(f"| ✅ ToolOptimizer completed after {step_number}/{self.max_steps} steps")
+
+        if response["done"] and tool_config.path:
+            await self._reload_tool(tool_name, tool_config)
 
         return AgentResponse(
             success=response["done"],
-            message=response["result"],
+            message=response["result"] or "",
             extra=AgentExtra(data=response),
         )
+
+    async def _reload_tool(self, tool_name: str, tool_config) -> None:
+        """Read updated source file, load new class dynamically, and re-register with incremented version."""
+        try:
+            from src.tool.types import Tool as ToolBase
+            with open(tool_config.path, "r") as f:
+                new_code = f.read()
+            class_name = dynamic_manager.extract_class_name_from_code(new_code)
+            new_cls = dynamic_manager.load_class(new_code, class_name=class_name, base_class=ToolBase, context="tool")
+            await tool_manager.update(
+                tool_name=tool_name,
+                tool=new_cls,
+                config=tool_config.config or {},
+                code=new_code,
+            )
+            logger.info(f"| 🔄 Tool '{tool_name}' reloaded with updated source (class={class_name})")
+        except Exception as e:
+            logger.error(f"| ❌ Failed to reload tool '{tool_name}': {e}")

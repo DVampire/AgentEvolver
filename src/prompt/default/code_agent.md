@@ -155,6 +155,11 @@ Respond with valid JSON only — no markdown fences, no extra text:
 }
 ```
 
+When calling `done_tool`, always include both `reasoning` and `result`:
+```text
+{"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Explained what was done and why.\", \"result\": \"Summary of the completed task.\"}"}
+```
+
 ---
 
 <!-- role: user -->

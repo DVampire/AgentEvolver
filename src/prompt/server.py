@@ -14,8 +14,6 @@ from src.logger import logger
 from src.prompt.types import PromptConfig, Prompt
 from src.prompt.context import PromptContextManager
 from src.message.types import Message
-from src.optimizer.types import Variable
-
 
 class PromptManagerServer(BaseModel):
     """Prompt Manager for managing prompt registration and lifecycle."""
@@ -121,26 +119,6 @@ class PromptManagerServer(BaseModel):
             agent_modules=agent_modules,
             **kwargs)
 
-    async def get_variables(self, prompt_name: str) -> Dict[str, Variable]:
-        return await self.prompt_context_manager.get_variables(prompt_name=prompt_name)
-
-    async def get_trainable_variables(self, prompt_name: str) -> Dict[str, Variable]:
-        return await self.prompt_context_manager.get_trainable_variables(prompt_name=prompt_name)
-
-    async def set_variables(self, prompt_name: str,
-                             variable_updates: Dict[str, str],
-                             new_version: Optional[str] = None,
-                             description: Optional[str] = None) -> Dict[str, PromptConfig]:
-        """Update a prompt from a new md text string. variable_updates = {prompt_name: new_md_text}."""
-        updated = await self.prompt_context_manager.set_variables(
-            prompt_name=prompt_name,
-            variable_updates=variable_updates,
-            new_version=new_version,
-            description=description,
-        )
-        for name, cfg in updated.items():
-            self._registered_configs[name] = cfg
-        return updated
 
     async def set_contract(self, prompt_names: Optional[List[str]] = None):
         await self.prompt_context_manager.save_contract(prompt_names=prompt_names)

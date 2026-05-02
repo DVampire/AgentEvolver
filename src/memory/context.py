@@ -2,14 +2,11 @@
 import asyncio
 import os
 from asyncio_atexit import register as async_atexit_register
-from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Type, Optional, Union, Tuple
 from datetime import datetime
 import inflection
 import json
 from pydantic import BaseModel, ConfigDict, Field
-
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -1001,138 +998,6 @@ class MemoryContextManager(BaseModel):
         
         logger.info(f"| 🔄 Restored memory {memory_name} to version {version}")
         return restored_config
-    
-    async def get_variables(self, memory_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get variables from memory systems, where each memory's code is used as the variable value.
-        
-        Args:
-            memory_name (Optional[str]): Name of a specific memory system. If None, returns variables for all memory systems.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping memory names to Variable objects. Each Variable has:
-                - name: memory name
-                - type: "memory_code"
-                - description: memory description
-                - require_grad: memory's require_grad value
-                - variables: memory's code (as string value)
-        """
-        # Lazy import to avoid circular dependency
-        from src.optimizer.types import Variable
-        
-        variables: Dict[str, Variable] = {}
-        
-        if memory_name is not None:
-            # Get specific memory
-            memory_config = self._memory_configs.get(memory_name)
-            if memory_config is None:
-                logger.warning(f"| ⚠️ Memory {memory_name} not found")
-                return variables
-            
-            memory_configs = {memory_name: memory_config}
-        else:
-            # Get all memory systems
-            memory_configs = self._memory_configs
-        
-        for name, memory_config in memory_configs.items():
-            # Get memory code
-            memory_code = memory_config.code or ""
-            
-            # Create Variable for this memory system
-            variable = Variable(
-                name=name,
-                type="memory_code",
-                description=memory_config.description or f"Code for memory system {name}",
-                require_grad=memory_config.require_grad,
-                template=None,
-                variables=memory_code  # Store code as the variable value
-            )
-            variables[name] = variable
-        
-        return variables
-    
-    async def get_trainable_variables(self, memory_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get trainable variables from memory systems, filtering out memory systems with require_grad=False.
-        
-        Only returns variables for memory systems where require_grad=True.
-        
-        Args:
-            memory_name (Optional[str]): Name of a specific memory system. If None, returns trainable variables for all memory systems.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping memory names to Variable objects for memory systems with require_grad=True.
-                                Each Variable has:
-                - name: memory name
-                - type: "memory_code"
-                - description: memory description
-                - require_grad: True
-                - variables: memory's code (as string value)
-        """
-        async with self._variables_lock:
-            # Get all variables first
-            all_variables = await self.get_variables(memory_name=memory_name)
-            
-            # Filter to only include variables with require_grad=True
-            trainable_variables = {
-                name: variable for name, variable in all_variables.items()
-                if variable.require_grad is True
-            }
-            
-            return trainable_variables
-    
-    async def set_variables(self, memory_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> MemoryConfig:
-        """Set variable values in a memory system and create a new version.
-        
-        Args:
-            memory_name: Name of the memory system to update
-            variable_updates: Dictionary mapping variable names to new values.
-                For memory systems, this is typically {"name": "memory_name", "variables": "memory code"}
-            new_version: New version string. If None, auto-increments from current version.
-            description: Description for this version update
-            
-        Returns:
-            MemoryConfig: Updated memory configuration
-        """
-        async with self._variables_lock:
-            original_config = self._memory_configs.get(memory_name)
-            if original_config is None:
-                raise ValueError(f"Memory {memory_name} not found. Use register() to register a new memory system.")
-            
-            # For memory systems, variable_updates format is {"name": "memory_name", "variables": "memory code"}
-            # Extract the new code from "variables" field
-            if "variables" not in variable_updates:
-                raise ValueError(f"variable_updates must contain 'variables' field with memory code, got: {list(variable_updates.keys())}")
-            
-            new_code = variable_updates["variables"]
-            if not isinstance(new_code, str):
-                raise ValueError(f"Memory code must be a string, got {type(new_code)}")
-            
-            # Load memory class from code
-            class_name = dynamic_manager.extract_class_name_from_code(new_code)
-            if not class_name:
-                raise ValueError(f"Cannot extract class name from code")
-            
-            try:
-                memory_cls = dynamic_manager.load_class(
-                    new_code,
-                    class_name=class_name,
-                    base_class=Memory,
-                    context="memory"
-                )
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load memory class from code: {e}")
-                raise ValueError(f"Failed to load memory class from code: {e}")
-            
-            # Use update() function to handle version management and persistence
-            # Pass the code directly to avoid re-extracting from dynamically created class
-            update_description = description or f"Updated code for {memory_name}"
-            return await self.update(
-                memory_name=memory_name,
-                memory=memory_cls,
-                memory_config_dict=original_config.config,
-                new_version=new_version,
-                description=update_description,
-                code=new_code  # Pass code directly since memory_cls is dynamically created
-            )
     
     async def cleanup(self):
         """Cleanup all active memory systems."""

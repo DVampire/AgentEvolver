@@ -1,5 +1,6 @@
 """Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
 import os
+import inspect
 import asyncio
 from asyncio_atexit import register as async_atexit_register
 from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
@@ -8,8 +9,6 @@ import inflection
 import json
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -184,6 +183,10 @@ class ToolContextManager(BaseModel):
                 tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
                 
                 # Create tool config (ToolConfig.id is auto-incremented internally if needed)
+                try:
+                    tool_path = inspect.getfile(tool_cls)
+                except Exception:
+                    tool_path = None
                 tool_config = ToolConfig(
                     name=tool_name,
                     description=tool_description,
@@ -197,6 +200,7 @@ class ToolContextManager(BaseModel):
                     metadata=tool_metadata,
                     require_grad=tool_require_grad,
                     code=tool_code,
+                    path=tool_path,
                 )
                 
                 # Store tool config
@@ -434,6 +438,10 @@ class ToolContextManager(BaseModel):
             tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
             
             # --- Build ToolConfig ---
+            try:
+                tool_path = inspect.getfile(tool_cls)
+            except Exception:
+                tool_path = None
             tool_config = ToolConfig(
                 name=tool_name,
                 description=tool_description,
@@ -447,6 +455,7 @@ class ToolContextManager(BaseModel):
                 text=tool_text,
                 args_schema=tool_args_schema,
                 code=tool_code,
+                path=tool_path,
             )
             
             # --- Persist current config and history ---
@@ -1009,142 +1018,6 @@ class ToolContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Error during tool context manager cleanup: {e}")
             
-    async def get_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get variables from tools, where each tool's code is used as the variable value.
-        
-        Args:
-            tool_name (Optional[str]): Name of a specific tool. If None, returns variables for all tools.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping tool names to Variable objects. Each Variable has:
-                - name: tool name
-                - type: "tool_code"
-                - description: tool description
-                - require_grad: tool's require_grad value
-                - variables: tool's code (as string value)
-        """
-        # Lazy import to avoid circular dependency
-        from src.optimizer.types import Variable
-        
-        variables: Dict[str, Variable] = {}
-        
-        if tool_name is not None:
-            # Get specific tool
-            tool_config = await self.get_info(tool_name)
-            if tool_config is None:
-                logger.warning(f"| ⚠️ Tool {tool_name} not found")
-                return variables
-            
-            tool_configs = {tool_name: tool_config}
-        else:
-            # Get all tools
-            tool_configs = self._tool_configs
-        
-        for name, tool_config in tool_configs.items():
-            # Get tool code
-            tool_code = tool_config.code or ""
-            
-            # Create Variable for this tool
-            variable = Variable(
-                name=name,
-                type="tool_code",
-                description=tool_config.description or f"Code for tool {name}",
-                require_grad=tool_config.require_grad,
-                template=None,
-                variables=tool_code  # Store code as the variable value
-            )
-            variables[name] = variable
-        
-        return variables
-    
-    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get trainable variables from tools, filtering out tools with require_grad=False.
-        
-        Only returns variables for tools where require_grad=True.
-        
-        Args:
-            tool_name (Optional[str]): Name of a specific tool. If None, returns trainable variables for all tools.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping tool names to Variable objects for tools with require_grad=True.
-                                Each Variable has:
-                - name: tool name
-                - type: "tool_code"
-                - description: tool description
-                - require_grad: True
-                - variables: tool's code (as string value)
-        """
-        async with self._variables_lock:
-            # Get all variables first
-            all_variables = await self.get_variables(tool_name=tool_name)
-            
-            # Filter to only include variables with require_grad=True
-            trainable_variables = {
-                name: variable for name, variable in all_variables.items()
-                if variable.require_grad is True
-            }
-            
-            return trainable_variables
-    
-    async def set_variables(self, tool_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> ToolConfig:
-        """Set variable values in a tool and create a new version.
-        
-        Args:
-            tool_name: Name of the tool to update
-            variable_updates: Dictionary mapping variable names to new values.
-                For tools, this is typically {"code": new_code_string}
-                - example:
-                {
-                    "name": "tool_name",
-                    "variables": "tool code"
-                }
-            new_version: New version string. If None, auto-increments from current version.
-            description: Description for this version update
-            
-        Returns:
-            ToolConfig: Updated tool configuration
-        """
-        async with self._variables_lock:
-            original_config = self._tool_configs.get(tool_name)
-            if original_config is None:
-                raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
-            
-            # For tools, variable_updates format is {"name": "tool_name", "variables": "tool code"}
-            # Extract the new code from "variables" field
-            if "variables" not in variable_updates:
-                raise ValueError(f"variable_updates must contain 'variables' field with tool code, got: {list(variable_updates.keys())}")
-            
-            new_code = variable_updates["variables"]
-            if not isinstance(new_code, str):
-                raise ValueError(f"Tool code must be a string, got {type(new_code)}")
-            
-            # Load tool class from code
-            class_name = dynamic_manager.extract_class_name_from_code(new_code)
-            if not class_name:
-                raise ValueError(f"Cannot extract class name from code")
-            
-            try:
-                tool_cls = dynamic_manager.load_class(
-                    new_code,
-                    class_name=class_name,
-                    base_class=Tool,
-                    context="tool"
-                )
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load tool class from code: {e}")
-                raise ValueError(f"Failed to load tool class from code: {e}")
-            
-            # Use update() function to handle version management and persistence
-            # Pass the code directly to avoid re-extracting from dynamically created class
-            update_description = description or f"Updated code for {tool_name}"
-            return await self.update(
-                tool_cls=tool_cls,
-                tool_config_dict=original_config.config,
-                new_version=new_version,
-                description=update_description,
-                code=new_code  # Pass code directly since tool_cls is dynamically created
-            )
-    
     async def __call__(self,
                        name: str,
                        input: Dict[str, Any],

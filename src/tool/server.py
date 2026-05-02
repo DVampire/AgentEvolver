@@ -7,8 +7,6 @@ import asyncio
 import os
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -135,25 +133,28 @@ class ToolManagerServer(BaseModel):
         await self.tool_context_manager.cleanup()
         self._registered_configs.clear()
     
-    async def update(self, 
-                     tool_name: str, tool: Union[Tool, Type[Tool]], 
+    async def update(self,
+                     tool_name: str, tool: Union[Tool, Type[Tool]],
                      config: Optional[Dict[str, Any]] = None,
-                     new_version: Optional[str] = None, 
-                     description: Optional[str] = None) -> ToolConfig:
+                     new_version: Optional[str] = None,
+                     description: Optional[str] = None,
+                     code: Optional[str] = None) -> ToolConfig:
         """Update an existing tool with new configuration and create a new version
-        
+
         Args:
             tool_name: Name of the tool to update
             tool: New tool class or instance with updated implementation
             config: Configuration dict for tool initialization (required when tool is a class)
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
-            
+            code: Optional source code string (used when tool class is dynamically loaded)
+
         Returns:
             ToolConfig: Updated tool configuration
         """
+        tool_cls = tool if isinstance(tool, type) else type(tool)
         tool_config = await self.tool_context_manager.update(
-            tool_name, tool, tool_config_dict=config, new_version=new_version, description=description
+            tool_cls, tool_config_dict=config, new_version=new_version, description=description, code=code
         )
         self._registered_configs[tool_config.name] = tool_config
         return tool_config
@@ -206,49 +207,6 @@ class ToolManagerServer(BaseModel):
         if tool_config:
             self._registered_configs[tool_config.name] = tool_config
         return tool_config
-    
-    async def get_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get variables from tools, where each tool's code is used as the variable value.
-        
-        Args:
-            tool_name (Optional[str]): Name of a specific tool. If None, returns variables for all tools.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping tool names to Variable objects.
-        """
-        return await self.tool_context_manager.get_variables(tool_name=tool_name)
-    
-    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get trainable variables from tools, filtering out tools with require_grad=False.
-        
-        Args:
-            tool_name (Optional[str]): Name of a specific tool. If None, returns trainable variables for all tools.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping tool names to Variable objects for tools with require_grad=True.
-        """
-        return await self.tool_context_manager.get_trainable_variables(tool_name=tool_name)
-    
-    async def set_variables(self, tool_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> ToolConfig:
-        """Set variable values in a tool and create a new version.
-        
-        Args:
-            tool_name: Name of the tool to update
-            variable_updates: Dictionary mapping variable names to new values.
-            new_version: New version string. If None, auto-increments from current version.
-            description: Description for this version update
-            
-        Returns:
-            ToolConfig: Updated tool configuration
-        """
-        updated_config = await self.tool_context_manager.set_variables(
-            tool_name=tool_name, 
-            variable_updates=variable_updates,
-            new_version=new_version, 
-            description=description
-        )
-        self._registered_configs[updated_config.name] = updated_config
-        return updated_config
     
     async def __call__(self, 
                        name: str, 

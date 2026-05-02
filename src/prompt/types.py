@@ -11,8 +11,6 @@ from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
 from src.logger import logger
 from src.message import Message, SystemMessage, HumanMessage, ContentPartText
 
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 try:
     from jinja2 import Template as JinjaTemplate
@@ -125,20 +123,6 @@ class Prompt(BaseModel):
     async def get_user_message(self, modules: Optional[Dict[str, Any]] = None, reload: bool = True) -> HumanMessage:
         rendered = _render_template(self.user_template, self._merged_modules(modules))
         return HumanMessage(content=[ContentPartText(text=rendered)])
-
-    async def get_trainable_variable(self) -> Optional["Variable"]:
-        """Returns a single Variable representing the whole md file, if require_grad=True."""
-        if not self.require_grad:
-            return None
-        from src.optimizer.types import Variable
-        return Variable(
-            name=self.name,
-            type="prompt",
-            description=self.description,
-            require_grad=True,
-            template=None,
-            variables=reconstruct_prompt_text(self),
-        )
 
     def __str__(self):
         return f"Prompt(name={self.name}, version={self.version})"

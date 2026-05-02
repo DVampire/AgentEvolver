@@ -3,10 +3,7 @@
 Manager implementation for the Memory Context Protocol.
 """
 import os
-from typing import Any, Dict, List, Optional, Union, Type, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
+from typing import Any, Dict, List, Optional, Union, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -257,50 +254,6 @@ class MemoryManagerServer(BaseModel):
         """
         return await self.memory_context_manager.get_state(name, n, ctx, **kwargs)
     
-    async def get_variables(self, memory_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get variables from memory systems, where each memory's code is used as the variable value.
-        
-        Args:
-            memory_name (Optional[str]): Name of a specific memory system. If None, returns variables for all memory systems.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping memory names to Variable objects.
-        """
-        return await self.memory_context_manager.get_variables(memory_name=memory_name)
-    
-    async def get_trainable_variables(self, memory_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get trainable variables from memory systems, filtering out memory systems with require_grad=False.
-        
-        Args:
-            memory_name (Optional[str]): Name of a specific memory system. If None, returns trainable variables for all memory systems.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping memory names to Variable objects for memory systems with require_grad=True.
-        """
-        return await self.memory_context_manager.get_trainable_variables(memory_name=memory_name)
-    
-    async def set_variables(self, memory_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> MemoryConfig:
-        """Set variable values in a memory system and create a new version.
-        
-        Args:
-            memory_name: Name of the memory system to update
-            variable_updates: Dictionary mapping variable names to new values.
-                For memory systems, this is typically {"name": "memory_name", "variables": "memory code"}
-            new_version: New version string. If None, auto-increments from current version.
-            description: Description for this version update
-            
-        Returns:
-            MemoryConfig: Updated memory configuration
-        """
-        updated_config = await self.memory_context_manager.set_variables(
-            memory_name=memory_name, 
-            variable_updates=variable_updates, 
-            new_version=new_version, 
-            description=description
-        )
-        self._registered_memories[updated_config.name] = updated_config
-        return updated_config
-
 
 # Global Memory Manager Server instance
 memory_manager = MemoryManagerServer()

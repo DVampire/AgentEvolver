@@ -17,6 +17,7 @@ from .other import (
     ReformulatorTool
 )
 from .server import tool_manager
+from . import extended  # noqa: F401 — triggers registration of tools in extended/
 
 
 __all__ = [

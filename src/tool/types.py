@@ -58,6 +58,7 @@ class ToolConfig(BaseModel):
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the tool")
     instance: Optional[Tool] = Field(default=None, description="The instance of the tool")
     code: Optional[str] = Field(default=None, description="Source code for dynamically generated tool classes (used when cls cannot be imported from a module)")
+    path: Optional[str] = Field(default=None, description="Absolute path to the tool's source file")
     
     # Default representations
     function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")
@@ -78,7 +79,8 @@ class ToolConfig(BaseModel):
             "config": self.config,
             "instance": None,
             "code": self.code,
-            
+            "path": self.path,
+
             "function_calling": self.function_calling,
             "text": self.text,
             "args_schema": dynamic_manager.serialize_args_schema(self.args_schema) if self.args_schema else None,

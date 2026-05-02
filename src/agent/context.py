@@ -8,8 +8,6 @@ import inflection
 import json
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -1004,128 +1002,6 @@ class AgentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
-    async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get variables from agents, where each agent's class source code is used as the variable value.
-        
-        Args:
-            agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all agents.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping agent names to Variable objects. Each Variable has:
-                - name: agent name
-                - type: "agent_code"
-                - description: agent description
-                - require_grad: agent's require_grad value
-                - variables: agent's class source code (as string value)
-        """
-        # Lazy import to avoid circular dependency
-        from src.optimizer.types import Variable
-        
-        variables: Dict[str, Variable] = {}
-        
-        if agent_name is not None:
-            # Get specific agent
-            agent_config = await self.get_info(agent_name)
-            if agent_config is None:
-                logger.warning(f"| ⚠️ Agent {agent_name} not found")
-                return variables
-            
-            agent_configs = {agent_name: agent_config}
-        else:
-            # Get all agents
-            agent_configs = self._agent_configs
-        
-        for name, agent_config in agent_configs.items():
-            # Get agent code
-            agent_code = ""
-            if agent_config.cls is not None:
-                agent_code = dynamic_manager.get_full_module_source(agent_config.cls) or ""
-            elif agent_config.code:
-                agent_code = agent_config.code
-            
-            # Create Variable for this agent
-            variable = Variable(
-                name=name,
-                type="agent_code",
-                description=agent_config.description or f"Code for agent {name}",
-                require_grad=agent_config.require_grad,
-                template=None,
-                variables=agent_code  # Store code as the variable value
-            )
-            variables[name] = variable
-        
-        return variables
-    
-    async def get_trainable_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get trainable variables from agents, filtering out agents with require_grad=False.
-        
-        Only returns variables for agents where require_grad=True.
-        
-        Args:
-            agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all trainable agents.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping agent names to Variable objects for trainable agents.
-        """
-        async with self._variables_lock:
-            all_variables = await self.get_variables(agent_name=agent_name)
-            trainable_variables = {name: var for name, var in all_variables.items() if var.require_grad}
-            return trainable_variables
-    
-    async def set_variables(self, agent_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> AgentConfig:
-        """Set variable values in an agent and create a new version.
-        
-        Args:
-            agent_name: Name of the agent to update
-            variable_updates: Dictionary mapping variable names to new values.
-                For agents, this is typically {"code": new_code_string}
-            new_version: New version string. If None, auto-increments from current version.
-            description: Description for this version update
-            
-        Returns:
-            AgentConfig: Updated agent configuration
-        """
-        async with self._variables_lock:
-            original_config = self._agent_configs.get(agent_name)
-            if original_config is None:
-                raise ValueError(f"Agent {agent_name} not found. Use register() to register a new agent.")
-            
-            # For agents, variable_updates format is {"name": "agent_name", "variables": "agent code"}
-            # Extract the new code from "variables" field
-            if "variables" not in variable_updates:
-                raise ValueError(f"variable_updates must contain 'variables' field with agent code, got: {list(variable_updates.keys())}")
-            
-            new_code = variable_updates["variables"]
-            if not isinstance(new_code, str):
-                raise ValueError(f"Agent code must be a string, got {type(new_code)}")
-            
-            # Load agent class from code
-            class_name = dynamic_manager.extract_class_name_from_code(new_code)
-            if not class_name:
-                raise ValueError(f"Cannot extract class name from code")
-            
-            try:
-                agent_cls = dynamic_manager.load_class(
-                    new_code,
-                    class_name=class_name,
-                    base_class=Agent,
-                    context="agent"
-                )
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load agent class from code: {e}")
-                raise ValueError(f"Failed to load agent class from code: {e}")
-            
-            # Use update() function to handle version management and persistence
-            # Pass the code directly to avoid re-extracting from dynamically created class
-            update_description = description or f"Updated code for {agent_name}"
-            return await self.update(
-                agent_cls=agent_cls,
-                agent_config_dict=original_config.config,
-                new_version=new_version,
-                description=update_description,
-                code=new_code  # Pass code directly since agent_cls is dynamically created
-            )
-
     async def cleanup(self):
         """Cleanup all active agents."""
         try:

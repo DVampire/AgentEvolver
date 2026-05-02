@@ -160,6 +160,11 @@ The general reasoning patterns are as follows:
     - For text actions: use "type": "text", "name": "text", and put the response in args as `{"content": "..."}`.
     - Actions are executed sequentially in the order listed.
 
+When calling `done_tool`, always include both `reasoning` and `result`:
+```text
+{"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Explained what was done and why.\", \"result\": \"Summary of the completed task.\"}"}
+```
+
 - You must ALWAYS respond with a valid JSON in this exact format.
 DO NOT add any other text like "```json" or "```" or anything else:
 

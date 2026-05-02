@@ -4,10 +4,7 @@ Server implementation for the Agent Context Protocol with lazy loading support.
 """
 
 import os
-from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
+from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -210,52 +207,6 @@ class AgentManagerServer(BaseModel):
             self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
-    async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get variables from agents, where each agent's class source code is used as the variable value.
-        
-        Args:
-            agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all agents.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping agent names to Variable objects.
-        """
-        return await self.agent_context_manager.get_variables(agent_name=agent_name)
-    
-    async def get_trainable_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get trainable variables from agents, filtering out agents with require_grad=False.
-        
-        Only returns variables for agents where require_grad=True.
-        
-        Args:
-            agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all trainable agents.
-            
-        Returns:
-            Dict[str, Variable]: Dictionary mapping agent names to Variable objects for trainable agents.
-        """
-        return await self.agent_context_manager.get_trainable_variables(agent_name=agent_name)
-    
-    async def set_variables(self, agent_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> AgentConfig:
-        """Set variable values in an agent and create a new version.
-        
-        Args:
-            agent_name: Name of the agent to update
-            variable_updates: Dictionary mapping variable names to new values.
-                For agents, this is typically {"code": new_code_string}
-            new_version: New version string. If None, auto-increments from current version.
-            description: Description for this version update
-            
-        Returns:
-            AgentConfig: Updated agent configuration
-        """
-        updated_config = await self.agent_context_manager.set_variables(
-            agent_name=agent_name, 
-            variable_updates=variable_updates, 
-            new_version=new_version, 
-            description=description
-        )
-        self._registered_configs[updated_config.name] = updated_config
-        return updated_config
-
     async def __call__(self, name: str, input: Dict[str, Any], **kwargs) -> Any:
         """Call an agent method using context manager.
         

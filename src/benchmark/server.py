@@ -1,6 +1,6 @@
 """Benchmark Manager implementation"""
 import os
-from typing import Any, Dict, List, Optional, Union, Type, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, Type
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
@@ -8,9 +8,6 @@ from src.utils import assemble_project_path
 from src.logger import logger
 from src.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats
 from src.benchmark.context import BenchmarkContextManager
-
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 class BenchmarkManager(BaseModel):
     """Benchmark Manager for managing benchmark registration and lifecycle"""

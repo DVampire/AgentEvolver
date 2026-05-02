@@ -1,0 +1,37 @@
+"""Hello World tool — a minimal example tool in src/tool/extended/."""
+import datetime
+from typing import Any, Dict, Optional
+from pydantic import Field
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.registry import TOOL
+
+
+@TOOL.register_module(force=True)
+class HelloWorldTool(Tool):
+    """A simple hello world tool that returns a greeting message."""
+
+    name: str = "hello_world_tool"
+    description: str = (
+        "A simple hello world tool. Returns a greeting for the given name.\n"
+        "Args:\n"
+        "- name (str): The name to greet. Defaults to 'World'."
+    )
+    metadata: Dict[str, Any] = Field(default={})
+    require_grad: bool = Field(default=True)
+
+    def __init__(self, require_grad: bool = True, **kwargs):
+        super().__init__(require_grad=require_grad, **kwargs)
+
+    async def __call__(self, name: Optional[str] = "World", **kwargs) -> ToolResponse:
+        """Return a greeting for the given name.
+
+        Args:
+            name (str): The name to greet.
+        """
+        timestamp = datetime.datetime.now().isoformat()
+        message = f"Hello, {name}! (Timestamp: {timestamp})"
+        return ToolResponse(
+            success=True,
+            message=message,
+            extra=ToolExtra(data={"greeting": message, "timestamp": timestamp}),
+        )

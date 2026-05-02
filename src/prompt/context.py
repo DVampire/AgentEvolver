@@ -10,8 +10,6 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -316,69 +314,6 @@ class PromptContextManager(BaseModel):
     # ------------------------------------------------------------------
     # Trainable variables
     # ------------------------------------------------------------------
-
-    async def get_variables(self, prompt_name: str) -> Dict[str, "Variable"]:
-        """Get the Variable for a prompt (whether trainable or not)."""
-        cfg = self._prompt_configs.get(prompt_name)
-        if cfg is None:
-            return {}
-        var = await cfg.to_prompt().get_trainable_variable()
-        if var is None:
-            return {}
-        return {prompt_name: var}
-
-    async def get_trainable_variables(self, prompt_name: str) -> Dict[str, "Variable"]:
-        """Return {name: Variable} only if require_grad=True."""
-        async with self._variables_lock:
-            cfg = self._prompt_configs.get(prompt_name)
-            if cfg is None or not cfg.require_grad:
-                return {}
-            var = await cfg.to_prompt().get_trainable_variable()
-            if var is None:
-                return {}
-            logger.debug(f"| ✅ Trainable variable '{prompt_name}' extracted")
-            return {prompt_name: var}
-
-    async def set_variables(self, prompt_name: str,
-                             variable_updates: Dict[str, str],
-                             new_version: Optional[str] = None,
-                             description: Optional[str] = None) -> Dict[str, PromptConfig]:
-        """Update a prompt from a new md text string. Persists to JSON only (no md file write).
-
-        variable_updates: {prompt_name: new_md_text}
-        """
-        async with self._variables_lock:
-            cfg = self._prompt_configs.get(prompt_name)
-            if cfg is None:
-                raise ValueError(f"Prompt '{prompt_name}' not found")
-
-            new_md_text = variable_updates.get(prompt_name)
-            if new_md_text is None:
-                raise ValueError(f"No update provided for '{prompt_name}' in variable_updates")
-
-            new_cfg = parse_prompt_text(new_md_text)
-            if new_version is None:
-                new_version = await version_manager.generate_next_version("prompt", prompt_name, "patch")
-
-            updated = PromptConfig(
-                name=cfg.name,
-                description=new_cfg.description,
-                version=new_version,
-                require_grad=new_cfg.require_grad,
-                system_template=new_cfg.system_template,
-                user_template=new_cfg.user_template,
-                variables=cfg.variables,
-                metadata=cfg.metadata,
-            )
-            self._prompt_configs[prompt_name] = updated
-            if prompt_name not in self._prompt_history_versions:
-                self._prompt_history_versions[prompt_name] = {}
-            self._prompt_history_versions[prompt_name][new_version] = updated
-            await version_manager.register_version("prompt", prompt_name, new_version,
-                                                   description=description or f"set_variables from {cfg.version}")
-            await self.save_to_json()
-            logger.info(f"| ✅ set_variables: {prompt_name} → v{new_version}")
-            return {prompt_name: updated}
 
     # ------------------------------------------------------------------
     # Persistence

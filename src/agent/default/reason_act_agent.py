@@ -91,6 +91,8 @@ class ReasonActAgent(Agent):
         )
 
         thinking = ""
+        evaluation_previous_goal = ""
+        memory = ""
         next_goal = ""
 
         try:
@@ -195,14 +197,6 @@ class ReasonActAgent(Agent):
                 if done:
                     break
 
-            event_data = {
-                "thinking": thinking,
-                "evaluation_previous_goal": evaluation_previous_goal,
-                "memory": memory,
-                "next_goal": next_goal,
-                "actions": action_results,
-            }
-
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
 
@@ -211,7 +205,7 @@ class ReasonActAgent(Agent):
             ctx, HookEvent.POST_STEP,
             agent_name=self.name,
             step_number=step_number,
-            extra={"task_id": task_id, "thinking": thinking, "next_goal": next_goal},
+            extra={"task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
         )
 
         return {"done": done, "result": result, "reasoning": reasoning}
