@@ -396,11 +396,10 @@ class Agent(BaseModel):
     async def _resolve_workdir(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workdir surfaced in the prompt's `{{ workdir }}` slot.
 
-        Default: absolutise `self.workdir` so the LLM always sees a real path
-        (avoids relative-path leakage to the process CWD). Subclasses may
-        override to add per-task isolation (e.g. SopAgent appends `ctx.id`).
+        Prefers ctx.workdir (injected by MetaAgent for sub-agents) over
+        self.workdir so all agents in a MetaAgent run share the same directory.
         """
-        return assemble_project_path(self.workdir)
+        return assemble_project_path(ctx.workdir if ctx and ctx.workdir else self.workdir)
 
     async def _get_messages(self,
                             task: str,

@@ -33,8 +33,9 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from src.agent.types import Agent, AgentContext, AgentResponse, AgentExtra
+from src.config import config
 from src.hook.server import hook_manager
-from src.hook.types import HookEvent
+from src.hook.types import HookEvent, HookContext
 from src.logger import logger
 from src.memory import memory_manager
 from src.model import model_manager
@@ -698,7 +699,7 @@ class MetaAgent(Agent):
                 agent_name=agent_name,
                 task_id=task_id,
                 parent_agent=self.name,
-                workdir=getattr(sub_agent, "workdir", None),
+                workdir=self.workdir,  # all sub-agents share MetaAgent's workdir
                 extra={
                     "parent_session_id": state.session_id,
                     "subtask_id": task_id,

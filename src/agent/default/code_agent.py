@@ -102,13 +102,20 @@ class CodeAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        git_status = await self._get_git_status(self.workdir, ctx=ctx)
+        workdir = ctx.workdir if ctx and ctx.workdir else self.workdir
+        git_status = await self._get_git_status(workdir, ctx=ctx)
         if git_status:
-            base["agent_context"] = base["agent_context"].replace(
-                "### Agent History",
-                f"### Git Status\n{git_status}\n\n### Agent History",
-                1,
-            )
+            # Insert git status before the Memory section (or at the end if not found)
+            ctx_text = base["agent_context"]
+            insert_marker = "### Memory"
+            if insert_marker in ctx_text:
+                base["agent_context"] = ctx_text.replace(
+                    insert_marker,
+                    f"### Git Status\n{git_status}\n\n{insert_marker}",
+                    1,
+                )
+            else:
+                base["agent_context"] = ctx_text + f"\n\n### Git Status\n{git_status}"
 
         return base
 
