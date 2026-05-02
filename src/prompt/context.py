@@ -64,7 +64,7 @@ class PromptContextManager(BaseModel):
 
     async def initialize(self, prompt_names: Optional[List[str]] = None):
         """Load prompts from md directory, then overlay JSON-versioned overrides."""
-        template_dir = os.path.join(os.path.dirname(__file__), "template")
+        template_dir = os.path.join(os.path.dirname(__file__), "default")
         md_configs = await self._load_from_registry(template_dir)
         json_configs = await self._load_from_code()
 
