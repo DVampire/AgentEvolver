@@ -7,7 +7,7 @@ import os
 from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.agent.optimizer.types import Variable
+    from src.optimizer.types import Variable
 
 from pydantic import BaseModel, ConfigDict, Field
 

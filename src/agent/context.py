@@ -9,7 +9,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from src.agent.optimizer.types import Variable
+    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -1019,7 +1019,7 @@ class AgentContextManager(BaseModel):
                 - variables: agent's class source code (as string value)
         """
         # Lazy import to avoid circular dependency
-        from src.agent.optimizer.types import Variable
+        from src.optimizer.types import Variable
         
         variables: Dict[str, Variable] = {}
         

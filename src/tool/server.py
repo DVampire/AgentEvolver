@@ -8,7 +8,7 @@ import os
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from src.agent.optimizer.types import Variable
+    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config

@@ -10,7 +10,7 @@ from src.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats
 from src.benchmark.context import BenchmarkContextManager
 
 if TYPE_CHECKING:
-    from src.agent.optimizer.types import Variable
+    from src.optimizer.types import Variable
 
 class BenchmarkManager(BaseModel):
     """Benchmark Manager for managing benchmark registration and lifecycle"""
