@@ -103,10 +103,11 @@ Each step produces a list of actions. An action is one of:
 - Actions execute sequentially. For independent operations, combine them into one step.
 
 ### Efficiency Guidelines
-- Read → Edit → Verify is the canonical code change loop. Do not skip steps.
+- Locate → Read → Edit → Verify → done_tool is the canonical loop. Do not skip steps.
 - Combine related reads into one step when possible.
 - Avoid redundant re-reads of files you just read and didn't change.
 - Always balance correctness and efficiency.
+- After running syntax verification and it passes, call `done_tool` immediately.
 
 ## Tool Context Rules
 - If no tools are loaded, ignore **Tool Context**.
