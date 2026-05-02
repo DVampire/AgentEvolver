@@ -209,6 +209,9 @@ __marimo__/
 others/
 workdir/
 .claude/
+.DS_Store
+.idea/
+.vscode/
 
 # Frontend
 src/trace/ui/node_modules/
