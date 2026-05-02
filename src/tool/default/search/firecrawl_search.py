@@ -188,10 +188,10 @@ class FirecrawlSearch(Tool):
             )
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"| Firecrawl search HTTP error: {e.response.status_code} — {e.response.text[:200]}")
+            logger.error(f"| Firecrawl search HTTP error: {e.response.status_code} — {e.response.text}")
             return ToolResponse(
                 success=False,
-                message=f"Firecrawl search failed: HTTP {e.response.status_code} — {e.response.text[:200]}",
+                message=f"Firecrawl search failed: HTTP {e.response.status_code} — {e.response.text}",
             )
         except Exception as e:
             logger.error(f"| Firecrawl search error: {e}")

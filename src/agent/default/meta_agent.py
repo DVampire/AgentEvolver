@@ -213,16 +213,16 @@ class MetaPlanFile:
         for i, r in enumerate(self._records.values(), 1):
             emoji = _STATUS_EMOJI.get(r.status, "?")
             cat = "user" if r.spec.category == SubTaskCategory.USER else "evol"
-            desc = r.spec.description[:60]
+            desc = r.spec.description
             short_id = r.spec.id.split("_")[-1]  # last 8-char fragment
             lines.append(
                 f"| {i} | `{r.spec.agent_name}` | {cat} "
                 f"| {emoji} {r.status.value} | {desc} `[{short_id}]` |"
             )
             if r.result:
-                lines.append(f"|   |       |     |        | ↳ {r.result[:80]} |")
+                lines.append(f"|   |       |     |        | ↳ {r.result} |")
             elif r.error:
-                lines.append(f"|   |       |     |        | ↳ ❌ {r.error[:80]} |")
+                lines.append(f"|   |       |     |        | ↳ ❌ {r.error} |")
         return "\n".join(lines)
 
     def _render_log(self) -> str:
@@ -362,7 +362,7 @@ class MetaAgent(Agent):
         ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> AgentResponse:
-        logger.info(f"| 🧠 MetaAgent starting: {task[:80]}")
+        logger.info(f"| 🧠 MetaAgent starting: {task}")
 
         session_id = new_session_id()
         state = MetaState(session_id=session_id, user_task=task)
@@ -512,7 +512,7 @@ class MetaAgent(Agent):
     ) -> None:
         for e in escalations:
             state._pending_escalations[e.task_id] = e
-            plan.log(f"ESCALATE {e.task_id[:8]} ({e.agent_name}) — {(e.escalation_message or '')[:80]}")
+            plan.log(f"ESCALATE {e.task_id[:8]} ({e.agent_name}) — {e.escalation_message or ''}")
             self._emit(state.session_id, step, "escalation", f"Escalation from {e.agent_name}", {
                 "task_id": e.task_id,
                 "agent_name": e.agent_name,
@@ -535,7 +535,7 @@ class MetaAgent(Agent):
 
         if react.decision == "reply_escalation":
             self._resolve_escalation(state, react.escalation_task_id, react.escalation_reply)
-            plan.log(f"REPLY {react.escalation_task_id[:8]} — {react.escalation_reply[:80]}")
+            plan.log(f"REPLY {react.escalation_task_id[:8]} — {react.escalation_reply}")
             self._emit(state.session_id, step, "escalation_reply",
                        f"Reply → {react.escalation_task_id[:8]}", {
                 "task_id": react.escalation_task_id,
@@ -597,7 +597,7 @@ class MetaAgent(Agent):
         elapsed = (_time.monotonic() - t0) * 1000
         self._emit(state.session_id, step, "llm_end", f"React step {step} → {output.decision}", {
             "decision": output.decision,
-            "thinking": output.thinking[:200],
+            "thinking": output.thinking,
             "duration_ms": elapsed,
         })
         return output
@@ -611,9 +611,9 @@ class MetaAgent(Agent):
         if react.decision == "continue":
             for spec in react.next_subtasks:
                 state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
-                plan.log(f"PLANNED {spec.id[:8]} — {spec.description[:60]} → {spec.agent_name}")
+                plan.log(f"PLANNED {spec.id[:8]} — {spec.description} → {spec.agent_name}")
                 self._emit(state.session_id, step, "subtask_planned",
-                           f"Plan: {spec.description[:50]} → {spec.agent_name}", {
+                           f"Plan: {spec.description} → {spec.agent_name}", {
                     "subtask_id": spec.id,
                     "agent_name": spec.agent_name,
                     "category": spec.category.value,
@@ -626,12 +626,12 @@ class MetaAgent(Agent):
         elif react.decision == "stop":
             state.final_answer = react.final_answer
             self._emit(state.session_id, step, "stop",
-                       "Final answer ready", {"answer": react.final_answer[:200]})
+                       "Final answer ready", {"answer": react.final_answer})
             await self._cancel_running(state)
 
         elif react.decision == "reply_escalation":
             self._resolve_escalation(state, react.escalation_task_id, react.escalation_reply)
-            plan.log(f"REPLY {react.escalation_task_id[:8]} — {react.escalation_reply[:80]}")
+            plan.log(f"REPLY {react.escalation_task_id[:8]} — {react.escalation_reply}")
 
         if react.request_evolution and react.evolution_target_agent:
             self._emit(state.session_id, step, "evolution_requested",
@@ -656,9 +656,9 @@ class MetaAgent(Agent):
                 name=f"subtask-{record.spec.id}",
             )
             state._running_tasks[record.spec.id] = t
-            plan.log(f"DISPATCH {record.spec.id[:8]} → {record.spec.agent_name} [{sid[-12:]}]")
+            plan.log(f"DISPATCH {record.spec.id[:8]} → {record.spec.agent_name} [{sid}]")
             self._emit(state.session_id, 0, "subtask_dispatch",
-                       f"Dispatch → {record.spec.agent_name}: {record.spec.description[:50]}", {
+                       f"Dispatch → {record.spec.agent_name}: {record.spec.description}", {
                 "subtask_id": record.spec.id,
                 "subtask_session_id": sid,
                 "agent_name": record.spec.agent_name,
@@ -667,7 +667,7 @@ class MetaAgent(Agent):
                 "description": record.spec.description,
             })
             logger.info(
-                f"| 🚀 Dispatched '{record.spec.description[:60]}' "
+                f"| 🚀 Dispatched '{record.spec.description}' "
                 f"→ {record.spec.agent_name} [{sid}]"
             )
 
@@ -833,19 +833,19 @@ class MetaAgent(Agent):
             return
         if event.event_type == MetaEventType.SUBTASK_DONE:
             record.mark_done(event.result or "")
-            plan.log(f"DONE {event.task_id[:8]} — {(event.result or '')[:80]}")
+            plan.log(f"DONE {event.task_id[:8]} — {event.result or ''}")
             self._emit(state.session_id, 0, "subtask_done",
-                       f"Done: {record.spec.description[:50]}", {
+                       f"Done: {record.spec.description}", {
                 "subtask_id": event.task_id,
                 "agent_name": event.agent_name,
-                "result": (event.result or "")[:300],
+                "result": event.result or "",
             })
             logger.info(f"| ✅ Subtask done: {event.task_id}")
         elif event.event_type == MetaEventType.SUBTASK_FAILED:
             record.mark_failed(event.error or "unknown error")
             plan.log(f"FAILED {event.task_id[:8]} — {event.error or 'unknown'}")
             self._emit(state.session_id, 0, "subtask_failed",
-                       f"Failed: {record.spec.description[:50]}", {
+                       f"Failed: {record.spec.description}", {
                 "subtask_id": event.task_id,
                 "agent_name": event.agent_name,
                 "error": event.error,
@@ -889,14 +889,14 @@ class MetaAgent(Agent):
         lines = ["### Recent Events"]
         for e in events:
             if e.event_type == MetaEventType.SUBTASK_DONE:
-                lines.append(f"- DONE [{e.task_id}]: {(e.result or '')[:200]}")
+                lines.append(f"- DONE [{e.task_id}]: {(e.result or '')}")
             elif e.event_type == MetaEventType.SUBTASK_FAILED:
                 lines.append(f"- FAILED [{e.task_id}]: {e.error}")
         lines.append("\n### Subtask Status")
         for r in state.subtask_records.values():
-            line = f"- [{r.status.value.upper()}] {r.spec.id}: {r.spec.description[:80]}"
+            line = f"- [{r.status.value.upper()}] {r.spec.id}: {r.spec.description}"
             if r.result:
-                line += f" → {r.result[:100]}"
+                line += f" → {r.result}"
             lines.append(line)
         return "\n".join(lines)
 

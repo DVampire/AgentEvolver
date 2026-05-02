@@ -87,7 +87,7 @@ class JinaSearch(Tool):
             raw_items = response_data
 
         if not raw_items:
-            logger.warning(f"Jina search returned no results. Response: {str(response_data)[:200]}")
+            logger.warning(f"Jina search returned no results. Response: {str(response_data)}")
             return results
 
         for item in raw_items:

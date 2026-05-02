@@ -26,7 +26,7 @@ export function SessionList({ sessions, selected, onSelect }: Props) {
           className={`session-item ${selected === s.session_id ? 'active' : ''}`}
           onClick={() => onSelect(s.session_id)}
         >
-          <div className="session-name">{s.session_id.slice(8, 24)}</div>
+          <div className="session-name">{s.session_id}</div>
           <div className="session-agents">{s.agent_names.join(', ') || '—'}</div>
           <div className="session-footer">
             <span>{s.event_count} events</span>

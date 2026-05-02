@@ -163,7 +163,7 @@ class TraceManager(metaclass=Singleton):
         )
         _, stderr = await install.communicate()
         if install.returncode != 0:
-            logger.warning(f"| ⚠️  npm install failed: {stderr.decode()[:200]}")
+            logger.warning(f"| ⚠️  npm install failed: {stderr.decode()}")
             return
 
         build = await asyncio.create_subprocess_exec(
@@ -174,7 +174,7 @@ class TraceManager(metaclass=Singleton):
         )
         _, stderr = await build.communicate()
         if build.returncode != 0:
-            logger.warning(f"| ⚠️  npm run build failed: {stderr.decode()[:200]}")
+            logger.warning(f"| ⚠️  npm run build failed: {stderr.decode()}")
             return
 
         logger.info("| ✅ Trace UI built successfully")

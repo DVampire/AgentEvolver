@@ -91,7 +91,7 @@ class EscalationHook(Hook):
         )
 
         await meta_inbox.put(event)
-        logger.info(f"| 🆘 Escalation sent from {agent_name} [{task_id[:8]}]")
+        logger.info(f"| 🆘 Escalation sent from {agent_name} [{task_id}]")
 
         try:
             reply: str = await asyncio.wait_for(
@@ -101,7 +101,7 @@ class EscalationHook(Hook):
             reply = "Meta Agent did not respond in time. Please stop the current subtask gracefully."
             logger.warning(f"| ⏰ Escalation timeout for task {task_id}")
 
-        logger.info(f"| 💬 Escalation reply received for task {task_id[:8]}: {reply[:80]}")
+        logger.info(f"| 💬 Escalation reply received for task {task_id}: {reply}")
 
         return HookResult(
             decision="allow",

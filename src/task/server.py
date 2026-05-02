@@ -229,7 +229,7 @@ class TaskManager(metaclass=Singleton):
 
         logger.info(
             f"| ➕ Task submitted: {task.id} "
-            f"[{category.value}/{priority.name}] {content[:60]}"
+            f"[{category.value}/{priority.name}] {content}"
         )
         return task.id
 
@@ -342,7 +342,7 @@ class TaskManager(metaclass=Singleton):
             record.started_at = datetime.now(timezone.utc)
             await self._save_unlocked()
 
-        logger.info(f"| ▶️  Running task: {task_id} — {record.task.content[:60]}")
+        logger.info(f"| ▶️  Running task: {task_id} — {record.task.content}")
 
         handler = self._handler
         try:

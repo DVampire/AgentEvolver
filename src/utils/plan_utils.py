@@ -223,7 +223,7 @@ class FlowChart:
         lines.append("  subgraph execution [Execution Flow]")
 
         if not self._steps:
-            lines.append(f'    start(["{self._safe(self.task[:40])}"])')
+            lines.append(f'    start(["{self._safe(self.task)}"])')
             if self._status in ("done", "failed"):
                 tag = "Done" if self._status == "done" else "Failed"
                 lines.append(f'    start --> finish(["{tag}"])')

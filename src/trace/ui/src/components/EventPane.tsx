@@ -116,7 +116,7 @@ function Thinking({ text }: { text: string }) {
       <div className="ep-thinking-header" onClick={() => setOpen(o => !o)}>
         <span className="ep-thinking-toggle">{open ? '▾' : '▸'}</span>
         <span className="ep-thinking-label">Thinking</span>
-        {!open && <span className="ep-thinking-preview">{text.slice(0, 160)}</span>}
+        {!open && <span className="ep-thinking-preview">{text}</span>}
       </div>
       {open && <div className="ep-thinking-body">{text}</div>}
     </div>
@@ -125,14 +125,13 @@ function Thinking({ text }: { text: string }) {
 
 function buildDescText(input: unknown): string {
   if (input == null) return ''
-  if (typeof input === 'string') return input.slice(0, 100)
+  if (typeof input === 'string') return input
   if (typeof input === 'object') {
     return Object.entries(input as Record<string, unknown>)
-      .slice(0, 3)
-      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`.slice(0, 50))
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
       .join('  ')
   }
-  return String(input).slice(0, 100)
+  return String(input)
 }
 
 function IoRow({ tag, data, isError }: { tag: string; data: unknown; isError?: boolean }) {

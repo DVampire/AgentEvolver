@@ -710,8 +710,8 @@ Historical Reflections from Previous Tasks:
                                     if param_name in updated_params and initial_params[param_name] != updated_params[param_name]:
                                         changed_from_initial.append(param_name)
                                         logger.info(f"| ✅ [TEST] Parameter changed from INITIAL: {param_name}")
-                                        logger.info(f"| ✅ [TEST]   INITIAL: {initial_params[param_name][:100]}...")
-                                        logger.info(f"| ✅ [TEST]   UPDATED: {updated_params[param_name][:100]}...")
+                                        logger.info(f"| ✅ [TEST]   INITIAL: {initial_params[param_name]}")
+                                        logger.info(f"| ✅ [TEST]   UPDATED: {updated_params[param_name]}")
 
                                 if changed_from_initial:
                                     logger.info(f"| ✅ [TEST] SUCCESS: {len(changed_from_initial)} parameters were updated from initial state!")

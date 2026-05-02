@@ -151,10 +151,9 @@ class WorkingMemory:
         if e.label:
             parts.append(e.label)
         if e.output and isinstance(e.output, str):
-            snippet = e.output[:200].replace("\n", " ")
-            parts.append(f"output: {snippet}")
+            parts.append(f"output: {e.output.replace(chr(10), ' ')}")
         elif e.error:
-            parts.append(f"error: {e.error[:200]}")
+            parts.append(f"error: {e.error}")
         return " | ".join(parts)
 
 
