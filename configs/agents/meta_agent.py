@@ -1,0 +1,13 @@
+meta_agent = dict(
+    workdir = "workdir/meta_agent",
+    name = "meta_agent",
+    type = "Agent",
+    description = "Orchestrator that decomposes tasks, dispatches sub-agents concurrently, reacts to results, and triggers self-evolution when agents underperform.",
+    model_name = "openai/o3",
+    prompt_name = "meta_agent",
+    memory_name = "general_memory_system",
+    max_steps = 50,
+    evolution_score_threshold = 0.5,
+    require_grad = False,
+    use_memory = True,
+)

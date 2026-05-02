@@ -14,8 +14,14 @@ from .file_utils import (
 from .string_utils import (
     extract_boxed_content,
     dedent,
+    is_same,
+)
+from .name_utils import (
     generate_unique_id,
-    is_same
+    new_session_id,
+    new_task_id,
+    subtask_session_id,
+    parse_subtask_session_id,
 )
 from .url_utils import fetch_url
 from .args_utils import parse_tool_args
@@ -52,6 +58,10 @@ __all__ = [
     "fetch_url",
     "parse_tool_args",
     "is_same",
+    "new_session_id",
+    "new_task_id",
+    "subtask_session_id",
+    "parse_subtask_session_id",
     "hvac_client",
     "count_tokens",
     "count_message_tokens",

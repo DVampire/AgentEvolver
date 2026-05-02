@@ -1,6 +1,4 @@
 import hashlib
-import uuid
-from datetime import datetime
 
 def hash_text_sha256(text: str) -> str:
     hash_object = hashlib.sha256(text.encode())
@@ -37,11 +35,12 @@ def dedent(text: str) -> str:
     clean = "\n".join(line.strip() for line in text.splitlines())
     return clean
 
-def generate_unique_id(prefix: str = "session") -> str:
-    """Generate a unique id using timestamp and UUID."""
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    unique_id = str(uuid.uuid4())[:8]
-    return f"{prefix}_{timestamp}_{unique_id}"
-
 def is_same(a: str, b: str) -> bool:
     return a.strip().lower() == b.strip().lower()
+
+__all__ = [
+    "hash_text_sha256",
+    "extract_boxed_content",
+    "dedent",
+    "is_same",
+]

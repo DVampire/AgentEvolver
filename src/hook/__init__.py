@@ -12,6 +12,7 @@ from .default import (
     ToolResultTruncHook,
     HistorySummaryHook,
     TraceHook,
+    EscalationHook,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "ToolResultTruncHook",
     "HistorySummaryHook",
     "TraceHook",
+    "EscalationHook",
 ]

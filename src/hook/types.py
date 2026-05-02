@@ -29,6 +29,7 @@ class HookEvent(str, Enum):
     # Agent lifecycle
     ON_START = "on_start"
     ON_STOP = "on_stop"       # agent is about to call done_tool
+    ON_ESCALATE = "on_escalate"  # agent is blocked and requests Meta guidance
 
 
 class HookContext(BaseContext):

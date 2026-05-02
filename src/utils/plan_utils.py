@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, Protocol, TypeVar
 
 from pydantic import BaseModel, Field
-from src.utils.string_utils import generate_unique_id
+from src.utils.name_utils import generate_unique_id
 
 
 # ---------------------------------------------------------------------------

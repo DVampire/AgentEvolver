@@ -17,6 +17,8 @@ import json
 import time
 from typing import Dict, Optional
 
+from pydantic import PrivateAttr
+
 from src.hook.types import Hook, HookContext, HookEvent, HookResult
 from src.trace.types import (
     TraceEvent,
@@ -37,9 +39,8 @@ class TraceHook(Hook):
     events: list = []   # empty = handle all events
     priority: int = 1   # run first so timing is accurate
 
-    # Class-level timer dict shared across all instances (there is only one).
-    # Key: "<session_id>:<scope_key>"
-    _timers: Dict[str, float] = {}
+    # Key: "<session_id>:<scope_key>" — per-instance via PrivateAttr.
+    _timers: Dict[str, float] = PrivateAttr(default_factory=dict)
 
     async def handle(self, ctx: HookContext) -> HookResult:
         # Lazy import to avoid circular deps at module load time.
@@ -54,6 +55,16 @@ class TraceHook(Hook):
                 agent_name=ctx.agent_name,
                 task_content=self._task_content(ctx),
             )
+            # If this agent was dispatched by a MetaAgent, carry the linkage
+            # in metadata so the frontend can nest this session under the parent.
+            parent_session_id = (ctx.extra or {}).get("parent_session_id")
+            subtask_id = (ctx.extra or {}).get("subtask_id")
+            if parent_session_id:
+                event = event.model_copy(update={"metadata": {
+                    **event.metadata,
+                    "parent_session_id": parent_session_id,
+                    "subtask_id": subtask_id or "",
+                }})
             self._timers[f"{ctx.id}:agent"] = time.monotonic()
 
         elif ctx.event == HookEvent.ON_STOP:
