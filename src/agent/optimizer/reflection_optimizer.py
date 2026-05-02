@@ -7,7 +7,7 @@ from pydantic import ConfigDict, Field
 from pydantic import BaseModel
 
 from src.logger import logger
-from src.optimizer.types import Optimizer, Variable
+from src.agent.optimizer.types import Optimizer, Variable
 from src.model import model_manager
 from src.message.types import SystemMessage, HumanMessage
 from src.memory.types import EventType

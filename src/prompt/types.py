@@ -12,7 +12,7 @@ from src.logger import logger
 from src.message import Message, SystemMessage, HumanMessage, ContentPartText
 
 if TYPE_CHECKING:
-    from src.optimizer.types import Variable
+    from src.agent.optimizer.types import Variable
 
 try:
     from jinja2 import Template as JinjaTemplate
@@ -130,7 +130,7 @@ class Prompt(BaseModel):
         """Returns a single Variable representing the whole md file, if require_grad=True."""
         if not self.require_grad:
             return None
-        from src.optimizer.types import Variable
+        from src.agent.optimizer.types import Variable
         return Variable(
             name=self.name,
             type="prompt",

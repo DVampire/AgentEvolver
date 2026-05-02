@@ -70,6 +70,7 @@ When reading memory:
 
 ### Verification
 - After making code changes, run tests or a quick sanity check with `bash_tool`.
+- After modifying or generating any Python file, run `python -c "exec(open('/abs/path/file.py').read())"` to catch syntax errors immediately before proceeding.
 - If a test fails, read the error carefully, locate the cause, and fix it before moving on.
 - Do not mark a task complete without verifying the changes work.
 

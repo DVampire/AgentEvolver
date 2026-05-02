@@ -14,7 +14,7 @@ from src.logger import logger
 from src.prompt.types import PromptConfig, Prompt
 from src.prompt.context import PromptContextManager
 from src.message.types import Message
-from src.optimizer.types import Variable
+from src.agent.optimizer.types import Variable
 
 
 class PromptManagerServer(BaseModel):

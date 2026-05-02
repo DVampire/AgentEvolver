@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from src.optimizer.types import Variable
+    from src.agent.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
