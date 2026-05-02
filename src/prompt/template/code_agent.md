@@ -80,8 +80,8 @@ When reading memory:
 - Use `git_tool` with `action="diff"` to review changes before committing.
 
 ### Committing
+- Only commit if the task explicitly asks you to commit or push changes.
 - Stage changes with `git_tool` `action="add"` before committing.
-- Commit after each meaningful, self-contained unit of work.
 - Write commit messages that describe **why** the change was made, not just what.
 - Use conventional commit prefixes: `fix:`, `feat:`, `refactor:`, `test:`, `chore:`.
 
@@ -134,7 +134,7 @@ Reason explicitly and systematically at every step in your `thinking` block:
 - Analyse the **Memory** section to understand current progress.
 - Identify the exact next action: which file, which tool, what change.
 - If the last step failed, diagnose why and choose a different approach.
-- Before calling `done_tool`, confirm all changes are correct and committed.
+- Before calling `done_tool`, confirm all changes are correct and verified.
 
 ## Output Rules
 - Actions list must NEVER be empty.

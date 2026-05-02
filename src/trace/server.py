@@ -71,6 +71,7 @@ class TraceManager(metaclass=Singleton):
         await self._ensure_ui_built()
 
         self._writer.start()
+        self._uvicorn_server = None
 
         self._server_task = asyncio.create_task(
             self._run_web_server(), name="trace-web-server"
@@ -79,7 +80,7 @@ class TraceManager(metaclass=Singleton):
         logger.info(f"| 🌐 Trace web UI: http://localhost:{WEB_PORT}")
 
     async def stop(self) -> None:
-        """Drain queue, flush writer, cancel web server."""
+        """Drain queue, flush writer, stop web server gracefully."""
         if not self._running:
             return
         self._running = False
@@ -87,12 +88,19 @@ class TraceManager(metaclass=Singleton):
         if self._writer:
             await self._writer.stop()
 
+        # Use uvicorn's built-in shutdown to avoid CancelledError noise
+        if self._uvicorn_server is not None:
+            self._uvicorn_server.should_exit = True
+
         if self._server_task:
-            self._server_task.cancel()
             try:
-                await self._server_task
-            except (asyncio.CancelledError, Exception):
-                pass
+                await asyncio.wait_for(self._server_task, timeout=3.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                self._server_task.cancel()
+                try:
+                    await self._server_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
         logger.info("| ⏹️  TraceManager stopped")
 
@@ -186,11 +194,11 @@ class TraceManager(metaclass=Singleton):
                 app=app,
                 host="0.0.0.0",
                 port=WEB_PORT,
-                log_level="warning",
+                log_level="error",
                 loop="none",
             )
-            server = uvicorn.Server(uvicorn_config)
-            await server.serve()
+            self._uvicorn_server = uvicorn.Server(uvicorn_config)
+            await self._uvicorn_server.serve()
         except asyncio.CancelledError:
             pass
         except ImportError:
