@@ -30,11 +30,13 @@ class SubTaskCategory(str, Enum):
 
     USER subtasks directly serve the user's goal — MetaAgent waits for all
     of them before returning a final answer.
-    EVOLUTION subtasks run in the background and do not block the user result.
+    EVALUATION and OPTIMIZATION subtasks run in the background and do not
+    block the user result.
     """
 
-    USER      = "user"
-    EVOLUTION = "evolution"
+    ACTOR     = "actor"
+    EVALUATOR = "evaluator"
+    OPTIMIZER = "optimizer"
 
 
 class TaskPriority(int, Enum):

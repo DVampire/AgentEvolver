@@ -4,6 +4,8 @@ with read_base():
     from .agents.meta_agent import meta_agent
     from .agents.code_agent import code_agent
     from .agents.reason_act_agent import reason_act_agent
+    from .agents.tool_optimize_agent import tool_optimize_agent
+    from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
     from .tools.read_file import read_file_tool
@@ -27,6 +29,8 @@ agent_names = [
     "meta_agent",
     "code_agent",
     "reason_act_agent",
+    "tool_optimize_agent",
+    "tool_evaluate_agent",
 ]
 tool_names = [
     "bash_tool",
@@ -54,7 +58,7 @@ general_memory_system.update(
     require_grad=False,
 )
 
-#-----------------SUB-AGENT CONFIGS-----------------
+#-----------------ACTOR AGENT CONFIGS-----------------
 code_agent.update(
     workdir=workdir,
     model_name=model_name,
@@ -64,6 +68,24 @@ code_agent.update(
 )
 
 reason_act_agent.update(
+    workdir=workdir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+#-----------------OPTIMIZER AGENT CONFIGS-----------------
+tool_optimize_agent.update(
+    workdir=workdir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+#-----------------EVALUATOR AGENT CONFIGS-----------------
+tool_evaluate_agent.update(
     workdir=workdir,
     model_name=model_name,
     memory_name=memory_names[0],

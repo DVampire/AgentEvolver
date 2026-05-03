@@ -1,29 +1,15 @@
-"""Run MetaAgent with code_agent and reason_act_agent as sub-agents.
-
-Usage
------
-# Default task
-python examples/run_meta_agent.py
-
-# Custom task
-python examples/run_meta_agent.py --task "Write a Python function to reverse a string and add unit tests."
-
-# Override config options
-python examples/run_meta_agent.py --task "..." --cfg-options model_name=openai/o3
-"""
-
-import asyncio
-import json
+"""Run ToolEvaluateAgent on a tool."""
 import os
 import sys
+import json
+import asyncio
+import argparse
 from pathlib import Path
-
 from dotenv import load_dotenv
 
 load_dotenv(verbose=True)
 
 from mmengine import DictAction
-import argparse
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -33,8 +19,8 @@ from src.logger import logger
 from src.model import model_manager
 from src.version import version_manager
 from src.prompt import prompt_manager
-from src.memory import memory_manager
 from src.tool import tool_manager
+from src.memory import memory_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
 from src.hook import hook_manager
@@ -44,13 +30,20 @@ from src.session.types import SessionContext
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run MetaAgent on a task")
+    parser = argparse.ArgumentParser(description="Run ToolEvaluateAgent to evaluate a tool")
     parser.add_argument(
         "--config",
-        default=os.path.join(root, "configs", "meta_agent.py"),
+        default=os.path.join(root, "configs", "tool_evaluate_agent.py"),
         help="Config file path",
     )
-    parser.add_argument("--task", default=None, help="Task to run")
+    parser.add_argument(
+        "--task",
+        default=(
+            "Evaluate the hello_world_tool."
+        ),
+        help="Evaluation task description",
+    )
+    parser.add_argument("--tool-name", default="hello_world_tool", help="Name of the tool to evaluate")
     parser.add_argument(
         "--cfg-options",
         nargs="+",
@@ -60,17 +53,18 @@ def parse_args():
     return parser.parse_args()
 
 
-async def run_agent(record: TaskRecord):
+async def run_evaluate_agent(record: TaskRecord):
+    """TaskManager handler: executes the tool evaluate agent for a given TaskRecord."""
     ctx = SessionContext()
     ctx.id = record.task.session_id or ctx.id
 
+    tool_name = (record.task.metadata or {}).get("tool_name", "hello_world_tool")
+
     response = await agent_manager(
-        name="meta_agent",
-        input={
-            "task": record.task.content,
-            "files": record.task.files,
-        },
+        name="tool_evaluate_agent",
+        input={"task": record.task.content, "tool_name": tool_name},
         ctx=ctx,
+        workdir=config.workdir,
     )
     return response
 
@@ -82,17 +76,16 @@ async def main():
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
 
-    # --- Core managers ---
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
     logger.info(f"| ✅ Versions: {await version_manager.list()}")
 
-    # --- Trace ---
+    logger.info("| 🌐 Initializing trace manager...")
     await trace_manager.initialize()
     await trace_manager.start()
     logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
-    # --- Hooks ---
+    logger.info("| 🪝 Initializing hook manager...")
     await hook_manager.initialize()
 
     logger.info("| 🧠 Initializing model manager...")
@@ -103,20 +96,19 @@ async def main():
     await prompt_manager.initialize()
     logger.info(f"| ✅ Prompts: {await prompt_manager.list()}")
 
-    logger.info("| 📁 Initializing memory manager...")
-    await memory_manager.initialize(memory_names=config.memory_names)
+    logger.info("| 🧠 Initializing memory manager...")
+    await memory_manager.initialize(memory_names=getattr(config, "memory_names", None))
     logger.info(f"| ✅ Memory: {await memory_manager.list()}")
 
-    logger.info("| 🛠️  Initializing tools...")
+    logger.info("| 🛠️ Initializing tools...")
     await tool_manager.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools: {await tool_manager.list()}")
 
     logger.info("| 🎯 Initializing skills...")
-    skill_names = getattr(config, "skill_names", None)
-    await skill_manager.initialize(skill_names=skill_names)
+    await skill_manager.initialize(skill_names=getattr(config, "skill_names", None))
     logger.info(f"| ✅ Skills: {await skill_manager.list()}")
 
-    logger.info("| 🤖 Initializing agents...")
+    logger.info("| 🤖 Initializing agent manager...")
     await agent_manager.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents: {await agent_manager.list()}")
 
@@ -124,51 +116,41 @@ async def main():
 
     # --- TaskManager ---
     task_workdir = os.path.join(config.workdir, "tasks")
-    await task_manager.initialize(workdir=task_workdir, handler=run_agent)
+    await task_manager.initialize(workdir=task_workdir, handler=run_evaluate_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---
-    task_text = args.task or (
-        "Improve the hello_world_tool so that it also returns a timestamp "
-        "alongside the greeting message. The timestamp should be in ISO 8601 format "
-        "and included both in the response message string and in the extra data dict."
-        "Finally, verify the new functionality."
-    )
+    task_text = args.task
+    tool_name = args.tool_name
 
-    logger.info(f"| 📋 Submitting task: {task_text}")
+    logger.info(f"| 📋 Submitting evaluation task: tool={tool_name}")
+    logger.info(f"| 📋 Task: {task_text}")
+
     task_id = await task_manager.submit(
         content=task_text,
         category=TaskCategory.USER,
         priority=TaskPriority.HIGH,
+        metadata={"tool_name": tool_name},
     )
     logger.info(f"| ✅ Task submitted: {task_id}")
 
     # --- Wait for completion ---
     while True:
         record = await task_manager.get(task_id)
-        if record and record.task.status in (
-            TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED
-        ):
+        if record and record.task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED):
             break
         await asyncio.sleep(1)
 
     record = await task_manager.get(task_id)
     if record.task.status == TaskStatus.DONE:
-        logger.info(f"| ✅ Task completed: {task_id}")
-        logger.info(f"| 📄 Result:\n{record.result}")
+        logger.info(f"| ✅ Evaluation completed: {task_id}")
     else:
-        logger.error(f"| ❌ Task ended with status {record.task.status}: {record.error}")
-
-    # --- Print plan file path if available ---
-    if record.result and hasattr(record.result, "extra"):
-        plan_path = (record.result.extra.data or {}).get("plan_path")
-        if plan_path:
-            logger.info(f"| 📝 Plan file: {plan_path}")
+        logger.error(f"| ❌ Evaluation ended with status {record.task.status}: {record.error}")
 
     # --- Teardown ---
     await task_manager.stop()
+    await asyncio.sleep(600)  # Keep trace UI alive for inspection
     await trace_manager.stop()
-    await asyncio.sleep(600)  # Wait for all tasks to finish
 
 
 if __name__ == "__main__":

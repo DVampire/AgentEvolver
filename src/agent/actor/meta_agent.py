@@ -66,7 +66,7 @@ class SubTaskSpec(BaseModel):
     id: str = Field(default_factory=new_task_id)
     description: str
     agent_name: str
-    category: SubTaskCategory = SubTaskCategory.USER
+    category: SubTaskCategory = SubTaskCategory.ACTOR
     depends_on: List[str] = Field(default_factory=list)
     files: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -212,7 +212,7 @@ class MetaPlanFile:
         lines.append("|---|-------|-----|--------|-------------|")
         for i, r in enumerate(self._records.values(), 1):
             emoji = _STATUS_EMOJI.get(r.status, "?")
-            cat = "user" if r.spec.category == SubTaskCategory.USER else "evol"
+            cat = r.spec.category.value  # "user" | "evaluation" | "optimization"
             desc = r.spec.description
             short_id = r.spec.id.split("_")[-1]  # last 8-char fragment
             lines.append(
@@ -293,7 +293,7 @@ class MetaState(BaseModel):
         ]
 
     def is_complete(self) -> bool:
-        user = [r for r in self.subtask_records.values() if r.spec.category == SubTaskCategory.USER]
+        user = [r for r in self.subtask_records.values() if r.spec.category == SubTaskCategory.ACTOR]  # only USER blocks completion
         return bool(user) and all(
             r.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED)
             for r in user
