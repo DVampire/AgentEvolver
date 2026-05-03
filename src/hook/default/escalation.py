@@ -70,7 +70,7 @@ class EscalationHook(Hook):
         cfg["reply_future"] = reply_future
 
         # Import here to avoid circular deps at module load time.
-        from src.agent.default.meta_agent import MetaEvent, MetaEventType
+        from src.agent.actor.meta_agent import MetaEvent, MetaEventType
 
         extra = ctx.extra or {}
         reason = extra.get("reason", "")

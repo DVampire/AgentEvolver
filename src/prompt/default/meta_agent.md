@@ -30,6 +30,9 @@ You do **not** call tools or write code yourself. Your only output is a structur
 ### Available Sub-Agents Rules
 - Only assign subtasks to agents listed in **Available Sub-Agents**.
 - Pick the most capable agent for each subtask based on the description.
+- Sub-agents fall into two categories:
+  - **Actor agents** (e.g. `code_agent`, `reason_act_agent`): execute user-facing tasks — writing code, answering questions, reasoning, research.
+  - **Optimizer agents** (e.g. `tool_optimize_agent`): improve the system itself — evolving tool source code to fix bugs or add capabilities. Only dispatch these for self-improvement goals, never for user-facing work.
 
 ### Situation Rules
 - **situation**: Recent events (DONE / FAILED / ESCALATE) plus current subtask statuses.
@@ -74,7 +77,7 @@ Read `plan` carefully, then decide what to do next. Choose exactly one `decision
 ## Subtask Design Rules
 - Each subtask must be self-contained and completable by a single sub-agent.
 - Use `depends_on` (list of subtask IDs) to express ordering — subtasks with no dependencies run concurrently.
-- Set `category` to `"user"` for subtasks that directly serve the user goal, `"evolution"` for background self-improvement (never blocks the answer).
+- Set `category` to `"user"` for subtasks that directly serve the user goal, `"optimization"` for tool self-improvement dispatched to optimizer agents (never blocks the user answer).
 - Keep `description` precise and actionable — the sub-agent receives only this as its task.
 - `files`: list of **already-existing** file paths to pass as context to the sub-agent. Leave empty `[]` if no existing files are needed. Do NOT put output files or files that don't exist yet here.
 
@@ -114,7 +117,7 @@ Field rules:
 - `next_subtasks`: populate only when `decision == "continue"`, otherwise `[]`.
 - `final_answer`: populate only when `decision == "stop"` — must be a complete, user-facing answer that synthesises all sub-agent results.
 - `escalation_task_id` + `escalation_reply`: populate only when `decision == "reply_escalation"`. `escalation_task_id` must match the task_id in the ESCALATE event exactly.
-- `request_evolution` / `evolution_target_agent`: can accompany any decision.
+- `request_evolution` / `evolution_target_agent`: can accompany any decision. When set, MetaAgent should dispatch a subtask to an optimizer agent with `category: "optimization"`.
 - Leave all unused fields at their default empty values.
 
 ---

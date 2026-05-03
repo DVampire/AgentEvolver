@@ -1,6 +1,6 @@
 """Agents module for multi-agent system."""
 
-from .default import ReasonActAgent, CodeAgent, MetaAgent
+from .actor import ReasonActAgent, CodeAgent, MetaAgent
 from .server import agent_manager
 from .optimizer import ToolOptimizeAgent
 
