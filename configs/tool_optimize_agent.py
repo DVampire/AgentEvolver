@@ -7,11 +7,11 @@ with read_base():
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
     from .tools.hello_world import hello_world_tool
-    from .optimizers.tool_optimizer import tool_optimizer
+    from .optimizers.tool_optimize_agent import tool_optimize_agent
 
-tag = "tool_optimizer"
+tag = "tool_optimize_agent"
 workdir = f"workdir/{tag}"
-log_path = "tool_optimizer.log"
+log_path = "tool_optimize_agent.log"
 
 use_local_proxy = True
 model_name = "openrouter/gemini-3-flash-preview"
@@ -25,8 +25,8 @@ tool_names = [
     "edit_file_tool",
     "hello_world_tool",
 ]
-optimizer_names = [
-    "tool_optimizer",
+agent_names = [
+    "tool_optimize_agent",
 ]
 skill_names = []
 memory_names = [
@@ -41,8 +41,8 @@ todo_tool.update(
     base_dir="tool/todo",
     require_grad=False,
 )
-#-----------------OPTIMIZER CONFIG-----------------
-tool_optimizer.update(
+#-----------------AGENT CONFIG-----------------
+tool_optimize_agent.update(
     workdir=workdir,
     model_name=model_name,
     memory_name=memory_names[0],

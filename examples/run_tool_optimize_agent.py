@@ -1,4 +1,4 @@
-"""Run ToolOptimizer on the hello_world_tool."""
+"""Run ToolOptimizeAgent on the hello_world_tool."""
 import os
 import sys
 import json
@@ -22,7 +22,7 @@ from src.prompt import prompt_manager
 from src.tool import tool_manager
 from src.memory import memory_manager
 from src.skill import skill_manager
-from src.optimizer import optimizer_manager
+from src.agent import agent_manager
 from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
 from src.trace import trace_manager
@@ -30,10 +30,10 @@ from src.session.types import SessionContext
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run ToolOptimizer to evolve a tool")
+    parser = argparse.ArgumentParser(description="Run ToolOptimizeAgent to evolve a tool")
     parser.add_argument(
         "--config",
-        default=os.path.join(root, "configs", "tool_optimizer.py"),
+        default=os.path.join(root, "configs", "tool_optimize_agent.py"),
         help="Config file path",
     )
     parser.add_argument(
@@ -55,17 +55,16 @@ def parse_args():
     return parser.parse_args()
 
 
-async def run_optimizer(record: TaskRecord):
-    """TaskManager handler: executes the tool optimizer for a given TaskRecord."""
+async def run_optimize_agent(record: TaskRecord):
+    """TaskManager handler: executes the tool optimize agent for a given TaskRecord."""
     ctx = SessionContext()
     ctx.id = record.task.session_id or ctx.id
 
     tool_name = (record.task.metadata or {}).get("tool_name", "hello_world_tool")
 
-    response = await optimizer_manager(
-        name="tool_optimizer",
-        task=record.task.content,
-        tool_name=tool_name,
+    response = await agent_manager(
+        name="tool_optimize_agent",
+        input={"task": record.task.content, "tool_name": tool_name},
         ctx=ctx,
         workdir=config.workdir,
     )
@@ -111,15 +110,15 @@ async def main():
     await skill_manager.initialize(skill_names=getattr(config, "skill_names", None))
     logger.info(f"| ✅ Skills: {await skill_manager.list()}")
 
-    logger.info("| ⚙️ Initializing optimizer manager...")
-    await optimizer_manager.initialize(optimizer_names=config.optimizer_names)
-    logger.info(f"| ✅ Optimizers: {await optimizer_manager.list()}")
+    logger.info("| 🤖 Initializing agent manager...")
+    await agent_manager.initialize(agent_names=config.agent_names)
+    logger.info(f"| ✅ Agents: {await agent_manager.list()}")
 
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
     task_workdir = os.path.join(config.workdir, "tasks")
-    await task_manager.initialize(workdir=task_workdir, handler=run_optimizer)
+    await task_manager.initialize(workdir=task_workdir, handler=run_optimize_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---

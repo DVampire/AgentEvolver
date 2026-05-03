@@ -3,7 +3,6 @@ from mmengine.registry import Registry
 MEMORY_SYSTEM = Registry("memory_system", locations=["src.memory"])
 TOOL = Registry("tool", locations=["src.tool"])
 AGENT = Registry("agent", locations=["src.agent"])
-OPTIMIZER = Registry("optimizer", locations=["src.optimizer"])
 PROMPT = Registry("prompt", locations=["src.prompt"])
 DATASET = Registry("dataset", locations=["src.data"])
 BENCHMARK = Registry("benchmark", locations=["src.benchmark"])

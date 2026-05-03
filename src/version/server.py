@@ -39,7 +39,6 @@ class VersionManagerServer(BaseModel):
             "memory": {},
             "benchmark": {},
             "skill": {},
-            "optimizer": {},
         }
 
     async def initialize(self):

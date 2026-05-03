@@ -1,6 +1,5 @@
-"""ToolOptimizer — an agent that evolves tool source code given an evolution task."""
+"""ToolOptimizeAgent — an agent that evolves tool source code given an evolution task."""
 
-import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -12,15 +11,16 @@ from src.hook.types import HookDecision, HookEvent
 from src.logger import logger
 from src.message import Message
 from src.model import model_manager
-from src.registry import OPTIMIZER
+from src.registry import AGENT
 from src.skill.server import skill_manager
 from src.tool.server import tool_manager
 from src.dynamic import dynamic_manager
 from src.utils import parse_tool_args
 
-@OPTIMIZER.register_module(force=True)
-class ToolOptimizer(Agent):
-    """Agent-style optimizer that evolves tool source code to satisfy an evolution task.
+
+@AGENT.register_module(force=True)
+class ToolOptimizeAgent(Agent):
+    """Agent that evolves tool source code to satisfy an evolution task.
 
     Receives an evolution task from MetaAgent, iteratively reads / edits the target
     tool's .py file under src/tool/extended/ using standard file/bash tools, verifies
@@ -29,9 +29,9 @@ class ToolOptimizer(Agent):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="tool_optimizer")
+    name: str = Field(default="tool_optimize_agent")
     description: str = Field(
-        default="An optimizer agent that evolves tool source code given an evolution task."
+        default="An agent that evolves tool source code given an evolution task."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
     require_grad: bool = Field(default=False)
@@ -57,7 +57,7 @@ class ToolOptimizer(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "tool_optimizer",
+            prompt_name=prompt_name or "tool_optimize_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
@@ -97,7 +97,7 @@ class ToolOptimizer(Agent):
         return base
 
     # ------------------------------------------------------------------
-    # Core step — copied from CodeAgent
+    # Core step
     # ------------------------------------------------------------------
 
     async def _think_and_action(
@@ -237,7 +237,7 @@ class ToolOptimizer(Agent):
         return {"done": done, "result": result, "reasoning": reasoning}
 
     # ------------------------------------------------------------------
-    # Main entry point — copied from CodeAgent, optimize() delegates here
+    # Main entry point
     # ------------------------------------------------------------------
 
     async def __call__(
@@ -246,7 +246,7 @@ class ToolOptimizer(Agent):
         tool_name: str,
         **kwargs,
     ) -> AgentResponse:
-        logger.info(f"| 🚀 Starting ToolOptimizer: {task} (tool={tool_name})")
+        logger.info(f"| 🚀 Starting ToolOptimizeAgent: {task} (tool={tool_name})")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
@@ -301,7 +301,7 @@ class ToolOptimizer(Agent):
                    "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
 
-        logger.info(f"| ✅ ToolOptimizer completed after {step_number}/{self.max_steps} steps")
+        logger.info(f"| ✅ ToolOptimizeAgent completed after {step_number}/{self.max_steps} steps")
 
         if response["done"] and tool_config.path:
             await self._reload_tool(tool_name, tool_config)

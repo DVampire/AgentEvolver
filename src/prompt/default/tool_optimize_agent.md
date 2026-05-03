@@ -1,6 +1,6 @@
 ---
-name: tool_optimizer
-description: An optimizer agent that evolves tool source code given an evolution task from MetaAgent.
+name: tool_optimize_agent
+description: An agent that evolves tool source code given an evolution task from MetaAgent.
 version: 1.0.0
 require_grad: false
 ---
