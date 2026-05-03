@@ -1,3 +1,3 @@
 from .hello_world import HelloWorldTool
 
-__all__ = ["HelloWorldTool"]
+__all__ = ["HelloWorldTool", "CalculatorTool"]

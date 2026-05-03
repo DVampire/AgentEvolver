@@ -6,6 +6,7 @@ with read_base():
     from .agents.reason_act_agent import reason_act_agent
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
+    from .agents.tool_generate_agent import tool_generate_agent
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
     from .tools.read_file import read_file_tool
@@ -31,6 +32,7 @@ agent_names = [
     "reason_act_agent",
     "tool_optimize_agent",
     "tool_evaluate_agent",
+    "tool_generate_agent",
 ]
 tool_names = [
     "bash_tool",
@@ -77,6 +79,15 @@ reason_act_agent.update(
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------
 tool_optimize_agent.update(
+    workdir=workdir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+#-----------------GENERATOR AGENT CONFIGS-----------------
+tool_generate_agent.update(
     workdir=workdir,
     model_name=model_name,
     memory_name=memory_names[0],

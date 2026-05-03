@@ -708,10 +708,9 @@ class MetaAgent(Agent):
             # files (not yet created) into the files list by mistake.
             existing_files = [f for f in (record.spec.input.files or []) if os.path.exists(f)]
 
-            # Build extra kwargs: target_name maps to tool_name for optimizer/evaluator agents
             extra_kwargs = dict(record.spec.input.extra)
             if record.spec.input.target_name is not None:
-                extra_kwargs.setdefault("tool_name", record.spec.input.target_name)
+                extra_kwargs["target_name"] = record.spec.input.target_name
 
             response = await sub_agent(
                 task=record.spec.input.task,

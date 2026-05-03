@@ -1,4 +1,4 @@
-"""ToolEvaluateAgent — an agent that evaluates tool behavior given an evaluation task."""
+"""ToolGenerateAgent — an agent that generates new tool source code from a description."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -19,19 +19,19 @@ from src.utils import parse_tool_args
 
 
 @AGENT.register_module(force=True)
-class ToolEvaluateAgent(Agent):
-    """Agent that evaluates tool behavior against an evaluation task.
+class ToolGenerateAgent(Agent):
+    """Agent that generates a new tool from a natural-language description.
 
-    Receives an evaluation task from MetaAgent, reads the target tool's source
-    file and runs it against test cases using bash/python tools, collects results,
-    and reports a structured evaluation verdict via done_tool.
+    Receives a generation task from MetaAgent describing what the new tool should do,
+    writes a new .py file under src/tool/extended/, verifies it, registers it, and
+    reports back via done_tool.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="tool_evaluate_agent")
+    name: str = Field(default="tool_generate_agent")
     description: str = Field(
-        default="An agent that evaluates tool behavior given an evaluation task."
+        default="An agent that generates new tool source code from a description."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
     require_grad: bool = Field(default=False)
@@ -46,7 +46,7 @@ class ToolEvaluateAgent(Agent):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_actions: int = 10,
-        max_steps: int = 20,
+        max_steps: int = 30,
         review_steps: int = 5,
         require_grad: bool = False,
         **kwargs,
@@ -57,7 +57,7 @@ class ToolEvaluateAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "tool_evaluate_agent",
+            prompt_name=prompt_name or "tool_generate_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
@@ -65,9 +65,55 @@ class ToolEvaluateAgent(Agent):
             require_grad=require_grad,
             **kwargs,
         )
+        # project_root: two levels up from this file (src/agent/generator/ → repo root)
+        from pathlib import Path
+        self.project_root = str(Path(__file__).resolve().parents[3])
 
     # ------------------------------------------------------------------
-    # Override: inject tool info into agent context
+    # Override: inject project_root into system modules
+    # ------------------------------------------------------------------
+
+    async def _get_messages(self, task: str, ctx, **kwargs):
+        from src.utils import assemble_project_path
+        from src.prompt import prompt_manager
+        from src.hook.types import HookContext, HookEvent
+        from src.config import config as _config
+
+        workdir = await self._resolve_workdir(ctx=ctx, **kwargs)
+        system_modules = dict(
+            max_actions=self.max_actions,
+            workdir=workdir,
+            project_root=self.project_root,
+        )
+        agent_message_modules = dict(task=task)
+        agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
+        agent_message_modules.update(await self._get_tool_context(ctx=ctx))
+        agent_message_modules.update(await self._get_skill_context(ctx=ctx))
+
+        messages = await prompt_manager.get_messages(
+            prompt_name=self.prompt_name,
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
+        )
+
+        hook_ctx = HookContext(
+            event=HookEvent.PRE_MESSAGES,
+            id=ctx.id,
+            agent_name=self.name,
+            messages=messages,
+            max_tokens=getattr(_config, "max_tokens", 0),
+        )
+        from src.hook.server import hook_manager as _hm
+        result = await _hm(hook_ctx)
+        messages = result.modified_messages if result.modified_messages is not None else messages
+        if result.additional_context:
+            from src.message import SystemMessage
+            messages = list(messages) + [SystemMessage(content=result.additional_context)]
+
+        return messages
+
+    # ------------------------------------------------------------------
+    # Override: inject generation context
     # ------------------------------------------------------------------
 
     async def _get_agent_context(
@@ -80,24 +126,24 @@ class ToolEvaluateAgent(Agent):
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
         target_name = kwargs.get("target_name")
+        lines = []
         if target_name:
-            tool_config = await tool_manager.get_info(target_name)
-            lines = [f"- **Tool Name**: {target_name}"]
-            if tool_config:
-                lines.append(f"- **Description**: {tool_config.description}")
-                lines.append(f"- **Version**: {tool_config.version}")
-                if tool_config.path:
-                    lines.append(f"- **Source File**: {tool_config.path}")
+            lines.append(f"- **Requested Tool Name**: `{target_name}`")
+            lines.append(f"- **Target File**: `src/tool/extended/{target_name}.py`")
+            existing = await tool_manager.get_info(target_name)
+            if existing:
+                lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
             else:
-                lines.append("- (tool not found in registry)")
-            base["evaluation_target"] = "\n".join(lines)
+                lines.append("- **Status**: not yet registered — create from scratch")
         else:
-            base["evaluation_target"] = "(no target_name provided)"
+            lines.append("- **Requested Tool Name**: (not specified — infer a snake_case name from the task)")
+            lines.append("- **Target File**: `src/tool/extended/<inferred_name>.py`")
 
+        base["generation_target"] = "\n".join(lines)
         return base
 
     # ------------------------------------------------------------------
-    # Core step
+    # Core step (identical loop to optimizer/evaluator)
     # ------------------------------------------------------------------
 
     async def _think_and_action(
@@ -243,10 +289,10 @@ class ToolEvaluateAgent(Agent):
     async def __call__(
         self,
         task: str,
-        target_name: str,
+        target_name: Optional[str] = None,
         **kwargs,
     ) -> AgentResponse:
-        logger.info(f"| 🚀 Starting ToolEvaluateAgent: {task} (tool={target_name})")
+        logger.info(f"| 🚀 Starting ToolGenerateAgent: {task} (target_name={target_name})")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
@@ -255,12 +301,7 @@ class ToolEvaluateAgent(Agent):
         if not ctx.workdir:
             ctx.workdir = self.workdir
 
-        tool_config = await tool_manager.get_info(target_name)
-        if tool_config is None:
-            logger.warning(f"| ⚠️ Tool '{target_name}' not found in registry, refusing evaluation")
-            return AgentResponse(success=False, message=f"Tool '{target_name}' not found in registry.")
-
-        task_id = "eval_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        task_id = "gen_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
         await hook_manager(
@@ -287,7 +328,7 @@ class ToolEvaluateAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps})")
             response = {
                 "done": False,
-                "result": "Tool evaluation did not complete within max steps.",
+                "result": "Tool generation did not complete within max steps.",
                 "reasoning": "Reached the maximum number of steps.",
             }
 
@@ -298,10 +339,52 @@ class ToolEvaluateAgent(Agent):
                    "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
 
-        logger.info(f"| ✅ ToolEvaluateAgent completed after {step_number}/{self.max_steps} steps")
+        logger.info(f"| ✅ ToolGenerateAgent completed after {step_number}/{self.max_steps} steps")
+
+        if response["done"]:
+            await self._register_tool(target_name, response)
 
         return AgentResponse(
             success=response["done"],
             message=response["result"] or "",
             extra=AgentExtra(data=response),
         )
+
+    async def _register_tool(self, target_name: Optional[str], response: Dict[str, Any]) -> None:
+        """Dynamically load and register the newly generated tool."""
+        import os
+        from src.tool.types import Tool as ToolBase
+
+        # Agent reports the file path in reasoning or we infer it
+        generated_path = None
+        reasoning = response.get("reasoning") or ""
+        for token in reasoning.split():
+            if token.startswith("src/tool/extended/") and token.endswith(".py"):
+                generated_path = os.path.join(self.workdir.split("workdir")[0], token)
+                break
+
+        if not generated_path and target_name:
+            generated_path = os.path.join(
+                self.workdir.split("workdir")[0],
+                f"src/tool/extended/{target_name}.py",
+            )
+
+        if not generated_path or not os.path.exists(generated_path):
+            logger.warning(f"| ⚠️  Could not locate generated tool file for registration")
+            return
+
+        try:
+            with open(generated_path, "r") as f:
+                new_code = f.read()
+            class_name = dynamic_manager.extract_class_name_from_code(new_code)
+            new_cls = dynamic_manager.load_class(new_code, class_name=class_name, base_class=ToolBase, context="tool")
+            inferred_name = target_name or getattr(new_cls, "name", None) or class_name
+            await tool_manager.update(
+                target_name=inferred_name,
+                tool=new_cls,
+                config={},
+                code=new_code,
+            )
+            logger.info(f"| 🔄 Tool '{inferred_name}' registered from {generated_path}")
+        except Exception as e:
+            logger.error(f"| ❌ Failed to register generated tool: {e}")

@@ -79,10 +79,10 @@ class ToolOptimizeAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        tool_name = kwargs.get("tool_name")
-        if tool_name:
-            tool_config = await tool_manager.get_info(tool_name)
-            lines = [f"- **Tool Name**: {tool_name}"]
+        target_name = kwargs.get("target_name")
+        if target_name:
+            tool_config = await tool_manager.get_info(target_name)
+            lines = [f"- **Tool Name**: {target_name}"]
             if tool_config:
                 lines.append(f"- **Description**: {tool_config.description}")
                 lines.append(f"- **Version**: {tool_config.version}")
@@ -92,7 +92,7 @@ class ToolOptimizeAgent(Agent):
                 lines.append("- (tool not found in registry)")
             base["optimization_target"] = "\n".join(lines)
         else:
-            base["optimization_target"] = "(no tool_name provided)"
+            base["optimization_target"] = "(no target_name provided)"
 
         return base
 
@@ -243,10 +243,10 @@ class ToolOptimizeAgent(Agent):
     async def __call__(
         self,
         task: str,
-        tool_name: str,
+        target_name: str,
         **kwargs,
     ) -> AgentResponse:
-        logger.info(f"| 🚀 Starting ToolOptimizeAgent: {task} (tool={tool_name})")
+        logger.info(f"| 🚀 Starting ToolOptimizeAgent: {task} (tool={target_name})")
 
         ctx = kwargs.get("ctx", None)
         if ctx is None:
@@ -255,13 +255,13 @@ class ToolOptimizeAgent(Agent):
         if not ctx.workdir:
             ctx.workdir = self.workdir
 
-        tool_config = await tool_manager.get_info(tool_name)
+        tool_config = await tool_manager.get_info(target_name)
         if tool_config is None:
-            logger.warning(f"| ⚠️ Tool '{tool_name}' not found in registry, refusing optimization")
-            return AgentResponse(success=False, message=f"Tool '{tool_name}' not found in registry.")
+            logger.warning(f"| ⚠️ Tool '{target_name}' not found in registry, refusing optimization")
+            return AgentResponse(success=False, message=f"Tool '{target_name}' not found in registry.")
         if not tool_config.require_grad:
-            logger.warning(f"| ⚠️ Tool '{tool_name}' has require_grad=False, refusing optimization")
-            return AgentResponse(success=False, message=f"Tool '{tool_name}' is not evolvable (require_grad=False).")
+            logger.warning(f"| ⚠️ Tool '{target_name}' has require_grad=False, refusing optimization")
+            return AgentResponse(success=False, message=f"Tool '{target_name}' is not evolvable (require_grad=False).")
 
         task_id = "opt_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
@@ -269,11 +269,11 @@ class ToolOptimizeAgent(Agent):
         await hook_manager(
             ctx, HookEvent.ON_START,
             agent_name=self.name,
-            extra={"task_id": task_id, "task": task, "tool_name": tool_name,
+            extra={"task_id": task_id, "task": task, "target_name": target_name,
                    "memory_name": self.memory_name, "use_memory": self.use_memory},
         )
 
-        messages = await self._get_messages(task, ctx=ctx, tool_name=tool_name)
+        messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
 
         step_number = 0
         response = {"done": False, "result": None, "reasoning": None}
@@ -282,7 +282,7 @@ class ToolOptimizeAgent(Agent):
             logger.info(f"| 🔄 Step {step_number + 1}/{self.max_steps}")
             response = await self._think_and_action(messages, task_id, step_number, ctx=ctx)
             step_number += 1
-            messages = await self._get_messages(task, ctx=ctx, tool_name=tool_name)
+            messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
             if response["done"]:
                 break
 
@@ -304,7 +304,7 @@ class ToolOptimizeAgent(Agent):
         logger.info(f"| ✅ ToolOptimizeAgent completed after {step_number}/{self.max_steps} steps")
 
         if response["done"] and tool_config.path:
-            await self._reload_tool(tool_name, tool_config)
+            await self._reload_tool(target_name, tool_config)
 
         return AgentResponse(
             success=response["done"],
@@ -312,7 +312,7 @@ class ToolOptimizeAgent(Agent):
             extra=AgentExtra(data=response),
         )
 
-    async def _reload_tool(self, tool_name: str, tool_config) -> None:
+    async def _reload_tool(self, target_name: str, tool_config) -> None:
         """Read updated source file, load new class dynamically, and re-register with incremented version."""
         try:
             from src.tool.types import Tool as ToolBase
@@ -321,11 +321,11 @@ class ToolOptimizeAgent(Agent):
             class_name = dynamic_manager.extract_class_name_from_code(new_code)
             new_cls = dynamic_manager.load_class(new_code, class_name=class_name, base_class=ToolBase, context="tool")
             await tool_manager.update(
-                tool_name=tool_name,
+                target_name=target_name,
                 tool=new_cls,
                 config=tool_config.config or {},
                 code=new_code,
             )
-            logger.info(f"| 🔄 Tool '{tool_name}' reloaded with updated source (class={class_name})")
+            logger.info(f"| 🔄 Tool '{target_name}' reloaded with updated source (class={class_name})")
         except Exception as e:
-            logger.error(f"| ❌ Failed to reload tool '{tool_name}': {e}")
+            logger.error(f"| ❌ Failed to reload tool '{target_name}': {e}")

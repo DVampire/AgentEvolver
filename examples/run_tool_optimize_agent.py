@@ -60,11 +60,11 @@ async def run_optimize_agent(record: TaskRecord):
     ctx = SessionContext()
     ctx.id = record.task.session_id or ctx.id
 
-    tool_name = (record.task.metadata or {}).get("tool_name", "hello_world_tool")
+    target_name = (record.task.metadata or {}).get("target_name", "hello_world_tool")
 
     response = await agent_manager(
         name="tool_optimize_agent",
-        input={"task": record.task.content, "tool_name": tool_name},
+        input={"task": record.task.content, "target_name": target_name},
         ctx=ctx,
         workdir=config.workdir,
     )
@@ -123,16 +123,16 @@ async def main():
 
     # --- Submit task ---
     task_text = args.task
-    tool_name = args.tool_name
+    target_name = args.tool_name
 
-    logger.info(f"| 📋 Submitting optimization task: tool={tool_name}")
+    logger.info(f"| 📋 Submitting optimization task: target={target_name}")
     logger.info(f"| 📋 Task: {task_text}")
 
     task_id = await task_manager.submit(
         content=task_text,
         category=TaskCategory.USER,
         priority=TaskPriority.HIGH,
-        metadata={"tool_name": tool_name},
+        metadata={"target_name": target_name},
     )
     logger.info(f"| ✅ Task submitted: {task_id}")
 
