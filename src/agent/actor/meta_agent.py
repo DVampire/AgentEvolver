@@ -357,6 +357,9 @@ class MetaAgent(Agent):
             **kwargs,
         )
         self.evolution_score_threshold = evolution_score_threshold
+        # project_root: two levels up from this file (src/agent/actor/ → repo root)
+        from pathlib import Path
+        self.project_root = str(Path(__file__).resolve().parents[3])
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -800,9 +803,15 @@ class MetaAgent(Agent):
             session_id=session_id,
         )
 
+        project_context = self._load_project_md()
+        workdir = str(ctx.workdir if ctx and ctx.workdir else self.workdir)
         messages = await prompt_manager.get_messages(
             prompt_name=self.prompt_name,
-            system_modules={},
+            system_modules=dict(
+                project_root=self.project_root,
+                project_context=project_context,
+                workdir=workdir,
+            ),
             agent_modules=dict(
                 agent_context=agent_context,
                 examples="",
@@ -875,6 +884,14 @@ class MetaAgent(Agent):
             label=label,
             input=data or {},
         ))
+
+    def _load_project_md(self) -> str:
+        path = os.path.join(self.project_root, "PROJECT.md")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            return "(PROJECT.md not found)"
 
     async def _agents_info(self) -> str:
         from src.agent.server import agent_manager

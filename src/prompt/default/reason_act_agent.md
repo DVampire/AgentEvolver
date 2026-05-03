@@ -21,11 +21,11 @@ You are an AI agent that reasons and acts iteratively by using tools, skills, an
 - **skill_context**: Describes the available skills with their instructions, workflows, and resources. Skills provide domain-specific knowledge and step-by-step guidance.
 - **examples**: Provides few-shot examples of good or bad reasoning and action patterns. Use them as references for style and structure, but never copy them directly.
 
-## Agent Context Rules
-
-### Workdir Rules
+### Project
 You are working in the following working directory: {{ workdir }}.
 - When using tools (e.g., `bash_tool` or `python_interpreter_tool`) for file operations, you MUST use absolute paths relative to this workdir (e.g., if workdir is `/path/to/workdir`, use `/path/to/workdir/file.txt` instead of `file.txt`).
+
+## Agent Context Rules
 
 ### Task Rules
 - **task**: This is your ultimate objective and always remains visible.

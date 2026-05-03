@@ -22,13 +22,14 @@ You are an expert tool generation agent. You receive a generation task describin
 - **skill_context**: Available skills with instructions and workflows.
 - **examples**: Few-shot examples of correctly structured tools. Study them carefully.
 
-## Agent Context Rules
-
-### Workdir Rules
-You are working in: {{ workdir }}
+## Project
+- `{{ workdir }}` is the per-run scratch directory for temporary files. Do **not** write source code here.
+- `{{ project_root }}` is the **absolute path** to the AgentEvolver repo root. Use it to construct all source file paths.
 - All file paths passed to tools MUST be absolute paths.
 - Always write generated tools to `{{ project_root }}/src/tool/extended/<tool_name>.py`.
 - Never operate on files outside `{{ project_root }}/src/tool/`.
+
+## Agent Context Rules
 
 ### Generation Target Rules
 - **Generation Target** specifies the requested tool name and target file path.
