@@ -62,14 +62,19 @@ _STATUS_EMOJI = {
 # Sub-task spec & record
 # ---------------------------------------------------------------------------
 
+class SubTaskInput(BaseModel):
+    task: str
+    files: List[str] = Field(default_factory=list)
+    target_name: Optional[str] = Field(default=None, description="Name of the tool/agent to optimize or evaluate.")
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+
 class SubTaskSpec(BaseModel):
     id: str = Field(default_factory=new_task_id)
-    description: str
-    agent_name: str
     category: SubTaskCategory = SubTaskCategory.ACTOR
+    name: str = Field(description="Agent name to dispatch this subtask to.")
+    input: SubTaskInput
     depends_on: List[str] = Field(default_factory=list)
-    files: List[str] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SubTaskRecord(BaseModel):
@@ -136,15 +141,17 @@ class MetaEvent(BaseModel):
 # Structured LLM outputs
 # ---------------------------------------------------------------------------
 
+class EscalationReply(BaseModel):
+    task_id: str = Field(description="Exact task_id from the ESCALATE event.")
+    reply: str = Field(description="Concrete, actionable guidance for the blocked sub-agent.")
+
+
 class MetaReactOutput(BaseModel):
     thinking: str
-    decision: Literal["continue", "wait", "stop", "reply_escalation"]
-    next_subtasks: List[SubTaskSpec] = Field(default_factory=list)
+    decision: Literal["continue", "wait", "stop"]
+    tasks: List[SubTaskSpec] = Field(default_factory=list)
+    escalation_replies: List[EscalationReply] = Field(default_factory=list)
     final_answer: str = ""
-    escalation_task_id: str = ""
-    escalation_reply: str = ""
-    request_evolution: bool = False
-    evolution_target_agent: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -212,11 +219,11 @@ class MetaPlanFile:
         lines.append("|---|-------|-----|--------|-------------|")
         for i, r in enumerate(self._records.values(), 1):
             emoji = _STATUS_EMOJI.get(r.status, "?")
-            cat = r.spec.category.value  # "user" | "evaluation" | "optimization"
-            desc = r.spec.description
+            cat = r.spec.category.value
+            desc = r.spec.input.task
             short_id = r.spec.id.split("_")[-1]  # last 8-char fragment
             lines.append(
-                f"| {i} | `{r.spec.agent_name}` | {cat} "
+                f"| {i} | `{r.spec.name}` | {cat} "
                 f"| {emoji} {r.status.value} | {desc} `[{short_id}]` |"
             )
             if r.result:
@@ -466,8 +473,6 @@ class MetaAgent(Agent):
                 # Final synthesis: LLM reads full plan and writes the answer.
                 react = await self._react(state, plan, completions, step=step, ctx=ctx)
                 state.final_answer = react.final_answer or self._join_results(state)
-                if react.request_evolution and react.evolution_target_agent:
-                    self._submit_evolution(react.evolution_target_agent, state.session_id)
                 break
 
             react = await self._react(state, plan, completions, step=step, ctx=ctx)
@@ -531,18 +536,15 @@ class MetaAgent(Agent):
             ctx=ctx,
         )
         react = await self._llm_react(messages)
-        logger.info(f"| 🤔 Escalation decision: {react.decision}")
+        logger.info(f"| 🤔 Escalation react decision: {react.decision}")
 
-        if react.decision == "reply_escalation":
-            self._resolve_escalation(state, react.escalation_task_id, react.escalation_reply)
-            plan.log(f"REPLY {react.escalation_task_id[:8]} — {react.escalation_reply}")
-            self._emit(state.session_id, step, "escalation_reply",
-                       f"Reply → {react.escalation_task_id[:8]}", {
-                "task_id": react.escalation_task_id,
-                "reply": react.escalation_reply,
-            })
-        else:
-            for e in escalations:
+        # _apply_react handles escalation_replies + any concurrent continue/stop.
+        await self._apply_react(state, plan, react, step=step)
+
+        # Fallback: unblock any escalations the LLM forgot to reply to.
+        resolved = {er.task_id for er in react.escalation_replies}
+        for e in escalations:
+            if e.task_id not in resolved:
                 self._resolve_escalation(
                     state, e.task_id,
                     "No specific guidance available. Use your best judgement or stop gracefully.",
@@ -550,9 +552,6 @@ class MetaAgent(Agent):
                 plan.log(f"REPLY {e.task_id[:8]} — (default: no guidance)")
                 self._emit(state.session_id, step, "escalation_reply",
                            f"Default reply → {e.task_id[:8]}", {"task_id": e.task_id})
-
-        if react.request_evolution and react.evolution_target_agent:
-            self._submit_evolution(react.evolution_target_agent, state.session_id)
 
         await plan.save()
         state.touch()
@@ -608,17 +607,27 @@ class MetaAgent(Agent):
     ) -> None:
         logger.info(f"| 🤔 React decision: {react.decision}")
 
+        # Always resolve escalation replies first — independent of plan advancement.
+        for er in react.escalation_replies:
+            self._resolve_escalation(state, er.task_id, er.reply)
+            plan.log(f"REPLY {er.task_id[:8]} — {er.reply}")
+            self._emit(state.session_id, step, "escalation_reply",
+                       f"Reply → {er.task_id[:8]}", {
+                "task_id": er.task_id,
+                "reply": er.reply,
+            })
+
         if react.decision == "continue":
-            for spec in react.next_subtasks:
+            for spec in react.tasks:
                 state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
-                plan.log(f"PLANNED {spec.id[:8]} — {spec.description} → {spec.agent_name}")
+                plan.log(f"PLANNED {spec.id[:8]} — {spec.input.task} → {spec.name}")
                 self._emit(state.session_id, step, "subtask_planned",
-                           f"Plan: {spec.description} → {spec.agent_name}", {
+                           f"Plan: {spec.input.task} → {spec.name}", {
                     "subtask_id": spec.id,
-                    "agent_name": spec.agent_name,
+                    "agent_name": spec.name,
                     "category": spec.category.value,
                     "depends_on": spec.depends_on,
-                    "description": spec.description,
+                    "description": spec.input.task,
                 })
             plan.update(state.subtask_records)
             self._dispatch(state, plan)
@@ -628,17 +637,6 @@ class MetaAgent(Agent):
             self._emit(state.session_id, step, "stop",
                        "Final answer ready", {"answer": react.final_answer})
             await self._cancel_running(state)
-
-        elif react.decision == "reply_escalation":
-            self._resolve_escalation(state, react.escalation_task_id, react.escalation_reply)
-            plan.log(f"REPLY {react.escalation_task_id[:8]} — {react.escalation_reply}")
-
-        if react.request_evolution and react.evolution_target_agent:
-            self._emit(state.session_id, step, "evolution_requested",
-                       f"Evolution → {react.evolution_target_agent}", {
-                "target_agent": react.evolution_target_agent,
-            })
-            self._submit_evolution(react.evolution_target_agent, state.session_id)
 
         await plan.save()
         state.touch()
@@ -656,19 +654,19 @@ class MetaAgent(Agent):
                 name=f"subtask-{record.spec.id}",
             )
             state._running_tasks[record.spec.id] = t
-            plan.log(f"DISPATCH {record.spec.id[:8]} → {record.spec.agent_name} [{sid}]")
+            plan.log(f"DISPATCH {record.spec.id[:8]} → {record.spec.name} [{sid}]")
             self._emit(state.session_id, 0, "subtask_dispatch",
-                       f"Dispatch → {record.spec.agent_name}: {record.spec.description}", {
+                       f"Dispatch → {record.spec.name}: {record.spec.input.task}", {
                 "subtask_id": record.spec.id,
                 "subtask_session_id": sid,
-                "agent_name": record.spec.agent_name,
+                "agent_name": record.spec.name,
                 "category": record.spec.category.value,
                 "step": record.step,
-                "description": record.spec.description,
+                "description": record.spec.input.task,
             })
             logger.info(
-                f"| 🚀 Dispatched '{record.spec.description}' "
-                f"→ {record.spec.agent_name} [{sid}]"
+                f"| 🚀 Dispatched '{record.spec.input.task}' "
+                f"→ {record.spec.name} [{sid}]"
             )
 
     async def _run_subtask(self, record: SubTaskRecord, state: MetaState) -> None:
@@ -678,7 +676,7 @@ class MetaAgent(Agent):
         session_id = record.session_id or subtask_session_id(
             state.session_id, task_id, record.step
         )
-        agent_name = record.spec.agent_name
+        agent_name = record.spec.name
 
         try:
             sub_agent = await agent_manager.get(agent_name)
@@ -708,12 +706,18 @@ class MetaAgent(Agent):
 
             # Only pass files that actually exist — LLM sometimes puts output
             # files (not yet created) into the files list by mistake.
-            existing_files = [f for f in (record.spec.files or []) if os.path.exists(f)]
+            existing_files = [f for f in (record.spec.input.files or []) if os.path.exists(f)]
+
+            # Build extra kwargs: target_name maps to tool_name for optimizer/evaluator agents
+            extra_kwargs = dict(record.spec.input.extra)
+            if record.spec.input.target_name is not None:
+                extra_kwargs.setdefault("tool_name", record.spec.input.target_name)
 
             response = await sub_agent(
-                task=record.spec.description,
+                task=record.spec.input.task,
                 files=existing_files or None,
                 ctx=ctx,
+                **extra_kwargs,
             )
 
             await state._inbox.put(MetaEvent(
@@ -835,7 +839,7 @@ class MetaAgent(Agent):
             record.mark_done(event.result or "")
             plan.log(f"DONE {event.task_id[:8]} — {event.result or ''}")
             self._emit(state.session_id, 0, "subtask_done",
-                       f"Done: {record.spec.description}", {
+                       f"Done: {record.spec.input.task}", {
                 "subtask_id": event.task_id,
                 "agent_name": event.agent_name,
                 "result": event.result or "",
@@ -845,7 +849,7 @@ class MetaAgent(Agent):
             record.mark_failed(event.error or "unknown error")
             plan.log(f"FAILED {event.task_id[:8]} — {event.error or 'unknown'}")
             self._emit(state.session_id, 0, "subtask_failed",
-                       f"Failed: {record.spec.description}", {
+                       f"Failed: {record.spec.input.task}", {
                 "subtask_id": event.task_id,
                 "agent_name": event.agent_name,
                 "error": event.error,
@@ -894,7 +898,7 @@ class MetaAgent(Agent):
                 lines.append(f"- FAILED [{e.task_id}]: {e.error}")
         lines.append("\n### Subtask Status")
         for r in state.subtask_records.values():
-            line = f"- [{r.status.value.upper()}] {r.spec.id}: {r.spec.description}"
+            line = f"- [{r.status.value.upper()}] {r.spec.id}: {r.spec.input.task}"
             if r.result:
                 line += f" → {r.result}"
             lines.append(line)
@@ -908,7 +912,7 @@ class MetaAgent(Agent):
 
     def _join_results(self, state: MetaState) -> str:
         return "\n\n".join(
-            f"[{r.spec.description}]\n{r.result}"
+            f"[{r.spec.input.task}]\n{r.result}"
             for r in state.done() if r.result
         ) or "Task completed."
 
@@ -920,20 +924,3 @@ class MetaAgent(Agent):
         if state._running_tasks:
             await asyncio.gather(*state._running_tasks.values(), return_exceptions=True)
 
-    def _submit_evolution(self, agent_name: str, trigger_session_id: str) -> None:
-        asyncio.create_task(self._do_evolution(agent_name, trigger_session_id))
-
-    async def _do_evolution(self, agent_name: str, trigger_session_id: str) -> None:
-        try:
-            from src.task.server import task_manager, TaskCategory
-            from src.task.types import TaskPriority
-            task_id = await task_manager.submit(
-                content=f"Evolve agent: {agent_name}",
-                category=TaskCategory.EVOLVER,
-                priority=TaskPriority.LOW,
-                entity_key=f"agent/{agent_name}",
-                metadata={"trigger_session_id": trigger_session_id},
-            )
-            logger.info(f"| 🧬 Evolution task submitted for '{agent_name}': {task_id}")
-        except Exception as exc:
-            logger.warning(f"| ⚠️  Failed to submit evolution task: {exc}")

@@ -28,10 +28,10 @@ class TaskStatus(str, Enum):
 class SubTaskCategory(str, Enum):
     """Category of a subtask within MetaAgent's plan.
 
-    USER subtasks directly serve the user's goal — MetaAgent waits for all
+    ACTOR subtasks directly serve the user's goal — MetaAgent waits for all
     of them before returning a final answer.
-    EVALUATION and OPTIMIZATION subtasks run in the background and do not
-    block the user result.
+    EVALUATOR and OPTIMIZER subtasks run in the background and do not block
+    the user result.
     """
 
     ACTOR     = "actor"

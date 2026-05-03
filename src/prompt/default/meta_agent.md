@@ -66,10 +66,11 @@ Read `plan` carefully, then decide what to do next. Choose exactly one `decision
 
 | decision | when to use |
 |---|---|
-| `continue` | Dispatch new subtasks now. Provide them in `next_subtasks`. |
+| `continue` | Dispatch new subtasks now. Populate `tasks` with one or more subtasks. |
 | `wait` | All needed subtasks are already running; nothing to dispatch yet. |
 | `stop` | The user goal is achieved (or unrecoverable). Provide the complete `final_answer`. |
-| `reply_escalation` | A sub-agent is blocked and waiting. Set `escalation_task_id` (exact task_id from the ESCALATE event) and provide a specific, actionable `escalation_reply`. |
+
+**Escalation replies are independent of `decision`.** Whenever a sub-agent is blocked, populate `escalation_replies` alongside your normal `decision`. You can reply to an escalation *and* continue dispatching new subtasks in the same turn.
 
 **First call** (`plan` shows no subtasks yet): always use `continue` with a full initial plan in `next_subtasks`.
 
@@ -99,31 +100,44 @@ Always respond with valid JSON. Do NOT add markdown fences or any text outside t
 ```text
 {
     "thinking": "Step-by-step reasoning about current state and what to do next.",
-    "decision": "continue | wait | stop | reply_escalation",
-    "next_subtasks": [
+    "decision": "continue | wait | stop",
+    "tasks": [
         {
-            "description": "Precise, self-contained task for the sub-agent.",
-            "agent_name": "exact_agent_name",
-            "category": "user",
-            "depends_on": [],
-            "files": [],
-            "metadata": {}
+            "category": "actor | evaluator | optimizer",
+            "name": "exact_agent_name",
+            "input": {
+                "task": "Precise, self-contained task description for the sub-agent.",
+                "files": [],
+                "target_name": null,
+                "extra": {}
+            },
+            "depends_on": []
         }
     ],
-    "final_answer": "",
-    "escalation_task_id": "",
-    "escalation_reply": "",
-    "request_evolution": false,
-    "evolution_target_agent": ""
+    "escalation_replies": [
+        {
+            "task_id": "exact task_id from the ESCALATE event",
+            "reply": "Concrete, actionable guidance for the blocked sub-agent."
+        }
+    ],
+    "final_answer": ""
 }
 ```
 
 Field rules:
-- `next_subtasks`: populate only when `decision == "continue"`, otherwise `[]`.
-- `final_answer`: populate only when `decision == "stop"` — must be a complete, user-facing answer that synthesises all sub-agent results.
-- `escalation_task_id` + `escalation_reply`: populate only when `decision == "reply_escalation"`. `escalation_task_id` must match the task_id in the ESCALATE event exactly.
-- `request_evolution` / `evolution_target_agent`: can accompany any decision. When set, MetaAgent should dispatch a subtask to an optimizer agent with `category: "optimizer"`.
-- Leave all unused fields at their default empty values.
+- `tasks`: populate when `decision == "continue"`, otherwise `[]`.
+- `tasks[].category`: `"actor"` for user-facing work (blocks final answer), `"evaluator"` for quality assessment (background), `"optimizer"` for tool improvement (background).
+- `tasks[].name`: exact registered agent name (e.g. `"code_agent"`, `"tool_optimize_agent"`, `"tool_evaluate_agent"`).
+- `tasks[].input.task`: precise task description the sub-agent will receive.
+- `tasks[].input.files`: list of existing file paths to pass as context. Leave `[]` for none.
+- `tasks[].input.target_name`: name of the tool/agent to optimize or evaluate. Set for optimizer/evaluator subtasks; `null` otherwise.
+- `tasks[].input.extra`: additional key-value pairs to pass to the sub-agent. Leave `{}` if not needed.
+- `tasks[].depends_on`: list of subtask IDs this task waits for. Empty `[]` means it runs immediately.
+- `escalation_replies`: always independent of `decision` — populate whenever a sub-agent is blocked. You can reply to an escalation and continue dispatching new tasks in the same turn.
+- `escalation_replies[].task_id`: must exactly match the task_id from the ESCALATE event.
+- `escalation_replies[].reply`: concrete, actionable guidance (e.g. "skip this step", "use default value X", "stop gracefully").
+- `final_answer`: populate only when `decision == "stop"` — a complete, user-facing answer synthesising all sub-agent results.
+- Leave all unused fields at their default empty values (`[]` / `""`).
 
 ---
 
