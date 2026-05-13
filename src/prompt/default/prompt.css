@@ -130,7 +130,20 @@ div.user > div > div::before {
   margin-bottom: 8px;
 }
 
-/* Suppress ::before on code blocks */
+/* ===== Code blocks — always dark, override any inherited background ===== */
+div.code {
+  background: var(--slate) !important;
+  color: #E8E6DE;
+  border-radius: 10px;
+  padding: 18px 20px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
 div.code::before {
   display: none;
 }
@@ -151,20 +164,6 @@ div.generation-target {
   word-break: break-word;
 }
 
-/* ===== Code blocks ===== */
-
-div.code {
-  background: var(--slate);
-  color: #E8E6DE;
-  border-radius: 10px;
-  padding: 18px 20px;
-  overflow-x: auto;
-  margin: 12px 0;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  white-space: pre;
-}
 
 code {
   font-family: var(--mono);
