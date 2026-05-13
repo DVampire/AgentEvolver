@@ -136,7 +136,7 @@ div.evaluation-target {
 }
 
 /* ===== Code blocks ===== */
-pre, code {
+div.code, code {
   background: #282c34;
   color: #abb2bf;
   border-radius: 4px;
@@ -144,10 +144,11 @@ pre, code {
   font-size: 12.5px;
 }
 
-pre {
+div.code {
   padding: 12px 16px;
   overflow-x: auto;
   margin: 8px 0;
+  white-space: pre;
 }
 
 code {
