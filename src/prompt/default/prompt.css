@@ -26,7 +26,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ===== Top-level sections ===== */
+/* ===== Top-level wrappers ===== */
 
 div.system {
   max-width: 900px;
@@ -34,6 +34,8 @@ div.system {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* counter scope for section numbering */
+  counter-reset: section;
 }
 
 div.user {
@@ -44,7 +46,7 @@ div.user {
   gap: 12px;
 }
 
-/* ===== Profile ===== */
+/* ===== Profile — clay accent card ===== */
 
 div.profile {
   border-left: 4px solid var(--clay);
@@ -55,7 +57,9 @@ div.profile {
   color: var(--slate);
 }
 
-/* ===== Named sections — card style ===== */
+div.profile::before { display: none; }
+
+/* ===== Top-level section cards ===== */
 
 div.language-settings,
 div.input-rules,
@@ -77,24 +81,69 @@ div.tool-convention {
   background: var(--white);
   border: 1.5px solid var(--gray-300);
   border-radius: 12px;
-  padding: 20px 24px;
+  padding: 24px 28px;
+  counter-increment: section;
 }
 
-/* ===== Section label (class name as eyebrow) ===== */
+/* Numbered serif heading generated from the class name */
+div.language-settings::before,
+div.input-rules::before,
+div.project::before,
+div.agent-context-rules::before,
+div.code-operation-rules::before,
+div.git-rules::before,
+div.action-rules::before,
+div.tool-context-rules::before,
+div.skill-context-rules::before,
+div.reasoning-rules::before,
+div.output-rules::before,
+div.subtask-design-rules::before,
+div.evaluation-dimensions::before,
+div.your-job-each-turn::before,
+div.output-format::before,
+div.example-rules::before,
+div.tool-convention::before {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  /* badge */
+  content: counter(section, decimal-leading-zero) "  " attr(class);
+}
 
-div[class]::before {
-  content: attr(class);
+/* Override: render as flex row with styled badge via a trick —
+   since CSS can't split content into two styled elements,
+   we use a gradient underline + mono prefix instead */
+div.language-settings::before,
+div.input-rules::before,
+div.project::before,
+div.agent-context-rules::before,
+div.code-operation-rules::before,
+div.git-rules::before,
+div.action-rules::before,
+div.tool-context-rules::before,
+div.skill-context-rules::before,
+div.reasoning-rules::before,
+div.output-rules::before,
+div.subtask-design-rules::before,
+div.evaluation-dimensions::before,
+div.your-job-each-turn::before,
+div.output-format::before,
+div.example-rules::before,
+div.tool-convention::before {
   display: block;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: var(--gray-500);
-  margin-bottom: 10px;
+  border-bottom: 1.5px solid var(--gray-150);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
 }
 
-/* ===== Nested rule divs ===== */
+/* ===== Nested rule blocks ===== */
 
 div.task-rules,
 div.memory-rules,
@@ -133,7 +182,59 @@ div.register-in-init {
   background: var(--gray-150);
   border-radius: 8px;
   padding: 14px 16px;
-  margin-top: 12px;
+  margin-top: 14px;
+}
+
+div.task-rules::before,
+div.memory-rules::before,
+div.read-before-edit::before,
+div.edit-strategy::before,
+div.verification::before,
+div.tracking-changes::before,
+div.committing::before,
+div.reverting::before,
+div.action-selection-rules::before,
+div.efficiency-guidelines::before,
+div.todo-rules::before,
+div.available-tools-format::before,
+div.available-tools-rules::before,
+div.available-skills-rules::before,
+div.tool-use-rules::before,
+div.skill-use-rules::before,
+div.general-reasoning-rules::before,
+div.available-sub-agents-rules::before,
+div.situation-rules::before,
+div.plan-rules::before,
+div.evaluation-target-rules::before,
+div.never-modify::before,
+div.test-execution::before,
+div.syntax-check::before,
+div.correctness::before,
+div.robustness::before,
+div.interface-compliance::before,
+div.code-quality::before,
+div.performance::before,
+div.optimization-target-rules::before,
+div.generation-target-rules::before,
+div.locate-the-tool-file-first::before,
+div.write-strategy::before,
+div.register-in-init::before {
+  display: block;
+  content: attr(class);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-500);
+  margin-bottom: 8px;
+}
+
+/* Suppress ::before on divs that should have none */
+div.system::before,
+div.user::before,
+div.code::before {
+  display: none;
 }
 
 /* ===== Context blocks (user section) ===== */
@@ -156,13 +257,31 @@ div.generation-target {
   word-break: break-word;
 }
 
+div.agent-context::before,
+div.tool-context::before,
+div.skill-context::before,
+div.examples::before,
+div.evaluation-target::before,
+div.optimization-target::before,
+div.generation-target::before {
+  display: block;
+  content: attr(class);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-500);
+  margin-bottom: 8px;
+}
+
 /* ===== Code blocks ===== */
 
 div.code {
   background: var(--slate);
   color: #E8E6DE;
   border-radius: 10px;
-  padding: 16px 20px;
+  padding: 18px 20px;
   overflow-x: auto;
   margin: 12px 0;
   font-family: var(--mono);
@@ -173,12 +292,11 @@ div.code {
 
 code {
   font-family: var(--mono);
-  font-size: 0.9em;
-  background: var(--gray-150);
+  font-size: 0.88em;
+  background: var(--oat);
   color: var(--slate);
   padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid var(--gray-300);
 }
 
 /* ===== Tables ===== */
@@ -190,7 +308,7 @@ table {
   border-radius: 8px;
   overflow: hidden;
   font-size: 13px;
-  margin: 12px 0;
+  margin: 14px 0;
 }
 
 th {
@@ -246,4 +364,5 @@ em {
 p {
   font-size: 14px;
   margin: 6px 0;
+  line-height: 1.6;
 }
