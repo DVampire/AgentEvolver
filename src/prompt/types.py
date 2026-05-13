@@ -27,12 +27,13 @@ def _render_template(template_str: str, modules: Dict[str, Any]) -> str:
 
 
 class _PromptHTMLParser(HTMLParser):
-    """SAX-style parser that extracts meta attributes and section contents."""
+    """SAX-style parser that extracts meta attributes and div.system/div.user contents."""
 
     def __init__(self):
         super().__init__()
         self.meta: Dict[str, str] = {}
         self._in_section: Optional[str] = None
+        self._depth: int = 0  # nesting depth inside the top-level section div
         self._buf: list = []
         self.sections: Dict[str, str] = {}
 
@@ -43,17 +44,36 @@ class _PromptHTMLParser(HTMLParser):
             content = attr_dict.get("content", "")
             if name:
                 self.meta[name] = content
-        elif tag == "section":
-            role = attr_dict.get("role", "")
-            if role in ("system", "user"):
-                self._in_section = role
+            return
+
+        if tag == "div" and self._in_section is None:
+            cls = attr_dict.get("class", "")
+            if cls in ("system", "user"):
+                self._in_section = cls
+                self._depth = 1
                 self._buf = []
+                return
+
+        if self._in_section is not None:
+            # Reconstruct opening tag verbatim so inner HTML is preserved
+            attrs_str = ""
+            for k, v in attrs:
+                attrs_str += f' {k}="{v}"' if v is not None else f' {k}'
+            self._buf.append(f"<{tag}{attrs_str}>")
+            if tag == "div":
+                self._depth += 1
 
     def handle_endtag(self, tag):
-        if tag == "section" and self._in_section:
-            self.sections[self._in_section] = "".join(self._buf).strip()
-            self._in_section = None
-            self._buf = []
+        if self._in_section is None:
+            return
+        if tag == "div":
+            self._depth -= 1
+            if self._depth == 0:
+                self.sections[self._in_section] = "".join(self._buf).strip()
+                self._in_section = None
+                return
+            # inner closing div — write to buf and fall through
+        self._buf.append(f"</{tag}>")
 
     def handle_data(self, data):
         if self._in_section is not None:
@@ -108,16 +128,17 @@ def reconstruct_prompt_text(prompt: "Prompt") -> str:
     desc = html_module.escape(prompt.description, quote=True)
     return (
         f'<!DOCTYPE html>\n'
-        f'<html>\n'
+        f'<html lang="en">\n'
         f'<head>\n'
+        f'  <meta charset="UTF-8">\n'
         f'  <meta name="name" content="{prompt.name}">\n'
         f'  <meta name="description" content="{desc}">\n'
         f'  <meta name="version" content="{prompt.version}">\n'
         f'  <meta name="require_grad" content="{req_grad}">\n'
         f'</head>\n'
         f'<body>\n\n'
-        f'<section role="system">\n{prompt.system_template}\n</section>\n\n'
-        f'<section role="user">\n{prompt.user_template}\n</section>\n\n'
+        f'<div class="system">\n{prompt.system_template}\n</div>\n\n'
+        f'<div class="user">\n{prompt.user_template}\n</div>\n\n'
         f'</body>\n'
         f'</html>\n'
     )
