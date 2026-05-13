@@ -1,10 +1,11 @@
 """Prompt Context Protocol (PCP) Types
 
 Core type definitions for the Prompt Context Protocol.
-Prompts are loaded from .md files; each file defines one agent prompt (system + user).
+Prompts are loaded from .html files; each file defines one agent prompt (system + user).
 """
 import re
-import yaml
+import html as html_module
+from html.parser import HTMLParser
 from typing import Any, Dict, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
 
@@ -25,35 +26,61 @@ def _render_template(template_str: str, modules: Dict[str, Any]) -> str:
     return JinjaTemplate(template_str).render(**modules)
 
 
+class _PromptHTMLParser(HTMLParser):
+    """SAX-style parser that extracts meta attributes and section contents."""
+
+    def __init__(self):
+        super().__init__()
+        self.meta: Dict[str, str] = {}
+        self._in_section: Optional[str] = None
+        self._buf: list = []
+        self.sections: Dict[str, str] = {}
+
+    def handle_starttag(self, tag, attrs):
+        attr_dict = dict(attrs)
+        if tag == "meta":
+            name = attr_dict.get("name", "")
+            content = attr_dict.get("content", "")
+            if name:
+                self.meta[name] = content
+        elif tag == "section":
+            role = attr_dict.get("role", "")
+            if role in ("system", "user"):
+                self._in_section = role
+                self._buf = []
+
+    def handle_endtag(self, tag):
+        if tag == "section" and self._in_section:
+            self.sections[self._in_section] = "".join(self._buf).strip()
+            self._in_section = None
+            self._buf = []
+
+    def handle_data(self, data):
+        if self._in_section is not None:
+            self._buf.append(data)
+
+    def handle_entityref(self, name):
+        if self._in_section is not None:
+            self._buf.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if self._in_section is not None:
+            self._buf.append(f"&#{name};")
+
+
 def parse_prompt_text(text: str) -> "PromptConfig":
-    """Parse a full md file text into a PromptConfig."""
-    fm_match = re.match(r'^---\n(.*?)\n---\n(.*)', text, re.DOTALL)
-    if not fm_match:
-        raise ValueError("Invalid md format: missing YAML frontmatter delimiters")
+    """Parse a full HTML file text into a PromptConfig."""
+    parser = _PromptHTMLParser()
+    parser.feed(text)
 
-    yaml_block = fm_match.group(1)
-    body = fm_match.group(2)
+    meta = parser.meta
+    name = meta.get("name", "")
+    description = meta.get("description", "")
+    version = str(meta.get("version", "1.0.0"))
+    require_grad = meta.get("require_grad", "false").lower() == "true"
 
-    fm = yaml.safe_load(yaml_block) or {}
-    name = fm.get("name", "")
-    description = fm.get("description", "")
-    version = str(fm.get("version", "1.0.0"))
-    require_grad = bool(fm.get("require_grad", False))
-
-    parts = re.split(r'<!--\s*role:\s*(system|user)\s*-->', body)
-    system_template = ""
-    user_template = ""
-    i = 0
-    while i < len(parts):
-        if parts[i].strip().lower() == "system" and i + 1 < len(parts):
-            # Strip trailing --- separator if present before <!-- role: user -->
-            system_template = re.sub(r'\n---\s*$', '', parts[i + 1]).strip()
-            i += 2
-        elif parts[i].strip().lower() == "user" and i + 1 < len(parts):
-            user_template = parts[i + 1].strip()
-            i += 2
-        else:
-            i += 1
+    system_template = parser.sections.get("system", "")
+    user_template = parser.sections.get("user", "")
 
     return PromptConfig(
         name=name,
@@ -66,29 +93,33 @@ def parse_prompt_text(text: str) -> "PromptConfig":
 
 
 def parse_prompt_file(path: str) -> "PromptConfig":
-    """Read and parse an .md file into a PromptConfig."""
+    """Read and parse an .html file into a PromptConfig."""
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     try:
         return parse_prompt_text(text)
     except Exception as e:
-        raise ValueError(f"Failed to parse md file {path}: {e}") from e
+        raise ValueError(f"Failed to parse html file {path}: {e}") from e
 
 
 def reconstruct_prompt_text(prompt: "Prompt") -> str:
-    """Rebuild the canonical md file text from a Prompt instance's stored fields."""
-    fm = {
-        "name": prompt.name,
-        "description": prompt.description,
-        "version": prompt.version,
-        "require_grad": prompt.require_grad,
-    }
-    yaml_block = yaml.dump(fm, default_flow_style=False, allow_unicode=True).rstrip()
+    """Rebuild the canonical HTML file text from a Prompt instance's stored fields."""
+    req_grad = "true" if prompt.require_grad else "false"
+    desc = html_module.escape(prompt.description, quote=True)
     return (
-        f"---\n{yaml_block}\n---\n\n"
-        f"<!-- role: system -->\n{prompt.system_template}\n\n"
-        f"---\n\n"
-        f"<!-- role: user -->\n{prompt.user_template}\n"
+        f'<!DOCTYPE html>\n'
+        f'<html>\n'
+        f'<head>\n'
+        f'  <meta name="name" content="{prompt.name}">\n'
+        f'  <meta name="description" content="{desc}">\n'
+        f'  <meta name="version" content="{prompt.version}">\n'
+        f'  <meta name="require_grad" content="{req_grad}">\n'
+        f'</head>\n'
+        f'<body>\n\n'
+        f'<section role="system">\n{prompt.system_template}\n</section>\n\n'
+        f'<section role="user">\n{prompt.user_template}\n</section>\n\n'
+        f'</body>\n'
+        f'</html>\n'
     )
 
 

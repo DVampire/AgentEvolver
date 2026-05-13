@@ -93,16 +93,16 @@ class PromptContextManager(BaseModel):
         logger.info("| ✅ Prompts initialization completed")
 
     async def _load_from_registry(self, template_dir: str) -> Dict[str, PromptConfig]:
-        """Scan template_dir for *.md files and parse each into a PromptConfig."""
+        """Scan template_dir for *.html files and parse each into a PromptConfig."""
         configs: Dict[str, PromptConfig] = {}
-        md_files = glob.glob(os.path.join(template_dir, "*.md"))
-        logger.info(f"| 🔍 Found {len(md_files)} md files in {template_dir}")
+        html_files = glob.glob(os.path.join(template_dir, "*.html"))
+        logger.info(f"| 🔍 Found {len(html_files)} html files in {template_dir}")
 
-        for path in md_files:
+        for path in html_files:
             try:
                 cfg = parse_prompt_file(path)
                 if not cfg.name:
-                    logger.warning(f"| ⚠️ Skipping {path}: missing 'name' in frontmatter")
+                    logger.warning(f"| ⚠️ Skipping {path}: missing 'name' in meta")
                     continue
                 configs[cfg.name] = cfg
                 logger.info(f"| 📝 Loaded prompt '{cfg.name}' from {os.path.basename(path)}")
