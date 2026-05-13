@@ -31,194 +31,94 @@ body {
 div.system {
   max-width: 900px;
   margin: 0 auto 32px;
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: 16px;
+  padding: 28px 32px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  /* counter scope for section numbering */
   counter-reset: section;
 }
 
 div.user {
   max-width: 900px;
   margin: 0 auto 32px;
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: 16px;
+  padding: 28px 32px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  counter-reset: section;
 }
 
-/* ===== Profile — clay accent card ===== */
+div.system::before,
+div.user::before {
+  display: block;
+  content: attr(class);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--gray-500);
+  border-bottom: 1.5px solid var(--gray-150);
+  padding-bottom: 14px;
+  margin-bottom: 4px;
+}
 
+/* ===== Direct children of system/user get numbered headers ===== */
+
+div.system > div,
+div.user > div {
+  background: var(--gray-150);
+  border-radius: 10px;
+  padding: 18px 20px;
+  counter-increment: section;
+}
+
+div.system > div::before,
+div.user > div::before {
+  display: block;
+  content: counter(section, decimal-leading-zero) "  ·  " attr(class);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-500);
+  border-bottom: 1px solid var(--gray-300);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+/* Profile: clay accent override, still inside system */
 div.profile {
   border-left: 4px solid var(--clay);
   background: var(--white);
-  border-radius: 0 12px 12px 0;
-  padding: 20px 24px;
+  border-radius: 0 10px 10px 0;
+  padding: 18px 20px;
   font-size: 15px;
   color: var(--slate);
 }
 
-div.profile::before { display: none; }
-
-/* ===== Top-level section cards ===== */
-
-div.language-settings,
-div.input-rules,
-div.project,
-div.agent-context-rules,
-div.code-operation-rules,
-div.git-rules,
-div.action-rules,
-div.tool-context-rules,
-div.skill-context-rules,
-div.reasoning-rules,
-div.output-rules,
-div.subtask-design-rules,
-div.evaluation-dimensions,
-div.your-job-each-turn,
-div.output-format,
-div.example-rules,
-div.tool-convention {
-  background: var(--white);
-  border: 1.5px solid var(--gray-300);
-  border-radius: 12px;
-  padding: 24px 28px;
-  counter-increment: section;
-}
-
-/* Numbered serif heading generated from the class name */
-div.language-settings::before,
-div.input-rules::before,
-div.project::before,
-div.agent-context-rules::before,
-div.code-operation-rules::before,
-div.git-rules::before,
-div.action-rules::before,
-div.tool-context-rules::before,
-div.skill-context-rules::before,
-div.reasoning-rules::before,
-div.output-rules::before,
-div.subtask-design-rules::before,
-div.evaluation-dimensions::before,
-div.your-job-each-turn::before,
-div.output-format::before,
-div.example-rules::before,
-div.tool-convention::before {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 16px;
-  /* badge */
-  content: counter(section, decimal-leading-zero) "  " attr(class);
-}
-
-/* Override: render as flex row with styled badge via a trick —
-   since CSS can't split content into two styled elements,
-   we use a gradient underline + mono prefix instead */
-div.language-settings::before,
-div.input-rules::before,
-div.project::before,
-div.agent-context-rules::before,
-div.code-operation-rules::before,
-div.git-rules::before,
-div.action-rules::before,
-div.tool-context-rules::before,
-div.skill-context-rules::before,
-div.reasoning-rules::before,
-div.output-rules::before,
-div.subtask-design-rules::before,
-div.evaluation-dimensions::before,
-div.your-job-each-turn::before,
-div.output-format::before,
-div.example-rules::before,
-div.tool-convention::before {
-  display: block;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--gray-500);
-  border-bottom: 1.5px solid var(--gray-150);
-  padding-bottom: 12px;
-  margin-bottom: 16px;
-}
-
 /* ===== Nested rule blocks ===== */
 
-div.task-rules,
-div.memory-rules,
-div.read-before-edit,
-div.edit-strategy,
-div.verification,
-div.tracking-changes,
-div.committing,
-div.reverting,
-div.action-selection-rules,
-div.efficiency-guidelines,
-div.todo-rules,
-div.available-tools-format,
-div.available-tools-rules,
-div.available-skills-rules,
-div.tool-use-rules,
-div.skill-use-rules,
-div.general-reasoning-rules,
-div.available-sub-agents-rules,
-div.situation-rules,
-div.plan-rules,
-div.evaluation-target-rules,
-div.never-modify,
-div.test-execution,
-div.syntax-check,
-div.correctness,
-div.robustness,
-div.interface-compliance,
-div.code-quality,
-div.performance,
-div.optimization-target-rules,
-div.generation-target-rules,
-div.locate-the-tool-file-first,
-div.write-strategy,
-div.register-in-init {
-  background: var(--gray-150);
+/* ===== Nested rule blocks (grandchildren of system/user) ===== */
+
+div.system > div > div,
+div.user > div > div {
+  background: var(--white);
   border-radius: 8px;
-  padding: 14px 16px;
-  margin-top: 14px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  counter-increment: none;
 }
 
-div.task-rules::before,
-div.memory-rules::before,
-div.read-before-edit::before,
-div.edit-strategy::before,
-div.verification::before,
-div.tracking-changes::before,
-div.committing::before,
-div.reverting::before,
-div.action-selection-rules::before,
-div.efficiency-guidelines::before,
-div.todo-rules::before,
-div.available-tools-format::before,
-div.available-tools-rules::before,
-div.available-skills-rules::before,
-div.tool-use-rules::before,
-div.skill-use-rules::before,
-div.general-reasoning-rules::before,
-div.available-sub-agents-rules::before,
-div.situation-rules::before,
-div.plan-rules::before,
-div.evaluation-target-rules::before,
-div.never-modify::before,
-div.test-execution::before,
-div.syntax-check::before,
-div.correctness::before,
-div.robustness::before,
-div.interface-compliance::before,
-div.code-quality::before,
-div.performance::before,
-div.optimization-target-rules::before,
-div.generation-target-rules::before,
-div.locate-the-tool-file-first::before,
-div.write-strategy::before,
-div.register-in-init::before {
+div.system > div > div::before,
+div.user > div > div::before {
   display: block;
   content: attr(class);
   font-family: var(--mono);
@@ -230,9 +130,7 @@ div.register-in-init::before {
   margin-bottom: 8px;
 }
 
-/* Suppress ::before on divs that should have none */
-div.system::before,
-div.user::before,
+/* Suppress ::before on code blocks */
 div.code::before {
   display: none;
 }
@@ -246,33 +144,11 @@ div.examples,
 div.evaluation-target,
 div.optimization-target,
 div.generation-target {
-  background: var(--white);
   border: 1.5px dashed var(--gray-300);
-  border-radius: 12px;
-  padding: 16px 20px;
   font-family: var(--mono);
   font-size: 12.5px;
-  color: var(--gray-700);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-div.agent-context::before,
-div.tool-context::before,
-div.skill-context::before,
-div.examples::before,
-div.evaluation-target::before,
-div.optimization-target::before,
-div.generation-target::before {
-  display: block;
-  content: attr(class);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--gray-500);
-  margin-bottom: 8px;
 }
 
 /* ===== Code blocks ===== */
