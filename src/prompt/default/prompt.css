@@ -1,66 +1,65 @@
-/* ===== Layout ===== */
+:root {
+  --ivory:    #FAF9F5;
+  --slate:    #141413;
+  --clay:     #D97757;
+  --oat:      #E3DACC;
+  --olive:    #788C5D;
+  --gray-150: #F0EEE6;
+  --gray-300: #D1CFC5;
+  --gray-500: #87867F;
+  --gray-700: #3D3D3A;
+  --white:    #FFFFFF;
+
+  --serif: ui-serif, Georgia, 'Times New Roman', serif;
+  --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
+  font-family: var(--sans);
+  background: var(--ivory);
+  color: var(--gray-700);
   line-height: 1.6;
-  color: #1a1a1a;
-  background: #f8f9fa;
-  margin: 0;
-  padding: 16px;
+  padding: 48px 32px 96px;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ===== Top-level sections ===== */
+
 div.system {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 20px 24px;
-  margin-bottom: 16px;
+  max-width: 900px;
+  margin: 0 auto 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 div.user {
-  background: #f0f4ff;
-  border: 1px solid #c5d0f0;
-  border-radius: 8px;
-  padding: 20px 24px;
-  margin-bottom: 16px;
+  max-width: 900px;
+  margin: 0 auto 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-/* ===== Named sections ===== */
+/* ===== Profile ===== */
+
 div.profile {
-  background: #eef6ee;
-  border-left: 4px solid #4caf50;
-  padding: 12px 16px;
-  border-radius: 0 6px 6px 0;
-  margin-bottom: 14px;
-  font-style: italic;
+  border-left: 4px solid var(--clay);
+  background: var(--white);
+  border-radius: 0 12px 12px 0;
+  padding: 20px 24px;
+  font-size: 15px;
+  color: var(--slate);
 }
 
-div.language-settings {
-  background: #fff8e1;
-  border-left: 4px solid #ffc107;
-  padding: 10px 16px;
-  border-radius: 0 6px 6px 0;
-  margin-bottom: 14px;
-}
+/* ===== Named sections — card style ===== */
 
-div.project {
-  background: #e8f4fd;
-  border-left: 4px solid #2196f3;
-  padding: 10px 16px;
-  border-radius: 0 6px 6px 0;
-  margin-bottom: 14px;
-}
-
-div.input-rules {
-  background: #fdf3e7;
-  border-left: 4px solid #ff9800;
-  padding: 10px 16px;
-  border-radius: 0 6px 6px 0;
-  margin-bottom: 14px;
-}
-
-/* ===== Rule groups ===== */
+div.language-settings,
+div.input-rules,
+div.project,
 div.agent-context-rules,
 div.code-operation-rules,
 div.git-rules,
@@ -73,15 +72,30 @@ div.subtask-design-rules,
 div.evaluation-dimensions,
 div.your-job-each-turn,
 div.output-format,
-div.example-rules {
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  padding: 14px 18px;
-  margin-bottom: 14px;
+div.example-rules,
+div.tool-convention {
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+/* ===== Section label (class name as eyebrow) ===== */
+
+div[class]::before {
+  content: attr(class);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-500);
+  margin-bottom: 10px;
 }
 
 /* ===== Nested rule divs ===== */
+
 div.task-rules,
 div.memory-rules,
 div.read-before-edit,
@@ -110,110 +124,126 @@ div.correctness,
 div.robustness,
 div.interface-compliance,
 div.code-quality,
-div.performance {
-  background: #fafafa;
-  border-left: 3px solid #9e9e9e;
-  padding: 8px 12px;
-  border-radius: 0 4px 4px 0;
-  margin-bottom: 10px;
+div.performance,
+div.optimization-target-rules,
+div.generation-target-rules,
+div.locate-the-tool-file-first,
+div.write-strategy,
+div.register-in-init {
+  background: var(--gray-150);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-top: 12px;
 }
 
 /* ===== Context blocks (user section) ===== */
+
 div.agent-context,
 div.tool-context,
 div.skill-context,
 div.examples,
-div.evaluation-target {
-  background: #fff;
-  border: 1px dashed #b0bec5;
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 13px;
+div.evaluation-target,
+div.optimization-target,
+div.generation-target {
+  background: var(--white);
+  border: 1.5px dashed var(--gray-300);
+  border-radius: 12px;
+  padding: 16px 20px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--gray-700);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 /* ===== Code blocks ===== */
-div.code, code {
-  background: #282c34;
-  color: #abb2bf;
-  border-radius: 4px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 12.5px;
-}
 
 div.code {
-  padding: 12px 16px;
+  background: var(--slate);
+  color: #E8E6DE;
+  border-radius: 10px;
+  padding: 16px 20px;
   overflow-x: auto;
-  margin: 8px 0;
+  margin: 12px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
   white-space: pre;
 }
 
 code {
-  padding: 2px 5px;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--gray-150);
+  color: var(--slate);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--gray-300);
 }
 
 /* ===== Tables ===== */
+
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
+  border: 1.5px solid var(--gray-300);
+  border-radius: 8px;
+  overflow: hidden;
   font-size: 13px;
+  margin: 12px 0;
 }
 
 th {
-  background: #37474f;
-  color: #fff;
-  padding: 8px 12px;
+  background: var(--gray-150);
+  color: var(--slate);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 10px 14px;
   text-align: left;
+  border-bottom: 1.5px solid var(--gray-300);
 }
 
 td {
-  padding: 7px 12px;
-  border-bottom: 1px solid #e0e0e0;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--gray-300);
+  vertical-align: top;
 }
 
-tr:nth-child(even) td {
-  background: #f5f5f5;
-}
+tr:last-child td { border-bottom: none; }
 
-/* ===== Typography ===== */
-strong {
-  color: #1565c0;
-}
-
-em {
-  color: #555;
-}
-
-h1, h2, h3, h4 {
-  margin: 12px 0 8px;
-  color: #212121;
-}
+/* ===== Lists ===== */
 
 ul, ol {
+  padding-left: 20px;
   margin: 6px 0;
-  padding-left: 22px;
 }
 
 li {
-  margin-bottom: 3px;
+  margin-bottom: 5px;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-/* ===== Section headers (div class as label) ===== */
-div[class]::before {
-  content: attr(class);
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #78909c;
-  background: #eceff1;
-  border-radius: 3px;
-  padding: 1px 6px;
-  margin-bottom: 6px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+li > ul, li > ol {
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+/* ===== Typography ===== */
+
+strong {
+  color: var(--slate);
+  font-weight: 600;
+}
+
+em {
+  color: var(--gray-500);
+  font-style: italic;
+}
+
+p {
+  font-size: 14px;
+  margin: 6px 0;
 }
