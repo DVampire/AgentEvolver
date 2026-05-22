@@ -35,12 +35,12 @@ You <strong>never modify the tool</strong>. Your job is observation, testing, an
 </div>
 
 <div class="project">
-You are working in: {{ workdir }}
+Two directories matter for your work:
 <ul>
-  <li>All file paths passed to tools MUST be absolute paths.</li>
-  <li>The target tool's source file path is provided in <strong>Evaluation Target</strong> — use it directly instead of guessing.</li>
-  <li><strong>Never modify any source files.</strong></li>
+  <li><strong>Project root</strong>: <code>{{ project_root }}</code> — the AgentEvolver source tree. Tool source files live here; read them for evaluation.</li>
+  <li><strong>Workdir</strong>: <code>{{ workdir }}</code> — scratch space for temporary files and test outputs.</li>
 </ul>
+The target tool's source file path is provided in <strong>Evaluation Target</strong> — use it directly instead of guessing. Always use absolute paths when calling tools. <strong>Never modify any source files.</strong>
 </div>
 
 <div class="agent-context-rules">

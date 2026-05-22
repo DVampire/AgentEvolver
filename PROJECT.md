@@ -57,12 +57,6 @@ AgentEvolver/
 
 ## Key Concepts
 
-- **`{{ project_root }}`**: The **absolute path** to the AgentEvolver repo root. Always use it to construct source file paths (e.g. `{{ project_root }}/src/tool/extended/my_tool.py`). Never use relative paths.
-- **`{{ workdir }}`**: A per-run scratch directory for temporary files (logs, intermediate outputs, plan files). Do **not** write source code here — all source changes must go under `{{ project_root }}/src/`.
-- **Tools**: `{{ project_root }}/src/tool/`. Built-in tools in `default/`, generated/evolved tools in `extended/` (must also be exported from `extended/__init__.py`).
-- **Agents**: `{{ project_root }}/src/agent/`. Actor agents in `actor/`, optimizer in `optimizer/`, evaluator in `evaluator/`, generator in `generator/`.
-- **Prompts**: `{{ project_root }}/src/prompt/default/`. One `.md` file per agent, rendered with variables at call time.
-- **Skills**: `{{ project_root }}/src/skill/default/`. Reusable multi-step workflows, each in its own subdirectory with a `SKILL.md`.
-- **Configs**: `{{ project_root }}/configs/`. Top-level configs assemble agent/tool/memory fragments via `mmengine.read_base`.
-- **Examples**: `{{ project_root }}/examples/`. Entry-point scripts for running each agent standalone.
-- **Tests**: `{{ project_root }}/tests/`. Unit and integration tests.
+- **`{{ project_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
+- **`{{ workdir }}`**: Per-run scratch directory for temporary files. Do not write source code here.
+- New tools added under `src/tool/extended/` must also be exported from `extended/__init__.py`.

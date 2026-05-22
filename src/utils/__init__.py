@@ -1,4 +1,4 @@
-from .path_utils import assemble_project_path
+from .path_utils import assemble_project_path, get_project_root
 from .singleton import Singleton
 from .utils import (
     _is_package_available,
@@ -44,6 +44,7 @@ from .plan_utils import (
 
 __all__ = [
     "assemble_project_path",
+    "get_project_root",
     "Singleton",
     "_is_package_available",
     "gather_with_concurrency",

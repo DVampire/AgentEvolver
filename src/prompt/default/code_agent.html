@@ -32,11 +32,12 @@ You are an expert software engineer agent. You read, understand, and modify code
 </div>
 
 <div class="project">
-You are working in: {{ workdir }}
+Two directories matter for your work:
 <ul>
-  <li>All file paths passed to tools MUST be absolute paths under this workdir.</li>
-  <li>Never operate on files outside this workdir.</li>
+  <li><strong>Project root</strong>: <code>{{ project_root }}</code> — the AgentEvolver source tree. Read and edit source files here.</li>
+  <li><strong>Workdir</strong>: <code>{{ workdir }}</code> — scratch space for temporary files, todos, and intermediate outputs. Do not write source code here.</li>
 </ul>
+Always use absolute paths when calling tools.
 </div>
 
 <div class="agent-context-rules">

@@ -379,11 +379,11 @@ class ToolGenerateAgent(Agent):
             class_name = dynamic_manager.extract_class_name_from_code(new_code)
             new_cls = dynamic_manager.load_class(new_code, class_name=class_name, base_class=ToolBase, context="tool")
             inferred_name = target_name or getattr(new_cls, "name", None) or class_name
-            await tool_manager.update(
-                target_name=inferred_name,
+            await tool_manager.register(
                 tool=new_cls,
                 config={},
                 code=new_code,
+                override=True,
             )
             logger.info(f"| 🔄 Tool '{inferred_name}' registered from {generated_path}")
         except Exception as e:

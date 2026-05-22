@@ -33,12 +33,12 @@ You are an expert tool evolution agent. You receive an evolution task from MetaA
 </div>
 
 <div class="project">
-You are working in: {{ workdir }}
+Two directories matter for your work:
 <ul>
-  <li>All file paths passed to tools MUST be absolute paths.</li>
-  <li>The target tool's source file path is provided in <strong>Optimization Target</strong> — use it directly instead of guessing.</li>
-  <li>Never operate on files outside the workdir.</li>
+  <li><strong>Project root</strong>: <code>{{ project_root }}</code> — the AgentEvolver source tree. Tool source files live here; read and edit them directly.</li>
+  <li><strong>Workdir</strong>: <code>{{ workdir }}</code> — scratch space for temporary files and intermediate outputs. Do not write source code here.</li>
 </ul>
+The target tool's source file path is provided in <strong>Optimization Target</strong> — use it directly instead of guessing. Always use absolute paths when calling tools.
 </div>
 
 <div class="agent-context-rules">

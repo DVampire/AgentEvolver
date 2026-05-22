@@ -1,5 +1,5 @@
 """Calculator tool for basic arithmetic operations."""
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
@@ -7,20 +7,15 @@ from src.registry import TOOL
 
 @TOOL.register_module(force=True)
 class CalculatorTool(Tool):
-    """A tool that performs basic arithmetic operations: add, subtract, multiply, divide."""
+    """A tool that performs basic arithmetic operations (add, subtract, multiply, divide)."""
 
     name: str = "calculator_tool"
     description: str = (
-        "Performs basic arithmetic operations (+, -, *, /) on two numbers.\
-"
-        "Args:\
-"
-        "- a (float): The first number.\
-"
-        "- b (float): The second number.\
-"
-        "- op (str): The operator, one of '+', '-', '*', '/'.\
-"
+        "Performs basic arithmetic operations between two numbers.\n"
+        "Args:\n"
+        "- a (float): The first number.\n"
+        "- b (float): The second number.\n"
+        "- op (str): The operation to perform ('+', '-', '*', '/').\n"
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=True)
@@ -30,16 +25,6 @@ class CalculatorTool(Tool):
 
     async def __call__(self, a: float, b: float, op: str, **kwargs) -> ToolResponse:
         """Execute the arithmetic operation."""
-        try:
-            a = float(a)
-            b = float(b)
-        except ValueError:
-            return ToolResponse(
-                success=False,
-                message="Error: 'a' and 'b' must be numbers.",
-                extra=ToolExtra(data={"error": "InvalidInput"})
-            )
-
         if op == '+':
             result = a + b
         elif op == '-':
@@ -48,21 +33,17 @@ class CalculatorTool(Tool):
             result = a * b
         elif op == '/':
             if b == 0:
-                return ToolResponse(
-                    success=False,
-                    message="Error: Division by zero is not allowed.",
-                    extra=ToolExtra(data={"error": "DivisionByZero"})
-                )
+                raise ZeroDivisionError("Division by zero is not allowed.")
             result = a / b
         else:
             return ToolResponse(
                 success=False,
-                message=f"Error: Unsupported operator '{op}'. Use '+', '-', '*', or '/'.",
-                extra=ToolExtra(data={"error": "UnsupportedOperator"})
+                message=f"Unsupported operator: {op}",
+                extra=ToolExtra(data={}),
             )
 
         return ToolResponse(
             success=True,
-            message=f"The result of {a} {op} {b} is {result}.",
+            message=f"The result of {a} {op} {b} is {result}",
             extra=ToolExtra(data={"result": result, "a": a, "b": b, "op": op}),
         )

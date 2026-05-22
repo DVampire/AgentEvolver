@@ -31,6 +31,7 @@ from src.utils import (
     assemble_project_path,
     dedent,
     get_file_info,
+    get_project_root,
 )
 from src.session import BaseContext
 
@@ -408,7 +409,8 @@ class Agent(BaseModel):
         """Build system+agent messages using prompt templates and context."""
 
         workdir = await self._resolve_workdir(ctx=ctx, **kwargs)
-        system_modules = dict(max_actions=self.max_actions, workdir=workdir)
+        project_root = get_project_root()
+        system_modules = dict(max_actions=self.max_actions, workdir=workdir, project_root=project_root)
         agent_message_modules = dict(task=task)
         
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
