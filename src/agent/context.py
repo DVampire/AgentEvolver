@@ -21,6 +21,7 @@ from src.session import SessionContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import AGENT
+from src.permission import permission_manager, PermissionMode
 
 
 class AgentContextManager(BaseModel):
@@ -375,12 +376,18 @@ class AgentContextManager(BaseModel):
             # Initialize agent if it has an initialize method
             if hasattr(agent_instance, "initialize"):
                 await agent_instance.initialize()
-            
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=agent_instance.name,
+                mode=PermissionMode(agent_instance.permission_mode),
+            )
+
             agent_config.instance = agent_instance
-            
+
             # Store agent metadata
             self._agent_configs[agent_config.name] = agent_config
-            
+
             logger.info(f"| 🔧 Agent {agent_config.name} created and stored")
             
             return agent_config
@@ -421,7 +428,13 @@ class AgentContextManager(BaseModel):
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
             agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict and "require_grad" in agent_config_dict else agent_instance.require_grad
-            
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=agent_name,
+                mode=PermissionMode(agent_instance.permission_mode),
+            )
+
             # Get or generate version from version_manager
             if version is None:
                 agent_version = await version_manager.get_version("agent", agent_name)

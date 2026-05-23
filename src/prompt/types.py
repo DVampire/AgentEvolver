@@ -152,6 +152,7 @@ class Prompt(BaseModel):
     description: str = Field(default="", description="Short description of the agent")
     version: str = Field(default="1.0.0", description="Version string")
     require_grad: bool = Field(default=False, description="Whether this prompt is a trainable variable")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     system_template: str = Field(default="", description="System prompt text (Jinja2)")
     user_template: str = Field(default="", description="User/agent message text (Jinja2)")
     variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Static Jinja2 render-context defaults")
@@ -191,6 +192,7 @@ class PromptConfig(BaseModel):
     description: str = Field(default="", description="Short description")
     version: str = Field(default="1.0.0", description="Version string")
     require_grad: bool = Field(default=False, description="Whether the whole prompt is a trainable variable")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     system_template: str = Field(default="", description="System prompt text")
     user_template: str = Field(default="", description="User/agent message text")
     variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Static Jinja2 render-context defaults")
@@ -202,6 +204,7 @@ class PromptConfig(BaseModel):
             description=self.description,
             version=self.version,
             require_grad=self.require_grad,
+            permission_mode=self.permission_mode,
             system_template=self.system_template,
             user_template=self.user_template,
             variables=self.variables or {},
@@ -214,6 +217,7 @@ class PromptConfig(BaseModel):
             "description": self.description,
             "version": self.version,
             "require_grad": self.require_grad,
+            "permission_mode": self.permission_mode,
             "system_template": self.system_template,
             "user_template": self.user_template,
             "variables": self.variables or {},
@@ -227,6 +231,7 @@ class PromptConfig(BaseModel):
             description=data.get("description", ""),
             version=data.get("version", "1.0.0"),
             require_grad=data.get("require_grad", False),
+            permission_mode=data.get("permission_mode", "workspace_write"),
             system_template=data.get("system_template", ""),
             user_template=data.get("user_template", ""),
             variables=data.get("variables", {}),

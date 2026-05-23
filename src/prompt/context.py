@@ -18,6 +18,7 @@ from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
 from src.prompt.types import Prompt, PromptConfig, parse_prompt_file, parse_prompt_text
 from src.message.types import Message
+from src.permission import permission_manager, PermissionMode
 
 
 class PromptContextManager(BaseModel):
@@ -86,6 +87,10 @@ class PromptContextManager(BaseModel):
                 self._prompt_history_versions[name] = {}
             self._prompt_history_versions[name][cfg.version] = cfg
             await version_manager.register_version("prompt", name, cfg.version)
+            permission_manager.register(
+                entity_name=name,
+                mode=PermissionMode(getattr(cfg, "permission_mode", "workspace_write")),
+            )
             logger.info(f"| 🔧 Prompt {name} v{cfg.version} ready")
 
         await self.save_to_json()

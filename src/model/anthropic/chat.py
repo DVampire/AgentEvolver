@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 import json
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra
+from src.model.types import LLMResponse, LLMExtra, TokenUsage
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -119,12 +119,11 @@ class ChatAnthropic(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response) -> Optional[Dict[str, Any]]:
+    def _get_usage(self, response) -> Optional["TokenUsage"]:
         """Extract usage information from Anthropic response."""
         if hasattr(response, 'usage') and response.usage is not None:
-            return response.usage.model_dump()
-        else:
-            return None
+            return TokenUsage.from_raw(response.usage.model_dump())
+        return None
 
     async def _build_params(
         self,
@@ -412,7 +411,8 @@ class ChatAnthropic(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=formatted_message,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
             # Handle structured output (if response_format was provided)
@@ -454,7 +454,8 @@ class ChatAnthropic(BaseModel):
                     return LLMResponse(
                         success=True,
                         message=formatted_message,
-                        extra=extra
+                        extra=extra,
+                        usage=usage,
                     )
                 except json.JSONDecodeError as e:
                     return LLMResponse(
@@ -482,7 +483,8 @@ class ChatAnthropic(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=message_text,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
         except Exception as e:

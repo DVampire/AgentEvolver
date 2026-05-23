@@ -1,11 +1,14 @@
 """EditFileTool — precise string-replace editing (Claude Code style)."""
 
+import difflib
 import os
-from typing import Dict, Any
+from typing import Any, Dict, List
+
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.permission import Operation, PermissionRequest, is_binary_file, permission_manager
 from src.registry import TOOL
+from src.tool.types import Tool, ToolExtra, ToolResponse
 
 _EDIT_FILE_TOOL_DESCRIPTION = """Edit a file by replacing an exact string with a new string.
 
@@ -44,7 +47,7 @@ class EditFileTool(Tool):
         """Replace old_string with new_string in the file at path.
 
         Args:
-            path: Absolute path to the file.
+            path:       Absolute path to the file.
             old_string: Exact text to replace (must appear exactly once).
             new_string: Replacement text.
         """
@@ -53,6 +56,16 @@ class EditFileTool(Tool):
                 return ToolResponse(success=False, message=f"Error: File not found: {path}")
             if not os.path.isfile(path):
                 return ToolResponse(success=False, message=f"Error: Path is not a file: {path}")
+            if is_binary_file(path):
+                return ToolResponse(success=False, message="Error: Binary file — use a dedicated binary tool.")
+
+            # Permission check (write op)
+            result = permission_manager.check(
+                self.name,
+                PermissionRequest(op=Operation.WRITE, target=path, content=new_string),
+            )
+            if not result.allowed:
+                return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
 
             with open(path, "r", encoding="utf-8") as f:
                 original = f.read()
@@ -80,17 +93,34 @@ class EditFileTool(Tool):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(updated)
 
-            old_lines = old_string.count("\n") + 1
-            new_lines = new_string.count("\n") + 1 if new_string else 0
-            delta = new_lines - old_lines
+            # Build unified diff for extra.data
+            orig_lines: List[str] = original.splitlines(keepends=True)
+            upd_lines: List[str] = updated.splitlines(keepends=True)
+            patch = list(difflib.unified_diff(
+                orig_lines, upd_lines,
+                fromfile=f"a/{os.path.basename(path)}",
+                tofile=f"b/{os.path.basename(path)}",
+                lineterm="",
+            ))
+
+            old_line_count = len(old_string.splitlines()) or 1
+            new_line_count = len(new_string.splitlines())
+            delta = new_line_count - old_line_count
             delta_str = f"+{delta}" if delta >= 0 else str(delta)
+
+            warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
             return ToolResponse(
                 success=True,
-                message=f"Edited {path} ({delta_str} lines)",
+                message=f"{warning_prefix}Edited {path} ({delta_str} lines)",
                 extra=ToolExtra(
                     file_path=path,
-                    data={"old_lines": old_lines, "new_lines": new_lines, "delta": delta},
+                    data={
+                        "old_lines": old_line_count,
+                        "new_lines": new_line_count,
+                        "delta": delta,
+                        "patch": patch,
+                    },
                 ),
             )
 

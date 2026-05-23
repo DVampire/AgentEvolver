@@ -17,6 +17,7 @@ from src.session import SessionContext
 from src.skill.types import SkillContext
 from src.utils import assemble_project_path, file_lock
 from src.version import version_manager
+from src.permission import permission_manager, PermissionMode
 
 
 DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent / "default"
@@ -110,6 +111,11 @@ class SkillContextManager(BaseModel):
             self._skill_history_versions[name][skill_config.version] = skill_config
 
             await version_manager.register_version("skill", name, skill_config.version)
+
+            permission_manager.register(
+                entity_name=name,
+                mode=PermissionMode(skill_config.permission_mode),
+            )
             logger.info(f"| 🎯 Skill '{name}' v{skill_config.version} loaded from {skill_config.skill_dir}")
 
         # 5. Persist

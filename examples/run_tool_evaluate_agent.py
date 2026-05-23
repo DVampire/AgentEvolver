@@ -90,7 +90,7 @@ async def main():
 
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize()
-    logger.info(f"| ✅ Models: {await model_manager.list()}")
+    logger.info(f"| ✅ Models: {model_manager.list()}")
 
     logger.info("| 📁 Initializing prompt manager...")
     await prompt_manager.initialize()

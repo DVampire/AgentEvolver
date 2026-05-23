@@ -9,6 +9,8 @@ from .write_file import WriteFileTool
 from .edit_file import EditFileTool
 from .list_dir import ListDirTool
 from .git import GitTool
+from .glob_search import GlobSearchTool
+from .grep_search import GrepSearchTool
 
 __all__ = [
     "BashTool",
@@ -22,4 +24,6 @@ __all__ = [
     "EditFileTool",
     "ListDirTool",
     "GitTool",
+    "GlobSearchTool",
+    "GrepSearchTool",
 ]

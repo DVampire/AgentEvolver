@@ -42,6 +42,21 @@ class TraceEventType(str, Enum):
     CUSTOM        = "custom"
 
 
+class EventProvenance(str, Enum):
+    """Where this event originated."""
+    LIVE      = "live"       # real agent execution
+    TEST      = "test"       # test/simulation run
+    REPLAY    = "replay"     # replayed from persisted trace
+    HEALTHCHECK = "healthcheck"  # health probe after compaction
+
+
+class EventConfidence(str, Enum):
+    """Confidence level — gates automated downstream actions."""
+    HIGH   = "high"     # safe to act on automatically
+    MEDIUM = "medium"   # human review recommended before acting
+    LOW    = "low"      # diagnostic only, do not auto-act
+
+
 class TraceEvent(BaseModel):
     """A single, immutable trace record produced during agent execution."""
 
@@ -80,11 +95,30 @@ class TraceEvent(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
+    # Event ordering and deduplication (lane_events.rs pattern)
+    seq_no: Optional[int] = Field(default=None, description="Monotonic per-session sequence number.")
+    fingerprint: Optional[str] = Field(default=None, description="SHA256(event_type+session_id+step+action) for dedup.")
+    provenance: EventProvenance = Field(default=EventProvenance.LIVE)
+    confidence: EventConfidence = Field(default=EventConfidence.HIGH)
+
     def to_dict(self) -> Dict[str, Any]:
         """Return JSON-serialisable dict."""
         d = self.model_dump()
         d["timestamp"] = self.timestamp.isoformat()
         return d
+
+
+def compute_event_fingerprint(event: TraceEvent) -> str:
+    """SHA256-based deduplication fingerprint for a trace event."""
+    import hashlib
+    parts = [
+        event.event_type.value,
+        event.session_id or "",
+        str(event.step_number or ""),
+        str(event.action_index or ""),
+        event.action_name or "",
+    ]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------

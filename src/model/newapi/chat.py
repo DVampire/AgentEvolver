@@ -13,7 +13,7 @@ except ImportError:
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra
+from src.model.types import LLMResponse, LLMExtra, TokenUsage
 from src.message.types import Message
 from src.model.newapi.serializer import NewAPIChatSerializer
 from src.model.newapi.rest import NewAPIClient
@@ -74,10 +74,8 @@ class ChatNewAPI(BaseModel):
             http_client=self.http_client,
         )
 
-    def _get_usage(self, response: ChatCompletion) -> Optional[Dict[str, Any]]:
-        if response.usage is not None:
-            return response.usage.model_dump()
-        return None
+    def _get_usage(self, response: ChatCompletion) -> Optional["TokenUsage"]:
+        return TokenUsage.from_raw(response.usage.model_dump() if response.usage else None)
 
     def _get_reasoning(self, message) -> Optional[str]:
         reasoning = None
@@ -230,7 +228,8 @@ class ChatNewAPI(BaseModel):
                             "finish_reason": finish_reason,
                             "reasoning": reasoning,
                         }
-                    )
+                    ),
+                    usage=usage,
                 )
 
             # Handle structured output
@@ -267,7 +266,8 @@ class ChatNewAPI(BaseModel):
                                 "reasoning": reasoning,
                             },
                             parsed_model=parsed_model
-                        )
+                        ),
+                        usage=usage,
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
                     return LLMResponse(
@@ -295,7 +295,8 @@ class ChatNewAPI(BaseModel):
                             "finish_reason": finish_reason,
                             "reasoning": reasoning,
                         }
-                    )
+                    ),
+                    usage=usage,
                 )
 
         except Exception as e:

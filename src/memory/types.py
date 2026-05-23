@@ -99,7 +99,8 @@ class Memory(BaseModel):
     description: str = Field(default="", description="The description of the memory system")
     save_path: Optional[str] = Field(default=None, description="Path to save/load memory JSON file")
     require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
-    
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+
     def __init__(self, **kwargs):
         """Initialize memory system."""
         super().__init__(**kwargs)
@@ -123,6 +124,7 @@ class MemoryConfig(BaseModel):
     name: str = Field(description="The name of the memory system")
     description: str = Field(description="The description of the memory system")
     require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the memory system")
     
     cls: Optional[Type[Memory]] = Field(default=None, description="The class of the memory system")
@@ -137,6 +139,7 @@ class MemoryConfig(BaseModel):
             "name": self.name,
             "description": self.description,
             "require_grad": self.require_grad,
+            "permission_mode": self.permission_mode,
             "version": self.version,
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
@@ -150,7 +153,8 @@ class MemoryConfig(BaseModel):
         """Validate the model from a dictionary."""
         name = data.get("name")
         description = data.get("description")
-        require_grad = data.get("require_grad", False)  # Default to False if not provided
+        require_grad = data.get("require_grad", False)
+        permission_mode = data.get("permission_mode", "workspace_write")
         version = data.get("version", "1.0.0")
         
         cls_ = None
@@ -180,6 +184,7 @@ class MemoryConfig(BaseModel):
             name=name,
             description=description,
             require_grad=require_grad,
+            permission_mode=permission_mode,
             version=version,
             cls=cls_,
             config=config,

@@ -1,11 +1,14 @@
 """WriteFileTool — create or overwrite a file with given content."""
 
+import difflib
 import os
-from typing import Dict, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.permission import Operation, PermissionRequest, permission_manager
 from src.registry import TOOL
+from src.tool.types import Tool, ToolExtra, ToolResponse
 
 _WRITE_FILE_TOOL_DESCRIPTION = """Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does.
 
@@ -40,28 +43,53 @@ class WriteFileTool(Tool):
         """Write content to a file.
 
         Args:
-            path: Absolute path to the file.
+            path:    Absolute path to the file.
             content: Full content to write.
         """
         try:
+            # Permission + size + workspace boundary check
+            result = permission_manager.check(
+                self.name,
+                PermissionRequest(op=Operation.WRITE, target=path, content=content),
+            )
+            if not result.allowed:
+                return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
+
             parent = os.path.dirname(path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
 
+            # Read original for diff (if exists)
+            original_lines: List[str] = []
             existed = os.path.exists(path)
+            if existed:
+                try:
+                    with open(path, "r", encoding="utf-8", errors="replace") as f:
+                        original_lines = f.readlines()
+                except OSError:
+                    pass
 
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
+            new_lines = content.splitlines(keepends=True)
+            patch = list(difflib.unified_diff(
+                original_lines, new_lines,
+                fromfile=f"a/{os.path.basename(path)}",
+                tofile=f"b/{os.path.basename(path)}",
+                lineterm="",
+            ))
+
             line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
             action = "Overwrote" if existed else "Created"
+            warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
             return ToolResponse(
                 success=True,
-                message=f"{action} {path} ({line_count} lines)",
+                message=f"{warning_prefix}{action} {path} ({line_count} lines)",
                 extra=ToolExtra(
                     file_path=path,
-                    data={"existed": existed, "line_count": line_count},
+                    data={"existed": existed, "line_count": line_count, "patch": patch},
                 ),
             )
 

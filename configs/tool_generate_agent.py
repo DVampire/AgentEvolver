@@ -6,6 +6,8 @@ with read_base():
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
+    from .tools.glob_search import glob_search_tool
+    from .tools.grep_search import grep_search_tool
     from .agents.tool_generate_agent import tool_generate_agent
 
 tag = "tool_generate_agent"
@@ -22,6 +24,8 @@ tool_names = [
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
+    "glob_search_tool",
+    "grep_search_tool",
 ]
 agent_names = [
     "tool_generate_agent",

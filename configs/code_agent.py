@@ -9,6 +9,8 @@ with read_base():
     from .tools.edit_file import edit_file_tool
     from .tools.list_dir import list_dir_tool
     from .tools.git import git_tool
+    from .tools.glob_search import glob_search_tool
+    from .tools.grep_search import grep_search_tool
     from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "code_agent"
@@ -33,6 +35,8 @@ tool_names = [
     "edit_file_tool",
     "list_dir_tool",
     "git_tool",
+    "glob_search_tool",
+    "grep_search_tool",
 ]
 skill_names = []
 

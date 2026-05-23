@@ -39,7 +39,8 @@ class Tool(BaseModel):
     description: str = Field(description="The description of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
-    
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+
     async def __call__(self, **kwargs) -> ToolResponse:
         """Call the tool with the given arguments."""
         raise NotImplementedError("All tools must implement __call__")
@@ -52,8 +53,9 @@ class ToolConfig(BaseModel):
     description: str = Field(description="The description of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the tool")
-    
+
     cls: Optional[Type[Tool]] = Field(default=None, description="The class of the tool")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the tool")
     instance: Optional[Tool] = Field(default=None, description="The instance of the tool")
@@ -73,8 +75,9 @@ class ToolConfig(BaseModel):
             "description": self.description,
             "metadata": self.metadata,
             "require_grad": self.require_grad,
+            "permission_mode": self.permission_mode,
             "version": self.version,
-            
+
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
             "instance": None,
@@ -94,7 +97,8 @@ class ToolConfig(BaseModel):
         name = data.get("name")
         description = data.get("description")
         metadata = data.get("metadata")
-        require_grad = data.get("require_grad", False)  # Default to False if not provided
+        require_grad = data.get("require_grad", False)
+        permission_mode = data.get("permission_mode", "workspace_write")
         version = data.get("version")
         
         cls_ = None
@@ -123,18 +127,19 @@ class ToolConfig(BaseModel):
         text = data.get("text")
         args_schema = dynamic_manager.deserialize_args_schema(data.get("args_schema"))
         
-        return cls(name=name, 
+        return cls(name=name,
             description=description,
             metadata=metadata,
             require_grad=require_grad,
+            permission_mode=permission_mode,
             version=version,
-            cls=cls_, 
-            config=config, 
-            instance=instance, 
+            cls=cls_,
+            config=config,
+            instance=instance,
             code=code,
-            function_calling=function_calling, 
-            text=text, 
-            args_schema=args_schema
+            function_calling=function_calling,
+            text=text,
+            args_schema=args_schema,
         )
 
 __all__ = [

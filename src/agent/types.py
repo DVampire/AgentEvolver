@@ -57,6 +57,7 @@ class AgentConfig(BaseModel):
     version: str = Field(default="1.0.0", description="Version of the agent")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
 
     cls: Optional[Any] = None
     config: Optional[Dict[str, Any]] = Field(default_factory=dict,description="The initialization configuration of the agent",)
@@ -84,16 +85,18 @@ class AgentConfig(BaseModel):
             "version": self.version,
             "require_grad": self.require_grad,
             
+            "permission_mode": self.permission_mode,
+
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
             "instance": None,
             "code": self.code,
-            
+
             "function_calling": self.function_calling,
             "text": self.text,
             "args_schema": dynamic_manager.serialize_args_schema(self.args_schema) if self.args_schema else None,
         }
-        
+
         return result
     
     @classmethod
@@ -104,7 +107,8 @@ class AgentConfig(BaseModel):
         metadata = data.get("metadata", {})
         version = data.get("version")
         require_grad = data.get("require_grad", False)
-        
+        permission_mode = data.get("permission_mode", "workspace_write")
+
         cls_ = None
         code = data.get("code")
         if code:
@@ -129,19 +133,22 @@ class AgentConfig(BaseModel):
 
         function_calling = data.get("function_calling")
         text = data.get("text")
-        args_schema = dynamic_manager.deserialize_args_schema(data.get("args_schema"))
+        _raw_schema = data.get("args_schema")
+        args_schema = dynamic_manager.deserialize_args_schema(_raw_schema) if _raw_schema is not None else None
         
-        return cls(name=name, 
+        return cls(
+            name=name,
             description=description,
             metadata=metadata,
             version=version,
             require_grad=require_grad,
-            cls=cls_, 
-            config=config, 
-            instance=instance, 
-            function_calling=function_calling, 
-            text=text, 
-            args_schema=args_schema
+            permission_mode=permission_mode,
+            cls=cls_,
+            config=config,
+            instance=instance,
+            function_calling=function_calling,
+            text=text,
+            args_schema=args_schema,
         )
 
     def __str__(self) -> str:
@@ -229,6 +236,7 @@ class Agent(BaseModel):
     metadata: Dict[str, Any] = Field(description="The metadata of the agent.")
     version: str = Field(default="1.0.0", description="Version of the agent")
     require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
 
     def __init__(
         self,

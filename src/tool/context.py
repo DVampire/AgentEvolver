@@ -22,6 +22,7 @@ from src.tool.types import ToolContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
+from src.permission import permission_manager, PermissionMode
 
 class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
@@ -372,12 +373,18 @@ class ToolContextManager(BaseModel):
             # Initialize tool if it has an initialize method
             if hasattr(tool_instance, "initialize"):
                 await tool_instance.initialize()
-            
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=tool_instance.name,
+                mode=PermissionMode(tool_instance.permission_mode),
+            )
+
             tool_config.instance = tool_instance
-            
+
             # Store tool metadata
             self._tool_configs[tool_config.name] = tool_config
-            
+
             logger.info(f"| 🔧 Tool {tool_config.name} created and stored")
             
             return tool_config
@@ -419,7 +426,13 @@ class ToolContextManager(BaseModel):
             tool_metadata = tool_instance.metadata
             # Get require_grad from tool_config_dict if provided, otherwise from tool_instance
             tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict and "require_grad" in tool_config_dict else tool_instance.require_grad
-            
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=tool_name,
+                mode=PermissionMode(tool_instance.permission_mode),
+            )
+
             # Get or generate version from version_manager
             if version is None:
                 tool_version = await version_manager.get_version("tool", tool_name)

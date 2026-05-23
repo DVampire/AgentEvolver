@@ -41,6 +41,7 @@ class SkillConfig(BaseModel):
     description: str = Field(description="Skill description from YAML frontmatter")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional YAML frontmatter fields")
     require_grad: bool = Field(default=False, description="Whether the skill is trainable")
+    permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the skill")
     skill_type: str = Field(default="tool", description="Skill type: 'sop' (returns instructions) or 'tool' (LLM executes)")
 
@@ -58,6 +59,7 @@ class SkillConfig(BaseModel):
             "description": self.description,
             "metadata": self.metadata,
             "require_grad": self.require_grad,
+            "permission_mode": self.permission_mode,
             "version": self.version,
             "skill_type": self.skill_type,
             "skill_dir": self.skill_dir,

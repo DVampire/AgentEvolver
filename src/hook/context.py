@@ -15,6 +15,61 @@ from src.logger import logger
 from src.message import Message
 
 
+# Model pricing per million tokens (USD) — approximate, updated 2025
+_MODEL_PRICING: Dict[str, Dict[str, float]] = {
+    "haiku":  {"input": 0.80,  "output": 4.00,  "cache_write": 1.00,  "cache_read": 0.08},
+    "sonnet": {"input": 3.00,  "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
+    "opus":   {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    "gpt-4o": {"input": 2.50,  "output": 10.00, "cache_write": 0.0,   "cache_read": 1.25},
+    "o3":     {"input": 10.00, "output": 40.00, "cache_write": 0.0,   "cache_read": 2.50},
+}
+_DEFAULT_PRICING = {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30}
+
+
+def _get_pricing(model_name: str) -> Dict[str, float]:
+    name = model_name.lower()
+    for key, pricing in _MODEL_PRICING.items():
+        if key in name:
+            return pricing
+    return _DEFAULT_PRICING
+
+
+class UsageAccumulator(BaseModel):
+    """Accumulates token usage and estimates cost across all LLM calls in a session."""
+    total_input: int = 0
+    total_output: int = 0
+    total_cache_write: int = 0
+    total_cache_read: int = 0
+    turn_count: int = 0
+
+    def add(self, input_tokens: int = 0, output_tokens: int = 0,
+            cache_write: int = 0, cache_read: int = 0) -> None:
+        self.total_input += input_tokens
+        self.total_output += output_tokens
+        self.total_cache_write += cache_write
+        self.total_cache_read += cache_read
+        self.turn_count += 1
+
+    def cost_usd(self, model_name: str = "") -> float:
+        p = _get_pricing(model_name)
+        M = 1_000_000
+        return (
+            self.total_input       * p["input"]       / M +
+            self.total_output      * p["output"]      / M +
+            self.total_cache_write * p["cache_write"] / M +
+            self.total_cache_read  * p["cache_read"]  / M
+        )
+
+    def summary_line(self, model_name: str = "") -> str:
+        cost = self.cost_usd(model_name)
+        return (
+            f"turns={self.turn_count} "
+            f"in={self.total_input} out={self.total_output} "
+            f"cache_w={self.total_cache_write} cache_r={self.total_cache_read} "
+            f"~${cost:.4f}"
+        )
+
+
 class HookSessionState(BaseModel):
     """Mutable state that hooks can read/write, scoped to one session."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -33,6 +88,9 @@ class HookSessionState(BaseModel):
     # File tracking (written by CodeAgent or PostAction hooks)
     modified_files: Set[str] = Field(default_factory=set)
     read_files: Set[str] = Field(default_factory=set)
+
+    # Accumulated token usage and cost across all LLM calls in this session
+    usage: UsageAccumulator = Field(default_factory=UsageAccumulator)
 
     # Arbitrary per-hook scratch space keyed by hook name
     scratch: Dict[str, Any] = Field(default_factory=dict)

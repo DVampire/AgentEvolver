@@ -1,11 +1,13 @@
 """ReadFileTool — read file contents with optional line range."""
 
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.permission import Operation, PermissionRequest, permission_manager
 from src.registry import TOOL
+from src.tool.types import Tool, ToolExtra, ToolResponse
 
 _READ_FILE_TOOL_DESCRIPTION = """Read the contents of a file. Returns the file content with line numbers prefixed.
 
@@ -41,15 +43,23 @@ class ReadFileTool(Tool):
         """Read file contents with line numbers.
 
         Args:
-            path: Absolute path to the file.
+            path:   Absolute path to the file.
             offset: First line to return (1-based).
-            limit: Maximum number of lines to return.
+            limit:  Maximum number of lines to return.
         """
         try:
             if not os.path.exists(path):
                 return ToolResponse(success=False, message=f"Error: File not found: {path}")
             if not os.path.isfile(path):
                 return ToolResponse(success=False, message=f"Error: Path is not a file: {path}")
+
+            # Permission + guard check (size, binary)
+            result = permission_manager.check(
+                self.name,
+                PermissionRequest(op=Operation.READ, target=path),
+            )
+            if not result.allowed:
+                return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
 
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.readlines()
@@ -59,9 +69,7 @@ class ReadFileTool(Tool):
             end = min(start + limit, total_lines)
             selected = all_lines[start:end]
 
-            numbered = "".join(
-                f"{start + i + 1}\t{line}" for i, line in enumerate(selected)
-            )
+            numbered = "".join(f"{start + i + 1}\t{line}" for i, line in enumerate(selected))
 
             truncation_note = ""
             if end < total_lines:
@@ -70,9 +78,11 @@ class ReadFileTool(Tool):
                     f"Use offset/limit to read more.]"
                 )
 
+            warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
+
             return ToolResponse(
                 success=True,
-                message=numbered + truncation_note,
+                message=warning_prefix + numbered + truncation_note,
                 extra=ToolExtra(
                     file_path=path,
                     data={"total_lines": total_lines, "start": start + 1, "end": end},

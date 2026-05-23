@@ -36,6 +36,45 @@ class ModelConfig(BaseModel):
     )
 
 
+class TokenUsage(BaseModel):
+    """Structured token usage from a single LLM API call."""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_read_tokens: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    @classmethod
+    def from_raw(cls, raw: Optional[Dict[str, Any]]) -> Optional["TokenUsage"]:
+        """Normalize provider-specific usage dicts into TokenUsage."""
+        if not raw:
+            return None
+        return cls(
+            input_tokens=(
+                raw.get("prompt_tokens") or raw.get("input_tokens") or
+                raw.get("prompt_token_count") or 0
+            ),
+            output_tokens=(
+                raw.get("completion_tokens") or raw.get("output_tokens") or
+                raw.get("candidates_token_count") or 0
+            ),
+            cache_write_tokens=raw.get("cache_creation_input_tokens") or 0,
+            cache_read_tokens=raw.get("cache_read_input_tokens") or 0,
+        )
+
+    def summary_line(self, model: str = "") -> str:
+        parts = [f"in={self.input_tokens}", f"out={self.output_tokens}"]
+        if self.cache_write_tokens:
+            parts.append(f"cache_write={self.cache_write_tokens}")
+        if self.cache_read_tokens:
+            parts.append(f"cache_read={self.cache_read_tokens}")
+        prefix = f"[{model}] " if model else ""
+        return f"{prefix}tokens: {', '.join(parts)}"
+
+
 class LLMExtra(BaseModel):
     """LLM Extra Response"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -53,6 +92,7 @@ class LLMResponse(BaseModel):
     success: bool = Field(description="Whether the model call was successful")
     message: str = Field(description="The message from the model call")
     extra: Optional[LLMExtra] = Field(default=None, description="The extra data from the model call")
-    
-__all__ = ["ModelConfig", "LLMResponse", "LLMExtra"]
+    usage: Optional["TokenUsage"] = None
+
+__all__ = ["ModelConfig", "LLMResponse", "LLMExtra", "TokenUsage"]
 

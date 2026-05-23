@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.version import version_manager
-from src.utils import (assemble_project_path, 
+from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
@@ -20,6 +20,7 @@ from src.session import SessionContext
 from src.memory.types import MemoryContext
 from src.dynamic import dynamic_manager
 from src.registry import MEMORY_SYSTEM
+from src.permission import permission_manager, PermissionMode
 
 class MemoryContextManager(BaseModel):
     """Global context manager for all memory systems with lazy loading support."""
@@ -387,7 +388,13 @@ class MemoryContextManager(BaseModel):
             memory_metadata = getattr(memory_instance, 'metadata', {})
             # Get require_grad from memory_config_dict if provided, otherwise from memory_instance
             memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
-            
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=memory_name,
+                mode=PermissionMode(getattr(memory_instance, "permission_mode", "workspace_write")),
+            )
+
             if not memory_name:
                 raise ValueError("Memory.name cannot be empty.")
             
@@ -740,12 +747,18 @@ class MemoryContextManager(BaseModel):
             # Initialize memory if it has an initialize method
             if hasattr(memory_instance, "initialize"):
                 await memory_instance.initialize()
-            
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=memory_config.name,
+                mode=PermissionMode(getattr(memory_instance, "permission_mode", "workspace_write")),
+            )
+
             memory_config.instance = memory_instance
-            
+
             # Store memory metadata
             self._memory_configs[memory_config.name] = memory_config
-            
+
             logger.info(f"| 🔧 Memory {memory_config.name} created and stored")
             
             return memory_config

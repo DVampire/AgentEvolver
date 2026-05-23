@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.message.types import Message
 from src.model.openai.serializer import OpenAIChatSerializer
-from src.model.types import LLMResponse, LLMExtra
+from src.model.types import LLMResponse, LLMExtra, TokenUsage
 from src.logger import logger
 from typing import TYPE_CHECKING
 
@@ -126,13 +126,9 @@ class ChatOpenAI(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response: ChatCompletion) -> Optional[Dict[str, Any]]:
+    def _get_usage(self, response: ChatCompletion) -> Optional["TokenUsage"]:
         """Extract usage information from response."""
-        if response.usage is not None:
-            usage = response.usage.model_dump()
-            return usage
-        else:
-            return None
+        return TokenUsage.from_raw(response.usage.model_dump() if response.usage else None)
 
     def _get_reasoning(self, message) -> Optional[str]:
         """Extract reasoning information from message."""
@@ -429,7 +425,8 @@ class ChatOpenAI(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=formatted_message,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
             # Handle structured output
@@ -475,7 +472,8 @@ class ChatOpenAI(BaseModel):
                     return LLMResponse(
                         success=True,
                         message=formatted_message,
-                        extra=extra
+                        extra=extra,
+                        usage=usage,
                     )
                 except json.JSONDecodeError as e:
                     return LLMResponse(
@@ -510,7 +508,8 @@ class ChatOpenAI(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=content,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
         except Exception as e:

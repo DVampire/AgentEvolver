@@ -9,5 +9,6 @@ tool_evaluate_agent = dict(
     max_steps=20,
     review_steps=5,
     require_grad=False,
+    permission_mode="read_only",
     use_memory=False,
 )

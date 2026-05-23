@@ -27,7 +27,7 @@ except ImportError:
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra
+from src.model.types import LLMResponse, LLMExtra, TokenUsage
 from src.message.types import Message
 from src.model.openrouter.serializer import OpenRouterChatSerializer
 from src.model.openrouter.rest import OpenRouterClient
@@ -140,13 +140,9 @@ class ChatOpenRouter(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response: ChatCompletion) -> Optional[Dict[str, Any]]:
+    def _get_usage(self, response: ChatCompletion) -> Optional["TokenUsage"]:
         """Extract usage information from response."""
-        if response.usage is not None:
-            usage = response.usage.model_dump()
-            return usage
-        else:
-            return None
+        return TokenUsage.from_raw(response.usage.model_dump() if response.usage else None)
 
     def _get_reasoning(self, message) -> Optional[str]:
         """Extract reasoning information from message."""
@@ -390,7 +386,8 @@ class ChatOpenRouter(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=formatted_message,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
             # Handle structured output
@@ -435,7 +432,8 @@ class ChatOpenRouter(BaseModel):
                     return LLMResponse(
                         success=True,
                         message=formatted_message,
-                        extra=extra
+                        extra=extra,
+                        usage=usage,
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
                     return LLMResponse(
@@ -470,7 +468,8 @@ class ChatOpenRouter(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=content,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
         except Exception as e:

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 import json
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra
+from src.model.types import LLMResponse, LLMExtra, TokenUsage
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.google.serializer import GoogleChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -104,12 +104,11 @@ class ChatGoogle(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response) -> Optional[Dict[str, Any]]:
+    def _get_usage(self, response) -> Optional["TokenUsage"]:
         """Extract usage information from Google Gemini response."""
         if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
-            return response.usage_metadata.model_dump()
-        else:
-            return None
+            return TokenUsage.from_raw(response.usage_metadata.model_dump())
+        return None
 
     async def _build_params(
         self,
@@ -415,7 +414,8 @@ class ChatGoogle(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=formatted_message,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
             # Handle structured output (if response_format was provided)
@@ -457,7 +457,8 @@ class ChatGoogle(BaseModel):
                     return LLMResponse(
                         success=True,
                         message=formatted_message,
-                        extra=extra
+                        extra=extra,
+                        usage=usage,
                     )
                 except json.JSONDecodeError as e:
                     return LLMResponse(
@@ -485,7 +486,8 @@ class ChatGoogle(BaseModel):
                 return LLMResponse(
                     success=True,
                     message=message_text,
-                    extra=extra
+                    extra=extra,
+                    usage=usage,
                 )
 
         except Exception as e:
