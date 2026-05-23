@@ -40,7 +40,7 @@ class SkillManagerServer(BaseModel):
         Args:
             skill_names: If provided, only these skills are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.work_dir, "skill"))
+        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "skill.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")

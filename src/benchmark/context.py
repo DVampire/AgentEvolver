@@ -43,7 +43,7 @@ class BenchmarkContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.work_dir, "benchmark"))
+            self.base_dir = assemble_project_path(os.path.join(config.default_dir, "benchmark"))
         logger.info(f"| 📁 Benchmark context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         

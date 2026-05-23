@@ -33,7 +33,7 @@ class TraceWriter:
         # session_id → summary dict for the index
         self._session_meta: Dict[str, Dict] = {}
 
-        self._index_path = os.path.join(workdir, "index.json")
+        self._index_path = os.path.join(work_dir, "index.json")
         self._task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------

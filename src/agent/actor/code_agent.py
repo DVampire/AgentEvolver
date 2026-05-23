@@ -82,18 +82,18 @@ class CodeAgent(Agent):
 
         # Inject a live workdir file snapshot so the agent can see current files
         # without needing to call list_dir_tool just to confirm state.
-        workdir = os.path.abspath(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+        work_dir = os.path.abspath(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
         try:
-            entries = sorted(os.listdir(workdir))
+            entries = sorted(os.listdir(work_dir))
             lines = []
             for name in entries:
-                suffix = "/" if os.path.isdir(os.path.join(workdir, name)) else ""
+                suffix = "/" if os.path.isdir(os.path.join(work_dir, name)) else ""
                 lines.append(f"  {name}{suffix}")
             snapshot = "\n".join(lines) if lines else "  (empty)"
         except Exception:
             snapshot = "  (unavailable)"
 
-        base["agent_context"] += f"\n\n### Workdir\n{workdir}\n{snapshot}"
+        base["agent_context"] += f"\n\n### Work Dir\n{work_dir}\n{snapshot}"
         return base
 
     # ------------------------------------------------------------------

@@ -52,7 +52,7 @@ class ToolContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.work_dir, "tool"))
+            self.base_dir = assemble_project_path(os.path.join(config.default_dir, "tool"))
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         if save_path is not None:
@@ -1051,8 +1051,8 @@ class ToolContextManager(BaseModel):
 
         if ctx is None:
             ctx = SessionContext()
-        workdir = getattr(ctx, "work_dir", None)
-        tool_ctx = ToolContext.from_session(ctx, tool_name=name, timeout=timeout, work_dir=workdir)
+        work_dir = getattr(ctx, "work_dir", None)
+        tool_ctx = ToolContext.from_session(ctx, tool_name=name, timeout=timeout, work_dir=work_dir)
 
         tool_info = await self.get_info(name)
         

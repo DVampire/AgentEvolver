@@ -47,7 +47,7 @@ class MemoryContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.work_dir, "memory"))
+            self.base_dir = assemble_project_path(os.path.join(config.default_dir, "memory"))
         logger.info(f"| 📁 Memory context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         if save_path is not None:

@@ -36,7 +36,7 @@ class ToolManagerServer(BaseModel):
             tool_names: List of tool names to initialize. If None, initialize all registered tools.
         """
         
-        self.base_dir = assemble_project_path(os.path.join(config.work_dir, "tool"))
+        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "tool"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "tool.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")

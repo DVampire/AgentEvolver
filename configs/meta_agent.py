@@ -15,6 +15,7 @@ with read_base():
     from .tools.list_dir import list_dir_tool
     from .tools.git import git_tool
     from .memory.general_memory_system import memory_system as general_memory_system
+    from .memory.file_system_memory import file_system_memory
 
 tag = "meta_agent"
 work_dir = f"work_dir/{tag}"
@@ -27,6 +28,7 @@ model_name = "openrouter/gemini-3-flash-preview"
 
 memory_names = [
     "general_memory_system",
+    "file_system_memory",
 ]
 agent_names = [
     "meta_agent",
@@ -50,15 +52,21 @@ skill_names = []
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(require_grad=False)
-todo_tool.update(base_dir="default/tool/todo", require_grad=False)
+todo_tool.update(base_dir="tool/todo", require_grad=False)
 git_tool.update(timeout=60)
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
-    base_dir="default/memory/general_memory_system",
+    base_dir="memory/general_memory_system",
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
+    require_grad=False,
+)
+
+file_system_memory.update(
+    base_dir="memory/file_system",
+    model_name=model_name,
     require_grad=False,
 )
 
@@ -110,7 +118,7 @@ tool_evaluate_agent.update(
 meta_agent.update(
     base_dir=extended_dir,
     model_name=model_name,
-    memory_name=memory_names[0],
+    memory_name="file_system_memory",
     require_grad=False,
     use_memory=True,
 )

@@ -365,7 +365,7 @@ class TodoTool(Tool):
     
     # Configuration parameters
     base_dir: str = Field(
-        default="workdir/todo_tool",
+        default="work_dir/todo_tool",
         description="The base directory for saving todo files."
     )
     

@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 others/
-workdir/
+work_dir/
 .claude/
 .DS_Store
 .idea/

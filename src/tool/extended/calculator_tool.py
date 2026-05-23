@@ -1,5 +1,5 @@
 """Calculator tool for basic arithmetic operations."""
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
@@ -25,21 +25,36 @@ class CalculatorTool(Tool):
 
     async def __call__(self, a: float, b: float, op: str, **kwargs) -> ToolResponse:
         """Execute the arithmetic operation."""
-        if op == '+':
-            result = a + b
-        elif op == '-':
-            result = a - b
-        elif op == '*':
-            result = a * b
-        elif op == '/':
-            if b == 0:
-                raise ValueError("Division by zero is not allowed.")
-            result = a / b
-        else:
-            raise ValueError(f"Unsupported operation: {op}. Use '+', '-', '*', or '/'.")
+        try:
+            if op == '+':
+                result = a + b
+            elif op == '-':
+                result = a - b
+            elif op == '*':
+                result = a * b
+            elif op == '/':
+                if b == 0:
+                    return ToolResponse(
+                        success=False,
+                        message="Division by zero error.",
+                        extra=ToolExtra(data={"error": "ZeroDivisionError"}),
+                    )
+                result = a / b
+            else:
+                return ToolResponse(
+                    success=False,
+                    message=f"Unsupported operator: {op}",
+                    extra=ToolExtra(data={"error": "ValueError"}),
+                )
 
-        return ToolResponse(
-            success=True,
-            message=f"The result of {a} {op} {b} is {result}",
-            extra=ToolExtra(data={"result": result})
-        )
+            return ToolResponse(
+                success=True,
+                message=f"The result of {a} {op} {b} is {result}",
+                extra=ToolExtra(data={"result": result}),
+            )
+        except Exception as e:
+            return ToolResponse(
+                success=False,
+                message=str(e),
+                extra=ToolExtra(data={"error": type(e).__name__}),
+            )

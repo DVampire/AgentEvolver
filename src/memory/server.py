@@ -33,7 +33,7 @@ class MemoryManagerServer(BaseModel):
         Args:
             memory_names: List of memory system names to initialize. If None, initialize all discovered memory systems.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.work_dir, "memory"))
+        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "memory"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "memory.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")

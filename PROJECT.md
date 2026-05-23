@@ -58,5 +58,5 @@ AgentEvolver/
 ## Key Concepts
 
 - **`{{ project_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
-- **`{{ workdir }}`**: Per-run scratch directory for temporary files. Do not write source code here.
+- **`{{ work_dir }}`**: Per-run scratch directory for temporary files. Do not write source code here.
 - New tools added under `src/tool/extended/` must also be exported from `extended/__init__.py`.

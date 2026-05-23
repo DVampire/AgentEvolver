@@ -130,6 +130,134 @@ div.user > div > div::before {
   margin-bottom: 8px;
 }
 
+/* ===== Custom semantic tags (flat, no-class style) ===== */
+
+div.system > :not(div):not(style),
+div.user > :not(div):not(style) {
+  display: block;
+  background: var(--gray-150);
+  border-radius: 10px;
+  padding: 18px 20px;
+  counter-increment: section;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+div.system > profile {
+  border-left: 4px solid var(--clay);
+  background: var(--white);
+  border-radius: 0 10px 10px 0;
+  font-size: 15px;
+  color: var(--slate);
+}
+
+div.system > output-schema,
+div.system > done-tool-schema,
+div.system > memory-format,
+div.system > tool-format-schema,
+div.system > skill-format-schema,
+div.system > available-tools-format,
+div.system > available-skills-format,
+div.system > test-template,
+div.system > tool-template,
+div.system > init-template,
+div.system > verification-template {
+  background: var(--slate) !important;
+  color: #E8E6DE;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+div.user > agent-context,
+div.user > tool-context,
+div.user > skill-context,
+div.user > examples,
+div.user > evaluation-target,
+div.user > optimization-target,
+div.user > generation-target,
+div.user > generation-target {
+  border: 1.5px dashed var(--gray-300);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ::before labels for custom tags */
+div.system > :not(div):not(style)::before,
+div.user > :not(div):not(style)::before {
+  display: block;
+  content: counter(section, decimal-leading-zero);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-500);
+  border-bottom: 1px solid var(--gray-300);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+/* Code-type tags: no header */
+div.system > output-schema::before,
+div.system > done-tool-schema::before,
+div.system > memory-format::before,
+div.system > tool-format-schema::before,
+div.system > skill-format-schema::before,
+div.system > available-tools-format::before,
+div.system > available-skills-format::before,
+div.system > test-template::before,
+div.system > tool-template::before,
+div.system > init-template::before,
+div.system > verification-template::before { display: none; }
+
+/* Named labels for major content sections */
+div.system > profile::before                  { content: counter(section, decimal-leading-zero) "  ·  profile"; }
+div.system > language-settings::before        { content: counter(section, decimal-leading-zero) "  ·  language"; }
+div.system > project::before                  { content: counter(section, decimal-leading-zero) "  ·  project"; }
+div.system > input-rules::before              { content: counter(section, decimal-leading-zero) "  ·  input"; }
+div.system > task-rules::before               { content: counter(section, decimal-leading-zero) "  ·  task"; }
+div.system > memory-rules::before             { content: counter(section, decimal-leading-zero) "  ·  memory"; }
+div.system > memory-rules-continued::before,
+div.system > memory-read-rules::before,
+div.system > memory-reading-rules::before     { content: counter(section, decimal-leading-zero) "  ·  memory-rules"; }
+div.system > action-rules::before             { content: counter(section, decimal-leading-zero) "  ·  actions"; }
+div.system > action-selection-rules::before   { content: counter(section, decimal-leading-zero) "  ·  action-selection"; }
+div.system > efficiency-guidelines::before    { content: counter(section, decimal-leading-zero) "  ·  efficiency"; }
+div.system > tool-context-rules::before       { content: counter(section, decimal-leading-zero) "  ·  tools"; }
+div.system > tool-use-rules::before           { content: counter(section, decimal-leading-zero) "  ·  tool-use"; }
+div.system > todo-rules::before               { content: counter(section, decimal-leading-zero) "  ·  todo"; }
+div.system > skill-context-rules::before      { content: counter(section, decimal-leading-zero) "  ·  skills"; }
+div.system > skill-use-rules::before          { content: counter(section, decimal-leading-zero) "  ·  skill-use"; }
+div.system > example-rules::before            { content: counter(section, decimal-leading-zero) "  ·  examples"; }
+div.system > reasoning-rules::before          { content: counter(section, decimal-leading-zero) "  ·  reasoning"; }
+div.system > output-rules::before             { content: counter(section, decimal-leading-zero) "  ·  output"; }
+div.system > sub-agents-rules::before         { content: counter(section, decimal-leading-zero) "  ·  sub-agents"; }
+div.system > situation-rules::before          { content: counter(section, decimal-leading-zero) "  ·  situation"; }
+div.system > execution-state-rules::before    { content: counter(section, decimal-leading-zero) "  ·  execution-state"; }
+div.system > decision-rules::before           { content: counter(section, decimal-leading-zero) "  ·  decision"; }
+div.system > subtask-design::before           { content: counter(section, decimal-leading-zero) "  ·  subtask-design"; }
+div.system > reasoning::before                { content: counter(section, decimal-leading-zero) "  ·  reasoning"; }
+div.system > output-format::before            { content: counter(section, decimal-leading-zero) "  ·  output-format"; }
+div.system > optimization-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target"; }
+div.system > code-operation-rules::before     { content: counter(section, decimal-leading-zero) "  ·  code-ops"; }
+div.system > evaluation-target-rules::before  { content: counter(section, decimal-leading-zero) "  ·  eval-target"; }
+div.system > canonical-workflow::before       { content: counter(section, decimal-leading-zero) "  ·  workflow"; }
+div.system > evaluation-dimensions::before    { content: counter(section, decimal-leading-zero) "  ·  dimensions"; }
+div.system > generation-target-rules::before  { content: counter(section, decimal-leading-zero) "  ·  gen-target"; }
+div.system > tool-convention::before          { content: counter(section, decimal-leading-zero) "  ·  convention"; }
+
+div.user > agent-context::before       { content: counter(section, decimal-leading-zero) "  ·  agent-context"; }
+div.user > tool-context::before        { content: counter(section, decimal-leading-zero) "  ·  tool-context"; }
+div.user > skill-context::before       { content: counter(section, decimal-leading-zero) "  ·  skill-context"; }
+div.user > examples::before            { content: counter(section, decimal-leading-zero) "  ·  examples"; }
+div.user > evaluation-target::before   { content: counter(section, decimal-leading-zero) "  ·  eval-target"; }
+div.user > optimization-target::before { content: counter(section, decimal-leading-zero) "  ·  optim-target"; }
+div.user > generation-target::before   { content: counter(section, decimal-leading-zero) "  ·  gen-target"; }
+
 /* ===== Code blocks — always dark, override any inherited background ===== */
 div.code {
   background: var(--slate) !important;

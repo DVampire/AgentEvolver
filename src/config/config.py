@@ -10,11 +10,15 @@ def process_general(config: MMConfig) -> MMConfig:
     work_dir = str(assemble_project_path(config.work_dir))
     config.work_dir = work_dir
 
-    default_dir = str(assemble_project_path(config.default_dir))
-    config.default_dir = default_dir
+    if "default_dir" in config:
+        default_dir = str(assemble_project_path(config.default_dir))
+        config.default_dir = default_dir
+    else:
+        default_dir = work_dir
 
-    extended_dir = str(assemble_project_path(config.extended_dir))
-    config.extended_dir = extended_dir
+    if "extended_dir" in config:
+        extended_dir = str(assemble_project_path(config.extended_dir))
+        config.extended_dir = extended_dir
 
     log_path = os.path.join(default_dir, config.log_path)
     config.log_path = log_path

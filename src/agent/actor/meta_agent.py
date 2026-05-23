@@ -12,8 +12,9 @@ Architecture
   completion events (batched with a 100 ms window before one LLM REACT call).
 * Completion flow: all USER subtasks terminal → one final LLM synthesis call
   → ``state.final_answer`` set.
-* A ``MetaPlanFile`` is written to disk throughout execution — the LLM reads it
-  as ``plan_context`` on every REACT call so it can make informed decisions.
+* Execution state is persisted as an HTML file via FileSystemMemory; the LLM
+  reads it as ``plan_context`` on every REACT call so it can make informed
+  decisions.
 
 Session naming
 --------------
@@ -45,7 +46,6 @@ from src.task.types import TaskStatus, SubTaskCategory
 from src.trace.server import trace_manager
 from src.trace.types import TraceEvent, TraceEventType, agent_start_event, agent_end_event
 from src.utils.name_utils import new_session_id, new_task_id, subtask_session_id
-from src.visual import css_path
 
 # Collect completion events arriving within this window before one LLM REACT call.
 _BATCH_WINDOW_S = 0.1
@@ -156,198 +156,6 @@ class MetaReactOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# MetaPlanFile — lightweight execution log written to disk
-# ---------------------------------------------------------------------------
-
-def _he(text: str) -> str:
-    """Minimal HTML escaping."""
-    return (text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;"))
-
-
-_STATUS_CSS = {
-    TaskStatus.DONE:      ("done",      "●"),
-    TaskStatus.PENDING:   ("pending",   "●"),
-    TaskStatus.RUNNING:   ("running",   "●"),
-    TaskStatus.FAILED:    ("failed",    "●"),
-    TaskStatus.CANCELLED: ("cancelled", "●"),
-}
-
-
-class MetaPlanFile:
-    """Append-only execution log for one MetaAgent invocation, rendered as HTML."""
-
-    def __init__(self, path: str, task: str, session_id: str) -> None:
-        self.path = path
-        self.task = task
-        self.session_id = session_id
-        self._records: Dict[str, SubTaskRecord] = {}
-        self._log: List[str] = []
-        self._result: Optional[str] = None
-
-    # ------------------------------------------------------------------
-    # Mutation
-    # ------------------------------------------------------------------
-
-    def update(self, records: Dict[str, SubTaskRecord]) -> None:
-        self._records = dict(records)
-
-    def log(self, msg: str) -> None:
-        ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        self._log.append(f"[{ts}] {msg}")
-
-    def finalize(self, result: str) -> None:
-        self._result = result
-        self.log("DONE — final answer written")
-
-    # ------------------------------------------------------------------
-    # Rendering — HTML
-    # ------------------------------------------------------------------
-
-    def render(self) -> str:
-        css_rel = os.path.relpath(css_path("plan.css"), start=os.path.dirname(self.path))
-        parts = [
-            "<!DOCTYPE html>",
-            '<html lang="en">',
-            "<head>",
-            '  <meta charset="UTF-8">',
-            '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
-            f'  <title>Plan — {_he(self.session_id)}</title>',
-            f'  <link rel="stylesheet" href="{css_rel}">',
-            "</head>",
-            "<body>",
-            '<div class="plan-page">',
-            self._render_header(),
-            self._render_subtasks(),
-            self._render_log(),
-        ]
-        if self._result is not None:
-            parts.append(self._render_result())
-        parts += ["</div>", "</body>", "</html>"]
-        return "\n".join(parts)
-
-    def _render_header(self) -> str:
-        return (
-            '<div class="plan-header">'
-            '<div class="plan-label">Plan</div>'
-            f'<p class="plan-task">{_he(self.task)}</p>'
-            f'<code class="plan-session">{_he(self.session_id)}</code>'
-            "</div>"
-        )
-
-    def _render_subtasks(self) -> str:
-        lines = [
-            '<div class="plan-section subtasks-section">',
-            "<h2>Subtasks</h2>",
-        ]
-        if not self._records:
-            lines += ['<p class="empty">No subtasks yet.</p>', "</div>"]
-            return "\n".join(lines)
-
-        lines += [
-            '<table class="subtasks-table">',
-            "<thead><tr>"
-            "<th>#</th><th>Agent</th><th>Category</th><th>Status</th><th>Description</th>"
-            "</tr></thead>",
-            "<tbody>",
-        ]
-        for i, r in enumerate(self._records.values(), 1):
-            css_cls, dot = _STATUS_CSS.get(r.status, ("pending", "●"))
-            badge = (
-                f'<span class="status-badge status-{css_cls}">'
-                f'<span class="status-dot"></span>{_he(r.status.value)}'
-                f"</span>"
-            )
-            short_id = r.spec.id.split("_")[-1]
-            desc_html = (
-                f'<span class="subtask-desc">{_he(r.spec.input.task)}</span>'
-                f'<span class="subtask-id">{_he(short_id)}</span>'
-            )
-            lines.append(
-                f'<tr class="subtask-row">'
-                f'<td class="subtask-num">{i}</td>'
-                f'<td><code class="subtask-agent">{_he(r.spec.name)}</code></td>'
-                f'<td class="subtask-cat">{_he(r.spec.category.value)}</td>'
-                f"<td>{badge}</td>"
-                f"<td>{desc_html}</td>"
-                f"</tr>"
-            )
-            if r.result:
-                lines.append(
-                    f'<tr class="result-row">'
-                    f"<td colspan=\"5\">"
-                    f'<span class="result-arrow">↳</span>'
-                    f'<span class="result-text">{_he(r.result)}</span>'
-                    f"</td></tr>"
-                )
-            elif r.error:
-                lines.append(
-                    f'<tr class="result-row">'
-                    f"<td colspan=\"5\">"
-                    f'<span class="result-arrow">↳</span>'
-                    f'<span class="error-text">{_he(r.error)}</span>'
-                    f"</td></tr>"
-                )
-        lines += ["</tbody>", "</table>", "</div>"]
-        return "\n".join(lines)
-
-    def _render_log(self) -> str:
-        lines = [
-            '<div class="plan-section log-section">',
-            "<h2>Log</h2>",
-            '<div class="log-timeline">',
-        ]
-        if not self._log:
-            lines += ['<p class="empty">No entries yet.</p>']
-        else:
-            for entry in self._log:
-                # entry format: "[HH:MM:SS] MESSAGE"
-                if entry.startswith("[") and "] " in entry:
-                    ts, _, msg = entry[1:].partition("] ")
-                else:
-                    ts, msg = "", entry
-                # bold the first word of the message (e.g. START, PLANNED, DONE)
-                words = msg.split(" ", 1)
-                if len(words) == 2:
-                    msg_html = f"<strong>{_he(words[0])}</strong> {_he(words[1])}"
-                else:
-                    msg_html = _he(msg)
-                lines.append(
-                    f'<div class="log-entry">'
-                    f'<span class="log-ts">{_he(ts)}</span>'
-                    f'<span class="log-dot"></span>'
-                    f'<span class="log-msg">{msg_html}</span>'
-                    f"</div>"
-                )
-        lines += ["</div>", "</div>"]
-        return "\n".join(lines)
-
-    def _render_result(self) -> str:
-        return (
-            '<div class="plan-section result-section">'
-            "<h2>Result</h2>"
-            f"<pre>{_he(self._result)}</pre>"
-            "</div>"
-        )
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
-    async def save(self) -> None:
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        content = self.render()
-        await asyncio.to_thread(self._write, content)
-
-    def _write(self, content: str) -> None:
-        with open(self.path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-
-
-# ---------------------------------------------------------------------------
 # Per-invocation state
 # ---------------------------------------------------------------------------
 
@@ -393,7 +201,7 @@ class MetaState(BaseModel):
         ]
 
     def is_complete(self) -> bool:
-        user = [r for r in self.subtask_records.values() if r.spec.category == SubTaskCategory.ACTOR]  # only USER blocks completion
+        user = [r for r in self.subtask_records.values() if r.spec.category == SubTaskCategory.ACTOR]
         return bool(user) and all(
             r.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED)
             for r in user
@@ -450,7 +258,6 @@ class MetaAgent(Agent):
             **kwargs,
         )
         self.evolution_score_threshold = evolution_score_threshold
-        # project_root: two levels up from this file (src/agent/actor/ → repo root)
         from pathlib import Path
         self.project_root = str(Path(__file__).resolve().parents[3])
 
@@ -470,9 +277,6 @@ class MetaAgent(Agent):
         session_id = new_session_id()
         state = MetaState(session_id=session_id, user_task=task)
 
-        plan_path = os.path.join(self.base_dir, f"{session_id}.plan.html")
-        plan = MetaPlanFile(path=plan_path, task=task, session_id=session_id)
-
         hook_ctx = AgentContext(id=session_id, agent_name=self.name)
         await hook_manager(
             hook_ctx, HookEvent.ON_START,
@@ -491,7 +295,7 @@ class MetaAgent(Agent):
         _t0 = _time.monotonic()
 
         try:
-            final_answer = await self._run(state, plan, ctx=hook_ctx)
+            final_answer = await self._run(state, ctx=hook_ctx)
             success = True
         except Exception as exc:
             logger.error(f"| ❌ MetaAgent fatal error: {exc}", exc_info=True)
@@ -500,8 +304,10 @@ class MetaAgent(Agent):
         finally:
             await self._cancel_running(state)
 
-        plan.finalize(final_answer)
-        await plan.save()
+        await self._mem_emit(session_id, "final_result", {
+            "result": final_answer,
+            "success": success,
+        })
 
         await hook_manager(
             hook_ctx, HookEvent.ON_STOP,
@@ -518,13 +324,22 @@ class MetaAgent(Agent):
             duration_ms=(_time.monotonic() - _t0) * 1000,
         ))
 
+        memory_path = ""
+        if self.memory_name:
+            try:
+                info = await memory_manager.get_info(self.memory_name)
+                if info and info.instance:
+                    memory_path = os.path.join(info.instance.base_dir, f"{session_id}.memory.html")
+            except Exception:
+                pass
+
         logger.info(f"| ✅ MetaAgent done (success={success})")
         return AgentResponse(
             success=success,
             message=final_answer or "",
             extra=AgentExtra(data={
                 "session_id": session_id,
-                "plan_path": plan_path,
+                "memory_path": memory_path,
                 "state": state.model_dump(),
             }),
         )
@@ -533,13 +348,11 @@ class MetaAgent(Agent):
     # Main run loop
     # ------------------------------------------------------------------
 
-    async def _run(self, state: MetaState, plan: MetaPlanFile, ctx: Optional[AgentContext] = None) -> str:
-        # Cold-start: no subtasks yet — first REACT call produces the initial plan.
-        plan.log("START — requesting initial plan")
-        await plan.save()
+    async def _run(self, state: MetaState, ctx: Optional[AgentContext] = None) -> str:
+        await self._record(state.session_id, 0, "start", "START", "requesting initial plan", "running")
 
-        react = await self._react(state, plan, events=[], step=0, ctx=ctx)
-        await self._apply_react(state, plan, react, step=0)
+        react = await self._react(state, events=[], step=0, ctx=ctx)
+        await self._apply_react(state, react, step=0)
 
         step = 0
         while step < self.max_steps:
@@ -547,32 +360,27 @@ class MetaAgent(Agent):
 
             escalations, completions = await self._drain(state)
 
-            # Escalations are high-priority: handle immediately without batching.
             if escalations:
-                await self._reply_escalations(state, plan, escalations, step=step, ctx=ctx)
+                await self._reply_escalations(state, escalations, step=step, ctx=ctx)
 
-            # Apply completion events to records and sync plan table.
             for event in completions:
-                self._apply(state, plan, event)
+                await self._apply(state, event)
 
             if completions:
-                plan.update(state.subtask_records)
-                await plan.save()
+                await self._sync_state(state)
 
-            # Dispatch any subtasks newly unblocked by completed dependencies.
-            self._dispatch(state, plan)
+            await self._dispatch(state)
 
             if not completions:
                 continue
 
             if state.is_complete():
-                # Final synthesis: LLM reads full plan and writes the answer.
-                react = await self._react(state, plan, completions, step=step, ctx=ctx)
+                react = await self._react(state, completions, step=step, ctx=ctx)
                 state.final_answer = react.final_answer or self._join_results(state)
                 break
 
-            react = await self._react(state, plan, completions, step=step, ctx=ctx)
-            await self._apply_react(state, plan, react, step=step)
+            react = await self._react(state, completions, step=step, ctx=ctx)
+            await self._apply_react(state, react, step=step)
 
             if state.final_answer:
                 break
@@ -608,36 +416,34 @@ class MetaAgent(Agent):
     # ------------------------------------------------------------------
 
     async def _reply_escalations(
-        self, state: MetaState, plan: MetaPlanFile, escalations: List[MetaEvent],
+        self, state: MetaState, escalations: List[MetaEvent],
         step: int = 0, ctx: Optional[AgentContext] = None,
     ) -> None:
         for e in escalations:
             state._pending_escalations[e.task_id] = e
-            plan.log(f"ESCALATE {e.task_id[:8]} ({e.agent_name}) — {e.escalation_message or ''}")
-            self._emit(state.session_id, step, "escalation", f"Escalation from {e.agent_name}", {
-                "task_id": e.task_id,
-                "agent_name": e.agent_name,
-                "message": e.escalation_message,
-            })
+            await self._record(
+                state.session_id, step, "escalation",
+                f"ESCALATE {e.task_id[:8]} ({e.agent_name})",
+                e.escalation_message or "", "running",
+                {"task_id": e.task_id, "agent_name": e.agent_name, "message": e.escalation_message},
+            )
 
-        plan.update(state.subtask_records)
-        await plan.save()
+        await self._sync_state(state)
 
+        plan_context = await self._get_plan_context(state)
         messages = await self._get_messages(
             task=state.user_task,
             available_agents=await self._agents_info(),
             situation=self._fmt_escalations(escalations),
-            plan_context=plan.render(),
+            plan_context=plan_context,
             session_id=state.session_id,
             ctx=ctx,
         )
         react = await self._llm_react(messages)
         logger.info(f"| 🤔 Escalation react decision: {react.decision}")
 
-        # _apply_react handles escalation_replies + any concurrent continue/stop.
-        await self._apply_react(state, plan, react, step=step)
+        await self._apply_react(state, react, step=step)
 
-        # Fallback: unblock any escalations the LLM forgot to reply to.
         resolved = {er.task_id for er in react.escalation_replies}
         for e in escalations:
             if e.task_id not in resolved:
@@ -645,11 +451,12 @@ class MetaAgent(Agent):
                     state, e.task_id,
                     "No specific guidance available. Use your best judgement or stop gracefully.",
                 )
-                plan.log(f"REPLY {e.task_id[:8]} — (default: no guidance)")
-                self._emit(state.session_id, step, "escalation_reply",
-                           f"Default reply → {e.task_id[:8]}", {"task_id": e.task_id})
+                await self._record(
+                    state.session_id, step, "escalation_reply",
+                    f"REPLY {e.task_id[:8]} (default)", "no guidance",
+                    data={"task_id": e.task_id},
+                )
 
-        await plan.save()
         state.touch()
 
     def _resolve_escalation(self, state: MetaState, task_id: str, reply: str) -> None:
@@ -658,7 +465,6 @@ class MetaAgent(Agent):
             e.reply_future.set_result(reply)
             logger.info(f"| 💬 Escalation resolved: {task_id}")
             return
-        # Fallback: resolve the first unresolved pending escalation.
         for tid, e in list(state._pending_escalations.items()):
             if e.reply_future and not e.reply_future.done():
                 e.reply_future.set_result(reply)
@@ -671,77 +477,89 @@ class MetaAgent(Agent):
     # ------------------------------------------------------------------
 
     async def _react(
-        self, state: MetaState, plan: MetaPlanFile, events: List[MetaEvent],
+        self, state: MetaState, events: List[MetaEvent],
         step: int = 0, ctx: Optional[AgentContext] = None,
     ) -> MetaReactOutput:
         import time as _time
         situation = self._fmt_situation(state, events) if events else "No events yet. Produce the initial plan."
+        plan_context = await self._get_plan_context(state)
         messages = await self._get_messages(
             task=state.user_task,
             available_agents=await self._agents_info(),
             situation=situation,
-            plan_context=plan.render(),
+            plan_context=plan_context,
             session_id=state.session_id,
             ctx=ctx,
         )
-        self._emit(state.session_id, step, "llm_start", f"React step {step}", {
-            "message_count": len(messages),
-        })
+        trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id=state.session_id,
+            agent_name=self.name,
+            step_number=step,
+            action_name="llm_start",
+            label=f"React step {step}",
+            input={"message_count": len(messages)},
+        ))
         t0 = _time.monotonic()
         output = await self._llm_react(messages)
-        elapsed = (_time.monotonic() - t0) * 1000
-        self._emit(state.session_id, step, "llm_end", f"React step {step} → {output.decision}", {
-            "decision": output.decision,
-            "thinking": output.thinking,
-            "duration_ms": elapsed,
-        })
+        trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id=state.session_id,
+            agent_name=self.name,
+            step_number=step,
+            action_name="llm_end",
+            label=f"React step {step} → {output.decision}",
+            input={"decision": output.decision, "thinking": output.thinking,
+                   "duration_ms": (_time.monotonic() - t0) * 1000},
+        ))
         return output
 
     async def _apply_react(
-        self, state: MetaState, plan: MetaPlanFile, react: MetaReactOutput,
+        self, state: MetaState, react: MetaReactOutput,
         step: int = 0,
     ) -> None:
         logger.info(f"| 🤔 React decision: {react.decision}")
 
-        # Always resolve escalation replies first — independent of plan advancement.
         for er in react.escalation_replies:
             self._resolve_escalation(state, er.task_id, er.reply)
-            plan.log(f"REPLY {er.task_id[:8]} — {er.reply}")
-            self._emit(state.session_id, step, "escalation_reply",
-                       f"Reply → {er.task_id[:8]}", {
-                "task_id": er.task_id,
-                "reply": er.reply,
-            })
+            await self._record(
+                state.session_id, step, "escalation_reply",
+                f"REPLY {er.task_id[:8]}", er.reply, "",
+                {"task_id": er.task_id, "reply": er.reply},
+            )
 
         if react.decision == "continue":
             for spec in react.tasks:
                 state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
-                plan.log(f"PLANNED {spec.id[:8]} — {spec.input.task} → {spec.name}")
-                self._emit(state.session_id, step, "subtask_planned",
-                           f"Plan: {spec.input.task} → {spec.name}", {
-                    "subtask_id": spec.id,
-                    "agent_name": spec.name,
-                    "category": spec.category.value,
-                    "depends_on": spec.depends_on,
-                    "description": spec.input.task,
-                })
-            plan.update(state.subtask_records)
-            self._dispatch(state, plan)
+                await self._record(
+                    state.session_id, step, "subtask_planned",
+                    f"PLANNED {spec.id[:8]}", f"{spec.input.task} → {spec.name}", "pending",
+                    {"subtask_id": spec.id, "agent_name": spec.name,
+                     "category": spec.category.value, "depends_on": spec.depends_on},
+                )
+            await self._sync_state(state)
+            await self._dispatch(state)
 
         elif react.decision == "stop":
             state.final_answer = react.final_answer
-            self._emit(state.session_id, step, "stop",
-                       "Final answer ready", {"answer": react.final_answer})
+            trace_manager.emit(TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id=state.session_id,
+                agent_name=self.name,
+                step_number=step,
+                action_name="stop",
+                label="Final answer ready",
+                input={"answer": react.final_answer},
+            ))
             await self._cancel_running(state)
 
-        await plan.save()
         state.touch()
 
     # ------------------------------------------------------------------
     # Sub-task dispatch
     # ------------------------------------------------------------------
 
-    def _dispatch(self, state: MetaState, plan: MetaPlanFile) -> None:
+    async def _dispatch(self, state: MetaState) -> None:
         for record in state.ready():
             sid = subtask_session_id(state.session_id, record.spec.id, record.step)
             record.mark_running(sid)
@@ -750,16 +568,12 @@ class MetaAgent(Agent):
                 name=f"subtask-{record.spec.id}",
             )
             state._running_tasks[record.spec.id] = t
-            plan.log(f"DISPATCH {record.spec.id[:8]} → {record.spec.name} [{sid}]")
-            self._emit(state.session_id, 0, "subtask_dispatch",
-                       f"Dispatch → {record.spec.name}: {record.spec.input.task}", {
-                "subtask_id": record.spec.id,
-                "subtask_session_id": sid,
-                "agent_name": record.spec.name,
-                "category": record.spec.category.value,
-                "step": record.step,
-                "description": record.spec.input.task,
-            })
+            await self._record(
+                state.session_id, 0, "subtask_dispatch",
+                f"DISPATCH {record.spec.id[:8]}", f"{record.spec.name}: {record.spec.input.task}", "running",
+                {"subtask_id": record.spec.id, "subtask_session_id": sid,
+                 "agent_name": record.spec.name, "step": record.step},
+            )
             logger.info(
                 f"| 🚀 Dispatched '{record.spec.input.task}' "
                 f"→ {record.spec.name} [{sid}]"
@@ -777,13 +591,10 @@ class MetaAgent(Agent):
         try:
             sub_agent = await agent_manager.get(agent_name)
 
-            # Write escalation config into the subtask's HookSessionState.scratch.
-            # EscalationHook (global singleton) reads it from ctx.extra["_session_state"].
-            # Per-session isolation is guaranteed by HookContextManager.
             session_state = await hook_manager.context.get_or_create(session_id)
             session_state.scratch["escalation"] = {
                 "meta_inbox": state._inbox,
-                "reply_future": None,   # filled fresh on each escalation by the hook
+                "reply_future": None,
                 "task_id": task_id,
                 "agent_name": agent_name,
             }
@@ -793,15 +604,13 @@ class MetaAgent(Agent):
                 agent_name=agent_name,
                 task_id=task_id,
                 parent_agent=self.name,
-                work_dir=self.base_dir,  # all sub-agents share MetaAgent's base_dir
+                work_dir=self.base_dir,
                 extra={
                     "parent_session_id": state.session_id,
                     "subtask_id": task_id,
                 },
             )
 
-            # Only pass files that actually exist — LLM sometimes puts output
-            # files (not yet created) into the files list by mistake.
             existing_files = [f for f in (record.spec.input.files or []) if os.path.exists(f)]
 
             extra_kwargs = dict(record.spec.input.extra)
@@ -847,38 +656,6 @@ class MetaAgent(Agent):
         )
         return response.extra.parsed_model
 
-    async def _get_memory_context(self, session_id: str) -> str:
-        if not (self.use_memory and self.memory_name and session_id):
-            return ""
-        try:
-            memory_info = await memory_manager.get_info(self.memory_name)
-            if memory_info and memory_info.instance is not None:
-                return await memory_info.instance.get(session_id=session_id)
-        except Exception:
-            pass
-        return ""
-
-    async def _get_agent_context(
-        self,
-        task: str,
-        available_agents: str,
-        situation: str,
-        plan_context: str,
-        session_id: str,
-    ) -> str:
-        memory_context = await self._get_memory_context(session_id)
-        parts = [
-            f"### Task\n{task}",
-            f"### Available Sub-Agents\n{available_agents}",
-            f"### Current Situation\n{situation}",
-            f"### Plan\n{plan_context}",
-        ]
-        if memory_context:
-            parts.append(f"### Memory\n{memory_context}")
-        else:
-            parts.append("### Memory\n[No memory recorded yet.]")
-        return "\n\n".join(parts)
-
     async def _get_messages(
         self,
         task: str,
@@ -888,13 +665,12 @@ class MetaAgent(Agent):
         session_id: str = "",
         ctx: Optional[AgentContext] = None,
     ) -> list:
-        agent_context = await self._get_agent_context(
-            task=task,
-            available_agents=available_agents,
-            situation=situation,
-            plan_context=plan_context,
-            session_id=session_id,
-        )
+        agent_context = "\n\n".join([
+            f"### Task\n{task}",
+            f"### Available Sub-Agents\n{available_agents}",
+            f"### Current Situation\n{situation}",
+            f"### Execution State\n{plan_context or '[No state recorded yet.]'}",
+        ])
 
         project_context = self._load_project_md()
         work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
@@ -911,7 +687,6 @@ class MetaAgent(Agent):
             ),
         )
 
-        # Run PRE_MESSAGES hook pipeline (token count, truncation, history summary)
         if ctx is not None:
             hook_ctx = HookContext(
                 event=HookEvent.PRE_MESSAGES,
@@ -932,51 +707,115 @@ class MetaAgent(Agent):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _apply(self, state: MetaState, plan: MetaPlanFile, event: MetaEvent) -> None:
+    async def _apply(self, state: MetaState, event: MetaEvent) -> None:
         record = state.subtask_records.get(event.task_id)
         if record is None:
             return
         if event.event_type == MetaEventType.SUBTASK_DONE:
             record.mark_done(event.result or "")
-            plan.log(f"DONE {event.task_id[:8]} — {event.result or ''}")
-            self._emit(state.session_id, 0, "subtask_done",
-                       f"Done: {record.spec.input.task}", {
-                "subtask_id": event.task_id,
-                "agent_name": event.agent_name,
-                "result": event.result or "",
-            })
+            await self._record(
+                state.session_id, 0, "subtask_done",
+                f"DONE {event.task_id[:8]}", (event.result or "")[:200], "done",
+                {"subtask_id": event.task_id, "agent_name": event.agent_name},
+            )
             logger.info(f"| ✅ Subtask done: {event.task_id}")
         elif event.event_type == MetaEventType.SUBTASK_FAILED:
             record.mark_failed(event.error or "unknown error")
-            plan.log(f"FAILED {event.task_id[:8]} — {event.error or 'unknown'}")
-            self._emit(state.session_id, 0, "subtask_failed",
-                       f"Failed: {record.spec.input.task}", {
-                "subtask_id": event.task_id,
-                "agent_name": event.agent_name,
-                "error": event.error,
-            })
+            await self._record(
+                state.session_id, 0, "subtask_failed",
+                f"FAILED {event.task_id[:8]}", event.error or "unknown", "failed",
+                {"subtask_id": event.task_id, "agent_name": event.agent_name},
+            )
             logger.warning(f"| ❌ Subtask failed: {event.task_id} — {event.error}")
         state.touch()
 
-    def _emit(
+    async def _record(
         self,
         session_id: str,
         step: int,
-        action_name: str,
+        action: str,
         label: str,
+        detail: str = "",
+        status: str = "",
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Fire-and-forget a CUSTOM TraceEvent for a MetaAgent lifecycle point."""
+        """Write a history entry to the HTML memory file and emit a trace event."""
+        await self._mem_emit(session_id, "history_entry", {
+            "event": label, "detail": detail, "status": status,
+        })
         trace_manager.emit(TraceEvent(
             event_type=TraceEventType.CUSTOM,
             session_id=session_id,
-            task_id=session_id,
             agent_name=self.name,
             step_number=step,
-            action_name=action_name,
+            action_name=action,
             label=label,
             input=data or {},
         ))
+
+    async def _sync_state(self, state: MetaState) -> None:
+        """Push current subtask records to FileSystemMemory (todos + flowchart)."""
+        todos = [
+            {"id": r.spec.id, "description": r.spec.input.task,
+             "agent_name": r.spec.name, "status": r.status.value}
+            for r in state.subtask_records.values()
+        ]
+        rounds = self._compute_rounds(state.subtask_records)
+        steps = [
+            {"step": i + 1, "label": r.spec.input.task, "agents": [r.spec.name],
+             "status": r.status.value, "round": rounds.get(r.spec.id, 1)}
+            for i, r in enumerate(state.subtask_records.values())
+        ]
+        await self._mem_emit(state.session_id, "todo_update", {"todos": todos})
+        await self._mem_emit(state.session_id, "flowchart_update", {"steps": steps})
+
+    async def _get_plan_context(self, state: MetaState) -> str:
+        if not self.memory_name:
+            return ""
+        try:
+            info = await memory_manager.get_info(self.memory_name)
+            if info and info.instance:
+                return await info.instance.get(session_id=state.session_id) or ""
+        except Exception:
+            pass
+        return ""
+
+    async def _mem_emit(self, session_id: str, meta_type: str, data: Dict[str, Any]) -> None:
+        if not self.memory_name:
+            return
+        try:
+            info = await memory_manager.get_info(self.memory_name)
+            if info and info.instance:
+                await info.instance.emit(
+                    TraceEvent(
+                        event_type=TraceEventType.CUSTOM,
+                        session_id=session_id,
+                        agent_name=self.name,
+                        metadata={"type": meta_type, **data},
+                    ),
+                    session_id=session_id,
+                )
+        except Exception as exc:
+            logger.warning(f"| ⚠️ FileSystemMemory emit failed: {exc}")
+
+    @staticmethod
+    def _compute_rounds(records: Dict[str, SubTaskRecord]) -> Dict[str, int]:
+        rounds: Dict[str, int] = {}
+
+        def _round(task_id: str) -> int:
+            if task_id in rounds:
+                return rounds[task_id]
+            rec = records.get(task_id)
+            if rec is None or not rec.spec.depends_on:
+                rounds[task_id] = 1
+            else:
+                dep_rounds = [_round(d) for d in rec.spec.depends_on if d in records]
+                rounds[task_id] = (max(dep_rounds) + 1) if dep_rounds else 1
+            return rounds[task_id]
+
+        for tid in records:
+            _round(tid)
+        return rounds
 
     def _load_project_md(self) -> str:
         path = os.path.join(self.project_root, "PROJECT.md")
@@ -1032,4 +871,3 @@ class MetaAgent(Agent):
                 logger.info(f"| 🛑 Cancelled subtask {tid}")
         if state._running_tasks:
             await asyncio.gather(*state._running_tasks.values(), return_exceptions=True)
-

@@ -93,57 +93,57 @@ class GitTool(Tool):
             count: Number of log entries (for log action).
         """
         ctx = kwargs.get("ctx")
-        workdir = self._get_workdir(ctx)
-        if not workdir:
+        work_dir = self._get_workdir(ctx)
+        if not work_dir:
             return ToolResponse(success=False, message="Error: No work_dir set in context.")
-        if not os.path.isdir(workdir):
-            return ToolResponse(success=False, message=f"Error: work_dir not found: {workdir}")
+        if not os.path.isdir(work_dir):
+            return ToolResponse(success=False, message=f"Error: work_dir not found: {work_dir}")
 
         try:
             if action == "status":
-                rc, out, err = await self._run(["status"], workdir)
+                rc, out, err = await self._run(["status"], work_dir)
                 return self._respond(rc, out, err, "status")
 
             elif action == "diff":
                 git_args = ["diff"]
                 if path:
                     git_args.append(path)
-                rc, out, err = await self._run(git_args, workdir)
+                rc, out, err = await self._run(git_args, work_dir)
                 return self._respond(rc, out or "(no unstaged changes)", err, "diff")
 
             elif action == "diff_staged":
                 git_args = ["diff", "--cached"]
                 if path:
                     git_args.append(path)
-                rc, out, err = await self._run(git_args, workdir)
+                rc, out, err = await self._run(git_args, work_dir)
                 return self._respond(rc, out or "(no staged changes)", err, "diff --cached")
 
             elif action == "log":
                 rc, out, err = await self._run(
-                    ["log", f"--max-count={count}", "--oneline", "--decorate"], workdir
+                    ["log", f"--max-count={count}", "--oneline", "--decorate"], work_dir
                 )
                 return self._respond(rc, out or "(no commits)", err, "log")
 
             elif action == "add":
                 target = path or "."
-                rc, out, err = await self._run(["add", target], workdir)
+                rc, out, err = await self._run(["add", target], work_dir)
                 msg = f"Staged: {target}" if rc == 0 else err
                 return self._respond(rc, msg, err, "add")
 
             elif action == "commit":
                 if not message:
                     return ToolResponse(success=False, message="Error: commit requires a message parameter.")
-                rc, out, err = await self._run(["commit", "-m", message], workdir)
+                rc, out, err = await self._run(["commit", "-m", message], work_dir)
                 return self._respond(rc, out or err, err, "commit")
 
             elif action == "checkout":
                 if not path:
                     return ToolResponse(success=False, message="Error: checkout requires a target (branch or file path).")
-                rc, out, err = await self._run(["checkout", path], workdir)
+                rc, out, err = await self._run(["checkout", path], work_dir)
                 return self._respond(rc, out or err or f"Checked out: {path}", err, "checkout")
 
             elif action == "branch":
-                rc, out, err = await self._run(["branch", "-a"], workdir)
+                rc, out, err = await self._run(["branch", "-a"], work_dir)
                 return self._respond(rc, out or "(no branches)", err, "branch")
 
             else:
