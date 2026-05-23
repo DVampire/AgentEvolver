@@ -8,7 +8,7 @@ with read_base():
     from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "reason_act_agent"
-workdir = f"workdir/{tag}"
+work_dir = f"work_dir/{tag}"
 log_path = "agent.log"
 
 use_local_proxy = True
@@ -57,7 +57,7 @@ general_memory_system.update(
 
 #-----------------REASON ACT AGENT CONFIG-----------------
 reason_act_agent.update(
-    workdir=workdir,
+    base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,

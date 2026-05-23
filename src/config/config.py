@@ -7,13 +7,18 @@ from src.utils import assemble_project_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
     """Process general configuration and ensure paths are strings"""
-    workdir = str(assemble_project_path(config.workdir))
-    config.workdir = workdir
-    
-    log_path = getattr(config, 'log_path', 'agent.log')
-    log_path = str(assemble_project_path(os.path.join(workdir, log_path)))
+    work_dir = str(assemble_project_path(config.work_dir))
+    config.work_dir = work_dir
+
+    default_dir = str(assemble_project_path(config.default_dir))
+    config.default_dir = default_dir
+
+    extended_dir = str(assemble_project_path(config.extended_dir))
+    config.extended_dir = extended_dir
+
+    log_path = os.path.join(default_dir, config.log_path)
     config.log_path = log_path
-    
+
     return config
 
 def process_tools(config: MMConfig) -> MMConfig:
@@ -21,8 +26,8 @@ def process_tools(config: MMConfig) -> MMConfig:
         if "tool" in key:
             if "base_dir" in config[key]:
                 # base_dir in config is already a relative path from project root
-                # (e.g., "workdir/tool_calling_agent/browser"), so just assemble it
-                base_dir = str(assemble_project_path(os.path.join(config.workdir, config[key]["base_dir"])))
+                # (e.g., "defaultdir/tool_calling_agent/browser"), so just assemble it
+                base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -32,7 +37,7 @@ def process_environments(config: MMConfig) -> MMConfig:
     for key in config:
         if "environment" in key:
             if "base_dir" in config[key]:
-                base_dir = str(assemble_project_path(os.path.join(config.workdir, config[key]["base_dir"])))
+                base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -42,7 +47,7 @@ def process_memory(config: MMConfig)->MMConfig:
     for key in config:
         if "memory" in key:
             if "base_dir" in config[key]:
-                base_dir = str(assemble_project_path(os.path.join(config.workdir, config[key]["base_dir"])))
+                base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -57,10 +62,9 @@ def process_memory(config: MMConfig)->MMConfig:
 
 def process_agent(config: MMConfig) -> MMConfig:
     if "agent" in config:
-        if "workdir" in config.agent:
-            # agent workdir should use the same workdir as config
+        if "base_dir" in config.agent:
             config.agent.update(dict(
-                workdir = str(assemble_project_path(config.workdir))
+                base_dir = str(assemble_project_path(config.default_dir))
             ))
         if "model_name" in config.agent:
             config.agent.update(dict(
@@ -83,7 +87,7 @@ class Config(MMConfig, metaclass=Singleton):
         for item in args.__dict__:
             if item not in ['config', 'cfg_options'] and args.__dict__[item] is not None:
                 cfg_options[item] = args.__dict__[item]
-        
+
         mmconfig.merge_from_dict(cfg_options)
 
         # Process general configuration
@@ -95,7 +99,7 @@ class Config(MMConfig, metaclass=Singleton):
         print(mmconfig.pretty_text)
 
         self.__dict__.update(mmconfig.__dict__)
-    
+
     def dump(self) -> str:
         """Dump the configuration"""
         return super().dump()

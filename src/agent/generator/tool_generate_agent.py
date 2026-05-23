@@ -38,7 +38,7 @@ class ToolGenerateAgent(Agent):
 
     def __init__(
         self,
-        workdir: str,
+        base_dir: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -52,7 +52,7 @@ class ToolGenerateAgent(Agent):
         **kwargs,
     ):
         super().__init__(
-            workdir=workdir,
+            base_dir=base_dir,
             name=name,
             description=description,
             metadata=metadata,
@@ -79,10 +79,10 @@ class ToolGenerateAgent(Agent):
         from src.hook.types import HookContext, HookEvent
         from src.config import config as _config
 
-        workdir = await self._resolve_workdir(ctx=ctx, **kwargs)
+        work_dir = await self._resolve_work_dir(ctx=ctx, **kwargs)
         system_modules = dict(
             max_actions=self.max_actions,
-            workdir=workdir,
+            work_dir=work_dir,
             project_root=self.project_root,
         )
         agent_message_modules = dict(task=task)
@@ -298,8 +298,8 @@ class ToolGenerateAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-        if not ctx.workdir:
-            ctx.workdir = self.workdir
+        if not ctx.work_dir:
+            ctx.work_dir = self.base_dir
 
         task_id = "gen_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
@@ -360,12 +360,12 @@ class ToolGenerateAgent(Agent):
         reasoning = response.get("reasoning") or ""
         for token in reasoning.split():
             if token.startswith("src/tool/extended/") and token.endswith(".py"):
-                generated_path = os.path.join(self.workdir.split("workdir")[0], token)
+                generated_path = os.path.join(self.base_dir.split("work_dir")[0], token)
                 break
 
         if not generated_path and target_name:
             generated_path = os.path.join(
-                self.workdir.split("workdir")[0],
+                self.base_dir.split("work_dir")[0],
                 f"src/tool/extended/{target_name}.py",
             )
 

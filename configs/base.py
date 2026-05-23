@@ -1,6 +1,6 @@
 #---------------GENERAL CONFIG-------------
 tag = "base"
-workdir = f"workdir/{tag}"
+work_dir = f"work_dir/{tag}"
 log_path = "base.log"
 use_local_proxy = False
 model_name = "openrouter/gemini-3-flash-preview"

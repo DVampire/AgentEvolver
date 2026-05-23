@@ -41,7 +41,7 @@ class AgentContext(BaseContext):
     agent_name: str = Field(default="", description="Name of the agent being called.")
     task_id: Optional[str] = Field(default=None, description="Task identifier for tracing.")
     parent_agent: Optional[str] = Field(default=None, description="Name of the parent agent if this is a sub-agent call.")
-    workdir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 class InputArgs(BaseModel):
@@ -240,7 +240,7 @@ class Agent(BaseModel):
 
     def __init__(
         self,
-        workdir: str,
+        base_dir: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -264,7 +264,7 @@ class Agent(BaseModel):
         self.require_grad = require_grad
 
         # Set working directory
-        self.workdir = workdir
+        self.base_dir = base_dir
 
         # Set prompt name and modules
         self.prompt_name = prompt_name
@@ -281,7 +281,7 @@ class Agent(BaseModel):
 
     async def initialize(self) -> None:
         """Initialize the agent."""
-        logger.info(f"| 📁 Agent working directory: {self.workdir}")
+        logger.info(f"| 📁 Agent working directory: {self.base_dir}")
 
     def __str__(self) -> str:
         return f"Agent(name={self.name}, model={self.model_name}, prompt_name={self.prompt_name})"
@@ -402,13 +402,13 @@ class Agent(BaseModel):
         skill_context = f"### Available Skills\n{skill_content}" if skill_content else "### Available Skills\n[No skills loaded.]"
         return {"skill_context": skill_context}
 
-    async def _resolve_workdir(self, ctx: AgentContext, **kwargs) -> str:
-        """Resolve the workdir surfaced in the prompt's `{{ workdir }}` slot.
+    async def _resolve_work_dir(self, ctx: AgentContext, **kwargs) -> str:
+        """Resolve the work_dir surfaced in the prompt's `{{ work_dir }}` slot.
 
-        Prefers ctx.workdir (injected by MetaAgent for sub-agents) over
-        self.workdir so all agents in a MetaAgent run share the same directory.
+        Prefers ctx.work_dir (injected by MetaAgent for sub-agents) over
+        self.base_dir so all agents in a MetaAgent run share the same directory.
         """
-        return assemble_project_path(ctx.workdir if ctx and ctx.workdir else self.workdir)
+        return assemble_project_path(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
 
     async def _get_messages(self,
                             task: str,
@@ -416,9 +416,9 @@ class Agent(BaseModel):
                             **kwargs) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
-        workdir = await self._resolve_workdir(ctx=ctx, **kwargs)
+        work_dir = await self._resolve_work_dir(ctx=ctx, **kwargs)
         project_root = get_project_root()
-        system_modules = dict(max_actions=self.max_actions, workdir=workdir, project_root=project_root)
+        system_modules = dict(max_actions=self.max_actions, work_dir=work_dir, project_root=project_root)
         agent_message_modules = dict(task=task)
         
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))

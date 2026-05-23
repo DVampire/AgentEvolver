@@ -12,7 +12,7 @@ class SkillContext(BaseContext):
     """Context passed into skill manager and individual skill instances."""
     skill_name: str = Field(default="", description="Name of the skill being invoked.")
     model_name: Optional[str] = Field(default=None, description="LLM model override for this skill.")
-    workdir: Optional[str] = Field(default=None)
+    work_dir: Optional[str] = Field(default=None)
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 

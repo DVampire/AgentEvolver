@@ -54,7 +54,7 @@ class AgentContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.workdir, "agent"))
+            self.base_dir = assemble_project_path(os.path.join(config.work_dir, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Agent context manager base directory: {self.base_dir}.")
         if save_path is not None:

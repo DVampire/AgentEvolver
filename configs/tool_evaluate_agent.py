@@ -10,7 +10,7 @@ with read_base():
     from .agents.tool_evaluate_agent import tool_evaluate_agent
 
 tag = "tool_evaluate_agent"
-workdir = f"workdir/{tag}"
+work_dir = f"work_dir/{tag}"
 log_path = "tool_evaluate_agent.log"
 
 use_local_proxy = True
@@ -43,7 +43,7 @@ todo_tool.update(
 )
 #-----------------AGENT CONFIG-----------------
 tool_evaluate_agent.update(
-    workdir=workdir,
+    base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,

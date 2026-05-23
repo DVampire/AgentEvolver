@@ -208,7 +208,7 @@ class MetaPlanFile:
     # ------------------------------------------------------------------
 
     def render(self) -> str:
-        css_content = open(css_path("plan.css")).read()
+        css_rel = os.path.relpath(css_path("plan.css"), start=os.path.dirname(self.path))
         parts = [
             "<!DOCTYPE html>",
             '<html lang="en">',
@@ -216,7 +216,7 @@ class MetaPlanFile:
             '  <meta charset="UTF-8">',
             '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
             f'  <title>Plan — {_he(self.session_id)}</title>',
-            f'  <style>\n{css_content}\n  </style>',
+            f'  <link rel="stylesheet" href="{css_rel}">',
             "</head>",
             "<body>",
             '<div class="plan-page">',
@@ -424,7 +424,7 @@ class MetaAgent(Agent):
 
     def __init__(
         self,
-        workdir: str,
+        base_dir: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -437,7 +437,7 @@ class MetaAgent(Agent):
         **kwargs,
     ):
         super().__init__(
-            workdir=workdir,
+            base_dir=base_dir,
             name=name,
             description=description,
             metadata=metadata,
@@ -470,7 +470,7 @@ class MetaAgent(Agent):
         session_id = new_session_id()
         state = MetaState(session_id=session_id, user_task=task)
 
-        plan_path = os.path.join(self.workdir, f"{session_id}.plan.html")
+        plan_path = os.path.join(self.base_dir, f"{session_id}.plan.html")
         plan = MetaPlanFile(path=plan_path, task=task, session_id=session_id)
 
         hook_ctx = AgentContext(id=session_id, agent_name=self.name)
@@ -793,7 +793,7 @@ class MetaAgent(Agent):
                 agent_name=agent_name,
                 task_id=task_id,
                 parent_agent=self.name,
-                workdir=self.workdir,  # all sub-agents share MetaAgent's workdir
+                work_dir=self.base_dir,  # all sub-agents share MetaAgent's base_dir
                 extra={
                     "parent_session_id": state.session_id,
                     "subtask_id": task_id,
@@ -897,13 +897,13 @@ class MetaAgent(Agent):
         )
 
         project_context = self._load_project_md()
-        workdir = str(ctx.workdir if ctx and ctx.workdir else self.workdir)
+        work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
         messages = await prompt_manager.get_messages(
             prompt_name=self.prompt_name,
             system_modules=dict(
                 project_root=self.project_root,
                 project_context=project_context,
-                workdir=workdir,
+                work_dir=work_dir,
             ),
             agent_modules=dict(
                 agent_context=agent_context,

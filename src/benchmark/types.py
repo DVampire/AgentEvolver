@@ -68,7 +68,7 @@ class Benchmark(BaseModel):
             self.base_dir = assemble_project_path(base_dir)
         else:
             self.base_dir = assemble_project_path(
-                os.path.join(config.workdir, "benchmark", self.name)
+                os.path.join(config.work_dir, "benchmark", self.name)
             )
 
     def _apply_slice(self, records: list) -> list:

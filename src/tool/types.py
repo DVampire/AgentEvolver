@@ -10,7 +10,7 @@ from src.session import BaseContext
 class ToolContext(BaseContext):
     """Context passed into tool manager and individual tool instances."""
     tool_name: str = Field(default="", description="Name of the tool being called.")
-    workdir: Optional[str] = Field(default=None, description="Working directory for file operations.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory for file operations.")
     timeout: Optional[float] = Field(default=None, description="Per-call timeout override.")
     extra: Dict[str, Any] = Field(default_factory=dict)
 

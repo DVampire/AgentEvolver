@@ -38,7 +38,7 @@ class ToolEvaluateAgent(Agent):
 
     def __init__(
         self,
-        workdir: str,
+        base_dir: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -52,7 +52,7 @@ class ToolEvaluateAgent(Agent):
         **kwargs,
     ):
         super().__init__(
-            workdir=workdir,
+            base_dir=base_dir,
             name=name,
             description=description,
             metadata=metadata,
@@ -252,8 +252,8 @@ class ToolEvaluateAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-        if not ctx.workdir:
-            ctx.workdir = self.workdir
+        if not ctx.work_dir:
+            ctx.work_dir = self.base_dir
 
         tool_config = await tool_manager.get_info(target_name)
         if tool_config is None:

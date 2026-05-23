@@ -17,7 +17,9 @@ with read_base():
     from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "meta_agent"
-workdir = f"workdir/{tag}"
+work_dir = f"work_dir/{tag}"
+default_dir = f"work_dir/{tag}/default"
+extended_dir = f"work_dir/{tag}/extended"
 log_path = "agent.log"
 
 use_local_proxy = True
@@ -48,12 +50,12 @@ skill_names = []
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(require_grad=False)
-todo_tool.update(base_dir="tool/todo", require_grad=False)
+todo_tool.update(base_dir="default/tool/todo", require_grad=False)
 git_tool.update(timeout=60)
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
-    base_dir="memory/general_memory_system",
+    base_dir="default/memory/general_memory_system",
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
@@ -62,7 +64,7 @@ general_memory_system.update(
 
 #-----------------ACTOR AGENT CONFIGS-----------------
 code_agent.update(
-    workdir=workdir,
+    base_dir=extended_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -70,7 +72,7 @@ code_agent.update(
 )
 
 reason_act_agent.update(
-    workdir=workdir,
+    base_dir=extended_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -79,7 +81,7 @@ reason_act_agent.update(
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------
 tool_optimize_agent.update(
-    workdir=workdir,
+    base_dir=extended_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -88,7 +90,7 @@ tool_optimize_agent.update(
 
 #-----------------GENERATOR AGENT CONFIGS-----------------
 tool_generate_agent.update(
-    workdir=workdir,
+    base_dir=extended_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -97,7 +99,7 @@ tool_generate_agent.update(
 
 #-----------------EVALUATOR AGENT CONFIGS-----------------
 tool_evaluate_agent.update(
-    workdir=workdir,
+    base_dir=extended_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -106,7 +108,7 @@ tool_evaluate_agent.update(
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(
-    workdir=workdir,
+    base_dir=extended_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,

@@ -1,5 +1,5 @@
 reason_act_agent = dict(
-    workdir = "workdir/reason_act_agent",
+    base_dir = "work_dir/reason_act_agent",
     name = "reason_act_agent",
     type = "Agent",
     description = "An iterative agent that reasons and acts by using tools, skills, and direct responses to accomplish tasks accurately, safely, and efficiently.",

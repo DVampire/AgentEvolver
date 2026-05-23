@@ -11,7 +11,7 @@ with read_base():
     from .agents.tool_generate_agent import tool_generate_agent
 
 tag = "tool_generate_agent"
-workdir = f"workdir/{tag}"
+work_dir = f"work_dir/{tag}"
 log_path = "tool_generate_agent.log"
 
 use_local_proxy = True
@@ -44,7 +44,7 @@ todo_tool.update(
 
 #-----------------AGENT CONFIG-----------------
 tool_generate_agent.update(
-    workdir=workdir,
+    base_dir=work_dir,
     model_name=model_name,
     require_grad=False,
     use_memory=False,

@@ -72,8 +72,8 @@ class GitTool(Tool):
         )
 
     def _get_workdir(self, ctx) -> Optional[str]:
-        if ctx and hasattr(ctx, "workdir") and ctx.workdir:
-            return ctx.workdir
+        if ctx and hasattr(ctx, "work_dir") and ctx.work_dir:
+            return ctx.work_dir
         return None
 
     async def __call__(
@@ -95,9 +95,9 @@ class GitTool(Tool):
         ctx = kwargs.get("ctx")
         workdir = self._get_workdir(ctx)
         if not workdir:
-            return ToolResponse(success=False, message="Error: No workdir set in context.")
+            return ToolResponse(success=False, message="Error: No work_dir set in context.")
         if not os.path.isdir(workdir):
-            return ToolResponse(success=False, message=f"Error: Workdir not found: {workdir}")
+            return ToolResponse(success=False, message=f"Error: work_dir not found: {workdir}")
 
         try:
             if action == "status":

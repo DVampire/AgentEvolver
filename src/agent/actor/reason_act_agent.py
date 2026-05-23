@@ -38,7 +38,7 @@ class ReasonActAgent(Agent):
 
     def __init__(
         self,
-        workdir: str,
+        base_dir: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -52,7 +52,7 @@ class ReasonActAgent(Agent):
         **kwargs,
     ):
         super().__init__(
-            workdir=workdir,
+            base_dir=base_dir,
             name=name,
             description=description,
             metadata=metadata,
@@ -226,8 +226,8 @@ class ReasonActAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-        if not ctx.workdir:
-            ctx.workdir = self.workdir
+        if not ctx.work_dir:
+            ctx.work_dir = self.base_dir
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")

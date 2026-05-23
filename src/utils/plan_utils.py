@@ -29,10 +29,10 @@ from src.utils.name_utils import generate_unique_id
 # Plan path helper
 # ---------------------------------------------------------------------------
 
-def make_plan_path(workdir: str, session_id: str, suffix: str = "plan") -> str:
-    """Generate a unique plan file path: {workdir}/{session_id}_{timestamp}_{random}.{suffix}.md"""
+def make_plan_path(work_dir: str, session_id: str, suffix: str = "plan") -> str:
+    """Generate a unique plan file path: {work_dir}/{session_id}_{timestamp}_{random}.{suffix}.md"""
     unique_id = generate_unique_id(prefix=session_id)
-    return os.path.join(workdir, f"{unique_id}.{suffix}.md")
+    return os.path.join(work_dir, f"{unique_id}.{suffix}.md")
 
 # ---------------------------------------------------------------------------
 # Timestamp helper

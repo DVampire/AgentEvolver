@@ -1,5 +1,5 @@
 code_agent = dict(
-    workdir="workdir/code_agent",
+    base_dir="work_dir/code_agent",
     name="code_agent",
     type="Agent",
     description="A code agent that reads, writes, and edits source code files, runs tests, and commits changes using git.",

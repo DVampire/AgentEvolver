@@ -40,12 +40,12 @@ class BashTool(Tool):
     def __init__(self, require_grad: bool = False, **kwargs):
         super().__init__(require_grad=require_grad, **kwargs)
 
-    async def __call__(self, command: str, workdir: Optional[str] = None, **kwargs) -> ToolResponse:
+    async def __call__(self, command: str, work_dir: Optional[str] = None, **kwargs) -> ToolResponse:
         """Execute a bash command asynchronously.
 
         Args:
-            command:  The shell command to run.
-            workdir:  Working directory — used for workspace-boundary checks.
+            command:   The shell command to run.
+            work_dir:  Working directory — used for workspace-boundary checks.
         """
         if not command.strip():
             return ToolResponse(success=False, message="Error: Empty command provided")

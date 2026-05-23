@@ -12,7 +12,7 @@ with read_base():
     from .agents.tool_optimize_agent import tool_optimize_agent
 
 tag = "tool_optimize_agent"
-workdir = f"workdir/{tag}"
+work_dir = f"work_dir/{tag}"
 log_path = "tool_optimize_agent.log"
 
 use_local_proxy = True
@@ -47,7 +47,7 @@ todo_tool.update(
 )
 #-----------------AGENT CONFIG-----------------
 tool_optimize_agent.update(
-    workdir=workdir,
+    base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,

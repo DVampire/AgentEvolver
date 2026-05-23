@@ -35,7 +35,7 @@ class AgentManagerServer(BaseModel):
             agent_names: List of agent names to initialize. If None, initialize all registered agents.
         """
         
-        self.base_dir = assemble_project_path(os.path.join(config.workdir, "agent"))
+        self.base_dir = assemble_project_path(os.path.join(config.work_dir, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "agent.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")

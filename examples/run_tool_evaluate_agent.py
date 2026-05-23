@@ -64,7 +64,7 @@ async def run_evaluate_agent(record: TaskRecord):
         name="tool_evaluate_agent",
         input={"task": record.task.content, "target_name": target_name},
         ctx=ctx,
-        workdir=config.workdir,
+        work_dir=config.work_dir,
     )
     return response
 
@@ -115,8 +115,8 @@ async def main():
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
-    task_workdir = os.path.join(config.workdir, "tasks")
-    await task_manager.initialize(workdir=task_workdir, handler=run_evaluate_agent)
+    task_work_dir = os.path.join(config.work_dir, "tasks")
+    await task_manager.initialize(work_dir=task_work_dir, handler=run_evaluate_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---

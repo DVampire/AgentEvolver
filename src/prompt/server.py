@@ -34,7 +34,7 @@ class PromptManagerServer(BaseModel):
             prompt_names: List of prompt names (md frontmatter `name:`) to load.
                           If None, all md files are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.workdir, "prompt"))
+        self.base_dir = assemble_project_path(os.path.join(config.work_dir, "prompt"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "prompt.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")

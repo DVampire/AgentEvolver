@@ -39,7 +39,7 @@ class CodeAgent(Agent):
 
     def __init__(
         self,
-        workdir: str,
+        base_dir: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -53,7 +53,7 @@ class CodeAgent(Agent):
         **kwargs,
     ):
         super().__init__(
-            workdir=workdir,
+            base_dir=base_dir,
             name=name,
             description=description,
             metadata=metadata,
@@ -82,7 +82,7 @@ class CodeAgent(Agent):
 
         # Inject a live workdir file snapshot so the agent can see current files
         # without needing to call list_dir_tool just to confirm state.
-        workdir = os.path.abspath(ctx.workdir if ctx and ctx.workdir else self.workdir)
+        workdir = os.path.abspath(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
         try:
             entries = sorted(os.listdir(workdir))
             lines = []
@@ -257,8 +257,8 @@ class CodeAgent(Agent):
             ctx = AgentContext()
 
         # Inject workdir so git_tool and file tools can resolve paths
-        if not ctx.workdir:
-            ctx.workdir = self.workdir
+        if not ctx.work_dir:
+            ctx.work_dir = self.base_dir
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")

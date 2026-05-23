@@ -24,8 +24,8 @@ from src.trace.types import TraceEvent
 class TraceWriter:
     """Drains an AsyncQueue[TraceEvent] and writes events to JSONL files, one per session."""
 
-    def __init__(self, workdir: str, queue: AsyncQueue[TraceEvent]) -> None:
-        self._workdir = workdir
+    def __init__(self, work_dir: str, queue: AsyncQueue[TraceEvent]) -> None:
+        self._workdir = work_dir
         self._queue = queue
 
         # session_id → open file handle for fast append

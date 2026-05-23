@@ -88,7 +88,7 @@ class TaskManager(metaclass=Singleton):
 
         handler = async def run(record): ...
 
-        await task_manager.initialize(workdir="workdir/tasks", handler=handler)
+        await task_manager.initialize(work_dir="work_dir/tasks", handler=handler)
         await task_manager.start(num_workers=4)
 
         task_id = await task_manager.submit(
@@ -112,7 +112,7 @@ class TaskManager(metaclass=Singleton):
 
         self._workers: List[asyncio.Task] = []
         self._handler: Optional[TaskHandler] = None
-        self._workdir: Optional[str] = None
+        self._work_dir: Optional[str] = None
         self._persist_path: Optional[str] = None
         self._archive_path: Optional[str] = None
 
@@ -125,21 +125,21 @@ class TaskManager(metaclass=Singleton):
 
     async def initialize(
         self,
-        workdir: str,
+        work_dir: str,
         handler: Optional[TaskHandler] = None,
     ) -> None:
-        """Set workdir, attach handler, and load persisted pending tasks."""
-        self._workdir = workdir
+        """Set work_dir, attach handler, and load persisted pending tasks."""
+        self._work_dir = work_dir
         self._handler = handler
-        os.makedirs(workdir, exist_ok=True)
+        os.makedirs(work_dir, exist_ok=True)
 
-        self._persist_path = os.path.join(workdir, "tasks.json")
-        self._archive_path = os.path.join(workdir, "tasks_archive.json")
+        self._persist_path = os.path.join(work_dir, "tasks.json")
+        self._archive_path = os.path.join(work_dir, "tasks_archive.json")
 
         await self._load()
         logger.info(
             f"| 📋 TaskManager initialised — {len(self._records)} task(s) loaded "
-            f"(workdir={workdir})"
+            f"(work_dir={work_dir})"
         )
 
     async def start(self, num_workers: int = 4) -> None:

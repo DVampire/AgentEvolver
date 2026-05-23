@@ -74,8 +74,8 @@ async def main():
     logger.info(f"| ✅ Versions: {await version_manager.list()}")
 
     # --- Trace ---
-    trace_workdir = os.path.join(config.workdir, "trace")
-    await trace_manager.initialize(workdir=trace_workdir)
+    trace_work_dir = os.path.join(config.work_dir, "trace")
+    await trace_manager.initialize(work_dir=trace_work_dir)
     await trace_manager.start()
     logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
@@ -110,8 +110,8 @@ async def main():
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
-    task_workdir = os.path.join(config.workdir, "tasks")
-    await task_manager.initialize(workdir=task_workdir, handler=run_agent)
+    task_work_dir = os.path.join(config.work_dir, "tasks")
+    await task_manager.initialize(work_dir=task_work_dir, handler=run_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---
