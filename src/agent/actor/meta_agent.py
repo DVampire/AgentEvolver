@@ -208,8 +208,7 @@ class MetaPlanFile:
     # ------------------------------------------------------------------
 
     def render(self) -> str:
-        css = css_path("plan.css")
-        css_href = f"file://{css}"
+        css_content = open(css_path("plan.css")).read()
         parts = [
             "<!DOCTYPE html>",
             '<html lang="en">',
@@ -217,7 +216,7 @@ class MetaPlanFile:
             '  <meta charset="UTF-8">',
             '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
             f'  <title>Plan — {_he(self.session_id)}</title>',
-            f'  <link rel="stylesheet" href="{css_href}">',
+            f'  <style>\n{css_content}\n  </style>',
             "</head>",
             "<body>",
             '<div class="plan-page">',

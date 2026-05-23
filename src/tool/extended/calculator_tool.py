@@ -15,7 +15,7 @@ class CalculatorTool(Tool):
         "Args:\n"
         "- a (float): The first number.\n"
         "- b (float): The second number.\n"
-        "- op (str): The operator, one of '+', '-', '*', '/'.\n"
+        "- op (str): The operation to perform: '+', '-', '*', or '/'.\n"
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=True)
@@ -36,11 +36,7 @@ class CalculatorTool(Tool):
                 raise ValueError("Division by zero is not allowed.")
             result = a / b
         else:
-            return ToolResponse(
-                success=False,
-                message=f"Unsupported operator: {op}",
-                extra=ToolExtra(data={})
-            )
+            raise ValueError(f"Unsupported operation: {op}. Use '+', '-', '*', or '/'.")
 
         return ToolResponse(
             success=True,
