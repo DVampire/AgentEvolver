@@ -45,6 +45,7 @@ from src.task.types import TaskStatus, SubTaskCategory
 from src.trace.server import trace_manager
 from src.trace.types import TraceEvent, TraceEventType, agent_start_event, agent_end_event
 from src.utils.name_utils import new_session_id, new_task_id, subtask_session_id
+from src.visual import css_path
 
 # Collect completion events arriving within this window before one LLM REACT call.
 _BATCH_WINDOW_S = 0.1
@@ -158,21 +159,32 @@ class MetaReactOutput(BaseModel):
 # MetaPlanFile — lightweight execution log written to disk
 # ---------------------------------------------------------------------------
 
-class MetaPlanFile:
-    """Append-only execution log for one MetaAgent invocation.
+def _he(text: str) -> str:
+    """Minimal HTML escaping."""
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;"))
 
-    Structure
-    ---------
-    ## Subtasks          — live table, updated on every status change
-    ## Log               — append-only timestamped event lines
-    ## Result            — written once on completion
-    """
+
+_STATUS_CSS = {
+    TaskStatus.DONE:      ("done",      "●"),
+    TaskStatus.PENDING:   ("pending",   "●"),
+    TaskStatus.RUNNING:   ("running",   "●"),
+    TaskStatus.FAILED:    ("failed",    "●"),
+    TaskStatus.CANCELLED: ("cancelled", "●"),
+}
+
+
+class MetaPlanFile:
+    """Append-only execution log for one MetaAgent invocation, rendered as HTML."""
 
     def __init__(self, path: str, task: str, session_id: str) -> None:
         self.path = path
         self.task = task
         self.session_id = session_id
-        self._records: Dict[str, SubTaskRecord] = {}   # kept in sync via update()
+        self._records: Dict[str, SubTaskRecord] = {}
         self._log: List[str] = []
         self._result: Optional[str] = None
 
@@ -181,7 +193,6 @@ class MetaPlanFile:
     # ------------------------------------------------------------------
 
     def update(self, records: Dict[str, SubTaskRecord]) -> None:
-        """Sync subtask table with current MetaState.subtask_records."""
         self._records = dict(records)
 
     def log(self, msg: str) -> None:
@@ -193,52 +204,135 @@ class MetaPlanFile:
         self.log("DONE — final answer written")
 
     # ------------------------------------------------------------------
-    # Rendering
+    # Rendering — HTML
     # ------------------------------------------------------------------
 
     def render(self) -> str:
-        parts: List[str] = [
-            f"## Plan\n",
-            f"Task: {self.task}\n",
-            f"Session: `{self.session_id}`\n",
-            "",
+        css = css_path("plan.css")
+        css_href = f"file://{css}"
+        parts = [
+            "<!DOCTYPE html>",
+            '<html lang="en">',
+            "<head>",
+            '  <meta charset="UTF-8">',
+            '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+            f'  <title>Plan — {_he(self.session_id)}</title>',
+            f'  <link rel="stylesheet" href="{css_href}">',
+            "</head>",
+            "<body>",
+            '<div class="plan-page">',
+            self._render_header(),
             self._render_subtasks(),
-            "",
             self._render_log(),
         ]
         if self._result is not None:
-            parts += ["", "### Result\n", self._result]
+            parts.append(self._render_result())
+        parts += ["</div>", "</body>", "</html>"]
         return "\n".join(parts)
 
+    def _render_header(self) -> str:
+        return (
+            '<div class="plan-header">'
+            '<div class="plan-label">Plan</div>'
+            f'<p class="plan-task">{_he(self.task)}</p>'
+            f'<code class="plan-session">{_he(self.session_id)}</code>'
+            "</div>"
+        )
+
     def _render_subtasks(self) -> str:
-        lines = ["### Subtasks\n"]
+        lines = [
+            '<div class="plan-section subtasks-section">',
+            "<h2>Subtasks</h2>",
+        ]
         if not self._records:
-            lines.append("*(no subtasks yet)*")
+            lines += ['<p class="empty">No subtasks yet.</p>', "</div>"]
             return "\n".join(lines)
-        lines.append("| # | Agent | Cat | Status | Description |")
-        lines.append("|---|-------|-----|--------|-------------|")
+
+        lines += [
+            '<table class="subtasks-table">',
+            "<thead><tr>"
+            "<th>#</th><th>Agent</th><th>Category</th><th>Status</th><th>Description</th>"
+            "</tr></thead>",
+            "<tbody>",
+        ]
         for i, r in enumerate(self._records.values(), 1):
-            emoji = _STATUS_EMOJI.get(r.status, "?")
-            cat = r.spec.category.value
-            desc = r.spec.input.task
-            short_id = r.spec.id.split("_")[-1]  # last 8-char fragment
+            css_cls, dot = _STATUS_CSS.get(r.status, ("pending", "●"))
+            badge = (
+                f'<span class="status-badge status-{css_cls}">'
+                f'<span class="status-dot"></span>{_he(r.status.value)}'
+                f"</span>"
+            )
+            short_id = r.spec.id.split("_")[-1]
+            desc_html = (
+                f'<span class="subtask-desc">{_he(r.spec.input.task)}</span>'
+                f'<span class="subtask-id">{_he(short_id)}</span>'
+            )
             lines.append(
-                f"| {i} | `{r.spec.name}` | {cat} "
-                f"| {emoji} {r.status.value} | {desc} `[{short_id}]` |"
+                f'<tr class="subtask-row">'
+                f'<td class="subtask-num">{i}</td>'
+                f'<td><code class="subtask-agent">{_he(r.spec.name)}</code></td>'
+                f'<td class="subtask-cat">{_he(r.spec.category.value)}</td>'
+                f"<td>{badge}</td>"
+                f"<td>{desc_html}</td>"
+                f"</tr>"
             )
             if r.result:
-                lines.append(f"|   |       |     |        | ↳ {r.result} |")
+                lines.append(
+                    f'<tr class="result-row">'
+                    f"<td colspan=\"5\">"
+                    f'<span class="result-arrow">↳</span>'
+                    f'<span class="result-text">{_he(r.result)}</span>'
+                    f"</td></tr>"
+                )
             elif r.error:
-                lines.append(f"|   |       |     |        | ↳ ❌ {r.error} |")
+                lines.append(
+                    f'<tr class="result-row">'
+                    f"<td colspan=\"5\">"
+                    f'<span class="result-arrow">↳</span>'
+                    f'<span class="error-text">{_he(r.error)}</span>'
+                    f"</td></tr>"
+                )
+        lines += ["</tbody>", "</table>", "</div>"]
         return "\n".join(lines)
 
     def _render_log(self) -> str:
-        lines = ["### Log\n"]
+        lines = [
+            '<div class="plan-section log-section">',
+            "<h2>Log</h2>",
+            '<div class="log-timeline">',
+        ]
         if not self._log:
-            lines.append("*(empty)*")
+            lines += ['<p class="empty">No entries yet.</p>']
         else:
-            lines.extend(self._log)
+            for entry in self._log:
+                # entry format: "[HH:MM:SS] MESSAGE"
+                if entry.startswith("[") and "] " in entry:
+                    ts, _, msg = entry[1:].partition("] ")
+                else:
+                    ts, msg = "", entry
+                # bold the first word of the message (e.g. START, PLANNED, DONE)
+                words = msg.split(" ", 1)
+                if len(words) == 2:
+                    msg_html = f"<strong>{_he(words[0])}</strong> {_he(words[1])}"
+                else:
+                    msg_html = _he(msg)
+                lines.append(
+                    f'<div class="log-entry">'
+                    f'<span class="log-ts">{_he(ts)}</span>'
+                    f'<span class="log-dot"></span>'
+                    f'<span class="log-msg">{msg_html}</span>'
+                    f"</div>"
+                )
+        lines += ["</div>", "</div>"]
         return "\n".join(lines)
+
+    def _render_result(self) -> str:
+        return (
+            '<div class="plan-section result-section">'
+            "<h2>Result</h2>"
+            f"<pre>{_he(self._result)}</pre>"
+            "</div>"
+        )
 
     # ------------------------------------------------------------------
     # Persistence
@@ -377,7 +471,7 @@ class MetaAgent(Agent):
         session_id = new_session_id()
         state = MetaState(session_id=session_id, user_task=task)
 
-        plan_path = os.path.join(self.workdir, f"{session_id}.plan.md")
+        plan_path = os.path.join(self.workdir, f"{session_id}.plan.html")
         plan = MetaPlanFile(path=plan_path, task=task, session_id=session_id)
 
         hook_ctx = AgentContext(id=session_id, agent_name=self.name)

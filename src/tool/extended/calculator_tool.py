@@ -1,5 +1,5 @@
-"""Basic calculator tool for addition, subtraction, multiplication, and division."""
-from typing import Any, Dict, Optional
+"""Calculator tool for basic arithmetic operations."""
+from typing import Any, Dict
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
@@ -7,7 +7,7 @@ from src.registry import TOOL
 
 @TOOL.register_module(force=True)
 class CalculatorTool(Tool):
-    """A tool that performs basic arithmetic operations."""
+    """A tool that performs basic arithmetic: add, subtract, multiply, and divide."""
 
     name: str = "calculator_tool"
     description: str = (
@@ -24,7 +24,7 @@ class CalculatorTool(Tool):
         super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(self, a: float, b: float, op: str, **kwargs) -> ToolResponse:
-        """Executes the arithmetic operation."""
+        """Execute the arithmetic operation."""
         if op == '+':
             result = a + b
         elif op == '-':
@@ -44,6 +44,6 @@ class CalculatorTool(Tool):
 
         return ToolResponse(
             success=True,
-            message=str(result),
+            message=f"The result of {a} {op} {b} is {result}",
             extra=ToolExtra(data={"result": result})
         )

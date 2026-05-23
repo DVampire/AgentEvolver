@@ -1,0 +1,317 @@
+:root {
+  --ivory:    #FAF9F5;
+  --slate:    #141413;
+  --clay:     #D97757;
+  --oat:      #E3DACC;
+  --olive:    #788C5D;
+  --gray-150: #F0EEE6;
+  --gray-300: #D1CFC5;
+  --gray-500: #87867F;
+  --gray-700: #3D3D3A;
+  --white:    #FFFFFF;
+
+  --green:    #3B7A57;
+  --green-bg: #EAF4EE;
+  --yellow:   #A07C1E;
+  --yellow-bg:#FDF6E3;
+  --blue:     #2E6DA4;
+  --blue-bg:  #E8F1FA;
+  --red:      #B33A3A;
+  --red-bg:   #FAE8E8;
+  --gray-bg:  #F0EEE6;
+
+  --serif: ui-serif, Georgia, 'Times New Roman', serif;
+  --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--sans);
+  background: var(--ivory);
+  color: var(--gray-700);
+  line-height: 1.6;
+  padding: 48px 32px 96px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Page wrapper ===== */
+
+.plan-page {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ===== Header card ===== */
+
+.plan-header {
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: 16px;
+  padding: 32px 36px;
+  border-left: 5px solid var(--clay);
+}
+
+.plan-header .plan-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--clay);
+  margin-bottom: 10px;
+}
+
+.plan-header .plan-task {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--slate);
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+
+.plan-header .plan-session {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gray-500);
+  background: var(--gray-150);
+  border-radius: 6px;
+  padding: 3px 10px;
+}
+
+/* ===== Section cards ===== */
+
+.plan-section {
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: 16px;
+  padding: 28px 32px;
+}
+
+.plan-section h2 {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--gray-500);
+  border-bottom: 1.5px solid var(--gray-150);
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+}
+
+/* ===== Subtasks table ===== */
+
+.subtasks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.subtasks-table thead th {
+  background: var(--gray-150);
+  color: var(--slate);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1.5px solid var(--gray-300);
+}
+
+.subtasks-table thead th:first-child { border-radius: 8px 0 0 0; }
+.subtasks-table thead th:last-child  { border-radius: 0 8px 0 0; }
+
+.subtasks-table tbody tr.subtask-row td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--gray-150);
+  vertical-align: top;
+}
+
+.subtasks-table tbody tr.subtask-row:last-of-type td {
+  border-bottom: none;
+}
+
+.subtasks-table tbody tr.result-row td {
+  padding: 0 14px 14px 40px;
+  border-bottom: 1px solid var(--gray-150);
+}
+
+.subtasks-table tbody tr.result-row:last-child td {
+  border-bottom: none;
+}
+
+.subtask-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gray-500);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.subtask-agent {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--gray-150);
+  color: var(--slate);
+  padding: 2px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.subtask-cat {
+  font-size: 12px;
+  color: var(--gray-500);
+  white-space: nowrap;
+}
+
+/* ===== Status badges ===== */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.status-done      { background: var(--green-bg);  color: var(--green);  }
+.status-pending   { background: var(--yellow-bg); color: var(--yellow); }
+.status-running   { background: var(--blue-bg);   color: var(--blue);   }
+.status-failed    { background: var(--red-bg);    color: var(--red);    }
+.status-cancelled { background: var(--gray-bg);   color: var(--gray-500); }
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-done      .status-dot { background: var(--green);  }
+.status-pending   .status-dot { background: var(--yellow); }
+.status-running   .status-dot { background: var(--blue);   }
+.status-failed    .status-dot { background: var(--red);    }
+.status-cancelled .status-dot { background: var(--gray-500); }
+
+/* ===== Subtask description & result ===== */
+
+.subtask-desc {
+  font-size: 13.5px;
+  color: var(--gray-700);
+  line-height: 1.5;
+}
+
+.subtask-id {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--gray-500);
+  background: var(--gray-150);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.result-arrow {
+  color: var(--clay);
+  font-weight: 700;
+  margin-right: 6px;
+  font-size: 13px;
+}
+
+.result-text {
+  font-size: 13px;
+  color: var(--gray-500);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-text {
+  font-size: 13px;
+  color: var(--red);
+  line-height: 1.55;
+}
+
+/* ===== Log section ===== */
+
+.log-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gray-150);
+  position: relative;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-ts {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--gray-500);
+  white-space: nowrap;
+  padding-top: 1px;
+  min-width: 70px;
+}
+
+.log-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--clay);
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.log-msg {
+  font-size: 13.5px;
+  color: var(--gray-700);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.log-msg strong {
+  color: var(--slate);
+  font-weight: 600;
+}
+
+/* ===== Result section ===== */
+
+.result-section pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  background: var(--gray-150);
+  border-radius: 10px;
+  padding: 20px 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--gray-700);
+}
+
+/* ===== Empty states ===== */
+
+.empty {
+  font-size: 13px;
+  color: var(--gray-500);
+  font-style: italic;
+}
