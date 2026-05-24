@@ -1,5 +1,5 @@
 """Calculator tool for basic arithmetic operations."""
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
@@ -15,7 +15,7 @@ class CalculatorTool(Tool):
         "Args:\n"
         "- a (float): The first number.\n"
         "- b (float): The second number.\n"
-        "- op (str): The operation to perform: '+', '-', '*', or '/'.\n"
+        "- op (str): The operation to perform ('+', '-', '*', '/').\n"
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=True)
@@ -25,36 +25,29 @@ class CalculatorTool(Tool):
 
     async def __call__(self, a: float, b: float, op: str, **kwargs) -> ToolResponse:
         """Execute the arithmetic operation."""
-        try:
-            if op == '+':
-                result = a + b
-            elif op == '-':
-                result = a - b
-            elif op == '*':
-                result = a * b
-            elif op == '/':
-                if b == 0:
-                    return ToolResponse(
-                        success=False,
-                        message="Division by zero error.",
-                        extra=ToolExtra(data={"error": "ZeroDivisionError"}),
-                    )
-                result = a / b
-            else:
+        if op == '+':
+            result = a + b
+        elif op == '-':
+            result = a - b
+        elif op == '*':
+            result = a * b
+        elif op == '/':
+            if b == 0:
                 return ToolResponse(
                     success=False,
-                    message=f"Unsupported operator: {op}",
-                    extra=ToolExtra(data={"error": "ValueError"}),
+                    message="Division by zero is not allowed.",
+                    extra=ToolExtra(data={})
                 )
-
-            return ToolResponse(
-                success=True,
-                message=f"The result of {a} {op} {b} is {result}",
-                extra=ToolExtra(data={"result": result}),
-            )
-        except Exception as e:
+            result = a / b
+        else:
             return ToolResponse(
                 success=False,
-                message=str(e),
-                extra=ToolExtra(data={"error": type(e).__name__}),
+                message=f"Unsupported operation: {op}",
+                extra=ToolExtra(data={})
             )
+
+        return ToolResponse(
+            success=True,
+            message=f"Result of {a} {op} {b} is {result}",
+            extra=ToolExtra(data={"result": result})
+        )

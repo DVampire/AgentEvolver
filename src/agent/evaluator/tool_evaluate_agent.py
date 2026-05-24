@@ -16,6 +16,7 @@ from src.skill.server import skill_manager
 from src.tool.server import tool_manager
 from src.dynamic import dynamic_manager
 from src.utils import parse_tool_args
+from src.agent.generator.tool_generate_agent import _load_class_from_file
 
 
 @AGENT.register_module(force=True)
@@ -257,6 +258,8 @@ class ToolEvaluateAgent(Agent):
 
         tool_config = await tool_manager.get_info(target_name)
         if tool_config is None:
+            tool_config = await self._try_load_tool(target_name)
+        if tool_config is None:
             logger.warning(f"| ⚠️ Tool '{target_name}' not found in registry, refusing evaluation")
             return AgentResponse(success=False, message=f"Tool '{target_name}' not found in registry.")
 
@@ -305,3 +308,22 @@ class ToolEvaluateAgent(Agent):
             message=response["result"] or "",
             extra=AgentExtra(data=response),
         )
+
+    async def _try_load_tool(self, target_name: str):
+        """Try to load and register a tool from src/tool/extended/ if not in registry."""
+        import os
+        from src.utils import assemble_project_path
+
+        tool_path = str(assemble_project_path(f"src/tool/extended/{target_name}.py"))
+        if not os.path.exists(tool_path):
+            return None
+        try:
+            new_cls = _load_class_from_file(tool_path, target_name)
+            with open(tool_path, "r") as f:
+                code = f.read()
+            await tool_manager.register(tool=new_cls, config={}, code=code, override=True)
+            logger.info(f"| 🔄 Tool '{target_name}' auto-loaded from {tool_path}")
+            return await tool_manager.get_info(target_name)
+        except Exception as e:
+            logger.warning(f"| ⚠️ Auto-load of '{target_name}' failed: {e}")
+            return None

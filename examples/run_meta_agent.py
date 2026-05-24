@@ -160,11 +160,11 @@ async def main():
     else:
         logger.error(f"| ❌ Task ended with status {record.task.status}: {record.error}")
 
-    # --- Print plan file path if available ---
+    # --- Print memory HTML path if available ---
     if record.result and hasattr(record.result, "extra"):
-        plan_path = (record.result.extra.data or {}).get("plan_path")
-        if plan_path:
-            logger.info(f"| 📝 Plan file: {plan_path}")
+        memory_path = (record.result.extra.data or {}).get("memory_path")
+        if memory_path:
+            logger.info(f"| 📄 Memory HTML: {memory_path}")
 
     # --- Teardown ---
     await task_manager.stop()

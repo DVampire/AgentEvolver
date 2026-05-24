@@ -18,6 +18,32 @@ from src.dynamic import dynamic_manager
 from src.utils import parse_tool_args
 
 
+def _load_class_from_file(file_path: str, module_name: Optional[str] = None):
+    """Load a class from a .py file using importlib, bypassing string exec.
+
+    Uses Python's standard import machinery so the file is parsed and compiled
+    normally — no JSON-escaped-quote issues that plague exec(source_string).
+    """
+    import sys
+    import importlib.util
+
+    mod_name = module_name or f"_dynamic_{id(file_path)}"
+    # Evict any stale cached module so we always load fresh from disk.
+    sys.modules.pop(mod_name, None)
+
+    spec = importlib.util.spec_from_file_location(mod_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = module
+    spec.loader.exec_module(module)
+
+    # Return the first class defined in the module that isn't imported.
+    for attr in vars(module).values():
+        if isinstance(attr, type) and attr.__module__ == mod_name:
+            return attr
+
+    raise ValueError(f"No class found in {file_path}")
+
+
 @AGENT.register_module(force=True)
 class ToolGenerateAgent(Agent):
     """Agent that generates a new tool from a natural-language description.
@@ -157,6 +183,7 @@ class ToolGenerateAgent(Agent):
         done = False
         result = None
         reasoning = None
+        target_name = kwargs.get("target_name")
 
         await hook_manager(
             ctx, HookEvent.PRE_STEP,
@@ -246,10 +273,17 @@ class ToolGenerateAgent(Agent):
                         logger.info(f"| ✅ Tool '{action_name}' completed")
 
                         if action_name == "done_tool":
-                            done = True
-                            result = action_result
                             action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
                             reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
+                            reg_error = await self._try_register_tool(target_name, reasoning or "")
+                            if reg_error is None:
+                                done = True
+                                result = action_result
+                            else:
+                                action_result = (
+                                    f"[registration failed] {reg_error}\n"
+                                    "Please fix the code at the reported location and call done_tool again."
+                                )
 
                 except Exception as e:
                     error = str(e)
@@ -318,7 +352,7 @@ class ToolGenerateAgent(Agent):
 
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number + 1}/{self.max_steps}")
-            response = await self._think_and_action(messages, task_id, step_number, ctx=ctx)
+            response = await self._think_and_action(messages, task_id, step_number, ctx=ctx, target_name=target_name)
             step_number += 1
             messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
             if response["done"]:
@@ -341,23 +375,17 @@ class ToolGenerateAgent(Agent):
 
         logger.info(f"| ✅ ToolGenerateAgent completed after {step_number}/{self.max_steps} steps")
 
-        if response["done"]:
-            await self._register_tool(target_name, response)
-
         return AgentResponse(
             success=response["done"],
             message=response["result"] or "",
             extra=AgentExtra(data=response),
         )
 
-    async def _register_tool(self, target_name: Optional[str], response: Dict[str, Any]) -> None:
-        """Dynamically load and register the newly generated tool."""
+    async def _try_register_tool(self, target_name: Optional[str], reasoning: str) -> Optional[str]:
+        """Try to load and register the generated tool. Returns None on success, error string on failure."""
         import os
-        from src.tool.types import Tool as ToolBase
 
-        # Agent reports the file path in reasoning or we infer it
         generated_path = None
-        reasoning = response.get("reasoning") or ""
         for token in reasoning.split():
             if token.startswith("src/tool/extended/") and token.endswith(".py"):
                 generated_path = os.path.join(self.base_dir.split("work_dir")[0], token)
@@ -370,21 +398,16 @@ class ToolGenerateAgent(Agent):
             )
 
         if not generated_path or not os.path.exists(generated_path):
-            logger.warning(f"| ⚠️  Could not locate generated tool file for registration")
-            return
+            return f"Could not locate generated tool file (expected src/tool/extended/{target_name}.py)"
 
         try:
+            new_cls = _load_class_from_file(generated_path, target_name)
             with open(generated_path, "r") as f:
                 new_code = f.read()
-            class_name = dynamic_manager.extract_class_name_from_code(new_code)
-            new_cls = dynamic_manager.load_class(new_code, class_name=class_name, base_class=ToolBase, context="tool")
-            inferred_name = target_name or getattr(new_cls, "name", None) or class_name
-            await tool_manager.register(
-                tool=new_cls,
-                config={},
-                code=new_code,
-                override=True,
-            )
+            inferred_name = target_name or getattr(new_cls, "name", None) or new_cls.__name__
+            await tool_manager.register(tool=new_cls, config={}, code=new_code, override=True)
             logger.info(f"| 🔄 Tool '{inferred_name}' registered from {generated_path}")
+            return None
         except Exception as e:
-            logger.error(f"| ❌ Failed to register generated tool: {e}")
+            logger.warning(f"| ⚠️ Registration attempt failed: {e}")
+            return str(e)

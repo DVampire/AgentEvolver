@@ -94,6 +94,12 @@ class CodeAgent(Agent):
             snapshot = "  (unavailable)"
 
         base["agent_context"] += f"\n\n### Work Dir\n{work_dir}\n{snapshot}"
+
+        action_errors = kwargs.get("action_errors") or []
+        if action_errors:
+            error_lines = "\n".join(f"- {e}" for e in action_errors)
+            base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
+
         return base
 
     # ------------------------------------------------------------------
@@ -111,6 +117,7 @@ class CodeAgent(Agent):
         done = False
         result = None
         reasoning = None
+        action_errors = []
 
         # PRE_STEP
         await hook_manager(
@@ -209,6 +216,7 @@ class CodeAgent(Agent):
 
                 except Exception as e:
                     error = str(e)
+                    action_errors.append(f"Action '{action_name}' failed: {error}")
                     logger.error(f"| ❌ Action '{action_name}' failed: {e}")
 
                 # POST_ACTION
@@ -238,7 +246,7 @@ class CodeAgent(Agent):
             extra={"task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
         )
 
-        return {"done": done, "result": result, "reasoning": reasoning}
+        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -281,13 +289,14 @@ class CodeAgent(Agent):
         messages = await self._get_messages(enhanced_task, ctx=ctx)
 
         step_number = 0
-        response = {"done": False, "result": None, "reasoning": None}
+        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             response = await self._think_and_action(messages, task_id, step_number, ctx=ctx)
             step_number += 1
-            messages = await self._get_messages(enhanced_task, ctx=ctx)
+            action_errors = response.get("action_errors") or []
+            messages = await self._get_messages(enhanced_task, ctx=ctx, action_errors=action_errors)
             if response["done"]:
                 break
 
