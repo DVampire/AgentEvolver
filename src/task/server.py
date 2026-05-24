@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from src.logger import logger
 from src.task.types import Task, TaskPriority, TaskStatus
-from src.utils import Singleton, file_lock, generate_unique_id
+from src.utils import Singleton, file_lock, make_id
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ class TaskManager(metaclass=Singleton):
                     return existing_id
 
             task = Task(
-                id=generate_unique_id("task"),
+                id=make_id(),
                 content=content,
                 files=files or [],
                 priority=priority,

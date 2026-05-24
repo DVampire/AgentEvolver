@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from src.utils import generate_unique_id
+from src.utils import make_id
 
 
 def _workspace_fingerprint(workspace: str) -> str:
@@ -18,7 +18,7 @@ def _workspace_fingerprint(workspace: str) -> str:
 class SessionContext(BaseModel):
     """Top-level session identifier passed between all managers."""
     id: str = Field(
-        default_factory=lambda: generate_unique_id("session"),
+        default_factory=lambda: make_id(),
         description="Unique identifier for this session.",
     )
     workspace: str = Field(default="", description="Canonical workspace root path.")
@@ -57,7 +57,7 @@ class SessionContext(BaseModel):
 
 class BaseContext(BaseModel):
     """Base class for all module-level contexts."""
-    id: str = Field(description="Session id, copied from SessionContext.")
+    id: str = Field(description="Task/execution ID — unique per agent run, used as hook isolation key and HTML file name.")
 
     @classmethod
     def from_session(cls, ctx: "SessionContext", **kwargs) -> "BaseContext":

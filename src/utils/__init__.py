@@ -16,13 +16,7 @@ from .string_utils import (
     dedent,
     is_same,
 )
-from .name_utils import (
-    generate_unique_id,
-    new_session_id,
-    new_task_id,
-    subtask_session_id,
-    parse_subtask_session_id,
-)
+from .name_utils import make_id
 from .url_utils import fetch_url
 from .args_utils import parse_tool_args
 from .hvac_utils import hvac_client
@@ -55,14 +49,10 @@ __all__ = [
     "file_lock",
     "extract_boxed_content",
     "dedent",
-    "generate_unique_id",
+    "make_id",
     "fetch_url",
     "parse_tool_args",
     "is_same",
-    "new_session_id",
-    "new_task_id",
-    "subtask_session_id",
-    "parse_subtask_session_id",
     "hvac_client",
     "count_tokens",
     "count_message_tokens",

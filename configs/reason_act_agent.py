@@ -4,7 +4,6 @@ with read_base():
     from .agents.reason_act_agent import reason_act_agent
     from .tools.mdify import mdify_tool
     from .tools.bash import bash_tool
-    from .tools.todo import todo_tool
     from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "reason_act_agent"
@@ -26,7 +25,6 @@ tool_names = [
     'bash_tool',
     'python_interpreter_tool',
     'done_tool',
-    'todo_tool',
 ]
 skill_names = [
     "hello_world_skill",
@@ -39,11 +37,6 @@ bash_tool.update(
 #-----------------MDIFY TOOL CONFIG-----------------
 mdify_tool.update(
     base_dir="tool/mdify",
-)
-#-----------------TODO TOOL CONFIG-----------------
-todo_tool.update(
-    base_dir="tool/todo",
-    require_grad=False,
 )
 
 #-----------------MEMORY SYSTEM CONFIG-----------------

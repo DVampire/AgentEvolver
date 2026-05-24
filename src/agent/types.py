@@ -194,6 +194,17 @@ class ActionInputArgs(BaseModel):
     args: str = Field(description='The arguments as a JSON string. Must be a valid JSON object string. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
 
 
+class PlanItem(BaseModel):
+    id: str = Field(description='Short step ID like "step-1", "step-2".')
+    description: str = Field(description="What this step involves.")
+    status: str = Field(default="pending", description="pending | in_progress | done | failed")
+
+
+class TodoUpdate(BaseModel):
+    id: str = Field(description="The plan item ID to update.")
+    status: str = Field(description="New status: in_progress | done | failed")
+
+
 class ThinkOutput(BaseModel):
     thinking: str = Field(
         description="A structured <think>-style reasoning block."
@@ -204,6 +215,20 @@ class ThinkOutput(BaseModel):
     memory: str = Field(description="1-3 sentences of specific memory.")
     next_goal: str = Field(
         description="State the next immediate goals and actions."
+    )
+    initial_plan: Optional[List[PlanItem]] = Field(
+        default=None,
+        description=(
+            "Only set on step 0 to define the execution plan. Leave null on all other steps. "
+            'e.g., [{"id": "step-1", "description": "Read source file", "status": "pending"}, ...]'
+        )
+    )
+    plan_updates: List[TodoUpdate] = Field(
+        default_factory=list,
+        description=(
+            "Update plan item statuses. Use on step 1+ to mark items in_progress, done, or failed. "
+            'e.g., [{"id": "step-1", "status": "done"}, {"id": "step-2", "status": "in_progress"}]'
+        )
     )
     actions: List[ActionInputArgs] = Field(
         description=(
@@ -220,6 +245,8 @@ class ThinkOutput(BaseModel):
             f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
             f"Memory: {self.memory}\n"
             f"Next Goal: {self.next_goal}\n"
+            f"Initial Plan: {self.initial_plan}\n"
+            f"Plan Updates: {self.plan_updates}\n"
             f"Actions:\n{format_actions(self.actions)}\n"
         )
 
@@ -252,7 +279,6 @@ class Agent(BaseModel):
         review_steps: int = 5,
         require_grad: bool = False,
         use_memory: bool = True,
-        use_todo: bool = True,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -277,7 +303,6 @@ class Agent(BaseModel):
         self.max_actions = max_actions
 
         self.review_steps = review_steps
-        self.use_todo = use_todo
 
     async def initialize(self) -> None:
         """Initialize the agent."""
@@ -376,16 +401,10 @@ class Agent(BaseModel):
             except Exception:
                 pass
 
-        if self.use_todo:
-            todo_tool = await tool_manager.get("todo_tool")
-            todo_section = f"### Todo\n{todo_tool.get_todo_content(ctx=ctx)}"
-        else:
-            todo_section = "### Todo\n[Todo is disabled.]"
-
         sections = [task_section, step_info]
         if history_section:
             sections.append(history_section)
-        sections.extend([memory_section, todo_section])
+        sections.append(memory_section)
         agent_context = "\n\n".join(sections)
 
         return {"agent_context": agent_context}
@@ -480,7 +499,9 @@ __all__ = [
     "InputArgs",
     "AgentConfig",
     "ActionInputArgs",
+    "PlanItem",
+    "TodoUpdate",
+    "ThinkOutput",
     "Agent",
     "AgentResponse",
-    "ThinkOutput",
 ]

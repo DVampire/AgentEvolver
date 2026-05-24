@@ -7,7 +7,8 @@ from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse, ThinkOutput
 from src.hook.server import hook_manager
-from src.hook.types import HookDecision, HookEvent
+from src.hook.types import HookContext, HookDecision, HookEvent
+from src.config import config
 from src.logger import logger
 from src.message import Message
 from src.model import model_manager
@@ -100,11 +101,6 @@ class ToolGenerateAgent(Agent):
     # ------------------------------------------------------------------
 
     async def _get_messages(self, task: str, ctx, **kwargs):
-        from src.utils import assemble_project_path
-        from src.prompt import prompt_manager
-        from src.hook.types import HookContext, HookEvent
-        from src.config import config as _config
-
         work_dir = await self._resolve_work_dir(ctx=ctx, **kwargs)
         system_modules = dict(
             max_actions=self.max_actions,
@@ -127,10 +123,9 @@ class ToolGenerateAgent(Agent):
             id=ctx.id,
             agent_name=self.name,
             messages=messages,
-            max_tokens=getattr(_config, "max_tokens", 0),
+            max_tokens=getattr(config, "max_tokens", 0),
         )
-        from src.hook.server import hook_manager as _hm
-        result = await _hm(hook_ctx)
+        result = await hook_manager(hook_ctx)
         messages = result.modified_messages if result.modified_messages is not None else messages
         if result.additional_context:
             from src.message import SystemMessage
@@ -210,6 +205,26 @@ class ToolGenerateAgent(Agent):
             memory = think_output.memory
             next_goal = think_output.next_goal
             actions = think_output.actions
+
+            if step_number == 0 and think_output.initial_plan:
+                await hook_manager(
+                    ctx, HookEvent.ON_CUSTOM,
+                    agent_name=self.name,
+                    extra={"meta_type": "plan_init", "items": [
+                        {"id": i.id, "description": i.description, "status": i.status}
+                        for i in think_output.initial_plan
+                    ]},
+                )
+                logger.info(f"| 📋 Plan initialized: {len(think_output.initial_plan)} steps")
+            if think_output.plan_updates:
+                await hook_manager(
+                    ctx, HookEvent.ON_CUSTOM,
+                    agent_name=self.name,
+                    extra={"meta_type": "plan_update", "updates": [
+                        {"id": u.id, "status": u.status}
+                        for u in think_output.plan_updates
+                    ]},
+                )
 
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
@@ -332,6 +347,7 @@ class ToolGenerateAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
+
         if not ctx.work_dir:
             ctx.work_dir = self.base_dir
 
@@ -388,12 +404,12 @@ class ToolGenerateAgent(Agent):
         generated_path = None
         for token in reasoning.split():
             if token.startswith("src/tool/extended/") and token.endswith(".py"):
-                generated_path = os.path.join(self.base_dir.split("work_dir")[0], token)
+                generated_path = os.path.join(self.project_root, token)
                 break
 
         if not generated_path and target_name:
             generated_path = os.path.join(
-                self.base_dir.split("work_dir")[0],
+                self.project_root,
                 f"src/tool/extended/{target_name}.py",
             )
 

@@ -109,6 +109,15 @@ class _FlowStep:
         self.round = round
 
 
+class _PlanEntry:
+    __slots__ = ("id", "description", "status")
+
+    def __init__(self, id: str, description: str, status: str = "pending") -> None:
+        self.id = id
+        self.description = description
+        self.status = status
+
+
 class _HistoryEntry:
     __slots__ = ("ts", "event", "detail", "status")
 
@@ -131,12 +140,62 @@ class _SessionState:
 
         self.todos: List[_TodoEntry] = []
         self.flow_steps: List[_FlowStep] = []
+        self.plan: List[_PlanEntry] = []
         self.history: List[_HistoryEntry] = []
+        self.history_summary: str = ""   # LLM-compressed summary of overflow entries
         self.final_result: Optional[str] = None
         self.result_success: bool = True
 
         # Serialises concurrent HTML writes for this session
         self._write_lock: asyncio.Lock = asyncio.Lock()
+        self._compressing: bool = False  # guard against concurrent compression tasks
+
+    # ------------------------------------------------------------------
+    # Text summary (for prompt injection)
+    # ------------------------------------------------------------------
+
+    def to_text(self, recent_n: int = 20) -> str:
+        """Return a markdown text summary of session state, suitable for prompt injection."""
+        parts: List[str] = []
+
+        if self.task:
+            parts.append(f"**Task:** {self.task}")
+
+        if self.plan:
+            _plan_icon = {"pending": "☐", "in_progress": "▶", "done": "✓", "failed": "✗"}
+            parts.append("\n**Execution Plan:**")
+            for p in self.plan:
+                icon = _plan_icon.get(p.status, "☐")
+                parts.append(f"  {icon} [{p.id}] {p.description}")
+
+        if self.todos:
+            parts.append("\n**Todo List:**")
+            for t in self.todos:
+                mark = "✓" if t.status == "done" else ("✗" if t.status == "failed" else "○")
+                agent = f" [{t.agent_name}]" if t.agent_name else ""
+                parts.append(f"  {mark} [{t.status}] {t.description}{agent}")
+
+        if self.flow_steps:
+            parts.append("\n**Execution Plan:**")
+            for s in self.flow_steps:
+                agents = f" ({', '.join(s.agents)})" if s.agents else ""
+                parts.append(f"  Step {s.step}: [{s.status}] {s.label}{agents}")
+
+        if self.history_summary:
+            parts.append(f"\n**Earlier History (summarized):**\n  {self.history_summary}")
+
+        recent = self.history[-recent_n:] if recent_n else self.history
+        if recent:
+            parts.append("\n**Recent History:**")
+            for h in recent:
+                detail = f": {h.detail}" if h.detail else ""
+                status = f" [{h.status}]" if h.status else ""
+                parts.append(f"  [{h.ts}] {h.event}{status}{detail}")
+
+        if self.final_result is not None:
+            parts.append(f"\n**Result:** {self.final_result}")
+
+        return "\n".join(parts)
 
     # ------------------------------------------------------------------
     # HTML rendering
@@ -156,6 +215,7 @@ class _SessionState:
             "<body>",
             '<div class="memory-page">',
             self._render_header(),
+            self._render_plan(),
             self._render_todos(),
             self._render_flowchart(),
             self._render_history(),
@@ -173,6 +233,28 @@ class _SessionState:
             f'<code class="mem-session">{_he(self.session_id)}</code>'
             "</div>"
         )
+
+    def _render_plan(self) -> str:
+        lines = ['<div class="mem-section">', "<h2>Execution Plan</h2>"]
+        if not self.plan:
+            lines += ['<p class="mem-empty">No plan yet.</p>', "</div>"]
+            return "\n".join(lines)
+
+        lines += [
+            '<table class="todo-table">',
+            "<thead><tr><th>#</th><th>ID</th><th>Status</th><th>Description</th></tr></thead><tbody>",
+        ]
+        for i, p in enumerate(self.plan, 1):
+            lines.append(
+                f"<tr>"
+                f'<td class="todo-num">{i}</td>'
+                f'<td><code class="todo-agent">{_he(p.id)}</code></td>'
+                f"<td>{_badge(p.status)}</td>"
+                f'<td class="todo-desc">{_he(p.description)}</td>'
+                "</tr>"
+            )
+        lines += ["</tbody>", "</table>", "</div>"]
+        return "\n".join(lines)
 
     def _render_todos(self) -> str:
         lines = ['<div class="mem-section">', "<h2>Todo List</h2>"]
@@ -300,6 +382,8 @@ class FileSystemMemory(Memory):
     base_dir: str = Field(default="")
     model_name: str = Field(default="openrouter/gemini-3-flash-preview")
     max_todo_length: int = Field(default=80)
+    max_history: int = Field(default=40, description="Trigger history compression when entry count exceeds this.")
+    keep_recent: int = Field(default=20, description="Number of recent history entries to keep verbatim after compression.")
 
     def __init__(
         self,
@@ -322,6 +406,12 @@ class FileSystemMemory(Memory):
     # Public API
     # ------------------------------------------------------------------
 
+    def _append_history(self, state: _SessionState, entry: _HistoryEntry) -> None:
+        """Append a history entry and fire compression if threshold exceeded."""
+        state.history.append(entry)
+        if len(state.history) > self.max_history and not state._compressing:
+            asyncio.create_task(self._compress_history(state))
+
     async def emit(self, event: TraceEvent, session_id: str) -> None:
         """Ingest a TraceEvent. Never blocks the caller."""
         state = await self._get_or_create(session_id, event)
@@ -331,7 +421,7 @@ class FileSystemMemory(Memory):
         if ev == TraceEventType.AGENT_START:
             # Task is already set in _get_or_create; just record history
             task_desc = (event.input or {}).get("task", "")
-            state.history.append(_HistoryEntry(
+            self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event=f"Agent started: {event.agent_name or ''}",
                 detail=task_desc[:200] if task_desc else "",
@@ -343,7 +433,7 @@ class FileSystemMemory(Memory):
             success = event.metadata.get("success", not bool(event.error))
             result = event.output if isinstance(event.output, str) else str(event.output or "")
             error = event.error or ""
-            state.history.append(_HistoryEntry(
+            self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event=f"Agent ended: {event.agent_name or ''}",
                 detail=error if not success else result[:200],
@@ -360,7 +450,7 @@ class FileSystemMemory(Memory):
             detail = event.error if not ok else ""
             if isinstance(event.output, str):
                 detail = detail or event.output[:200]
-            state.history.append(_HistoryEntry(
+            self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event=f"{event.action_name or event.action_type or 'action'} result",
                 detail=detail,
@@ -369,12 +459,26 @@ class FileSystemMemory(Memory):
             asyncio.create_task(self._save(state))
 
         elif ev == TraceEventType.ERROR:
-            state.history.append(_HistoryEntry(
+            self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event="Error",
                 detail=event.error or str(event.output or ""),
                 status="failed",
             ))
+            asyncio.create_task(self._save(state))
+
+        elif ev == TraceEventType.PLAN_INIT:
+            state.plan = [
+                _PlanEntry(id=i["id"], description=i["description"], status=i.get("status", "pending"))
+                for i in event.metadata.get("items", [])
+            ]
+            asyncio.create_task(self._save(state))
+
+        elif ev == TraceEventType.PLAN_UPDATE:
+            update_map = {u["id"]: u["status"] for u in event.metadata.get("updates", [])}
+            for p in state.plan:
+                if p.id in update_map:
+                    p.status = update_map[p.id]
             asyncio.create_task(self._save(state))
 
         elif ev == TraceEventType.CUSTOM:
@@ -405,7 +509,7 @@ class FileSystemMemory(Memory):
                 asyncio.create_task(self._save(state))
 
             elif meta_type == "history_entry":
-                state.history.append(_HistoryEntry(
+                self._append_history(state, _HistoryEntry(
                     ts=_ts(),
                     event=event.metadata.get("event", event.label),
                     detail=event.metadata.get("detail", ""),
@@ -414,6 +518,14 @@ class FileSystemMemory(Memory):
                 asyncio.create_task(self._save(state))
 
     async def get(self, session_id: str, **kwargs) -> Optional[str]:
+        """Return a text summary of session state, suitable for prompt injection."""
+        async with self._registry_lock:
+            state = self._sessions.get(session_id)
+        if state is None:
+            return None
+        return state.to_text() or None
+
+    async def get_html(self, session_id: str) -> Optional[str]:
         """Return the full HTML content of the memory file for this session."""
         async with self._registry_lock:
             state = self._sessions.get(session_id)
@@ -437,6 +549,42 @@ class FileSystemMemory(Memory):
                 self._sessions[session_id] = state
                 logger.info(f"| 📄 FileSystemMemory: created session {session_id} → {file_path}")
             return self._sessions[session_id]
+
+    async def _compress_history(self, state: _SessionState) -> None:
+        """LLM-compress overflow history entries into state.history_summary."""
+        state._compressing = True
+        try:
+            overflow = state.history[:-self.keep_recent]
+            state.history = state.history[-self.keep_recent:]
+
+            entries_text = "\n".join(
+                f"[{e.ts}] {e.event}{' [' + e.status + ']' if e.status else ''}"
+                f"{': ' + e.detail if e.detail else ''}"
+                for e in overflow
+            )
+            existing = (
+                f"Existing summary:\n{state.history_summary}\n\nNew entries to incorporate:\n"
+                if state.history_summary else ""
+            )
+            prompt = (
+                f"{existing}{entries_text}\n\n"
+                "Summarize the above execution history in 2-4 sentences. "
+                "Focus on what agents ran, what tools were called, and what succeeded or failed."
+            )
+            response = await model_manager(
+                model=self.model_name,
+                messages=[
+                    SystemMessage(content="You are a concise execution history summarizer."),
+                    HumanMessage(content=prompt),
+                ],
+            )
+            state.history_summary = response.message.strip()
+            await self._save(state)
+            logger.info(f"| 🗜️ FileSystemMemory: compressed {len(overflow)} history entries for {state.session_id}")
+        except Exception as e:
+            logger.warning(f"| ⚠️ FileSystemMemory: history compression failed ({e})")
+        finally:
+            state._compressing = False
 
     async def _apply_todos(self, state: _SessionState, raw_todos: List[Dict[str, Any]]) -> None:
         """Summarise long todo descriptions, update state, then save."""

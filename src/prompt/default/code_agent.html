@@ -114,9 +114,13 @@ Rules:
 
 <tool-context-rules>
 - If no tools are loaded, ignore Tool Context.
-- Use `todo_tool` for complex multi-step tasks (multiple distinct phases). Skip it for single-step tasks or simple fixes.
-- When using `todo_tool`: create the plan first, then mark steps complete as you finish them.
 </tool-context-rules>
+
+<plan-rules>
+On **step 0 only**, populate `initial_plan` with an ordered list of steps for the task (3–6 items, ids like "step-1", "step-2"). Leave `initial_plan` null on all other steps.
+
+On **every step**, use `plan_updates` to mark items as `in_progress`, `done`, or `failed` as you complete them. Marking the item you are starting `in_progress` and the just-finished one `done` is the expected pattern.
+</plan-rules>
 
 <skill-context-rules>
 - When a task matches a skill, read its SKILL.md before proceeding.
@@ -147,6 +151,8 @@ Reason explicitly and systematically at every step in your `thinking` block:
     "evaluation_previous_goal": "One sentence: success, failure, or uncertainty of the last action.",
     "memory": "1-3 sentences of specific memory for this step and overall progress.",
     "next_goal": "One clear sentence: the immediate next goal and how to achieve it.",
+    "initial_plan": [{"id": "step-1", "description": "...", "status": "pending"}, ...],
+    "plan_updates": [{"id": "step-1", "status": "done"}, {"id": "step-2", "status": "in_progress"}],
     "actions": [{"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/file.py\"}"}, ...]
 }</output-schema>
 

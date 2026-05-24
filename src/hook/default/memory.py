@@ -11,6 +11,7 @@ from src.hook.types import Hook, HookContext, HookEvent, HookResult
 from src.registry import HOOK
 from src.trace.types import (
     TraceEvent,
+    TraceEventType,
     agent_start_event,
     agent_end_event,
     step_end_event,
@@ -42,20 +43,55 @@ class MemoryHook(Hook):
         if event is None:
             return HookResult.allow()
 
-        # Emit into memory; ON_STOP also ends the session (flushes working memory)
+        # ON_CUSTOM events carry structured plan-state data (todo_update, flowchart_update,
+        # history_entry, final_result) and go exclusively to file_system_memory.
+        if ctx.event == HookEvent.ON_CUSTOM:
+            try:
+                fs_info = await memory_manager.get_info("file_system_memory")
+                if fs_info and fs_info.instance is not None:
+                    extra = ctx.extra or {}
+                    meta_type = extra.get("meta_type", "")
+                    data = {k: v for k, v in extra.items()
+                            if k not in ("meta_type", "memory_name", "use_memory", "_session_state")}
+                    _type_map = {
+                        "plan_init":   TraceEventType.PLAN_INIT,
+                        "plan_update": TraceEventType.PLAN_UPDATE,
+                    }
+                    ev_type = _type_map.get(meta_type, TraceEventType.CUSTOM)
+                    metadata = data if ev_type != TraceEventType.CUSTOM else {"type": meta_type, **data}
+                    await fs_info.instance.emit(
+                        TraceEvent(
+                            event_type=ev_type,
+                            session_id=ctx.id,
+                            agent_name=ctx.agent_name,
+                            metadata=metadata,
+                        ),
+                        session_id=ctx.id,
+                    )
+            except Exception as e:
+                logger.warning(f"| ⚠️ MemoryHook (ON_CUSTOM) error: {e}")
+            return HookResult.allow()
+
+        # Emit into primary memory (GeneralMemorySystem — working memory / summaries)
         try:
             memory_info = await memory_manager.get_info(memory_name)
-            if memory_info is None or memory_info.instance is None:
-                return HookResult.allow()
-
-            mem = memory_info.instance  # GeneralMemorySystem instance
-            await mem.emit(event, session_id=ctx.id)
-
-            if ctx.event == HookEvent.ON_STOP:
-                await mem.end_session(session_id=ctx.id)
-
+            if memory_info and memory_info.instance is not None:
+                mem = memory_info.instance
+                await mem.emit(event, session_id=ctx.id)
+                if ctx.event == HookEvent.ON_STOP:
+                    await mem.end_session(session_id=ctx.id)
         except Exception as e:
-            logger.warning(f"| ⚠️ MemoryHook error on {ctx.event}: {e}")
+            logger.warning(f"| ⚠️ MemoryHook (primary) error on {ctx.event}: {e}")
+
+        # Emit into FileSystemMemory as a secondary sink so every agent's execution
+        # is recorded as HTML — runs concurrently with the primary emit above.
+        if memory_name != "file_system_memory":
+            try:
+                fs_info = await memory_manager.get_info("file_system_memory")
+                if fs_info and fs_info.instance is not None:
+                    await fs_info.instance.emit(event, session_id=ctx.id)
+            except Exception as e:
+                logger.warning(f"| ⚠️ MemoryHook (file_system) error on {ctx.event}: {e}")
 
         return HookResult.allow()
 
@@ -75,12 +111,13 @@ class MemoryHook(Hook):
             )
 
         if ctx.event == HookEvent.ON_STOP:
+            extra = ctx.extra or {}
             return agent_end_event(
                 session_id=ctx.id,
                 task_id=task_id,
                 agent_name=ctx.agent_name,
-                success=True,
-                result=None,
+                success=not bool(extra.get("error")),
+                result=extra.get("result"),
             )
 
         if ctx.event == HookEvent.POST_STEP:

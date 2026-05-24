@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, Protocol, TypeVar
 
 from pydantic import BaseModel, Field
-from src.utils.name_utils import generate_unique_id
+from src.utils.name_utils import make_id
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +31,8 @@ from src.utils.name_utils import generate_unique_id
 
 def make_plan_path(work_dir: str, session_id: str, suffix: str = "plan") -> str:
     """Generate a unique plan file path: {work_dir}/{session_id}_{timestamp}_{random}.{suffix}.md"""
-    unique_id = generate_unique_id(prefix=session_id)
-    return os.path.join(work_dir, f"{unique_id}.{suffix}.md")
+    unique_id = make_id()
+    return os.path.join(work_dir, f"{session_id}_{unique_id}.{suffix}.md")
 
 # ---------------------------------------------------------------------------
 # Timestamp helper

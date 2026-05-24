@@ -146,6 +146,26 @@ class CodeAgent(Agent):
             next_goal = think_output.next_goal
             actions = think_output.actions
 
+            if step_number == 0 and think_output.initial_plan:
+                await hook_manager(
+                    ctx, HookEvent.ON_CUSTOM,
+                    agent_name=self.name,
+                    extra={"meta_type": "plan_init", "items": [
+                        {"id": i.id, "description": i.description, "status": i.status}
+                        for i in think_output.initial_plan
+                    ]},
+                )
+                logger.info(f"| 📋 Plan initialized: {len(think_output.initial_plan)} steps")
+            if think_output.plan_updates:
+                await hook_manager(
+                    ctx, HookEvent.ON_CUSTOM,
+                    agent_name=self.name,
+                    extra={"meta_type": "plan_update", "updates": [
+                        {"id": u.id, "status": u.status}
+                        for u in think_output.plan_updates
+                    ]},
+                )
+
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Actions: {actions}")
@@ -263,6 +283,7 @@ class CodeAgent(Agent):
         ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
+
 
         # Inject workdir so git_tool and file tools can resolve paths
         if not ctx.work_dir:

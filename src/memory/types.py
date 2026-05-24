@@ -100,6 +100,7 @@ class Memory(BaseModel):
     save_path: Optional[str] = Field(default=None, description="Path to save/load memory JSON file")
     require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+    prompt_readable: bool = Field(default=True, description="Whether get() returns text suitable for prompt injection. Set False for HTML-based memories.")
 
     def __init__(self, **kwargs):
         """Initialize memory system."""

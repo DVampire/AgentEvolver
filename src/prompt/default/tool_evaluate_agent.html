@@ -140,6 +140,12 @@ Evaluate the tool across the following five dimensions. Each dimension is scored
 - Only write to workdir scratch files.
 </code-operation-rules>
 
+<plan-rules>
+On **step 0 only**, populate `initial_plan` with the 4 canonical evaluation steps (ids "step-1" … "step-4"): Read source file → Write test suite → Run syntax check and test suite → Write report and done_tool. Leave `initial_plan` null on all other steps.
+
+On **every step**, use `plan_updates` to mark items `in_progress`, `done`, or `failed`.
+</plan-rules>
+
 <test-template>
 import asyncio, sys, time
 sys.path.insert(0, '{{ project_root }}')
@@ -200,6 +206,8 @@ Respond with valid JSON only — no markdown fences, no extra text:
     "evaluation_previous_goal": "One sentence: did the last action succeed or fail?",
     "memory": "✓ Source file read: /path/to/tool.py\n✓ Correctness: PASS (4/4) — 20\n✗ Robustness: not yet tested\n...",
     "next_goal": "One sentence: exactly what I will do next.",
+    "initial_plan": [{"id": "step-1", "description": "...", "status": "pending"}, ...],
+    "plan_updates": [{"id": "step-1", "status": "done"}, {"id": "step-2", "status": "in_progress"}],
     "actions": [{"type": "tool", "name": "bash_tool", "args": "{\"command\": \"...\"}"}]
 }
 </output-schema>

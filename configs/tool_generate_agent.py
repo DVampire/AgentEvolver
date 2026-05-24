@@ -2,7 +2,6 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .tools.bash import bash_tool
-    from .tools.todo import todo_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
@@ -20,7 +19,6 @@ model_name = "openrouter/gemini-3-flash-preview"
 tool_names = [
     "bash_tool",
     "done_tool",
-    "todo_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
@@ -35,10 +33,6 @@ memory_names = []
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(
-    require_grad=False,
-)
-todo_tool.update(
-    base_dir="tool/todo",
     require_grad=False,
 )
 

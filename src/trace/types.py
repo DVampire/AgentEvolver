@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.utils import generate_unique_id
+from src.utils import make_id
 
 
 class TraceEventType(str, Enum):
@@ -37,6 +37,10 @@ class TraceEventType(str, Enum):
     SKILL_RESULT  = "skill_result"
     PLAN_TEXT     = "plan_text"      # action_type == "text"
 
+    # Plan lifecycle
+    PLAN_INIT     = "plan_init"   # step 0: agent sets its execution plan
+    PLAN_UPDATE   = "plan_update" # step N: agent updates plan item statuses
+
     # Misc
     ERROR         = "error"
     CUSTOM        = "custom"
@@ -61,7 +65,7 @@ class TraceEvent(BaseModel):
     """A single, immutable trace record produced during agent execution."""
 
     id: str = Field(
-        default_factory=lambda: generate_unique_id("ev"),
+        default_factory=lambda: make_id(),
         description="Globally unique event ID.",
     )
     event_type: TraceEventType

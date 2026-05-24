@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.utils import generate_unique_id
+from src.utils import make_id
 
 
 class TaskStatus(str, Enum):
@@ -61,7 +61,7 @@ class Task(BaseModel):
     """
 
     id: str = Field(
-        default_factory=lambda: generate_unique_id("task"),
+        default_factory=lambda: make_id(),
         description="Unique identifier for this task.",
     )
     content: str = Field(description="Natural-language description of what needs to be done.")

@@ -1,26 +1,50 @@
-"""MetaAgent — long-lived Actor that orchestrates sub-agents to complete a user task.
+"""MetaAgent — orchestrator that decomposes a user task and dispatches sub-agents concurrently.
 
-Architecture
-------------
-* MetaAgent is stateless across calls.  Each ``__call__`` creates an isolated
-  ``MetaState`` (inbox, escalation futures, running tasks) — concurrent user
-  requests never share state.
-* Sub-agents are ordinary async coroutines.  They escalate to Meta by placing a
-  ``SUBTASK_ESCALATE`` event on ``MetaState.inbox`` with an attached
-  ``asyncio.Future``; they suspend on that Future until Meta resolves it.
-* The event loop separates escalations (high-priority, immediate reply) from
-  completion events (batched with a 100 ms window before one LLM REACT call).
-* Completion flow: all USER subtasks terminal → one final LLM synthesis call
-  → ``state.final_answer`` set.
-* Execution state is persisted as an HTML file via FileSystemMemory; the LLM
-  reads it as ``plan_context`` on every REACT call so it can make informed
-  decisions.
+Execution model
+---------------
+  user task
+      │
+      ▼
+  _react()  ──LLM──►  plan  (SubTaskSpec list + dependency graph)
+      │
+      ├─ _dispatch() ──► asyncio.Task per ready subtask  ──► sub-agent(__call__)
+      │                        │                                    │
+      │               SUBTASK_ESCALATE                      SUBTASK_DONE
+      │                        │                                    │
+      └──────────── MetaState._inbox (asyncio.Queue) ◄─────────────┘
+                               │
+                    _drain() collects completions
+                    (100 ms batch window)
+                               │
+                    _react() again with results
+                               │
+                    all done ──► final LLM synthesis ──► AgentResponse
 
-Session naming
---------------
-* Each ``__call__`` owns a top-level ``session_id`` (``new_session_id()``).
-* Each subtask execution gets ``subtask_session_id(session_id, task_id, step)``
-  so memory and trace records never bleed between retries or concurrent runs.
+Escalation flow
+---------------
+  sub-agent blocks  →  puts SUBTASK_ESCALATE on inbox (with asyncio.Future)
+  meta _reply_escalations()  →  LLM decides reply  →  Future.set_result()
+  sub-agent resumes
+
+Memory & observability
+----------------------
+  Write  (all paths via MemoryHook):
+    lifecycle events  →  MemoryHook  →  GeneralMemorySystem (working memory)
+                      →  MemoryHook  →  FileSystemMemory    (HTML per session)
+    plan-state updates (todo/flowchart/history)
+                      →  hook ON_CUSTOM  →  MemoryHook  →  FileSystemMemory
+
+  Read:
+    meta_agent._get_memory_context()  →  FileSystemMemory.get()
+                                    →  HTML injected as ``memory_context`` on every _react()
+    sub-agents._get_agent_context() →  GeneralMemorySystem.get()
+                                    →  text summary injected into each step's prompt
+
+Task ID / HTML naming
+---------------------
+  Each agent run has its own task_id (= AgentContext.id) which also names its HTML file.
+  meta_agent : make_id()      → {id}.memory.html  (root run)
+  sub-agent  : SubTaskSpec.id → {id}.memory.html  (one file per subtask)
 """
 
 from __future__ import annotations
@@ -45,7 +69,7 @@ from src.registry import AGENT
 from src.task.types import TaskStatus, SubTaskCategory
 from src.trace.server import trace_manager
 from src.trace.types import TraceEvent, TraceEventType, agent_start_event, agent_end_event
-from src.utils.name_utils import new_session_id, new_task_id, subtask_session_id
+from src.utils.name_utils import make_id
 
 # Collect completion events arriving within this window before one LLM REACT call.
 _BATCH_WINDOW_S = 0.1
@@ -71,7 +95,7 @@ class SubTaskInput(BaseModel):
 
 
 class SubTaskSpec(BaseModel):
-    id: str = Field(default_factory=new_task_id)
+    id: str = Field(default_factory=lambda: make_id())
     category: SubTaskCategory = SubTaskCategory.ACTOR
     name: str = Field(description="Agent name to dispatch this subtask to.")
     input: SubTaskInput
@@ -254,7 +278,6 @@ class MetaAgent(Agent):
             memory_name=memory_name,
             max_steps=max_steps,
             require_grad=require_grad,
-            use_todo=False,
             **kwargs,
         )
         self.evolution_score_threshold = evolution_score_threshold
@@ -274,7 +297,7 @@ class MetaAgent(Agent):
     ) -> AgentResponse:
         logger.info(f"| 🧠 MetaAgent starting: {task}")
 
-        session_id = new_session_id()
+        session_id = make_id()
         state = MetaState(session_id=session_id, user_task=task)
 
         hook_ctx = AgentContext(id=session_id, agent_name=self.name)
@@ -430,12 +453,12 @@ class MetaAgent(Agent):
 
         await self._sync_state(state)
 
-        plan_context = await self._get_plan_context(state)
+        memory_context = await self._get_memory_context(state)
         messages = await self._get_messages(
             task=state.user_task,
             available_agents=await self._agents_info(),
             situation=self._fmt_escalations(escalations),
-            plan_context=plan_context,
+            memory_context=memory_context,
             session_id=state.session_id,
             ctx=ctx,
         )
@@ -482,12 +505,12 @@ class MetaAgent(Agent):
     ) -> MetaReactOutput:
         import time as _time
         situation = self._fmt_situation(state, events) if events else "No events yet. Produce the initial plan."
-        plan_context = await self._get_plan_context(state)
+        memory_context = await self._get_memory_context(state)
         messages = await self._get_messages(
             task=state.user_task,
             available_agents=await self._agents_info(),
             situation=situation,
-            plan_context=plan_context,
+            memory_context=memory_context,
             session_id=state.session_id,
             ctx=ctx,
         )
@@ -561,8 +584,7 @@ class MetaAgent(Agent):
 
     async def _dispatch(self, state: MetaState) -> None:
         for record in state.ready():
-            sid = subtask_session_id(state.session_id, record.spec.id, record.step)
-            record.mark_running(sid)
+            record.mark_running(record.spec.id)
             t = asyncio.create_task(
                 self._run_subtask(record, state),
                 name=f"subtask-{record.spec.id}",
@@ -571,21 +593,18 @@ class MetaAgent(Agent):
             await self._record(
                 state.session_id, 0, "subtask_dispatch",
                 f"DISPATCH {record.spec.id[:8]}", f"{record.spec.name}: {record.spec.input.task}", "running",
-                {"subtask_id": record.spec.id, "subtask_session_id": sid,
-                 "agent_name": record.spec.name, "step": record.step},
+                {"subtask_id": record.spec.id, "agent_name": record.spec.name, "step": record.step},
             )
             logger.info(
                 f"| 🚀 Dispatched '{record.spec.input.task}' "
-                f"→ {record.spec.name} [{sid}]"
+                f"→ {record.spec.name} [{record.spec.id}]"
             )
 
     async def _run_subtask(self, record: SubTaskRecord, state: MetaState) -> None:
         from src.agent.server import agent_manager
 
         task_id = record.spec.id
-        session_id = record.session_id or subtask_session_id(
-            state.session_id, task_id, record.step
-        )
+        session_id = record.session_id or record.spec.id
         agent_name = record.spec.name
 
         try:
@@ -661,7 +680,7 @@ class MetaAgent(Agent):
         task: str,
         available_agents: str,
         situation: str = "",
-        plan_context: str = "",
+        memory_context: str = "",
         session_id: str = "",
         ctx: Optional[AgentContext] = None,
     ) -> list:
@@ -669,7 +688,7 @@ class MetaAgent(Agent):
             f"### Task\n{task}",
             f"### Available Sub-Agents\n{available_agents}",
             f"### Current Situation\n{situation}",
-            f"### Execution State\n{plan_context or '[No state recorded yet.]'}",
+            f"### Execution State\n{memory_context or '[No state recorded yet.]'}",
         ])
 
         project_context = self._load_project_md()
@@ -769,7 +788,7 @@ class MetaAgent(Agent):
         await self._mem_emit(state.session_id, "todo_update", {"todos": todos})
         await self._mem_emit(state.session_id, "flowchart_update", {"steps": steps})
 
-    async def _get_plan_context(self, state: MetaState) -> str:
+    async def _get_memory_context(self, state: MetaState) -> str:
         if not self.memory_name:
             return ""
         try:
@@ -783,20 +802,13 @@ class MetaAgent(Agent):
     async def _mem_emit(self, session_id: str, meta_type: str, data: Dict[str, Any]) -> None:
         if not self.memory_name:
             return
-        try:
-            info = await memory_manager.get_info(self.memory_name)
-            if info and info.instance:
-                await info.instance.emit(
-                    TraceEvent(
-                        event_type=TraceEventType.CUSTOM,
-                        session_id=session_id,
-                        agent_name=self.name,
-                        metadata={"type": meta_type, **data},
-                    ),
-                    session_id=session_id,
-                )
-        except Exception as exc:
-            logger.warning(f"| ⚠️ FileSystemMemory emit failed: {exc}")
+        ctx = AgentContext(id=session_id)
+        await hook_manager(
+            ctx,
+            HookEvent.ON_CUSTOM,
+            agent_name=self.name,
+            extra={"meta_type": meta_type, **data},
+        )
 
     @staticmethod
     def _compute_rounds(records: Dict[str, SubTaskRecord]) -> Dict[str, int]:

@@ -41,6 +41,7 @@ from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
 from src.trace import trace_manager
 from src.session.types import SessionContext
+from src.utils import make_id
 
 
 def parse_args():
@@ -60,9 +61,7 @@ def parse_args():
     return parser.parse_args()
 
 
-async def run_agent(record: TaskRecord):
-    ctx = SessionContext()
-    ctx.id = record.task.session_id or ctx.id
+async def run_agent(record: TaskRecord, ctx: SessionContext):
 
     response = await agent_manager(
         name="meta_agent",
@@ -122,9 +121,15 @@ async def main():
 
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
+    # --- Session context ---
+    session_id = make_id()
+    ctx = SessionContext(
+        id=session_id
+    )
+
     # --- TaskManager ---
     task_work_dir = os.path.join(config.default_dir, "tasks")
-    await task_manager.initialize(work_dir=task_work_dir, handler=run_agent)
+    await task_manager.initialize(work_dir=task_work_dir, handler=lambda record: run_agent(record, ctx))
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---
@@ -142,7 +147,7 @@ async def main():
         category=TaskCategory.USER,
         priority=TaskPriority.HIGH,
     )
-    logger.info(f"| ✅ Task submitted: {task_id}")
+    logger.info(f"| ✅ Session id: {session_id}, Task id: {task_id}")
 
     # --- Wait for completion ---
     while True:

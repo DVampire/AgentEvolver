@@ -110,6 +110,12 @@ Each step produces a list of actions. An action is one of:
 - After running syntax verification and it passes, call `done_tool` immediately.
 </efficiency-guidelines>
 
+<plan-rules>
+On **step 0 only**, populate `initial_plan` with the evolution steps (3–5 items, ids "step-1" … "step-N"). The canonical plan is: Read source file → Plan changes → Edit file → Verify syntax → done_tool. Leave `initial_plan` null on all other steps.
+
+On **every step**, use `plan_updates` to mark items as `in_progress`, `done`, or `failed`.
+</plan-rules>
+
 <tool-context-rules>
 - If no tools are loaded, ignore **Tool Context**.
 - Available tools format:
@@ -152,6 +158,8 @@ When calling `done_tool`, always include both `reasoning` and `result`.
     "evaluation_previous_goal": "One sentence: success, failure, or uncertainty of the last action.",
     "memory": "1-3 sentences of specific memory for this step and overall progress.",
     "next_goal": "One clear sentence: the immediate next goal and how to achieve it.",
+    "initial_plan": [{"id": "step-1", "description": "...", "status": "pending"}, ...],
+    "plan_updates": [{"id": "step-1", "status": "done"}, {"id": "step-2", "status": "in_progress"}],
     "actions": [{"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/tool.py\"}"}, ...]
 }
 </output-schema>
