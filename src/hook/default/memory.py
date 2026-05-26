@@ -72,14 +72,11 @@ class MemoryHook(Hook):
                 logger.warning(f"| ⚠️ MemoryHook (ON_CUSTOM) error: {e}")
             return HookResult.allow()
 
-        # Emit into primary memory (GeneralMemorySystem — working memory / summaries)
+        # Emit into primary memory
         try:
             memory_info = await memory_manager.get_info(memory_name)
             if memory_info and memory_info.instance is not None:
-                mem = memory_info.instance
-                await mem.emit(event, session_id=ctx.id)
-                if ctx.event == HookEvent.ON_STOP:
-                    await mem.end_session(session_id=ctx.id)
+                await memory_info.instance.emit(event, session_id=ctx.id)
         except Exception as e:
             logger.warning(f"| ⚠️ MemoryHook (primary) error on {ctx.event}: {e}")
 

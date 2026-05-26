@@ -10,7 +10,7 @@ from .server import hook_manager
 from .default import (
     TokenCountHook,
     ToolResultTruncHook,
-    HistorySummaryHook,
+    CompactHook,
     TraceHook,
     EscalationHook,
 )
@@ -26,7 +26,7 @@ __all__ = [
     "hook_manager",
     "TokenCountHook",
     "ToolResultTruncHook",
-    "HistorySummaryHook",
+    "CompactHook",
     "TraceHook",
     "EscalationHook",
 ]

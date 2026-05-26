@@ -584,7 +584,7 @@ class MetaAgent(Agent):
 
     async def _dispatch(self, state: MetaState) -> None:
         for record in state.ready():
-            record.mark_running(record.spec.id)
+            record.mark_running(make_id())
             t = asyncio.create_task(
                 self._run_subtask(record, state),
                 name=f"subtask-{record.spec.id}",

@@ -142,7 +142,8 @@ class _SessionState:
         self.flow_steps: List[_FlowStep] = []
         self.plan: List[_PlanEntry] = []
         self.history: List[_HistoryEntry] = []
-        self.history_summary: str = ""   # LLM-compressed summary of overflow entries
+        self.history_summary: str = ""   # LLM-compressed summary of overflow execution events
+        self.compact_summary: str = ""   # LLM summary of compacted conversation messages (from CompactHook)
         self.final_result: Optional[str] = None
         self.result_success: bool = True
 
@@ -181,8 +182,11 @@ class _SessionState:
                 agents = f" ({', '.join(s.agents)})" if s.agents else ""
                 parts.append(f"  Step {s.step}: [{s.status}] {s.label}{agents}")
 
+        if self.compact_summary:
+            parts.append(f"\n**Compacted Conversation History:**\n{self.compact_summary}")
+
         if self.history_summary:
-            parts.append(f"\n**Earlier History (summarized):**\n  {self.history_summary}")
+            parts.append(f"\n**Earlier Execution History (summarized):**\n  {self.history_summary}")
 
         recent = self.history[-recent_n:] if recent_n else self.history
         if recent:
@@ -325,6 +329,14 @@ class _SessionState:
         if not self.history:
             lines += ['<p class="mem-empty">No history yet.</p>', "</div>"]
             return "\n".join(lines)
+
+        if self.compact_summary:
+            lines.append(
+                '<details class="compact-summary">'
+                '<summary>Compacted conversation history</summary>'
+                f'<pre class="compact-summary-body">{_he(self.compact_summary)}</pre>'
+                '</details>'
+            )
 
         lines.append('<div class="history-timeline">')
         for e in self.history:
@@ -514,6 +526,19 @@ class FileSystemMemory(Memory):
                     event=event.metadata.get("event", event.label),
                     detail=event.metadata.get("detail", ""),
                     status=event.metadata.get("status", ""),
+                ))
+                asyncio.create_task(self._save(state))
+
+            elif meta_type == "compact_summary":
+                summary = event.metadata.get("summary", "")
+                covers_steps = event.metadata.get("covers_steps", 0)
+                if summary:
+                    state.compact_summary = summary
+                self._append_history(state, _HistoryEntry(
+                    ts=_ts(),
+                    event=f"Context compacted (steps 1–{covers_steps})",
+                    detail="Conversation history compressed to reduce token usage.",
+                    status="done",
                 ))
                 asyncio.create_task(self._save(state))
 

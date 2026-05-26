@@ -41,18 +41,10 @@ class CalculatorTool(Tool):
                 result = a * b
             elif op == '/':
                 if b == 0:
-                    return ToolResponse(
-                        success=False,
-                        message='Division by zero error.',
-                        extra=ToolExtra(data={'error': 'ZeroDivisionError'})
-                    )
+                    raise ValueError('Division by zero')
                 result = a / b
             else:
-                return ToolResponse(
-                    success=False,
-                    message=f'Invalid operator: {op}',
-                    extra=ToolExtra(data={'error': 'ValueError'})
-                )
+                raise ValueError(f'Invalid operator: {op}')
 
             return ToolResponse(
                 success=True,

@@ -1,4 +1,6 @@
-"""HistorySummaryHook — compresses agent history when total tokens exceed threshold.
+"""CompactHook — compresses agent conversation history when total tokens exceed threshold.
+
+Mirrors Claude Code's /compact feature (compact.rs pattern).
 
 Fires on PRE_MESSAGES. Strategy:
   1. Keep system message (index 0) and the last `keep_recent_messages` messages intact.
@@ -8,6 +10,7 @@ Fires on PRE_MESSAGES. Strategy:
   4. On re-compaction the old and new summaries are merged (not overwritten).
   5. The summarised history is replaced by a single HumanMessage containing the structured
      summary wrapped in a direct-resume instruction so the agent continues without preamble.
+  6. The compact summary is persisted to FileSystemMemory so it survives the session.
 
 Concurrency: per-session lock ensures only one summary LLM call runs at a
 time per session.
@@ -15,6 +18,7 @@ time per session.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import List, Optional, Set
 from src.registry import HOOK
@@ -121,9 +125,9 @@ def _messages_to_text(messages: List[Message]) -> str:
 
 
 @HOOK.register_module(force=True)
-class HistorySummaryHook(Hook):
-    name: str = "history_summary"
-    description: str = "Summarises old agent history when total tokens exceed the threshold."
+class CompactHook(Hook):
+    name: str = "compact"
+    description: str = "Compacts old agent conversation history when total tokens exceed the threshold."
     events: list = [HookEvent.PRE_MESSAGES]
     priority: int = 50
 
@@ -155,7 +159,7 @@ class HistorySummaryHook(Hook):
             return HookResult.allow()
 
         logger.info(
-            f"| 📝 [{ctx.id}] History summary triggered "
+            f"| [{ctx.id}] Compact triggered "
             f"({current_tokens} > {threshold} tokens, {compactable_count} compactable messages)"
         )
 
@@ -172,6 +176,11 @@ class HistorySummaryHook(Hook):
 
         # Post-compaction health probe: verify tool system is still responsive
         await self._health_probe(ctx.id)
+
+        # Persist compact summary to FileSystemMemory (fire-and-forget)
+        asyncio.create_task(
+            self._emit_to_memory(ctx.id, state.summary_text or "", state.summary_covers_steps)
+        )
 
         additional = f"[Context was compressed. Summary covers steps 1–{state.summary_covers_steps}.]"
         return HookResult.modify_messages(new_messages, additional_context=additional)
@@ -228,7 +237,6 @@ class HistorySummaryHook(Hook):
             state.summary_text = summary_text
             state.summary_covers_steps = split_point
 
-        # Wrap in preamble + direct resume instruction (claw-code compact.rs pattern)
         continuation_text = (
             f"{_COMPACT_PREAMBLE}\n\n"
             f"### Compressed History\n\n"
@@ -248,7 +256,6 @@ class HistorySummaryHook(Hook):
         return result
 
     async def _call_llm(self, messages: List[Message], session_id: str) -> Optional[str]:
-        # Structured pre-extraction gives the LLM grounding before it reads the full history
         pre_context = _extract_pre_context(messages)
         history_text = _messages_to_text(messages)
 
@@ -265,33 +272,51 @@ class HistorySummaryHook(Hook):
                     HumanMessage(content="\n\n".join(prompt_parts)),
                 ],
             )
-            logger.info(f"| ✅ [{session_id}] History summarised ({len(response.message)} chars)")
+            logger.info(f"| [{session_id}] History compacted ({len(response.message)} chars)")
             return response.message
         except Exception as e:
-            logger.warning(f"| ⚠️ History summary LLM call failed: {e}")
+            logger.warning(f"| ⚠️ Compact LLM call failed: {e}")
             return None
 
     async def _health_probe(self, session_id: str) -> None:
-        """Non-destructive post-compaction probe: verify the tool system responds.
-
-        Ported from claw-code conversation.rs health-probe pattern.
-        Failure is non-blocking — we log a warning but never abort the compaction.
-        """
+        """Non-destructive post-compaction probe: verify the tool system responds."""
         try:
             from src.tool.server import tool_manager
             tool = tool_manager.get("glob_search_tool")
             if tool is None:
-                logger.debug(f"| 🔍 [{session_id}] Health probe skipped (glob_search_tool not registered)")
+                logger.debug(f"| [{session_id}] Health probe skipped (glob_search_tool not registered)")
                 return
             result = await tool(pattern="*.py", directory=".")
             if result.success:
-                logger.debug(f"| 🔍 [{session_id}] Post-compaction health probe OK")
+                logger.debug(f"| [{session_id}] Post-compact health probe OK")
             else:
                 logger.warning(
-                    f"| ⚠️ [{session_id}] Post-compaction health probe returned failure: {result.message}"
+                    f"| ⚠️ [{session_id}] Post-compact health probe returned failure: {result.message}"
                 )
         except Exception as e:
-            logger.debug(f"| 🔍 [{session_id}] Post-compaction health probe skipped: {e}")
+            logger.debug(f"| [{session_id}] Post-compact health probe skipped: {e}")
+
+    async def _emit_to_memory(self, session_id: str, summary: str, covers_steps: int) -> None:
+        """Persist the compact summary to FileSystemMemory."""
+        try:
+            from src.memory import memory_manager
+            from src.trace.types import TraceEvent, TraceEventType
+            fs_info = await memory_manager.get_info("file_system_memory")
+            if fs_info and fs_info.instance is not None:
+                await fs_info.instance.emit(
+                    TraceEvent(
+                        event_type=TraceEventType.CUSTOM,
+                        session_id=session_id,
+                        metadata={
+                            "type": "compact_summary",
+                            "summary": summary,
+                            "covers_steps": covers_steps,
+                        },
+                    ),
+                    session_id=session_id,
+                )
+        except Exception as e:
+            logger.debug(f"| [{session_id}] compact → file_system_memory skipped: {e}")
 
     @staticmethod
     def _to_dicts(messages: List[Message]) -> list:

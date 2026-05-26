@@ -12,6 +12,7 @@ from src.config import config
 from src.logger import logger
 from src.message import Message
 from src.model import model_manager
+from src.prompt import prompt_manager
 from src.registry import AGENT
 from src.skill.server import skill_manager
 from src.tool.server import tool_manager

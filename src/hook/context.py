@@ -80,7 +80,7 @@ class HookSessionState(BaseModel):
     last_token_count: int = 0
     peak_token_count: int = 0
 
-    # Summary state (written by HistorySummaryHook)
+    # Summary state (written by CompactHook)
     summary_text: Optional[str] = None
     summary_covers_steps: int = 0
     last_summary_step: int = 0

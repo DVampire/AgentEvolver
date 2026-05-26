@@ -1,14 +1,18 @@
 """
-GeneralMemorySystem — two-layer per-session memory backed by TraceEvents.
+GeneralMemorySystem — two-layer per-task memory backed by TraceEvents.
 
 Architecture
 ------------
 ShortTermMemory  : bounded deque of recent TraceEvents, no LLM required.
 WorkingMemory    : LLM-generated summaries triggered every N short-term events.
 
-Both layers are per-session (keyed by session_id) so MetaAgent and each
-sub-agent maintain fully isolated memory.  The MemoryHook feeds events in;
-agents call get(session_id) to retrieve a formatted markdown context string.
+Interface (same as FileSystemMemory):
+    await mem.emit(event, session_id)   # ingest a TraceEvent; never blocks caller
+    text  = await mem.get(session_id)   # markdown summary for prompt injection
+
+Sessions are task-scoped and keyed by session_id.  Working-memory summarisation
+is flushed automatically when an AGENT_END event is received — no end_session()
+call needed.
 """
 
 from __future__ import annotations
@@ -207,23 +211,17 @@ class GeneralMemorySystem(Memory):
     # ------------------------------------------------------------------
 
     async def emit(self, event: TraceEvent, session_id: str) -> None:
-        """Ingest a TraceEvent. Called by MemoryHook. Never blocks the caller."""
+        """Ingest a TraceEvent. Never blocks the caller."""
         state = await self._get_or_create(session_id)
         state.short_term.append(event)
         should_summarise = state.working.stage(event)
         if should_summarise:
             asyncio.create_task(state.working.maybe_summarise())
+        # On task end, flush pending summaries in the background.
+        if event.event_type == TraceEventType.AGENT_END:
+            asyncio.create_task(state.working.force_summarise())
 
-    async def end_session(self, session_id: str) -> None:
-        """Flush pending working-memory summarisation and remove session state."""
-        async with self._cache_lock:
-            state = self._sessions.get(session_id)
-        if state is not None:
-            await state.working.force_summarise()
-        async with self._cache_lock:
-            self._sessions.pop(session_id, None)
-
-    async def get(self, session_id: str, short_term_n: Optional[int] = 10) -> str:
+    async def get(self, session_id: str, short_term_n: Optional[int] = 10, **kwargs) -> Optional[str]:
         """Return a formatted markdown memory context string for prompt injection.
 
         Args:
@@ -233,7 +231,7 @@ class GeneralMemorySystem(Memory):
         async with self._cache_lock:
             state = self._sessions.get(session_id)
         if state is None:
-            return ""
+            return None
 
         lines: List[str] = []
 
@@ -253,4 +251,5 @@ class GeneralMemorySystem(Memory):
                 lines.append(f"- {WorkingMemory._format_event(e)}")
             lines.append("")
 
-        return "\n".join(lines).strip()
+        result = "\n".join(lines).strip()
+        return result or None
