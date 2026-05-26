@@ -15,7 +15,7 @@ One-shot sugar (used internally by Agent.__call__):
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.logger import logger
 from src.utils import Singleton, make_id
@@ -30,6 +30,9 @@ from src.runtime.types import (
     _current_ref_var,
 )
 
+if TYPE_CHECKING:
+    from src.agent.types import Agent
+
 
 class RuntimeManager(metaclass=Singleton):
     """Singleton holding all running AgentRefs."""
@@ -43,25 +46,19 @@ class RuntimeManager(metaclass=Singleton):
 
     async def spawn(
         self,
-        agent_or_name: Union[str, Any],
+        agent: "Agent",
         *,
         name: Optional[str] = None,
         parent_ref: Optional[AgentRef] = None,
     ) -> AgentRef:
-        """Start a pump for one agent and register the ref.
+        """Start a pump for one agent instance and register the ref.
 
-        agent_or_name : registered agent name (str) or Agent instance.
-        name          : optional explicit ref name; defaults to "<agent>-<id>".
-        parent_ref    : optional parent ref for hierarchical wiring.
+        agent      : an Agent instance (already constructed/registered). Callers
+                     that have a name should look it up via ``agent_manager.get``
+                     before calling — runtime stays free of the agent registry.
+        name       : optional explicit ref name; defaults to ``"<agent>-<id>"``.
+        parent_ref : optional parent ref for hierarchical wiring.
         """
-        if isinstance(agent_or_name, str):
-            from src.agent.server import agent_manager
-            agent = await agent_manager.get(agent_or_name)
-            if agent is None:
-                raise ValueError(f"No registered agent named {agent_or_name!r}")
-        else:
-            agent = agent_or_name
-
         agent_name = getattr(agent, "name", agent.__class__.__name__)
         ref_name = name or f"{agent_name}-{make_id()}"
         existing = self._refs.get(ref_name)
@@ -149,7 +146,7 @@ class RuntimeManager(metaclass=Singleton):
 
     async def invoke(
         self,
-        agent_or_name: Union[str, Any],
+        agent: "Agent",
         *,
         name: Optional[str] = None,
         parent_ref: Optional[AgentRef] = None,
@@ -162,7 +159,7 @@ class RuntimeManager(metaclass=Singleton):
         is forwarded into the TaskMessage as agent kwargs. Used by
         ``Agent.__call__`` so every direct invocation also gets a runtime ref.
         """
-        ref = await self.spawn(agent_or_name, name=name, parent_ref=parent_ref)
+        ref = await self.spawn(agent, name=name, parent_ref=parent_ref)
         try:
             task = task_kwargs.pop("task", None)
             msg = TaskMessage(task=task, kwargs=task_kwargs)

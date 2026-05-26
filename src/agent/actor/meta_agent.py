@@ -591,8 +591,11 @@ class MetaAgent(Agent):
             extra_kwargs["target_name"] = record.spec.input.target_name
 
         try:
+            sub_agent = await agent_manager.get(agent_name)
+            if sub_agent is None:
+                raise ValueError(f"No registered agent named {agent_name!r}")
             response = await runtime_manager.invoke(
-                agent_name,
+                sub_agent,
                 name=session_id,
                 parent_ref=state._meta_ref,
                 task=record.spec.input.task,
