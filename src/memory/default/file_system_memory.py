@@ -6,13 +6,11 @@ Interface (mirrors GeneralMemorySystem):
 
 HTML Sections
 -------------
-  Task             ← first AGENT_START  (input["task"])
-  TodoList         ← CUSTOM  metadata["type"]="todo_update"
-                              metadata["todos"]=[{id, description, agent_name, status}, ...]
-  FlowChart        ← CUSTOM  metadata["type"]="flowchart_update"
-                              metadata["steps"]=[{step, label, agents, status, round}, ...]
-  ExecutionHistory ← AGENT_START/END, TOOL_RESULT, SKILL_RESULT, ERROR
-  FinalResult      ← AGENT_END  (metadata["success"], output)
+  Task             ← AGENT_START  (input["task"])
+  TodoList         ← AGENT_CALL   (metadata["todos"])
+  FlowChart        ← AGENT_CALL   (metadata["flow_steps"])
+  ExecutionHistory ← AGENT_START/END, TOOL_CALL, SKILL_CALL, AGENT_CALL(note), ERROR
+  FinalResult      ← AGENT_CALL   (metadata["final_result"])
 
 Concurrency
 -----------
@@ -109,15 +107,6 @@ class _FlowStep:
         self.round = round
 
 
-class _PlanEntry:
-    __slots__ = ("id", "description", "status")
-
-    def __init__(self, id: str, description: str, status: str = "pending") -> None:
-        self.id = id
-        self.description = description
-        self.status = status
-
-
 class _HistoryEntry:
     __slots__ = ("ts", "event", "detail", "status")
 
@@ -140,7 +129,6 @@ class _SessionState:
 
         self.todos: List[_TodoEntry] = []
         self.flow_steps: List[_FlowStep] = []
-        self.plan: List[_PlanEntry] = []
         self.history: List[_HistoryEntry] = []
         self.history_summary: str = ""   # LLM-compressed summary of overflow execution events
         self.compact_summary: str = ""   # LLM summary of compacted conversation messages (from CompactHook)
@@ -162,13 +150,6 @@ class _SessionState:
         if self.task:
             parts.append(f"**Task:** {self.task}")
 
-        if self.plan:
-            _plan_icon = {"pending": "☐", "in_progress": "▶", "done": "✓", "failed": "✗"}
-            parts.append("\n**Execution Plan:**")
-            for p in self.plan:
-                icon = _plan_icon.get(p.status, "☐")
-                parts.append(f"  {icon} [{p.id}] {p.description}")
-
         if self.todos:
             parts.append("\n**Todo List:**")
             for t in self.todos:
@@ -177,7 +158,7 @@ class _SessionState:
                 parts.append(f"  {mark} [{t.status}] {t.description}{agent}")
 
         if self.flow_steps:
-            parts.append("\n**Execution Plan:**")
+            parts.append("\n**Flow Chart:**")
             for s in self.flow_steps:
                 agents = f" ({', '.join(s.agents)})" if s.agents else ""
                 parts.append(f"  Step {s.step}: [{s.status}] {s.label}{agents}")
@@ -219,7 +200,6 @@ class _SessionState:
             "<body>",
             '<div class="memory-page">',
             self._render_header(),
-            self._render_plan(),
             self._render_todos(),
             self._render_flowchart(),
             self._render_history(),
@@ -237,28 +217,6 @@ class _SessionState:
             f'<code class="mem-session">{_he(self.session_id)}</code>'
             "</div>"
         )
-
-    def _render_plan(self) -> str:
-        lines = ['<div class="mem-section">', "<h2>Execution Plan</h2>"]
-        if not self.plan:
-            lines += ['<p class="mem-empty">No plan yet.</p>', "</div>"]
-            return "\n".join(lines)
-
-        lines += [
-            '<table class="todo-table">',
-            "<thead><tr><th>#</th><th>ID</th><th>Status</th><th>Description</th></tr></thead><tbody>",
-        ]
-        for i, p in enumerate(self.plan, 1):
-            lines.append(
-                f"<tr>"
-                f'<td class="todo-num">{i}</td>'
-                f'<td><code class="todo-agent">{_he(p.id)}</code></td>'
-                f"<td>{_badge(p.status)}</td>"
-                f'<td class="todo-desc">{_he(p.description)}</td>'
-                "</tr>"
-            )
-        lines += ["</tbody>", "</table>", "</div>"]
-        return "\n".join(lines)
 
     def _render_todos(self) -> str:
         lines = ['<div class="mem-section">', "<h2>Todo List</h2>"]
@@ -373,12 +331,13 @@ class _SessionState:
 # FileSystemMemory
 # ---------------------------------------------------------------------------
 
-# Event types that get written to ExecutionHistory
+# (unused — kept for external introspection)
 _HISTORY_TYPES = frozenset({
     TraceEventType.AGENT_START,
+    TraceEventType.AGENT_CALL,
     TraceEventType.AGENT_END,
-    TraceEventType.TOOL_RESULT,
-    TraceEventType.SKILL_RESULT,
+    TraceEventType.TOOL_CALL,
+    TraceEventType.SKILL_CALL,
     TraceEventType.ERROR,
 })
 
@@ -457,7 +416,7 @@ class FileSystemMemory(Memory):
                 state.result_success = success
             asyncio.create_task(self._save(state))
 
-        elif ev in (TraceEventType.TOOL_RESULT, TraceEventType.SKILL_RESULT):
+        elif ev in (TraceEventType.TOOL_CALL, TraceEventType.SKILL_CALL):
             ok = event.metadata.get("success", not bool(event.error))
             detail = event.error if not ok else ""
             if isinstance(event.output, str):
@@ -479,30 +438,14 @@ class FileSystemMemory(Memory):
             ))
             asyncio.create_task(self._save(state))
 
-        elif ev == TraceEventType.PLAN_INIT:
-            state.plan = [
-                _PlanEntry(id=i["id"], description=i["description"], status=i.get("status", "pending"))
-                for i in event.metadata.get("items", [])
-            ]
-            asyncio.create_task(self._save(state))
+        elif ev == TraceEventType.AGENT_CALL:
+            md = event.metadata
+            changed = False
 
-        elif ev == TraceEventType.PLAN_UPDATE:
-            update_map = {u["id"]: u["status"] for u in event.metadata.get("updates", [])}
-            for p in state.plan:
-                if p.id in update_map:
-                    p.status = update_map[p.id]
-            asyncio.create_task(self._save(state))
+            if "todos" in md:
+                asyncio.create_task(self._apply_todos(state, md["todos"]))
 
-        elif ev == TraceEventType.CUSTOM:
-            meta_type = event.metadata.get("type")
-
-            if meta_type == "todo_update":
-                # Summarise long descriptions in background, then save once.
-                raw_todos = event.metadata.get("todos", [])
-                asyncio.create_task(self._apply_todos(state, raw_todos))
-
-            elif meta_type == "flowchart_update":
-                raw_steps = event.metadata.get("steps", [])
+            if "flow_steps" in md:
                 state.flow_steps = [
                     _FlowStep(
                         step=s.get("step", i + 1),
@@ -511,27 +454,23 @@ class FileSystemMemory(Memory):
                         status=s.get("status", "pending"),
                         round=s.get("round", 1),
                     )
-                    for i, s in enumerate(raw_steps)
+                    for i, s in enumerate(md["flow_steps"])
                 ]
-                asyncio.create_task(self._save(state))
+                changed = True
 
-            elif meta_type == "final_result":
-                state.final_result = event.metadata.get("result", str(event.output or ""))
-                state.result_success = event.metadata.get("success", True)
-                asyncio.create_task(self._save(state))
-
-            elif meta_type == "history_entry":
+            if "note" in md:
+                n = md["note"]
                 self._append_history(state, _HistoryEntry(
                     ts=_ts(),
-                    event=event.metadata.get("event", event.label),
-                    detail=event.metadata.get("detail", ""),
-                    status=event.metadata.get("status", ""),
+                    event=n.get("event", event.label),
+                    detail=n.get("detail", ""),
+                    status=n.get("status", ""),
                 ))
-                asyncio.create_task(self._save(state))
+                changed = True
 
-            elif meta_type == "compact_summary":
-                summary = event.metadata.get("summary", "")
-                covers_steps = event.metadata.get("covers_steps", 0)
+            if "compact_summary" in md:
+                summary = md.get("compact_summary", "")
+                covers_steps = md.get("covers_steps", 0)
                 if summary:
                     state.compact_summary = summary
                 self._append_history(state, _HistoryEntry(
@@ -540,6 +479,14 @@ class FileSystemMemory(Memory):
                     detail="Conversation history compressed to reduce token usage.",
                     status="done",
                 ))
+                changed = True
+
+            if "final_result" in md:
+                state.final_result = md["final_result"]
+                state.result_success = md.get("success", True)
+                changed = True
+
+            if changed:
                 asyncio.create_task(self._save(state))
 
     async def get(self, session_id: str, **kwargs) -> Optional[str]:

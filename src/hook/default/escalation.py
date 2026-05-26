@@ -1,48 +1,35 @@
-"""EscalationHook — global singleton hook that handles ON_ESCALATE events.
+"""EscalationHook — bridges sub-agent ON_ESCALATE → MetaAgent via runtime.ask.
 
 Design
 ------
-The hook is registered once at startup (stateless instance).  Per-subtask
-mutable state (meta inbox, reply future) is stored in
-``HookSessionState.scratch["escalation"]`` keyed by the subtask's session_id.
+- Registered once at startup (stateless instance).
+- At fire time the sub-agent's own AgentRef and its parent_ref are looked up
+  through the runtime contextvar (``runtime_manager.current_ref()``).
+- An ``EscalationMessage`` is then sent via ``runtime_manager.ask`` to the
+  parent — the runtime auto-fills its reply_future and awaits it. The hook
+  returns the parent's guidance as ``additional_context`` so the sub-agent's
+  next turn sees a system reminder.
 
-MetaAgent writes into scratch before dispatching a subtask::
-
-    session_state = await hook_manager.context.get_or_create(subtask_session_id)
-    session_state.scratch["escalation"] = {
-        "meta_inbox": state.inbox,
-        "reply_future": reply_future,
-        "task_id": task_id,
-        "agent_name": agent_name,
-    }
-
-When the sub-agent fires HookEvent.ON_ESCALATE, handle() reads that entry
-from ctx.extra["_session_state"] (injected by HookManager), sends a
-SUBTASK_ESCALATE event to meta_inbox, then awaits reply_future.  The hook
-suspends until MetaAgent resolves the future, then returns a HookResult
-whose additional_context is injected as a system reminder into the sub-agent.
-
-Concurrency
------------
-Each subtask session has its own HookSessionState, so concurrent subtasks
-never share state.  No per-subtask hook registration/unregistration needed.
+No per-session scratch state is involved; the only coupling between sub-agent
+and MetaAgent is the parent_ref captured by runtime.spawn.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
 
 from src.hook.types import Hook, HookContext, HookEvent, HookResult
 from src.logger import logger
 from src.registry import HOOK
+from src.runtime import current_ref, runtime_manager
 
 _ESCALATION_TIMEOUT_S = 300.0
 
 
 @HOOK.register_module(force=True)
 class EscalationHook(Hook):
-    """Global singleton hook that bridges sub-agent → MetaAgent escalation."""
+    """Global singleton hook that suspends a sub-agent on ON_ESCALATE
+    and asks MetaAgent for guidance through the runtime."""
 
     name: str = "escalation_hook"
     description: str = "Suspends a sub-agent on ON_ESCALATE and awaits MetaAgent reply."
@@ -50,58 +37,43 @@ class EscalationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
-        session_state = (ctx.extra or {}).get("_session_state")
-        if session_state is None:
-            logger.warning("| ⚠️ EscalationHook: no session state in context")
+        sub_ref = current_ref()
+        if sub_ref is None:
+            logger.warning("| ⚠️ EscalationHook: no current ref (not running under runtime?)")
             return HookResult.allow()
 
-        cfg: Optional[Dict[str, Any]] = session_state.scratch.get("escalation")
-        if cfg is None:
-            logger.warning(f"| ⚠️ EscalationHook: no escalation config for session {ctx.id}")
+        parent_ref = sub_ref.parent_ref
+        if parent_ref is None:
+            logger.warning(
+                f"| ⚠️ EscalationHook: {sub_ref.name} has no parent_ref — nowhere to escalate"
+            )
             return HookResult.allow()
 
-        meta_inbox: asyncio.Queue = cfg["meta_inbox"]
-        task_id: str = cfg["task_id"]
-        agent_name: str = cfg["agent_name"]
-
-        # Each escalation gets a fresh future so multiple escalations from the
-        # same subtask are handled independently.
-        reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
-        cfg["reply_future"] = reply_future
-
-        # Import here to avoid circular deps at module load time.
-        from src.agent.actor.meta_agent import MetaEvent, MetaEventType
+        from src.agent.actor.meta_agent import EscalationMessage  # local: break import cycle
 
         extra = ctx.extra or {}
-        reason = extra.get("reason", "")
-        situation = extra.get("situation", "")
-        suggestion = extra.get("suggestion", "")
-
-        escalation_text = f"Reason: {reason}\nSituation: {situation}"
-        if suggestion:
-            escalation_text += f"\nSuggestion: {suggestion}"
-
-        event = MetaEvent(
-            event_type=MetaEventType.SUBTASK_ESCALATE,
-            task_id=task_id,
-            agent_name=agent_name,
+        escalation = EscalationMessage(
+            task_id=sub_ref.name,
+            agent_name=sub_ref.agent_name,
             session_id=ctx.id,
-            escalation_message=escalation_text,
-            reply_future=reply_future,
+            reason=extra.get("reason", ""),
+            situation=extra.get("situation", ""),
+            suggestion=extra.get("suggestion", ""),
         )
 
-        await meta_inbox.put(event)
-        logger.info(f"| 🆘 Escalation sent from {agent_name} [{task_id}]")
+        logger.info(
+            f"| 🆘 Escalation sent from {sub_ref.agent_name} [{sub_ref.name}] → {parent_ref.name}"
+        )
 
         try:
-            reply: str = await asyncio.wait_for(
-                asyncio.shield(reply_future), timeout=_ESCALATION_TIMEOUT_S
+            reply: str = await runtime_manager.ask(
+                parent_ref, escalation, timeout=_ESCALATION_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
             reply = "Meta Agent did not respond in time. Please stop the current subtask gracefully."
-            logger.warning(f"| ⏰ Escalation timeout for task {task_id}")
+            logger.warning(f"| ⏰ Escalation timeout for task {sub_ref.name}")
 
-        logger.info(f"| 💬 Escalation reply received for task {task_id}: {reply}")
+        logger.info(f"| 💬 Escalation reply received for task {sub_ref.name}: {reply}")
 
         return HookResult(
             decision="allow",

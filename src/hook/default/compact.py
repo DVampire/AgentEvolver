@@ -305,11 +305,10 @@ class CompactHook(Hook):
             if fs_info and fs_info.instance is not None:
                 await fs_info.instance.emit(
                     TraceEvent(
-                        event_type=TraceEventType.CUSTOM,
+                        event_type=TraceEventType.AGENT_CALL,
                         session_id=session_id,
                         metadata={
-                            "type": "compact_summary",
-                            "summary": summary,
+                            "compact_summary": summary,
                             "covers_steps": covers_steps,
                         },
                     ),

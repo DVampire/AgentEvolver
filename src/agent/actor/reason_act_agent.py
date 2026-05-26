@@ -1,6 +1,5 @@
 """ReasonActAgent implementation — iterative reasoning and action via tools, skills, and text."""
 
-import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import Field, ConfigDict
@@ -70,7 +69,7 @@ class ReasonActAgent(Agent):
     # Core step
     # ------------------------------------------------------------------
 
-    async def _think_and_action(
+    async def _think_and_act(
         self,
         messages: List[Message],
         task_id: str,
@@ -108,26 +107,6 @@ class ReasonActAgent(Agent):
             memory = think_output.memory
             next_goal = think_output.next_goal
             actions = think_output.actions
-
-            if step_number == 0 and think_output.initial_plan:
-                await hook_manager(
-                    ctx, HookEvent.ON_CUSTOM,
-                    agent_name=self.name,
-                    extra={"meta_type": "plan_init", "items": [
-                        {"id": i.id, "description": i.description, "status": i.status}
-                        for i in think_output.initial_plan
-                    ]},
-                )
-                logger.info(f"| 📋 Plan initialized: {len(think_output.initial_plan)} steps")
-            if think_output.plan_updates:
-                await hook_manager(
-                    ctx, HookEvent.ON_CUSTOM,
-                    agent_name=self.name,
-                    extra={"meta_type": "plan_update", "updates": [
-                        {"id": u.id, "status": u.status}
-                        for u in think_output.plan_updates
-                    ]},
-                )
 
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
@@ -234,7 +213,7 @@ class ReasonActAgent(Agent):
     # Main entry point
     # ------------------------------------------------------------------
 
-    async def __call__(
+    async def _run(
         self,
         task: str,
         files: Optional[List[str]] = None,
@@ -252,10 +231,7 @@ class ReasonActAgent(Agent):
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")
-            files = await asyncio.gather(*[self._extract_file_content(f) for f in files])
-            enhanced_task = await self._generate_enhanced_task(task, files)
-        else:
-            enhanced_task = task
+        enhanced_task = task
 
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
@@ -275,7 +251,7 @@ class ReasonActAgent(Agent):
 
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
-            response = await self._think_and_action(messages, task_id, step_number, ctx=ctx)
+            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
             step_number += 1
             messages = await self._get_messages(enhanced_task, ctx=ctx)
             if response["done"]:

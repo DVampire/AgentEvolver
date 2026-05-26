@@ -76,11 +76,10 @@ class WorkingMemory:
         # Only stage semantically meaningful events
         if event.event_type in (
             TraceEventType.AGENT_START,
+            TraceEventType.AGENT_CALL,
             TraceEventType.AGENT_END,
-            TraceEventType.STEP_END,
-            TraceEventType.TOOL_RESULT,
-            TraceEventType.SKILL_RESULT,
-            TraceEventType.ACTION_END,
+            TraceEventType.TOOL_CALL,
+            TraceEventType.SKILL_CALL,
         ):
             self._pending.append(event)
         return len(self._pending) >= self.trigger_every

@@ -8,7 +8,6 @@ with read_base():
     from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .agents.tool_generate_agent import tool_generate_agent
     from .tools.bash import bash_tool
-    from .tools.todo import todo_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
@@ -24,10 +23,9 @@ extended_dir = f"work_dir/{tag}/extended"
 log_path = "agent.log"
 
 use_local_proxy = True
-model_name = "openrouter/gemini-3-flash-preview"
+model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 memory_names = [
-    "general_memory_system",
     "file_system_memory",
 ]
 agent_names = [
@@ -41,7 +39,6 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
-    "todo_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
@@ -52,18 +49,9 @@ skill_names = []
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(require_grad=False)
-todo_tool.update(base_dir="tool/todo", require_grad=False)
 git_tool.update(timeout=60)
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
-general_memory_system.update(
-    base_dir="memory/general_memory_system",
-    model_name=model_name,
-    max_summaries=10,
-    max_insights=10,
-    require_grad=False,
-)
-
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
@@ -118,7 +106,7 @@ tool_evaluate_agent.update(
 meta_agent.update(
     base_dir=extended_dir,
     model_name=model_name,
-    memory_name="file_system_memory",
+    memory_name=memory_names[0],
     require_grad=False,
     use_memory=True,
 )

@@ -31,19 +31,19 @@ body {
   font-family: var(--sans);
   background: var(--ivory);
   color: var(--gray-700);
-  line-height: 1.6;
-  padding: 48px 32px 96px;
+  line-height: 1.55;
+  padding: 56px 32px 120px;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ===== Page wrapper ===== */
 
 .plan-page {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
 
 /* ===== Header card ===== */
@@ -51,26 +51,28 @@ body {
 .plan-header {
   background: var(--white);
   border: 1.5px solid var(--gray-300);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 32px 36px;
   border-left: 5px solid var(--clay);
 }
 
 .plan-header .plan-label {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--clay);
+  letter-spacing: 0.08em;
+  color: var(--gray-500);
   margin-bottom: 10px;
 }
 
 .plan-header .plan-task {
-  font-size: 18px;
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 500;
   color: var(--slate);
-  line-height: 1.45;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
   margin-bottom: 12px;
 }
 
@@ -89,17 +91,16 @@ body {
 .plan-section {
   background: var(--white);
   border: 1.5px solid var(--gray-300);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 28px 32px;
 }
 
 .plan-section h2 {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--gray-500);
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--slate);
   border-bottom: 1.5px solid var(--gray-150);
   padding-bottom: 12px;
   margin-bottom: 20px;
@@ -150,7 +151,10 @@ body {
 .subtask-num {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--gray-500);
+  color: var(--slate);
+  background: var(--oat);
+  padding: 2px 8px;
+  border-radius: 6px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -306,6 +310,75 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--gray-700);
+}
+
+/* ===== Diagram panel ===== */
+
+.diagram-panel {
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: 12px;
+  padding: 20px;
+  overflow-x: auto;
+}
+
+.diagram-panel svg { display: block; max-width: 100%; }
+.diagram-panel svg text { font-family: var(--mono); font-size: 12px; fill: var(--slate); }
+.diagram-panel svg .sub  { font-size: 10px; fill: var(--gray-500); }
+.diagram-panel svg .box  { fill: var(--white); stroke: var(--gray-300); stroke-width: 1.5; }
+.diagram-panel svg .box.hot { fill: rgba(217,119,87,0.10); stroke: var(--clay); }
+.diagram-panel svg .arrow { stroke: var(--gray-500); stroke-width: 1.5; fill: none; }
+
+/* ===== Step walkthrough ===== */
+
+.plan-steps { display: flex; flex-direction: column; }
+
+.plan-step {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 18px;
+  padding: 20px 0;
+  border-bottom: 1.5px solid var(--gray-150);
+}
+
+.plan-step:last-child { border-bottom: none; }
+
+.step-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--oat);
+  border: 1.5px solid var(--gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--slate);
+  flex-shrink: 0;
+}
+
+.plan-step.hot .step-badge {
+  background: rgba(217,119,87,0.14);
+  border-color: var(--clay);
+  color: var(--clay);
+}
+
+.step-loc {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--slate);
+  margin-bottom: 6px;
+}
+
+.step-loc .range { color: var(--gray-500); }
+
+.step-body p {
+  font-size: 14px;
+  color: var(--gray-700);
+  line-height: 1.6;
+  margin-bottom: 10px;
 }
 
 /* ===== Empty states ===== */

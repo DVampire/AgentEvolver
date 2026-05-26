@@ -168,7 +168,7 @@ class ToolGenerateAgent(Agent):
     # Core step (identical loop to optimizer/evaluator)
     # ------------------------------------------------------------------
 
-    async def _think_and_action(
+    async def _think_and_act(
         self,
         messages: List[Message],
         task_id: str,
@@ -209,7 +209,7 @@ class ToolGenerateAgent(Agent):
 
             if step_number == 0 and think_output.initial_plan:
                 await hook_manager(
-                    ctx, HookEvent.ON_CUSTOM,
+                    ctx, HookEvent.ON_CALL,
                     agent_name=self.name,
                     extra={"meta_type": "plan_init", "items": [
                         {"id": i.id, "description": i.description, "status": i.status}
@@ -219,7 +219,7 @@ class ToolGenerateAgent(Agent):
                 logger.info(f"| 📋 Plan initialized: {len(think_output.initial_plan)} steps")
             if think_output.plan_updates:
                 await hook_manager(
-                    ctx, HookEvent.ON_CUSTOM,
+                    ctx, HookEvent.ON_CALL,
                     agent_name=self.name,
                     extra={"meta_type": "plan_update", "updates": [
                         {"id": u.id, "status": u.status}
@@ -336,7 +336,7 @@ class ToolGenerateAgent(Agent):
     # Main entry point
     # ------------------------------------------------------------------
 
-    async def __call__(
+    async def _run(
         self,
         task: str,
         target_name: Optional[str] = None,
@@ -369,7 +369,7 @@ class ToolGenerateAgent(Agent):
 
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number + 1}/{self.max_steps}")
-            response = await self._think_and_action(messages, task_id, step_number, ctx=ctx, target_name=target_name)
+            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx, target_name=target_name)
             step_number += 1
             messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
             if response["done"]:

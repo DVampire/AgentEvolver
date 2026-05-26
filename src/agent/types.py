@@ -22,15 +22,12 @@ from src.hook.types import HookContext, HookEvent
 from src.dynamic import dynamic_manager
 from src.logger import logger
 from src.memory import memory_manager
-from src.message.types import HumanMessage, Message, SystemMessage
-from src.model import model_manager
+from src.message.types import Message
 from src.prompt import prompt_manager
 from src.tool.server import tool_manager
 from src.skill.server import skill_manager
 from src.utils import (
     assemble_project_path,
-    dedent,
-    get_file_info,
     get_project_root,
 )
 from src.session import BaseContext
@@ -314,59 +311,6 @@ class Agent(BaseModel):
     def __repr__(self) -> str:
         return self.__str__()
 
-    async def _extract_file_content(self, file: str) -> Dict[str, Any]:
-        """Extract file information and a short summary."""
-
-        info = get_file_info(file)
-
-        # Extract file content
-        input_payload = {
-            "name": "mdify_tool",
-            "input": {
-                "file_path": file,
-                "output_format": "markdown",
-            },
-        }
-        tool_response = await tool_manager(**input_payload)
-        file_content = tool_response.message
-
-        # Use LLM to summarize the file content
-        system_prompt = "You are a helpful assistant that summarizes file content."
-
-        user_prompt = dedent(f"""
-            Summarize the following file content as 1-3 sentences:
-            {file_content}
-        """
-        )
-
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
-
-        model_response = await model_manager(model=self.model_name, messages=messages)
-
-        info["content"] = file_content
-        info["summary"] = model_response.message
-
-        return info
-
-    async def _generate_enhanced_task(self, task: str, files: List[Dict[str, Any]]) -> str:
-        """Generate enhanced task with attached file summaries."""
-
-        attach_files_string = "\n".join(
-            [f"File: {file['path']}\nSummary: {file['summary']}" for file in files]
-        )
-
-        enhanced_task = dedent(
-            f"""
-            - Task:
-            {task}
-            - Attach files:
-            {attach_files_string}
-        """)
-        return enhanced_task
-
     async def _get_agent_context(self,
                                  task: str,
                                  step_number: int = 0,
@@ -470,13 +414,34 @@ class Agent(BaseModel):
         return messages
 
     async def __call__(self,
-                       task: str,
+                       task: Optional[str] = None,
                        files: Optional[List[str]] = None,
                        ctx: Optional[AgentContext] = None,
                        **kwargs: Any,
-                       ) -> AgentResponse:
-        """Run the agent. This method should be implemented by the child classes."""
-        raise NotImplementedError("__all__ method is not implemented by the child class")
+                       ) -> "AgentResponse":
+        """Public entry: every direct call routes through the runtime so that
+        every agent invocation gets a mailbox-managed lifecycle. Subclasses
+        override ``_run``, not ``__call__``."""
+        # Local import to break the import cycle between agent and runtime.
+        from src.runtime import runtime_manager
+
+        invoke_kwargs: Dict[str, Any] = dict(kwargs)
+        if files is not None:
+            invoke_kwargs["files"] = files
+        if ctx is not None:
+            invoke_kwargs["ctx"] = ctx
+        return await runtime_manager.invoke(self, task=task, **invoke_kwargs)
+
+    async def _run(self,
+                   task: Optional[str] = None,
+                   files: Optional[List[str]] = None,
+                   ctx: Optional[AgentContext] = None,
+                   **kwargs: Any,
+                   ) -> "AgentResponse":
+        """Actual agent implementation. Subclasses must override."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__}._run must be implemented by the subclass"
+        )
 
 
 class AgentExtra(BaseModel):

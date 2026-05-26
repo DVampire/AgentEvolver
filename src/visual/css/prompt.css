@@ -21,19 +21,19 @@ body {
   font-family: var(--sans);
   background: var(--ivory);
   color: var(--gray-700);
-  line-height: 1.6;
-  padding: 48px 32px 96px;
+  line-height: 1.55;
+  padding: 56px 32px 120px;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ===== Top-level wrappers ===== */
 
 div.system {
-  max-width: 900px;
-  margin: 0 auto 32px;
+  max-width: 1120px;
+  margin: 0 auto 40px;
   background: var(--white);
   border: 1.5px solid var(--gray-300);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 28px 32px;
   display: flex;
   flex-direction: column;
@@ -42,11 +42,11 @@ div.system {
 }
 
 div.user {
-  max-width: 900px;
-  margin: 0 auto 32px;
+  max-width: 1120px;
+  margin: 0 auto 40px;
   background: var(--white);
   border: 1.5px solid var(--gray-300);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 28px 32px;
   display: flex;
   flex-direction: column;
@@ -59,10 +59,10 @@ div.user::before {
   display: block;
   content: attr(class);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--gray-500);
   border-bottom: 1.5px solid var(--gray-150);
   padding-bottom: 14px;
@@ -75,7 +75,7 @@ div.system > div,
 div.user > div {
   background: var(--gray-150);
   border-radius: 10px;
-  padding: 18px 20px;
+  padding: 20px 22px;
   counter-increment: section;
 }
 
@@ -99,8 +99,9 @@ div.profile {
   border-left: 4px solid var(--clay);
   background: var(--white);
   border-radius: 0 10px 10px 0;
-  padding: 18px 20px;
+  padding: 18px 22px;
   font-size: 15px;
+  line-height: 1.65;
   color: var(--slate);
 }
 
