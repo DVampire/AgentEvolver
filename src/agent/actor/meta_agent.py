@@ -34,12 +34,13 @@ Memory & observability
   Write  (all paths via MemoryHook):
     lifecycle events  →  MemoryHook  →  GeneralMemorySystem (working memory)
                       →  MemoryHook  →  FileSystemMemory    (HTML per session)
-    plan-state updates (todo/flowchart/history)
-                      →  hook ON_CALL  →  MemoryHook  →  FileSystemMemory
+    subtask lifecycle (planned/dispatch/done/failed/cancelled)
+                      →  _record() emits ON_CALL + subtask_event payload
+                      →  MemoryHook  →  FileSystemMemory    (incremental todo/flowchart updates)
 
   Read:
-    meta_agent._get_messages() reads FileSystemMemory and injects HTML
-                               as ``memory_context`` on every _think_and_act() call.
+    meta_agent._get_messages() reads FileSystemMemory.get() (full HTML of the session file)
+                               and injects it as ``memory_context`` on every LLM call.
     sub-agents._get_agent_context() reads GeneralMemorySystem and injects
                                     a text summary into each step's prompt.
 
@@ -78,6 +79,15 @@ from src.utils.name_utils import make_id
 
 # Collect completion events arriving within this window before one LLM REACT call.
 _BATCH_WINDOW_S = 0.1
+
+# Subtask lifecycle action names that carry structured data for FileSystemMemory.
+_SUBTASK_EVENTS = frozenset({
+    "subtask_planned",
+    "subtask_dispatch",
+    "subtask_done",
+    "subtask_failed",
+    "subtask_cancelled",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -405,10 +415,15 @@ class MetaAgent(Agent):
 
         hook_ctx = AgentContext(id=session_id, agent_name=self.name)
         await hook_manager(
-            hook_ctx, HookEvent.ON_START,
+            hook_ctx, 
+            HookEvent.ON_START,
             agent_name=self.name,
-            extra={"task_id": session_id, "task": task,
-                   "memory_name": self.memory_name, "use_memory": self.use_memory},
+            extra={
+                "task_id": session_id, 
+                "task": task,
+                "memory_name": self.memory_name, 
+                "use_memory": self.use_memory
+            },
         )
         trace_manager.emit(agent_start_event(
             session_id=session_id, task_id=session_id,
@@ -425,18 +440,28 @@ class MetaAgent(Agent):
             success = False
         finally:
             await self._cancel_running(state)
-            await self._sync_state(state)   # reflect CANCELLED status in HTML
 
         if self.memory_name:
-            await hook_manager(AgentContext(id=session_id), HookEvent.ON_CALL,
-                               agent_name=self.name,
-                               extra={"final_result": final_answer, "success": success})
+            await hook_manager(
+                AgentContext(id=session_id), 
+                HookEvent.ON_CALL,
+                agent_name=self.name,
+                extra={
+                    "final_result": final_answer,
+                    "success": success
+                }
+            )
 
         await hook_manager(
-            hook_ctx, HookEvent.ON_STOP,
+            hook_ctx,
+            HookEvent.ON_STOP,
             agent_name=self.name,
-            extra={"task_id": session_id, "result": final_answer,
-                   "memory_name": self.memory_name, "use_memory": self.use_memory},
+            extra={
+                "task_id": session_id, 
+                "result": final_answer,
+                "memory_name": self.memory_name, 
+                "use_memory": self.use_memory
+            },
         )
         trace_manager.emit(agent_end_event(
             session_id=session_id, task_id=session_id,
@@ -524,7 +549,6 @@ class MetaAgent(Agent):
 
             state.refresh_round_statuses()
             state.touch()
-            await self._sync_state(state)
 
             # Think only at a round boundary (current round complete → re-plan +
             # dispatch next) or when a sub-agent is blocked (reply now).
@@ -682,7 +706,9 @@ class MetaAgent(Agent):
                         state.session_id, step, "subtask_planned",
                         f"PLANNED {spec.id}", f"{spec.input.task} → {spec.name}", "pending",
                         {"subtask_id": spec.id, "agent_name": spec.name,
-                         "category": spec.category.value, "round": round_no},
+                         "category": spec.category.value, "round": round_no,
+                         "task": spec.input.task,
+                         "round_label": round_spec.goal or f"Round {round_no}"},
                     )
                 if not rec.task_ids:
                     logger.warning(f"| ⚠️ Round {round_no} has no tasks — skipped.")
@@ -707,7 +733,6 @@ class MetaAgent(Agent):
                 {"subtask_id": tid, "agent_name": record.spec.name},
             )
             logger.info(f"| 🚀 Dispatched '{record.spec.input.task}' → {record.spec.name} [{tid}]")
-        await self._sync_state(state)
 
     async def _run_subtask(self, record: SubTaskRecord, state: MetaState) -> None:
         """Run one sub-agent through runtime; post a Subtask{Done,Failed}Message.
@@ -765,8 +790,6 @@ class MetaAgent(Agent):
                 session_id=session_id,
                 error=str(exc),
             ))
-        finally:
-            await hook_manager.end_session(session_id)
 
     # ------------------------------------------------------------------
     # Situation & prompt assembly
@@ -825,7 +848,13 @@ class MetaAgent(Agent):
         situation: str,
         ctx: Optional[AgentContext] = None,
     ) -> list:
-        """Assemble the full message list for the LLM (project md, memory, agents catalog, PRE_MESSAGES hooks)."""
+        """Assemble the full message list for the LLM.
+
+        Reads FileSystemMemory.get() (returns the full HTML of the session file)
+        and injects it as ``memory_context`` alongside
+        the project context, available agents catalog, and current situation.
+        PRE_MESSAGES hooks run last and may further modify the message list.
+        """
         # Memory snapshot (read fresh each call — reflects latest plan state).
         memory_context = ""
         if self.memory_name:
@@ -886,11 +915,19 @@ class MetaAgent(Agent):
         status: str = "",
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Write a history entry to the HTML memory file and emit a trace event."""
+        """Write a history entry to the HTML memory file and emit a trace event.
+
+        For subtask lifecycle actions, also passes a ``subtask_event`` payload so
+        FileSystemMemory can maintain todos and the flow chart purely event-driven,
+        without a separate snapshot push (_sync_state).
+        """
         if self.memory_name:
+            extra: Dict[str, Any] = {"note": {"event": label, "detail": detail, "status": status}}
+            if action in _SUBTASK_EVENTS and data:
+                extra["subtask_event"] = {"action": action, "data": data}
             await hook_manager(AgentContext(id=session_id), HookEvent.ON_CALL,
                                agent_name=self.name,
-                               extra={"note": {"event": label, "detail": detail, "status": status}})
+                               extra=extra)
         trace_manager.emit(TraceEvent(
             event_type=TraceEventType.CUSTOM,
             session_id=session_id,
@@ -900,46 +937,6 @@ class MetaAgent(Agent):
             label=label,
             input=data or {},
         ))
-
-    async def _sync_state(self, state: MetaState) -> None:
-        """Push the plan (todo list + per-subtask flowchart) to FileSystemMemory as one AGENT_CALL.
-
-        Each subtask becomes its own flow node, grouped visually by round via
-        ``round`` (1-based index) and ``round_label`` (the round goal string).
-        This lets FileSystemMemory render a header row per round with the goal,
-        followed by one node per subtask inside that round.
-        """
-        if not self.memory_name:
-            return
-
-        todos: List[Dict[str, Any]] = []
-        flow_steps: List[Dict[str, Any]] = []
-        global_step = 0
-        for i, rec in enumerate(state.plan, 1):
-            round_label = rec.goal or f"Round {i}"
-            for tid in rec.task_ids:
-                r = state.subtask_records.get(tid)
-                if not r:
-                    continue
-                todos.append({
-                    "id": tid, "description": r.spec.input.task,
-                    "agent_name": r.spec.name, "status": r.status.value,
-                })
-                global_step += 1
-                flow_steps.append({
-                    "step": global_step,
-                    "label": r.spec.input.task,
-                    "agents": [r.spec.name],
-                    "status": r.status.value,
-                    "round": i,
-                    "round_label": round_label,
-                })
-
-        await hook_manager(
-            AgentContext(id=state.session_id), HookEvent.ON_CALL,
-            agent_name=self.name,
-            extra={"todos": todos, "flow_steps": flow_steps},
-        )
 
     def _join_results(self, state: MetaState) -> str:
         """Concatenate results from all DONE subtasks as a fallback final answer."""
@@ -955,7 +952,11 @@ class MetaAgent(Agent):
                 t.cancel()
                 logger.info(f"| 🛑 Cancelled subtask {tid}")
         await asyncio.gather(*state._running_tasks.values(), return_exceptions=True)
-        # Reflect the cancellation in subtask records so _sync_state shows correct status.
         for rec in state.subtask_records.values():
             if rec.status == TaskStatus.RUNNING:
                 rec.mark_cancelled()
+                await self._record(
+                    state.session_id, 0, "subtask_cancelled",
+                    f"CANCELLED {rec.spec.id}", "", "cancelled",
+                    {"subtask_id": rec.spec.id, "agent_name": rec.spec.name},
+                )

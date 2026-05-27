@@ -11,8 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.tool.context import ToolContextManager
-from src.tool.types import Tool, ToolConfig, ToolResponse
-from src.session import SessionContext
+from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
 from src.utils import assemble_project_path
 
 class ToolManagerServer(BaseModel):
@@ -211,8 +210,7 @@ class ToolManagerServer(BaseModel):
     async def __call__(self, 
                        name: str, 
                        input: Dict[str, Any], 
-                       timeout: Optional[float] = None,
-                       ctx: SessionContext = None,
+                       ctx: ToolContext = None,
                        **kwargs
                        ) -> ToolResponse:
         """Call a tool by name with optional timeout and context
@@ -226,11 +224,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             ToolResponse: Tool result
         """
-        return await self.tool_context_manager(name, 
-                                               input, 
-                                               timeout=timeout, 
-                                               ctx=ctx, 
-                                               **kwargs)
+        return await self.tool_context_manager(name, input, ctx=ctx, **kwargs)
 
 
 # Global tool manager instance

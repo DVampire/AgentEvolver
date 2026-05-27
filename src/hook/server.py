@@ -148,17 +148,12 @@ class HookManager(metaclass=Singleton):
         if merged.additional_context:
             logger.debug(f"| 💬 Hook additional_context injected ({len(merged.additional_context)} chars)")
 
+        # Auto-cleanup: release per-session state after ON_STOP so it doesn't
+        # accumulate indefinitely. All hooks have already run by this point.
+        if ctx.event == HookEvent.ON_STOP:
+            await self.context.end_session(ctx.id)
+
         return merged
-
-    # ------------------------------------------------------------------
-    # Session lifecycle helpers
-    # ------------------------------------------------------------------
-
-    async def start_session(self, session_id: str) -> None:
-        await self.context.get_or_create(session_id)
-
-    async def end_session(self, session_id: str) -> None:
-        await self.context.end_session(session_id)
 
 
 hook_manager = HookManager()

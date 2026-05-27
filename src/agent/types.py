@@ -31,12 +31,9 @@ from src.utils import (
 )
 from src.session import BaseContext
 
-
 class AgentContext(BaseContext):
     """Context passed into agent manager and individual agent instances."""
-    agent_name: str = Field(default="", description="Name of the agent being called.")
-    task_id: Optional[str] = Field(default=None, description="Task identifier for tracing.")
-    parent_agent: Optional[str] = Field(default=None, description="Name of the parent agent if this is a sub-agent call.")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this agent invocation, useful for tracing and logging.")
     work_dir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
     extra: Dict[str, Any] = Field(default_factory=dict)
 

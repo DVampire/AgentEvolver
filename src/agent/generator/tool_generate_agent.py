@@ -246,7 +246,6 @@ class ToolGenerateAgent(Agent):
                 )
                 if pre_result.decision == HookDecision.BLOCK:
                     logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
-                    action_results.append({**action_dict, "output": f"[blocked] {pre_result.reason}"})
                     continue
 
                 action_result = None

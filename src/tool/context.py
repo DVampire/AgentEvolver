@@ -16,9 +16,7 @@ from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
-from src.tool.types import Tool, ToolConfig, ToolResponse
-from src.session import SessionContext
-from src.tool.types import ToolContext
+from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
@@ -1034,8 +1032,7 @@ class ToolContextManager(BaseModel):
     async def __call__(self,
                        name: str,
                        input: Dict[str, Any],
-                       timeout: Optional[float] = None,
-                       ctx: SessionContext = None,
+                       ctx: ToolContext = None,
                        **kwargs
                        ) -> ToolResponse:
         """Call a tool by name with optional timeout
@@ -1043,16 +1040,12 @@ class ToolContextManager(BaseModel):
         Args:
             name: Tool name
             input: Input for the tool
-            timeout: Timeout in seconds for this specific call (overrides default_timeout if provided)
-
+            ctx: Optional tool context to pass to the tool
         Returns:
             ToolResponse: Tool result
         """
 
-        if ctx is None:
-            ctx = SessionContext()
-        work_dir = getattr(ctx, "work_dir", None)
-        tool_ctx = ToolContext.from_session(ctx, tool_name=name, timeout=timeout, work_dir=work_dir)
+        ctx = ToolContext.from_context(ctx)
 
         tool_info = await self.get_info(name)
         
@@ -1065,21 +1058,14 @@ class ToolContextManager(BaseModel):
         tool_instance = tool_info.instance
         logger.info(f"| ✅ Using tool {name}@{version}")
         
-        # Use provided timeout, or fall back to default_timeout
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-        
         # Other tool args
-        tool_kwargs = dict(ctx=tool_ctx)
-        
-        # If timeout is None (no timeout), call tool directly
-        if effective_timeout is None:
-            return await tool_instance(**input, **tool_kwargs)
+        tool_kwargs = dict(ctx=ctx, **kwargs)
         
         # Otherwise, use asyncio.wait_for to enforce timeout
         try:
-            return await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=effective_timeout)
+            return await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=self.default_timeout)
         except asyncio.TimeoutError:
-            error_msg = f"Tool '{name}' execution timed out after {effective_timeout} seconds"
+            error_msg = f"Tool '{name}' execution timed out after {self.default_timeout} seconds"
             logger.error(f"| ⏱️ {error_msg}")
             return ToolResponse(
                 success=False,

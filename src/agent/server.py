@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
 from src.logger import logger
-from src.agent.types import AgentConfig, Agent
+from src.agent.types import AgentConfig, Agent, AgentContext
 from src.agent.context import AgentContextManager
 from src.utils import assemble_project_path
 
@@ -207,18 +207,23 @@ class AgentManagerServer(BaseModel):
             self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
-    async def __call__(self, name: str, input: Dict[str, Any], **kwargs) -> Any:
+    async def __call__(self, 
+                       name: str, 
+                       input: Dict[str, Any], 
+                       ctx: AgentContext = None,
+                       **kwargs) -> Any:
         """Call an agent method using context manager.
         
         Args:
             name: Name of the agent
             input: Input for the agent
+            ctx: Agent context
             **kwargs: Keyword arguments for the agent
             
         Returns:
             Agent result
         """
-        return await self.agent_context_manager(name, input, **kwargs)
+        return await self.agent_context_manager(name, input, ctx=ctx, **kwargs)
 
 
 # Global Agent manager instance

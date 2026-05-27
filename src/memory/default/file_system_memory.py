@@ -7,8 +7,12 @@ Interface (mirrors GeneralMemorySystem):
 HTML Sections
 -------------
   Task             ← AGENT_START  (input["task"])
-  TodoList         ← AGENT_CALL   (metadata["todos"])
-  FlowChart        ← AGENT_CALL   (metadata["flow_steps"])
+  TodoList         ← event-driven:
+                       sub-agents : POST_STEP flush of _pending_step_actions (same data as flow chart)
+                       MetaAgent  : AGENT_CALL (metadata["subtask_event"]["action"] == "subtask_planned")
+                       legacy     : AGENT_CALL (metadata["todos"]) — explicit snapshot, kept as fallback
+  FlowChart        ← event-driven (same sources as TodoList)
+                       legacy     : AGENT_CALL (metadata["flow_steps"])
   ExecutionHistory ← AGENT_START/END, TOOL_CALL, SKILL_CALL, AGENT_CALL(note), ERROR
   FinalResult      ← AGENT_CALL   (metadata["final_result"])
 
@@ -55,6 +59,14 @@ def _he(text: str) -> str:
 
 
 _FLOW_LABEL_MAX = 80   # max chars for a flow-chart node label
+
+# Maps MetaAgent subtask lifecycle event names → display status strings.
+_SUBTASK_STATUS_MAP: Dict[str, str] = {
+    "subtask_dispatch":  "running",
+    "subtask_done":      "done",
+    "subtask_failed":    "failed",
+    "subtask_cancelled": "cancelled",
+}
 
 _NODE_CSS = {
     "done":      "node-done",
@@ -142,53 +154,15 @@ class _SessionState:
         # Key: step_number, Value: list of action dicts to be flushed into flow_steps.
         self._pending_step_actions: Dict[int, List[Dict[str, Any]]] = {}
 
+        # Index for MetaAgent subtask events: subtask_id → list index in todos / flow_steps.
+        # Enables O(1) status updates without scanning the whole list.
+        self._subtask_todo_index: Dict[str, int] = {}
+        self._subtask_flow_index: Dict[str, int] = {}
+
         # Serialises concurrent HTML writes for this session
         self._write_lock: asyncio.Lock = asyncio.Lock()
         self._todos_lock: asyncio.Lock = asyncio.Lock()  # serialises _apply_todos calls
         self._compressing: bool = False  # guard against concurrent compression tasks
-
-    # ------------------------------------------------------------------
-    # Text summary (for prompt injection)
-    # ------------------------------------------------------------------
-
-    def to_text(self, recent_n: int = 20) -> str:
-        """Return a markdown text summary of session state, suitable for prompt injection."""
-        parts: List[str] = []
-
-        if self.task:
-            parts.append(f"**Task:** {self.task}")
-
-        if self.todos:
-            parts.append("\n**Todo List:**")
-            for t in self.todos:
-                mark = "✓" if t.status == "done" else ("✗" if t.status == "failed" else "○")
-                agent = f" [{t.agent_name}]" if t.agent_name else ""
-                parts.append(f"  {mark} [{t.status}] {t.description}{agent}")
-
-        if self.flow_steps:
-            parts.append("\n**Flow Chart:**")
-            for s in self.flow_steps:
-                agents = f" ({', '.join(s.agents)})" if s.agents else ""
-                parts.append(f"  Step {s.step}: [{s.status}] {s.label}{agents}")
-
-        if self.compact_summary:
-            parts.append(f"\n**Compacted Conversation History:**\n{self.compact_summary}")
-
-        if self.history_summary:
-            parts.append(f"\n**Earlier Execution History (summarized):**\n  {self.history_summary}")
-
-        recent = self.history[-recent_n:] if recent_n else self.history
-        if recent:
-            parts.append("\n**Recent History:**")
-            for h in recent:
-                detail = f": {h.detail}" if h.detail else ""
-                status = f" [{h.status}]" if h.status else ""
-                parts.append(f"  [{h.ts}] {h.event}{status}{detail}")
-
-        if self.final_result is not None:
-            parts.append(f"\n**Result:** {self.final_result}")
-
-        return "\n".join(parts)
 
     # ------------------------------------------------------------------
     # HTML rendering
@@ -472,7 +446,7 @@ class FileSystemMemory(Memory):
 
             # ── POST_STEP variant (from MemoryHook POST_STEP → agent_call_event) ──
             # Identified by: step_number set + output dict containing "next_goal".
-            # Flush buffered tool/skill actions for this step into flow_steps.
+            # Flush buffered tool/skill actions for this step into flow_steps AND todos.
             ev_output = event.output if isinstance(event.output, dict) else {}
             if event.step_number is not None and "next_goal" in ev_output:
                 step = event.step_number
@@ -482,17 +456,70 @@ class FileSystemMemory(Memory):
                     pending.sort(key=lambda a: a["action_index"])
                     for act in pending:
                         label = (act["description"] or act["action_name"])[:_FLOW_LABEL_MAX]
+                        act_status = "done" if act["success"] else "failed"
+                        # Flow chart node
                         state.flow_steps.append(_FlowStep(
                             step=len(state.flow_steps) + 1,
                             label=label,
                             agents=[act["action_name"]],
-                            status="done" if act["success"] else "failed",
+                            status=act_status,
                             round=step,
                             round_label=next_goal,
                         ))
+                        # Matching todo row (same data, tabular view)
+                        state.todos.append(_TodoEntry(
+                            id=f"step{step}-a{act['action_index']}",
+                            description=label,
+                            agent_name=act["action_name"],
+                            status=act_status,
+                        ))
                     changed = True
 
-            # ── ON_CALL variant (explicit payload from MetaAgent / agent hooks) ──
+            # ── subtask_event variant (MetaAgent incremental todo/flow updates) ──
+            # MetaAgent emits structured subtask lifecycle events so FileSystemMemory
+            # can maintain todos and flow_steps without a full snapshot push.
+            if "subtask_event" in md:
+                se = md["subtask_event"]
+                se_action = se.get("action", "")
+                se_data = se.get("data", {})
+                subtask_id = se_data.get("subtask_id", "")
+
+                if se_action == "subtask_planned":
+                    task_desc = se_data.get("task", "")[:_FLOW_LABEL_MAX]
+                    agent_name = se_data.get("agent_name", "")
+                    round_no = se_data.get("round", 1)
+                    round_label = se_data.get("round_label", f"Round {round_no}")
+                    # Add todo row
+                    state._subtask_todo_index[subtask_id] = len(state.todos)
+                    state.todos.append(_TodoEntry(
+                        id=subtask_id,
+                        description=task_desc,
+                        agent_name=agent_name,
+                        status="pending",
+                    ))
+                    # Add flow node
+                    state._subtask_flow_index[subtask_id] = len(state.flow_steps)
+                    state.flow_steps.append(_FlowStep(
+                        step=len(state.flow_steps) + 1,
+                        label=task_desc,
+                        agents=[agent_name],
+                        status="pending",
+                        round=round_no,
+                        round_label=round_label,
+                    ))
+                    changed = True
+
+                elif se_action in _SUBTASK_STATUS_MAP:
+                    new_status = _SUBTASK_STATUS_MAP[se_action]
+                    idx = state._subtask_todo_index.get(subtask_id)
+                    if idx is not None and idx < len(state.todos):
+                        state.todos[idx].status = new_status
+                    idx = state._subtask_flow_index.get(subtask_id)
+                    if idx is not None and idx < len(state.flow_steps):
+                        state.flow_steps[idx].status = new_status
+                    changed = True
+
+            # ── ON_CALL explicit payload (legacy / external override) ──
             if "todos" in md:
                 asyncio.create_task(self._apply_todos(state, md["todos"]))
 
@@ -542,14 +569,6 @@ class FileSystemMemory(Memory):
                 asyncio.create_task(self._save(state))
 
     async def get(self, session_id: str, **kwargs) -> Optional[str]:
-        """Return a text summary of session state, suitable for prompt injection."""
-        async with self._registry_lock:
-            state = self._sessions.get(session_id)
-        if state is None:
-            return None
-        return state.to_text() or None
-
-    async def get_html(self, session_id: str) -> Optional[str]:
         """Return the full HTML content of the memory file for this session."""
         async with self._registry_lock:
             state = self._sessions.get(session_id)
