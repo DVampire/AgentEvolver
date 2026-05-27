@@ -1,16 +1,12 @@
-"""Model manager server — global singleton, mirrors skill_manager pattern."""
+"""Model manager server — global singleton, mirrors agent_manager pattern."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 from src.model.context import ModelContextManager
-from src.model.types import ModelConfig, LLMResponse
-from src.message.types import Message
-
-if TYPE_CHECKING:
-    from src.tool.types import Tool
+from src.model.types import ModelContext, ModelConfig, LLMResponse
 
 
 class ModelManagerServer(BaseModel):
@@ -19,7 +15,7 @@ class ModelManagerServer(BaseModel):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._ctx = ModelContextManager()
+        self.model_context_manager = ModelContextManager()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -27,7 +23,7 @@ class ModelManagerServer(BaseModel):
 
     async def initialize(self) -> None:
         """Initialize all provider model registrations."""
-        await self._ctx.initialize()
+        await self.model_context_manager.initialize()
 
     # ------------------------------------------------------------------
     # Registration
@@ -35,7 +31,7 @@ class ModelManagerServer(BaseModel):
 
     async def register_model(self, config: ModelConfig) -> None:
         """Register a custom model configuration at runtime."""
-        await self._ctx.register_model(config)
+        await self.model_context_manager.register_model(config)
 
     # ------------------------------------------------------------------
     # Query
@@ -43,18 +39,17 @@ class ModelManagerServer(BaseModel):
 
     def get_model_config(self, model: str) -> Optional[ModelConfig]:
         """Return the ModelConfig for a registered model name."""
-        return self._ctx.get_model_config(model)
+        return self.model_context_manager.get_model_config(model)
 
     def list(self) -> List[str]:
         """List all registered model names."""
-        return self._ctx.list()
+        return self.model_context_manager.list()
 
-    # async aliases for backward-compatibility with existing await call-sites
     async def alist(self) -> List[str]:
-        return self._ctx.list()
+        return self.model_context_manager.list()
 
     async def aget_model_config(self, model: str) -> Optional[ModelConfig]:
-        return self._ctx.get_model_config(model)
+        return self.model_context_manager.get_model_config(model)
 
     # ------------------------------------------------------------------
     # Invocation
@@ -62,39 +57,22 @@ class ModelManagerServer(BaseModel):
 
     async def __call__(
         self,
-        model: str,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format=None,
-        stream: bool = False,
-        plugins: Optional[List[Dict[str, Any]]] = None,
-        max_retries: int = 3,
-        caller: Optional[str] = None,
+        name: str,
+        input: Dict[str, Any],
+        ctx: ModelContext = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        """Invoke a model with retry + fallback.
+        """Invoke a model by name.
 
         Args:
-            model:           Registered model name (e.g. "openrouter/gemini-3-flash-preview").
-            messages:        Conversation messages.
-            tools:           Optional tool list for function calling.
-            response_format: Optional Pydantic model or dict for structured output.
-            stream:          Whether to stream the response.
-            plugins:         OpenRouter plugin list.
-            max_retries:     Number of attempts before falling back (default 3).
-            caller:          Optional caller tag for usage logs.
+            name:  Registered model name (e.g. "openrouter/gemini-3-flash-preview").
+            input: Call payload — keys: messages (required), tools, response_format,
+                   stream, plugins, max_retries, caller.
+            ctx:   Optional ModelContext carrying caller tag, retry count, timeout, etc.
         """
-        return await self._ctx(
-            model=model,
-            messages=messages,
-            tools=tools,
-            response_format=response_format,
-            stream=stream,
-            plugins=plugins,
-            max_retries=max_retries,
-            caller=caller,
-            **kwargs,
-        )
+        if not input.get("messages"):
+            return LLMResponse(success=False, message="'messages' is required in input and must be non-empty.")
+        return await self.model_context_manager(name=name, input=input, ctx=ctx, **kwargs)
 
 
 # Global singleton

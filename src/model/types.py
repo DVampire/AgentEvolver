@@ -3,6 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Union, Literal
 from pydantic import BaseModel, ConfigDict, Field
+from src.session import BaseContext
+
+
+class ModelContext(BaseContext):
+    """Context passed into model manager and individual model invocations."""
+    pass
 
 
 class ModelConfig(BaseModel):
@@ -94,5 +100,5 @@ class LLMResponse(BaseModel):
     extra: Optional[LLMExtra] = Field(default=None, description="The extra data from the model call")
     usage: Optional["TokenUsage"] = None
 
-__all__ = ["ModelConfig", "LLMResponse", "LLMExtra", "TokenUsage"]
+__all__ = ["ModelContext", "ModelConfig", "LLMResponse", "LLMExtra", "TokenUsage"]
 

@@ -224,6 +224,11 @@ class ToolManagerServer(BaseModel):
         Returns:
             ToolResponse: Tool result
         """
+        # Ensure ctx is always an ToolContext instance
+        ctx = ToolContext(
+            id =ctx.id if ctx else make_id(),
+            name=name
+        )
         return await self.tool_context_manager(name, input, ctx=ctx, **kwargs)
 
 

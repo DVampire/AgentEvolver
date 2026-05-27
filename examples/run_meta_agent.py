@@ -123,8 +123,10 @@ async def main():
 
     # --- Session context ---
     session_id = make_id()
+    name = f"main_entrypoint"
     ctx = SessionContext(
-        id=session_id
+        id=session_id,
+        name=name,
     )
 
     # --- TaskManager ---

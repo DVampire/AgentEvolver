@@ -9,7 +9,6 @@ The runtime is a thin mailbox/pump layer on top of existing Agent instances.
 from __future__ import annotations
 
 import asyncio
-import contextvars
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -60,17 +59,10 @@ class AgentRef(BaseModel):
     agent_name: str
     status:     AgentStatus = AgentStatus.RUNNING
 
-    _inbox:      asyncio.Queue            = PrivateAttr(default_factory=asyncio.Queue)
-    _pump_task:  Optional[asyncio.Task]   = PrivateAttr(default=None)
-    _parent_ref: Optional["AgentRef"]     = PrivateAttr(default=None)
+    _inbox:         asyncio.Queue            = PrivateAttr(default_factory=asyncio.Queue)
+    _pump_task:     Optional[asyncio.Task]   = PrivateAttr(default=None)
+    _pending_reply: Optional[asyncio.Future] = PrivateAttr(default=None)
 
-    @property
-    def parent_ref(self) -> Optional["AgentRef"]:
-        """The AgentRef that spawned this one, if any. None for root refs."""
-        return self._parent_ref
-
-    # Override Pydantic's default __repr__/__str__ to a compact one-liner.
-    # Pydantic v2 routes __str__ through __repr_args__, so we override both.
     def __repr__(self) -> str:
         return f"AgentRef(name={self.name!r}, agent={self.agent_name!r}, status={self.status.value})"
 
@@ -78,14 +70,3 @@ class AgentRef(BaseModel):
 
 
 AgentRef.model_rebuild()
-
-
-# ---------------------------------------------------------------------------
-# Per-task contextvar carrying the AgentRef whose pump is currently driving
-# the calling asyncio Task. Set by _pump; read by anyone needing to address
-# "self" or "parent" — escalation hook, MetaAgent's _run, etc.
-# ---------------------------------------------------------------------------
-
-_current_ref_var: "contextvars.ContextVar[Optional[AgentRef]]" = contextvars.ContextVar(
-    "runtime_current_ref", default=None
-)

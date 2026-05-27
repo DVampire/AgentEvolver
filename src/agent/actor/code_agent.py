@@ -122,10 +122,9 @@ class CodeAgent(Agent):
 
         # PRE_STEP
         await hook_manager(
-            ctx, HookEvent.PRE_STEP,
-            agent_name=self.name,
-            step_number=step_number,
-            extra={"task_id": task_id},
+            name="trace_hook",
+            input={"event": HookEvent.PRE_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id},
+            ctx=ctx,
         )
 
         thinking = ""
@@ -135,9 +134,9 @@ class CodeAgent(Agent):
 
         try:
             think_output = await model_manager(
-                model=self.model_name,
-                messages=messages,
-                response_format=AgentThinkOutput,
+                name=self.model_name,
+                input={"messages": messages, "response_format": AgentThinkOutput},
+                ctx=ctx,
             )
             think_output = think_output.extra.parsed_model
 
@@ -172,11 +171,9 @@ class CodeAgent(Agent):
 
                 # PRE_ACTION
                 pre_result = await hook_manager(
-                    ctx, HookEvent.PRE_ACTION,
-                    agent_name=self.name,
-                    step_number=step_number,
-                    action=action_dict,
-                    extra={"task_id": task_id},
+                    name="trace_hook",
+                    input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
+                    ctx=ctx,
                 )
                 if pre_result.decision == HookDecision.BLOCK:
                     logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
@@ -221,12 +218,14 @@ class CodeAgent(Agent):
 
                 # POST_ACTION
                 await hook_manager(
-                    ctx, HookEvent.POST_ACTION,
-                    agent_name=self.name,
-                    step_number=step_number,
-                    action=action_dict,
-                    action_result=action_result,
-                    extra={"task_id": task_id, "error": error},
+                    name="memory_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
+                )
+                await hook_manager(
+                    name="trace_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
                 )
 
                 if done:
@@ -237,10 +236,14 @@ class CodeAgent(Agent):
 
         # POST_STEP
         await hook_manager(
-            ctx, HookEvent.POST_STEP,
-            agent_name=self.name,
-            step_number=step_number,
-            extra={"task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            name="memory_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            ctx=ctx,
         )
 
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
@@ -249,7 +252,7 @@ class CodeAgent(Agent):
     # Main entry point
     # ------------------------------------------------------------------
 
-    async def _run(
+    async def __call__(
         self,
         task: str,
         files: Optional[List[str]] = None,
@@ -275,10 +278,14 @@ class CodeAgent(Agent):
 
         # ON_START
         await hook_manager(
-            ctx, HookEvent.ON_START,
-            agent_name=self.name,
-            extra={"task_id": task_id, "task": enhanced_task,
-                   "memory_name": self.memory_name, "use_memory": self.use_memory},
+            name="memory_hook",
+            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
         )
 
         messages = await self._get_messages(enhanced_task, ctx=ctx)
@@ -305,10 +312,14 @@ class CodeAgent(Agent):
 
         # ON_STOP
         await hook_manager(
-            ctx, HookEvent.ON_STOP,
-            agent_name=self.name,
-            extra={"task_id": task_id, "result": response.get("result"),
-                   "memory_name": self.memory_name, "use_memory": self.use_memory},
+            name="memory_hook",
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
         )
 
         logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")

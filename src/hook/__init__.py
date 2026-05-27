@@ -5,11 +5,10 @@ from .types import (
     HookDecision,
     Hook,
 )
-from .context import HookContextManager, HookSessionState
+from .context import HookContextManager, HookConfig
 from .server import hook_manager
 from .default import (
     TokenCountHook,
-    ToolResultTruncHook,
     CompactHook,
     TraceHook,
     EscalationHook,
@@ -22,10 +21,9 @@ __all__ = [
     "HookDecision",
     "Hook",
     "HookContextManager",
-    "HookSessionState",
+    "HookConfig",
     "hook_manager",
     "TokenCountHook",
-    "ToolResultTruncHook",
     "CompactHook",
     "TraceHook",
     "EscalationHook",

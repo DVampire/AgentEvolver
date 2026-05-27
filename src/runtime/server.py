@@ -1,15 +1,12 @@
 """RuntimeManager — spawn / send / ask / stop / invoke / list / shutdown.
 
-The runtime manages **running** agent refs. Class registration / versioning
-is still owned by agent_manager; this module only tracks who is alive.
+The runtime manages **running** agent refs via a single registry:
+    _refs: Dict[str, AgentRef]
 
-Typical use (for long-lived sessions):
-    ref = await runtime_manager.spawn("code_agent")
-    await runtime_manager.send(ref, TaskMessage(task="..."))
-    await runtime_manager.stop(ref)
-
-One-shot sugar (used internally by Agent.__call__):
-    result = await runtime_manager.invoke("code_agent", task="...", ctx=...)
+Every agent gets one inbox (AgentRef._inbox).  Messages to any running agent
+are routed by ref name.  MetaAgent looks up sub-agent callbacks this way;
+EscalationHook finds MetaAgent's ref by parent_session_id (= ref.name).
+No separate session registry is needed.
 """
 
 from __future__ import annotations
@@ -27,7 +24,6 @@ from src.runtime.types import (
     BaseMessage,
     StopMessage,
     TaskMessage,
-    _current_ref_var,
 )
 
 if TYPE_CHECKING:
@@ -49,24 +45,15 @@ class RuntimeManager(metaclass=Singleton):
         agent: "Agent",
         *,
         name: Optional[str] = None,
-        parent_ref: Optional[AgentRef] = None,
     ) -> AgentRef:
-        """Start a pump for one agent instance and register the ref.
-
-        agent      : an Agent instance (already constructed/registered). Callers
-                     that have a name should look it up via ``agent_manager.get``
-                     before calling — runtime stays free of the agent registry.
-        name       : optional explicit ref name; defaults to ``"<agent>-<id>"``.
-        parent_ref : optional parent ref for hierarchical wiring.
-        """
+        """Start a pump for one agent instance and register the ref."""
         agent_name = getattr(agent, "name", agent.__class__.__name__)
-        ref_name = name or f"{agent_name}-{make_id()}"
-        existing = self._refs.get(ref_name)
+        ref_name   = name or f"{agent_name}-{make_id()}"
+        existing   = self._refs.get(ref_name)
         if existing is not None and existing.status == AgentStatus.RUNNING:
             raise ValueError(f"AgentRef name collision: {ref_name!r} is already RUNNING")
 
         ref = AgentRef(name=ref_name, agent_name=agent_name, status=AgentStatus.RUNNING)
-        ref._parent_ref = parent_ref
         ref._pump_task = asyncio.create_task(_pump(agent, ref), name=f"pump-{ref_name}")
 
         self._refs[ref_name] = ref
@@ -81,11 +68,7 @@ class RuntimeManager(metaclass=Singleton):
         timeout: Optional[float] = None,
         reason: str = "manual",
     ) -> None:
-        """Stop the ref.
-
-        drain=True : enqueue StopMessage, wait for pump to finish current task and exit.
-        drain=False: cancel pump immediately (in-flight task gets CancelledError).
-        """
+        """Stop the ref's pump."""
         if ref.status != AgentStatus.RUNNING:
             self._refs.pop(ref.name, None)
             return
@@ -115,7 +98,7 @@ class RuntimeManager(metaclass=Singleton):
             logger.info(f"| ⚫ Runtime stopped: {ref}")
 
     async def shutdown(self) -> None:
-        """Stop every running ref. Call on process shutdown."""
+        """Stop every running ref."""
         for ref in list(self._refs.values()):
             await self.stop(ref, drain=False, reason="shutdown")
 
@@ -124,7 +107,7 @@ class RuntimeManager(metaclass=Singleton):
     # ------------------------------------------------------------------
 
     async def send(self, ref: AgentRef, msg: BaseMessage) -> None:
-        """Fire-and-forget."""
+        """Fire-and-forget into a ref's inbox."""
         if ref.status != AgentStatus.RUNNING:
             raise AgentDeadError(f"Cannot send to {ref}: not RUNNING")
         await ref._inbox.put(msg)
@@ -136,7 +119,7 @@ class RuntimeManager(metaclass=Singleton):
         *,
         timeout: Optional[float] = None,
     ) -> Any:
-        """Send and await reply on msg.reply_future."""
+        """Send into a ref's inbox and await the reply."""
         if msg.reply_future is None:
             msg.reply_future = asyncio.get_event_loop().create_future()
         await self.send(ref, msg)
@@ -149,24 +132,16 @@ class RuntimeManager(metaclass=Singleton):
         agent: "Agent",
         *,
         name: Optional[str] = None,
-        parent_ref: Optional[AgentRef] = None,
         timeout: Optional[float] = None,
         **task_kwargs: Any,
     ) -> Any:
-        """One-shot: spawn + ask(TaskMessage) + stop. Returns agent's result.
-
-        ``name`` / ``parent_ref`` are forwarded to ``spawn``; everything else
-        is forwarded into the TaskMessage as agent kwargs. Used by
-        ``Agent.__call__`` so every direct invocation also gets a runtime ref.
-        """
-        ref = await self.spawn(agent, name=name, parent_ref=parent_ref)
+        """One-shot: spawn + ask(TaskMessage) + stop.  Returns agent's result."""
+        ref = await self.spawn(agent, name=name)
         try:
             task = task_kwargs.pop("task", None)
-            msg = TaskMessage(task=task, kwargs=task_kwargs)
+            msg  = TaskMessage(task=task, kwargs=task_kwargs)
             return await self.ask(ref, msg, timeout=timeout)
         finally:
-            # drain=False because the agent has already returned by the time
-            # ask resolves — there is no more work to drain.
             await self.stop(ref, drain=False)
 
     # ------------------------------------------------------------------
@@ -178,14 +153,6 @@ class RuntimeManager(metaclass=Singleton):
 
     def list(self) -> List[AgentRef]:
         return list(self._refs.values())
-
-    def current_ref(self) -> Optional[AgentRef]:
-        """The AgentRef whose pump is driving the calling asyncio task.
-
-        Returns None if called outside any pump (e.g., from top-level code
-        before any spawn). Inherited by child tasks via contextvar copy.
-        """
-        return _current_ref_var.get()
 
 
 runtime_manager = RuntimeManager()

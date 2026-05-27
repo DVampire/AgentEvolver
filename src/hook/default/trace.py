@@ -38,11 +38,13 @@ class TraceHook(Hook):
 
         event: Optional[TraceEvent] = None
 
-        if ctx.event == HookEvent.ON_START:
+        agent_name = (ctx.extra or {}).get("agent_name", "")
+
+        if ctx.extra.get("event") == HookEvent.ON_START:
             event = agent_start_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 task_content=self._task_content(ctx),
             )
             parent_session_id = (ctx.extra or {}).get("parent_session_id")
@@ -55,37 +57,37 @@ class TraceHook(Hook):
                 }})
             self._timers[f"{ctx.id}:agent"] = time.monotonic()
 
-        elif ctx.event == HookEvent.ON_STOP:
+        elif ctx.extra.get("event") == HookEvent.ON_STOP:
             elapsed = self._pop_timer(f"{ctx.id}:agent")
             event = agent_end_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 success=True,
                 result=None,
                 duration_ms=elapsed,
             )
 
-        elif ctx.event == HookEvent.PRE_STEP:
-            step = ctx.step_number or 0
+        elif ctx.extra.get("event") == HookEvent.PRE_STEP:
+            step = ctx.extra.get("step_number") or 0
             self._timers[f"{ctx.id}:step:{step}"] = time.monotonic()
 
-        elif ctx.event == HookEvent.POST_STEP:
-            step = ctx.step_number or 0
+        elif ctx.extra.get("event") == HookEvent.POST_STEP:
+            step = ctx.extra.get("step_number") or 0
             elapsed = self._pop_timer(f"{ctx.id}:step:{step}")
             event = agent_call_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 step_number=step,
                 thinking=(ctx.extra or {}).get("thinking"),
                 next_goal=(ctx.extra or {}).get("next_goal"),
                 duration_ms=elapsed,
             )
 
-        elif ctx.event == HookEvent.PRE_ACTION:
-            action = ctx.action or {}
-            step = ctx.step_number or 0
+        elif ctx.extra.get("event") == HookEvent.PRE_ACTION:
+            action = ctx.extra.get("action") or {}
+            step = ctx.extra.get("step_number") or 0
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
@@ -99,7 +101,7 @@ class TraceHook(Hook):
             event = factory(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 step_number=step,
                 action_index=idx,
                 action_name=aname,
@@ -107,9 +109,9 @@ class TraceHook(Hook):
             )
             self._timers[f"{ctx.id}:action:{step}:{idx}"] = time.monotonic()
 
-        elif ctx.event == HookEvent.POST_ACTION:
-            action = ctx.action or {}
-            step = ctx.step_number or 0
+        elif ctx.extra.get("event") == HookEvent.POST_ACTION:
+            action = ctx.extra.get("action") or {}
+            step = ctx.extra.get("step_number") or 0
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
@@ -120,18 +122,18 @@ class TraceHook(Hook):
             event = factory(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 step_number=step,
                 action_index=idx,
                 action_name=aname,
-                result=ctx.action_result,
+                result=ctx.extra.get("action_result"),
                 success=success,
                 duration_ms=elapsed,
                 error=error,
             )
 
         if event is not None:
-            trace_manager.emit(event)
+            await trace_manager.emit(event)
 
         return HookResult.allow()
 

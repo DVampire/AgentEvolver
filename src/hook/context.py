@@ -1,146 +1,274 @@
-"""HookContextManager — per-session state store.
+"""Hook Context Manager — hook registry, initialization, and dispatch.
 
-Each session gets its own isolated HookSessionState so concurrent
-agent runs never share mutable state. Locks are per-session.
+Parallels AgentContextManager from src/agent/context.py.
+
+Each hook is stateless by design: any per-session state lives inside the
+hook instance itself (via PrivateAttr), not in a shared session store.
 """
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Dict, List, Optional, Set
+import inflection
+from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.logger import logger
-from src.message import Message
+from src.hook.types import Hook, HookContext, HookEvent, HookResult
 
 
-# Model pricing per million tokens (USD) — approximate, updated 2025
-_MODEL_PRICING: Dict[str, Dict[str, float]] = {
-    "haiku":  {"input": 0.80,  "output": 4.00,  "cache_write": 1.00,  "cache_read": 0.08},
-    "sonnet": {"input": 3.00,  "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
-    "opus":   {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
-    "gpt-4o": {"input": 2.50,  "output": 10.00, "cache_write": 0.0,   "cache_read": 1.25},
-    "o3":     {"input": 10.00, "output": 40.00, "cache_write": 0.0,   "cache_read": 2.50},
-}
-_DEFAULT_PRICING = {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30}
+# ---------------------------------------------------------------------------
+# HookConfig — per-hook configuration (parallel to AgentConfig)
+# ---------------------------------------------------------------------------
 
-
-def _get_pricing(model_name: str) -> Dict[str, float]:
-    name = model_name.lower()
-    for key, pricing in _MODEL_PRICING.items():
-        if key in name:
-            return pricing
-    return _DEFAULT_PRICING
-
-
-class UsageAccumulator(BaseModel):
-    """Accumulates token usage and estimates cost across all LLM calls in a session."""
-    total_input: int = 0
-    total_output: int = 0
-    total_cache_write: int = 0
-    total_cache_read: int = 0
-    turn_count: int = 0
-
-    def add(self, input_tokens: int = 0, output_tokens: int = 0,
-            cache_write: int = 0, cache_read: int = 0) -> None:
-        self.total_input += input_tokens
-        self.total_output += output_tokens
-        self.total_cache_write += cache_write
-        self.total_cache_read += cache_read
-        self.turn_count += 1
-
-    def cost_usd(self, model_name: str = "") -> float:
-        p = _get_pricing(model_name)
-        M = 1_000_000
-        return (
-            self.total_input       * p["input"]       / M +
-            self.total_output      * p["output"]      / M +
-            self.total_cache_write * p["cache_write"] / M +
-            self.total_cache_read  * p["cache_read"]  / M
-        )
-
-    def summary_line(self, model_name: str = "") -> str:
-        cost = self.cost_usd(model_name)
-        return (
-            f"turns={self.turn_count} "
-            f"in={self.total_input} out={self.total_output} "
-            f"cache_w={self.total_cache_write} cache_r={self.total_cache_read} "
-            f"~${cost:.4f}"
-        )
-
-
-class HookSessionState(BaseModel):
-    """Mutable state that hooks can read/write, scoped to one session."""
+class HookConfig(BaseModel):
+    """Configuration record for a registered hook."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    session_id: str
+    name: str = Field(description="Unique hook name.")
+    description: str = Field(default="", description="What this hook does.")
+    enabled: bool = Field(default=True)
+    priority: int = Field(default=100, description="Execution priority — lower runs first.")
 
-    # Token tracking (written by TokenCountHook)
-    last_token_count: int = 0
-    peak_token_count: int = 0
+    cls: Optional[Any] = Field(default=None, description="Hook class.")
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Init config dict.")
+    instance: Optional[Any] = Field(default=None, description="Live hook instance.")
 
-    # Summary state (written by CompactHook)
-    summary_text: Optional[str] = None
-    summary_covers_steps: int = 0
-    last_summary_step: int = 0
+    def __str__(self) -> str:
+        return f"HookConfig(name={self.name}, enabled={self.enabled}, priority={self.priority})"
 
-    # File tracking (written by CodeAgent or PostAction hooks)
-    modified_files: Set[str] = Field(default_factory=set)
-    read_files: Set[str] = Field(default_factory=set)
+    def __repr__(self) -> str:
+        return self.__str__()
 
-    # Accumulated token usage and cost across all LLM calls in this session
-    usage: UsageAccumulator = Field(default_factory=UsageAccumulator)
 
-    # Arbitrary per-hook scratch space keyed by hook name
-    scratch: Dict[str, Any] = Field(default_factory=dict)
-
-    # Internal asyncio lock — not serialised
-    _lock: Optional[asyncio.Lock] = None
-
-    def get_lock(self) -> asyncio.Lock:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
-
+# ---------------------------------------------------------------------------
+# HookContextManager — hook registry + dispatch (parallel to AgentContextManager)
+# ---------------------------------------------------------------------------
 
 class HookContextManager:
-    """Manages per-session HookSessionState with async-safe access.
+    """Global context manager for all hooks — registry, initialization, and dispatch.
 
-    Sessions are created on first access and cleaned up explicitly via
-    end_session(). Embedded inside HookManager (singleton).
+    Parallels AgentContextManager from src/agent/context.py.
+    Hook dispatch is by registered name (exact match), mirroring how
+    AgentContextManager dispatches by agent name.
+
+    Hooks are stateless by design. Any per-session state a hook needs lives
+    inside the hook instance itself (e.g. via pydantic PrivateAttr), not here.
     """
 
     def __init__(self) -> None:
-        self._sessions: Dict[str, HookSessionState] = {}
-        self._global_lock = asyncio.Lock()
+        # name → HookConfig (current registered hooks)
+        self._hook_configs: Dict[str, HookConfig] = {}
 
-    async def get_or_create(self, session_id: str) -> HookSessionState:
-        """Return the session state, creating it if this is the first access."""
-        async with self._global_lock:
-            if session_id not in self._sessions:
-                self._sessions[session_id] = HookSessionState(session_id=session_id)
-                logger.debug(f"| 🔧 Hook session created: {session_id}")
-            return self._sessions[session_id]
+    # ------------------------------------------------------------------
+    # Initialization — auto-discover from HOOK registry
+    # ------------------------------------------------------------------
 
-    async def get(self, session_id: str) -> Optional[HookSessionState]:
-        """Return the session state without creating it."""
-        return self._sessions.get(session_id)
+    async def initialize(self, hook_names: Optional[List[str]] = None) -> None:
+        """Discover all @HOOK.register_module classes, instantiate them, and register.
 
-    async def end_session(self, session_id: str) -> None:
-        """Clean up session state when the agent finishes."""
-        async with self._global_lock:
-            if session_id in self._sessions:
-                del self._sessions[session_id]
-                logger.debug(f"| 🧹 Hook session cleaned up: {session_id}")
+        Args:
+            hook_names: If provided, only register hooks whose snake_case class name
+                        is in this list. None means register all discovered hooks.
+        """
+        hook_configs = await self._load_from_registry(hook_names=hook_names)
 
-    async def update(self, session_id: str, **kwargs: Any) -> None:
-        """Atomically update fields on a session state."""
-        state = await self.get_or_create(session_id)
-        async with state.get_lock():
-            for key, value in kwargs.items():
-                if hasattr(state, key):
-                    setattr(state, key, value)
+        for hook_config in hook_configs.values():
+            try:
+                built_config = await self.build(hook_config)
+                self._hook_configs[built_config.name] = built_config
+                logger.info(f"| 🎣 Hook '{built_config.name}' initialized")
+            except Exception as e:
+                logger.error(f"| ❌ Failed to initialize hook '{hook_config.name}': {e}")
 
-    def list_sessions(self) -> List[str]:
-        return list(self._sessions.keys())
+        logger.info(f"| ✅ Hooks initialization completed: {self.list()}")
+
+    async def _load_from_registry(
+        self, hook_names: Optional[List[str]] = None
+    ) -> Dict[str, HookConfig]:
+        """Load hook classes from the HOOK registry and build HookConfig objects."""
+        import src.hook.default  # ensure all default hooks are imported/registered
+        from src.registry import HOOK
+        from src.config import config
+
+        hook_classes: List[Type[Hook]] = list(HOOK._module_dict.values())
+        logger.info(f"| 🔍 Discovering {len(hook_classes)} hooks from HOOK registry")
+
+        hook_configs: Dict[str, HookConfig] = {}
+
+        for hook_cls in hook_classes:
+            key = inflection.underscore(hook_cls.__name__)
+            if hook_names is not None and key not in hook_names:
+                continue
+            hook_cfg_dict: dict = getattr(config, key, {}) or {}
+
+            try:
+                fields = hook_cls.model_fields
+                default_name     = fields["name"].default     if "name"     in fields else key
+                default_desc     = fields["description"].default if "description" in fields else ""
+                default_priority = fields["priority"].default  if "priority" in fields else 100
+                default_enabled  = fields["enabled"].default   if "enabled"  in fields else True
+
+                hook_config = HookConfig(
+                    name=hook_cfg_dict.get("name", default_name),
+                    description=hook_cfg_dict.get("description", default_desc),
+                    enabled=hook_cfg_dict.get("enabled", default_enabled),
+                    priority=hook_cfg_dict.get("priority", default_priority),
+                    cls=hook_cls,
+                    config=hook_cfg_dict,
+                    instance=None,
+                )
+                hook_configs[hook_config.name] = hook_config
+                logger.info(f"| 📝 Discovered hook: {hook_config.name} ({hook_cls.__name__})")
+            except Exception as e:
+                logger.error(f"| ❌ Failed to build config for hook {hook_cls.__name__}: {e}")
+
+        return hook_configs
+
+    # ------------------------------------------------------------------
+    # Build — instantiate a hook from its config
+    # ------------------------------------------------------------------
+
+    async def build(self, hook_config: HookConfig) -> HookConfig:
+        """Instantiate a hook from its HookConfig and store the live instance."""
+        if hook_config.name in self._hook_configs:
+            existing = self._hook_configs[hook_config.name]
+            if existing.instance is not None:
+                return existing
+
+        if hook_config.cls is None:
+            raise ValueError(f"Cannot create hook '{hook_config.name}': no class provided.")
+
+        cfg = hook_config.config or {}
+        try:
+            instance: Hook = hook_config.cls(**cfg) if cfg else hook_config.cls()
+        except Exception as e:
+            logger.error(f"| ❌ Failed to instantiate hook '{hook_config.name}': {e}")
+            raise
+
+        hook_config.instance = instance
+        self._hook_configs[hook_config.name] = hook_config
+        logger.info(f"| 🔧 Hook '{hook_config.name}' created (priority={instance.priority})")
+        return hook_config
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    async def register(
+        self,
+        hook_cls: Type[Hook],
+        config: Optional[Dict[str, Any]] = None,
+    ) -> HookConfig:
+        """Register (or replace) a hook class, instantiate it, and store."""
+        cfg = config or {}
+        try:
+            instance: Hook = hook_cls(**cfg) if cfg else hook_cls()
+        except Exception as e:
+            raise ValueError(
+                f"Failed to instantiate hook {hook_cls.__name__} with config {cfg}: {e}"
+            ) from e
+
+        hook_config = HookConfig(
+            name=instance.name,
+            description=instance.description,
+            enabled=instance.enabled,
+            priority=instance.priority,
+            cls=hook_cls,
+            config=cfg,
+            instance=instance,
+        )
+        self._hook_configs[hook_config.name] = hook_config
+        logger.info(f"| 🔌 Hook registered: {hook_config.name} (priority={hook_config.priority})")
+        return hook_config
+
+    def unregister(self, name: str) -> None:
+        """Remove a hook from the registry."""
+        if name in self._hook_configs:
+            del self._hook_configs[name]
+            logger.info(f"| 🗑️ Hook unregistered: {name}")
+
+    # ------------------------------------------------------------------
+    # Query
+    # ------------------------------------------------------------------
+
+    async def get(self, name: str) -> Optional[Hook]:
+        """Return the live hook instance, or None if not found."""
+        cfg = self._hook_configs.get(name)
+        return cfg.instance if cfg else None
+
+    async def get_info(self, name: str) -> Optional[HookConfig]:
+        """Return the HookConfig for a registered hook."""
+        return self._hook_configs.get(name)
+
+    def list(self) -> List[str]:
+        """Return names of all registered hooks, sorted by priority."""
+        return [
+            name
+            for name, _ in sorted(
+                self._hook_configs.items(), key=lambda kv: kv[1].priority
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # Dispatch — parallel to AgentContextManager.__call__
+    # ------------------------------------------------------------------
+
+    async def __call__(
+        self,
+        name: str,
+        input: Dict[str, Any],
+        ctx=None,
+        **kwargs,
+    ) -> HookResult:
+        """Dispatch to the hook registered under ``name``.
+
+        Routing is by hook name (exact match), mirroring how AgentContextManager
+        routes by agent name.
+
+        Args:
+            name:  Registered hook name to invoke (e.g. ``"memory_hook"``).
+            input: Event payload — all keys become ctx.extra.
+                   ``event`` is required.
+            ctx:   Any context with an ``.id`` attribute (AgentContext, etc.).
+                   If already a HookContext, used as-is.
+
+        Returns a HookResult. Hooks that raise are logged and treated as ALLOW.
+        """
+        event = input.get("event")
+        if event is None:
+            raise ValueError("'event' is required in input")
+        session_id = ctx.id if ctx is not None else ""
+        hook_ctx = HookContext(
+            id=session_id,
+            name=name,
+            extra=dict(input),
+        )
+
+        hook_config = self._hook_configs.get(name)
+        if hook_config is None or not hook_config.enabled or hook_config.instance is None:
+            return HookResult.allow()
+
+        hook_instance = hook_config.instance
+        event = hook_ctx.extra.get("event")
+
+        try:
+            result = await hook_instance.handle(hook_ctx)
+        except Exception as e:
+            logger.warning(f"| ⚠️ Hook '{name}' raised on {event}: {e}")
+            result = HookResult.allow()
+
+        if result.additional_context:
+            logger.debug(
+                f"| 💬 Hook '{name}' additional_context injected "
+                f"({len(result.additional_context)} chars)"
+            )
+
+        # ON_STOP: let the hook release its own per-session resources
+        if event == HookEvent.ON_STOP:
+            try:
+                await hook_instance.cleanup(hook_ctx.id)
+            except Exception as e:
+                logger.debug(f"| Hook '{name}' cleanup raised: {e}")
+
+        return result

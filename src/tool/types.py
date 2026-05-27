@@ -9,9 +9,12 @@ from src.session import BaseContext
 
 class ToolContext(BaseContext):
     """Context passed into tool manager and individual tool instances."""
-    tool_name: str = Field(default="", description="Name of the tool being called.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory for file operations.")
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    id: str = Field(default="", description="Unique identifier for the tool call, used for tracing and logging.")
+    name: str = Field(default="", description="Name of the tool being called.")
     timeout: Optional[float] = Field(default=None, description="Per-call timeout override.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory for file operations.")
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -380,7 +380,7 @@ class WebSearcherTool(Tool):
 
             try:
                 message = HumanMessage(content=prompt)
-                response = await model_manager(model=self.model_name, messages=[message])
+                response = await model_manager(name=self.model_name, input={"messages": [message]})
                 if response and response.message.strip():
                     result["summary"] = response.message.strip()
                 else:
@@ -454,8 +454,8 @@ class WebSearcherTool(Tool):
             )
             user_message = HumanMessage(content=prompt)
             response = await model_manager(
-                model=self.model_name,
-                messages=[system_message, user_message]
+                name=self.model_name,
+                input={"messages": [system_message, user_message]},
             )
 
             if response and response.message.strip():

@@ -6,6 +6,7 @@ abstractions, aligned with the design of `src.tool.types`.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -16,8 +17,6 @@ from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
-from src.hook.server import hook_manager
-from src.hook.types import HookContext, HookEvent
 from src.dynamic import dynamic_manager
 from src.logger import logger
 from src.memory import memory_manager
@@ -335,24 +334,11 @@ class Agent(BaseModel):
             agent_modules=agent_message_modules,
         )
 
-        # Run PRE_MESSAGES middleware pipeline (token count, truncation, history summary)
-        hook_ctx = HookContext(
-            event=HookEvent.PRE_MESSAGES,
-            id=ctx.id,
-            agent_name=self.name,
-            messages=messages,
-            max_tokens=getattr(config, "max_tokens", 0),
-        )
-        result = await hook_manager(hook_ctx)
-        messages = result.modified_messages if result.modified_messages is not None else messages
-        additional_context = result.additional_context
-
-        # Inject additional_context (e.g. from history summary) as a system reminder
-        if additional_context:
-            from src.message import SystemMessage
-            messages = list(messages) + [SystemMessage(content=additional_context)]
-
         return messages
+
+    # ------------------------------------------------------------------
+    # Path 1: Direct call
+    # ------------------------------------------------------------------
 
     async def __call__(self,
                        task: Optional[str] = None,
@@ -360,29 +346,102 @@ class Agent(BaseModel):
                        ctx: Optional[AgentContext] = None,
                        **kwargs: Any,
                        ) -> "AgentResponse":
-        """Public entry: every direct call routes through the runtime so that
-        every agent invocation gets a mailbox-managed lifecycle. Subclasses
-        override ``_run``, not ``__call__``."""
-        # Local import to break the import cycle between agent and runtime.
-        from src.runtime import runtime_manager
+        """Direct invocation — no runtime machinery involved.
 
-        invoke_kwargs: Dict[str, Any] = dict(kwargs)
-        if files is not None:
-            invoke_kwargs["files"] = files
-        if ctx is not None:
-            invoke_kwargs["ctx"] = ctx
-        return await runtime_manager.invoke(self, task=task, **invoke_kwargs)
-
-    async def _run(self,
-                   task: Optional[str] = None,
-                   files: Optional[List[str]] = None,
-                   ctx: Optional[AgentContext] = None,
-                   **kwargs: Any,
-                   ) -> "AgentResponse":
-        """Actual agent implementation. Subclasses must override."""
+        Subclasses **must** override this to implement their task logic.
+        This is the only method simple actor agents need to implement.
+        """
         raise NotImplementedError(
-            f"{self.__class__.__name__}._run must be implemented by the subclass"
+            f"{self.__class__.__name__} must implement __call__"
         )
+
+    # ------------------------------------------------------------------
+    # Path 2: Event-driven (runtime / mailbox)
+    # ------------------------------------------------------------------
+
+    async def on_start(self,
+                       task: str,
+                       files: Optional[List[str]],
+                       ctx: Optional[AgentContext],
+                       ref: Any,
+                       ) -> Optional["AgentResponse"]:
+        """Called by the runtime pump when a TaskMessage arrives.
+
+        Default behaviour: delegate to ``__call__`` so that simple actor
+        agents only need to implement one method.
+
+        Override to customise event-driven startup (e.g. MetaAgent).
+        Return an ``AgentResponse`` to resolve the task immediately; return
+        ``None`` to signal that resolution will happen asynchronously via
+        a later ``on_event`` / ``on_stop`` call.
+        """
+        return await self.__call__(task=task, files=files, ctx=ctx)
+
+    async def on_event(self,
+                       msg: Any,
+                       ref: Any,
+                       ) -> None:
+        """Called by the runtime pump for every non-TaskMessage message.
+
+        Default behaviour: no-op.  Event-driven agents (e.g. MetaAgent)
+        override this to handle SubtaskDone, Escalation, etc.
+        """
+
+    async def on_stop(self,
+                      result: "AgentResponse",
+                      ctx: Optional[AgentContext],
+                      ) -> None:
+        """Called after the task resolves — cleanup / teardown hook.
+
+        For sync agents this is called automatically by ``handle()`` once
+        ``on_start`` returns a result.  Async / event-driven agents should
+        call this themselves when they are done (e.g. inside ``_finish``).
+
+        Default behaviour: no-op.  Override to emit ON_STOP hooks, flush
+        memory, reset per-invocation state, etc.
+        """
+
+    # ------------------------------------------------------------------
+    # Framework dispatcher — do NOT override in subclasses
+    # ------------------------------------------------------------------
+
+    async def handle(self, msg: Any, ref: Any) -> None:
+        """Runtime pump dispatcher.
+
+        Routes each inbox message to the appropriate lifecycle method:
+          * TaskMessage          → on_start → [on_stop if resolved]
+          * Everything else      → on_event
+
+        This method is part of the framework layer.  Subclasses should
+        implement ``__call__``, ``on_start``, ``on_event``, and ``on_stop``
+        instead of overriding ``handle``.
+        """
+        from src.runtime.types import TaskMessage
+        if isinstance(msg, TaskMessage):
+            ctx = msg.kwargs.get("ctx")
+            ref._pending_reply = msg.reply_future      # hand ownership to ref
+            try:
+                result = await self.on_start(
+                    task=msg.task or "",
+                    files=msg.kwargs.get("files"),
+                    ctx=ctx,
+                    ref=ref,
+                )
+                if result is not None:
+                    if ref._pending_reply is not None and not ref._pending_reply.done():
+                        ref._pending_reply.set_result(result)
+                        ref._pending_reply = None
+                    await self.on_stop(result, ctx)
+            except asyncio.CancelledError:
+                if ref._pending_reply is not None and not ref._pending_reply.done():
+                    ref._pending_reply.cancel()
+                raise
+            except Exception as exc:
+                logger.error(f"| ❌ {self.name} task failed: {exc}", exc_info=True)
+                if ref._pending_reply is not None and not ref._pending_reply.done():
+                    ref._pending_reply.set_exception(exc)
+        else:
+            await self.on_event(msg, ref)
 
 
 class AgentExtra(BaseModel):

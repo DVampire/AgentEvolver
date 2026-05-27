@@ -1,159 +1,122 @@
-"""HookManager — singleton that registers hooks and fires events.
+"""HookManagerServer — thin server wrapper around HookContextManager.
 
-Design decisions:
-- Hook instances are shared across sessions (stateless by design).
-  Per-session mutable state lives in HookContextManager.
-- Handlers for a given event run concurrently (asyncio.gather), then
-  results are merged with _merge_results (most-restrictive wins).
-- Per-session asyncio.Lock (inside HookSessionState) ensures that
-  hooks writing shared session state do so atomically.
+Parallels AgentManagerServer / src/agent/server.py.
+All logic lives in HookContextManager; this class just owns the singleton
+instance and exposes a stable public API.
 """
 
 from __future__ import annotations
 
-import asyncio
-import inflection
-from typing import Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from src.logger import logger
-from src.utils import Singleton
-from src.hook.types import (
-    HookEvent,
-    HookContext,
-    HookResult,
-    Hook,
-    _merge_results,
-)
-from src.hook.context import HookContextManager
+from src.hook.types import Hook, HookContext, HookResult
+from src.hook.context import HookContextManager, HookConfig
 
 
-class HookManager(metaclass=Singleton):
-    """Singleton registry and dispatcher for all hooks."""
+class HookManagerServer:
+    """Singleton server for hook registration and dispatch.
+
+    Parallels AgentManagerServer: stores a HookContextManager and delegates
+    every method to it.  Call ``await hook_manager.initialize()`` once at
+    startup before any hooks are dispatched.
+    """
 
     def __init__(self) -> None:
-        self._hooks: List[Hook] = []
-        self.context = HookContextManager()
+        self.hook_context_manager: Optional[HookContextManager] = None
 
     # ------------------------------------------------------------------
-    # Initialization — auto-discover from HOOK registry
+    # Initialization
     # ------------------------------------------------------------------
 
     async def initialize(self, hook_names: Optional[List[str]] = None) -> None:
-        """Discover all @HOOK.register_module classes, instantiate them with config,
-        and register. Hooks already registered by name are skipped.
+        """Discover and instantiate hooks from the HOOK registry.
 
         Args:
-            hook_names: If provided, only register hooks whose class name (underscored)
-                        is in this list. None means register all discovered hooks.
+            hook_names: If provided, only load hooks whose snake_case class
+                        name is in this list. None loads all discovered hooks.
         """
-        import src.hook.default  # ensure all default hooks are imported/registered
-        from src.registry import HOOK
-        from src.config import config
+        self.hook_context_manager = HookContextManager()
+        await self.hook_context_manager.initialize(hook_names=hook_names)
+        logger.info("| ✅ Hook manager server initialized")
 
-        hook_classes: List[Type[Hook]] = list(HOOK._module_dict.values())
-        logger.info(f"| 🔍 Discovering {len(hook_classes)} hooks from HOOK registry")
-
-        for hook_cls in hook_classes:
-            key = inflection.underscore(hook_cls.__name__)
-            if hook_names is not None and key not in hook_names:
-                continue
-            hook_cfg: dict = getattr(config, key, {})
-            try:
-                instance = hook_cls(**hook_cfg) if hook_cfg else hook_cls()
-                self.register(instance)
-            except Exception as e:
-                logger.error(f"| ❌ Failed to instantiate hook {hook_cls.__name__}: {e}")
-
-        logger.info(f"| ✅ Hooks initialized: {self.list()}")
+    def _require_manager(self) -> HookContextManager:
+        if self.hook_context_manager is None:
+            raise RuntimeError(
+                "HookManagerServer has not been initialized. "
+                "Call `await hook_manager.initialize()` first."
+            )
+        return self.hook_context_manager
 
     # ------------------------------------------------------------------
     # Registration
     # ------------------------------------------------------------------
 
-    def register(self, hook: Hook) -> None:
-        """Register a hook instance. Replaces any existing instance with the same name."""
-        self._hooks = [h for h in self._hooks if h.name != hook.name]
-        self._hooks.append(hook)
-        self._hooks.sort(key=lambda h: h.priority)
-        logger.info(f"| 🔌 Hook registered: {hook.name} (priority={hook.priority})")
+    async def register(
+        self,
+        hook_cls: Type[Hook],
+        config: Optional[Dict[str, Any]] = None,
+    ) -> HookConfig:
+        """Register (or replace) a hook class.
+
+        Args:
+            hook_cls: Hook subclass to register.
+            config:   Optional init kwargs passed to the constructor.
+
+        Returns:
+            HookConfig of the newly registered hook.
+        """
+        return await self._require_manager().register(hook_cls, config=config)
 
     def unregister(self, name: str) -> None:
-        self._hooks = [h for h in self._hooks if h.name != name]
-
-    def get(self, name: str) -> Optional[Hook]:
-        for h in self._hooks:
-            if h.name == name:
-                return h
-        return None
-
-    def list(self) -> List[str]:
-        return [h.name for h in self._hooks]
+        """Remove a hook from the registry by name."""
+        self._require_manager().unregister(name)
 
     # ------------------------------------------------------------------
-    # Hook dispatch
+    # Query
+    # ------------------------------------------------------------------
+
+    async def get(self, name: str) -> Optional[Hook]:
+        """Return the live Hook instance registered under ``name``."""
+        return await self._require_manager().get(name)
+
+    async def get_info(self, name: str) -> Optional[HookConfig]:
+        """Return the HookConfig registered under ``name``."""
+        return await self._require_manager().get_info(name)
+
+    def list(self) -> List[str]:
+        """Return a list of registered hook names, sorted by priority."""
+        if self.hook_context_manager is None:
+            return []
+        return self.hook_context_manager.list()
+
+    # ------------------------------------------------------------------
+    # Dispatch — mirrors AgentManagerServer.__call__
     # ------------------------------------------------------------------
 
     async def __call__(
         self,
-        ctx,                          # SessionContext, HookContext, or any object with .id
-        event: Optional[HookEvent] = None,
-        agent_name: str = "",
-        step_number: Optional[int] = None,
-        action: Optional[dict] = None,
-        action_result: Optional[str] = None,
-        extra: Optional[dict] = None,
+        name: str,
+        input: Dict[str, Any],
+        ctx=None,
+        **kwargs,
     ) -> HookResult:
-        """Dispatch a hook event.
+        """Dispatch to the hook registered under ``name``.
 
-        Accepts either:
-        - A pre-built HookContext as the first argument (event omitted), or
-        - A plain SessionContext + explicit event keyword/positional.
+        Args:
+            name:  Registered hook name (e.g. ``"memory_hook"``).
+            input: Flat event payload dict. Must contain ``"event"`` key
+                   (a HookEvent value) unless ctx is already a HookContext.
+            ctx:   Any context with an ``.id`` attribute, or a HookContext.
 
-        Returns a merged HookResult. Hooks that raise are logged and
-        treated as ALLOW (non-fatal).
+        Returns:
+            HookResult (ALLOW if no hook is registered under ``name``).
         """
-        if isinstance(ctx, HookContext):
-            hook_ctx = ctx
-        else:
-            if event is None:
-                raise ValueError("event is required when ctx is not a HookContext")
-            hook_ctx = HookContext(
-                id=ctx.id,
-                event=event,
-                agent_name=agent_name,
-                step_number=step_number,
-                action=action,
-                action_result=action_result,
-                extra=extra or {},
-            )
-        ctx = hook_ctx
-        candidates = [h for h in self._hooks if h.handles_event(ctx.event)]
-        if not candidates:
+        if self.hook_context_manager is None:
+            # Graceful no-op before initialization (e.g. during tests)
             return HookResult.allow()
-
-        # Attach session state to extra so hooks can read/write it
-        session_state = await self.context.get_or_create(ctx.id)
-        ctx.extra["_session_state"] = session_state
-
-        async def _safe_handle(h: Hook) -> HookResult:
-            try:
-                return await h.handle(ctx)
-            except Exception as e:
-                logger.warning(f"| ⚠️ Hook '{h.name}' raised on {ctx.event}: {e}")
-                return HookResult.allow()
-
-        results = await asyncio.gather(*[_safe_handle(h) for h in candidates])
-        merged = _merge_results(list(results))
-
-        if merged.additional_context:
-            logger.debug(f"| 💬 Hook additional_context injected ({len(merged.additional_context)} chars)")
-
-        # Auto-cleanup: release per-session state after ON_STOP so it doesn't
-        # accumulate indefinitely. All hooks have already run by this point.
-        if ctx.event == HookEvent.ON_STOP:
-            await self.context.end_session(ctx.id)
-
-        return merged
+        return await self.hook_context_manager(name, input, ctx=ctx, **kwargs)
 
 
-hook_manager = HookManager()
+# Global singleton — import this everywhere
+hook_manager = HookManagerServer()

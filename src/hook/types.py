@@ -34,25 +34,23 @@ class HookEvent(str, Enum):
 
 
 class HookContext(BaseContext):
-    """Immutable snapshot of agent state passed to every middleware handler."""
+    """Context passed into hook manager and individual hook handlers.
+
+    Event-specific payload lives in ``extra``:
+      - extra["event"]         → HookEvent
+      - extra["messages"]      → List[Message]  (PRE_MESSAGES)
+      - extra["action"]        → dict            (PRE_ACTION / POST_ACTION)
+      - extra["action_result"] → str             (POST_ACTION)
+      - extra["step_number"]   → int             (PRE_STEP / POST_STEP)
+      - extra["max_tokens"]    → int             (PRE_MESSAGES)
+    ``name`` holds the agent name that fired the event.
+    """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-
-    event: HookEvent = Field(description="The event that triggered this hook.")
-    agent_name: str = Field(default="", description="Name of the agent firing the event.")
-
-    # Present for PRE_MESSAGES / POST_MESSAGES
-    messages: Optional[List[Message]] = Field(default=None)
-
-    # Present for PRE_ACTION / POST_ACTION
-    action: Optional[Dict[str, Any]] = Field(default=None, description="The action dict being executed.")
-    action_result: Optional[str] = Field(default=None, description="Result of the action (POST_ACTION only).")
-
-    # Present for PRE_STEP / POST_STEP
-    step_number: Optional[int] = Field(default=None)
-
-    # Agent-level metadata
-    max_tokens: Optional[int] = Field(default=None)
-    extra: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    id: str = Field(description="Session ID or any unique identifier for this hook context.")
+    name: str = Field(description="Hook name that fired the event.")
+    timeout: Optional[float] = Field(default=3600, description="Optional timeout for this context. Defaults to 1 hour.")
+    work_dir: Optional[str] = Field(default=None, description="Optional working directory for this context.")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="Event-specific payload.")
 
 
 class HookDecision(str, Enum):
@@ -144,8 +142,6 @@ class Hook(BaseModel):
     name: str = Field(description="Unique name for this hook.")
     description: str = Field(default="", description="What this hook does.")
     enabled: bool = Field(default=True)
-    # Which events this hook handles. Empty = handle all.
-    events: List[HookEvent] = Field(default_factory=list)
     # Execution priority — lower number runs first.
     priority: int = Field(default=100)
 
@@ -153,5 +149,5 @@ class Hook(BaseModel):
         """Override this method to implement hook logic."""
         return HookResult.allow()
 
-    def handles_event(self, event: HookEvent) -> bool:
-        return self.enabled and (not self.events or event in self.events)
+    async def cleanup(self, session_id: str) -> None:
+        """Called when a session ends (ON_STOP). Override to release per-session state."""

@@ -35,7 +35,7 @@ class MemoryHook(Hook):
 
         # ON_CALL: always route directly to FileSystemMemory as an AGENT_CALL
         # with the caller's payload as metadata.
-        if ctx.event == HookEvent.ON_CALL:
+        if ctx.extra.get("event") == HookEvent.ON_CALL:
             try:
                 fs_info = await memory_manager.get_info("file_system_memory")
                 if fs_info and fs_info.instance is not None:
@@ -46,7 +46,7 @@ class MemoryHook(Hook):
                         TraceEvent(
                             event_type=TraceEventType.AGENT_CALL,
                             session_id=ctx.id,
-                            agent_name=ctx.agent_name,
+                            agent_name=ctx.extra.get("agent_name", ""),
                             metadata=data,
                         ),
                         session_id=ctx.id,
@@ -65,7 +65,7 @@ class MemoryHook(Hook):
             if memory_info and memory_info.instance is not None:
                 await memory_info.instance.emit(event, session_id=ctx.id)
         except Exception as e:
-            logger.warning(f"| ⚠️ MemoryHook (primary) error on {ctx.event}: {e}")
+            logger.warning(f"| ⚠️ MemoryHook (primary) error on {ctx.extra.get('event')}: {e}")
 
         # FileSystemMemory as secondary sink
         if memory_name != "file_system_memory":
@@ -74,42 +74,43 @@ class MemoryHook(Hook):
                 if fs_info and fs_info.instance is not None:
                     await fs_info.instance.emit(event, session_id=ctx.id)
             except Exception as e:
-                logger.warning(f"| ⚠️ MemoryHook (file_system) error on {ctx.event}: {e}")
+                logger.warning(f"| ⚠️ MemoryHook (file_system) error on {ctx.extra.get('event')}: {e}")
 
         return HookResult.allow()
 
     def _build_event(self, ctx: HookContext) -> TraceEvent | None:
         task_id = (ctx.extra or {}).get("task_id", ctx.id)
+        agent_name = (ctx.extra or {}).get("agent_name", "")
 
-        if ctx.event == HookEvent.ON_START:
+        if ctx.extra.get("event") == HookEvent.ON_START:
             return agent_start_event(
                 session_id=ctx.id, task_id=task_id,
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 task_content=(ctx.extra or {}).get("task", ""),
             )
 
-        if ctx.event == HookEvent.ON_STOP:
+        if ctx.extra.get("event") == HookEvent.ON_STOP:
             extra = ctx.extra or {}
             return agent_end_event(
                 session_id=ctx.id, task_id=task_id,
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 success=not bool(extra.get("error")),
                 result=extra.get("result"),
             )
 
-        if ctx.event == HookEvent.POST_STEP:
-            step = ctx.step_number or 0
+        if ctx.extra.get("event") == HookEvent.POST_STEP:
+            step = ctx.extra.get("step_number") or 0
             return agent_call_event(
                 session_id=ctx.id, task_id=task_id,
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 step_number=step,
                 thinking=(ctx.extra or {}).get("thinking"),
                 next_goal=(ctx.extra or {}).get("next_goal"),
             )
 
-        if ctx.event == HookEvent.POST_ACTION:
-            action = ctx.action or {}
-            step = ctx.step_number or 0
+        if ctx.extra.get("event") == HookEvent.POST_ACTION:
+            action = ctx.extra.get("action") or {}
+            step = ctx.extra.get("step_number") or 0
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
@@ -119,9 +120,9 @@ class MemoryHook(Hook):
             factory = tool_call_event if atype == "tool" else skill_call_event
             return factory(
                 session_id=ctx.id, task_id=task_id,
-                agent_name=ctx.agent_name,
+                agent_name=agent_name,
                 step_number=step, action_index=idx, action_name=aname,
-                result=ctx.action_result, success=success,
+                result=ctx.extra.get("action_result"), success=success,
                 duration_ms=None, error=error,
                 description=description,
             )

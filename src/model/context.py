@@ -11,7 +11,7 @@ load_dotenv(verbose=True)
 
 from pydantic import BaseModel
 
-from src.model.types import ModelConfig, LLMResponse, LLMExtra
+from src.model.types import ModelContext, ModelConfig, LLMResponse, LLMExtra
 from src.model.openai.chat import ChatOpenAI
 from src.model.openai.response import ResponseOpenAI
 from src.model.openai.transcribe import TranscribeOpenAI
@@ -407,35 +407,50 @@ class ModelContextManager:
 
     async def __call__(
         self,
-        model: str,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
-        stream: bool = False,
-        plugins: Optional[List[Dict[str, Any]]] = None,
-        max_retries: int = 3,
-        caller: Optional[str] = None,
+        name: str,
+        input: Dict[str, Any],
+        ctx: ModelContext = None,
         **kwargs: Any,
     ) -> LLMResponse:
+        """Invoke a registered model by name.
+
+        Args:
+            name:  Registered model name (e.g. "openrouter/gemini-3-flash-preview").
+            input: Call payload — keys: messages (required), tools, response_format,
+                   stream, plugins, max_retries, caller.
+            ctx:   Optional ModelContext (carries id, name, work_dir, timeout, extra).
+        """
         import time as _t
         import httpx
+
+        ctx = ModelContext.from_context(ctx)
+        if not ctx.name:
+            ctx = ctx.model_copy(update={"name": name})
+
+        messages        = input.get("messages", [])
+        tools           = input.get("tools")
+        response_format = input.get("response_format")
+        stream          = input.get("stream", False)
+        plugins         = input.get("plugins")
+        max_retries     = input.get("max_retries", 3)
+        caller          = input.get("caller")
 
         self._current_caller = caller
         if tools and response_format:
             raise ValueError("tools and response_format cannot be used together")
 
-        if model not in self.model_clients:
-            return LLMResponse(success=False, message=f"Model {model} not found. Available: {list(self.models.keys())}")
+        if name not in self.model_clients:
+            return LLMResponse(success=False, message=f"Model {name} not found. Available: {list(self.models.keys())}")
 
-        model_config = self.models.get(model)
+        model_config = self.models.get(name)
         last_exc: Exception = None
 
         for attempt in range(max_retries):
             _start = _t.time()
             try:
-                client = await self._get_client(model)
+                client = await self._get_client(name)
                 result = await self._call_client(client, model_config, messages, tools, response_format, stream, plugins, kwargs)
-                self._log_usage(model, result)
+                self._log_usage(name, result)
                 if not result.success:
                     raise Exception(result.message or "Model returned success=False")
                 is_chat = not model_config or model_config.model_type not in ("transcriptions", "embeddings")
@@ -444,22 +459,22 @@ class ModelContextManager:
                 return result
             except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
                 last_exc = e
-                logger.error(f"| ❌ Model {model} timed out ({_t.time()-_start:.0f}s): {e}")
+                logger.error(f"| ❌ Model {name} timed out ({_t.time()-_start:.0f}s): {e}")
                 break
             except Exception as e:
                 last_exc = e
                 _elapsed = _t.time() - _start
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
                 if attempt < max_retries - 1:
-                    logger.warning(f"| ⚠️ Model {model} attempt {attempt+1}/{max_retries} failed ({_elapsed:.0f}s{tag}): {e}, retrying...")
+                    logger.warning(f"| ⚠️ Model {name} attempt {attempt+1}/{max_retries} failed ({_elapsed:.0f}s{tag}): {e}, retrying...")
                 else:
-                    logger.error(f"| ❌ Model {model} failed after {max_retries} attempts ({_elapsed:.0f}s{tag}): {e}")
+                    logger.error(f"| ❌ Model {name} failed after {max_retries} attempts ({_elapsed:.0f}s{tag}): {e}")
 
         if model_config and model_config.fallback_model:
             fallback = model_config.fallback_model
-            logger.warning(f"| Primary model {model} exhausted retries, falling back to {fallback}")
+            logger.warning(f"| Primary model {name} exhausted retries, falling back to {fallback}")
             if fallback not in self.model_clients:
-                return LLMResponse(success=False, message=f"Primary model {model} failed and fallback {fallback} not found. Error: {last_exc}")
+                return LLMResponse(success=False, message=f"Primary model {name} failed and fallback {fallback} not found. Error: {last_exc}")
             fallback_config = self.models.get(fallback)
             try:
                 fb_client = await self._get_client(fallback)
@@ -474,7 +489,7 @@ class ModelContextManager:
                 return result
             except Exception as fallback_error:
                 logger.error(f"| Fallback model {fallback} also failed: {fallback_error}")
-                return LLMResponse(success=False, message=f"Both {model} and fallback {fallback} failed. Primary: {last_exc}, Fallback: {fallback_error}")
+                return LLMResponse(success=False, message=f"Both {name} and fallback {fallback} failed. Primary: {last_exc}, Fallback: {fallback_error}")
 
         return LLMResponse(success=False, message=str(last_exc))
 

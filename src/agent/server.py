@@ -12,7 +12,7 @@ from src.config import config
 from src.logger import logger
 from src.agent.types import AgentConfig, Agent, AgentContext
 from src.agent.context import AgentContextManager
-from src.utils import assemble_project_path
+from src.utils import assemble_project_path, make_id
 
 class AgentManagerServer(BaseModel):
     """Agent Manager Server for managing agent registration and execution with lazy loading."""
@@ -223,6 +223,13 @@ class AgentManagerServer(BaseModel):
         Returns:
             Agent result
         """
+        
+        # Ensure ctx is always an AgentContext instance
+        ctx = AgentContext(
+            id = ctx.id if ctx else make_id(),
+            name = name,
+        )
+
         return await self.agent_context_manager(name, input, ctx=ctx, **kwargs)
 
 

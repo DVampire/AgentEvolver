@@ -10,8 +10,11 @@ from src.session import BaseContext
 
 class SkillContext(BaseContext):
     """Context passed into skill manager and individual skill instances."""
-    skill_name: str = Field(default="", description="Name of the skill being invoked.")
-    model_name: Optional[str] = Field(default=None, description="LLM model override for this skill.")
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(default="", description="Unique identifier for this skill invocation")
+    name: str = Field(default="", description="Name of the skill being invoked.")
+    timeout: Optional[int] = Field(default=None, description="Optional timeout for skill execution in seconds")
     work_dir: Optional[str] = Field(default=None)
     extra: Dict[str, Any] = Field(default_factory=dict)
 

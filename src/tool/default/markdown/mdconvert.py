@@ -47,7 +47,7 @@ def transcribe_audio(file_stream, audio_format):
     
     async def _transcribe_async():
         """Internal async function to call model_manager."""
-        response = await model_manager(model="gpt-4o-transcribe", messages=messages)
+        response = await model_manager(name="openai/gpt-4o-transcribe", input={"messages": messages})
         return response.message.strip()
     
     # Run async function in sync context

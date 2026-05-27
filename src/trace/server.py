@@ -5,7 +5,7 @@ Lifecycle::
     await trace_manager.initialize(work_dir="work_dir/trace")
     await trace_manager.start()          # starts writer + FastAPI server
     ...
-    trace_manager.emit(event)            # fire-and-forget from anywhere
+    await trace_manager.emit(event)      # non-blocking async emit
     ...
     await trace_manager.stop()
 
@@ -108,8 +108,8 @@ class TraceManager(metaclass=Singleton):
     # Public API
     # ------------------------------------------------------------------
 
-    def emit(self, event: TraceEvent) -> None:
-        """Fire-and-forget event emission.  Never blocks, never raises."""
+    async def emit(self, event: TraceEvent) -> None:
+        """Emit a trace event.  Never blocks on the caller, never raises."""
         if not self._running or self._queue is None:
             return
         self._queue.emit(event)

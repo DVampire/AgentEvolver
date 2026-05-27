@@ -128,11 +128,13 @@ class WorkingMemory:
 
         try:
             response = await model_manager(
-                model=self.model_name,
-                messages=[
-                    SystemMessage(content="You are a concise memory summarisation assistant."),
-                    HumanMessage(content=prompt),
-                ],
+                name=self.model_name,
+                input={
+                    "messages": [
+                        SystemMessage(content="You are a concise memory summarisation assistant."),
+                        HumanMessage(content=prompt),
+                    ],
+                },
             )
             text = response.message.strip() if response.success else ""
             if text:

@@ -1041,8 +1041,6 @@ class AgentContextManager(BaseModel):
         Returns:
             Agent result
         """
-        ctx = AgentContext.from_context(ctx)
-
         agent_info = await self.get_info(name)
 
         # Agent args: ctx + any extra kwargs from the caller
@@ -1051,6 +1049,7 @@ class AgentContextManager(BaseModel):
         version = agent_info.version
         agent_instance = agent_info.instance
         logger.info(f"| ✅ Using agent {name}@{version}")
-        
-        return await agent_instance(**input, **agent_args)
+
+        from src.runtime.server import runtime_manager
+        return await runtime_manager.invoke(agent_instance, **input, **agent_args)
 

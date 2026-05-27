@@ -701,14 +701,12 @@ class SkillContextManager(BaseModel):
         self,
         name: str,
         input: Dict[str, Any],
-        model_name: Optional[str] = None,
         ctx: SessionContext = None,
         **kwargs,
     ) -> SkillResponse:
         """Execute a skill by returning its SKILL.md as instructions for the calling agent."""
-        if ctx is None:
-            ctx = SessionContext()
-        skill_ctx = SkillContext.from_session(ctx, skill_name=name, model_name=model_name)
+        skill_ctx = SkillContext.from_context(ctx)
+        skill_ctx = skill_ctx.model_copy(update={"skill_name": name})
 
         skill_config = self._skill_configs.get(name)
         if skill_config is None:

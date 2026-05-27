@@ -101,9 +101,8 @@ class ReformulatorTool(Tool):
             
             # Call model with response_format
             response = await model_manager(
-                model=self.model_name, 
-                messages=messages,
-                response_format=ReformulatedAnswer
+                name=self.model_name,
+                input={"messages": messages, "response_format": ReformulatedAnswer},
             )
             
             if not response.success:

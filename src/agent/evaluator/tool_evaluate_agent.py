@@ -120,10 +120,9 @@ class ToolEvaluateAgent(Agent):
         action_errors = []
 
         await hook_manager(
-            ctx, HookEvent.PRE_STEP,
-            agent_name=self.name,
-            step_number=step_number,
-            extra={"task_id": task_id},
+            name="trace_hook",
+            input={"event": HookEvent.PRE_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id},
+            ctx=ctx,
         )
 
         thinking = ""
@@ -133,9 +132,9 @@ class ToolEvaluateAgent(Agent):
 
         try:
             think_output = await model_manager(
-                model=self.model_name,
-                messages=messages,
-                response_format=AgentThinkOutput,
+                name=self.model_name,
+                input={"messages": messages, "response_format": AgentThinkOutput},
+                ctx=ctx,
             )
             think_output = think_output.extra.parsed_model
 
@@ -169,11 +168,9 @@ class ToolEvaluateAgent(Agent):
                 }
 
                 pre_result = await hook_manager(
-                    ctx, HookEvent.PRE_ACTION,
-                    agent_name=self.name,
-                    step_number=step_number,
-                    action=action_dict,
-                    extra={"task_id": task_id},
+                    name="trace_hook",
+                    input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
+                    ctx=ctx,
                 )
                 if pre_result.decision == HookDecision.BLOCK:
                     logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
@@ -217,12 +214,14 @@ class ToolEvaluateAgent(Agent):
                     logger.error(f"| ❌ Action '{action_name}' failed: {e}")
 
                 await hook_manager(
-                    ctx, HookEvent.POST_ACTION,
-                    agent_name=self.name,
-                    step_number=step_number,
-                    action=action_dict,
-                    action_result=action_result,
-                    extra={"task_id": task_id, "error": error},
+                    name="memory_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
+                )
+                await hook_manager(
+                    name="trace_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
                 )
 
                 if done:
@@ -232,10 +231,14 @@ class ToolEvaluateAgent(Agent):
             logger.error(f"| Error in think_and_action: {e}")
 
         await hook_manager(
-            ctx, HookEvent.POST_STEP,
-            agent_name=self.name,
-            step_number=step_number,
-            extra={"task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            name="memory_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            ctx=ctx,
         )
 
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
@@ -244,7 +247,7 @@ class ToolEvaluateAgent(Agent):
     # Main entry point
     # ------------------------------------------------------------------
 
-    async def _run(
+    async def __call__(
         self,
         task: str,
         target_name: Optional[str] = None,
@@ -274,10 +277,14 @@ class ToolEvaluateAgent(Agent):
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
         await hook_manager(
-            ctx, HookEvent.ON_START,
-            agent_name=self.name,
-            extra={"task_id": task_id, "task": task, "target_name": target_name,
-                   "memory_name": self.memory_name, "use_memory": self.use_memory},
+            name="memory_hook",
+            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": task, "target_name": target_name, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": task, "target_name": target_name, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
         )
 
         messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
@@ -303,10 +310,14 @@ class ToolEvaluateAgent(Agent):
             }
 
         await hook_manager(
-            ctx, HookEvent.ON_STOP,
-            agent_name=self.name,
-            extra={"task_id": task_id, "result": response.get("result"),
-                   "memory_name": self.memory_name, "use_memory": self.use_memory},
+            name="memory_hook",
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            ctx=ctx,
         )
 
         logger.info(f"| ✅ ToolEvaluateAgent completed after {step_number}/{self.max_steps} steps")

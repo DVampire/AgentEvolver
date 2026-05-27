@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.utils import make_id
 
@@ -47,8 +47,10 @@ class BaseContext(BaseModel):
         )
 
 
-class SessionContext(BaseModel):
+class SessionContext(BaseContext):
     """Top-level session identifier passed between all managers."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
     id: str = Field(description="Session ID.")
     name: Optional[str] = Field(default=None, description="Optional name for this session.")
     timeout: Optional[float] = Field(default=3600, description="Optional timeout for this session. Defaults to 1 hour.")

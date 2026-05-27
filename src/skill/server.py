@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.skill.context import SkillContextManager
-from src.skill.types import SkillConfig, SkillResponse
+from src.skill.types import SkillConfig, SkillResponse, SkillContext
 from src.session import SessionContext
 from src.utils import assemble_project_path
 
@@ -222,8 +222,7 @@ class SkillManagerServer(BaseModel):
         self,
         name: str,
         input: Dict[str, Any],
-        model_name: Optional[str] = None,
-        ctx: SessionContext = None,
+        ctx: SkillContext = None,
         **kwargs,
     ) -> SkillResponse:
         """Execute a skill by name.
@@ -231,13 +230,17 @@ class SkillManagerServer(BaseModel):
         Args:
             name: Skill name.
             input: User-provided arguments.
-            model_name: LLM model override.
-            ctx: Session context.
+            ctx: Skill context.
         """
+        # Ensure ctx is always an SkillContext instance
+        ctx = SkillContext(
+            id=ctx.id if ctx else make_id(),
+            name=name
+        )
+
         return await self.skill_context_manager(
             name=name,
             input=input,
-            model_name=model_name,
             ctx=ctx,
             **kwargs,
         )

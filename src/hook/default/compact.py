@@ -12,6 +12,9 @@ Fires on PRE_MESSAGES. Strategy:
      summary wrapped in a direct-resume instruction so the agent continues without preamble.
   6. The compact summary is persisted to FileSystemMemory so it survives the session.
 
+Per-session state (summary text, step count, lock) is held in a PrivateAttr dict keyed
+by session_id — no shared global session store needed.
+
 Concurrency: per-session lock ensures only one summary LLM call runs at a
 time per session.
 """
@@ -20,7 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+
+from pydantic import PrivateAttr
 from src.registry import HOOK
 
 from src.logger import logger
@@ -29,7 +34,6 @@ from src.message.types import ContentPartText
 from src.model import model_manager
 from src.utils import count_message_tokens
 from src.hook.types import HookContext, HookEvent, HookResult, Hook
-from src.hook.context import HookSessionState
 
 _COMPACT_PREAMBLE = (
     "This session is being continued from a previous conversation that ran out of context. "
@@ -128,31 +132,43 @@ def _messages_to_text(messages: List[Message]) -> str:
 class CompactHook(Hook):
     name: str = "compact"
     description: str = "Compacts old agent conversation history when total tokens exceed the threshold."
-    events: list = [HookEvent.PRE_MESSAGES]
     priority: int = 50
 
     trigger_ratio: float = 0.75
     keep_recent_messages: int = 6
     summary_model: str = ""
 
+    # Per-session state: summary_text, summary_covers_steps, last_token_count, lock
+    # Keyed by session_id. No shared global store — this hook owns its own state.
+    _sessions: Dict[str, Dict[str, Any]] = PrivateAttr(default_factory=dict)
+
+    def _get_session(self, session_id: str) -> Dict[str, Any]:
+        if session_id not in self._sessions:
+            self._sessions[session_id] = {
+                "summary_text": None,
+                "summary_covers_steps": 0,
+                "last_token_count": 0,
+                "lock": asyncio.Lock(),
+            }
+        return self._sessions[session_id]
+
     async def handle(self, ctx: HookContext) -> HookResult:
-        if not ctx.messages or not ctx.max_tokens:
+        if not ctx.extra.get("messages") or not ctx.extra.get("max_tokens"):
             return HookResult.allow()
 
-        state: HookSessionState = ctx.extra.get("_session_state")
-        if state is None:
-            return HookResult.allow()
+        messages: List[Message] = ctx.extra.get("messages")
+        session = self._get_session(ctx.id)
 
-        threshold = int(ctx.max_tokens * self.trigger_ratio)
+        threshold = int(ctx.extra.get("max_tokens") * self.trigger_ratio)
 
-        current_tokens = state.last_token_count
+        # Use cached count if available, otherwise count fresh
+        current_tokens = session["last_token_count"]
         if current_tokens == 0:
-            msg_dicts = self._to_dicts(ctx.messages)
-            current_tokens = count_message_tokens(msg_dicts)
+            current_tokens = count_message_tokens(self._to_dicts(messages))
 
         # Dual-condition trigger: token count AND enough compactable messages
-        system_msg = ctx.messages[0] if ctx.messages and isinstance(ctx.messages[0], SystemMessage) else None
-        body = ctx.messages[1:] if system_msg else ctx.messages
+        system_msg = messages[0] if messages and isinstance(messages[0], SystemMessage) else None
+        body = messages[1:] if system_msg else messages
         compactable_count = max(0, len(body) - self.keep_recent_messages)
 
         if current_tokens <= threshold or compactable_count == 0:
@@ -163,32 +179,32 @@ class CompactHook(Hook):
             f"({current_tokens} > {threshold} tokens, {compactable_count} compactable messages)"
         )
 
-        async with state.get_lock():
-            if state.last_token_count <= threshold:
+        async with session["lock"]:
+            # Re-check under lock: another concurrent call may have already compacted
+            if session["last_token_count"] > 0 and session["last_token_count"] <= threshold:
                 return HookResult.allow()
 
-            new_messages = await self._summarise(ctx.messages, state, ctx.id)
+            new_messages = await self._summarise(messages, session, ctx.id)
             if new_messages is None:
                 return HookResult.allow()
 
-            new_dicts = self._to_dicts(new_messages)
-            state.last_token_count = count_message_tokens(new_dicts)
+            session["last_token_count"] = count_message_tokens(self._to_dicts(new_messages))
 
-        # Post-compaction health probe: verify tool system is still responsive
+        # Post-compaction health probe
         await self._health_probe(ctx.id)
 
         # Persist compact summary to FileSystemMemory (fire-and-forget)
         asyncio.create_task(
-            self._emit_to_memory(ctx.id, state.summary_text or "", state.summary_covers_steps)
+            self._emit_to_memory(ctx.id, session["summary_text"] or "", session["summary_covers_steps"])
         )
 
-        additional = f"[Context was compressed. Summary covers steps 1–{state.summary_covers_steps}.]"
+        additional = f"[Context was compressed. Summary covers steps 1–{session['summary_covers_steps']}.]"
         return HookResult.modify_messages(new_messages, additional_context=additional)
 
     async def _summarise(
         self,
         messages: List[Message],
-        state: HookSessionState,
+        session: Dict[str, Any],
         session_id: str,
     ) -> Optional[List[Message]]:
         n = len(messages)
@@ -200,8 +216,7 @@ class CompactHook(Hook):
 
         split_point = max(0, len(body) - self.keep_recent_messages)
 
-        # ToolCall/ToolResult boundary protection: walk back split_point so we never
-        # summarise an AssistantMessage with tool_calls while leaving its result in recent_tail.
+        # ToolCall/ToolResult boundary protection
         while split_point > 0:
             prev = body[split_point - 1]
             if isinstance(prev, AssistantMessage) and prev.tool_calls:
@@ -215,18 +230,18 @@ class CompactHook(Hook):
         if not to_summarise:
             return None
 
-        if state.summary_text and state.summary_covers_steps >= split_point:
-            summary_text = state.summary_text
+        if session["summary_text"] and session["summary_covers_steps"] >= split_point:
+            summary_text = session["summary_text"]
         else:
             new_summary = await self._call_llm(to_summarise, session_id)
             if new_summary is None:
                 return None
 
             # Multi-round summary merging: preserve old summary instead of overwriting
-            if state.summary_text:
+            if session["summary_text"]:
                 summary_text = (
                     "### Previously compacted context\n\n"
-                    f"{state.summary_text}\n\n"
+                    f"{session['summary_text']}\n\n"
                     "---\n\n"
                     "### Newly compacted context\n\n"
                     f"{new_summary}"
@@ -234,8 +249,8 @@ class CompactHook(Hook):
             else:
                 summary_text = new_summary
 
-            state.summary_text = summary_text
-            state.summary_covers_steps = split_point
+            session["summary_text"] = summary_text
+            session["summary_covers_steps"] = split_point
 
         continuation_text = (
             f"{_COMPACT_PREAMBLE}\n\n"
@@ -266,11 +281,13 @@ class CompactHook(Hook):
 
         try:
             response = await model_manager(
-                model=self.summary_model,
-                messages=[
-                    SystemMessage(content=_SUMMARY_SYSTEM_PROMPT),
-                    HumanMessage(content="\n\n".join(prompt_parts)),
-                ],
+                name=self.summary_model,
+                input={
+                    "messages": [
+                        SystemMessage(content=_SUMMARY_SYSTEM_PROMPT),
+                        HumanMessage(content="\n\n".join(prompt_parts)),
+                    ],
+                },
             )
             logger.info(f"| [{session_id}] History compacted ({len(response.message)} chars)")
             return response.message
@@ -316,6 +333,10 @@ class CompactHook(Hook):
                 )
         except Exception as e:
             logger.debug(f"| [{session_id}] compact → file_system_memory skipped: {e}")
+
+    async def cleanup(self, session_id: str) -> None:
+        """Release per-session state when the session ends."""
+        self._sessions.pop(session_id, None)
 
     @staticmethod
     def _to_dicts(messages: List[Message]) -> list:

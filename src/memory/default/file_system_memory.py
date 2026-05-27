@@ -615,11 +615,13 @@ class FileSystemMemory(Memory):
                 "Focus on what agents ran, what tools were called, and what succeeded or failed."
             )
             response = await model_manager(
-                model=self.model_name,
-                messages=[
-                    SystemMessage(content="You are a concise execution history summarizer."),
-                    HumanMessage(content=prompt),
-                ],
+                name=self.model_name,
+                input={
+                    "messages": [
+                        SystemMessage(content="You are a concise execution history summarizer."),
+                        HumanMessage(content=prompt),
+                    ],
+                },
             )
             state.history_summary = response.message.strip()
             await self._save(state)
@@ -656,14 +658,16 @@ class FileSystemMemory(Memory):
             return description
         try:
             response = await model_manager(
-                model=self.model_name,
-                messages=[
-                    SystemMessage(content="You are a concise summariser."),
-                    HumanMessage(content=(
-                        f"Summarise this task description in at most {self.max_todo_length} characters. "
-                        f"Return ONLY the summary, no extra text.\n\n{description}"
-                    )),
-                ],
+                name=self.model_name,
+                input={
+                    "messages": [
+                        SystemMessage(content="You are a concise summariser."),
+                        HumanMessage(content=(
+                            f"Summarise this task description in at most {self.max_todo_length} characters. "
+                            f"Return ONLY the summary, no extra text.\n\n{description}"
+                        )),
+                    ],
+                },
             )
             return response.message.strip()[: self.max_todo_length]
         except Exception as e:
