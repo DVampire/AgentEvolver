@@ -54,6 +54,8 @@ def _he(text: str) -> str:
     )
 
 
+_FLOW_LABEL_MAX = 80   # max chars for a flow-chart node label
+
 _NODE_CSS = {
     "done":      "node-done",
     "running":   "node-running",
@@ -96,15 +98,16 @@ class _TodoEntry:
 
 
 class _FlowStep:
-    __slots__ = ("step", "label", "agents", "status", "round")
+    __slots__ = ("step", "label", "agents", "status", "round", "round_label")
 
     def __init__(self, step: int, label: str, agents: List[str],
-                 status: str, round: int) -> None:
+                 status: str, round: int, round_label: str = "") -> None:
         self.step = step
         self.label = label
         self.agents = agents
         self.status = status
         self.round = round
+        self.round_label = round_label
 
 
 class _HistoryEntry:
@@ -135,8 +138,13 @@ class _SessionState:
         self.final_result: Optional[str] = None
         self.result_success: bool = True
 
+        # Pending tool/skill actions buffered per step_number until POST_STEP arrives.
+        # Key: step_number, Value: list of action dicts to be flushed into flow_steps.
+        self._pending_step_actions: Dict[int, List[Dict[str, Any]]] = {}
+
         # Serialises concurrent HTML writes for this session
         self._write_lock: asyncio.Lock = asyncio.Lock()
+        self._todos_lock: asyncio.Lock = asyncio.Lock()  # serialises _apply_todos calls
         self._compressing: bool = False  # guard against concurrent compression tasks
 
     # ------------------------------------------------------------------
@@ -263,8 +271,18 @@ class _SessionState:
                 lines.append('<div class="flow-connector"></div>')
             first = False
 
+            steps = by_round[rnum]
+            # Round header: show round number + goal label
+            round_label = steps[0].round_label if steps and steps[0].round_label else f"Round {rnum}"
+            lines.append(
+                f'<div class="flow-round-header">'
+                f'<span class="flow-round-num">Round {rnum}</span>'
+                f'<span class="flow-round-goal">{_he(round_label)}</span>'
+                f'</div>'
+            )
+
             lines.append('<div class="flow-round">')
-            for s in by_round[rnum]:
+            for s in steps:
                 node_css = _NODE_CSS.get(s.status, "node-pending")
                 agents_html = " ".join(f'<code>{_he(a)}</code>' for a in s.agents) if s.agents else ""
                 lines.append(
@@ -427,6 +445,16 @@ class FileSystemMemory(Memory):
                 detail=detail,
                 status="done" if ok else "failed",
             ))
+            # Buffer for flow chart — flushed into flow_steps when POST_STEP AGENT_CALL arrives.
+            if event.step_number is not None:
+                buf = state._pending_step_actions.setdefault(event.step_number, [])
+                buf.append({
+                    "action_name": event.action_name or event.action_type or "action",
+                    "description": event.metadata.get("description") or event.action_name or "",
+                    "action_type": event.action_type or "tool",
+                    "success": ok,
+                    "action_index": event.action_index or 0,
+                })
             asyncio.create_task(self._save(state))
 
         elif ev == TraceEventType.ERROR:
@@ -442,6 +470,29 @@ class FileSystemMemory(Memory):
             md = event.metadata
             changed = False
 
+            # ── POST_STEP variant (from MemoryHook POST_STEP → agent_call_event) ──
+            # Identified by: step_number set + output dict containing "next_goal".
+            # Flush buffered tool/skill actions for this step into flow_steps.
+            ev_output = event.output if isinstance(event.output, dict) else {}
+            if event.step_number is not None and "next_goal" in ev_output:
+                step = event.step_number
+                next_goal = (ev_output.get("next_goal") or f"Step {step}")[:_FLOW_LABEL_MAX]
+                pending = state._pending_step_actions.pop(step, [])
+                if pending:
+                    pending.sort(key=lambda a: a["action_index"])
+                    for act in pending:
+                        label = (act["description"] or act["action_name"])[:_FLOW_LABEL_MAX]
+                        state.flow_steps.append(_FlowStep(
+                            step=len(state.flow_steps) + 1,
+                            label=label,
+                            agents=[act["action_name"]],
+                            status="done" if act["success"] else "failed",
+                            round=step,
+                            round_label=next_goal,
+                        ))
+                    changed = True
+
+            # ── ON_CALL variant (explicit payload from MetaAgent / agent hooks) ──
             if "todos" in md:
                 asyncio.create_task(self._apply_todos(state, md["todos"]))
 
@@ -449,10 +500,11 @@ class FileSystemMemory(Memory):
                 state.flow_steps = [
                     _FlowStep(
                         step=s.get("step", i + 1),
-                        label=s.get("label", ""),
+                        label=s.get("label", "")[:_FLOW_LABEL_MAX],
                         agents=s.get("agents", []),
                         status=s.get("status", "pending"),
                         round=s.get("round", 1),
+                        round_label=s.get("round_label", ""),
                     )
                     for i, s in enumerate(md["flow_steps"])
                 ]
@@ -559,21 +611,26 @@ class FileSystemMemory(Memory):
             state._compressing = False
 
     async def _apply_todos(self, state: _SessionState, raw_todos: List[Dict[str, Any]]) -> None:
-        """Summarise long todo descriptions, update state, then save."""
-        entries: List[_TodoEntry] = []
-        tasks = [self._maybe_summarize(t.get("description", "")) for t in raw_todos]
-        summaries = await asyncio.gather(*tasks, return_exceptions=True)
+        """Summarise long todo descriptions, update state, then save.
 
-        for t, summary in zip(raw_todos, summaries):
-            desc = summary if isinstance(summary, str) else t.get("description", "")
-            entries.append(_TodoEntry(
-                id=t.get("id", ""),
-                description=desc,
-                agent_name=t.get("agent_name", ""),
-                status=t.get("status", "pending"),
-            ))
-        state.todos = entries
-        await self._save(state)
+        Serialised per session via _todos_lock so that rapid consecutive
+        _sync_state calls don't race to overwrite state.todos with stale data.
+        """
+        async with state._todos_lock:
+            entries: List[_TodoEntry] = []
+            tasks = [self._maybe_summarize(t.get("description", "")) for t in raw_todos]
+            summaries = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for t, summary in zip(raw_todos, summaries):
+                desc = summary if isinstance(summary, str) else t.get("description", "")
+                entries.append(_TodoEntry(
+                    id=t.get("id", ""),
+                    description=desc,
+                    agent_name=t.get("agent_name", ""),
+                    status=t.get("status", "pending"),
+                ))
+            state.todos = entries
+            await self._save(state)
 
     async def _maybe_summarize(self, description: str) -> str:
         if len(description) <= self.max_todo_length:
@@ -595,9 +652,14 @@ class FileSystemMemory(Memory):
             return description[: self.max_todo_length]
 
     async def _save(self, state: _SessionState) -> None:
-        """Render HTML and write to disk; serialised per session via _write_lock."""
-        html = state.render()
+        """Render HTML and write to disk; serialised per session via _write_lock.
+
+        render() is called inside the lock so the snapshot written to disk always
+        reflects the state at the moment the lock is held — not an earlier render
+        that raced with a concurrent state mutation.
+        """
         async with state._write_lock:
+            html = state.render()
             await asyncio.to_thread(_write_sync, state.file_path, html)
 
 

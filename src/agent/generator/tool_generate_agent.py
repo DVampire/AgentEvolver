@@ -1,11 +1,11 @@
 """ToolGenerateAgent — an agent that generates new tool source code from a description."""
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse, ThinkOutput
+from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse, AgentThinkOutput
+from src.utils.name_utils import make_id
 from src.hook.server import hook_manager
 from src.hook.types import HookContext, HookDecision, HookEvent
 from src.config import config
@@ -162,10 +162,16 @@ class ToolGenerateAgent(Agent):
             lines.append("- **Target File**: `src/tool/extended/<inferred_name>.py`")
 
         base["generation_target"] = "\n".join(lines)
+
+        action_errors = kwargs.get("action_errors") or []
+        if action_errors:
+            error_lines = "\n".join(f"- {e}" for e in action_errors)
+            base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
+
         return base
 
     # ------------------------------------------------------------------
-    # Core step (identical loop to optimizer/evaluator)
+    # Core step
     # ------------------------------------------------------------------
 
     async def _think_and_act(
@@ -179,6 +185,7 @@ class ToolGenerateAgent(Agent):
         done = False
         result = None
         reasoning = None
+        action_errors = []
         target_name = kwargs.get("target_name")
 
         await hook_manager(
@@ -197,7 +204,7 @@ class ToolGenerateAgent(Agent):
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=ThinkOutput,
+                response_format=AgentThinkOutput,
             )
             think_output = think_output.extra.parsed_model
 
@@ -205,45 +212,25 @@ class ToolGenerateAgent(Agent):
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            actions = think_output.actions
-
-            if step_number == 0 and think_output.initial_plan:
-                await hook_manager(
-                    ctx, HookEvent.ON_CALL,
-                    agent_name=self.name,
-                    extra={"meta_type": "plan_init", "items": [
-                        {"id": i.id, "description": i.description, "status": i.status}
-                        for i in think_output.initial_plan
-                    ]},
-                )
-                logger.info(f"| 📋 Plan initialized: {len(think_output.initial_plan)} steps")
-            if think_output.plan_updates:
-                await hook_manager(
-                    ctx, HookEvent.ON_CALL,
-                    agent_name=self.name,
-                    extra={"meta_type": "plan_update", "updates": [
-                        {"id": u.id, "status": u.status}
-                        for u in think_output.plan_updates
-                    ]},
-                )
+            plan_steps = think_output.plan
 
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions: {actions}")
+            logger.info(f"| 📋 Plan steps: {len(plan_steps)}")
 
-            action_results = []
-
-            for i, action in enumerate(actions):
+            for i, step in enumerate(plan_steps):
+                action = step.action
                 action_type = action.type
                 action_name = action.name
                 action_args_str = action.args
                 action_args = parse_tool_args(action_args_str) if action_args_str else {}
 
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: [{action_type}] {action_name}")
-                logger.info(f"| 📝 Args: {action_args}")
+                logger.info(f"| 📝 Step {i+1}/{len(plan_steps)}: {step.description}")
+                logger.info(f"| 📝 [{action_type}] {action_name}: {action_args}")
 
                 action_dict = {
                     "index": i,
+                    "description": step.description,
                     "type": action_type,
                     "name": action_name,
                     "args": action_args_str,
@@ -303,6 +290,7 @@ class ToolGenerateAgent(Agent):
 
                 except Exception as e:
                     error = str(e)
+                    action_errors.append(f"Action '{action_name}' failed: {error}")
                     logger.error(f"| ❌ Action '{action_name}' failed: {e}")
 
                 await hook_manager(
@@ -313,9 +301,6 @@ class ToolGenerateAgent(Agent):
                     action_result=action_result,
                     extra={"task_id": task_id, "error": error},
                 )
-
-                action_dict["output"] = action_result
-                action_results.append(action_dict)
 
                 if done:
                     break
@@ -330,7 +315,7 @@ class ToolGenerateAgent(Agent):
             extra={"task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
         )
 
-        return {"done": done, "result": result, "reasoning": reasoning}
+        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -348,11 +333,10 @@ class ToolGenerateAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-
         if not ctx.work_dir:
             ctx.work_dir = self.base_dir
 
-        task_id = "gen_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        task_id = make_id()
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
         await hook_manager(
@@ -365,13 +349,14 @@ class ToolGenerateAgent(Agent):
         messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
 
         step_number = 0
-        response = {"done": False, "result": None, "reasoning": None}
+        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number + 1}/{self.max_steps}")
             response = await self._think_and_act(messages, task_id, step_number, ctx=ctx, target_name=target_name)
             step_number += 1
-            messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
+            action_errors = response.get("action_errors") or []
+            messages = await self._get_messages(task, ctx=ctx, target_name=target_name, action_errors=action_errors)
             if response["done"]:
                 break
 

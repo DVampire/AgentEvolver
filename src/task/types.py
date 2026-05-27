@@ -30,13 +30,14 @@ class SubTaskCategory(str, Enum):
 
     ACTOR subtasks directly serve the user's goal — MetaAgent waits for all
     of them before returning a final answer.
-    EVALUATOR and OPTIMIZER subtasks run in the background and do not block
-    the user result.
+    EVALUATOR, OPTIMIZER, and GENERATOR subtasks are system self-improvement
+    work and do not block the user result.
     """
 
     ACTOR     = "actor"
     EVALUATOR = "evaluator"
     OPTIMIZER = "optimizer"
+    GENERATOR = "generator"
 
 
 class TaskPriority(int, Enum):

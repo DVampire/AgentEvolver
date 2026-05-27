@@ -164,7 +164,11 @@ def tool_call_event(
     step_number: int, action_index: int, action_name: str,
     result: Any, success: bool,
     duration_ms: Optional[float] = None, error: Optional[str] = None,
+    description: Optional[str] = None,
 ) -> TraceEvent:
+    meta: Dict[str, Any] = {"success": success}
+    if description:
+        meta["description"] = description
     return TraceEvent(
         event_type=TraceEventType.TOOL_CALL,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
@@ -172,7 +176,7 @@ def tool_call_event(
         action_type="tool", action_name=action_name,
         label=f"{action_name} ({'ok' if success else 'fail'})",
         output=result, error=error, duration_ms=duration_ms,
-        metadata={"success": success},
+        metadata=meta,
     )
 
 
@@ -195,7 +199,11 @@ def skill_call_event(
     step_number: int, action_index: int, action_name: str,
     result: Any, success: bool,
     duration_ms: Optional[float] = None, error: Optional[str] = None,
+    description: Optional[str] = None,
 ) -> TraceEvent:
+    meta: Dict[str, Any] = {"success": success}
+    if description:
+        meta["description"] = description
     return TraceEvent(
         event_type=TraceEventType.SKILL_CALL,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
@@ -203,5 +211,5 @@ def skill_call_event(
         action_type="skill", action_name=action_name,
         label=f"{action_name} ({'ok' if success else 'fail'})",
         output=result, error=error, duration_ms=duration_ms,
-        metadata={"success": success},
+        metadata=meta,
     )

@@ -13,7 +13,6 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
 
 
-import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
@@ -159,31 +158,6 @@ class AgentConfig(BaseModel):
         return self.__str__()
 
 
-def format_actions(actions: List[BaseModel]) -> str:
-    """Format actions (tool/skill calls) as a Markdown table using pandas."""
-    rows = []
-    for action in actions:
-        if isinstance(action.args, dict):
-            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
-        else:
-            args_str = str(action.args)
-
-        rows.append({
-            "Type": action.type if hasattr(action, "type") else "tool",
-            "Name": action.name,
-            "Args": args_str,
-            "Output": action.output if hasattr(action, "output") and action.output is not None else None,
-        })
-
-    df = pd.DataFrame(rows)
-
-    if df["Output"].isna().all():
-        df = df.drop(columns=["Output"])
-    else:
-        df["Output"] = df["Output"].fillna("None")
-
-    return df.to_markdown(index=True)
-
 
 class ActionInputArgs(BaseModel):
     type: str = Field(description='The type of this action: "tool", "skill", or "text".')
@@ -191,64 +165,34 @@ class ActionInputArgs(BaseModel):
     args: str = Field(description='The arguments as a JSON string. Must be a valid JSON object string. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
 
 
-class PlanItem(BaseModel):
-    id: str = Field(description='Short step ID like "step-1", "step-2".')
-    description: str = Field(description="What this step involves.")
-    status: str = Field(default="pending", description="pending | in_progress | done | failed")
+class AgentPlanStep(BaseModel):
+    """One step in the execution plan — a description plus the single action to run."""
+    description: str = Field(description="One-line summary of what this step does.")
+    action: ActionInputArgs = Field(description="The single action to execute for this step.")
 
 
-class TodoUpdate(BaseModel):
-    id: str = Field(description="The plan item ID to update.")
-    status: str = Field(description="New status: in_progress | done | failed")
+class AgentThinkOutput(BaseModel):
+    """Structured LLM output for plan-based agents.
 
-
-class ThinkOutput(BaseModel):
-    thinking: str = Field(
-        description="A structured <think>-style reasoning block."
-    )
+    The agent outputs only new steps to execute; history is maintained by
+    FileSystemMemory. The LLM never re-emits already-executed steps.
+    """
+    thinking: str = Field(description="Step-by-step reasoning about what to do next.")
     evaluation_previous_goal: str = Field(
-        description="One-sentence analysis of your last action."
+        default="",
+        description="One sentence: success, failure, or uncertainty of the last step.",
     )
-    memory: str = Field(description="1-3 sentences of specific memory.")
-    next_goal: str = Field(
-        description="State the next immediate goals and actions."
-    )
-    initial_plan: Optional[List[PlanItem]] = Field(
-        default=None,
-        description=(
-            "Only set on step 0 to define the execution plan. Leave null on all other steps. "
-            'e.g., [{"id": "step-1", "description": "Read source file", "status": "pending"}, ...]'
-        )
-    )
-    plan_updates: List[TodoUpdate] = Field(
+    memory: str = Field(default="", description="1-3 sentences of key facts to remember across steps.")
+    next_goal: str = Field(default="", description="One sentence: the immediate next goal.")
+    plan: List[AgentPlanStep] = Field(
         default_factory=list,
         description=(
-            "Update plan item statuses. Use on step 1+ to mark items in_progress, done, or failed. "
-            'e.g., [{"id": "step-1", "status": "done"}, {"id": "step-2", "status": "in_progress"}]'
-        )
-    )
-    actions: List[ActionInputArgs] = Field(
-        description=(
-            'The list of actions (tool or skill calls) to execute in sequence. '
-            'Each action has a "type" ("tool" or "skill"), a "name", and "args" (JSON string). '
-            'e.g., [{"type": "tool", "name": "done_tool", "args": "{\"result\": \"D\"}"}, '
-            '{"type": "skill", "name": "hello-world_tool", "args": "{\"name\": \"Alice\"}"}]'
-        )
+            "New steps to execute next, in order. Each step is exactly one action. "
+            "Include done_tool as the last step when the task is complete. "
+            "Do not re-emit steps that have already been executed."
+        ),
     )
 
-    def __str__(self) -> str:
-        return (
-            f"Thinking: {self.thinking}\n"
-            f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
-            f"Memory: {self.memory}\n"
-            f"Next Goal: {self.next_goal}\n"
-            f"Initial Plan: {self.initial_plan}\n"
-            f"Plan Updates: {self.plan_updates}\n"
-            f"Actions:\n{format_actions(self.actions)}\n"
-        )
-
-    def __repr__(self) -> str:
-        return self.__str__()
 
 class Agent(BaseModel):
     """Base class for all agents, mirroring the design of `Tool`."""
@@ -464,9 +408,8 @@ __all__ = [
     "InputArgs",
     "AgentConfig",
     "ActionInputArgs",
-    "PlanItem",
-    "TodoUpdate",
-    "ThinkOutput",
+    "AgentPlanStep",
+    "AgentThinkOutput",
     "Agent",
     "AgentResponse",
 ]

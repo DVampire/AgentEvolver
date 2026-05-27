@@ -113,6 +113,7 @@ class MemoryHook(Hook):
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
+            description = action.get("description") or None
             success = not bool((ctx.extra or {}).get("error"))
             error = (ctx.extra or {}).get("error")
             factory = tool_call_event if atype == "tool" else skill_call_event
@@ -122,6 +123,7 @@ class MemoryHook(Hook):
                 step_number=step, action_index=idx, action_name=aname,
                 result=ctx.action_result, success=success,
                 duration_ms=None, error=error,
+                description=description,
             )
 
         return None

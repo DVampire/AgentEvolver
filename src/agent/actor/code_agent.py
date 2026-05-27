@@ -2,7 +2,6 @@
 
 import os
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 from pydantic import Field, ConfigDict
 
 from src.message import Message
@@ -14,13 +13,16 @@ from src.model import model_manager
 from src.registry import AGENT
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent, HookDecision
+from pydantic import BaseModel
 from src.agent.types import (
     Agent,
     AgentResponse,
     AgentExtra,
-    ThinkOutput,
     AgentContext,
+    AgentPlanStep,
+    AgentThinkOutput,
 )
+from src.utils.name_utils import make_id
 
 
 @AGENT.register_module(force=True)
@@ -135,7 +137,7 @@ class CodeAgent(Agent):
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=ThinkOutput,
+                response_format=AgentThinkOutput,
             )
             think_output = think_output.extra.parsed_model
 
@@ -143,25 +145,25 @@ class CodeAgent(Agent):
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            actions = think_output.actions
+            plan_steps = think_output.plan
 
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions: {actions}")
+            logger.info(f"| 📋 Plan steps: {len(plan_steps)}")
 
-            action_results = []
-
-            for i, action in enumerate(actions):
+            for i, step in enumerate(plan_steps):
+                action = step.action
                 action_type = action.type
                 action_name = action.name
                 action_args_str = action.args
                 action_args = parse_tool_args(action_args_str) if action_args_str else {}
 
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: [{action_type}] {action_name}")
-                logger.info(f"| 📝 Args: {action_args}")
+                logger.info(f"| 📝 Step {i+1}/{len(plan_steps)}: {step.description}")
+                logger.info(f"| 📝 [{action_type}] {action_name}: {action_args}")
 
                 action_dict = {
                     "index": i,
+                    "description": step.description,
                     "type": action_type,
                     "name": action_name,
                     "args": action_args_str,
@@ -228,9 +230,6 @@ class CodeAgent(Agent):
                     extra={"task_id": task_id, "error": error},
                 )
 
-                action_dict["output"] = action_result
-                action_results.append(action_dict)
-
                 if done:
                     break
 
@@ -272,7 +271,7 @@ class CodeAgent(Agent):
             logger.info(f"| 📂 Attached files: {files}")
         enhanced_task = task
 
-        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        task_id = make_id()
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
         # ON_START
