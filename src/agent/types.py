@@ -364,6 +364,7 @@ class Agent(BaseModel):
                        files: Optional[List[str]],
                        ctx: Optional[AgentContext],
                        ref: Any,
+                       **kwargs: Any,
                        ) -> Optional["AgentResponse"]:
         """Called by the runtime pump when a TaskMessage arrives.
 
@@ -375,7 +376,7 @@ class Agent(BaseModel):
         ``None`` to signal that resolution will happen asynchronously via
         a later ``on_event`` / ``on_stop`` call.
         """
-        return await self.__call__(task=task, files=files, ctx=ctx)
+        return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
 
     async def on_event(self,
                        msg: Any,
@@ -421,11 +422,13 @@ class Agent(BaseModel):
             ctx = msg.kwargs.get("ctx")
             ref._pending_reply = msg.reply_future      # hand ownership to ref
             try:
+                extra_kwargs = {k: v for k, v in msg.kwargs.items() if k not in ("ctx", "files")}
                 result = await self.on_start(
                     task=msg.task or "",
                     files=msg.kwargs.get("files"),
                     ctx=ctx,
                     ref=ref,
+                    **extra_kwargs,
                 )
                 if result is not None:
                     if ref._pending_reply is not None and not ref._pending_reply.done():

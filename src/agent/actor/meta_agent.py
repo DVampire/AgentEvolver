@@ -579,7 +579,7 @@ class MetaAgent(Agent):
         parent_ref = state._parent_ref
         for tid in rnd.task_ids:
             record = state.subtask_records[tid]
-            record.mark_running(make_id())
+            record.mark_running(f"{record.spec.name}-{make_id()}")
             state._running_tasks[tid] = asyncio.create_task(
                 self._run_subtask(record, state, parent_ref), name=f"subtask-{tid}",
             )

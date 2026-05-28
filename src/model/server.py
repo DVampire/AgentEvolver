@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.model.context import ModelContextManager
 from src.model.types import ModelContext, ModelConfig, LLMResponse
@@ -13,9 +13,7 @@ class ModelManagerServer(BaseModel):
     """Global model manager — thin facade over ModelContextManager."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.model_context_manager = ModelContextManager()
+    model_context_manager: ModelContextManager = Field(default_factory=ModelContextManager)
 
     # ------------------------------------------------------------------
     # Lifecycle
