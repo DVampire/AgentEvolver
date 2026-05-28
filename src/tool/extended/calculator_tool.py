@@ -1,20 +1,20 @@
-'''A simple calculator tool supporting basic arithmetic operations.'''
-from typing import Any, Dict, Optional
+'''Calculator tool for basic arithmetic operations.'''
+from typing import Any, Dict
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
 
 @TOOL.register_module(force=True)
 class CalculatorTool(Tool):
-    '''A simple calculator tool supporting basic arithmetic operations.'''
+    '''Performs basic arithmetic operations (+, -, *, /).'''
 
     name: str = 'calculator_tool'
     description: str = (
-        'A simple calculator tool supporting basic arithmetic operations.\n'
+        'Performs basic arithmetic operations.\n'
         'Args:\n'
-        '- a (float): The first operand.\n'
-        '- b (float): The second operand.\n'
-        '- op (str): The operator, one of +, -, *, /.\n'
+        '- a (float): First operand\n'
+        '- b (float): Second operand\n'
+        '- op (str): Operation to perform (+, -, *, /)\n'
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=True)
@@ -23,7 +23,7 @@ class CalculatorTool(Tool):
         super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(self, a: float, b: float, op: str, **kwargs) -> ToolResponse:
-        '''Execute the calculation.'''
+        '''Executes the calculation.'''
         if op == '+':
             result = a + b
         elif op == '-':
@@ -34,19 +34,19 @@ class CalculatorTool(Tool):
             if b == 0:
                 return ToolResponse(
                     success=False,
-                    message='Error: Division by zero is not allowed.',
+                    message='Division by zero error.',
                     extra=ToolExtra(data={})
                 )
             result = a / b
         else:
             return ToolResponse(
                 success=False,
-                message=f'Error: Unsupported operator {op}',
+                message=f'Unsupported operation: {op}',
                 extra=ToolExtra(data={})
             )
-
+        
         return ToolResponse(
             success=True,
-            message=f'result: {result}',
-            extra=ToolExtra(data={'result': result}),
+            message=f'Result: {result}',
+            extra=ToolExtra(data={'result': result})
         )

@@ -390,7 +390,7 @@ class FileSystemMemory(Memory):
             self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event=f"Agent started: {event.agent_name or ''}",
-                detail=task_desc[:200] if task_desc else "",
+                detail=task_desc or "",
                 status="running",
             ))
             asyncio.create_task(self._save(state))
@@ -402,7 +402,7 @@ class FileSystemMemory(Memory):
             self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event=f"Agent ended: {event.agent_name or ''}",
-                detail=error if not success else result[:200],
+                detail=error if not success else result,
                 status="done" if success else "failed",
             ))
             # Only set final result when the root agent (no parent) ends
@@ -415,7 +415,7 @@ class FileSystemMemory(Memory):
             ok = event.metadata.get("success", not bool(event.error))
             detail = event.error if not ok else ""
             if isinstance(event.output, str):
-                detail = detail or event.output[:200]
+                detail = detail or event.output
             self._append_history(state, _HistoryEntry(
                 ts=_ts(),
                 event=f"{event.action_name or event.action_type or 'action'} result",
