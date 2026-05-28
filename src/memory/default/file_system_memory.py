@@ -146,7 +146,6 @@ class _SessionState:
         self.flow_steps: List[_FlowStep] = []
         self.history: List[_HistoryEntry] = []
         self.history_summary: str = ""   # LLM-compressed summary of overflow execution events
-        self.compact_summary: str = ""   # LLM summary of compacted conversation messages (from CompactHook)
         self.final_result: Optional[str] = None
         self.result_success: bool = True
 
@@ -279,34 +278,39 @@ class _SessionState:
 
     def _render_history(self) -> str:
         lines = ['<div class="mem-section">', "<h2>Execution History</h2>"]
-        if not self.history:
+        if not self.history and not self.history_summary:
             lines += ['<p class="mem-empty">No history yet.</p>', "</div>"]
             return "\n".join(lines)
 
-        if self.compact_summary:
+        if self.history_summary:
             lines.append(
                 '<details class="compact-summary">'
-                '<summary>Compacted conversation history</summary>'
-                f'<pre class="compact-summary-body">{_he(self.compact_summary)}</pre>'
+                '<summary>Working Memory</summary>'
+                f'<pre class="compact-summary-body">{_he(self.history_summary)}</pre>'
                 '</details>'
             )
 
-        lines.append('<div class="history-timeline">')
-        for e in self.history:
-            badge_html = f" {_badge(e.status)}" if e.status else ""
-            detail_html = (
-                f'<div class="history-detail">{_he(e.detail)}</div>' if e.detail else ""
-            )
-            lines.append(
-                f'<div class="history-entry">'
-                f'<span class="history-ts">{_he(e.ts)}</span>'
-                f'<span class="history-dot"></span>'
-                f'<div class="history-body">'
-                f'<div class="history-event">{_he(e.event)}{badge_html}</div>'
-                + detail_html
-                + "</div></div>"
-            )
-        lines += ["</div>", "</div>"]
+        recent = self.history[-10:]
+        if recent:
+            lines.append('<h3>Recent Steps</h3>')
+            lines.append('<div class="history-timeline">')
+            for e in recent:
+                badge_html = f" {_badge(e.status)}" if e.status else ""
+                detail_html = (
+                    f'<div class="history-detail">{_he(e.detail)}</div>' if e.detail else ""
+                )
+                lines.append(
+                    f'<div class="history-entry">'
+                    f'<span class="history-ts">{_he(e.ts)}</span>'
+                    f'<span class="history-dot"></span>'
+                    f'<div class="history-body">'
+                    f'<div class="history-event">{_he(e.event)}{badge_html}</div>'
+                    + detail_html
+                    + "</div></div>"
+                )
+            lines += ["</div>"]
+
+        lines.append("</div>")
         return "\n".join(lines)
 
     def _render_result(self) -> str:
@@ -325,17 +329,6 @@ class _SessionState:
 # ---------------------------------------------------------------------------
 # FileSystemMemory
 # ---------------------------------------------------------------------------
-
-# (unused — kept for external introspection)
-_HISTORY_TYPES = frozenset({
-    TraceEventType.AGENT_START,
-    TraceEventType.AGENT_CALL,
-    TraceEventType.AGENT_END,
-    TraceEventType.TOOL_CALL,
-    TraceEventType.SKILL_CALL,
-    TraceEventType.ERROR,
-})
-
 
 @MEMORY_SYSTEM.register_module(force=True)
 class FileSystemMemory(Memory):
@@ -553,19 +546,6 @@ class FileSystemMemory(Memory):
                 ))
                 changed = True
 
-            if "compact_summary" in md:
-                summary = md.get("compact_summary", "")
-                covers_steps = md.get("covers_steps", 0)
-                if summary:
-                    state.compact_summary = summary
-                self._append_history(state, _HistoryEntry(
-                    ts=_ts(),
-                    event=f"Context compacted (steps 1–{covers_steps})",
-                    detail="Conversation history compressed to reduce token usage.",
-                    status="done",
-                ))
-                changed = True
-
             if "final_result" in md:
                 state.final_result = md["final_result"]
                 state.result_success = md.get("success", True)
@@ -583,19 +563,19 @@ class FileSystemMemory(Memory):
 
         lines: list[str] = []
 
+        working_parts = []
+        if state.history_summary:
+            working_parts.append(state.history_summary)
         if state.agent_memory:
-            lines.append("## Agent Memory")
-            lines.append(state.agent_memory)
-            lines.append("")
-
-        if state.compact_summary:
-            lines.append("## Summary")
-            lines.append(state.compact_summary)
+            working_parts.append(state.agent_memory)
+        if working_parts:
+            lines.append("## Working Memory")
+            lines.append("\n".join(working_parts))
             lines.append("")
 
         recent = state.history[-short_term_n:] if short_term_n else state.history
         if recent:
-            lines.append("## Recent History")
+            lines.append("## Recent Steps")
             for e in recent:
                 status = f" [{e.status}]" if e.status else ""
                 detail = f": {e.detail}" if e.detail else ""
@@ -726,8 +706,3 @@ def _write_sync(file_path: str, content: str) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as fh:
         fh.write(content)
-
-
-def _read_sync(file_path: str) -> str:
-    with open(file_path, "r", encoding="utf-8") as fh:
-        return fh.read()
