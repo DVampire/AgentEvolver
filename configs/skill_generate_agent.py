@@ -8,6 +8,7 @@ with read_base():
     from .tools.glob_search import glob_search_tool
     from .tools.grep_search import grep_search_tool
     from .agents.skill_generate_agent import skill_generate_agent
+    from .memory.file_system_memory import file_system_memory
 
 tag = "skill_generate_agent"
 work_dir = f"work_dir/{tag}"
@@ -30,10 +31,19 @@ agent_names = [
     "skill_generate_agent",
 ]
 skill_names = []
-memory_names = []
+memory_names = [
+    "file_system_memory",
+]
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(
+    require_grad=False,
+)
+
+#-----------------MEMORY CONFIG-----------------
+file_system_memory.update(
+    base_dir="memory/file_system",
+    model_name=model_name,
     require_grad=False,
 )
 
@@ -41,6 +51,7 @@ bash_tool.update(
 skill_generate_agent.update(
     base_dir=work_dir,
     model_name=model_name,
+    memory_name=memory_names[0],
     require_grad=False,
-    use_memory=False,
+    use_memory=True,
 )

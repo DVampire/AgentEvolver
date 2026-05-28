@@ -10,7 +10,7 @@ with read_base():
     from .tools.git import git_tool
     from .tools.glob_search import glob_search_tool
     from .tools.grep_search import grep_search_tool
-    from .memory.general_memory_system import memory_system as general_memory_system
+    from .memory.file_system_memory import file_system_memory
 
 tag = "code_agent"
 work_dir = f"work_dir/{tag}"
@@ -21,7 +21,7 @@ use_local_proxy = True
 model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 memory_names = [
-    "general_memory_system",
+    "file_system_memory",
 ]
 agent_names = [
     "code_agent",
@@ -48,11 +48,9 @@ git_tool.update(
 )
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
-general_memory_system.update(
-    base_dir="memory/general_memory_system",
+file_system_memory.update(
+    base_dir="memory/file_system",
     model_name=model_name,
-    max_summaries=10,
-    max_insights=10,
     require_grad=False,
 )
 

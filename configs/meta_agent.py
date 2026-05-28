@@ -13,7 +13,6 @@ with read_base():
     from .tools.edit_file import edit_file_tool
     from .tools.list_dir import list_dir_tool
     from .tools.git import git_tool
-    from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.file_system_memory import file_system_memory
 
 tag = "meta_agent"

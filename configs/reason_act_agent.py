@@ -4,7 +4,7 @@ with read_base():
     from .agents.reason_act_agent import reason_act_agent
     from .tools.mdify import mdify_tool
     from .tools.bash import bash_tool
-    from .memory.general_memory_system import memory_system as general_memory_system
+    from .memory.file_system_memory import file_system_memory
 
 tag = "reason_act_agent"
 work_dir = f"work_dir/{tag}"
@@ -16,8 +16,7 @@ version = "0.1.0"
 model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 memory_names = [
-    "general_memory_system",
-    "optimizer_memory_system"
+    "file_system_memory",
 ]
 agent_names = [
     "reason_act_agent"
@@ -41,11 +40,9 @@ mdify_tool.update(
 )
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
-general_memory_system.update(
-    base_dir="memory/general_memory_system",
+file_system_memory.update(
+    base_dir="memory/file_system",
     model_name=model_name,
-    max_summaries=10,
-    max_insights=10,
     require_grad=False,
 )
 
