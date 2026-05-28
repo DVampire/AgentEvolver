@@ -12,6 +12,9 @@ from .default import (
     CompactHook,
     TraceHook,
     EscalationHook,
+    SkillRegistrationHook,
+    ToolRegistrationHook,
+    AgentRegistrationHook,
 )
 
 __all__ = [
@@ -27,4 +30,7 @@ __all__ = [
     "CompactHook",
     "TraceHook",
     "EscalationHook",
+    "SkillRegistrationHook",
+    "ToolRegistrationHook",
+    "AgentRegistrationHook",
 ]

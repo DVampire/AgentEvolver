@@ -30,7 +30,9 @@ tool_names = [
 agent_names = [
     "skill_generate_agent",
 ]
-skill_names = []
+skill_names = [
+    "generate_skill_skill",
+]
 memory_names = [
     "file_system_memory",
 ]

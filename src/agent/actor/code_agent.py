@@ -4,23 +4,15 @@ import os
 from typing import List, Optional, Dict, Any
 from pydantic import Field, ConfigDict
 
-from src.message import Message
 from src.logger import logger
-from src.utils import parse_tool_args
-from src.tool.server import tool_manager
-from src.skill.server import skill_manager
-from src.model import model_manager
 from src.registry import AGENT
 from src.hook.server import hook_manager
-from src.hook.types import HookEvent, HookDecision
-from pydantic import BaseModel
+from src.hook.types import HookEvent
 from src.agent.types import (
     Agent,
     AgentResponse,
     AgentExtra,
     AgentContext,
-    AgentPlanStep,
-    AgentThinkOutput,
 )
 from src.utils.name_utils import make_id
 
@@ -102,151 +94,6 @@ class CodeAgent(Agent):
             base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
 
         return base
-
-    # ------------------------------------------------------------------
-    # Core step
-    # ------------------------------------------------------------------
-
-    async def _think_and_act(
-        self,
-        messages: List[Message],
-        task_id: str,
-        step_number: int,
-        ctx: AgentContext,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        done = False
-        result = None
-        reasoning = None
-        action_errors = []
-
-        # PRE_STEP
-        await hook_manager(
-            name="trace_hook",
-            input={"event": HookEvent.PRE_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id},
-            ctx=ctx,
-        )
-
-        thinking = ""
-        evaluation_previous_goal = ""
-        memory = ""
-        next_goal = ""
-
-        try:
-            think_output = await model_manager(
-                name=self.model_name,
-                input={"messages": messages, "response_format": AgentThinkOutput},
-                ctx=ctx,
-            )
-            think_output = think_output.extra.parsed_model
-
-            thinking = think_output.thinking
-            evaluation_previous_goal = think_output.evaluation_previous_goal
-            memory = think_output.memory
-            next_goal = think_output.next_goal
-            plan_steps = think_output.plan
-
-            logger.info(f"| 💭 Thinking: {thinking}")
-            logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 📋 Plan steps: {len(plan_steps)}")
-
-            for i, step in enumerate(plan_steps):
-                action = step.action
-                action_type = action.type
-                action_name = action.name
-                action_args_str = action.args
-                action_args = parse_tool_args(action_args_str) if action_args_str else {}
-
-                logger.info(f"| 📝 Step {i+1}/{len(plan_steps)}: {step.description}")
-                logger.info(f"| 📝 [{action_type}] {action_name}: {action_args}")
-
-                action_dict = {
-                    "index": i,
-                    "description": step.description,
-                    "type": action_type,
-                    "name": action_name,
-                    "args": action_args_str,
-                    "args_parsed": action_args,
-                }
-
-                # PRE_ACTION
-                pre_result = await hook_manager(
-                    name="trace_hook",
-                    input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
-                    ctx=ctx,
-                )
-                if pre_result.decision == HookDecision.BLOCK:
-                    logger.warning(f"| 🚫 Action blocked by hook: {pre_result.reason}")
-                    continue
-
-                action_result = None
-                error = None
-
-                try:
-                    if action_type == "text":
-                        action_result = action_args.get("content", "")
-                        logger.info(f"| 💬 Text: {str(action_result)}")
-
-                    elif action_type == "skill":
-                        response = await skill_manager(
-                            name=action_name,
-                            input=action_args,
-                            ctx=ctx,
-                        )
-                        action_result = response.message
-                        logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
-
-                    else:
-                        tool_response = await tool_manager(
-                            name=action_name,
-                            input=action_args,
-                            ctx=ctx,
-                        )
-                        action_result = tool_response.message
-                        logger.info(f"| ✅ Tool '{action_name}' completed")
-
-                        if action_name == "done_tool":
-                            done = True
-                            result = action_result
-                            action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
-                            reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
-
-                except Exception as e:
-                    error = str(e)
-                    action_errors.append(f"Action '{action_name}' failed: {error}")
-                    logger.error(f"| ❌ Action '{action_name}' failed: {e}")
-
-                # POST_ACTION
-                await hook_manager(
-                    name="memory_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
-                    ctx=ctx,
-                )
-                await hook_manager(
-                    name="trace_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
-                    ctx=ctx,
-                )
-
-                if done:
-                    break
-
-        except Exception as e:
-            logger.error(f"| Error in think_and_action: {e}")
-
-        # POST_STEP
-        await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
-            ctx=ctx,
-        )
-
-        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
 
     # ------------------------------------------------------------------
     # Main entry point

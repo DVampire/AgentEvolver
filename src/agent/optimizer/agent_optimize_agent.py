@@ -1,34 +1,32 @@
-"""ToolGenerateAgent — an agent that generates new tool source code from a description."""
+"""AgentOptimizeAgent — evolves a generated agent (Python class and/or HTML prompt) given an optimization task."""
 
+import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
 from src.hook.server import hook_manager
-from src.hook.types import HookDecision, HookEvent
+from src.hook.types import HookEvent
 from src.logger import logger
 from src.registry import AGENT
-from src.tool.server import tool_manager
-from src.utils import get_project_root
 from src.utils.name_utils import make_id
 
 
-
 @AGENT.register_module(force=True)
-class ToolGenerateAgent(Agent):
-    """Agent that generates a new tool from a natural-language description.
+class AgentOptimizeAgent(Agent):
+    """Agent that evolves a generated agent to satisfy an optimization task.
 
-    Receives a generation task from MetaAgent describing what the new tool should do,
-    writes a new .py file under src/tool/extended/, verifies it, registers it, and
-    reports back via done_tool.
+    Can modify the Python class file, the HTML prompt file, or both.
+    After successful edits, reloads the agent class and re-registers it.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="tool_generate_agent")
+    name: str = Field(default="agent_optimize_agent")
     description: str = Field(
-        default="An agent that generates new tool source code from a description."
+        default="An agent that evolves a generated agent (Python class and/or HTML prompt) given an optimization task."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
     require_grad: bool = Field(default=False)
@@ -54,7 +52,7 @@ class ToolGenerateAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "tool_generate_agent",
+            prompt_name=prompt_name or "agent_optimize_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
@@ -62,9 +60,10 @@ class ToolGenerateAgent(Agent):
             require_grad=require_grad,
             **kwargs,
         )
+        self.project_root = str(Path(__file__).resolve().parents[3])
 
     # ------------------------------------------------------------------
-    # Override: inject generation context
+    # Override: inject optimization target context
     # ------------------------------------------------------------------
 
     async def _get_agent_context(
@@ -76,21 +75,29 @@ class ToolGenerateAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        target_name = kwargs.get("target_name")
-        lines = []
-        if target_name:
-            lines.append(f"- **Requested Tool Name**: `{target_name}`")
-            lines.append(f"- **Target File**: `src/tool/extended/{target_name}.py`")
-            existing = await tool_manager.get_info(target_name)
-            if existing:
-                lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
-            else:
-                lines.append("- **Status**: not yet registered — create from scratch")
-        else:
-            lines.append("- **Requested Tool Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Target File**: `src/tool/extended/<inferred_name>.py`")
+        from src.agent.server import agent_manager
 
-        base["generation_target"] = "\n".join(lines)
+        target_name = kwargs.get("target_name")
+        if target_name:
+            agent_config = await agent_manager.get_info(target_name)
+            py_path = os.path.join(self.project_root, "src", "agent", "extended", f"{target_name}.py")
+            html_path = os.path.join(self.project_root, "src", "prompt", "default", f"{target_name}.html")
+
+            lines = [f"- **Agent Name**: `{target_name}`"]
+            if agent_config:
+                lines.append(f"- **Description**: {agent_config.description}")
+                lines.append(f"- **Version**: {agent_config.version}")
+            else:
+                lines.append("- (agent not found in registry)")
+            lines.append(f"- **Python File**: `{py_path}`")
+            lines.append(f"- **Python File Exists**: {os.path.exists(py_path)}")
+            lines.append(f"- **HTML Prompt File**: `{html_path}`")
+            lines.append(f"- **HTML Prompt Exists**: {os.path.exists(html_path)}")
+            lines.append(f"- **Agent Type**: {'tool_calling' if os.path.exists(html_path) else 'workflow'}")
+
+            base["optimization_target"] = "\n".join(lines)
+        else:
+            base["optimization_target"] = "(no target_name provided)"
 
         action_errors = kwargs.get("action_errors") or []
         if action_errors:
@@ -109,16 +116,27 @@ class ToolGenerateAgent(Agent):
         target_name: Optional[str] = None,
         **kwargs,
     ) -> AgentResponse:
-        from src.utils.name_utils import make_id
-        from src.hook.types import HookDecision, HookEvent
-        from src.utils import get_project_root
+        logger.info(f"| 🚀 Starting {self.name}: {task} (agent={target_name})")
 
-        logger.info(f"| 🚀 Starting {self.name}: {task} (target_name={target_name})")
         ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
         if not ctx.work_dir:
             ctx.work_dir = self.base_dir
+
+        if not target_name:
+            logger.warning(f"| ⚠️ {self.name} called without target_name")
+            return AgentResponse(success=False, message="target_name is required for optimization but was not provided.")
+
+        from src.agent.server import agent_manager
+        agent_config = await agent_manager.get_info(target_name)
+        if agent_config is None:
+            logger.warning(f"| ⚠️ Agent '{target_name}' not found in registry, refusing optimization")
+            return AgentResponse(success=False, message=f"Agent '{target_name}' not found in registry.")
+        if not agent_config.require_grad:
+            logger.warning(f"| ⚠️ Agent '{target_name}' has require_grad=False, refusing optimization")
+            return AgentResponse(success=False, message=f"Agent '{target_name}' is not evolvable (require_grad=False).")
+
         task_id = make_id()
 
         await hook_manager(
@@ -159,10 +177,10 @@ class ToolGenerateAgent(Agent):
             )
             step_number += 1
             action_errors = response.get("action_errors") or []
-
             if response["done"]:
-                hook_result = await hook_manager(
-                    name="tool_registration_hook",
+                from src.utils import get_project_root
+                await hook_manager(
+                    name="agent_registration_hook",
                     input={
                         "target_name": target_name,
                         "reasoning": response.get("reasoning") or "",
@@ -171,12 +189,7 @@ class ToolGenerateAgent(Agent):
                     },
                     ctx=ctx,
                 )
-                if hook_result.decision == HookDecision.BLOCK:
-                    response["done"] = False
-                    action_errors = [hook_result.reason or "Registration failed."]
-                else:
-                    break
-
+                break
             messages = await self._get_messages(
                 task, ctx=ctx, target_name=target_name, action_errors=action_errors
             )
@@ -215,3 +228,4 @@ class ToolGenerateAgent(Agent):
             message=response["result"] or "",
             extra=AgentExtra(data=response),
         )
+

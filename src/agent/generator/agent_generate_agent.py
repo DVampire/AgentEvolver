@@ -1,34 +1,30 @@
-"""ToolGenerateAgent — an agent that generates new tool source code from a description."""
+"""AgentGenerateAgent — generates a new agent (Python class + optional HTML prompt) from a description."""
 
+import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
 from src.hook.server import hook_manager
-from src.hook.types import HookDecision, HookEvent
 from src.logger import logger
 from src.registry import AGENT
-from src.tool.server import tool_manager
-from src.utils import get_project_root
-from src.utils.name_utils import make_id
-
 
 
 @AGENT.register_module(force=True)
-class ToolGenerateAgent(Agent):
-    """Agent that generates a new tool from a natural-language description.
+class AgentGenerateAgent(Agent):
+    """Agent that generates a new agent (Python class + optional HTML prompt) from a natural-language description.
 
-    Receives a generation task from MetaAgent describing what the new tool should do,
-    writes a new .py file under src/tool/extended/, verifies it, registers it, and
-    reports back via done_tool.
+    For tool-calling agents: generates Python class + HTML prompt + config dict (3 files).
+    For workflow agents: generates Python class + config dict (2 files, no prompt needed).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="tool_generate_agent")
+    name: str = Field(default="agent_generate_agent")
     description: str = Field(
-        default="An agent that generates new tool source code from a description."
+        default="An agent that generates a new agent Python class and optional HTML prompt from a description."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
     require_grad: bool = Field(default=False)
@@ -54,7 +50,7 @@ class ToolGenerateAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "tool_generate_agent",
+            prompt_name=prompt_name or "agent_generate_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
@@ -64,7 +60,7 @@ class ToolGenerateAgent(Agent):
         )
 
     # ------------------------------------------------------------------
-    # Override: inject generation context
+    # Override: inject generation target context
     # ------------------------------------------------------------------
 
     async def _get_agent_context(
@@ -76,19 +72,25 @@ class ToolGenerateAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
+        from src.agent.server import agent_manager
+
         target_name = kwargs.get("target_name")
         lines = []
         if target_name:
-            lines.append(f"- **Requested Tool Name**: `{target_name}`")
-            lines.append(f"- **Target File**: `src/tool/extended/{target_name}.py`")
-            existing = await tool_manager.get_info(target_name)
+            lines.append(f"- **Requested Agent Name**: `{target_name}`")
+            lines.append(f"- **Python Class File**: `src/agent/extended/{target_name}.py`")
+            lines.append(f"- **HTML Prompt File**: `src/prompt/default/{target_name}.html` (tool-calling only)")
+            lines.append(f"- **Config File**: `configs/agents/{target_name}.py`")
+            existing = await agent_manager.get_info(target_name)
             if existing:
                 lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
             else:
                 lines.append("- **Status**: not yet registered — create from scratch")
         else:
-            lines.append("- **Requested Tool Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Target File**: `src/tool/extended/<inferred_name>.py`")
+            lines.append("- **Requested Agent Name**: (not specified — infer a snake_case name from the task)")
+            lines.append("- **Python Class File**: `src/agent/extended/<inferred_name>.py`")
+            lines.append("- **HTML Prompt File**: `src/prompt/default/<inferred_name>.html` (tool-calling only)")
+            lines.append("- **Config File**: `configs/agents/<inferred_name>.py`")
 
         base["generation_target"] = "\n".join(lines)
 
@@ -162,7 +164,7 @@ class ToolGenerateAgent(Agent):
 
             if response["done"]:
                 hook_result = await hook_manager(
-                    name="tool_registration_hook",
+                    name="agent_registration_hook",
                     input={
                         "target_name": target_name,
                         "reasoning": response.get("reasoning") or "",

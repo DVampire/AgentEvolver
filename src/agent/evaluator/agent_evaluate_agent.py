@@ -1,34 +1,36 @@
-"""ToolGenerateAgent — an agent that generates new tool source code from a description."""
+"""AgentEvaluateAgent — evaluates a generated agent across multiple quality dimensions."""
 
+import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
 from src.hook.server import hook_manager
-from src.hook.types import HookDecision, HookEvent
+from src.hook.types import HookEvent
 from src.logger import logger
 from src.registry import AGENT
-from src.tool.server import tool_manager
-from src.utils import get_project_root
 from src.utils.name_utils import make_id
 
 
-
 @AGENT.register_module(force=True)
-class ToolGenerateAgent(Agent):
-    """Agent that generates a new tool from a natural-language description.
+class AgentEvaluateAgent(Agent):
+    """Agent that evaluates a generated agent across five quality dimensions.
 
-    Receives a generation task from MetaAgent describing what the new tool should do,
-    writes a new .py file under src/tool/extended/, verifies it, registers it, and
-    reports back via done_tool.
+    Evaluates:
+    1. Interface Compliance (20pts) — inherits Agent, @AGENT.register_module, correct fields/methods
+    2. Code Quality (20pts) — syntax valid, clean structure, proper overrides
+    3. Prompt Quality (20pts) — HTML prompt well-structured (auto-pass for workflow agents)
+    4. Integration (20pts) — agent_manager can register and get the instance
+    5. Task Execution (20pts) — runs a sample task and returns a valid AgentResponse
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="tool_generate_agent")
+    name: str = Field(default="agent_evaluate_agent")
     description: str = Field(
-        default="An agent that generates new tool source code from a description."
+        default="An agent that evaluates a generated agent across multiple quality dimensions."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
     require_grad: bool = Field(default=False)
@@ -43,7 +45,7 @@ class ToolGenerateAgent(Agent):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_actions: int = 10,
-        max_steps: int = 30,
+        max_steps: int = 20,
         review_steps: int = 5,
         require_grad: bool = False,
         **kwargs,
@@ -54,7 +56,7 @@ class ToolGenerateAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "tool_generate_agent",
+            prompt_name=prompt_name or "agent_evaluate_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_steps=max_steps,
@@ -62,9 +64,10 @@ class ToolGenerateAgent(Agent):
             require_grad=require_grad,
             **kwargs,
         )
+        self.project_root = str(Path(__file__).resolve().parents[3])
 
     # ------------------------------------------------------------------
-    # Override: inject generation context
+    # Override: inject evaluation target context
     # ------------------------------------------------------------------
 
     async def _get_agent_context(
@@ -76,21 +79,30 @@ class ToolGenerateAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        target_name = kwargs.get("target_name")
-        lines = []
-        if target_name:
-            lines.append(f"- **Requested Tool Name**: `{target_name}`")
-            lines.append(f"- **Target File**: `src/tool/extended/{target_name}.py`")
-            existing = await tool_manager.get_info(target_name)
-            if existing:
-                lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
-            else:
-                lines.append("- **Status**: not yet registered — create from scratch")
-        else:
-            lines.append("- **Requested Tool Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Target File**: `src/tool/extended/<inferred_name>.py`")
+        from src.agent.server import agent_manager
 
-        base["generation_target"] = "\n".join(lines)
+        target_name = kwargs.get("target_name")
+        if target_name:
+            agent_config = await agent_manager.get_info(target_name)
+            py_path = os.path.join(self.project_root, "src", "agent", "extended", f"{target_name}.py")
+            html_path = os.path.join(self.project_root, "src", "prompt", "default", f"{target_name}.html")
+
+            lines = [f"- **Agent Name**: `{target_name}`"]
+            if agent_config:
+                lines.append(f"- **Description**: {agent_config.description}")
+                lines.append(f"- **Version**: {agent_config.version}")
+            else:
+                lines.append("- **Status**: not found in registry (will attempt to load from file)")
+
+            lines.append(f"- **Python File**: `{py_path}`")
+            lines.append(f"- **Python File Exists**: {os.path.exists(py_path)}")
+            lines.append(f"- **HTML Prompt File**: `{html_path}`")
+            lines.append(f"- **HTML Prompt Exists**: {os.path.exists(html_path)}")
+            lines.append(f"- **Agent Type**: {'tool_calling' if os.path.exists(html_path) else 'workflow'}")
+
+            base["evaluation_target"] = "\n".join(lines)
+        else:
+            base["evaluation_target"] = "(no target_name provided)"
 
         action_errors = kwargs.get("action_errors") or []
         if action_errors:
@@ -109,16 +121,24 @@ class ToolGenerateAgent(Agent):
         target_name: Optional[str] = None,
         **kwargs,
     ) -> AgentResponse:
-        from src.utils.name_utils import make_id
-        from src.hook.types import HookDecision, HookEvent
-        from src.utils import get_project_root
+        logger.info(f"| 🚀 Starting {self.name}: {task} (agent={target_name})")
 
-        logger.info(f"| 🚀 Starting {self.name}: {task} (target_name={target_name})")
         ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
         if not ctx.work_dir:
             ctx.work_dir = self.base_dir
+
+        if not target_name:
+            logger.warning(f"| ⚠️ {self.name} called without target_name")
+            return AgentResponse(success=False, message="target_name is required for evaluation but was not provided.")
+
+        from src.agent.server import agent_manager
+        agent_config = await agent_manager.get_info(target_name)
+        if agent_config is None:
+            logger.warning(f"| ⚠️ Agent '{target_name}' not found in registry, refusing evaluation")
+            return AgentResponse(success=False, message=f"Agent '{target_name}' not found in registry.")
+
         task_id = make_id()
 
         await hook_manager(
@@ -159,24 +179,8 @@ class ToolGenerateAgent(Agent):
             )
             step_number += 1
             action_errors = response.get("action_errors") or []
-
             if response["done"]:
-                hook_result = await hook_manager(
-                    name="tool_registration_hook",
-                    input={
-                        "target_name": target_name,
-                        "reasoning": response.get("reasoning") or "",
-                        "project_root": get_project_root(),
-                        "model_name": self.model_name,
-                    },
-                    ctx=ctx,
-                )
-                if hook_result.decision == HookDecision.BLOCK:
-                    response["done"] = False
-                    action_errors = [hook_result.reason or "Registration failed."]
-                else:
-                    break
-
+                break
             messages = await self._get_messages(
                 task, ctx=ctx, target_name=target_name, action_errors=action_errors
             )
@@ -215,3 +219,4 @@ class ToolGenerateAgent(Agent):
             message=response["result"] or "",
             extra=AgentExtra(data=response),
         )
+

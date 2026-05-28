@@ -7,13 +7,13 @@ with read_base():
     from .tools.edit_file import edit_file_tool
     from .tools.glob_search import glob_search_tool
     from .tools.grep_search import grep_search_tool
-    from .agents.tool_generate_agent import tool_generate_agent
+    from .agents.agent_generate_agent import agent_generate_agent
     from .memory.file_system_memory import file_system_memory
 
-tag = "tool_generate_agent"
+tag = "agent_generate_agent"
 work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
-log_path = "tool_generate_agent.log"
+log_path = "agent_generate_agent.log"
 
 use_local_proxy = True
 model_name = "int_openrouter/gemini-3.1-pro-preview"
@@ -28,10 +28,10 @@ tool_names = [
     "grep_search_tool",
 ]
 agent_names = [
-    "tool_generate_agent",
+    "agent_generate_agent",
 ]
 skill_names = [
-    "generate_tool_skill",
+    "generate_agent_skill",
 ]
 memory_names = [
     "file_system_memory",
@@ -50,7 +50,7 @@ file_system_memory.update(
 )
 
 #-----------------AGENT CONFIG-----------------
-tool_generate_agent.update(
+agent_generate_agent.update(
     base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
