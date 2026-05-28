@@ -27,6 +27,7 @@ from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
 from src.trace import trace_manager
 from src.session.types import SessionContext
+from src.utils import make_id
 
 
 def parse_args():
@@ -57,8 +58,8 @@ def parse_args():
 
 async def run_optimize_agent(record: TaskRecord):
     """TaskManager handler: executes the skill optimize agent for a given TaskRecord."""
-    ctx = SessionContext()
-    ctx.id = record.task.session_id or ctx.id
+    session_id = record.task.session_id or make_id()
+    ctx = SessionContext(id=session_id)
 
     target_name = (record.task.metadata or {}).get("target_name", "hello_world_skill")
 

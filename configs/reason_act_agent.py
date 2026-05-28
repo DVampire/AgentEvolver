@@ -13,7 +13,7 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "openrouter/gemini-3-flash-preview"
+model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 memory_names = [
     "general_memory_system",

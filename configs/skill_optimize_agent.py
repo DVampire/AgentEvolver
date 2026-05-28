@@ -16,7 +16,7 @@ default_dir = f"work_dir/{tag}/default"
 log_path = "skill_optimize_agent.log"
 
 use_local_proxy = True
-model_name = "openrouter/gemini-3-flash-preview"
+model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 tool_names = [
     "bash_tool",
