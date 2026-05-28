@@ -108,11 +108,11 @@ def _extract_pre_context(messages: List[Message]) -> str:
     if tool_names:
         parts.append(f"Tools used: {', '.join(sorted(tool_names))}")
     if recent_user_texts:
-        parts.append("Recent user requests:\n" + "\n".join(f"  - {t[:200]}" for t in recent_user_texts))
+        parts.append("Recent user requests:\n" + "\n".join(f"  - {t}" for t in recent_user_texts))
     if file_paths:
         parts.append(f"Key files mentioned: {', '.join(sorted(file_paths)[:20])}")
     if pending_lines:
-        parts.append("Pending/upcoming work mentions:\n" + "\n".join(f"  - {l[:200]}" for l in pending_lines[:10]))
+        parts.append("Pending/upcoming work mentions:\n" + "\n".join(f"  - {l}" for l in pending_lines[:10]))
     return "\n\n".join(parts)
 
 

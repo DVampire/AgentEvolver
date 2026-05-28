@@ -89,7 +89,7 @@ class GreenContract(BaseModel):
                     observed_level = self.required_level
                     details_parts.append(f"✓ {self.verify_command}")
                 else:
-                    output = stdout.decode(errors="replace")[:500] if stdout else ""
+                    output = stdout.decode(errors="replace") if stdout else ""
                     missing.append(f"verify_command failed (exit {proc.returncode})")
                     details_parts.append(f"✗ {self.verify_command}\n{output}")
             except asyncio.TimeoutError:

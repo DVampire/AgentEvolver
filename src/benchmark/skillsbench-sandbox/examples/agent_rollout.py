@@ -66,7 +66,7 @@ class SandboxHTTPClient(object):
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            raise RuntimeError("Non-JSON response from {}: {}".format(url, raw[:500]))
+            raise RuntimeError("Non-JSON response from {}: {}".format(url, raw))
 
     def create_env(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._json_request("POST", "/envs", payload)

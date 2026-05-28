@@ -478,7 +478,7 @@ class CodeSubmitter:
             
             if status_out.strip():
                 # Git commit with batch message
-                commit_msg = f'Batch add {len(filenames)} solutions: {", ".join(f[:20] for f in filenames[:3])}...'
+                commit_msg = f'Batch add {len(filenames)} solutions: {", ".join(f for f in filenames[:3])}...'
                 await self._run_git_command(['commit', '-m', commit_msg], self.repo_path)
             else:
                 logger.info("| 🔍 No changes to commit (files unchanged)")
