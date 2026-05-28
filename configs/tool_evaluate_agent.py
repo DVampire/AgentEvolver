@@ -5,11 +5,12 @@ with read_base():
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
-    from .tools.hello_world import hello_world_tool
     from .agents.tool_evaluate_agent import tool_evaluate_agent
+    from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "tool_evaluate_agent"
 work_dir = f"work_dir/{tag}"
+default_dir = f"work_dir/{tag}/default"
 log_path = "tool_evaluate_agent.log"
 
 use_local_proxy = True
@@ -36,6 +37,15 @@ memory_names = [
 bash_tool.update(
     require_grad=False,
 )
+#-----------------MEMORY CONFIG-----------------
+general_memory_system.update(
+    base_dir="memory/general_memory_system",
+    model_name=model_name,
+    max_summaries=10,
+    max_insights=10,
+    require_grad=False,
+)
+
 #-----------------AGENT CONFIG-----------------
 tool_evaluate_agent.update(
     base_dir=work_dir,

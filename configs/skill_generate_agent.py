@@ -11,6 +11,7 @@ with read_base():
 
 tag = "skill_generate_agent"
 work_dir = f"work_dir/{tag}"
+default_dir = f"work_dir/{tag}/default"
 log_path = "skill_generate_agent.log"
 
 use_local_proxy = True

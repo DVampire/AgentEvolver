@@ -6,9 +6,11 @@ with read_base():
     from .tools.glob_search import glob_search_tool
     from .tools.grep_search import grep_search_tool
     from .agents.skill_evaluate_agent import skill_evaluate_agent
+    from .memory.file_system_memory import file_system_memory
 
 tag = "skill_evaluate_agent"
 work_dir = f"work_dir/{tag}"
+default_dir = f"work_dir/{tag}/default"
 log_path = "skill_evaluate_agent.log"
 
 use_local_proxy = True
@@ -33,6 +35,13 @@ memory_names = [
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(
+    require_grad=False,
+)
+
+#-----------------MEMORY CONFIG-----------------
+file_system_memory.update(
+    base_dir="memory/file_system",
+    model_name=model_name,
     require_grad=False,
 )
 

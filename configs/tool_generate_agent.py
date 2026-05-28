@@ -11,6 +11,7 @@ with read_base():
 
 tag = "tool_generate_agent"
 work_dir = f"work_dir/{tag}"
+default_dir = f"work_dir/{tag}/default"
 log_path = "tool_generate_agent.log"
 
 use_local_proxy = True

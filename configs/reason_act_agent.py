@@ -8,6 +8,7 @@ with read_base():
 
 tag = "reason_act_agent"
 work_dir = f"work_dir/{tag}"
+default_dir = f"work_dir/{tag}/default"
 log_path = "agent.log"
 
 use_local_proxy = True
