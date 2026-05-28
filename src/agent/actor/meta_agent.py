@@ -86,6 +86,7 @@ class SubTaskRecord(BaseModel):
     session_id:  Optional[str]   = None
     result:      Optional[str]   = None
     error:       Optional[str]   = None
+    progress:    Optional[str]   = None  # latest snapshot from MonitorProgressMessage
     started_at:  Optional[datetime] = None
     finished_at: Optional[datetime] = None
 
@@ -139,6 +140,15 @@ class EscalationMessage(_SubtaskMessage):
         if self.suggestion:
             body += f"\nSuggestion: {self.suggestion}"
         return body
+
+
+class MonitorProgressMessage(_SubtaskMessage):
+    """Periodic progress update from MonitorAgent while a subprocess is running."""
+    pid:           int
+    status:        Literal["running", "completed", "failed", "timeout"]
+    elapsed:       float
+    recent_output: str = ""
+    exit_code:     Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +397,19 @@ class MetaAgent(Agent):
             state._events_since_think.append(msg)
             # Always think immediately on escalation
 
+        elif isinstance(msg, MonitorProgressMessage):
+            if rec := state.subtask_records.get(msg.task_id):
+                elapsed_str = f"{msg.elapsed:.0f}s"
+                rec.progress = f"[{msg.status}] elapsed={elapsed_str} pid={msg.pid}"
+                if msg.recent_output:
+                    rec.progress += f"\n{msg.recent_output[-500:]}"
+            logger.info(
+                f"| 📡 MonitorAgent [{msg.task_id}] pid={msg.pid} "
+                f"status={msg.status} elapsed={msg.elapsed:.0f}s"
+            )
+            state._events_since_think.append(msg)
+            return  # Progress updates do not trigger a think step
+
         else:
             logger.warning(f"| ⚠️ MetaAgent: unhandled message type {type(msg).__name__}")
             return
@@ -598,7 +621,11 @@ class MetaAgent(Agent):
         ctx = AgentContext(
             id=session_id, agent_name=agent_name, task_id=task_id,
             parent_agent=self.name, work_dir=self.base_dir,
-            extra={"parent_session_id": parent_ref.name, "subtask_id": task_id},
+            extra={
+                "parent_session_id": parent_ref.name,
+                "subtask_id": task_id,
+                "parent_ref": parent_ref,  # MonitorAgent uses this to post progress reports
+            },
         )
         existing_files = [f for f in (record.spec.input.files or []) if os.path.exists(f)]
         extra_kwargs: Dict[str, Any] = {}
@@ -644,6 +671,7 @@ class MetaAgent(Agent):
         else:
             escalations = [e for e in events if isinstance(e, EscalationMessage)]
             completions = [e for e in events if isinstance(e, (SubtaskDoneMessage, SubtaskFailedMessage))]
+            progresses  = [e for e in events if isinstance(e, MonitorProgressMessage)]
             if escalations:
                 lines.append("### Escalations Requiring Reply")
                 for e in escalations:
@@ -655,6 +683,15 @@ class MetaAgent(Agent):
                         lines.append(f"- DONE [{e.task_id}]: {e.result}")
                     else:
                         lines.append(f"- FAILED [{e.task_id}]: {e.error}")
+            if progresses:
+                lines.append("### Monitor Progress Updates")
+                for e in progresses:
+                    line = f"- [{e.status.upper()}] {e.task_id} ({e.agent_name}) pid={e.pid} elapsed={e.elapsed:.0f}s"
+                    if e.exit_code is not None:
+                        line += f" exit={e.exit_code}"
+                    lines.append(line)
+                    if e.recent_output:
+                        lines.append(f"  Recent output: {e.recent_output[:300]}")
             lines.append("\n### Plan Status (rounds run in order; tasks within a round run concurrently)")
             if not state.plan:
                 lines.append("(no plan yet)")
@@ -666,8 +703,9 @@ class MetaAgent(Agent):
                     if not r:
                         continue
                     line = f"  - [{r.status.value.upper()}] {tid} ({r.spec.name}): {r.spec.input.task}"
-                    if r.result: line += f" → {r.result}"
-                    if r.error:  line += f" ✗ {r.error}"
+                    if r.result:   line += f" → {r.result}"
+                    if r.error:    line += f" ✗ {r.error}"
+                    if r.progress: line += f" [progress: {r.progress[:150]}]"
                     lines.append(line)
         situation = "\n".join(lines)
 
