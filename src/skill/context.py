@@ -706,7 +706,7 @@ class SkillContextManager(BaseModel):
     ) -> SkillResponse:
         """Execute a skill by returning its SKILL.md as instructions for the calling agent."""
         skill_ctx = SkillContext.from_context(ctx)
-        skill_ctx = skill_ctx.model_copy(update={"skill_name": name})
+        skill_ctx = skill_ctx.model_copy(update={"name": name, "input": input})
 
         skill_config = self._skill_configs.get(name)
         if skill_config is None:

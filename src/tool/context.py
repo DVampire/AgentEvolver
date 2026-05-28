@@ -1046,6 +1046,7 @@ class ToolContextManager(BaseModel):
         """
 
         ctx = ToolContext.from_context(ctx)
+        ctx = ctx.model_copy(update={"input": input})
 
         tool_info = await self.get_info(name)
         

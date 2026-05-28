@@ -7,7 +7,7 @@ instance and exposes a stable public API.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type  # Dict/Any kept for register() signature
 
 from src.logger import logger
 from src.hook.types import Hook, HookContext, HookResult
@@ -97,7 +97,7 @@ class HookManagerServer:
     async def __call__(
         self,
         name: str,
-        input: Dict[str, Any],
+        input: dict,
         ctx=None,
         **kwargs,
     ) -> HookResult:
@@ -105,9 +105,8 @@ class HookManagerServer:
 
         Args:
             name:  Registered hook name (e.g. ``"memory_hook"``).
-            input: Flat event payload dict. Must contain ``"event"`` key
-                   (a HookEvent value) unless ctx is already a HookContext.
-            ctx:   Any context with an ``.id`` attribute, or a HookContext.
+            input: Event payload dict. ``"event"`` key is required.
+            ctx:   Any context with an ``.id`` attribute.
 
         Returns:
             HookResult (ALLOW if no hook is registered under ``name``).

@@ -16,7 +16,8 @@ class SkillContext(BaseContext):
     name: str = Field(default="", description="Name of the skill being invoked.")
     timeout: Optional[int] = Field(default=None, description="Optional timeout for skill execution in seconds")
     work_dir: Optional[str] = Field(default=None)
-    extra: Dict[str, Any] = Field(default_factory=dict)
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed by the caller.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Reserved — not populated or read by the framework.")
 
 
 class SkillExtra(BaseModel):

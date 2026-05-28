@@ -619,16 +619,13 @@ class MetaAgent(Agent):
         agent_name = record.spec.name
 
         ctx = AgentContext(
-            id=session_id, agent_name=agent_name, task_id=task_id,
-            parent_agent=self.name, work_dir=self.base_dir,
-            extra={
-                "parent_session_id": parent_ref.name,
-                "subtask_id": task_id,
-                "parent_ref": parent_ref,  # MonitorAgent uses this to post progress reports
-            },
+            id=session_id,
+            work_dir=self.base_dir,
+            parent_session_id=parent_ref.name,
+            subtask_id=task_id,
         )
         existing_files = [f for f in (record.spec.input.files or []) if os.path.exists(f)]
-        extra_kwargs: Dict[str, Any] = {}
+        extra_kwargs: Dict[str, Any] = {"parent_ref": parent_ref}
         if record.spec.input.target_name is not None:
             extra_kwargs["target_name"] = record.spec.input.target_name
 

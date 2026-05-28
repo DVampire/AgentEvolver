@@ -33,16 +33,17 @@ class BaseContext(BaseModel):
     @classmethod
     def from_context(cls, ctx: Optional["BaseContext"] = None) -> "BaseContext":
         if ctx is None:
-            return cls(id=make_id(), 
-                       name=None, 
-                       timeout=3600, 
-                       work_dir=None, 
+            return cls(id=make_id(),
+                       name=None,
+                       timeout=3600,
+                       work_dir=None,
                        extra={})
         return cls(
             id=ctx.id,
             name=getattr(ctx, "name", None),
             timeout=getattr(ctx, "timeout", 3600),
             work_dir=getattr(ctx, "work_dir", None),
+            input=getattr(ctx, "input", {}),
             extra=getattr(ctx, "extra", {}),
         )
 

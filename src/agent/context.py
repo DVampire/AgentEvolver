@@ -1044,8 +1044,11 @@ class AgentContextManager(BaseModel):
         agent_info = await self.get_info(name)
 
         # Agent args: ctx + any extra kwargs from the caller
+        if ctx is not None and not ctx.input:
+            ctx = ctx.model_copy(update={"input": input})
+
         agent_args = dict(ctx=ctx, **kwargs)
-        
+
         version = agent_info.version
         agent_instance = agent_info.instance
         logger.info(f"| ✅ Using agent {name}@{version}")

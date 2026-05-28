@@ -28,25 +28,26 @@ class MemoryHook(Hook):
         from src.memory import memory_manager
         from src.logger import logger
 
-        memory_name = (ctx.extra or {}).get("memory_name", "general_memory_system")
-        use_memory = (ctx.extra or {}).get("use_memory", True)
-        if not use_memory:
+        inp = ctx.input
+        if inp is None:
+            return HookResult.allow()
+
+        memory_name = inp.memory_name or "general_memory_system"
+        if not inp.use_memory:
             return HookResult.allow()
 
         # ON_CALL: always route directly to FileSystemMemory as an AGENT_CALL
         # with the caller's payload as metadata.
-        if ctx.extra.get("event") == HookEvent.ON_CALL:
+        if inp.event == HookEvent.ON_CALL:
             try:
                 fs_info = await memory_manager.get_info("file_system_memory")
                 if fs_info and fs_info.instance is not None:
-                    extra = ctx.extra or {}
-                    data = {k: v for k, v in extra.items()
-                            if k not in ("memory_name", "use_memory", "_session_state")}
+                    data = inp.model_dump(exclude={"memory_name", "use_memory"}, exclude_none=True)
                     await fs_info.instance.emit(
                         TraceEvent(
                             event_type=TraceEventType.AGENT_CALL,
                             session_id=ctx.id,
-                            agent_name=ctx.extra.get("agent_name", ""),
+                            agent_name=inp.agent_name,
                             metadata=data,
                         ),
                         session_id=ctx.id,
@@ -65,7 +66,7 @@ class MemoryHook(Hook):
             if memory_info and memory_info.instance is not None:
                 await memory_info.instance.emit(event, session_id=ctx.id)
         except Exception as e:
-            logger.warning(f"| ⚠️ MemoryHook (primary) error on {ctx.extra.get('event')}: {e}")
+            logger.warning(f"| ⚠️ MemoryHook (primary) error on {inp.event}: {e}")
 
         # FileSystemMemory as secondary sink
         if memory_name != "file_system_memory":
@@ -74,57 +75,55 @@ class MemoryHook(Hook):
                 if fs_info and fs_info.instance is not None:
                     await fs_info.instance.emit(event, session_id=ctx.id)
             except Exception as e:
-                logger.warning(f"| ⚠️ MemoryHook (file_system) error on {ctx.extra.get('event')}: {e}")
+                logger.warning(f"| ⚠️ MemoryHook (file_system) error on {inp.event}: {e}")
 
         return HookResult.allow()
 
     def _build_event(self, ctx: HookContext) -> TraceEvent | None:
-        task_id = (ctx.extra or {}).get("task_id", ctx.id)
-        agent_name = (ctx.extra or {}).get("agent_name", "")
+        inp = ctx.input
+        if inp is None:
+            return None
+        task_id = inp.task_id or ctx.id
+        agent_name = inp.agent_name
 
-        if ctx.extra.get("event") == HookEvent.ON_START:
+        if inp.event == HookEvent.ON_START:
             return agent_start_event(
                 session_id=ctx.id, task_id=task_id,
                 agent_name=agent_name,
-                task_content=(ctx.extra or {}).get("task", ""),
+                task_content=inp.task,
             )
 
-        if ctx.extra.get("event") == HookEvent.ON_STOP:
-            extra = ctx.extra or {}
+        if inp.event == HookEvent.ON_STOP:
             return agent_end_event(
                 session_id=ctx.id, task_id=task_id,
                 agent_name=agent_name,
-                success=not bool(extra.get("error")),
-                result=extra.get("result"),
+                success=not bool(inp.error),
+                result=inp.result,
             )
 
-        if ctx.extra.get("event") == HookEvent.POST_STEP:
-            step = ctx.extra.get("step_number") or 0
+        if inp.event == HookEvent.POST_STEP:
             return agent_call_event(
                 session_id=ctx.id, task_id=task_id,
                 agent_name=agent_name,
-                step_number=step,
-                thinking=(ctx.extra or {}).get("thinking"),
-                next_goal=(ctx.extra or {}).get("next_goal"),
-                memory=(ctx.extra or {}).get("memory"),
+                step_number=inp.step_number,
+                thinking=inp.thinking,
+                next_goal=inp.next_goal,
+                memory=inp.memory,
             )
 
-        if ctx.extra.get("event") == HookEvent.POST_ACTION:
-            action = ctx.extra.get("action") or {}
-            step = ctx.extra.get("step_number") or 0
+        if inp.event == HookEvent.POST_ACTION:
+            action = inp.action or {}
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
             description = action.get("description") or None
-            success = not bool((ctx.extra or {}).get("error"))
-            error = (ctx.extra or {}).get("error")
             factory = tool_call_event if atype == "tool" else skill_call_event
             return factory(
                 session_id=ctx.id, task_id=task_id,
                 agent_name=agent_name,
-                step_number=step, action_index=idx, action_name=aname,
-                result=ctx.extra.get("action_result"), success=success,
-                duration_ms=None, error=error,
+                step_number=inp.step_number, action_index=idx, action_name=aname,
+                result=inp.action_result, success=not bool(inp.error),
+                duration_ms=None, error=inp.error,
                 description=description,
             )
 

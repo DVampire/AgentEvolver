@@ -7,8 +7,8 @@ Design
     1. ``_drain_output``  — continuously reads stdout to prevent pipe back-pressure.
     2. ``_monitor_loop`` — uses ``asyncio.wait_for(process.wait(), timeout=poll_interval)``
        so process completion is detected immediately, and poll timeouts trigger progress reports.
-- On each poll timeout sends a ``MonitorProgressMessage`` to the parent AgentRef inbox
-  (obtained from ``ctx.extra["parent_ref"]`` injected by MetaAgent._run_subtask).
+- On each poll timeout sends a ``MonitorProgressMessage`` to the parent AgentRef inbox.
+  ``parent_ref`` is passed as an explicit kwarg by MetaAgent._run_subtask (not via ctx.extra).
 - On process completion resolves ``ref._pending_reply`` with the full output.
 - On ``max_wait`` exceeded kills the process and raises TimeoutError.
 """
@@ -84,8 +84,8 @@ class MonitorAgent(Agent):
         **kwargs: Any,
     ) -> Optional[AgentResponse]:
         command = kwargs.get("command") or task
-        parent_ref = ctx.extra.get("parent_ref") if ctx else None
-        task_id = (ctx.task_id if ctx else None) or make_id()
+        parent_ref = kwargs.get("parent_ref")
+        task_id = (ctx.id if ctx else None) or make_id()
 
         logger.info(f"| 🚀 MonitorAgent [{task_id}]: starting process")
         logger.info(f"|    command: {command[:300]}")

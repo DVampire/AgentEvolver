@@ -36,21 +36,17 @@ class HookEvent(str, Enum):
 class HookContext(BaseContext):
     """Context passed into hook manager and individual hook handlers.
 
-    Event-specific payload lives in ``extra``:
-      - extra["event"]         → HookEvent
-      - extra["messages"]      → List[Message]  (PRE_MESSAGES)
-      - extra["action"]        → dict            (PRE_ACTION / POST_ACTION)
-      - extra["action_result"] → str             (POST_ACTION)
-      - extra["step_number"]   → int             (PRE_STEP / POST_STEP)
-      - extra["max_tokens"]    → int             (PRE_MESSAGES)
-    ``name`` holds the agent name that fired the event.
+    ``input`` carries the event payload dict passed to ``hook_manager``.
+    Hook handlers read event data via ``ctx.input.get("event")``, etc.
+    ``extra`` is reserved and is never populated or read by the framework.
     """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     id: str = Field(description="Session ID or any unique identifier for this hook context.")
     name: str = Field(description="Hook name that fired the event.")
     timeout: Optional[float] = Field(default=3600, description="Optional timeout for this context. Defaults to 1 hour.")
     work_dir: Optional[str] = Field(default=None, description="Optional working directory for this context.")
-    extra: Optional[Dict[str, Any]] = Field(default=None, description="Event-specific payload.")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="Reserved — not populated or read by the framework.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Event payload dict passed by the caller.")
 
 
 class HookDecision(str, Enum):

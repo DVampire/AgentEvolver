@@ -2,8 +2,8 @@
 
 Design
 ------
-- parent_session_id (= MetaAgent's ref.name) is injected into ctx.extra by MetaAgent
-  when creating the sub-agent's AgentContext.
+- parent_session_id (= MetaAgent's ref.name) is passed in the hook input dict by
+  sub-agents that support escalation (e.g. ReasonActAgent includes it from ctx.parent_session_id).
 - The hook looks up the parent AgentRef in runtime_manager._refs by that name, then
   calls runtime_manager.ask(parent_ref, EscalationMessage) and blocks until MetaAgent
   sets the reply_future — no separate session registry needed.
@@ -30,10 +30,10 @@ class EscalationHook(Hook):
     priority:    int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
-        extra            = ctx.extra or {}
-        parent_session_id = extra.get("parent_session_id")
+        inp = ctx.input or {}
+        parent_session_id = inp.get("parent_session_id")
         if not parent_session_id:
-            logger.warning("| ⚠️ EscalationHook: no parent_session_id in ctx.extra — nowhere to escalate")
+            logger.warning("| ⚠️ EscalationHook: no parent_session_id in ctx.input — nowhere to escalate")
             return HookResult.allow()
 
         parent_ref = runtime_manager.get(parent_session_id)
@@ -44,12 +44,12 @@ class EscalationHook(Hook):
         from src.agent.actor.meta_agent import EscalationMessage  # local: break import cycle
 
         escalation = EscalationMessage(
-            task_id    = extra.get("task_id", ctx.id),
-            agent_name = extra.get("agent_name", ""),
+            task_id    = inp.get("task_id") or ctx.id,
+            agent_name = inp.get("agent_name", ""),
             session_id = ctx.id,
-            reason     = extra.get("reason", ""),
-            situation  = extra.get("situation", ""),
-            suggestion = extra.get("suggestion", ""),
+            reason     = inp.get("reason") or "",
+            situation  = inp.get("situation") or "",
+            suggestion = inp.get("suggestion") or "",
         )
 
         logger.info(

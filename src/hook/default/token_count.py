@@ -20,7 +20,7 @@ class TokenCountHook(Hook):
     model_name: str = ""
 
     async def handle(self, ctx: HookContext) -> HookResult:
-        messages = ctx.extra.get("messages")
+        messages = ctx.input.messages if ctx.input else None
         if not messages:
             return HookResult.allow()
 

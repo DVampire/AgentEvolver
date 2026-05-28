@@ -153,13 +153,14 @@ class CompactHook(Hook):
         return self._sessions[session_id]
 
     async def handle(self, ctx: HookContext) -> HookResult:
-        if not ctx.extra.get("messages") or not ctx.extra.get("max_tokens"):
+        inp = ctx.input
+        if inp is None or not inp.messages or not inp.max_tokens:
             return HookResult.allow()
 
-        messages: List[Message] = ctx.extra.get("messages")
+        messages: List[Message] = inp.messages
         session = self._get_session(ctx.id)
 
-        threshold = int(ctx.extra.get("max_tokens") * self.trigger_ratio)
+        threshold = int(inp.max_tokens * self.trigger_ratio)
 
         # Use cached count if available, otherwise count fresh
         current_tokens = session["last_token_count"]

@@ -105,15 +105,18 @@ class ReasonActAgent(Agent):
         task_id = make_id()
         logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
 
+        parent_session_id = ctx.parent_session_id if ctx else None
+        subtask_id = ctx.subtask_id if ctx else None
+
         # ON_START
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
             ctx=ctx,
         )
 
@@ -142,12 +145,12 @@ class ReasonActAgent(Agent):
         # ON_STOP
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
             ctx=ctx,
         )
 

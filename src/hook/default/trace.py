@@ -36,28 +36,29 @@ class TraceHook(Hook):
     async def handle(self, ctx: HookContext) -> HookResult:
         from src.trace.server import trace_manager
 
+        inp = ctx.input
+        if inp is None:
+            return HookResult.allow()
+
         event: Optional[TraceEvent] = None
+        agent_name = inp.agent_name
 
-        agent_name = (ctx.extra or {}).get("agent_name", "")
-
-        if ctx.extra.get("event") == HookEvent.ON_START:
+        if inp.event == HookEvent.ON_START:
             event = agent_start_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
                 agent_name=agent_name,
                 task_content=self._task_content(ctx),
             )
-            parent_session_id = (ctx.extra or {}).get("parent_session_id")
-            subtask_id = (ctx.extra or {}).get("subtask_id")
-            if parent_session_id:
+            if inp.parent_session_id:
                 event = event.model_copy(update={"metadata": {
                     **event.metadata,
-                    "parent_session_id": parent_session_id,
-                    "subtask_id": subtask_id or "",
+                    "parent_session_id": inp.parent_session_id,
+                    "subtask_id": inp.subtask_id or "",
                 }})
             self._timers[f"{ctx.id}:agent"] = time.monotonic()
 
-        elif ctx.extra.get("event") == HookEvent.ON_STOP:
+        elif inp.event == HookEvent.ON_STOP:
             elapsed = self._pop_timer(f"{ctx.id}:agent")
             event = agent_end_event(
                 session_id=ctx.id,
@@ -68,26 +69,26 @@ class TraceHook(Hook):
                 duration_ms=elapsed,
             )
 
-        elif ctx.extra.get("event") == HookEvent.PRE_STEP:
-            step = ctx.extra.get("step_number") or 0
+        elif inp.event == HookEvent.PRE_STEP:
+            step = inp.step_number
             self._timers[f"{ctx.id}:step:{step}"] = time.monotonic()
 
-        elif ctx.extra.get("event") == HookEvent.POST_STEP:
-            step = ctx.extra.get("step_number") or 0
+        elif inp.event == HookEvent.POST_STEP:
+            step = inp.step_number
             elapsed = self._pop_timer(f"{ctx.id}:step:{step}")
             event = agent_call_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
                 agent_name=agent_name,
                 step_number=step,
-                thinking=(ctx.extra or {}).get("thinking"),
-                next_goal=(ctx.extra or {}).get("next_goal"),
+                thinking=inp.thinking,
+                next_goal=inp.next_goal,
                 duration_ms=elapsed,
             )
 
-        elif ctx.extra.get("event") == HookEvent.PRE_ACTION:
-            action = ctx.extra.get("action") or {}
-            step = ctx.extra.get("step_number") or 0
+        elif inp.event == HookEvent.PRE_ACTION:
+            action = inp.action or {}
+            step = inp.step_number
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
@@ -109,14 +110,14 @@ class TraceHook(Hook):
             )
             self._timers[f"{ctx.id}:action:{step}:{idx}"] = time.monotonic()
 
-        elif ctx.extra.get("event") == HookEvent.POST_ACTION:
-            action = ctx.extra.get("action") or {}
-            step = ctx.extra.get("step_number") or 0
+        elif inp.event == HookEvent.POST_ACTION:
+            action = inp.action or {}
+            step = inp.step_number
             idx = action.get("index", 0)
             atype = action.get("type", "tool")
             aname = action.get("name", "")
-            success = not bool((ctx.extra or {}).get("error"))
-            error = (ctx.extra or {}).get("error")
+            success = not bool(inp.error)
+            error = inp.error
             elapsed = self._pop_timer(f"{ctx.id}:action:{step}:{idx}")
             factory = tool_call_event if atype == "tool" else skill_call_event
             event = factory(
@@ -126,7 +127,7 @@ class TraceHook(Hook):
                 step_number=step,
                 action_index=idx,
                 action_name=aname,
-                result=ctx.extra.get("action_result"),
+                result=inp.action_result,
                 success=success,
                 duration_ms=elapsed,
                 error=error,
@@ -138,10 +139,14 @@ class TraceHook(Hook):
         return HookResult.allow()
 
     def _task_id(self, ctx: HookContext) -> str:
-        return (ctx.extra or {}).get("task_id", ctx.id)
+        if ctx.input is None:
+            return ctx.id
+        return ctx.input.task_id or ctx.id
 
     def _task_content(self, ctx: HookContext) -> str:
-        return (ctx.extra or {}).get("task", "")
+        if ctx.input is None:
+            return ""
+        return ctx.input.task
 
     def _pop_timer(self, key: str) -> Optional[float]:
         start = self._timers.pop(key, None)

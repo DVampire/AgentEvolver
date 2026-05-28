@@ -34,7 +34,10 @@ class AgentContext(BaseContext):
     """Context passed into agent manager and individual agent instances."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this agent invocation, useful for tracing and logging.")
     work_dir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
-    extra: Dict[str, Any] = Field(default_factory=dict)
+    parent_session_id: Optional[str] = Field(default=None, description="ref.name of the parent MetaAgent, used by trace and escalation hooks.")
+    subtask_id: Optional[str] = Field(default=None, description="ID of the subtask record in the parent MetaAgent's plan.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed by the caller (e.g. task, files).")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Reserved — not populated or read by the framework.")
 
 class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")

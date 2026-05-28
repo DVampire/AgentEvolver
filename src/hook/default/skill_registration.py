@@ -17,7 +17,7 @@ class SkillRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
-        extra = ctx.extra or {}
+        extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
         project_root: str = extra.get("project_root") or ""

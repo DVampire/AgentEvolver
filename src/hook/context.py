@@ -228,10 +228,8 @@ class HookContextManager:
 
         Args:
             name:  Registered hook name to invoke (e.g. ``"memory_hook"``).
-            input: Event payload — all keys become ctx.extra.
-                   ``event`` is required.
+            input: Event payload dict. ``"event"`` key is required.
             ctx:   Any context with an ``.id`` attribute (AgentContext, etc.).
-                   If already a HookContext, used as-is.
 
         Returns a HookResult. Hooks that raise are logged and treated as ALLOW.
         """
@@ -242,7 +240,7 @@ class HookContextManager:
         hook_ctx = HookContext(
             id=session_id,
             name=name,
-            extra=dict(input),
+            input=input,
         )
 
         hook_config = self._hook_configs.get(name)
@@ -250,7 +248,6 @@ class HookContextManager:
             return HookResult.allow()
 
         hook_instance = hook_config.instance
-        event = hook_ctx.extra.get("event")
 
         try:
             result = await hook_instance.handle(hook_ctx)
