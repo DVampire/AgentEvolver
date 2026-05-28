@@ -106,6 +106,7 @@ class MemoryHook(Hook):
                 step_number=step,
                 thinking=(ctx.extra or {}).get("thinking"),
                 next_goal=(ctx.extra or {}).get("next_goal"),
+                memory=(ctx.extra or {}).get("memory"),
             )
 
         if ctx.extra.get("event") == HookEvent.POST_ACTION:

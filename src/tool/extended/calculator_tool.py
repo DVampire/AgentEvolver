@@ -1,4 +1,4 @@
-'''A calculator tool for basic arithmetic operations.'''
+'''A simple calculator tool supporting basic arithmetic operations.'''
 from typing import Any, Dict, Optional
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
@@ -6,13 +6,15 @@ from src.registry import TOOL
 
 @TOOL.register_module(force=True)
 class CalculatorTool(Tool):
-    '''A calculator tool that supports add, subtract, multiply, and divide operations.'''
+    '''A simple calculator tool supporting basic arithmetic operations.'''
 
     name: str = 'calculator_tool'
     description: str = (
-        'A calculator tool that performs basic arithmetic operations. '
-        'Args: a (float): The first operand. b (float): The second operand. '
-        'op (str): The operation to perform. Supported: "+", "-", "*", "/".'
+        'A simple calculator tool supporting basic arithmetic operations.\n'
+        'Args:\n'
+        '- a (float): The first operand.\n'
+        '- b (float): The second operand.\n'
+        '- op (str): The operator, one of +, -, *, /.\n'
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=True)
@@ -30,13 +32,21 @@ class CalculatorTool(Tool):
             result = a * b
         elif op == '/':
             if b == 0:
-                raise ValueError('Division by zero is not allowed.')
+                return ToolResponse(
+                    success=False,
+                    message='Error: Division by zero is not allowed.',
+                    extra=ToolExtra(data={})
+                )
             result = a / b
         else:
-            raise ValueError(f'Unsupported operation {op}. Supported operations are "+", "-", "*", "/".')
-        
+            return ToolResponse(
+                success=False,
+                message=f'Error: Unsupported operator {op}',
+                extra=ToolExtra(data={})
+            )
+
         return ToolResponse(
             success=True,
-            message=f'The result of {a} {op} {b} is {result}',
+            message=f'result: {result}',
             extra=ToolExtra(data={'result': result}),
         )

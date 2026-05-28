@@ -157,6 +157,13 @@ class WorkingMemory:
             parts.append(e.label)
         if e.output and isinstance(e.output, str):
             parts.append(f"output: {e.output.replace(chr(10), ' ')}")
+        elif e.output and isinstance(e.output, dict):
+            memory = e.output.get("memory")
+            next_goal = e.output.get("next_goal")
+            if memory:
+                parts.append(f"memory: {memory.replace(chr(10), ' ')}")
+            elif next_goal:
+                parts.append(f"goal: {next_goal.replace(chr(10), ' ')}")
         elif e.error:
             parts.append(f"error: {e.error}")
         return " | ".join(parts)

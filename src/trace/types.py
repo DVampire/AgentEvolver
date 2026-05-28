@@ -119,6 +119,7 @@ def agent_call_event(
     step_number: int,
     thinking: Optional[str] = None,
     next_goal: Optional[str] = None,
+    memory: Optional[str] = None,
     duration_ms: Optional[float] = None,
 ) -> TraceEvent:
     return TraceEvent(
@@ -126,7 +127,7 @@ def agent_call_event(
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         step_number=step_number,
         label=f"Step {step_number}",
-        output={"thinking": thinking, "next_goal": next_goal},
+        output={"thinking": thinking, "next_goal": next_goal, "memory": memory},
         duration_ms=duration_ms,
     )
 

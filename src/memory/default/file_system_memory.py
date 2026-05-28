@@ -154,6 +154,9 @@ class _SessionState:
         # Key: step_number, Value: list of action dicts to be flushed into flow_steps.
         self._pending_step_actions: Dict[int, List[Dict[str, Any]]] = {}
 
+        # Latest agent-written memory notes (from AgentThinkOutput.memory field).
+        self.agent_memory: str = ""
+
         # Index for MetaAgent subtask events: subtask_id → list index in todos / flow_steps.
         # Enables O(1) status updates without scanning the whole list.
         self._subtask_todo_index: Dict[str, int] = {}
@@ -451,6 +454,9 @@ class FileSystemMemory(Memory):
             if event.step_number is not None and "next_goal" in ev_output:
                 step = event.step_number
                 next_goal = (ev_output.get("next_goal") or f"Step {step}")[:_FLOW_LABEL_MAX]
+                agent_mem = ev_output.get("memory") or ""
+                if agent_mem:
+                    state.agent_memory = agent_mem
                 pending = state._pending_step_actions.pop(step, [])
                 if pending:
                     pending.sort(key=lambda a: a["action_index"])
@@ -568,13 +574,35 @@ class FileSystemMemory(Memory):
             if changed:
                 asyncio.create_task(self._save(state))
 
-    async def get(self, session_id: str, **kwargs) -> Optional[str]:
-        """Return the full HTML content of the memory file for this session."""
+    async def get(self, session_id: str, short_term_n: int = 10, **kwargs) -> Optional[str]:
+        """Return a text summary of the session memory for prompt injection."""
         async with self._registry_lock:
             state = self._sessions.get(session_id)
-        if state is None or not os.path.exists(state.file_path):
+        if state is None:
             return None
-        return await asyncio.to_thread(_read_sync, state.file_path)
+
+        lines: list[str] = []
+
+        if state.agent_memory:
+            lines.append("## Agent Memory")
+            lines.append(state.agent_memory)
+            lines.append("")
+
+        if state.compact_summary:
+            lines.append("## Summary")
+            lines.append(state.compact_summary)
+            lines.append("")
+
+        recent = state.history[-short_term_n:] if short_term_n else state.history
+        if recent:
+            lines.append("## Recent History")
+            for e in recent:
+                status = f" [{e.status}]" if e.status else ""
+                detail = f": {e.detail}" if e.detail else ""
+                lines.append(f"[{e.ts}] {e.event}{status}{detail}")
+
+        result = "\n".join(lines).strip()
+        return result or None
 
     # ------------------------------------------------------------------
     # Internal helpers
