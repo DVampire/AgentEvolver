@@ -23,7 +23,6 @@ tool_names = [
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
-    "hello_world_tool",
     "glob_search_tool",
     "grep_search_tool",
 ]

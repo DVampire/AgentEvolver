@@ -5,12 +5,13 @@ with read_base():
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
-    from .tools.hello_world import hello_world_tool
-    from .agents.tool_evaluate_agent import tool_evaluate_agent
+    from .tools.glob_search import glob_search_tool
+    from .tools.grep_search import grep_search_tool
+    from .agents.skill_generate_agent import skill_generate_agent
 
-tag = "tool_evaluate_agent"
+tag = "skill_generate_agent"
 work_dir = f"work_dir/{tag}"
-log_path = "tool_evaluate_agent.log"
+log_path = "skill_generate_agent.log"
 
 use_local_proxy = True
 model_name = "openrouter/gemini-3-flash-preview"
@@ -25,22 +26,20 @@ tool_names = [
     "grep_search_tool",
 ]
 agent_names = [
-    "tool_evaluate_agent",
+    "skill_generate_agent",
 ]
 skill_names = []
-memory_names = [
-    "general_memory_system",
-]
+memory_names = []
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(
     require_grad=False,
 )
+
 #-----------------AGENT CONFIG-----------------
-tool_evaluate_agent.update(
+skill_generate_agent.update(
     base_dir=work_dir,
     model_name=model_name,
-    memory_name=memory_names[0],
     require_grad=False,
-    use_memory=True,
+    use_memory=False,
 )

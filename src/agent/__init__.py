@@ -2,9 +2,9 @@
 
 from .actor import ReasonActAgent, CodeAgent, MetaAgent
 from .server import agent_manager
-from .optimizer import ToolOptimizeAgent
-from .evaluator import ToolEvaluateAgent
-from .generator import ToolGenerateAgent
+from .optimizer import ToolOptimizeAgent, SkillOptimizeAgent
+from .evaluator import ToolEvaluateAgent, SkillEvaluateAgent
+from .generator import ToolGenerateAgent, SkillGenerateAgent
 
 
 __all__ = [
@@ -15,4 +15,7 @@ __all__ = [
     "ToolOptimizeAgent",
     "ToolEvaluateAgent",
     "ToolGenerateAgent",
+    "SkillOptimizeAgent",
+    "SkillEvaluateAgent",
+    "SkillGenerateAgent",
 ]
