@@ -6,12 +6,9 @@ from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
 from src.hook.server import hook_manager
-from src.hook.types import HookDecision, HookEvent
 from src.logger import logger
 from src.registry import AGENT
 from src.tool.server import tool_manager
-from src.utils import get_project_root
-from src.utils.name_utils import make_id
 
 
 

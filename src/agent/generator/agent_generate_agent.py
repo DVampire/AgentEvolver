@@ -1,7 +1,5 @@
 """AgentGenerateAgent — generates a new agent (Python class + optional HTML prompt) from a description."""
 
-import os
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
