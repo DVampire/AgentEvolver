@@ -3,22 +3,38 @@
 Design
 ------
 - Overrides ``on_start`` and returns ``None`` (async resolution).
-- Spawns two background asyncio tasks:
-    1. ``_drain_output``  — continuously reads stdout to prevent pipe back-pressure.
-    2. ``_monitor_loop`` — uses ``asyncio.wait_for(process.wait(), timeout=poll_interval)``
-       so process completion is detected immediately, and poll timeouts trigger progress reports.
-- On each poll timeout sends a ``MonitorProgressMessage`` to the parent AgentRef inbox.
-  ``parent_ref`` is passed as an explicit kwarg by MetaAgent._run_subtask (not via ctx.extra).
-- On process completion resolves ``ref._pending_reply`` with the full output.
-- On ``max_wait`` exceeded kills the process and raises TimeoutError.
+- Spawns a single owned background task, ``_monitor_loop``, which:
+    * Creates and owns a ``_drain_output`` task that continuously reads stdout in
+      fixed-size chunks (no line-length limit) into a bounded rolling buffer.
+    * Waits on a single long-lived ``process.wait()`` task; on each poll-interval
+      timeout it sends a ``MonitorProgressMessage`` to the parent AgentRef inbox.
+    * On completion **flushes the drain task first** so the final lines of output
+      are never lost, then resolves ``ref._pending_reply`` with the captured output.
+    * On ``max_wait`` exceeded kills the process and resolves the reply with a
+      TimeoutError (the parent surfaces this as a failed subtask).
+- ``parent_ref`` is passed as an explicit kwarg by MetaAgent._run_subtask.
+
+Cancellation / cleanup
+----------------------
+- The background task is held by a strong reference (``self._bg_tasks``) so the
+  event loop cannot garbage-collect it mid-flight.
+- A done-callback on ``ref._pending_reply`` cancels the loop if the awaiting
+  future is cancelled (e.g. ``invoke(timeout=...)`` expiry), and the loop's
+  ``CancelledError``/``finally`` handlers kill the subprocess and stop draining.
+- Absent any external signal, the ``max_wait`` guard bounds how long an orphaned
+  subprocess can survive.
+
+Note: the buffer is a rolling window (``_MAX_BUFFER_CHARS``), so the resolved
+output is the *most recent* output, not necessarily the entire history.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from collections import deque
+from typing import Any, Deque, Dict, Optional, Set
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, PrivateAttr
 
 from src.agent.actor.meta_agent import MonitorProgressMessage
 from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
@@ -46,6 +62,13 @@ class MonitorAgent(Agent):
     poll_interval: int = Field(default=30, description="Seconds between progress reports.")
     max_wait: int = Field(default=3600, description="Maximum seconds to wait before killing the process.")
     tail_lines: int = Field(default=50, description="Lines of recent stdout to include in each progress report.")
+
+    # Read stdout in fixed-size chunks; bound the rolling buffer by chunk count.
+    _CHUNK_SIZE: int = 4096
+    _MAX_BUFFER_CHARS: int = 256_000
+
+    # Strong references to in-flight background tasks (prevents GC; allows cleanup).
+    _bg_tasks: Set[asyncio.Task] = PrivateAttr(default_factory=set)
 
     def __init__(
         self,
@@ -78,17 +101,26 @@ class MonitorAgent(Agent):
     async def on_start(
         self,
         task: str,
-        files: Optional[List[str]],
+        files: Optional[list],
         ctx: Optional[AgentContext],
         ref: Any,
         **kwargs: Any,
     ) -> Optional[AgentResponse]:
         command = kwargs.get("command") or task
         parent_ref = kwargs.get("parent_ref")
+
+        # Per-invocation overrides fall back to the instance defaults.
+        poll_interval = int(kwargs.get("poll_interval") or self.poll_interval)
+        max_wait = int(kwargs.get("max_wait") or self.max_wait)
+        tail_lines = int(kwargs.get("tail_lines") or self.tail_lines)
+
         task_id = (ctx.id if ctx else None) or make_id()
+        session_id = (ctx.id if ctx else None) or task_id
 
         logger.info(f"| 🚀 MonitorAgent [{task_id}]: starting process")
         logger.info(f"|    command: {command[:300]}")
+
+        await self._emit_start(session_id, task_id, command)
 
         try:
             process = await asyncio.create_subprocess_shell(
@@ -98,78 +130,114 @@ class MonitorAgent(Agent):
             )
         except Exception as exc:
             logger.error(f"| ❌ MonitorAgent [{task_id}]: failed to spawn process: {exc}")
+            await self._emit_end(session_id, task_id, success=False, result=None,
+                                 duration_ms=0.0, error=str(exc))
             return AgentResponse(message=f"Failed to start process: {exc}", success=False)
 
         logger.info(f"| 🔵 MonitorAgent [{task_id}]: pid={process.pid}")
 
-        output_buffer: List[str] = []
-        asyncio.create_task(self._drain_output(process.stdout, output_buffer))
-        asyncio.create_task(
-            self._monitor_loop(process, output_buffer, task_id, ctx, ref, parent_ref)
+        monitor_task = asyncio.create_task(
+            self._monitor_loop(
+                process, task_id, session_id, ref, parent_ref,
+                poll_interval, max_wait, tail_lines,
+            ),
+            name=f"monitor-loop-{task_id}",
         )
+        # Hold a strong reference so the loop is not garbage-collected mid-flight.
+        self._bg_tasks.add(monitor_task)
+        monitor_task.add_done_callback(self._bg_tasks.discard)
+
+        # If the awaiting future is cancelled (e.g. invoke timeout), tear the loop down.
+        future = getattr(ref, "_pending_reply", None)
+        if future is not None:
+            future.add_done_callback(
+                lambda f, mt=monitor_task: mt.cancel() if f.cancelled() else None
+            )
+
         return None  # Async resolution — _monitor_loop will set ref._pending_reply
 
     # ------------------------------------------------------------------
     # Background helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
     async def _drain_output(
+        self,
         stdout: asyncio.StreamReader,
-        buffer: List[str],
+        chunks: Deque[str],
     ) -> None:
-        """Read stdout line-by-line into a rolling buffer to prevent pipe back-pressure."""
-        async for raw in stdout:
-            line = raw.decode(errors="replace")
-            buffer.append(line)
-            if len(buffer) > 1000:
-                buffer.pop(0)
+        """Read stdout in fixed-size chunks into a bounded rolling buffer.
+
+        Chunked reads avoid the StreamReader 64 KiB line-length limit, so a
+        process emitting very long lines (progress bars, binary) cannot crash
+        the drain and stall the pipe.
+        """
+        try:
+            while True:
+                data = await stdout.read(self._CHUNK_SIZE)
+                if not data:
+                    break
+                chunks.append(data.decode(errors="replace"))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(f"| ⚠️ MonitorAgent: stdout drain error: {exc}")
 
     async def _monitor_loop(
         self,
         process: asyncio.subprocess.Process,
-        output_buffer: List[str],
         task_id: str,
-        ctx: Optional[AgentContext],
+        session_id: str,
         ref: Any,
         parent_ref: Any,
+        poll_interval: int,
+        max_wait: int,
+        tail_lines: int,
     ) -> None:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = loop.time()
-        session_id = (ctx.id if ctx else None) or task_id
+
+        maxlen = max(1, self._MAX_BUFFER_CHARS // self._CHUNK_SIZE)
+        chunks: Deque[str] = deque(maxlen=maxlen)
+        drain_task = asyncio.create_task(self._drain_output(process.stdout, chunks))
+        wait_task = asyncio.ensure_future(process.wait())
 
         try:
             while True:
                 elapsed = loop.time() - start
-                remaining = self.max_wait - elapsed
+                remaining = max_wait - elapsed
 
                 if remaining <= 0:
-                    process.kill()
-                    await process.wait()
+                    await self._terminate(process)
+                    elapsed = loop.time() - start
                     logger.warning(
                         f"| ⏰ MonitorAgent [{task_id}]: timed out after {elapsed:.0f}s, process killed"
                     )
+                    snapshot = self._tail(chunks, tail_lines)
+                    await self._send_progress(
+                        parent_ref, task_id, session_id, process.pid,
+                        status="timeout", elapsed=elapsed, recent_output=snapshot,
+                    )
                     _safe_set_exception(
                         ref,
-                        TimeoutError(f"Process (pid={process.pid}) timed out after {self.max_wait}s"),
+                        TimeoutError(f"Process (pid={process.pid}) timed out after {max_wait}s"),
                     )
-                    if parent_ref is not None:
-                        await parent_ref._inbox.put(MonitorProgressMessage(
-                            task_id=task_id, agent_name=self.name, session_id=session_id,
-                            pid=process.pid, status="timeout", elapsed=elapsed,
-                        ))
+                    await self._emit_end(
+                        session_id, task_id, success=False, result=snapshot,
+                        duration_ms=elapsed * 1000, error="timeout",
+                    )
                     return
 
-                try:
-                    # Wait for process exit OR poll_interval — whichever comes first.
-                    await asyncio.wait_for(
-                        asyncio.shield(process.wait()),
-                        timeout=min(self.poll_interval, remaining),
-                    )
+                # Wait for process exit OR poll_interval — whichever comes first.
+                # A single long-lived wait_task avoids accumulating shielded waiters.
+                done, _ = await asyncio.wait(
+                    {wait_task}, timeout=min(poll_interval, remaining)
+                )
 
-                    # --- Process finished ---
+                if wait_task in done:
+                    # --- Process finished: flush drain so trailing output is captured ---
+                    await self._flush_drain(drain_task)
                     elapsed = loop.time() - start
-                    output = "".join(output_buffer)
+                    output = "".join(chunks)
                     exit_code = process.returncode
                     success = exit_code == 0
 
@@ -189,38 +257,136 @@ class MonitorAgent(Agent):
                     )
                     _safe_set_result(ref, result)
 
-                    if parent_ref is not None:
-                        await parent_ref._inbox.put(MonitorProgressMessage(
-                            task_id=task_id, agent_name=self.name, session_id=session_id,
-                            pid=process.pid, status="completed", elapsed=elapsed,
-                            recent_output=output[-2000:], exit_code=exit_code,
-                        ))
+                    await self._send_progress(
+                        parent_ref, task_id, session_id, process.pid,
+                        status="completed" if success else "failed",
+                        elapsed=elapsed, recent_output=output[-2000:], exit_code=exit_code,
+                    )
+                    await self._emit_end(
+                        session_id, task_id, success=success, result=output[-4000:],
+                        duration_ms=elapsed * 1000,
+                        error=None if success else f"exit code {exit_code}",
+                    )
                     return
 
-                except asyncio.TimeoutError:
-                    # --- Still running — send progress report ---
-                    elapsed = loop.time() - start
-                    snapshot = "".join(output_buffer[-self.tail_lines:])
-                    logger.info(
-                        f"| 📡 MonitorAgent [{task_id}]: running, "
-                        f"elapsed={elapsed:.0f}s pid={process.pid}"
-                    )
-                    if parent_ref is not None:
-                        await parent_ref._inbox.put(MonitorProgressMessage(
-                            task_id=task_id, agent_name=self.name, session_id=session_id,
-                            pid=process.pid, status="running", elapsed=elapsed,
-                            recent_output=snapshot,
-                        ))
+                # --- Still running — send progress report ---
+                elapsed = loop.time() - start
+                snapshot = self._tail(chunks, tail_lines)
+                logger.info(
+                    f"| 📡 MonitorAgent [{task_id}]: running, "
+                    f"elapsed={elapsed:.0f}s pid={process.pid}"
+                )
+                await self._send_progress(
+                    parent_ref, task_id, session_id, process.pid,
+                    status="running", elapsed=elapsed, recent_output=snapshot,
+                )
 
         except asyncio.CancelledError:
-            process.kill()
-            await process.wait()
+            await self._terminate(process)
             logger.info(f"| ✋ MonitorAgent [{task_id}]: cancelled, process killed")
+            _safe_cancel(ref)
+            await self._emit_end(
+                session_id, task_id, success=False, result=None,
+                duration_ms=(loop.time() - start) * 1000, error="cancelled",
+            )
             raise
 
         except Exception as exc:
             logger.error(f"| ❌ MonitorAgent [{task_id}]: unexpected error: {exc}", exc_info=True)
+            await self._terminate(process)
             _safe_set_exception(ref, exc)
+            await self._emit_end(
+                session_id, task_id, success=False, result=None,
+                duration_ms=(loop.time() - start) * 1000, error=str(exc),
+            )
+
+        finally:
+            if not drain_task.done():
+                drain_task.cancel()
+            if not wait_task.done():
+                wait_task.cancel()
+
+    # ------------------------------------------------------------------
+    # Small helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tail(chunks: Deque[str], tail_lines: int) -> str:
+        """Return the last ``tail_lines`` lines from the rolling buffer."""
+        if not chunks:
+            return ""
+        return "\n".join("".join(chunks).splitlines()[-tail_lines:])
+
+    @staticmethod
+    async def _terminate(process: asyncio.subprocess.Process) -> None:
+        """Kill the process if it is still running, then reap it."""
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+
+    @staticmethod
+    async def _flush_drain(drain_task: asyncio.Task) -> None:
+        """Let the drain task finish reading buffered output, bounded by a short timeout."""
+        try:
+            await asyncio.wait_for(asyncio.shield(drain_task), timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            if not drain_task.done():
+                drain_task.cancel()
+
+    async def _send_progress(
+        self,
+        parent_ref: Any,
+        task_id: str,
+        session_id: str,
+        pid: int,
+        status: str,
+        elapsed: float,
+        recent_output: str = "",
+        exit_code: Optional[int] = None,
+    ) -> None:
+        if parent_ref is None:
+            return
+        try:
+            await parent_ref._inbox.put(MonitorProgressMessage(
+                task_id=task_id, agent_name=self.name, session_id=session_id,
+                pid=pid, status=status, elapsed=elapsed,
+                recent_output=recent_output, exit_code=exit_code,
+            ))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(f"| ⚠️ MonitorAgent [{task_id}]: failed to post progress: {exc}")
+
+    async def _emit_start(self, session_id: str, task_id: str, command: str) -> None:
+        try:
+            from src.trace.server import trace_manager
+            from src.trace.types import agent_start_event
+            await trace_manager.emit(agent_start_event(
+                session_id=session_id, task_id=task_id,
+                agent_name=self.name, task_content=command[:500],
+            ))
+        except Exception as exc:  # pragma: no cover - tracing must never break monitoring
+            logger.debug(f"| trace start emit failed: {exc}")
+
+    async def _emit_end(
+        self,
+        session_id: str,
+        task_id: str,
+        success: bool,
+        result: Optional[str],
+        duration_ms: float,
+        error: Optional[str] = None,
+    ) -> None:
+        try:
+            from src.trace.server import trace_manager
+            from src.trace.types import agent_end_event
+            await trace_manager.emit(agent_end_event(
+                session_id=session_id, task_id=task_id, agent_name=self.name,
+                success=success, result=result, duration_ms=duration_ms, error=error,
+            ))
+        except Exception as exc:  # pragma: no cover - tracing must never break monitoring
+            logger.debug(f"| trace end emit failed: {exc}")
 
 
 # ------------------------------------------------------------------
@@ -233,7 +399,13 @@ def _safe_set_result(ref: Any, result: Any) -> None:
         future.set_result(result)
 
 
-def _safe_set_exception(ref: Any, exc: Exception) -> None:
+def _safe_set_exception(ref: Any, exc: BaseException) -> None:
     future = getattr(ref, "_pending_reply", None)
     if future is not None and not future.done():
         future.set_exception(exc)
+
+
+def _safe_cancel(ref: Any) -> None:
+    future = getattr(ref, "_pending_reply", None)
+    if future is not None and not future.done():
+        future.cancel()
