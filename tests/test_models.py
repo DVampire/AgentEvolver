@@ -47,6 +47,7 @@ async def test_chat():
         # "openrouter/gpt-5.1",
         # "openrouter/gpt-5.2",
         # "openrouter/o3",
+        # "openrouter/o3-mini",
         # "openrouter/gpt-5.4-pro",
         # "openrouter/gpt-5.3-codex",
         # "openai/gpt-4o",
@@ -73,7 +74,10 @@ async def test_chat():
         # "anthropic/claude-sonnet-4",
         # "anthropic/claude-sonnet-4.5",
         # "newapi/claude-opus-4.6",
-        
+
+        # Aws claude models
+        "aws_claude/claude-opus-4.6",
+        "aws_claude/claude-opus-4.7",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
@@ -92,10 +96,13 @@ async def test_chat():
 
         # int openrouter models
         # "int_openrouter/gpt-5.4",
+        # "int_openrouter/gpt-5.5",
         # "int_openrouter/gpt-5.4-pro",
+        # "int_openrouter/gpt-5.5-pro",
         # "int_openrouter/o3-mini",
-        "int_openrouter/gemini-3.1-pro-preview",
+        # "int_openrouter/gemini-3.1-pro-preview",
         # "int_openrouter/grok-4.1-fast",
+        # "int_openrouter/gemini-3-flash-preview",
     ]
     
     logger.info(f"| Testing Local Image.")
@@ -113,8 +120,8 @@ async def test_chat():
     for model in models:
         logger.info(f"| Testing {model}")
         response = await model_manager(
-            model=model,
-            messages=messages
+            name=model,
+            input={"messages": messages},
         )
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
@@ -134,8 +141,8 @@ async def test_chat():
     for model in models:
         logger.info(f"| Testing {model}")
         response = await model_manager(
-            model=model,
-            messages=messages
+            name=model,
+            input={"messages": messages},
         )
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
@@ -162,7 +169,7 @@ async def test_audio():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -181,7 +188,7 @@ async def test_audio():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -205,7 +212,7 @@ async def test_embedding():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -227,7 +234,7 @@ async def test_video():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -254,7 +261,7 @@ async def test_pdf():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -273,7 +280,7 @@ async def test_pdf():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -289,7 +296,7 @@ async def test_response_format():
         # "openrouter/gpt-5.1",
         # "openrouter/gpt-5.2",
         # "openrouter/o3",
-        "openrouter/gpt-5.3-codex",
+        # "openrouter/gpt-5.3-codex",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
         # "openai/gpt-5",
@@ -303,6 +310,10 @@ async def test_response_format():
         # "openrouter/claude-sonnet-4.5",
         # "openrouter/claude-opus-4.5",
         # "anthropic/claude-sonnet-4.5",
+
+        # Aws claude models
+        "aws_claude/claude-opus-4.6",
+        "aws_claude/claude-opus-4.7",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
@@ -348,13 +359,14 @@ async def test_response_format():
     
     for model in models:
     
-        response = await model_manager(model=model, messages=messages, response_format=ThinkOutput)
+        response = await model_manager(name=model, input={"messages": messages, "response_format": ThinkOutput})
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
         
         parsed_response = response.extra.parsed_model
         print(parsed_response)
         
     logger.info(f"| --------------------------------------------------")
+
 
 async def test_tool_calling():
     logger.info(f"| --------------------------------------------------")
@@ -406,9 +418,8 @@ async def test_tool_calling():
     for model in models:
         logger.info(f"| Testing {model}")
         response = await model_manager(
-            model=model, 
-            messages=messages,
-            tools=tools,
+            name=model,
+            input={"messages": messages, "tools": tools},
         )
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
@@ -430,7 +441,7 @@ async def test_search():
     
     for model in models:
         logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages)
+        response = await model_manager(name=model, input={"messages": messages})
         logger.info(f"| {model} Response: {json.dumps(response.message, indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
@@ -457,8 +468,8 @@ async def test_music():
     for model in models:
         logger.info(f"| Testing {model}")
         response = await model_manager(
-            model=model,
-            messages=messages
+            name=model,
+            input={"messages": messages},
         )
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
@@ -466,7 +477,7 @@ async def test_music():
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "bus.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "meta_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -500,8 +511,8 @@ async def main():
     await tool_manager.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tool_manager.list()}")
 
-    await test_chat()
-    # await test_response_format()
+    # await test_chat()
+    await test_response_format()
     # await test_tool_calling()
     # await test_audio()
     # await test_embedding()
