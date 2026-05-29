@@ -128,17 +128,6 @@ class ChatAwsClaude(BaseModel):
                 params['tools'] = formatted_tools
 
         # Handle response_format.
-        #
-        # The gateway IGNORES OpenAI-style `response_format`
-        # (json_schema/json_object), Anthropic `output_format`, the
-        # `structured-outputs` beta and vLLM `guided_json` — it just does a
-        # plain text completion. The only structured-output mechanism the
-        # gateway actually honors for Claude is a *forced tool call*, which is
-        # exactly how Anthropic implements structured outputs natively.
-        #
-        # So translate a Pydantic `response_format` into a single synthetic
-        # tool plus a forced `tool_choice`. The schema is parsed back out of
-        # the resulting tool call in `_format_response`.
         if response_format:
             schema_model: Optional[Type[BaseModel]] = None
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
