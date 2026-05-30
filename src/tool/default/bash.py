@@ -10,8 +10,6 @@ from src.permission import Operation, PermissionRequest, permission_manager
 from src.registry import TOOL
 from src.tool.types import Tool, ToolExtra, ToolResponse
 
-MAX_OUTPUT_BYTES = 16384  # match claw-code
-
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell.
 
 IMPORTANT:
@@ -82,8 +80,8 @@ class BashTool(Tool):
                     message=f"Error: Command timed out after {self.timeout} seconds",
                 )
 
-            stdout_str = _truncate(stdout_bytes.decode("utf-8", errors="replace").strip())
-            stderr_str = _truncate(stderr_bytes.decode("utf-8", errors="replace").strip())
+            stdout_str = stdout_bytes.decode("utf-8", errors="replace").strip()
+            stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
 
             parts = []
             if stdout_str:
@@ -105,12 +103,3 @@ class BashTool(Tool):
 
         except Exception as e:
             return ToolResponse(success=False, message=f"Error executing command: {e}")
-
-
-def _truncate(text: str) -> str:
-    """Truncate output to MAX_OUTPUT_BYTES, appending a notice if clipped."""
-    encoded = text.encode("utf-8", errors="replace")
-    if len(encoded) <= MAX_OUTPUT_BYTES:
-        return text
-    clipped = encoded[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-    return clipped + f"\n... [output truncated at {MAX_OUTPUT_BYTES} bytes]"

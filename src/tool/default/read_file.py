@@ -14,7 +14,7 @@ _READ_FILE_TOOL_DESCRIPTION = """Read the contents of a file. Returns the file c
 Args:
 - path (str): Absolute path to the file to read.
 - offset (int, optional): Line number to start reading from (1-based). Defaults to 1.
-- limit (int, optional): Maximum number of lines to read. Defaults to 2000.
+- limit (int, optional): Maximum number of lines to read. Defaults to the whole file.
 
 Example: {"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py"}}
 Example: {"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py", "offset": 50, "limit": 100}}
@@ -37,7 +37,7 @@ class ReadFileTool(Tool):
         self,
         path: str,
         offset: int = 1,
-        limit: int = 2000,
+        limit: Optional[int] = None,
         **kwargs,
     ) -> ToolResponse:
         """Read file contents with line numbers.
@@ -45,7 +45,7 @@ class ReadFileTool(Tool):
         Args:
             path:   Absolute path to the file.
             offset: First line to return (1-based).
-            limit:  Maximum number of lines to return.
+            limit:  Maximum number of lines to return. None reads to end of file.
         """
         try:
             if not os.path.exists(path):
@@ -66,15 +66,16 @@ class ReadFileTool(Tool):
 
             total_lines = len(all_lines)
             start = max(0, offset - 1)
-            end = min(start + limit, total_lines)
+            end = total_lines if limit is None else min(start + limit, total_lines)
             selected = all_lines[start:end]
 
             numbered = "".join(f"{start + i + 1}\t{line}" for i, line in enumerate(selected))
 
+            # Only note when the caller explicitly limited the range (not a default full read).
             truncation_note = ""
-            if end < total_lines:
+            if limit is not None and end < total_lines:
                 truncation_note = (
-                    f"\n[File truncated. Showing lines {start+1}–{end} of {total_lines}. "
+                    f"\n[Showing lines {start+1}–{end} of {total_lines}. "
                     f"Use offset/limit to read more.]"
                 )
 

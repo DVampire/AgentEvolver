@@ -334,10 +334,7 @@ class WebSearcherTool(Tool):
                     timeout=20.0
                 )
                 if response.success and response.message:
-                    content = response.message
-                    if len(content) > self.max_length:
-                        content = content[: self.max_length] + "..."
-                    result["raw_content"] = content
+                    result["raw_content"] = response.message
                 else:
                     result["raw_content"] = None
             except asyncio.TimeoutError:
