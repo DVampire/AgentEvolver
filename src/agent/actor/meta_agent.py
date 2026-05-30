@@ -38,18 +38,29 @@ from src.registry import AGENT
 from src.runtime import runtime_manager, BaseMessage, AgentRef
 from src.task.types import TaskStatus, SubTaskCategory
 from src.trace.server import trace_manager
-from src.trace.types import TraceEvent, TraceEventType, agent_start_event, agent_end_event
+from src.trace.types import (
+    TraceEvent,
+    TraceEventType,
+    agent_start_event,
+    agent_end_event,
+)
 from src.utils.name_utils import make_id
 
-_SUBTASK_EVENTS = frozenset({
-    "subtask_planned", "subtask_dispatch",
-    "subtask_done", "subtask_failed", "subtask_cancelled",
-})
+_SUBTASK_EVENTS = frozenset(
+    {
+        "subtask_planned",
+        "subtask_dispatch",
+        "subtask_done",
+        "subtask_failed",
+        "subtask_cancelled",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Sub-task spec & record
 # ---------------------------------------------------------------------------
+
 
 class SubTaskInput(BaseModel):
     task: str
@@ -58,55 +69,56 @@ class SubTaskInput(BaseModel):
 
 
 class SubTaskSpec(BaseModel):
-    id:       str             = Field(default_factory=lambda: make_id())
+    id: str = Field(default_factory=lambda: make_id())
     category: SubTaskCategory = SubTaskCategory.ACTOR
-    name:     str             = Field(description="Agent name to dispatch this subtask to.")
-    input:    SubTaskInput
+    name: str = Field(description="Agent name to dispatch this subtask to.")
+    input: SubTaskInput
 
 
 class TaskSpec(BaseModel):
     """LLM-facing task spec (no id/status — all LLM-output tasks are pending)."""
-    name:        str             = Field(description="Exact registered sub-agent name.")
-    category:    SubTaskCategory = SubTaskCategory.ACTOR
-    task:        str             = Field(description="Self-contained instruction for the sub-agent.")
-    files:       List[str]       = Field(default_factory=list)
-    target_name: Optional[str]   = Field(default=None)
+
+    name: str = Field(description="Exact registered sub-agent name.")
+    category: SubTaskCategory = SubTaskCategory.ACTOR
+    task: str = Field(description="Self-contained instruction for the sub-agent.")
+    files: List[str] = Field(default_factory=list)
+    target_name: Optional[str] = Field(default=None)
 
 
 class PlanRound(BaseModel):
-    goal:  str            = Field(default="")
+    goal: str = Field(default="")
     tasks: List[TaskSpec] = Field(default_factory=list)
 
 
 class SubTaskRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    spec:        SubTaskSpec
-    status:      TaskStatus      = TaskStatus.PENDING
-    session_id:  Optional[str]   = None
-    result:      Optional[str]   = None
-    error:       Optional[str]   = None
-    progress:    Optional[str]   = None  # latest snapshot from MonitorProgressMessage
-    started_at:  Optional[datetime] = None
+    spec: SubTaskSpec
+    status: TaskStatus = TaskStatus.PENDING
+    session_id: Optional[str] = None
+    result: Optional[str] = None
+    error: Optional[str] = None
+    progress: Optional[str] = None  # latest snapshot from MonitorProgressMessage
+    started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
 
     def mark_running(self, session_id: str) -> None:
-        self.status     = TaskStatus.RUNNING
+        self.status = TaskStatus.RUNNING
         self.session_id = session_id
         self.started_at = datetime.now(timezone.utc)
 
     def mark_done(self, result: str) -> None:
-        self.status      = TaskStatus.DONE
-        self.result      = result
+        self.status = TaskStatus.DONE
+        self.result = result
         self.finished_at = datetime.now(timezone.utc)
 
     def mark_failed(self, error: str) -> None:
-        self.status      = TaskStatus.FAILED
-        self.error       = error
+        self.status = TaskStatus.FAILED
+        self.error = error
         self.finished_at = datetime.now(timezone.utc)
 
     def mark_cancelled(self) -> None:
-        self.status      = TaskStatus.CANCELLED
+        self.status = TaskStatus.CANCELLED
         self.finished_at = datetime.now(timezone.utc)
 
 
@@ -114,8 +126,9 @@ class SubTaskRecord(BaseModel):
 # Sub-task event messages (posted to MetaAgent's AgentRef._inbox)
 # ---------------------------------------------------------------------------
 
+
 class _SubtaskMessage(BaseMessage):
-    task_id:    str
+    task_id: str
     agent_name: str
     session_id: str
 
@@ -130,8 +143,9 @@ class SubtaskFailedMessage(_SubtaskMessage):
 
 class EscalationMessage(_SubtaskMessage):
     """Sub-agent is blocked; reply_future carries MetaAgent's guidance back."""
-    reason:     str = ""
-    situation:  str = ""
+
+    reason: str = ""
+    situation: str = ""
     suggestion: str = ""
 
     @property
@@ -144,28 +158,32 @@ class EscalationMessage(_SubtaskMessage):
 
 class MonitorProgressMessage(_SubtaskMessage):
     """Periodic progress update from MonitorAgent while a subprocess is running."""
-    pid:           int
-    status:        Literal["running", "completed", "failed", "timeout"]
-    elapsed:       float
+
+    pid: int
+    status: Literal["running", "completed", "failed", "timeout"]
+    elapsed: float
     recent_output: str = ""
-    exit_code:     Optional[int] = None
+    exit_code: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
 # Structured LLM outputs
 # ---------------------------------------------------------------------------
 
+
 class EscalationReply(BaseModel):
     task_id: str = Field(description="Exact task_id from the ESCALATE event.")
-    reply:   str = Field(description="Concrete, actionable guidance for the blocked sub-agent.")
+    reply: str = Field(
+        description="Concrete, actionable guidance for the blocked sub-agent."
+    )
 
 
 class MetaReactOutput(BaseModel):
-    thinking:            str
-    decision:            Literal["continue", "stop"]
-    plan:                List[PlanRound]      = Field(default_factory=list)
-    escalation_replies:  List[EscalationReply] = Field(default_factory=list)
-    final_answer:        str                  = ""
+    thinking: str
+    decision: Literal["continue", "stop"]
+    plan: List[PlanRound] = Field(default_factory=list)
+    escalation_replies: List[EscalationReply] = Field(default_factory=list)
+    final_answer: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +194,9 @@ _TERMINAL = (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED)
 
 
 class PlanRoundRecord(BaseModel):
-    goal:     str           = ""
-    task_ids: List[str]     = Field(default_factory=list)
-    status:   TaskStatus    = TaskStatus.PENDING
+    goal: str = ""
+    task_ids: List[str] = Field(default_factory=list)
+    status: TaskStatus = TaskStatus.PENDING
 
 
 class MetaState(BaseModel):
@@ -186,27 +204,29 @@ class MetaState(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    session_id:      str
-    user_task:       str
-    user_files:      List[str]                  = Field(default_factory=list)
-    plan:            List[PlanRoundRecord]       = Field(default_factory=list)
-    subtask_records: Dict[str, SubTaskRecord]   = Field(default_factory=dict)
-    final_answer:    Optional[str]              = None
-    created_at:      datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at:      datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    session_id: str
+    user_task: str
+    user_files: List[str] = Field(default_factory=list)
+    plan: List[PlanRoundRecord] = Field(default_factory=list)
+    subtask_records: Dict[str, SubTaskRecord] = Field(default_factory=dict)
+    final_answer: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Step counter and ctx — updated on each event.
     step: int = 0
 
     # Transient — excluded from serialization.
-    _ctx:                 Optional[AgentContext]          = PrivateAttr(default=None)
-    _running_tasks:       Dict[str, asyncio.Task]        = PrivateAttr(default_factory=dict)
-    _pending_escalations: Dict[str, "EscalationMessage"] = PrivateAttr(default_factory=dict)
-    _events_since_think:  List[BaseMessage]              = PrivateAttr(default_factory=list)
-    _parent_ref:          Optional[AgentRef]             = PrivateAttr(default=None)
-    _project_context:     str                            = PrivateAttr(default="")
-    _available_agents:    str                            = PrivateAttr(default="")
-    _t0:                  float                          = PrivateAttr(default=0.0)
+    _ctx: Optional[AgentContext] = PrivateAttr(default=None)
+    _running_tasks: Dict[str, asyncio.Task] = PrivateAttr(default_factory=dict)
+    _pending_escalations: Dict[str, "EscalationMessage"] = PrivateAttr(
+        default_factory=dict
+    )
+    _events_since_think: List[BaseMessage] = PrivateAttr(default_factory=list)
+    _parent_ref: Optional[AgentRef] = PrivateAttr(default=None)
+    _project_context: str = PrivateAttr(default="")
+    _available_agents: str = PrivateAttr(default="")
+    _t0: float = PrivateAttr(default=0.0)
 
     # ------------------------------------------------------------------
     # Round queries
@@ -228,16 +248,23 @@ class MetaState(BaseModel):
         for r in self.plan:
             if r.status == TaskStatus.RUNNING and all(
                 self.subtask_records[t].status in _TERMINAL
-                for t in r.task_ids if t in self.subtask_records
+                for t in r.task_ids
+                if t in self.subtask_records
             ):
                 r.status = TaskStatus.DONE
 
     def has_pending_or_running(self) -> bool:
-        return any(r.status in (TaskStatus.PENDING, TaskStatus.RUNNING) for r in self.plan)
+        return any(
+            r.status in (TaskStatus.PENDING, TaskStatus.RUNNING) for r in self.plan
+        )
 
     def round_display_status(self, r: PlanRoundRecord) -> str:
         if r.status == TaskStatus.DONE:
-            statuses = [self.subtask_records[t].status for t in r.task_ids if t in self.subtask_records]
+            statuses = [
+                self.subtask_records[t].status
+                for t in r.task_ids
+                if t in self.subtask_records
+            ]
             if any(s == TaskStatus.FAILED for s in statuses):
                 return "failed"
             if statuses and all(s == TaskStatus.CANCELLED for s in statuses):
@@ -255,61 +282,92 @@ class MetaState(BaseModel):
 # MetaAgent
 # ---------------------------------------------------------------------------
 
+
 @AGENT.register_module(force=True)
 class MetaAgent(Agent):
     """Event-driven orchestrator: one inbox, messages dispatched via on_start / on_event."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name:         str            = Field(default="meta_agent")
-    description:  str            = Field(
+    name: str = Field(default="meta_agent")
+    description: str = Field(
         default="Orchestrator that decomposes tasks, dispatches sub-agents concurrently, "
-                "reacts to results, and triggers self-evolution when agents underperform."
+        "reacts to results, and triggers self-evolution when agents underperform."
     )
-    metadata:     Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool           = Field(default=False)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    require_grad: bool = Field(default=False)
 
     _state: Optional[MetaState] = PrivateAttr(default=None)
 
-    def __init__(self, base_dir: str, name: Optional[str] = None,
-                 description: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
-                 model_name: Optional[str] = None, prompt_name: Optional[str] = None,
-                 memory_name: Optional[str] = None, max_steps: int = 50,
-                 require_grad: bool = False, **kwargs):
+    def __init__(
+        self,
+        base_dir: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        model_name: Optional[str] = None,
+        prompt_name: Optional[str] = None,
+        memory_name: Optional[str] = None,
+        max_steps: int = 50,
+        require_grad: bool = False,
+        **kwargs,
+    ):
         super().__init__(
-            base_dir=base_dir, name=name, description=description, metadata=metadata,
-            model_name=model_name, prompt_name=prompt_name or "meta_agent",
-            memory_name=memory_name, max_steps=max_steps, require_grad=require_grad, **kwargs,
+            base_dir=base_dir,
+            name=name,
+            description=description,
+            metadata=metadata,
+            model_name=model_name,
+            prompt_name=prompt_name or "meta_agent",
+            memory_name=memory_name,
+            max_steps=max_steps,
+            require_grad=require_grad,
+            **kwargs,
         )
         from pathlib import Path
+
         self.project_root = str(Path(__file__).resolve().parents[3])
 
     # ------------------------------------------------------------------
     # Path 1: direct call
     # ------------------------------------------------------------------
 
-    async def __call__(self, task: Optional[str] = None, files: Optional[List[str]] = None,
-                       ctx: Optional[AgentContext] = None, **kwargs) -> AgentResponse:
-        return await runtime_manager.invoke(self, task=task, files=files, ctx=ctx, **kwargs)
+    async def __call__(
+        self,
+        task: Optional[str] = None,
+        files: Optional[List[str]] = None,
+        ctx: Optional[AgentContext] = None,
+        **kwargs,
+    ) -> AgentResponse:
+        return await runtime_manager.invoke(
+            self, task=task, files=files, ctx=ctx, **kwargs
+        )
 
     # ------------------------------------------------------------------
     # Path 2: event-driven lifecycle
     # ------------------------------------------------------------------
 
-    async def on_start(self, task: str, files: Optional[List[str]],
-                       ctx: Optional[AgentContext], ref: AgentRef) -> Optional[AgentResponse]:
+    async def on_start(
+        self,
+        task: str,
+        files: Optional[List[str]],
+        ctx: Optional[AgentContext],
+        ref: AgentRef,
+    ) -> Optional[AgentResponse]:
         """Init state, kick off step-0 plan.  Returns None — resolved later via _finish."""
         session_id = ref.name
         logger.info(f"| 🧠 MetaAgent starting: {task}")
 
-        state             = MetaState(session_id=session_id, user_task=task, user_files=files or [])
+        state = MetaState(session_id=session_id, user_task=task, user_files=files or [])
         state._parent_ref = ref
-        state._ctx        = ctx
-        state._t0         = time.monotonic()
-        self._state       = state
+        state._ctx = ctx
+        state._t0 = time.monotonic()
+        self._state = state
 
         try:
-            with open(os.path.join(self.project_root, "PROJECT.md"), "r", encoding="utf-8") as f:
+            with open(
+                os.path.join(self.project_root, "PROJECT.md"), "r", encoding="utf-8"
+            ) as f:
                 state._project_context = f.read()
         except Exception:
             state._project_context = "(PROJECT.md not found)"
@@ -324,16 +382,31 @@ class MetaAgent(Agent):
         state._available_agents = "\n".join(agent_lines) or "[No sub-agents registered]"
 
         _hook_ctx = HookContext(id=session_id, name="memory_hook")
-        _hook_start = {"event": HookEvent.ON_START, "agent_name": self.name, "task_id": session_id,
-                       "task": task, "memory_name": self.memory_name, "use_memory": self.use_memory}
+        _hook_start = {
+            "event": HookEvent.ON_START,
+            "agent_name": self.name,
+            "task_id": session_id,
+            "task": task,
+            "memory_name": self.memory_name,
+            "use_memory": self.use_memory,
+        }
         await hook_manager(name="memory_hook", input=_hook_start, ctx=_hook_ctx)
-        await hook_manager(name="trace_hook",  input=_hook_start,
-                           ctx=HookContext(id=session_id, name="trace_hook"))
-        await trace_manager.emit(agent_start_event(
-            session_id=session_id, task_id=session_id,
-            agent_name=self.name, task_content=task,
-        ))
-        await self._record(session_id, 0, "start", "START", "requesting initial plan", "running")
+        await hook_manager(
+            name="trace_hook",
+            input=_hook_start,
+            ctx=HookContext(id=session_id, name="trace_hook"),
+        )
+        await trace_manager.emit(
+            agent_start_event(
+                session_id=session_id,
+                task_id=session_id,
+                agent_name=self.name,
+                task_content=task,
+            )
+        )
+        await self._record(
+            session_id, 0, "start", "START", "requesting initial plan", "running"
+        )
 
         try:
             await self._think_and_act(state, events=[])
@@ -352,7 +425,11 @@ class MetaAgent(Agent):
         """Handle all inbox messages: subtask completions and escalations."""
         state = self._state
         if state is None:
-            if isinstance(msg, EscalationMessage) and msg.reply_future and not msg.reply_future.done():
+            if (
+                isinstance(msg, EscalationMessage)
+                and msg.reply_future
+                and not msg.reply_future.done()
+            ):
                 msg.reply_future.set_result("No active orchestration. Stop gracefully.")
             return
 
@@ -360,9 +437,15 @@ class MetaAgent(Agent):
             state.step += 1
             if rec := state.subtask_records.get(msg.task_id):
                 rec.mark_done(msg.result)
-            await self._record(state.session_id, state.step, "subtask_done",
-                               f"DONE {msg.task_id}", msg.result, "done",
-                               {"subtask_id": msg.task_id, "agent_name": msg.agent_name})
+            await self._record(
+                state.session_id,
+                state.step,
+                "subtask_done",
+                f"DONE {msg.task_id}",
+                msg.result,
+                "done",
+                {"subtask_id": msg.task_id, "agent_name": msg.agent_name},
+            )
             logger.info(f"| ✅ Subtask done: {msg.task_id}")
             state.refresh_round_statuses()
             state.touch()
@@ -376,9 +459,15 @@ class MetaAgent(Agent):
             err = msg.error or "unknown error"
             if rec := state.subtask_records.get(msg.task_id):
                 rec.mark_failed(err)
-            await self._record(state.session_id, state.step, "subtask_failed",
-                               f"FAILED {msg.task_id}", err, "failed",
-                               {"subtask_id": msg.task_id, "agent_name": msg.agent_name})
+            await self._record(
+                state.session_id,
+                state.step,
+                "subtask_failed",
+                f"FAILED {msg.task_id}",
+                err,
+                "failed",
+                {"subtask_id": msg.task_id, "agent_name": msg.agent_name},
+            )
             logger.warning(f"| ❌ Subtask failed: {msg.task_id} — {err}")
             state.refresh_round_statuses()
             state.touch()
@@ -389,10 +478,19 @@ class MetaAgent(Agent):
         elif isinstance(msg, EscalationMessage):
             state.step += 1
             state._pending_escalations[msg.task_id] = msg
-            await self._record(state.session_id, state.step, "escalation",
-                               f"ESCALATE {msg.task_id} ({msg.agent_name})",
-                               msg.text, "running",
-                               {"task_id": msg.task_id, "agent_name": msg.agent_name, "message": msg.text})
+            await self._record(
+                state.session_id,
+                state.step,
+                "escalation",
+                f"ESCALATE {msg.task_id} ({msg.agent_name})",
+                msg.text,
+                "running",
+                {
+                    "task_id": msg.task_id,
+                    "agent_name": msg.agent_name,
+                    "message": msg.text,
+                },
+            )
             state.touch()
             state._events_since_think.append(msg)
             # Always think immediately on escalation
@@ -411,7 +509,9 @@ class MetaAgent(Agent):
             return  # Progress updates do not trigger a think step
 
         else:
-            logger.warning(f"| ⚠️ MetaAgent: unhandled message type {type(msg).__name__}")
+            logger.warning(
+                f"| ⚠️ MetaAgent: unhandled message type {type(msg).__name__}"
+            )
             return
 
         # --- think ---
@@ -431,7 +531,11 @@ class MetaAgent(Agent):
             await self._think_and_act(state, events=events)
         except Exception as exc:
             logger.error(f"| ❌ MetaAgent think failed: {exc}", exc_info=True)
-            if isinstance(msg, EscalationMessage) and msg.reply_future and not msg.reply_future.done():
+            if (
+                isinstance(msg, EscalationMessage)
+                and msg.reply_future
+                and not msg.reply_future.done()
+            ):
                 msg.reply_future.set_result("Error in MetaAgent. Stop gracefully.")
             else:
                 state.final_answer = str(exc)
@@ -445,22 +549,42 @@ class MetaAgent(Agent):
         if state is None:
             return
         sid = state.session_id
-        _hctx_mem   = HookContext(id=sid, name="memory_hook")
+        _hctx_mem = HookContext(id=sid, name="memory_hook")
         _hctx_trace = HookContext(id=sid, name="trace_hook")
         if self.memory_name:
-            await hook_manager(name="memory_hook", ctx=_hctx_mem,
-                               input={"event": HookEvent.ON_CALL, "agent_name": self.name,
-                                      "final_result": result.message, "success": result.success})
-        _hook_stop = {"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": sid,
-                      "result": result.message, "memory_name": self.memory_name,
-                      "use_memory": self.use_memory}
+            await hook_manager(
+                name="memory_hook",
+                ctx=_hctx_mem,
+                input={
+                    "event": HookEvent.ON_CALL,
+                    "agent_name": self.name,
+                    "task_id": sid,
+                    "use_memory": self.use_memory,
+                    "memory_name": self.memory_name,
+                    "final_result": result.message,
+                    "success": result.success,
+                },
+            )
+        _hook_stop = {
+            "event": HookEvent.ON_STOP,
+            "agent_name": self.name,
+            "task_id": sid,
+            "result": result.message,
+            "memory_name": self.memory_name,
+            "use_memory": self.use_memory,
+        }
         await hook_manager(name="memory_hook", input=_hook_stop, ctx=_hctx_mem)
-        await hook_manager(name="trace_hook",  input=_hook_stop, ctx=_hctx_trace)
-        await trace_manager.emit(agent_end_event(
-            session_id=sid, task_id=sid, agent_name=self.name,
-            success=result.success, result=result.message,
-            duration_ms=(time.monotonic() - state._t0) * 1000,
-        ))
+        await hook_manager(name="trace_hook", input=_hook_stop, ctx=_hctx_trace)
+        await trace_manager.emit(
+            agent_end_event(
+                session_id=sid,
+                task_id=sid,
+                agent_name=self.name,
+                success=result.success,
+                result=result.message,
+                duration_ms=(time.monotonic() - state._t0) * 1000,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Core: think → apply LLM decision
@@ -491,17 +615,24 @@ class MetaAgent(Agent):
                 continue
             reply = explicit.get(tid, _DEFAULT)
             e.reply_future.set_result(reply)
-            await self._record(state.session_id, state.step, "escalation_reply",
-                               f"REPLY {tid}" if tid in explicit else f"REPLY {tid} (default)",
-                               reply if tid in explicit else "no guidance",
-                               "", {"task_id": tid, "reply": reply})
+            await self._record(
+                state.session_id,
+                state.step,
+                "escalation_reply",
+                f"REPLY {tid}" if tid in explicit else f"REPLY {tid} (default)",
+                reply if tid in explicit else "no guidance",
+                "",
+                {"task_id": tid, "reply": reply},
+            )
 
-        if state.active_round() is not None:   # mid-round: defer re-planning
-            state.touch(); return
+        if state.active_round() is not None:  # mid-round: defer re-planning
+            state.touch()
+            return
 
         if react.decision == "stop":
             state.final_answer = react.final_answer or self._join_results(state)
-            state.touch(); return
+            state.touch()
+            return
 
         await self._dispatch(state, react.plan)
 
@@ -527,36 +658,56 @@ class MetaAgent(Agent):
         for rec in state.subtask_records.values():
             if rec.status == TaskStatus.RUNNING:
                 rec.mark_cancelled()
-                await self._record(state.session_id, 0, "subtask_cancelled",
-                                   f"CANCELLED {rec.spec.id}", "", "cancelled",
-                                   {"subtask_id": rec.spec.id, "agent_name": rec.spec.name})
+                await self._record(
+                    state.session_id,
+                    0,
+                    "subtask_cancelled",
+                    f"CANCELLED {rec.spec.id}",
+                    "",
+                    "cancelled",
+                    {"subtask_id": rec.spec.id, "agent_name": rec.spec.name},
+                )
 
-        success      = error is None
+        success = error is None
         final_answer = error or state.final_answer or self._join_results(state)
-        sid          = state.session_id
+        sid = state.session_id
 
         memory_path = ""
         if self.memory_name:
             try:
                 info = await memory_manager.get_info(self.memory_name)
                 if info and info.instance:
-                    memory_path = os.path.join(info.instance.base_dir, f"{sid}.memory.html")
+                    memory_path = os.path.join(
+                        info.instance.base_dir, f"{sid}.memory.html"
+                    )
             except Exception:
                 pass
 
         logger.info(f"| ✅ MetaAgent done (success={success})")
         result = AgentResponse(
-            success=success, message=final_answer or "",
-            extra=AgentExtra(data={"session_id": sid, "memory_path": memory_path,
-                                   "state": state.model_dump()}),
+            success=success,
+            message=final_answer or "",
+            extra=AgentExtra(
+                data={
+                    "session_id": sid,
+                    "memory_path": memory_path,
+                    "state": state.model_dump(),
+                }
+            ),
         )
 
         ref = state._parent_ref
-        if ref is not None and ref._pending_reply is not None and not ref._pending_reply.done():
+        if (
+            ref is not None
+            and ref._pending_reply is not None
+            and not ref._pending_reply.done()
+        ):
             ref._pending_reply.set_result(result)
             ref._pending_reply = None
 
-        await self.on_stop(result, state._ctx)   # on_stop reads self._state — must come before reset
+        await self.on_stop(
+            result, state._ctx
+        )  # on_stop reads self._state — must come before reset
         self._state = None
 
     # ------------------------------------------------------------------
@@ -565,7 +716,11 @@ class MetaAgent(Agent):
 
     async def _dispatch(self, state: MetaState, react_plan: List[PlanRound]) -> None:
         if react_plan:
-            frozen = sum(1 for r in state.plan if r.status in (TaskStatus.RUNNING, TaskStatus.DONE))
+            frozen = sum(
+                1
+                for r in state.plan
+                if r.status in (TaskStatus.RUNNING, TaskStatus.DONE)
+            )
             for rec in state.plan[frozen:]:
                 for tid in rec.task_ids:
                     state.subtask_records.pop(tid, None)
@@ -576,18 +731,31 @@ class MetaAgent(Agent):
                 rec = PlanRoundRecord(goal=round_spec.goal)
                 for task_spec in round_spec.tasks:
                     spec = SubTaskSpec(
-                        category=task_spec.category, name=task_spec.name,
-                        input=SubTaskInput(task=task_spec.task, files=task_spec.files,
-                                           target_name=task_spec.target_name),
+                        category=task_spec.category,
+                        name=task_spec.name,
+                        input=SubTaskInput(
+                            task=task_spec.task,
+                            files=task_spec.files,
+                            target_name=task_spec.target_name,
+                        ),
                     )
                     state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
                     rec.task_ids.append(spec.id)
                     await self._record(
-                        state.session_id, state.step, "subtask_planned",
-                        f"PLANNED {spec.id}", f"{spec.input.task} → {spec.name}", "pending",
-                        {"subtask_id": spec.id, "agent_name": spec.name,
-                         "category": spec.category.value, "round": round_no,
-                         "task": spec.input.task, "round_label": round_spec.goal or f"Round {round_no}"},
+                        state.session_id,
+                        state.step,
+                        "subtask_planned",
+                        f"PLANNED {spec.id}",
+                        f"{spec.input.task} → {spec.name}",
+                        "pending",
+                        {
+                            "subtask_id": spec.id,
+                            "agent_name": spec.name,
+                            "category": spec.category.value,
+                            "round": round_no,
+                            "task": spec.input.task,
+                            "round_label": round_spec.goal or f"Round {round_no}",
+                        },
                     )
                 if not rec.task_ids:
                     logger.warning(f"| ⚠️ Round {round_no} has no tasks — skipped.")
@@ -604,17 +772,27 @@ class MetaAgent(Agent):
             record = state.subtask_records[tid]
             record.mark_running(f"{record.spec.name}-{make_id()}")
             state._running_tasks[tid] = asyncio.create_task(
-                self._run_subtask(record, state, parent_ref), name=f"subtask-{tid}",
+                self._run_subtask(record, state, parent_ref),
+                name=f"subtask-{tid}",
             )
-            await self._record(state.session_id, state.step, "subtask_dispatch",
-                               f"DISPATCH {tid}", f"{record.spec.name}: {record.spec.input.task}",
-                               "running", {"subtask_id": tid, "agent_name": record.spec.name})
-            logger.info(f"| 🚀 Dispatched '{record.spec.input.task}' → {record.spec.name} [{tid}]")
+            await self._record(
+                state.session_id,
+                state.step,
+                "subtask_dispatch",
+                f"DISPATCH {tid}",
+                f"{record.spec.name}: {record.spec.input.task}",
+                "running",
+                {"subtask_id": tid, "agent_name": record.spec.name},
+            )
+            logger.info(
+                f"| 🚀 Dispatched '{record.spec.input.task}' → {record.spec.name} [{tid}]"
+            )
 
-    async def _run_subtask(self, record: SubTaskRecord, state: MetaState,
-                           parent_ref: AgentRef) -> None:
+    async def _run_subtask(
+        self, record: SubTaskRecord, state: MetaState, parent_ref: AgentRef
+    ) -> None:
         """Run one sub-agent; post Done/Failed to parent_ref._inbox."""
-        task_id    = record.spec.id
+        task_id = record.spec.id
         session_id = record.session_id or record.spec.id
         agent_name = record.spec.name
 
@@ -624,7 +802,9 @@ class MetaAgent(Agent):
             parent_session_id=parent_ref.name,
             subtask_id=task_id,
         )
-        existing_files = [f for f in (record.spec.input.files or []) if os.path.exists(f)]
+        existing_files = [
+            f for f in (record.spec.input.files or []) if os.path.exists(f)
+        ]
         extra_kwargs: Dict[str, Any] = {"parent_ref": parent_ref}
         if record.spec.input.target_name is not None:
             extra_kwargs["target_name"] = record.spec.input.target_name
@@ -634,22 +814,33 @@ class MetaAgent(Agent):
             if sub_agent is None:
                 raise ValueError(f"No registered agent named {agent_name!r}")
             response = await runtime_manager.invoke(
-                sub_agent, name=session_id,
-                task=record.spec.input.task, files=existing_files or None,
-                ctx=ctx, **extra_kwargs,
+                sub_agent,
+                name=session_id,
+                task=record.spec.input.task,
+                files=existing_files or None,
+                ctx=ctx,
+                **extra_kwargs,
             )
-            await parent_ref._inbox.put(SubtaskDoneMessage(
-                task_id=task_id, agent_name=agent_name,
-                session_id=session_id, result=response.message,
-            ))
+            await parent_ref._inbox.put(
+                SubtaskDoneMessage(
+                    task_id=task_id,
+                    agent_name=agent_name,
+                    session_id=session_id,
+                    result=response.message,
+                )
+            )
         except asyncio.CancelledError:
             logger.info(f"| ✋ Subtask {task_id} cancelled")
         except Exception as exc:
             logger.error(f"| ❌ Subtask {task_id} failed: {exc}", exc_info=True)
-            await parent_ref._inbox.put(SubtaskFailedMessage(
-                task_id=task_id, agent_name=agent_name,
-                session_id=session_id, error=str(exc),
-            ))
+            await parent_ref._inbox.put(
+                SubtaskFailedMessage(
+                    task_id=task_id,
+                    agent_name=agent_name,
+                    session_id=session_id,
+                    error=str(exc),
+                )
+            )
 
     # ------------------------------------------------------------------
     # Prompt assembly: situation + memory → messages
@@ -667,8 +858,12 @@ class MetaAgent(Agent):
             lines.append("No events yet. Produce the initial plan as a list of rounds.")
         else:
             escalations = [e for e in events if isinstance(e, EscalationMessage)]
-            completions = [e for e in events if isinstance(e, (SubtaskDoneMessage, SubtaskFailedMessage))]
-            progresses  = [e for e in events if isinstance(e, MonitorProgressMessage)]
+            completions = [
+                e
+                for e in events
+                if isinstance(e, (SubtaskDoneMessage, SubtaskFailedMessage))
+            ]
+            progresses = [e for e in events if isinstance(e, MonitorProgressMessage)]
             if escalations:
                 lines.append("### Escalations Requiring Reply")
                 for e in escalations:
@@ -689,20 +884,27 @@ class MetaAgent(Agent):
                     lines.append(line)
                     if e.recent_output:
                         lines.append(f"  Recent output: {e.recent_output[:300]}")
-            lines.append("\n### Plan Status (rounds run in order; tasks within a round run concurrently)")
+            lines.append(
+                "\n### Plan Status (rounds run in order; tasks within a round run concurrently)"
+            )
             if not state.plan:
                 lines.append("(no plan yet)")
             for i, rec in enumerate(state.plan, 1):
                 goal = f" — {rec.goal}" if rec.goal else ""
-                lines.append(f"**Round {i}** [{state.round_display_status(rec).upper()}]{goal}")
+                lines.append(
+                    f"**Round {i}** [{state.round_display_status(rec).upper()}]{goal}"
+                )
                 for tid in rec.task_ids:
                     r = state.subtask_records.get(tid)
                     if not r:
                         continue
                     line = f"  - [{r.status.value.upper()}] {tid} ({r.spec.name}): {r.spec.input.task}"
-                    if r.result:   line += f" → {r.result}"
-                    if r.error:    line += f" ✗ {r.error}"
-                    if r.progress: line += f" [progress: {r.progress[:150]}]"
+                    if r.result:
+                        line += f" → {r.result}"
+                    if r.error:
+                        line += f" ✗ {r.error}"
+                    if r.progress:
+                        line += f" [progress: {r.progress[:150]}]"
                     lines.append(line)
         situation = "\n".join(lines)
 
@@ -712,38 +914,41 @@ class MetaAgent(Agent):
             try:
                 info = await memory_manager.get_info(self.memory_name)
                 if info and info.instance:
-                    memory_context = await info.instance.get(session_id=state.session_id) or ""
+                    memory_context = (
+                        await info.instance.get(session_id=state.session_id) or ""
+                    )
             except Exception:
                 pass
 
         ctx = state._ctx
-        agent_context = "\n\n".join([
-            f"### Task\n{state.user_task}",
-            f"### Available Sub-Agents\n{state._available_agents}",
-            f"### Current Situation\n{situation}",
-            f"### Execution State\n{memory_context or '[No state recorded yet.]'}",
-        ])
+        agent_context = "\n\n".join(
+            [
+                f"### Task\n{state.user_task}",
+                f"### Available Sub-Agents\n{state._available_agents}",
+                f"### Current Situation\n{situation}",
+                f"### Execution State\n{memory_context or '[No state recorded yet.]'}",
+            ]
+        )
         work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
         messages = await prompt_manager.get_messages(
             prompt_name=self.prompt_name,
-            system_modules=dict(project_root=self.project_root,
-                                project_context=state._project_context, work_dir=work_dir),
+            system_modules=dict(
+                project_root=self.project_root,
+                project_context=state._project_context,
+                work_dir=work_dir,
+            ),
             agent_modules=dict(agent_context=agent_context),
         )
 
         if ctx is not None:
-            pre = {"event": HookEvent.PRE_MESSAGES, "agent_name": self.name,
-                   "max_tokens": getattr(config, "max_tokens", 0)}
-            extra: List[str] = []
-            await hook_manager(name="token_count", input={**pre, "messages": messages}, ctx=ctx)
-            r = await hook_manager(name="compact", input={**pre, "messages": messages}, ctx=ctx)
-            if r.modified_messages is not None:
-                messages = r.modified_messages
-            if r.additional_context:
-                extra.append(r.additional_context)
-            if extra:
-                from src.message import SystemMessage
-                messages = list(messages) + [SystemMessage(content="\n\n".join(extra))]
+            pre = {
+                "event": HookEvent.PRE_MESSAGES,
+                "agent_name": self.name,
+                "max_tokens": getattr(config, "max_tokens", 0),
+            }
+            await hook_manager(
+                name="token_count", input={**pre, "messages": messages}, ctx=ctx
+            )
 
         return messages
 
@@ -751,23 +956,48 @@ class MetaAgent(Agent):
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _record(self, session_id: str, step: int, action: str, label: str,
-                      detail: str = "", status: str = "",
-                      data: Optional[Dict[str, Any]] = None) -> None:
+    async def _record(
+        self,
+        session_id: str,
+        step: int,
+        action: str,
+        label: str,
+        detail: str = "",
+        status: str = "",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if self.memory_name:
-            payload: Dict[str, Any] = {"event": HookEvent.ON_CALL, "agent_name": self.name,
-                                       "note": {"event": label, "detail": detail, "status": status}}
+            payload: Dict[str, Any] = {
+                "event": HookEvent.ON_CALL,
+                "agent_name": self.name,
+                "task_id": session_id,
+                "use_memory": self.use_memory,
+                "memory_name": self.memory_name,
+                "note": {"event": label, "detail": detail, "status": status},
+            }
             if action in _SUBTASK_EVENTS and data:
                 payload["subtask_event"] = {"action": action, "data": data}
-            await hook_manager(name="memory_hook", input=payload,
-                               ctx=HookContext(id=session_id, name="memory_hook"))
-        await trace_manager.emit(TraceEvent(
-            event_type=TraceEventType.CUSTOM, session_id=session_id,
-            agent_name=self.name, step_number=step,
-            action_name=action, label=label, input=data or {},
-        ))
+            await hook_manager(
+                name="memory_hook",
+                input=payload,
+                ctx=HookContext(id=session_id, name="memory_hook"),
+            )
+        await trace_manager.emit(
+            TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id=session_id,
+                agent_name=self.name,
+                step_number=step,
+                action_name=action,
+                label=label,
+                input=data or {},
+            )
+        )
 
     def _join_results(self, state: MetaState) -> str:
-        return "\n\n".join(
-            f"[{r.spec.input.task}]\n{r.result}" for r in state.done() if r.result
-        ) or "Task completed."
+        return (
+            "\n\n".join(
+                f"[{r.spec.input.task}]\n{r.result}" for r in state.done() if r.result
+            )
+            or "Task completed."
+        )

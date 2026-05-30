@@ -1,6 +1,16 @@
-"""MemoryHook — feeds TraceEvents into the memory systems from agent lifecycle hooks."""
+"""MemoryHook — feeds TraceEvents into the memory systems from agent lifecycle hooks.
+
+Every agent calls ``memory_hook`` with the same envelope (event, agent_name,
+task_id, use_memory, memory_name); the per-event payload is the rest. The dict
+is validated into ``MemoryHookInput`` here, so the hook has one consistent,
+typed contract regardless of which agent fired it.
+"""
 
 from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, ConfigDict
 
 from src.hook.types import Hook, HookContext, HookEvent, HookResult
 from src.registry import HOOK
@@ -15,9 +25,45 @@ from src.trace.types import (
 )
 
 
+# Envelope keys — present on every call; everything else is the per-event payload.
+_ENVELOPE_KEYS = {"event", "agent_name", "task_id", "use_memory", "memory_name"}
+
+
+class MemoryHookInput(BaseModel):
+    """Typed contract for every ``memory_hook`` call. Agents still pass a dict;
+    it is validated into this model so missing fields get safe defaults."""
+    model_config = ConfigDict(extra="allow")  # tolerate extra payload keys (e.g. todos/flow_steps)
+
+    # —— Envelope (always present) ——
+    event: HookEvent
+    agent_name: str = ""
+    task_id: Optional[str] = None
+    use_memory: bool = True
+    memory_name: str = "general_memory_system"
+
+    # —— Lifecycle ——
+    task: Optional[str] = None              # ON_START
+    result: Optional[str] = None            # ON_STOP
+    success: Optional[bool] = None
+
+    # —— Step loop (sub-agents) ——
+    step_number: Optional[int] = None
+    thinking: Optional[str] = None
+    next_goal: Optional[str] = None
+    evaluation_previous_goal: Optional[str] = None
+    action: Optional[Dict[str, Any]] = None
+    action_result: Optional[Any] = None
+    error: Optional[str] = None
+
+    # —— Orchestration (MetaAgent ON_CALL) ——
+    note: Optional[Dict[str, Any]] = None           # {event, detail, status}
+    subtask_event: Optional[Dict[str, Any]] = None  # {action, data}
+    final_result: Optional[str] = None
+
+
 @HOOK.register_module(force=True)
 class MemoryHook(Hook):
-    """Routes agent lifecycle TraceEvents into the per-session memory system."""
+    """Routes agent lifecycle TraceEvents into the per-session memory systems."""
 
     name: str = "memory_hook"
     description: str = "Feeds agent lifecycle events into memory systems."
@@ -28,103 +74,81 @@ class MemoryHook(Hook):
         from src.memory import memory_manager
         from src.logger import logger
 
-        inp = ctx.input
-        if inp is None:
+        try:
+            inp = MemoryHookInput.model_validate(ctx.input or {})
+        except Exception as e:
+            logger.warning(f"| ⚠️ MemoryHook: invalid input ({e})")
             return HookResult.allow()
 
-        memory_name = inp.memory_name or "general_memory_system"
         if not inp.use_memory:
             return HookResult.allow()
 
-        # ON_CALL: always route directly to FileSystemMemory as an AGENT_CALL
-        # with the caller's payload as metadata.
-        if inp.event == HookEvent.ON_CALL:
-            try:
-                fs_info = await memory_manager.get_info("file_system_memory")
-                if fs_info and fs_info.instance is not None:
-                    data = inp.model_dump(exclude={"memory_name", "use_memory"}, exclude_none=True)
-                    await fs_info.instance.emit(
-                        TraceEvent(
-                            event_type=TraceEventType.AGENT_CALL,
-                            session_id=ctx.id,
-                            agent_name=inp.agent_name,
-                            metadata=data,
-                        ),
-                        session_id=ctx.id,
-                    )
-            except Exception as e:
-                logger.warning(f"| ⚠️ MemoryHook (ON_CALL) error: {e}")
-            return HookResult.allow()
-
-        event: TraceEvent | None = self._build_event(ctx)
+        event = self._build_event(inp, ctx.id)
         if event is None:
             return HookResult.allow()
 
-        # Emit into primary memory
+        # Primary memory
         try:
-            memory_info = await memory_manager.get_info(memory_name)
-            if memory_info and memory_info.instance is not None:
-                await memory_info.instance.emit(event, session_id=ctx.id)
+            info = await memory_manager.get_info(inp.memory_name)
+            if info and info.instance is not None:
+                await info.instance.emit(event, session_id=ctx.id)
         except Exception as e:
             logger.warning(f"| ⚠️ MemoryHook (primary) error on {inp.event}: {e}")
 
         # FileSystemMemory as secondary sink
-        if memory_name != "file_system_memory":
+        if inp.memory_name != "file_system_memory":
             try:
-                fs_info = await memory_manager.get_info("file_system_memory")
-                if fs_info and fs_info.instance is not None:
-                    await fs_info.instance.emit(event, session_id=ctx.id)
+                fs = await memory_manager.get_info("file_system_memory")
+                if fs and fs.instance is not None:
+                    await fs.instance.emit(event, session_id=ctx.id)
             except Exception as e:
                 logger.warning(f"| ⚠️ MemoryHook (file_system) error on {inp.event}: {e}")
 
         return HookResult.allow()
 
-    def _build_event(self, ctx: HookContext) -> TraceEvent | None:
-        inp = ctx.input
-        if inp is None:
-            return None
-        task_id = inp.task_id or ctx.id
-        agent_name = inp.agent_name
+    def _build_event(self, inp: MemoryHookInput, session_id: str) -> TraceEvent | None:
+        task_id = inp.task_id or session_id
 
         if inp.event == HookEvent.ON_START:
             return agent_start_event(
-                session_id=ctx.id, task_id=task_id,
-                agent_name=agent_name,
-                task_content=inp.task,
+                session_id=session_id, task_id=task_id,
+                agent_name=inp.agent_name, task_content=inp.task,
             )
 
         if inp.event == HookEvent.ON_STOP:
             return agent_end_event(
-                session_id=ctx.id, task_id=task_id,
-                agent_name=agent_name,
-                success=not bool(inp.error),
-                result=inp.result,
+                session_id=session_id, task_id=task_id, agent_name=inp.agent_name,
+                success=not bool(inp.error), result=inp.result,
             )
 
         if inp.event == HookEvent.POST_STEP:
             return agent_call_event(
-                session_id=ctx.id, task_id=task_id,
-                agent_name=agent_name,
-                step_number=inp.step_number,
-                thinking=inp.thinking,
-                next_goal=inp.next_goal,
-                memory=inp.memory,
+                session_id=session_id, task_id=task_id, agent_name=inp.agent_name,
+                step_number=inp.step_number, thinking=inp.thinking, next_goal=inp.next_goal,
             )
 
         if inp.event == HookEvent.POST_ACTION:
             action = inp.action or {}
-            idx = action.get("index", 0)
             atype = action.get("type", "tool")
-            aname = action.get("name", "")
-            description = action.get("description") or None
             factory = tool_call_event if atype == "tool" else skill_call_event
             return factory(
-                session_id=ctx.id, task_id=task_id,
-                agent_name=agent_name,
-                step_number=inp.step_number, action_index=idx, action_name=aname,
-                result=inp.action_result, success=not bool(inp.error),
-                duration_ms=None, error=inp.error,
-                description=description,
+                session_id=session_id, task_id=task_id, agent_name=inp.agent_name,
+                step_number=inp.step_number, action_index=action.get("index", 0),
+                action_name=action.get("name", ""), result=inp.action_result,
+                success=not bool(inp.error), duration_ms=None, error=inp.error,
+                description=action.get("description") or None,
+            )
+
+        if inp.event == HookEvent.ON_CALL:
+            # Orchestration payload (note / subtask_event / final_result / legacy extras)
+            # becomes AGENT_CALL metadata; the memory systems apply it to todos/flow/result.
+            metadata = {
+                k: v for k, v in inp.model_dump(exclude_none=True).items()
+                if k not in _ENVELOPE_KEYS
+            }
+            return TraceEvent(
+                event_type=TraceEventType.AGENT_CALL,
+                session_id=session_id, agent_name=inp.agent_name, metadata=metadata,
             )
 
         return None

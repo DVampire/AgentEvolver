@@ -20,12 +20,13 @@ from src.utils.name_utils import make_id
 @AGENT.register_module(force=True)
 class CodeAgent(Agent):
     """Code agent that reads, edits, and commits code using file and git tools."""
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="code_agent")
     description: str = Field(
         default="A code agent that reads, writes, and edits source code files, "
-                "runs tests, and commits changes using git."
+        "runs tests, and commits changes using git."
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
@@ -71,11 +72,15 @@ class CodeAgent(Agent):
         ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
+        base = await super()._get_agent_context(
+            task, step_number=step_number, ctx=ctx, **kwargs
+        )
 
         # Inject a live workdir file snapshot so the agent can see current files
         # without needing to call list_dir_tool just to confirm state.
-        work_dir = os.path.abspath(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+        work_dir = os.path.abspath(
+            ctx.work_dir if ctx and ctx.work_dir else self.base_dir
+        )
         try:
             entries = sorted(os.listdir(work_dir))
             lines = []
@@ -111,7 +116,6 @@ class CodeAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-
         # Inject workdir so git_tool and file tools can resolve paths
         if not ctx.work_dir:
             ctx.work_dir = self.base_dir
@@ -126,26 +130,49 @@ class CodeAgent(Agent):
         # ON_START
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={
+                "event": HookEvent.ON_START,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "task": enhanced_task,
+                "memory_name": self.memory_name,
+                "use_memory": self.use_memory,
+            },
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={
+                "event": HookEvent.ON_START,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "task": enhanced_task,
+                "memory_name": self.memory_name,
+                "use_memory": self.use_memory,
+            },
             ctx=ctx,
         )
 
         messages = await self._get_messages(enhanced_task, ctx=ctx)
 
         step_number = 0
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
+        response = {
+            "done": False,
+            "result": None,
+            "reasoning": None,
+            "action_errors": [],
+        }
 
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
-            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
+            response = await self._think_and_act(
+                messages, task_id, step_number, ctx=ctx
+            )
             step_number += 1
             action_errors = response.get("action_errors") or []
-            messages = await self._get_messages(enhanced_task, ctx=ctx, action_errors=action_errors)
+            messages = await self._get_messages(
+                enhanced_task, ctx=ctx, action_errors=action_errors
+            )
             if response["done"]:
                 break
 
@@ -160,16 +187,32 @@ class CodeAgent(Agent):
         # ON_STOP
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={
+                "event": HookEvent.ON_STOP,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "result": response.get("result"),
+                "memory_name": self.memory_name,
+                "use_memory": self.use_memory,
+            },
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory},
+            input={
+                "event": HookEvent.ON_STOP,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "result": response.get("result"),
+                "memory_name": self.memory_name,
+                "use_memory": self.use_memory,
+            },
             ctx=ctx,
         )
 
-        logger.info(f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps")
+        logger.info(
+            f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps"
+        )
 
         return AgentResponse(
             success=response["done"],

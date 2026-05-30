@@ -70,6 +70,9 @@ class HookResult(BaseModel):
     # Extra context to inject into the next agent message (like Claude Code additionalContext)
     additional_context: Optional[str] = Field(default=None)
 
+    # Generic text output for request/response-style hooks (e.g. compact returns its summary here).
+    output: Optional[str] = Field(default=None)
+
     @classmethod
     def allow(cls) -> "HookResult":
         return cls(decision=HookDecision.ALLOW)

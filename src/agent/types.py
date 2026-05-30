@@ -370,7 +370,6 @@ class Agent(BaseModel):
 
         thinking = ""
         evaluation_previous_goal = ""
-        memory = ""
         next_goal = ""
 
         try:
@@ -383,7 +382,6 @@ class Agent(BaseModel):
 
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal
-            memory = think_output.memory
             next_goal = think_output.next_goal
             plan_steps = think_output.plan
 
@@ -450,7 +448,7 @@ class Agent(BaseModel):
 
                 await hook_manager(
                     name="memory_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "use_memory": self.use_memory, "memory_name": self.memory_name},
                     ctx=ctx,
                 )
                 await hook_manager(
@@ -467,12 +465,12 @@ class Agent(BaseModel):
 
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "next_goal": next_goal, "use_memory": self.use_memory, "memory_name": self.memory_name},
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "memory": memory, "next_goal": next_goal},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "next_goal": next_goal},
             ctx=ctx,
         )
 
