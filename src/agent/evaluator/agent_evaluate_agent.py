@@ -85,7 +85,7 @@ class AgentEvaluateAgent(Agent):
         if target_name:
             agent_config = await agent_manager.get_info(target_name)
             py_path = os.path.join(self.project_root, "src", "agent", "extended", f"{target_name}.py")
-            html_path = os.path.join(self.project_root, "src", "prompt", "default", f"{target_name}.html")
+            html_path = os.path.join(self.project_root, "src", "prompt", "extended", f"{target_name}.html")
 
             lines = [f"- **Agent Name**: `{target_name}`"]
             if agent_config:

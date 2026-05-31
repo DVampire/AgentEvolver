@@ -51,9 +51,10 @@ class SkillConfig(BaseModel):
 
     skill_dir: str = Field(description="Absolute path to the skill directory")
     content: str = Field(default="", description="Full markdown body of SKILL.md (after frontmatter)")
-    scripts: List[str] = Field(default_factory=list, description="Paths to scripts under scripts/")
+    scripts: List[str] = Field(default_factory=list, description="Paths to files under scripts/")
     resources: List[str] = Field(default_factory=list, description="Paths to files under resources/")
-    reference_files: List[str] = Field(default_factory=list, description="Paths to extra markdown files")
+    references: List[str] = Field(default_factory=list, description="Paths to reference docs under references/")
+    examples: List[str] = Field(default_factory=list, description="Paths to example files under examples/")
 
     text: Optional[str] = Field(default=None, description="Pre-built text representation for prompt injection")
 
@@ -70,7 +71,8 @@ class SkillConfig(BaseModel):
             "content": self.content,
             "scripts": self.scripts,
             "resources": self.resources,
-            "reference_files": self.reference_files,
+            "references": self.references,
+            "examples": self.examples,
             "text": self.text,
         }
 

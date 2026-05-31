@@ -29,21 +29,11 @@ Describe how to confirm the task is complete.
 - [ ] Step 1: Description
 - [ ] Step 2: Description
 - [ ] Step 3: Verify result
-- [ ] Step 4: Report done
+- [ ] Step 4: Call done_tool
 ```
 
 ## Output Template
 
 ```
 [Concrete template showing the expected output format]
-```
-
-## Examples
-
-**Example 1:**
-
-Input: "..."
-Output:
-```
-[expected output]
 ```

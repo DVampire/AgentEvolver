@@ -34,8 +34,8 @@ class AgentRegistrationHook(Hook):
             from src.dynamic import dynamic_manager
             with open(py_path, "r") as f:
                 code = f.read()
-            new_cls = dynamic_manager.load_class(code, class_name=target_name, context="agent")
-            inferred_name = target_name or getattr(new_cls, "name", None) or new_cls.__name__
+            new_cls = dynamic_manager.load_class(code, context="agent")
+            inferred_name = getattr(new_cls, "name", None) or target_name or new_cls.__name__
             existing = await agent_manager.get_info(inferred_name)
             if existing:
                 await agent_manager.update(
@@ -55,13 +55,17 @@ class AgentRegistrationHook(Hook):
             return HookResult.block(f"[registration failed] {e}\nPlease fix the files and call done_tool again.")
 
         # Register HTML prompt if present (tool-calling agents) — non-fatal if fails
-        html_path = os.path.join(project_root, "src", "prompt", "default", f"{inferred_name}.html")
+        html_path = os.path.join(project_root, "src", "prompt", "extended", f"{inferred_name}.html")
         if os.path.exists(html_path):
             try:
                 from src.prompt import prompt_manager
+                from src.prompt.types import parse_prompt_text
                 with open(html_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
-                await prompt_manager.register(prompt={"name": inferred_name, "content": html_content}, override=True)
+                parsed = parse_prompt_text(html_content)
+                if not parsed.name:
+                    parsed = parsed.model_copy(update={"name": inferred_name})
+                await prompt_manager.register(prompt=parsed.model_dump(), override=True)
                 logger.info(f"| 🔄 AgentRegistrationHook: prompt '{inferred_name}' registered")
             except Exception as pe:
                 logger.warning(f"| ⚠️  AgentRegistrationHook: prompt registration failed (non-fatal): {pe}")

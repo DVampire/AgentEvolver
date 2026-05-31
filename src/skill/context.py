@@ -20,9 +20,6 @@ from src.version import version_manager
 from src.permission import permission_manager, PermissionMode
 
 
-DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent / "default"
-
-
 class SkillContextManager(BaseModel):
     """Manages the lifecycle of skills: discovery, loading, registration, update, and execution."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -30,6 +27,8 @@ class SkillContextManager(BaseModel):
     base_dir: str = Field(default=None, description="Base directory for skill runtime data")
     save_path: str = Field(default=None, description="Path to persist loaded skill configs")
     contract_path: str = Field(default=None, description="Path to save the skill contract")
+    default_skills_dir: str = Field(default=None, description="Directory for built-in default skills")
+    extended_skills_dir: str = Field(default=None, description="Directory for generated/user skills")
 
     _skill_configs: Dict[str, SkillConfig] = {}
     _skill_history_versions: Dict[str, Dict[str, SkillConfig]] = {}
@@ -39,6 +38,8 @@ class SkillContextManager(BaseModel):
         base_dir: Optional[str] = None,
         save_path: Optional[str] = None,
         contract_path: Optional[str] = None,
+        default_skills_dir: Optional[str] = None,
+        extended_skills_dir: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -59,6 +60,10 @@ class SkillContextManager(BaseModel):
         else:
             self.contract_path = os.path.join(self.base_dir, "contract.md")
 
+        _src_dir = Path(__file__).resolve().parent
+        self.default_skills_dir = default_skills_dir or str(_src_dir / "default")
+        self.extended_skills_dir = extended_skills_dir or str(_src_dir / "extended")
+
         self._skill_configs: Dict[str, SkillConfig] = {}
         self._skill_history_versions: Dict[str, Dict[str, SkillConfig]] = {}
 
@@ -77,8 +82,13 @@ class SkillContextManager(BaseModel):
         discovered: Dict[str, SkillConfig] = {}
 
         # 1. Load from built-in default directory
-        default_configs = await self._load_from_directory(DEFAULT_SKILLS_DIR)
+        default_configs = await self._load_from_directory(Path(self.default_skills_dir))
         discovered.update(default_configs)
+
+        # 1b. Load from extended directory (generated/user skills); extended overrides default
+        Path(self.extended_skills_dir).mkdir(parents=True, exist_ok=True)
+        extended_configs = await self._load_from_directory(Path(self.extended_skills_dir))
+        discovered.update(extended_configs)
 
         # 2. Load previously persisted skills from JSON (may contain user-registered skills)
         persisted_configs = await self._load_from_json()
@@ -164,21 +174,13 @@ class SkillContextManager(BaseModel):
         skill_type = frontmatter.get("type", "tool").lower()
         metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "require_grad")}
 
-        scripts_dir = skill_dir / "scripts"
-        scripts: List[str] = []
-        if scripts_dir.is_dir():
-            scripts = [str(p) for p in sorted(scripts_dir.rglob("*")) if p.is_file()]
+        def _scan_dir(d: Path) -> List[str]:
+            return [str(p) for p in sorted(d.rglob("*")) if p.is_file()] if d.is_dir() else []
 
-        resources_dir = skill_dir / "resources"
-        resources: List[str] = []
-        if resources_dir.is_dir():
-            resources = [str(p) for p in sorted(resources_dir.rglob("*")) if p.is_file()]
-
-        reference_files: List[str] = []
-        for md_file in sorted(skill_dir.glob("*.md")):
-            if md_file.name == "SKILL.md":
-                continue
-            reference_files.append(str(md_file))
+        scripts = _scan_dir(skill_dir / "scripts")
+        resources = _scan_dir(skill_dir / "resources")
+        references = _scan_dir(skill_dir / "references")
+        examples = _scan_dir(skill_dir / "examples")
 
         return SkillConfig(
             name=name,
@@ -191,7 +193,8 @@ class SkillContextManager(BaseModel):
             content=body.strip(),
             scripts=scripts,
             resources=resources,
-            reference_files=reference_files,
+            references=references,
+            examples=examples,
         )
 
     async def _load_from_json(self) -> Dict[str, SkillConfig]:
@@ -283,20 +286,25 @@ class SkillContextManager(BaseModel):
             f"SKILL.md: {os.path.join(skill_config.skill_dir, 'SKILL.md')}",
         ]
 
-        if skill_config.scripts:
-            parts.append("Scripts:")
-            for s in skill_config.scripts:
-                parts.append(f"  - {s}")
-
         if skill_config.resources:
             parts.append("Resources:")
             for r in skill_config.resources:
                 parts.append(f"  - {r}")
 
-        if skill_config.reference_files:
+        if skill_config.scripts:
+            parts.append("Scripts:")
+            for s in skill_config.scripts:
+                parts.append(f"  - {s}")
+
+        if skill_config.references:
             parts.append("References:")
-            for r in skill_config.reference_files:
+            for r in skill_config.references:
                 parts.append(f"  - {r}")
+
+        if skill_config.examples:
+            parts.append("Examples:")
+            for e in skill_config.examples:
+                parts.append(f"  - {e}")
 
         return "\n".join(parts)
 
@@ -721,12 +729,14 @@ class SkillContextManager(BaseModel):
         content = skill_config.content.replace("python scripts/", f"python {skill_dir}/scripts/")
         parts = [content]
 
-        if skill_config.scripts:
-            parts.append(f"\nAvailable scripts: {', '.join(skill_config.scripts)}")
         if skill_config.resources:
             parts.append(f"\nAvailable resources: {', '.join(skill_config.resources)}")
-        if skill_config.reference_files:
-            parts.append(f"\nReference files: {', '.join(skill_config.reference_files)}")
+        if skill_config.scripts:
+            parts.append(f"\nAvailable scripts: {', '.join(skill_config.scripts)}")
+        if skill_config.references:
+            parts.append(f"\nReference docs: {', '.join(skill_config.references)}")
+        if skill_config.examples:
+            parts.append(f"\nExamples: {', '.join(skill_config.examples)}")
 
         instructions = "\n".join(parts)
         logger.info(f"| ✅ Skill '{name}' — returned instructions ({len(instructions)} chars)")

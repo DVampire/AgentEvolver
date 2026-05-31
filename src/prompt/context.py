@@ -6,6 +6,7 @@ import os
 from asyncio_atexit import register as async_atexit_register
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,9 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.version import version_manager
-from src.utils import assemble_project_path, gather_with_concurrency
+from src.utils import assemble_project_path
 from src.utils.file_utils import file_lock
-from src.prompt.types import Prompt, PromptConfig, parse_prompt_file, parse_prompt_text
+from src.prompt.types import Prompt, PromptConfig, parse_prompt_file
 from src.message.types import Message
 from src.permission import permission_manager, PermissionMode
 
@@ -28,11 +29,15 @@ class PromptContextManager(BaseModel):
     base_dir: str = Field(default=None)
     save_path: str = Field(default=None)
     contract_path: str = Field(default=None)
+    default_prompt_dir: str = Field(default=None, description="Directory for built-in default prompts")
+    extended_prompt_dir: str = Field(default=None, description="Directory for generated/user prompts")
 
     def __init__(self,
                  base_dir: Optional[str] = None,
                  save_path: Optional[str] = None,
                  contract_path: Optional[str] = None,
+                 default_prompt_dir: Optional[str] = None,
+                 extended_prompt_dir: Optional[str] = None,
                  **kwargs):
         super().__init__(**kwargs)
 
@@ -44,6 +49,10 @@ class PromptContextManager(BaseModel):
 
         self.save_path = assemble_project_path(save_path) if save_path else os.path.join(self.base_dir, "prompt.json")
         self.contract_path = assemble_project_path(contract_path) if contract_path else os.path.join(self.base_dir, "contract.md")
+
+        _src_dir = Path(__file__).resolve().parent
+        self.default_prompt_dir = default_prompt_dir or str(_src_dir / "default")
+        self.extended_prompt_dir = extended_prompt_dir or str(_src_dir / "extended")
 
         logger.info(f"| 📁 Prompt context manager base_dir={self.base_dir} save_path={self.save_path}")
 
@@ -63,8 +72,12 @@ class PromptContextManager(BaseModel):
 
     async def initialize(self, prompt_names: Optional[List[str]] = None):
         """Load prompts from md directory, then overlay JSON-versioned overrides."""
-        template_dir = os.path.join(os.path.dirname(__file__), "default")
-        md_configs = await self._load_from_registry(template_dir)
+        Path(self.extended_prompt_dir).mkdir(parents=True, exist_ok=True)
+
+        md_configs = await self._load_from_registry(self.default_prompt_dir)
+        extended_configs = await self._load_from_registry(self.extended_prompt_dir)
+        md_configs.update(extended_configs)  # extended overrides default on name collision
+
         json_configs = await self._load_from_code()
 
         merged: Dict[str, PromptConfig] = dict(md_configs)

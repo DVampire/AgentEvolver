@@ -17,7 +17,7 @@ Infer a `snake_case` name from the task (e.g. `weather_tool`). The class name is
 
 ### Step 2: Read the template
 
-Read the template file at `{skill_dir}/resources/tool_template.py` to understand the required structure.
+Read the template file at `{skill_dir}/references/tool_template.py` to understand the required structure.
 
 ### Step 3: Write the tool file
 

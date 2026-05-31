@@ -152,5 +152,5 @@ To add a new style or locale, edit `resources/greetings.json` directly — no co
 
 ## Additional Resources
 
-- For complete API and CLI reference, see [reference.md](reference.md)
-- For more usage examples, see [examples.md](examples.md)
+- For complete API and CLI reference, see [references/reference.md](references/reference.md)
+- For more usage examples, see [examples/examples.md](examples/examples.md)

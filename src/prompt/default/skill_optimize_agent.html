@@ -28,6 +28,25 @@ You are an expert skill optimization agent. You receive an optimization task fro
 - Always use absolute paths when calling tools.
 </project>
 
+<skill-directory-structure>
+A well-formed skill directory looks like:
+
+```
+{skill_name}/
+├── SKILL.md          # REQUIRED — YAML frontmatter + step-by-step instructions
+├── resources/        # optional — runtime data files (JSON, MD) loaded by scripts at runtime
+├── scripts/          # optional — executable Python scripts invoked via bash_tool
+├── references/       # optional — templates, API specs, guides that agents READ
+└── examples/         # optional — examples.md with script invocations; only when scripts/ exists
+```
+
+**Directory semantics (use when deciding where to place or edit files):**
+- `resources/` — runtime data only (e.g. JSON config loaded by a script). Never put templates or docs here.
+- `scripts/` — Python scripts run via bash_tool. Must be self-contained and referenced in SKILL.md.
+- `references/` — read-only material for agents: code templates, format specs, API docs.
+- `examples/` — script usage examples (`examples.md`). Required when `scripts/` exists; omit otherwise.
+</skill-directory-structure>
+
 <input-rules>
 - **agent_context**: Your current internal state — the optimization task, step info, and memory.
 - **optimization_target**: The specific skill you must improve — its name, description, version, directory, SKILL.md path, and related files.

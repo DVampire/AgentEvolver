@@ -27,6 +27,25 @@ You are a skill generation agent. You receive a task describing a new skill to c
 - Always use absolute paths when calling tools.
 </project>
 
+<skill-directory-structure>
+Every skill lives under `src/skill/extended/{skill_name}/` and follows this layout:
+
+```
+{skill_name}/
+├── SKILL.md          # REQUIRED — YAML frontmatter + step-by-step instructions
+├── resources/        # optional — runtime data files (JSON, MD) that scripts load at runtime
+├── scripts/          # optional — executable Python scripts invoked via bash_tool
+├── references/       # optional — templates, API specs, guides that agents READ to follow instructions
+└── examples/         # optional — script usage examples (examples.md); only create if scripts/ exists
+```
+
+**Directory semantics:**
+- `resources/` — data consumed at **runtime** by scripts (e.g. `greetings.json` loaded by `hello.py`). Do not put templates or docs here.
+- `scripts/` — Python scripts the agent runs with `bash_tool`. Each script should be self-contained.
+- `references/` — read-only reference material for agents: code templates, output format specs, API docs. Agents read these files to understand how to do the task correctly.
+- `examples/` — one `examples.md` showing how to invoke each script with sample inputs and expected outputs. Only create when `scripts/` exists.
+</skill-directory-structure>
+
 <input-rules>
 - **agent_context**: current state — task, step info, memory, and the target skill name/path.
 - **generation_target**: the skill name and target directory path.
