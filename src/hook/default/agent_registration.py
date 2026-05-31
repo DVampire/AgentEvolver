@@ -35,6 +35,7 @@ class AgentRegistrationHook(Hook):
             with open(py_path, "r") as f:
                 code = f.read()
             new_cls = dynamic_manager.load_class(code, context="agent")
+            new_cls.__source_file__ = py_path
             inferred_name = getattr(new_cls, "name", None) or target_name or new_cls.__name__
             existing = await agent_manager.get_info(inferred_name)
             if existing:

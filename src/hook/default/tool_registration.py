@@ -33,14 +33,16 @@ class ToolRegistrationHook(Hook):
             from src.dynamic import dynamic_manager
             with open(tool_path, "r") as f:
                 code = f.read()
-            new_cls = dynamic_manager.load_class(code, class_name=target_name, context="tool")
-            existing = await tool_manager.get_info(target_name)
+            new_cls = dynamic_manager.load_class(code, context="tool")
+            new_cls.__source_file__ = tool_path
+            inferred_name = getattr(new_cls, "name", None) or target_name or new_cls.__name__
+            existing = await tool_manager.get_info(inferred_name)
             if existing:
-                await tool_manager.update(target_name=target_name, tool=new_cls, config=existing.config or {}, code=code)
-                logger.info(f"| 🔄 ToolRegistrationHook: '{target_name}' updated (re-registered)")
+                await tool_manager.update(target_name=inferred_name, tool=new_cls, config=existing.config or {}, code=code)
+                logger.info(f"| 🔄 ToolRegistrationHook: '{inferred_name}' updated (re-registered)")
             else:
                 await tool_manager.register(tool=new_cls, config={}, code=code, override=True)
-                logger.info(f"| 🔄 ToolRegistrationHook: '{target_name}' registered from {tool_path}")
+                logger.info(f"| 🔄 ToolRegistrationHook: '{inferred_name}' registered from {tool_path}")
             return HookResult.allow()
         except Exception as e:
             logger.warning(f"| ⚠️  ToolRegistrationHook: {e}")

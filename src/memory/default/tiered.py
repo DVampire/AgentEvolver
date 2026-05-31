@@ -418,7 +418,9 @@ class TieredMemory(Memory):
                 task = ""
                 if event.event_type == TraceEventType.AGENT_START:
                     task = (event.input or {}).get("task", "")
-                file_path = os.path.join(self.base_dir, f"{session_id}.{self.file_ext}") if self.base_dir else ""
+                agent_name = (event.agent_name or "").strip()
+                stem = f"{agent_name}_{session_id}" if agent_name else session_id
+                file_path = os.path.join(self.base_dir, f"{stem}.{self.file_ext}") if self.base_dir else ""
                 self._sessions[session_id] = _SessionState(
                     session_id=session_id, task=task, file_path=file_path,
                     working_max=self.working_max)

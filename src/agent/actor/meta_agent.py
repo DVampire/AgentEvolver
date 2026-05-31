@@ -678,7 +678,7 @@ class MetaAgent(Agent):
                 info = await memory_manager.get_info(self.memory_name)
                 if info and info.instance:
                     memory_path = os.path.join(
-                        info.instance.base_dir, f"{sid}.memory.html"
+                        info.instance.base_dir, f"{self.name}_{sid}.memory.html"
                     )
             except Exception:
                 pass

@@ -10,26 +10,30 @@ AgentEvolver/
 ├── src/                    # Core framework source
 │   ├── agent/              # All agent implementations
 │   │   ├── actor/          # MetaAgent, CodeAgent, ReasonActAgent
-│   │   ├── optimizer/      # Agents that evolve existing tool source code (e.g. ToolOptimizeAgent)
-│   │   ├── evaluator/      # Agents that assess tool quality (e.g. ToolEvaluateAgent)
-│   │   ├── generator/      # Agents that create new tools from descriptions (e.g. ToolGenerateAgent)
+│   │   ├── optimizer/      # Agents that evolve existing source code
+│   │   ├── evaluator/      # Agents that assess quality
+│   │   ├── generator/      # Agents that create new agents/tools/skills
+│   │   ├── extended/       # Generated agents (auto-created, do not edit manually)
 │   │   ├── types.py        # Base Agent class, AgentContext, AgentResponse
 │   │   └── server.py       # AgentManagerServer (agent_manager singleton)
 │   ├── tool/               # Tool implementations
 │   │   ├── default/        # Built-in tools (bash, read/write/edit file, git, done, ...)
-│   │   ├── extended/       # User-generated/evolved tools (hello_world, ...)
+│   │   ├── extended/       # Generated/evolved tools
 │   │   ├── workflow/       # Workflow tools (todo)
 │   │   ├── types.py        # Base Tool class, ToolResponse
 │   │   └── server.py       # ToolManagerServer (tool_manager singleton)
 │   ├── prompt/
-│   │   └── default/        # Prompt markdown files, one per agent (meta_agent.md, ...)
-│   ├── memory/             # Memory systems (general_memory_system)
+│   │   ├── default/        # Built-in HTML prompts, one per agent
+│   │   └── extended/       # Generated prompts (tool-calling agents)
+│   ├── skill/              # Skills (reusable multi-step SOP workflows)
+│   │   ├── default/        # Built-in skills (generate_agent_skill, ...)
+│   │   └── extended/       # Generated skills
+│   ├── memory/             # Memory systems
 │   ├── model/              # LLM client (model_manager singleton)
-│   ├── hook/               # Hook pipeline (pre/post step, escalation, token limits)
-│   ├── skill/              # Skills (reusable multi-step workflows)
+│   ├── hook/               # Hook pipeline (registration, memory, trace, ...)
 │   ├── task/               # Task types and TaskManager
 │   ├── trace/              # Trace/observability (TraceManager, UI server)
-│   ├── version/            # Version tracking for tools and agents
+│   ├── version/            # Version tracking for tools, agents, prompts, skills
 │   ├── config/             # Config loading (mmengine-based)
 │   ├── dynamic/            # Dynamic class loading for evolved code
 │   ├── session/            # Session context and isolation
@@ -38,21 +42,13 @@ AgentEvolver/
 │   └── utils/              # Shared utilities
 ├── configs/                # mmengine config files
 │   ├── base.py             # Shared defaults (window_size, max_tokens, ...)
+│   ├── meta_agent.py       # Example: full config for running MetaAgent
 │   ├── agents/             # Per-agent config fragments
 │   ├── tools/              # Per-tool config fragments
-│   ├── memory/             # Memory system config fragments
-│   ├── meta_agent.py       # Full config for running MetaAgent
-│   ├── tool_optimize_agent.py
-│   ├── tool_evaluate_agent.py
-│   └── tool_generate_agent.py
+│   └── memory/             # Memory system config fragments
 ├── tests/                  # Unit and integration tests
 └── examples/               # Runnable entry-point scripts
-    ├── run_meta_agent.py
-    ├── run_code_agent.py
-    ├── run_reason_act_agent.py
-    ├── run_tool_optimize_agent.py
-    ├── run_tool_evaluate_agent.py
-    └── run_tool_generate_agent.py
+    └── run_meta_agent.py   # Main entry point — MetaAgent orchestrates everything
 ```
 
 ## Key Concepts

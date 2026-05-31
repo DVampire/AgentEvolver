@@ -2,6 +2,7 @@
 
 import importlib
 import importlib.util
+import os
 import sys
 import inspect
 import ast
@@ -356,18 +357,26 @@ class DynamicModuleManager:
     
     def get_source_code(self, object: Union[Type['T'], Callable]) -> Optional[str]:
         """Extract source code of a class or callable object if possible.
-        
+
         Args:
             object: The class or callable object to extract source code from
-            
+
         Returns:
             Source code string if available, None otherwise
         """
         try:
             return inspect.getsource(object)
         except (OSError, TypeError):
-            # Source code not available (e.g., dynamically generated, compiled, etc.)
-            return None
+            pass
+        # Fallback: read from __source_file__ set by registration hooks on dynamically loaded classes
+        source_file = getattr(object, "__source_file__", None)
+        if source_file and os.path.isfile(source_file):
+            try:
+                with open(source_file, "r", encoding="utf-8") as f:
+                    return f.read()
+            except OSError:
+                pass
+        return None
     
     def get_full_module_source(self, cls: Type) -> str:
         """Get the full source code of the module containing the class, including all imports.
