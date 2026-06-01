@@ -16,7 +16,7 @@ except ImportError:
 from pydantic import BaseModel, ConfigDict
 
 from src.message.types import Message, HumanMessage, SystemMessage, ContentPartText
-from src.model.types import LLMResponse
+from src.response.types import Response, ResponseType
 from src.logger import logger
 
 
@@ -197,15 +197,15 @@ class EmbeddingOpenAI(BaseModel):
     async def _format_response(
         self,
         response: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
-        Format embedding response into LLMResponse (Step 3).
+        Format embedding response into Response (Step 3).
         
         Args:
             response: Embedding response object
             
         Returns:
-            LLMResponse with embedding vectors
+            Response with embedding vectors
         """
         # Extract embeddings from response
         embeddings = []
@@ -227,20 +227,18 @@ class EmbeddingOpenAI(BaseModel):
         else:
             message = f"{len(embeddings)} embedding vectors"
 
-        # Format response
-        extra = {
-            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-            "embeddings": embeddings,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'prompt_tokens') else None,
-                "total_tokens": response.usage.total_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens') else None,
-            } if hasattr(response, 'usage') else None,
-        }
-
-        return LLMResponse(
+        return Response(
+            type=ResponseType.LLM,
             success=True,
             message=message,
-            extra=extra
+            data={
+                "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                "embeddings": embeddings,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'prompt_tokens') else None,
+                    "total_tokens": response.usage.total_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens') else None,
+                } if hasattr(response, 'usage') else None,
+            }
         )
 
     async def __call__(
@@ -249,7 +247,7 @@ class EmbeddingOpenAI(BaseModel):
         dimensions: Optional[int] = None,
         encoding_format: Optional[str] = None,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
         Execute asynchronous embedding call via OpenAI API.
 
@@ -260,7 +258,7 @@ class EmbeddingOpenAI(BaseModel):
             **kwargs: Additional parameters
 
         Returns:
-            LLMResponse with embedding vectors
+            Response with embedding vectors
         """
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
@@ -284,30 +282,34 @@ class EmbeddingOpenAI(BaseModel):
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                extra={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name}
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name}
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                extra={"error": str(e), "status_code": e.status_code, "model": self.name}
+                data={"error": str(e), "status_code": e.status_code, "model": self.name}
             )
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name}
             )
 

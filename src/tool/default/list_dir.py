@@ -4,7 +4,8 @@ import os
 from typing import Dict, Any, List, Optional
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
 _LIST_DIR_TOOL_DESCRIPTION = """List the contents of a directory as a tree structure.
@@ -87,7 +88,7 @@ class ListDirTool(Tool):
         depth: int = 3,
         ignore: Optional[List[str]] = None,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """List directory as a tree.
 
         Args:
@@ -97,9 +98,9 @@ class ListDirTool(Tool):
         """
         try:
             if not os.path.exists(path):
-                return ToolResponse(success=False, message=f"Error: Path not found: {path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path not found: {path}")
             if not os.path.isdir(path):
-                return ToolResponse(success=False, message=f"Error: Path is not a directory: {path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a directory: {path}")
 
             ignore_set = _DEFAULT_IGNORE.copy()
             if ignore:
@@ -109,13 +110,11 @@ class ListDirTool(Tool):
             file_count = [0]
             self._build_tree(path, ignore_set, depth, 1, "", lines, file_count)
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message="\n".join(lines),
-                extra=ToolExtra(
-                    data={"file_count": file_count[0], "depth": depth}
-                ),
+                data={"file_count": file_count[0], "depth": depth},
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error listing directory: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error listing directory: {e}")

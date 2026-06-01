@@ -1,7 +1,8 @@
 '''Calculator tool for basic arithmetic operations.'''
 from typing import Any, Dict
 from pydantic import Field
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
 
@@ -17,7 +18,7 @@ class CalculatorTool(Tool):
     def __init__(self, require_grad: bool = True, **kwargs):
         super().__init__(require_grad=require_grad, **kwargs)
 
-    async def __call__(self, a: float, b: float, op: str, **kwargs) -> ToolResponse:
+    async def __call__(self, a: float, b: float, op: str, **kwargs) -> Response:
         '''Executes the calculator tool.'''
         if op == '+':
             result = a + b
@@ -27,21 +28,19 @@ class CalculatorTool(Tool):
             result = a * b
         elif op == '/':
             if b == 0.0:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message='Error: Division by zero is not allowed.',
-                    extra=ToolExtra(data={})
                 )
             result = a / b
         else:
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f'Error: Unsupported operation {op}',
-                extra=ToolExtra(data={})
             )
 
-        return ToolResponse(
+        return Response(type=ResponseType.TOOL, 
             success=True,
             message=f'Result of {a} {op} {b} is {result}',
-            extra=ToolExtra(data={'result': result})
+            data={'result': result}
         )

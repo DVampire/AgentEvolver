@@ -12,7 +12,8 @@ load_dotenv(verbose=True)
 
 from pydantic import BaseModel
 
-from src.model.types import ModelContext, ModelConfig, LLMResponse, LLMExtra
+from src.model.types import ModelContext, ModelConfig
+from src.response.types import Response, ResponseType
 from src.model.openai.chat import ChatOpenAI
 from src.model.openai.response import ResponseOpenAI
 from src.model.openai.transcribe import TranscribeOpenAI
@@ -1251,15 +1252,15 @@ class ModelContextManager:
     # Invocation
     # ------------------------------------------------------------------
 
-    def _log_usage(self, model_name: str, result: LLMResponse) -> None:
+    def _log_usage(self, model_name: str, result: Response) -> None:
         if not result.success:
             return
         # Prefer the structured TokenUsage field; fall back to raw dict for older code paths
         usage = result.usage
-        if usage is None and result.extra and result.extra.data:
+        if usage is None and result.data:
             from src.model.types import TokenUsage
 
-            raw = result.extra.data.get("usage")
+            raw = (result.data or {}).get("usage")
             usage = TokenUsage.from_raw(raw) if raw else None
         if usage is None:
             return
@@ -1287,7 +1288,7 @@ class ModelContextManager:
         stream,
         plugins,
         kwargs,
-    ) -> LLMResponse:
+    ) -> Response:
         if model_config and model_config.model_type == "transcriptions":
             return await client(messages=messages, **kwargs)
         elif model_config and model_config.model_type == "embeddings":
@@ -1317,7 +1318,7 @@ class ModelContextManager:
         input: Dict[str, Any],
         ctx: ModelContext = None,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """Invoke a registered model by name.
 
         Args:
@@ -1346,7 +1347,8 @@ class ModelContextManager:
             raise ValueError("tools and response_format cannot be used together")
 
         if name not in self.model_clients:
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Model {name} not found. Available: {list(self.models.keys())}",
             )
@@ -1407,7 +1409,8 @@ class ModelContextManager:
                 f"| Primary model {name} exhausted retries, falling back to {fallback}"
             )
             if fallback not in self.model_clients:
-                return LLMResponse(
+                return Response(
+                    type=ResponseType.LLM,
                     success=False,
                     message=f"Primary model {name} failed and fallback {fallback} not found. Error: {last_exc}",
                 )
@@ -1439,12 +1442,13 @@ class ModelContextManager:
                 logger.error(
                     f"| Fallback model {fallback} also failed: {fallback_error}"
                 )
-                return LLMResponse(
+                return Response(
+                    type=ResponseType.LLM,
                     success=False,
                     message=f"Both {name} and fallback {fallback} failed. Primary: {last_exc}, Fallback: {fallback_error}",
                 )
 
-        return LLMResponse(success=False, message=str(last_exc))
+        return Response(type=ResponseType.LLM, success=False, message=str(last_exc))
 
 
 __all__ = ["ApiKeyPool", "ModelContextManager"]

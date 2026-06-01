@@ -26,7 +26,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from src.agent.server import agent_manager
-from src.agent.types import Agent, AgentContext, AgentResponse, AgentExtra
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.config import config
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent, HookContext
@@ -338,7 +339,7 @@ class MetaAgent(Agent):
         files: Optional[List[str]] = None,
         ctx: Optional[AgentContext] = None,
         **kwargs,
-    ) -> AgentResponse:
+    ) -> Response:
         return await runtime_manager.invoke(
             self, task=task, files=files, ctx=ctx, **kwargs
         )
@@ -353,7 +354,7 @@ class MetaAgent(Agent):
         files: Optional[List[str]],
         ctx: Optional[AgentContext],
         ref: AgentRef,
-    ) -> Optional[AgentResponse]:
+    ) -> Optional[Response]:
         """Init state, kick off step-0 plan.  Returns None — resolved later via _finish."""
         session_id = ref.name
         logger.info(f"| 🧠 MetaAgent starting: {task}")
@@ -543,7 +544,7 @@ class MetaAgent(Agent):
         if state.final_answer is not None:
             await self._finish()
 
-    async def on_stop(self, result: AgentResponse, ctx: Optional[AgentContext]) -> None:
+    async def on_stop(self, result: Response, ctx: Optional[AgentContext]) -> None:
         """Lifecycle hooks + trace — called by _finish while self._state is still set."""
         state = self._state
         if state is None:
@@ -597,8 +598,8 @@ class MetaAgent(Agent):
             input={"messages": messages, "response_format": MetaReactOutput},
             ctx=state._ctx,
         )
-        if response.extra and response.extra.parsed_model:
-            react = response.extra.parsed_model
+        if response.parsed_model:
+            react = response.parsed_model
         else:
             try:
                 react = MetaReactOutput.model_validate_json(response.message)
@@ -684,16 +685,14 @@ class MetaAgent(Agent):
                 pass
 
         logger.info(f"| ✅ MetaAgent done (success={success})")
-        result = AgentResponse(
+        result = Response(type=ResponseType.AGENT, 
             success=success,
             message=final_answer or "",
-            extra=AgentExtra(
-                data={
-                    "session_id": sid,
-                    "memory_path": memory_path,
-                    "state": state.model_dump(),
-                }
-            ),
+            data={
+                "session_id": sid,
+                "memory_path": memory_path,
+                "state": state.model_dump(),
+            },
         )
 
         ref = state._parent_ref
@@ -939,16 +938,6 @@ class MetaAgent(Agent):
             ),
             agent_modules=dict(agent_context=agent_context),
         )
-
-        if ctx is not None:
-            pre = {
-                "event": HookEvent.PRE_MESSAGES,
-                "agent_name": self.name,
-                "max_tokens": getattr(config, "max_tokens", 0),
-            }
-            await hook_manager(
-                name="token_count", input={**pre, "messages": messages}, ctx=ctx
-            )
 
         return messages
 

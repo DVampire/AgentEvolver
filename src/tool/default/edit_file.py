@@ -8,7 +8,8 @@ from pydantic import Field
 
 from src.permission import Operation, PermissionRequest, is_binary_file, permission_manager
 from src.registry import TOOL
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 _EDIT_FILE_TOOL_DESCRIPTION = """Edit a file by replacing an exact string with a new string.
 
@@ -43,7 +44,7 @@ class EditFileTool(Tool):
         old_string: str,
         new_string: str,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Replace old_string with new_string in the file at path.
 
         Args:
@@ -53,11 +54,11 @@ class EditFileTool(Tool):
         """
         try:
             if not os.path.exists(path):
-                return ToolResponse(success=False, message=f"Error: File not found: {path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
             if not os.path.isfile(path):
-                return ToolResponse(success=False, message=f"Error: Path is not a file: {path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
             if is_binary_file(path):
-                return ToolResponse(success=False, message="Error: Binary file — use a dedicated binary tool.")
+                return Response(type=ResponseType.TOOL, success=False, message="Error: Binary file — use a dedicated binary tool.")
 
             # Permission check (write op)
             result = permission_manager.check(
@@ -65,14 +66,14 @@ class EditFileTool(Tool):
                 PermissionRequest(op=Operation.WRITE, target=path, content=new_string),
             )
             if not result.allowed:
-                return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
             with open(path, "r", encoding="utf-8") as f:
                 original = f.read()
 
             count = original.count(old_string)
             if count == 0:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=(
                         "Error: old_string not found in file. "
@@ -80,7 +81,7 @@ class EditFileTool(Tool):
                     ),
                 )
             if count > 1:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=(
                         f"Error: old_string appears {count} times in the file. "
@@ -110,19 +111,17 @@ class EditFileTool(Tool):
 
             warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"{warning_prefix}Edited {path} ({delta_str} lines)",
-                extra=ToolExtra(
-                    file_path=path,
-                    data={
-                        "old_lines": old_line_count,
-                        "new_lines": new_line_count,
-                        "delta": delta,
-                        "patch": patch,
-                    },
-                ),
+                file_path=[path],
+                data={
+                    "old_lines": old_line_count,
+                    "new_lines": new_line_count,
+                    "delta": delta,
+                    "patch": patch,
+                },
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error editing file: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error editing file: {e}")

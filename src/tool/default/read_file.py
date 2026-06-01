@@ -7,7 +7,8 @@ from pydantic import Field
 
 from src.permission import Operation, PermissionRequest, permission_manager
 from src.registry import TOOL
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 _READ_FILE_TOOL_DESCRIPTION = """Read the contents of a file. Returns the file content with line numbers prefixed.
 
@@ -39,7 +40,7 @@ class ReadFileTool(Tool):
         offset: int = 1,
         limit: Optional[int] = None,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Read file contents with line numbers.
 
         Args:
@@ -49,9 +50,9 @@ class ReadFileTool(Tool):
         """
         try:
             if not os.path.exists(path):
-                return ToolResponse(success=False, message=f"Error: File not found: {path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
             if not os.path.isfile(path):
-                return ToolResponse(success=False, message=f"Error: Path is not a file: {path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
 
             # Permission + guard check (size, binary)
             result = permission_manager.check(
@@ -59,7 +60,7 @@ class ReadFileTool(Tool):
                 PermissionRequest(op=Operation.READ, target=path),
             )
             if not result.allowed:
-                return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.readlines()
@@ -81,14 +82,12 @@ class ReadFileTool(Tool):
 
             warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=warning_prefix + numbered + truncation_note,
-                extra=ToolExtra(
-                    file_path=path,
-                    data={"total_lines": total_lines, "start": start + 1, "end": end},
-                ),
+                file_path=[path],
+                data={"total_lines": total_lines, "start": start + 1, "end": end},
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error reading file: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error reading file: {e}")

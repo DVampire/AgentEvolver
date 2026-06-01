@@ -5,7 +5,8 @@ import os
 from typing import Any, Optional, Dict
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.tool.default.markdown.mdconvert import MarkitdownConverter
 from src.logger import logger
 from src.registry import TOOL
@@ -61,7 +62,7 @@ class MdifyTool(Tool):
         if self.converter is None:
             self.converter = MarkitdownConverter(timeout=self.timeout)
 
-    async def __call__(self, file_path: str, output_format: str = "markdown", **kwargs) -> ToolResponse:
+    async def __call__(self, file_path: str, output_format: str = "markdown", **kwargs) -> Response:
         """
         Convert a file to markdown asynchronously.
 
@@ -72,15 +73,15 @@ class MdifyTool(Tool):
         try:
             # Validate input
             if not file_path.strip():
-                return ToolResponse(success=False, message="Error: Empty file path provided")
+                return Response(type=ResponseType.TOOL, success=False, message="Error: Empty file path provided")
             
             # Check if file exists
             if not os.path.exists(file_path):
-                return ToolResponse(success=False, message=f"Error: File not found: {file_path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {file_path}")
             
             # Check if it's a file (not directory)
             if not os.path.isfile(file_path):
-                return ToolResponse(success=False, message=f"Error: Path is not a file: {file_path}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {file_path}")
             
             # Get file info
             file_size = os.path.getsize(file_path)
@@ -90,7 +91,7 @@ class MdifyTool(Tool):
             # Check file size (limit to 100MB for safety)
             max_size = 100 * 1024 * 1024  # 100MB
             if file_size > max_size:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False, message=f"Error: File too large ({file_size / (1024*1024):.1f}MB). "
                            f"Maximum allowed size is {max_size / (1024*1024)}MB"
                 )
@@ -105,7 +106,7 @@ class MdifyTool(Tool):
             )
             
             if result is None:
-                return ToolResponse(success=False, message="Error: Conversion failed - unable to process the file")
+                return Response(type=ResponseType.TOOL, success=False, message="Error: Conversion failed - unable to process the file")
             
             # Save to base_dir if specified
             saved_path = None
@@ -135,8 +136,10 @@ class MdifyTool(Tool):
             
             message = response_content
             logger.info(f"| ✅ Converted file {file_path} to {output_format} and saved to {saved_path}")
-            return ToolResponse(success=True, message=message, extra=ToolExtra(
-                file_path=saved_path,
+            return Response(type=ResponseType.TOOL, 
+                success=True,
+                message=message,
+                file_path=[saved_path] if saved_path else None,
                 data={
                     "file_name": file_name,
                     "file_size": file_size,
@@ -144,13 +147,13 @@ class MdifyTool(Tool):
                     "output_format": output_format,
                     "saved_path": saved_path
                 }
-            ))
+            )
             
         except asyncio.TimeoutError:
-            return ToolResponse(success=False, 
+            return Response(type=ResponseType.TOOL, success=False, 
                                 message=f"Error: Conversion timed out after {self.timeout} seconds")
         except Exception as e:
-            return ToolResponse(success=False, 
+            return Response(type=ResponseType.TOOL, success=False, 
                                 message=f"Error during conversion: {str(e)}")
 
     def _convert_file(self, file_path: str, output_format: str) -> Optional[str]:

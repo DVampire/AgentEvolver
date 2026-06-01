@@ -8,7 +8,8 @@ from src.tool.default.executor import (
     BASE_BUILTIN_MODULES,
     BASE_PYTHON_TOOLS,
 )
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.logger import logger
 from src.registry import TOOL
 
@@ -70,7 +71,7 @@ class PythonInterpreterTool(Tool):
             )
             self.python_evaluator.send_tools(self.base_python_tools)
 
-    async def __call__(self, code: str, **kwargs) -> ToolResponse:
+    async def __call__(self, code: str, **kwargs) -> Response:
         """
         Execute the provided Python code.
 
@@ -85,7 +86,7 @@ class PythonInterpreterTool(Tool):
             message = output
             
             logger.info(f"| ✅ Executed Python code: {code}")
-            return ToolResponse(success=True, message=message)
+            return Response(type=ResponseType.TOOL, success=True, message=message)
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error: {str(e)}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: {str(e)}")

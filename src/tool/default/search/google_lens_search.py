@@ -15,7 +15,8 @@ from pydantic import ConfigDict, Field
 from src.logger import logger
 from src.registry import TOOL
 from src.tool.default.search.types import SearchItem
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 CHROMIUM_PATH = "/root/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome"
 
@@ -46,7 +47,7 @@ class GoogleLensSearch(Tool):
         filter_year: Optional[int] = None,
         screenshot_dir: Optional[str] = None,
         **kwargs
-    ) -> ToolResponse:
+    ) -> Response:
         """Execute a Google Lens search.
 
         Args:
@@ -56,7 +57,7 @@ class GoogleLensSearch(Tool):
         """
         image_path = Path(image)
         if not image_path.exists():
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Image file not found: {image}",
             )
@@ -92,22 +93,20 @@ class GoogleLensSearch(Tool):
 
             message = f"Google Lens search results for query: {query}\n\n{results_json}"
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(
-                    data={
-                        "image": str(image_path),
-                        "query": query,
-                        "num_results": 1,
-                        "search_items": search_items,
-                        "engine": "google_lens",
-                    }
-                ),
+                data={
+                    "image": str(image_path),
+                    "query": query,
+                    "num_results": 1,
+                    "search_items": search_items,
+                    "engine": "google_lens",
+                },
             )
         except Exception as e:
             logger.error(f"| GoogleLensSearch error: {e}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Google Lens search failed: {str(e)}",
             )

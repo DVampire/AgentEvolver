@@ -18,7 +18,8 @@ from tenacity import (
 from src.logger import logger
 from src.registry import TOOL
 from src.tool.default.search.types import SearchItem
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.utils import hvac_client
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -82,7 +83,7 @@ class FirecrawlSearch(Tool):
         num_results: Optional[int] = 10,
         filter_year: Optional[int] = None,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Execute a web search via Firecrawl API.
 
         Args:
@@ -91,13 +92,13 @@ class FirecrawlSearch(Tool):
             filter_year: Filter results by year.
         """
         if not self.api_key:
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message="FIRECRAWL_API_KEY not set",
             )
 
         if not query or not query.strip():
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message="Search query cannot be empty",
             )
@@ -119,7 +120,7 @@ class FirecrawlSearch(Tool):
             data = response.json()
 
             if not data.get("success"):
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=f"Firecrawl search returned unsuccessful response: {data}",
                 )
@@ -144,17 +145,15 @@ class FirecrawlSearch(Tool):
                 )
 
             if not search_items:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=True,
                     message=f"No search results found for: {query}",
-                    extra=ToolExtra(
-                        data={
-                            "query": query,
-                            "num_results": 0,
-                            "search_items": [],
-                            "engine": "firecrawl",
-                        }
-                    ),
+                    data={
+                        "query": query,
+                        "num_results": 0,
+                        "search_items": [],
+                        "engine": "firecrawl",
+                    },
                 )
 
             results_json = json.dumps(
@@ -174,28 +173,26 @@ class FirecrawlSearch(Tool):
 
             message = f"Firecrawl search results for query: {query}\n\n{results_json}"
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(
-                    data={
-                        "query": query,
-                        "num_results": len(search_items),
-                        "search_items": search_items,
-                        "engine": "firecrawl",
-                    }
-                ),
+                data={
+                    "query": query,
+                    "num_results": len(search_items),
+                    "search_items": search_items,
+                    "engine": "firecrawl",
+                },
             )
 
         except httpx.HTTPStatusError as e:
             logger.error(f"| Firecrawl search HTTP error: {e.response.status_code} — {e.response.text}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Firecrawl search failed: HTTP {e.response.status_code} — {e.response.text}",
             )
         except Exception as e:
             logger.error(f"| Firecrawl search error: {e}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Firecrawl search failed: {str(e)}",
             )

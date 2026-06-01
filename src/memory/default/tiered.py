@@ -176,8 +176,8 @@ class TieredMemory(Memory):
                 detail=(event.input or {}).get("task", ""), status="running"))
 
         elif ev == TraceEventType.AGENT_END:
-            ok = event.metadata.get("success", not bool(event.error))
-            result = event.error if not ok else _as_text(event.output)
+            ok = event.success if event.success is not None else (event.metadata.get("success", not bool(event.error)))
+            result = event.error if not ok else _as_text(event.message)
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"Agent ended: {event.agent_name or ''}",
                 detail=result, status="done" if ok else "failed"))
@@ -186,8 +186,8 @@ class TieredMemory(Memory):
                 state.result_success = ok
 
         elif ev in (TraceEventType.TOOL_CALL, TraceEventType.SKILL_CALL):
-            ok = event.metadata.get("success", not bool(event.error))
-            detail = event.error if not ok else _as_text(event.output)
+            ok = event.success if event.success is not None else (event.metadata.get("success", not bool(event.error)))
+            detail = event.error if not ok else _as_text(event.message)
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"{event.action_name or event.action_type or 'action'} result",
                 detail=detail, status="done" if ok else "failed"))
@@ -202,7 +202,7 @@ class TieredMemory(Memory):
 
         elif ev == TraceEventType.ERROR:
             self._append_recent(state, MemoryRecord(
-                ts=_ts(), event="Error", detail=event.error or _as_text(event.output),
+                ts=_ts(), event="Error", detail=event.error or _as_text(event.message),
                 status="failed"))
 
         elif ev == TraceEventType.AGENT_CALL:
@@ -250,7 +250,16 @@ class TieredMemory(Memory):
     def _apply_agent_call(self, state: _SessionState, event: TraceEvent) -> bool:
         md = event.metadata
         changed = False
-        out = event.output if isinstance(event.output, dict) else {}
+        # Try to parse message as dict for step-level data (thinking, next_goal)
+        out: Dict[str, Any] = {}
+        if event.message:
+            try:
+                import ast
+                out = ast.literal_eval(event.message)
+                if not isinstance(out, dict):
+                    out = {}
+            except Exception:
+                out = {}
 
         # ── POST_STEP: flush this step's buffered tool/skill actions ──
         if event.step_number is not None and "next_goal" in out:

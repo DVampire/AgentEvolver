@@ -12,7 +12,7 @@ except ImportError:
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra
+from src.response.types import Response, ResponseType
 from src.message.types import Message
 from src.model.aws_claude.serializer import AwsClaudeChatSerializer
 from src.model.aws_claude.rest import AwsClaudeClient
@@ -203,16 +203,14 @@ class ChatAwsClaude(BaseModel):
         response: ChatCompletion,
         tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
-    ) -> LLMResponse:
-        """Format AWS Claude response into LLMResponse."""
+    ) -> Response:
+        """Format AWS Claude response into Response."""
         try:
             if not response.choices:
-                return LLMResponse(
+                return Response(type=ResponseType.LLM, 
                     success=False,
                     message="No choices in response",
-                    extra=LLMExtra(
-                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
-                    )
+                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                 )
 
             message = response.choices[0].message
@@ -239,17 +237,15 @@ class ChatAwsClaude(BaseModel):
                     raw = message.content or ""
 
                 if not raw:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message="Empty structured output from model",
-                        extra=LLMExtra(
-                            data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
-                        )
+                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                     )
 
                 try:
-                    data = dirtyjson.loads(raw) if isinstance(raw, str) else raw
-                    parsed_model = response_format.model_validate(data)
+                    json_data = dirtyjson.loads(raw) if isinstance(raw, str) else raw
+                    parsed_model = response_format.model_validate(json_data)
 
                     model_name = response_format.__name__
                     model_dict = parsed_model.model_dump()
@@ -262,35 +258,27 @@ class ChatAwsClaude(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    extra = LLMExtra(
+                    return Response(type=ResponseType.LLM, 
+                        success=True,
+                        message=formatted_message,
+                        parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                             "usage": usage,
                             "finish_reason": finish_reason,
-                        },
-                        parsed_model=parsed_model
-                    )
-
-                    return LLMResponse(
-                        success=True,
-                        message=formatted_message,
-                        extra=extra
+                        }
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        extra=LLMExtra(
-                            data={"error": str(e), "content": raw}
-                        )
+                        data={"error": str(e), "content": raw}
                     )
                 except Exception as e:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        extra=LLMExtra(
-                            data={"error": str(e), "content": raw}
-                        )
+                        data={"error": str(e), "content": raw}
                     )
 
             # Handle function calling
@@ -321,7 +309,9 @@ class ChatAwsClaude(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                extra = LLMExtra(
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=formatted_message,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                         "functions": functions,
@@ -330,17 +320,13 @@ class ChatAwsClaude(BaseModel):
                     }
                 )
 
-                return LLMResponse(
-                    success=True,
-                    message=formatted_message,
-                    extra=extra
-                )
-
             # Default: return content as string
             else:
                 content = message.content or ""
 
-                extra = LLMExtra(
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=content,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                         "usage": usage,
@@ -348,20 +334,13 @@ class ChatAwsClaude(BaseModel):
                     }
                 )
 
-                return LLMResponse(
-                    success=True,
-                    message=content,
-                    extra=extra
-                )
-
         except Exception as e:
             logger.error(f"Failed to format response: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                extra=LLMExtra(
-                    data={"error": str(e)}
-                )
+                data={"error": str(e)}
             )
 
     async def __call__(
@@ -371,7 +350,7 @@ class ChatAwsClaude(BaseModel):
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
         Execute asynchronous completion call via the AWS Claude API.
 
@@ -383,7 +362,7 @@ class ChatAwsClaude(BaseModel):
             **kwargs: Additional parameters
 
         Returns:
-            LLMResponse with formatted message
+            Response with formatted message
         """
         try:
             # Step 1: Build parameters
@@ -412,10 +391,9 @@ class ChatAwsClaude(BaseModel):
             raise
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra=LLMExtra(
-                    data={"error": str(e), "model": self.name}
-                )
+                data={"error": str(e), "model": self.name}
             )

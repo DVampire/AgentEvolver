@@ -67,7 +67,8 @@ class TraceEvent(BaseModel):
     action_name:  Optional[str] = None
 
     input:    Optional[Dict[str, Any]] = Field(default=None)
-    output:   Optional[Any]            = Field(default=None)
+    message:  Optional[str]            = Field(default=None)
+    success:  Optional[bool]           = None
     error:    Optional[str]            = None
 
     duration_ms: Optional[float] = None
@@ -127,7 +128,8 @@ def agent_call_event(
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         step_number=step_number,
         label=f"Step {step_number}",
-        output={"thinking": thinking, "next_goal": next_goal, "memory": memory},
+        message=str({"thinking": thinking, "next_goal": next_goal, "memory": memory}),
+        success=True,
         duration_ms=duration_ms,
     )
 
@@ -141,7 +143,10 @@ def agent_end_event(
         event_type=TraceEventType.AGENT_END,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         label=f"Agent end: {agent_name} ({'ok' if success else 'fail'})",
-        output=result, error=error, duration_ms=duration_ms,
+        message=str(result) if result is not None else None,
+        success=success,
+        error=error,
+        duration_ms=duration_ms,
         metadata={"success": success},
     )
 
@@ -176,7 +181,10 @@ def tool_call_event(
         step_number=step_number, action_index=action_index,
         action_type="tool", action_name=action_name,
         label=f"{action_name} ({'ok' if success else 'fail'})",
-        output=result, error=error, duration_ms=duration_ms,
+        message=str(result) if result is not None else None,
+        success=success,
+        error=error,
+        duration_ms=duration_ms,
         metadata=meta,
     )
 
@@ -211,6 +219,9 @@ def skill_call_event(
         step_number=step_number, action_index=action_index,
         action_type="skill", action_name=action_name,
         label=f"{action_name} ({'ok' if success else 'fail'})",
-        output=result, error=error, duration_ms=duration_ms,
+        message=str(result) if result is not None else None,
+        success=success,
+        error=error,
+        duration_ms=duration_ms,
         metadata=meta,
     )

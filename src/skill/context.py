@@ -12,7 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.logger import logger
 from src.config import config
-from src.skill.types import SkillConfig, SkillResponse, SkillExtra
+from src.skill.types import SkillConfig
+from src.response.types import Response, ResponseType
 from src.session import SessionContext
 from src.skill.types import SkillContext
 from src.utils import assemble_project_path, file_lock
@@ -711,14 +712,14 @@ class SkillContextManager(BaseModel):
         input: Dict[str, Any],
         ctx: SessionContext = None,
         **kwargs,
-    ) -> SkillResponse:
+    ) -> Response:
         """Execute a skill by returning its SKILL.md as instructions for the calling agent."""
         skill_ctx = SkillContext.from_context(ctx)
         skill_ctx = skill_ctx.model_copy(update={"name": name, "input": input})
 
         skill_config = self._skill_configs.get(name)
         if skill_config is None:
-            return SkillResponse(
+            return Response(type=ResponseType.SKILL, 
                 success=False,
                 message=f"Skill '{name}' not found. Available skills: {list(self._skill_configs.keys())}",
             )
@@ -741,18 +742,16 @@ class SkillContextManager(BaseModel):
         instructions = "\n".join(parts)
         logger.info(f"| ✅ Skill '{name}' — returned instructions ({len(instructions)} chars)")
 
-        return SkillResponse(
+        return Response(type=ResponseType.SKILL, 
             success=True,
             message=instructions,
-            extra=SkillExtra(
-                data={
-                    "skill_name": name,
-                    "skill_type": skill_config.skill_type,
-                    "version": skill_config.version,
-                    "input": input,
-                    "skill_dir": skill_dir,
-                }
-            ),
+            data={
+                "skill_name": name,
+                "skill_type": skill_config.skill_type,
+                "version": skill_config.version,
+                "input": input,
+                "skill_dir": skill_dir,
+            },
         )
 
     # ------------------------------------------------------------------

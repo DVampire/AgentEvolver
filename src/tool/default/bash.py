@@ -8,7 +8,8 @@ from pydantic import Field
 
 from src.permission import Operation, PermissionRequest, permission_manager
 from src.registry import TOOL
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell.
 
@@ -38,7 +39,7 @@ class BashTool(Tool):
     def __init__(self, require_grad: bool = False, **kwargs):
         super().__init__(require_grad=require_grad, **kwargs)
 
-    async def __call__(self, command: str, work_dir: Optional[str] = None, **kwargs) -> ToolResponse:
+    async def __call__(self, command: str, work_dir: Optional[str] = None, **kwargs) -> Response:
         """Execute a bash command asynchronously.
 
         Args:
@@ -46,13 +47,13 @@ class BashTool(Tool):
             work_dir:  Working directory — used for workspace-boundary checks.
         """
         if not command.strip():
-            return ToolResponse(success=False, message="Error: Empty command provided")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: Empty command provided")
 
         # Permission check
         req = PermissionRequest(op=Operation.BASH, target=command)
         result = permission_manager.check(self.name, req)
         if not result.allowed:
-            return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
         warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
@@ -75,7 +76,7 @@ class BashTool(Tool):
                 except ProcessLookupError:
                     pass
                 await process.wait()
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=f"Error: Command timed out after {self.timeout} seconds",
                 )
@@ -95,11 +96,11 @@ class BashTool(Tool):
 
             message = warning_prefix + ("\n\n".join(parts) if parts else f"Command completed with exit code: {exit_code}")
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=exit_code == 0,
                 message=message,
-                extra=ToolExtra(data={"exit_code": exit_code, "command": command}),
+                data={"exit_code": exit_code, "command": command},
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error executing command: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error executing command: {e}")

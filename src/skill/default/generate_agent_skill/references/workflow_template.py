@@ -1,7 +1,8 @@
 '''One-line description of what this workflow agent does.'''
 from typing import Any, Dict, Optional
 from pydantic import ConfigDict, Field
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent
 from src.logger import logger
@@ -32,7 +33,7 @@ class MyWorkflowAgent(Agent):
             review_steps=review_steps, require_grad=require_grad, **kwargs,
         )
 
-    async def __call__(self, task: str, target_name=None, **kwargs) -> AgentResponse:
+    async def __call__(self, task: str, target_name=None, **kwargs) -> Response:
         logger.info(f'| 🚀 Starting {self.name}: {task}')
         ctx = kwargs.get('ctx', None)
         if ctx is None:
@@ -58,7 +59,7 @@ class MyWorkflowAgent(Agent):
                    'result': message, 'memory_name': self.memory_name, 'use_memory': self.use_memory}
         await hook_manager(name='memory_hook', input=on_stop, ctx=ctx)
         await hook_manager(name='trace_hook', input=on_stop, ctx=ctx)
-        return AgentResponse(success=success, message=message, extra=AgentExtra(data={}))
+        return Response(type=ResponseType.AGENT, success=success, message=message)
 
     async def _step_read(self, task: str, target_name: Optional[str], ctx) -> str:
         raise NotImplementedError

@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from src.registry import TOOL
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 _IGNORED_DIRS = frozenset({
     ".git", "node_modules", "target", "dist", "build",
@@ -47,7 +48,7 @@ class GrepSearchTool(Tool):
         case_sensitive: bool = True,
         max_results: int = 100,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Search file contents for pattern.
 
         Args:
@@ -59,13 +60,13 @@ class GrepSearchTool(Tool):
         """
         try:
             if not os.path.isdir(root):
-                return ToolResponse(success=False, message=f"Error: Not a directory: {root}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Not a directory: {root}")
 
             flags = 0 if case_sensitive else re.IGNORECASE
             try:
                 compiled = re.compile(pattern, flags)
             except re.error as e:
-                return ToolResponse(success=False, message=f"Invalid regex pattern: {e}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Invalid regex pattern: {e}")
 
             from fnmatch import fnmatch
 
@@ -109,11 +110,11 @@ class GrepSearchTool(Tool):
                 suffix = f"\n[Results capped at {max_results}.]" if truncated else ""
                 message = f"Found {len(results)} match(es):\n{lines}{suffix}"
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(data={"results": results, "truncated": truncated, "pattern": pattern}),
+                data={"results": results, "truncated": truncated, "pattern": pattern},
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error in grep search: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error in grep search: {e}")

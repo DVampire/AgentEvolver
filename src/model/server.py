@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.model.context import ModelContextManager
-from src.model.types import ModelContext, ModelConfig, LLMResponse
+from src.model.types import ModelContext, ModelConfig
+from src.response.types import Response, ResponseType
 
 
 class ModelManagerServer(BaseModel):
@@ -59,7 +60,7 @@ class ModelManagerServer(BaseModel):
         input: Dict[str, Any],
         ctx: ModelContext = None,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """Invoke a model by name.
 
         Args:
@@ -69,7 +70,7 @@ class ModelManagerServer(BaseModel):
             ctx:   Optional ModelContext carrying caller tag, retry count, timeout, etc.
         """
         if not input.get("messages"):
-            return LLMResponse(success=False, message="'messages' is required in input and must be non-empty.")
+            return Response(type=ResponseType.LLM, success=False, message="'messages' is required in input and must be non-empty.")
         return await self.model_context_manager(name=name, input=input, ctx=ctx, **kwargs)
 
 

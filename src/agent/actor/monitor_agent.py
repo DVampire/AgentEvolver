@@ -37,7 +37,8 @@ from typing import Any, Deque, Dict, Optional, Set
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from src.agent.actor.meta_agent import MonitorProgressMessage
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.logger import logger
 from src.registry import AGENT
 from src.utils.name_utils import make_id
@@ -105,7 +106,7 @@ class MonitorAgent(Agent):
         ctx: Optional[AgentContext],
         ref: Any,
         **kwargs: Any,
-    ) -> Optional[AgentResponse]:
+    ) -> Optional[Response]:
         command = kwargs.get("command") or task
         parent_ref = kwargs.get("parent_ref")
 
@@ -132,7 +133,7 @@ class MonitorAgent(Agent):
             logger.error(f"| ❌ MonitorAgent [{task_id}]: failed to spawn process: {exc}")
             await self._emit_end(session_id, task_id, success=False, result=None,
                                  duration_ms=0.0, error=str(exc))
-            return AgentResponse(message=f"Failed to start process: {exc}", success=False)
+            return Response(type=ResponseType.AGENT, message=f"Failed to start process: {exc}", success=False)
 
         logger.info(f"| 🔵 MonitorAgent [{task_id}]: pid={process.pid}")
 
@@ -246,14 +247,14 @@ class MonitorAgent(Agent):
                         f"exited code={exit_code} elapsed={elapsed:.0f}s"
                     )
 
-                    result = AgentResponse(
+                    result = Response(type=ResponseType.AGENT, 
                         message=output[-4000:] if output else f"Process exited with code {exit_code}.",
                         success=success,
-                        extra=AgentExtra(data={
+                        data={
                             "exit_code": exit_code,
                             "elapsed_seconds": round(elapsed, 1),
                             "pid": process.pid,
-                        }),
+                        },
                     )
                     _safe_set_result(ref, result)
 

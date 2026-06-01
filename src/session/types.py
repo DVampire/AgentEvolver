@@ -11,7 +11,8 @@ class BaseContext(BaseModel):
     name: Optional[str] = Field(default=None, description="Optional name for this context.")
     timeout: Optional[float] = Field(default=3600, description="Optional timeout for this context. Defaults to 1 hour.")
     work_dir: Optional[str] = Field(default=None, description="Optional working directory for this context.")
-    extra: Dict[str, Any] = Field(default_factory=dict)
+    input: Dict[str, Any] = Field(default_factory=dict)
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def create(
@@ -19,7 +20,7 @@ class BaseContext(BaseModel):
         name: Optional[str] = None,
         timeout: Optional[float] = 3600,
         work_dir: Optional[str] = None,
-        extra: Optional[Dict[str, Any]] = None,
+        meta: Optional[Dict[str, Any]] = None,
     ) -> "BaseContext":
         """Factory: creates a context with a unique ID."""
         return cls(
@@ -27,7 +28,7 @@ class BaseContext(BaseModel):
             name=name,
             timeout=timeout,
             work_dir=work_dir,
-            extra=extra if extra is not None else {}
+            meta=meta if meta is not None else {}
         )
 
     @classmethod
@@ -37,14 +38,15 @@ class BaseContext(BaseModel):
                        name=None,
                        timeout=3600,
                        work_dir=None,
-                       extra={})
+                       input={},
+                       meta={})
         return cls(
             id=ctx.id,
             name=getattr(ctx, "name", None),
             timeout=getattr(ctx, "timeout", 3600),
             work_dir=getattr(ctx, "work_dir", None),
             input=getattr(ctx, "input", {}),
-            extra=getattr(ctx, "extra", {}),
+            meta=getattr(ctx, "meta", {}),
         )
 
 
@@ -56,4 +58,4 @@ class SessionContext(BaseContext):
     name: Optional[str] = Field(default=None, description="Optional name for this session.")
     timeout: Optional[float] = Field(default=3600, description="Optional timeout for this session. Defaults to 1 hour.")
     work_dir: Optional[str] = Field(default=None, description="Optional working directory for this session.")
-    extra: Dict[str, Any] = Field(default_factory=dict, description="Optional extra metadata for this session.")
+    meta: Dict[str, Any] = Field(default_factory=dict, description="Optional meta metadata for this session.")

@@ -1,9 +1,7 @@
-from .types import SkillConfig, SkillResponse, SkillExtra
+from .types import SkillConfig
 from .server import skill_manager
 
 __all__ = [
     "SkillConfig",
-    "SkillResponse",
-    "SkillExtra",
     "skill_manager",
 ]

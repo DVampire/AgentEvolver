@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent
 from src.logger import logger
@@ -23,7 +24,7 @@ class AgentEvaluateAgent(Agent):
     2. Code Quality (20pts) — syntax valid, clean structure, proper overrides
     3. Prompt Quality (20pts) — HTML prompt well-structured (auto-pass for workflow agents)
     4. Integration (20pts) — agent_manager can register and get the instance
-    5. Task Execution (20pts) — runs a sample task and returns a valid AgentResponse
+    5. Task Execution (20pts) — runs a sample task and returns a valid Response
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -120,7 +121,7 @@ class AgentEvaluateAgent(Agent):
         task: str,
         target_name: Optional[str] = None,
         **kwargs,
-    ) -> AgentResponse:
+    ) -> Response:
         logger.info(f"| 🚀 Starting {self.name}: {task} (agent={target_name})")
 
         ctx = kwargs.get("ctx", None)
@@ -131,13 +132,13 @@ class AgentEvaluateAgent(Agent):
 
         if not target_name:
             logger.warning(f"| ⚠️ {self.name} called without target_name")
-            return AgentResponse(success=False, message="target_name is required for evaluation but was not provided.")
+            return Response(type=ResponseType.AGENT, success=False, message="target_name is required for evaluation but was not provided.")
 
         from src.agent.server import agent_manager
         agent_config = await agent_manager.get_info(target_name)
         if agent_config is None:
             logger.warning(f"| ⚠️ Agent '{target_name}' not found in registry, refusing evaluation")
-            return AgentResponse(success=False, message=f"Agent '{target_name}' not found in registry.")
+            return Response(type=ResponseType.AGENT, success=False, message=f"Agent '{target_name}' not found in registry.")
 
         task_id = make_id()
 
@@ -214,9 +215,9 @@ class AgentEvaluateAgent(Agent):
             ctx=ctx,
         )
 
-        return AgentResponse(
+        return Response(type=ResponseType.AGENT, 
             success=response["done"],
             message=response["result"] or "",
-            extra=AgentExtra(data=response),
+            data=response,
         )
 

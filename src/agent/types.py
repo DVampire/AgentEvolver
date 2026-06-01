@@ -29,6 +29,9 @@ from src.utils import (
     get_project_root,
 )
 from src.session import BaseContext
+from src.constraint.types import Constraint
+from src.registry import CONSTRAINT
+from src.response.types import Response, ResponseType
 
 class AgentContext(BaseContext):
     """Context passed into agent manager and individual agent instances."""
@@ -36,8 +39,6 @@ class AgentContext(BaseContext):
     work_dir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
     parent_session_id: Optional[str] = Field(default=None, description="ref.name of the parent MetaAgent, used by trace and escalation hooks.")
     subtask_id: Optional[str] = Field(default=None, description="ID of the subtask record in the parent MetaAgent's plan.")
-    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed by the caller (e.g. task, files).")
-    extra: Dict[str, Any] = Field(default_factory=dict, description="Reserved — not populated or read by the framework.")
 
 class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
@@ -219,6 +220,7 @@ class Agent(BaseModel):
         review_steps: int = 5,
         require_grad: bool = False,
         use_memory: bool = True,
+        constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -243,6 +245,24 @@ class Agent(BaseModel):
         self.max_actions = max_actions
 
         self.review_steps = review_steps
+
+        # Runtime constraints — accept Constraint instances or mmengine-style dicts
+        # e.g. {"type": "StepConstraint", "max_steps": 20}
+        self.constraints: List[Constraint] = self._build_constraints(constraints)
+
+    @staticmethod
+    def _build_constraints(raw: Optional[List]) -> List[Constraint]:
+        if not raw:
+            return []
+        result = []
+        for item in raw:
+            if isinstance(item, Constraint):
+                result.append(item)
+            elif isinstance(item, dict):
+                result.append(CONSTRAINT.build(item))
+            else:
+                raise TypeError(f"Unsupported constraint type: {type(item)}")
+        return result
 
     async def initialize(self) -> None:
         """Initialize the agent."""
@@ -356,11 +376,23 @@ class Agent(BaseModel):
         from src.hook.types import HookDecision, HookEvent
         from src.model import model_manager
         from src.utils import parse_tool_args
+        from src.constraint.server import constraint_manager
 
         done = False
         result = None
         reasoning = None
         action_errors = []
+
+        # --- Constraint checks ---
+        if self.constraints:
+            # Auto-start session on first step for this task_id
+            if not constraint_manager.has_session(task_id):
+                constraint_manager.start_session(task_id, self.constraints, self.name)
+
+            violation = await constraint_manager.check(task_id, step_number)
+            if violation and violation.violated:
+                constraint_manager.end_session(task_id)
+                return {"done": True, "result": violation.reason, "reasoning": None, "action_errors": []}
 
         await hook_manager(
             name="trace_hook",
@@ -373,12 +405,15 @@ class Agent(BaseModel):
         next_goal = ""
 
         try:
-            think_output = await model_manager(
+            llm_response = await model_manager(
                 name=self.model_name,
                 input={"messages": messages, "response_format": AgentThinkOutput},
                 ctx=ctx,
             )
-            think_output = think_output.extra.parsed_model
+            # Record token usage for constraint tracking
+            if self.constraints and llm_response.usage:
+                constraint_manager.record_tokens(task_id, llm_response.usage.total)
+            think_output = llm_response.parsed_model
 
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal
@@ -438,8 +473,7 @@ class Agent(BaseModel):
                         if action_name == "done_tool":
                             done = True
                             result = action_result
-                            action_extra = tool_response.extra if hasattr(tool_response, "extra") else None
-                            reasoning = action_extra.data.get("reasoning") if action_extra and action_extra.data else None
+                            reasoning = (tool_response.data or {}).get("reasoning") if hasattr(tool_response, "data") else None
 
                 except Exception as e:
                     error = str(e)
@@ -474,6 +508,10 @@ class Agent(BaseModel):
             ctx=ctx,
         )
 
+        # Clean up constraint session when task finishes
+        if done and self.constraints:
+            constraint_manager.end_session(task_id)
+
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
 
     # ------------------------------------------------------------------
@@ -485,7 +523,7 @@ class Agent(BaseModel):
                        files: Optional[List[str]] = None,
                        ctx: Optional[AgentContext] = None,
                        **kwargs: Any,
-                       ) -> "AgentResponse":
+                       ) -> "Response":
         """Direct invocation — no runtime machinery involved.
 
         Subclasses **must** override this to implement their task logic.
@@ -505,14 +543,14 @@ class Agent(BaseModel):
                        ctx: Optional[AgentContext],
                        ref: Any,
                        **kwargs: Any,
-                       ) -> Optional["AgentResponse"]:
+                       ) -> Optional["Response"]:
         """Called by the runtime pump when a TaskMessage arrives.
 
         Default behaviour: delegate to ``__call__`` so that simple actor
         agents only need to implement one method.
 
         Override to customise event-driven startup (e.g. MetaAgent).
-        Return an ``AgentResponse`` to resolve the task immediately; return
+        Return a ``Response`` to resolve the task immediately; return
         ``None`` to signal that resolution will happen asynchronously via
         a later ``on_event`` / ``on_stop`` call.
         """
@@ -529,7 +567,7 @@ class Agent(BaseModel):
         """
 
     async def on_stop(self,
-                      result: "AgentResponse",
+                      result: "Response",
                       ctx: Optional[AgentContext],
                       ) -> None:
         """Called after the task resolves — cleanup / teardown hook.
@@ -587,22 +625,6 @@ class Agent(BaseModel):
             await self.on_event(msg, ref)
 
 
-class AgentExtra(BaseModel):
-    """Agent extra data."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    file_path: Optional[Union[str, List[str]]] = Field(default=None, description="The file path of the extra data")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="The data of the extra data")
-    parsed_model: Optional[BaseModel] = Field(default=None, description="The parsed model of the extra data")
-
-class AgentResponse(BaseModel):
-    """Agent response."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    success: bool = Field(description="Whether the agent has completed the task.")
-    message: str = Field(description="The message of the agent.")
-    extra: Optional[AgentExtra] = Field(default=None, description="The extra data of the agent.")
-
 __all__ = [
     "InputArgs",
     "AgentConfig",
@@ -610,5 +632,5 @@ __all__ = [
     "AgentPlanStep",
     "AgentThinkOutput",
     "Agent",
-    "AgentResponse",
+    "AgentContext",
 ]

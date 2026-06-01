@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field, ConfigDict
 
 import json
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra, TokenUsage
+from src.response.types import Response, ResponseType
+from src.model.types import TokenUsage
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -255,7 +256,7 @@ class ChatAnthropic(BaseModel):
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
         Execute asynchronous completion call via Anthropic API.
 
@@ -267,7 +268,7 @@ class ChatAnthropic(BaseModel):
             **kwargs: Additional parameters
 
         Returns:
-            LLMResponse with formatted message
+            Response with formatted message
         """
         if AsyncAnthropic is None:
             raise ImportError("anthropic package is required. Install it with: pip install anthropic")
@@ -294,33 +295,37 @@ class ChatAnthropic(BaseModel):
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {str(e)}",
-                extra=LLMExtra(data={"error": str(e), "model": self.name})
+                data={"error": str(e), "model": self.name}
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                extra=LLMExtra(data={"error": str(e), "model": self.name})
+                data={"error": str(e), "model": self.name}
             )
         except APIError as e:
             logger.error(f"API error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API error: {str(e)}",
-                extra=LLMExtra(data={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name})
+                data={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name}
             )
         except httpx.TimeoutException:
             raise
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra=LLMExtra(data={"error": str(e), "model": self.name})
+                data={"error": str(e), "model": self.name}
             )
 
     async def _format_response(
@@ -328,8 +333,8 @@ class ChatAnthropic(BaseModel):
         response: Any,
         tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-    ) -> LLMResponse:
-        """Format Anthropic response into LLMResponse."""
+    ) -> Response:
+        """Format Anthropic response into Response."""
         try:
             # Handle SDK response object
             if hasattr(response, 'content'):
@@ -340,10 +345,10 @@ class ChatAnthropic(BaseModel):
                 content = []
 
             if not content:
-                return LLMResponse(
+                return Response(type=ResponseType.LLM, 
                     success=False,
                     message="No content in response",
-                    extra=LLMExtra(data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)})
+                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                 )
 
             # Extract text content and tool calls
@@ -399,36 +404,32 @@ class ChatAnthropic(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                extra = LLMExtra(
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=formatted_message,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
                         "functions": functions,
                         "usage": usage,
                         "stop_reason": stop_reason,
-                    }
-                )
-
-                return LLMResponse(
-                    success=True,
-                    message=formatted_message,
-                    extra=extra,
+                    },
                     usage=usage,
                 )
 
             # Handle structured output (if response_format was provided)
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 if not message_text:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message="Empty response content from model",
-                        extra=LLMExtra(data={"raw_response": response})
+                        data={"raw_response": response}
                     )
 
                 # Try to parse JSON from message text
                 import json
                 try:
-                    data = json.loads(message_text)
-                    parsed_model = response_format.model_validate(data)
+                    json_data = json.loads(message_text)
+                    parsed_model = response_format.model_validate(json_data)
 
                     # Format as string
                     model_name = response_format.__name__
@@ -442,56 +443,49 @@ class ChatAnthropic(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    extra = LLMExtra(
+                    return Response(type=ResponseType.LLM, 
+                        success=True,
+                        message=formatted_message,
                         parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
                             "usage": usage,
                             "stop_reason": stop_reason,
-                        }
-                    )
-
-                    return LLMResponse(
-                        success=True,
-                        message=formatted_message,
-                        extra=extra,
+                        },
                         usage=usage,
                     )
                 except json.JSONDecodeError as e:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        extra=LLMExtra(data={"error": str(e), "content": message_text})
+                        data={"error": str(e), "content": message_text}
                     )
                 except Exception as e:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        extra=LLMExtra(data={"error": str(e), "content": message_text})
+                        data={"error": str(e), "content": message_text}
                     )
 
             # Default: return content as string
             else:
-                extra = LLMExtra(
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=message_text,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
                         "usage": usage,
                         "stop_reason": stop_reason,
-                    }
-                )
-
-                return LLMResponse(
-                    success=True,
-                    message=message_text,
-                    extra=extra,
+                    },
                     usage=usage,
                 )
 
         except Exception as e:
             logger.error(f"Failed to format response: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                extra=LLMExtra(data={"error": str(e)})
+                data={"error": str(e)}
             )
 

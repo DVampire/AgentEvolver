@@ -16,7 +16,8 @@ from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
-from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
+from src.tool.types import Tool, ToolConfig, ToolContext
+from src.response.types import Response, ResponseType
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
@@ -80,15 +81,17 @@ class ToolContextManager(BaseModel):
         # Register tool-related symbols for auto-injection in dynamic code
         dynamic_manager.register_symbol("TOOL", TOOL)
         dynamic_manager.register_symbol("Tool", Tool)
-        dynamic_manager.register_symbol("ToolResponse", ToolResponse)
-        
+        dynamic_manager.register_symbol("Response", Response)
+        dynamic_manager.register_symbol("ResponseType", ResponseType)
+
         # Register tool context provider for automatic import injection
         def tool_context_provider():
             """Provide tool-related imports for dynamic tool classes."""
             return {
                 "TOOL": TOOL,
                 "Tool": Tool,
-                "ToolResponse": ToolResponse,
+                "Response": Response,
+                "ResponseType": ResponseType,
             }
         dynamic_manager.register_context_provider("tool", tool_context_provider)
         
@@ -1034,7 +1037,7 @@ class ToolContextManager(BaseModel):
                        input: Dict[str, Any],
                        ctx: ToolContext = None,
                        **kwargs
-                       ) -> ToolResponse:
+                       ) -> Response:
         """Call a tool by name with optional timeout
 
         Args:
@@ -1042,7 +1045,7 @@ class ToolContextManager(BaseModel):
             input: Input for the tool
             ctx: Optional tool context to pass to the tool
         Returns:
-            ToolResponse: Tool result
+            Response: Tool result
         """
 
         ctx = ToolContext.from_context(ctx)
@@ -1053,7 +1056,7 @@ class ToolContextManager(BaseModel):
         if tool_info is None:
             error_msg = f"Tool '{name}' is not registered. Available tools: {list(self._tool_configs.keys())}"
             logger.error(f"| ❌ {error_msg}")
-            return ToolResponse(success=False, message=error_msg)
+            return Response(type=ResponseType.TOOL, success=False, message=error_msg)
         
         version = tool_info.version
         tool_instance = tool_info.instance
@@ -1068,8 +1071,8 @@ class ToolContextManager(BaseModel):
         except asyncio.TimeoutError:
             error_msg = f"Tool '{name}' execution timed out after {self.default_timeout} seconds"
             logger.error(f"| ⏱️ {error_msg}")
-            return ToolResponse(
+            return Response(
+                type=ResponseType.TOOL,
                 success=False,
                 message=error_msg,
-                extra=None
             )

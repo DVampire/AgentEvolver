@@ -1,6 +1,6 @@
 from .server import ModelManagerServer, model_manager
 from .context import ModelContextManager, ApiKeyPool
-from .types import ModelConfig, LLMResponse, LLMExtra
+from .types import ModelConfig
 
 # Backward-compat alias
 ModelManager = ModelContextManager
@@ -12,6 +12,4 @@ __all__ = [
     "ApiKeyPool",
     "model_manager",
     "ModelConfig",
-    "LLMResponse",
-    "LLMExtra",
 ]

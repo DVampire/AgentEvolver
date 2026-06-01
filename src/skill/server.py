@@ -13,7 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.skill.context import SkillContextManager
-from src.skill.types import SkillConfig, SkillResponse, SkillContext
+from src.skill.types import SkillConfig, SkillContext
+from src.response.types import Response, ResponseType
 from src.session import SessionContext
 from src.utils import assemble_project_path
 
@@ -224,7 +225,7 @@ class SkillManagerServer(BaseModel):
         input: Dict[str, Any],
         ctx: SkillContext = None,
         **kwargs,
-    ) -> SkillResponse:
+    ) -> Response:
         """Execute a skill by name.
 
         Args:

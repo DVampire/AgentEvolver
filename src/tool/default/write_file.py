@@ -8,7 +8,8 @@ from pydantic import Field
 
 from src.permission import Operation, PermissionRequest, permission_manager
 from src.registry import TOOL
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 _WRITE_FILE_TOOL_DESCRIPTION = """Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does.
 
@@ -39,7 +40,7 @@ class WriteFileTool(Tool):
         path: str,
         content: str,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Write content to a file.
 
         Args:
@@ -53,7 +54,7 @@ class WriteFileTool(Tool):
                 PermissionRequest(op=Operation.WRITE, target=path, content=content),
             )
             if not result.allowed:
-                return ToolResponse(success=False, message=f"Permission denied: {result.reason}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
             parent = os.path.dirname(path)
             if parent:
@@ -84,14 +85,12 @@ class WriteFileTool(Tool):
             action = "Overwrote" if existed else "Created"
             warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"{warning_prefix}{action} {path} ({line_count} lines)",
-                extra=ToolExtra(
-                    file_path=path,
-                    data={"existed": existed, "line_count": line_count, "patch": patch},
-                ),
+                file_path=[path],
+                data={"existed": existed, "line_count": line_count, "patch": patch},
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error writing file: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error writing file: {e}")

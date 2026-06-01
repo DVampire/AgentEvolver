@@ -1,7 +1,8 @@
 '''One-line description of what this agent does.'''
 from typing import Any, Dict, Optional
 from pydantic import ConfigDict, Field
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent
 from src.logger import logger
@@ -43,7 +44,7 @@ class MyAgent(Agent):
             base['agent_context'] += '\n\n### Previous Step Errors\n' + '\n'.join(f'- {e}' for e in action_errors)
         return base
 
-    async def __call__(self, task: str, target_name=None, **kwargs) -> AgentResponse:
+    async def __call__(self, task: str, target_name=None, **kwargs) -> Response:
         logger.info(f'| 🚀 Starting {self.name}: {task}')
         ctx = kwargs.get('ctx', None)
         if ctx is None:
@@ -70,4 +71,4 @@ class MyAgent(Agent):
                    'result': response.get('result'), 'memory_name': self.memory_name, 'use_memory': self.use_memory}
         await hook_manager(name='memory_hook', input=on_stop, ctx=ctx)
         await hook_manager(name='trace_hook', input=on_stop, ctx=ctx)
-        return AgentResponse(success=response['done'], message=response['result'] or '', extra=AgentExtra(data=response))
+        return Response(type=ResponseType.AGENT, success=response['done'], message=response['result'] or '', data=response)

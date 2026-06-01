@@ -80,7 +80,7 @@ class PermissionManagerServer(BaseModel):
                 PermissionRequest(op=Operation.BASH, target="rm -rf /tmp/foo"),
             )
             if not result.allowed:
-                return ToolResponse(success=False, message=result.reason)
+                return Response(type=ResponseType.TOOL, success=False, message=result.reason)
         """
         return self._ctx.check(name=name, input=input, **kwargs)
 

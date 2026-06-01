@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, List, Optional, Union, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from src.session import BaseContext
+from src.response.types import Response, ResponseType
 
 
 class ModelContext(BaseContext):
@@ -51,7 +52,7 @@ class TokenUsage(BaseModel):
 
     @property
     def total(self) -> int:
-        return self.input_tokens + self.output_tokens
+        return self.input_tokens + self.output_tokens + self.cache_write_tokens + self.cache_read_tokens
 
     @classmethod
     def from_raw(cls, raw: Optional[Dict[str, Any]]) -> Optional["TokenUsage"]:
@@ -81,24 +82,5 @@ class TokenUsage(BaseModel):
         return f"{prefix}tokens: {', '.join(parts)}"
 
 
-class LLMExtra(BaseModel):
-    """LLM Extra Response"""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    file_path: Optional[str] = Field(default=None, description="The file path of the content")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="The data of the content")
-    parsed_model: Optional[BaseModel] = Field(default=None, description="The parsed model of the content")
-
-class LLMResponse(BaseModel):
-    """
-    Wrapper for LLM responses that normalizes output from different APIs.
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    success: bool = Field(description="Whether the model call was successful")
-    message: str = Field(description="The message from the model call")
-    extra: Optional[LLMExtra] = Field(default=None, description="The extra data from the model call")
-    usage: Optional["TokenUsage"] = None
-
-__all__ = ["ModelContext", "ModelConfig", "LLMResponse", "LLMExtra", "TokenUsage"]
+__all__ = ["ModelContext", "ModelConfig", "TokenUsage"]
 

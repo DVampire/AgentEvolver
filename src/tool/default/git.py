@@ -5,7 +5,8 @@ import os
 from typing import Dict, Any, Optional
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
 _GIT_TOOL_DESCRIPTION = """Run git operations inside the project workdir.
@@ -83,7 +84,7 @@ class GitTool(Tool):
         message: Optional[str] = None,
         count: int = 10,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Execute a git operation.
 
         Args:
@@ -95,9 +96,9 @@ class GitTool(Tool):
         ctx = kwargs.get("ctx")
         work_dir = self._get_workdir(ctx)
         if not work_dir:
-            return ToolResponse(success=False, message="Error: No work_dir set in context.")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: No work_dir set in context.")
         if not os.path.isdir(work_dir):
-            return ToolResponse(success=False, message=f"Error: work_dir not found: {work_dir}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: work_dir not found: {work_dir}")
 
         try:
             if action == "status":
@@ -132,13 +133,13 @@ class GitTool(Tool):
 
             elif action == "commit":
                 if not message:
-                    return ToolResponse(success=False, message="Error: commit requires a message parameter.")
+                    return Response(type=ResponseType.TOOL, success=False, message="Error: commit requires a message parameter.")
                 rc, out, err = await self._run(["commit", "-m", message], work_dir)
                 return self._respond(rc, out or err, err, "commit")
 
             elif action == "checkout":
                 if not path:
-                    return ToolResponse(success=False, message="Error: checkout requires a target (branch or file path).")
+                    return Response(type=ResponseType.TOOL, success=False, message="Error: checkout requires a target (branch or file path).")
                 rc, out, err = await self._run(["checkout", path], work_dir)
                 return self._respond(rc, out or err or f"Checked out: {path}", err, "checkout")
 
@@ -147,19 +148,19 @@ class GitTool(Tool):
                 return self._respond(rc, out or "(no branches)", err, "branch")
 
             else:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=f"Unknown action: {action}. Available: status, diff, diff_staged, log, add, commit, checkout, branch",
                 )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error running git {action}: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error running git {action}: {e}")
 
     @staticmethod
-    def _respond(rc: int, stdout: str, stderr: str, action: str) -> ToolResponse:
+    def _respond(rc: int, stdout: str, stderr: str, action: str) -> Response:
         success = rc == 0
         if success:
-            return ToolResponse(success=True, message=stdout, extra=ToolExtra(data={"action": action}))
+            return Response(type=ResponseType.TOOL, success=True, message=stdout, data={"action": action})
         else:
             msg = stderr or stdout or f"git {action} failed (exit {rc})"
-            return ToolResponse(success=False, message=f"Error: {msg}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: {msg}")

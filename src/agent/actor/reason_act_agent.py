@@ -9,10 +9,9 @@ from src.hook.server import hook_manager
 from src.hook.types import HookEvent
 from src.agent.types import (
     Agent,
-    AgentResponse,
-    AgentExtra,
-    AgentContext,
+        AgentContext,
 )
+from src.response.types import Response, ResponseType
 from src.utils.name_utils import make_id
 
 
@@ -88,7 +87,7 @@ class ReasonActAgent(Agent):
         task: str,
         files: Optional[List[str]] = None,
         **kwargs,
-    ) -> AgentResponse:
+    ) -> Response:
         logger.info(f"| 🚀 Starting ReasonActAgent: {task}")
 
         ctx = kwargs.get("ctx", None)
@@ -156,8 +155,8 @@ class ReasonActAgent(Agent):
 
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
 
-        return AgentResponse(
+        return Response(type=ResponseType.AGENT, 
             success=response["done"],
             message=response["result"],
-            extra=AgentExtra(data=response),
+            data=response,
         )

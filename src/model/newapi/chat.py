@@ -13,7 +13,8 @@ except ImportError:
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.model.types import LLMResponse, LLMExtra, TokenUsage
+from src.response.types import Response, ResponseType
+from src.model.types import TokenUsage
 from src.message.types import Message
 from src.model.newapi.serializer import NewAPIChatSerializer
 from src.model.newapi.rest import NewAPIClient
@@ -175,16 +176,14 @@ class ChatNewAPI(BaseModel):
         response: ChatCompletion,
         tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
-    ) -> LLMResponse:
-        """Format New-API response into LLMResponse."""
+    ) -> Response:
+        """Format New-API response into Response."""
         try:
             if not response.choices:
-                return LLMResponse(
+                return Response(type=ResponseType.LLM, 
                     success=False,
                     message="No choices in response",
-                    extra=LLMExtra(
-                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
-                    )
+                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                 )
 
             message = response.choices[0].message
@@ -217,18 +216,16 @@ class ChatNewAPI(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                return LLMResponse(
+                return Response(type=ResponseType.LLM, 
                     success=True,
                     message=formatted_message,
-                    extra=LLMExtra(
-                        data={
-                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                            "functions": functions,
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                            "reasoning": reasoning,
-                        }
-                    ),
+                    data={
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "functions": functions,
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                        "reasoning": reasoning,
+                    },
                     usage=usage,
                 )
 
@@ -236,17 +233,15 @@ class ChatNewAPI(BaseModel):
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 content = message.content or ""
                 if not content:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message="Empty response content from model",
-                        extra=LLMExtra(
-                            data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
-                        )
+                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                     )
 
                 try:
-                    data = dirtyjson.loads(content)
-                    parsed_model = response_format.model_validate(data)
+                    json_data = dirtyjson.loads(content)
+                    parsed_model = response_format.model_validate(json_data)
 
                     model_name = response_format.__name__
                     model_dict = parsed_model.model_dump()
@@ -255,56 +250,53 @@ class ChatNewAPI(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=True,
                         message=formatted_message,
-                        extra=LLMExtra(
-                            data={
-                                "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                                "usage": usage,
-                                "finish_reason": finish_reason,
-                                "reasoning": reasoning,
-                            },
-                            parsed_model=parsed_model
-                        ),
-                        usage=usage,
-                    )
-                except (dirtyjson.Error, ValueError, TypeError) as e:
-                    return LLMResponse(
-                        success=False,
-                        message=f"Failed to parse JSON from response: {e}",
-                        extra=LLMExtra(data={"error": str(e), "content": content})
-                    )
-                except Exception as e:
-                    return LLMResponse(
-                        success=False,
-                        message=f"Failed to validate response against schema: {e}",
-                        extra=LLMExtra(data={"error": str(e), "content": content})
-                    )
-
-            # Default: return content as string
-            else:
-                content = message.content or ""
-                return LLMResponse(
-                    success=True,
-                    message=content,
-                    extra=LLMExtra(
+                        parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                             "usage": usage,
                             "finish_reason": finish_reason,
                             "reasoning": reasoning,
-                        }
-                    ),
+                        },
+                        usage=usage,
+                    )
+                except (dirtyjson.Error, ValueError, TypeError) as e:
+                    return Response(type=ResponseType.LLM, 
+                        success=False,
+                        message=f"Failed to parse JSON from response: {e}",
+                        data={"error": str(e), "content": content}
+                    )
+                except Exception as e:
+                    return Response(type=ResponseType.LLM, 
+                        success=False,
+                        message=f"Failed to validate response against schema: {e}",
+                        data={"error": str(e), "content": content}
+                    )
+
+            # Default: return content as string
+            else:
+                content = message.content or ""
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=content,
+                    data={
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                        "reasoning": reasoning,
+                    },
                     usage=usage,
                 )
 
         except Exception as e:
             logger.error(f"Failed to format response: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                extra=LLMExtra(data={"error": str(e)})
+                data={"error": str(e)}
             )
 
     async def __call__(
@@ -314,7 +306,7 @@ class ChatNewAPI(BaseModel):
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
         Execute asynchronous completion call via New-API.
 
@@ -326,7 +318,7 @@ class ChatNewAPI(BaseModel):
             **kwargs: Additional parameters passed to the API
 
         Returns:
-            LLMResponse with formatted message
+            Response with formatted message
         """
         try:
             built = await self._build_params(
@@ -352,8 +344,9 @@ class ChatNewAPI(BaseModel):
             raise
         except Exception as e:
             logger.error(f"Unexpected error in ChatNewAPI: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra=LLMExtra(data={"error": str(e), "model": self.name})
+                data={"error": str(e), "model": self.name}
             )

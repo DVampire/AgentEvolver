@@ -24,7 +24,8 @@ from tenacity import (
 from src.logger import logger
 from src.registry import TOOL
 from src.tool.default.search.types import SearchItem
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.utils import hvac_client
 
 
@@ -136,7 +137,7 @@ class SerperSearch(Tool):
         lang: Optional[str] = "en",
         filter_year: Optional[int] = None,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Execute a Google search via Serper API.
 
         Args:
@@ -147,13 +148,13 @@ class SerperSearch(Tool):
             filter_year: Filter results by year (uses tbs parameter).
         """
         if not self.api_key:
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message="SERPER_API_KEY not set",
             )
 
         if not query or not query.strip():
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message="Search query cannot be empty",
             )
@@ -206,17 +207,15 @@ class SerperSearch(Tool):
                 )
 
             if not search_items:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=True,
                     message=f"No search results found for: {query}",
-                    extra=ToolExtra(
-                        data={
-                            "query": query,
-                            "num_results": 0,
-                            "search_items": [],
-                            "engine": "serper",
-                        }
-                    ),
+                    data={
+                        "query": query,
+                        "num_results": 0,
+                        "search_items": [],
+                        "engine": "serper",
+                    },
                 )
 
             results_json = json.dumps(
@@ -235,22 +234,20 @@ class SerperSearch(Tool):
 
             message = f"Serper search results for query: {query}\n\n{results_json}"
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(
-                    data={
-                        "query": query,
-                        "num_results": len(search_items),
-                        "search_items": search_items,
-                        "engine": "serper",
-                    }
-                ),
+                data={
+                    "query": query,
+                    "num_results": len(search_items),
+                    "search_items": search_items,
+                    "engine": "serper",
+                },
             )
 
         except Exception as e:
             logger.error(f"| Serper search error: {e}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Serper search failed: {str(e)}",
             )

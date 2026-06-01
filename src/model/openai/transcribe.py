@@ -19,7 +19,7 @@ except ImportError:
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.message.types import Message, HumanMessage, ContentPartAudio
-from src.model.types import LLMResponse
+from src.response.types import Response, ResponseType
 from src.logger import logger
 from src.utils import assemble_project_path
 
@@ -380,9 +380,9 @@ class TranscribeOpenAI(BaseModel):
         transcription: Any,
         temp_file_path: Optional[str] = None,
         file_obj: Optional[Any] = None,
-    ) -> LLMResponse:
+    ) -> Response:
         """
-        Format transcription response into LLMResponse (Step 3).
+        Format transcription response into Response (Step 3).
         
         Args:
             transcription: Transcription response object
@@ -390,7 +390,7 @@ class TranscribeOpenAI(BaseModel):
             file_obj: File object for cleanup
             
         Returns:
-            LLMResponse with transcribed text
+            Response with transcribed text
         """
         # Extract text from transcription response
         text = ""
@@ -405,20 +405,21 @@ class TranscribeOpenAI(BaseModel):
         self._cleanup_file_resources(file_obj, temp_file_path)
 
         # Format response
-        extra = {
+        extra_data = {
             "raw_response": transcription.model_dump() if hasattr(transcription, 'model_dump') else str(transcription),
         }
 
         # Add additional fields if available (for verbose_json format)
         if hasattr(transcription, 'words'):
-            extra["words"] = transcription.words
+            extra_data["words"] = transcription.words
         if hasattr(transcription, 'segments'):
-            extra["segments"] = transcription.segments
+            extra_data["segments"] = transcription.segments
 
-        return LLMResponse(
+        return Response(
+            type=ResponseType.LLM,
             success=True,
             message=text,
-            extra=extra
+            data=extra_data
         )
 
     async def __call__(
@@ -429,7 +430,7 @@ class TranscribeOpenAI(BaseModel):
         temperature: Optional[float] = None,
         timestamp_granularities: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
         Execute asynchronous transcription call via OpenAI API.
 
@@ -442,7 +443,7 @@ class TranscribeOpenAI(BaseModel):
             **kwargs: Additional parameters
 
         Returns:
-            LLMResponse with transcribed text
+            Response with transcribed text
         """
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
@@ -477,34 +478,38 @@ class TranscribeOpenAI(BaseModel):
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
             self._cleanup_file_resources(file_obj, temp_file_path)
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                extra={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name}
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
             self._cleanup_file_resources(file_obj, temp_file_path)
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name}
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
             self._cleanup_file_resources(file_obj, temp_file_path)
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                extra={"error": str(e), "status_code": e.status_code, "model": self.name}
+                data={"error": str(e), "status_code": e.status_code, "model": self.name}
             )
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             # Clean up resources on error
             self._cleanup_file_resources(file_obj, temp_file_path)
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name}
             )
 

@@ -8,7 +8,6 @@ from .types import (
 from .context import HookContextManager, HookConfig
 from .server import hook_manager
 from .default import (
-    TokenCountHook,
     CompactHook,
     TraceHook,
     EscalationHook,
@@ -26,7 +25,6 @@ __all__ = [
     "HookContextManager",
     "HookConfig",
     "hook_manager",
-    "TokenCountHook",
     "CompactHook",
     "TraceHook",
     "EscalationHook",

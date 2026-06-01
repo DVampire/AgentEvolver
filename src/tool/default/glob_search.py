@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from src.registry import TOOL
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 _IGNORED_DIRS = frozenset({
     ".git", "node_modules", "target", "dist", "build",
@@ -43,7 +44,7 @@ class GlobSearchTool(Tool):
         root: str,
         max_results: int = 100,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """Find files matching pattern under root.
 
         Args:
@@ -53,7 +54,7 @@ class GlobSearchTool(Tool):
         """
         try:
             if not os.path.isdir(root):
-                return ToolResponse(success=False, message=f"Error: Not a directory: {root}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Not a directory: {root}")
 
             matches: List[str] = []
             for dirpath, dirnames, filenames in os.walk(root):
@@ -80,11 +81,11 @@ class GlobSearchTool(Tool):
                 suffix = f"\n[Results capped at {max_results}. Refine your pattern to see more.]" if truncated else ""
                 message = f"Found {len(matches)} file(s):\n{lines}{suffix}"
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(data={"matches": matches, "truncated": truncated, "pattern": pattern}),
+                data={"matches": matches, "truncated": truncated, "pattern": pattern},
             )
 
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error in glob search: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error in glob search: {e}")

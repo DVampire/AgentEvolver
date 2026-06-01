@@ -12,7 +12,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.utils import assemble_project_path
 from src.utils import file_lock
 from src.registry import TOOL
@@ -471,7 +472,7 @@ class TodoTool(Tool):
         after_step_id: Optional[str] = None,
         export_path: Optional[str] = None,
         **kwargs
-    ) -> ToolResponse:
+    ) -> Response:
         """Execute a todo action asynchronously with coroutine safety.
 
         Args:
@@ -494,7 +495,7 @@ class TodoTool(Tool):
             # Handle cleanup action
             if action == "cleanup":
                 await self._cleanup_todo(id)
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=True,
                     message=f"✅ Cleaned up todo cache for id: {id}"
                 )
@@ -521,7 +522,7 @@ class TodoTool(Tool):
                 if action == "export":
                     return await self._handle_export(todo, export_path)
                 
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=(
                         f"Unknown action: {action}. "
@@ -532,7 +533,7 @@ class TodoTool(Tool):
         except Exception as e:
             logger.error(f"| ❌ Error in TodoTool: {e}")
             import traceback
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False, 
                 message=f"Error executing todo action '{action}': {str(e)}\n{traceback.format_exc()}"
             )
@@ -546,10 +547,10 @@ class TodoTool(Tool):
         parameters: Optional[Dict[str, Any]],
         after_step_id: Optional[str],
         step_id: Optional[str]
-    ) -> ToolResponse:
+    ) -> Response:
         """Handle add action."""
         if not task:
-            return ToolResponse(success=False, message="Error: Step description is required for add action")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: Step description is required for add action")
         
         try:
             new_step = await todo.add_step(
@@ -566,23 +567,21 @@ class TodoTool(Tool):
                 message = f"✅ Added step {new_step.id} after {after_step_id}: {task} (priority: {priority})"
             
             logger.info(f"| {message}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(
-                    file_path=todo.todo_file,
-                    data={
-                        "step_id": new_step.id,
-                        "after_step_id": after_step_id,
-                        "task": task,
-                        "priority": priority,
-                        "category": category,
-                        "parameters": parameters
-                    }
-                )
+                file_path=[todo.todo_file],
+                data={
+                    "step_id": new_step.id,
+                    "after_step_id": after_step_id,
+                    "task": task,
+                    "priority": priority,
+                    "category": category,
+                    "parameters": parameters
+                }
             )
         except ValueError as e:
-            return ToolResponse(success=False, message=f"Error: {str(e)}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: {str(e)}")
 
     async def _handle_complete(
         self,
@@ -590,33 +589,31 @@ class TodoTool(Tool):
         step_id: str,
         status: str,
         result: Optional[str]
-    ) -> ToolResponse:
+    ) -> Response:
         """Handle complete action."""
         if not step_id:
-            return ToolResponse(success=False, message="Error: Step ID is required for complete action")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: Step ID is required for complete action")
         
         if not status:
-            return ToolResponse(success=False, message="Error: Status is required for complete action")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: Status is required for complete action")
         
         try:
             step = await todo.complete_step(step_id=step_id, status=status, result=result)
             
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"✅ Completed step {step_id} with status: {status}",
-                extra=ToolExtra(
-                    file_path=todo.todo_file,
-                    data={
-                        "step_id": step_id,
-                        "status": status,
-                        "result": result,
-                        "updated_at": step.updated_at,
-                        "step_name": step.name
-                    }
-                )
+                file_path=[todo.todo_file],
+                data={
+                    "step_id": step_id,
+                    "status": status,
+                    "result": result,
+                    "updated_at": step.updated_at,
+                    "step_name": step.name
+                }
             )
         except ValueError as e:
-            return ToolResponse(success=False, message=f"Error: {str(e)}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: {str(e)}")
 
     async def _handle_update(
         self,
@@ -624,37 +621,35 @@ class TodoTool(Tool):
         step_id: str,
         task: Optional[str],
         parameters: Optional[Dict[str, Any]]
-    ) -> ToolResponse:
+    ) -> Response:
         """Handle update action."""
         if not step_id:
-            return ToolResponse(success=False, message="Error: Step ID is required for update action")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: Step ID is required for update action")
         
         try:
             step = await todo.update_step(step_id=step_id, task=task, parameters=parameters)
             
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"✅ Updated step {step_id}",
-                extra=ToolExtra(
-                    file_path=todo.todo_file,
-                    data={
-                        "step_id": step_id,
-                        "updated_fields": {
-                            "task": task if task else None,
-                            "parameters": parameters if parameters is not None else None
-                        },
-                        "updated_at": step.updated_at,
-                        "step_name": step.name
-                    }
-                )
+                file_path=[todo.todo_file],
+                data={
+                    "step_id": step_id,
+                    "updated_fields": {
+                        "task": task if task else None,
+                        "parameters": parameters if parameters is not None else None
+                    },
+                    "updated_at": step.updated_at,
+                    "step_name": step.name
+                }
             )
         except ValueError as e:
-            return ToolResponse(success=False, message=f"Error: {str(e)}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: {str(e)}")
 
-    def _handle_list(self, todo: Todo) -> ToolResponse:
+    def _handle_list(self, todo: Todo) -> Response:
         """Handle list action."""
         if not todo.steps:
-            return ToolResponse(success=False, message="No steps found. Use 'add' action to create your first step.")
+            return Response(type=ResponseType.TOOL, success=False, message="No steps found. Use 'add' action to create your first step.")
         
         result = "📋 Todo Steps:\n\n"
         for step in todo.steps:
@@ -684,64 +679,58 @@ class TodoTool(Tool):
                 result += f", Updated: {step.updated_at}"
             result += "\n\n"
         
-        return ToolResponse(
+        return Response(type=ResponseType.TOOL, 
             success=True,
             message=result,
-            extra=ToolExtra(
-                file_path=todo.todo_file,
-                data={
-                    "total_steps": len(todo.steps),
-                    "steps": [step.model_dump() for step in todo.steps],
-                    "pending_count": len([s for s in todo.steps if s.status == "pending"]),
-                    "completed_count": len([s for s in todo.steps if s.status in ["success", "failed"]])
-                }
-            )
+            file_path=[todo.todo_file],
+            data={
+                "total_steps": len(todo.steps),
+                "steps": [step.model_dump() for step in todo.steps],
+                "pending_count": len([s for s in todo.steps if s.status == "pending"]),
+                "completed_count": len([s for s in todo.steps if s.status in ["success", "failed"]])
+            }
         )
 
-    async def _handle_clear(self, todo: Todo) -> ToolResponse:
+    async def _handle_clear(self, todo: Todo) -> Response:
         """Handle clear action."""
         completed_steps = await todo.clear_completed()
         
         if not completed_steps:
-            return ToolResponse(success=False, message="No completed steps to remove")
+            return Response(type=ResponseType.TOOL, success=False, message="No completed steps to remove")
         
-        return ToolResponse(
+        return Response(type=ResponseType.TOOL, 
             success=True,
             message=f"✅ Removed {len(completed_steps)} completed step(s)",
-            extra=ToolExtra(
-                file_path=todo.todo_file,
-                data={
-                    "removed_count": len(completed_steps),
-                    "removed_steps": [step.model_dump() for step in completed_steps],
-                    "remaining_steps": len(todo.steps)
-                }
-            )
+            file_path=[todo.todo_file],
+            data={
+                "removed_count": len(completed_steps),
+                "removed_steps": [step.model_dump() for step in completed_steps],
+                "remaining_steps": len(todo.steps)
+            }
         )
 
-    def _handle_show(self, todo: Todo) -> ToolResponse:
+    def _handle_show(self, todo: Todo) -> Response:
         """Handle show action."""
         content = todo.get_content()
         
         if content.startswith("[Current todo.md is empty"):
-            return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
+            return Response(type=ResponseType.TOOL, success=False, message="No todo file found. Use 'add' action to create your first step.")
         
-        return ToolResponse(
+        return Response(type=ResponseType.TOOL, 
             success=True,
             message=f"📄 Todo.md content:\n\n```markdown\n{content}\n```",
-            extra=ToolExtra(
-                file_path=todo.todo_file,
-                data={
-                    "content": content,
-                    "file_size": len(content),
-                    "total_steps": len(todo.steps)
-                }
-            )
+            file_path=[todo.todo_file],
+            data={
+                "content": content,
+                "file_size": len(content),
+                "total_steps": len(todo.steps)
+            }
         )
 
-    async def _handle_export(self, todo: Todo, export_path: str) -> ToolResponse:
+    async def _handle_export(self, todo: Todo, export_path: str) -> Response:
         """Handle export action."""
         if not export_path:
-            return ToolResponse(success=False, message="Error: Export path is required for export action")
+            return Response(type=ResponseType.TOOL, success=False, message="Error: Export path is required for export action")
         
         try:
             # Ensure the todo.md file is up to date
@@ -749,7 +738,7 @@ class TodoTool(Tool):
             
             content = todo.get_content()
             if content.startswith("[Current todo.md is empty"):
-                return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
+                return Response(type=ResponseType.TOOL, success=False, message="No todo file found. Use 'add' action to create your first step.")
             
             # Create parent directories if they don't exist
             export_dir = os.path.dirname(export_path)
@@ -760,22 +749,20 @@ class TodoTool(Tool):
             with open(export_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"✅ Successfully exported todo.md to: {export_path}",
-                extra=ToolExtra(
-                    file_path=[todo.todo_file, export_path],
-                    data={
-                        "source_file": todo.todo_file,
-                        "export_path": export_path,
-                        "file_size": len(content),
-                        "total_steps": len(todo.steps)
-                    }
-                )
+                file_path=[todo.todo_file, export_path],
+                data={
+                    "source_file": todo.todo_file,
+                    "export_path": export_path,
+                    "file_size": len(content),
+                    "total_steps": len(todo.steps)
+                }
             )
             
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error exporting todo.md: {str(e)}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error exporting todo.md: {str(e)}")
 
     def get_todo_content(self, ctx: ToolContext, **kwargs) -> str:
         """Get the content of the todo.md file for a specific id.

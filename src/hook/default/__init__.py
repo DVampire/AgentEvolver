@@ -1,4 +1,3 @@
-from .token_count import TokenCountHook
 from .compact import CompactHook
 from .trace import TraceHook
 from .escalation import EscalationHook
@@ -8,7 +7,6 @@ from .tool_registration import ToolRegistrationHook
 from .agent_registration import AgentRegistrationHook
 
 __all__ = [
-    "TokenCountHook",
     "CompactHook",
     "TraceHook",
     "EscalationHook",

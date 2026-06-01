@@ -9,7 +9,8 @@ from src.tool.default.search import (
     JinaSearch
 )
 from src.logger import logger
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.model import model_manager
 from src.message.types import HumanMessage, SystemMessage
 from src.utils import dedent
@@ -78,7 +79,7 @@ class WebSearcherTool(Tool):
         country: Optional[str] = "us",
         filter_year: Optional[int] = None,
         **kwargs
-    ) -> ToolResponse:
+    ) -> Response:
         """
         Execute a Web search and return detailed search results with deep research.
 
@@ -108,37 +109,33 @@ class WebSearcherTool(Tool):
                     await asyncio.sleep(self.retry_delay)
                 else:
                     logger.error(f"| ❌ All search tools failed after {self.max_retries} retries. Giving up.")
-                    return ToolResponse(
+                    return Response(type=ResponseType.TOOL, 
                         success=False,
                         message=f"Error: All search tools failed to return results after multiple retries.",
-                        extra=ToolExtra(
-                            data={
-                                "query": query,
-                                "status": "failed",
-                                "results": [],
-                                "total_results": 0,
-                                "language": lang,
-                                "country": country,
-                                "search_tools_used": [],
-                                "retries": self.max_retries
-                            }
-                        )
-                    )
-            
-            if not results:
-                return ToolResponse(
-                    success=False,
-                    message="No search results found.",
-                    extra=ToolExtra(
                         data={
                             "query": query,
                             "status": "failed",
                             "results": [],
                             "total_results": 0,
                             "language": lang,
-                            "country": country
+                            "country": country,
+                            "search_tools_used": [],
+                            "retries": self.max_retries
                         }
                     )
+            
+            if not results:
+                return Response(type=ResponseType.TOOL, 
+                    success=False,
+                    message="No search results found.",
+                    data={
+                        "query": query,
+                        "status": "failed",
+                        "results": [],
+                        "total_results": 0,
+                        "language": lang,
+                        "country": country
+                    }
                 )
 
             logger.info(f"| ✅ Found {len(results)} search results from multiple engines")
@@ -184,22 +181,20 @@ class WebSearcherTool(Tool):
                 
             message = f"Web search results for query: {query}\n\n{output_message}"
 
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                extra=ToolExtra(
-                    data={
-                        "query": query,
-                        "num_results": len(results),
-                        "search_engines_used": search_engines_used,
-                        "merged_summary": merged_summary,
-                    }
-                )
+                data={
+                    "query": query,
+                    "num_results": len(results),
+                    "search_engines_used": search_engines_used,
+                    "merged_summary": merged_summary,
+                }
             )
 
         except Exception as e:
             logger.error(f"| ❌ Error in web search: {e}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Error during web search: {e}"
             )
@@ -531,17 +526,17 @@ class WebSearcherTool(Tool):
                 filter_year=search_params.get("filter_year"),
             )
             
-            # Handle ToolResponse
-            if isinstance(result, ToolResponse):
+            # Handle Response
+            if isinstance(result, Response):
                 if not result.success:
                     raise ValueError(f"Search tool failed: {result.message}")
-                if result.extra:
-                    search_items = result.extra.data.get("search_items", [])
+                if result.data:
+                    search_items = (result.data or {}).get("search_items", [])
                     return search_items
                 else:
-                    raise ValueError(f"Search tool returned invalid response: missing extra")
+                    raise ValueError(f"Search tool returned invalid response: missing data")
             else:
-                raise ValueError(f"Search tool returned invalid response: result is not a ToolResponse")
+                raise ValueError(f"Search tool returned invalid response: result is not a Response")
         
         try:
             return await _do_search()

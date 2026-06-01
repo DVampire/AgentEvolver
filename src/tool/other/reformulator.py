@@ -2,7 +2,8 @@
 from typing import List, Dict, Any, Optional
 from pydantic import Field, BaseModel
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.message.types import SystemMessage, HumanMessage
 from src.model import model_manager
 from src.logger import logger
@@ -53,7 +54,7 @@ class ReformulatorTool(Tool):
         task: str, 
         data: List[str],
         **kwargs
-    ) -> ToolResponse:
+    ) -> Response:
         """
         Reformulate the final answer from a conversation transcript.
         
@@ -61,7 +62,7 @@ class ReformulatorTool(Tool):
             task: The original task/question that was asked
             data: Conversation history in the form of a list of message texts.
         Returns:
-            ToolResponse with the reformulated final answer
+            Response with the reformulated final answer
         """
         try:
             
@@ -106,25 +107,24 @@ class ReformulatorTool(Tool):
             )
             
             if not response.success:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=f"Failed to reformulate answer: {response.message}"
                 )
             
             # Extract final answer from structured response
-            if response.extra and response.extra.parsed_model:
-                reformulated_answer = response.extra.parsed_model
+            if response.parsed_model:
+                reformulated_answer = response.parsed_model
                 final_answer = reformulated_answer.final_answer
                 logger.info(f"> Reformulated answer: {final_answer}")
-                
+
                 message = final_answer
-                return ToolResponse(success=True, 
-                                    message=message, 
-                                    extra=ToolExtra(
-                                        data={"original_response": response.message},
-                                        parsed_model=reformulated_answer
-                                    )
-                                )
+                return Response(type=ResponseType.TOOL, 
+                    success=True,
+                    message=message,
+                    data={"original_response": response.message},
+                    parsed_model=reformulated_answer
+                )
             else:
                 # Fallback: parse from text response
                 response_text = str(response.message)
@@ -132,21 +132,20 @@ class ReformulatorTool(Tool):
                     final_answer = response_text.split("FINAL ANSWER: ")[-1].strip()
                 else:
                     final_answer = response_text.strip()
-                
+
                 logger.info(f"> Reformulated answer (fallback): {final_answer}")
-                
+
                 message = final_answer
-                
-                return ToolResponse(success=True, 
-                                    message=message, 
-                                    extra=ToolExtra(
-                                        data={"original_response": response_text}
-                                    )
-                                )
+
+                return Response(type=ResponseType.TOOL, 
+                    success=True,
+                    message=message,
+                    data={"original_response": response_text}
+                )
             
         except Exception as e:
             logger.error(f"Error in reformulator tool: {e}")
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=False,
                 message=f"Error reformulating answer: {str(e)}"
             )

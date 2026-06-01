@@ -5,7 +5,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.hook.server import hook_manager
 from src.logger import logger
 from src.registry import AGENT
@@ -109,7 +110,7 @@ class SkillGenerateAgent(Agent):
         task: str,
         target_name: Optional[str] = None,
         **kwargs,
-    ) -> AgentResponse:
+    ) -> Response:
         from src.utils.name_utils import make_id
         from src.hook.types import HookDecision, HookEvent
         from src.utils import get_project_root
@@ -212,8 +213,8 @@ class SkillGenerateAgent(Agent):
             ctx=ctx,
         )
 
-        return AgentResponse(
+        return Response(type=ResponseType.AGENT, 
             success=response["done"],
             message=response["result"] or "",
-            extra=AgentExtra(data=response),
+            data=response,
         )

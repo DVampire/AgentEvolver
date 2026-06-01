@@ -4,7 +4,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
-from src.agent.types import Agent, AgentContext, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response, ResponseType
 from src.hook.server import hook_manager
 from src.hook.types import HookEvent
 from src.logger import logger
@@ -105,7 +106,7 @@ class ToolOptimizeAgent(Agent):
         task: str,
         target_name: Optional[str] = None,
         **kwargs,
-    ) -> AgentResponse:
+    ) -> Response:
         logger.info(f"| 🚀 Starting {self.name}: {task} (tool={target_name})")
 
         ctx = kwargs.get("ctx", None)
@@ -116,15 +117,15 @@ class ToolOptimizeAgent(Agent):
 
         if not target_name:
             logger.warning(f"| ⚠️ {self.name} called without target_name")
-            return AgentResponse(success=False, message="target_name is required for optimization but was not provided.")
+            return Response(type=ResponseType.AGENT, success=False, message="target_name is required for optimization but was not provided.")
 
         tool_config = await tool_manager.get_info(target_name)
         if tool_config is None:
             logger.warning(f"| ⚠️ Tool '{target_name}' not found in registry, refusing optimization")
-            return AgentResponse(success=False, message=f"Tool '{target_name}' not found in registry.")
+            return Response(type=ResponseType.AGENT, success=False, message=f"Tool '{target_name}' not found in registry.")
         if not tool_config.require_grad:
             logger.warning(f"| ⚠️ Tool '{target_name}' has require_grad=False, refusing optimization")
-            return AgentResponse(success=False, message=f"Tool '{target_name}' is not evolvable (require_grad=False).")
+            return Response(type=ResponseType.AGENT, success=False, message=f"Tool '{target_name}' is not evolvable (require_grad=False).")
 
         task_id = make_id()
 
@@ -213,9 +214,9 @@ class ToolOptimizeAgent(Agent):
             ctx=ctx,
         )
 
-        return AgentResponse(
+        return Response(type=ResponseType.AGENT, 
             success=response["done"],
             message=response["result"] or "",
-            extra=AgentExtra(data=response),
+            data=response,
         )
 

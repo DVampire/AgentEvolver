@@ -1,7 +1,8 @@
 """Done tool for indicating that the task has been completed."""
 from typing import Dict, Any
 from pydantic import Field
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
@@ -31,7 +32,7 @@ class DoneTool(Tool):
     async def __call__(self, 
                        reasoning: str,
                        result: str,
-                       **kwargs) -> ToolResponse:
+                       **kwargs) -> Response:
         """
         Indicate that the task has been completed.
 
@@ -48,4 +49,4 @@ class DoneTool(Tool):
             result = "No result provided"
         else:
             result = str(result)
-        return ToolResponse(success=True, message=result, extra=ToolExtra(data={"reasoning": reasoning, "result": result}))
+        return Response(type=ResponseType.TOOL, success=True, message=result, data={"reasoning": reasoning, "result": result})

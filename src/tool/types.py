@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import BaseModel, ConfigDict, Field
 from src.dynamic import dynamic_manager
 from src.session import BaseContext
+from src.response.types import Response, ResponseType
 
 
 class ToolContext(BaseContext):
@@ -15,25 +16,7 @@ class ToolContext(BaseContext):
     name: str = Field(default="", description="Name of the tool being called.")
     timeout: Optional[float] = Field(default=None, description="Per-call timeout override.")
     work_dir: Optional[str] = Field(default=None, description="Working directory for file operations.")
-    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed by the caller.")
-    extra: Dict[str, Any] = Field(default_factory=dict, description="Reserved — not populated or read by the framework.")
 
-
-class ToolExtra(BaseModel):
-    """Extra data for a tool response"""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    file_path: Optional[Union[str, List[str]]] = Field(default=None, description="The file path of the extra data")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="The data of the extra data")
-    parsed_model: Optional[BaseModel] = Field(default=None, description="The parsed model of the extra data")
-
-class ToolResponse(BaseModel):
-    """Response for a tool call."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    success: bool = Field(description="Whether the tool call was successful")
-    message: str = Field(description="The message from the tool call")
-    extra: Optional[ToolExtra] = Field(default=None, description="The extra data from the tool call")
 
 class Tool(BaseModel):
     """Base class for all tools that can be exposed through function calling."""
@@ -45,7 +28,7 @@ class Tool(BaseModel):
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
 
-    async def __call__(self, **kwargs) -> ToolResponse:
+    async def __call__(self, **kwargs) -> Response:
         """Call the tool with the given arguments."""
         raise NotImplementedError("All tools must implement __call__")
 
@@ -148,7 +131,7 @@ class ToolConfig(BaseModel):
 
 __all__ = [
     "Tool",
-    "ToolResponse",
     "ToolConfig",
+    "ToolContext",
 ]
 

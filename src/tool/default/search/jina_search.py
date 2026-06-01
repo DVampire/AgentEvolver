@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.tool.default.search.types import SearchItem
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.logger import logger
 from src.registry import TOOL
 from src.utils import hvac_client
@@ -124,7 +125,7 @@ class JinaSearch(Tool):
         lang: Optional[str] = "en",
         filter_year: Optional[int] = None,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         """
         Jina AI search tool.
 
@@ -147,15 +148,17 @@ class JinaSearch(Tool):
 
             message = f"Jina search results for query: {query}\n\n{results_json}"
 
-            return ToolResponse(success=True, message=message, extra=ToolExtra(
+            return Response(type=ResponseType.TOOL, 
+                success=True,
+                message=message,
                 data={
                     "query": query,
                     "num_results": len(search_items),
                     "search_items": search_items,
                     "engine": "jina",
                 }
-            ))
+            )
 
         except Exception as e:
             logger.error(f"Error in Jina search: {e}")
-            return ToolResponse(success=False, message=f"Error in Jina search: {str(e)}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error in Jina search: {str(e)}")

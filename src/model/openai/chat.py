@@ -26,7 +26,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.message.types import Message
 from src.model.openai.serializer import OpenAIChatSerializer
-from src.model.types import LLMResponse, LLMExtra, TokenUsage
+from src.response.types import Response, ResponseType
+from src.model.types import TokenUsage
 from src.logger import logger
 from typing import TYPE_CHECKING
 
@@ -282,7 +283,7 @@ class ChatOpenAI(BaseModel):
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Response:
         """
         Execute asynchronous completion call via OpenAI API.
 
@@ -294,7 +295,7 @@ class ChatOpenAI(BaseModel):
             **kwargs: Additional parameters
 
         Returns:
-            LLMResponse with formatted message
+            Response with formatted message
         """
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
@@ -321,41 +322,37 @@ class ChatOpenAI(BaseModel):
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                extra=LLMExtra(
-                    data={"error": str(e), "model": self.name}
-                )
+                data={"error": str(e), "model": self.name}
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                extra=LLMExtra(
-                    data={"error": str(e), "model": self.name}
-                )
+                data={"error": str(e), "model": self.name}
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                extra=LLMExtra(
-                    data={"error": str(e), "status_code": e.status_code, "model": self.name}
-                )
+                data={"error": str(e), "status_code": e.status_code, "model": self.name}
             )
         except httpx.TimeoutException:
             raise
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra=LLMExtra(
-                    data={"error": str(e), "model": self.name}
-                )
+                data={"error": str(e), "model": self.name}
             )
 
     async def _format_response(
@@ -363,16 +360,14 @@ class ChatOpenAI(BaseModel):
         response: ChatCompletion,
         tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-    ) -> LLMResponse:
-        """Format OpenAI response into LLMResponse."""
+    ) -> Response:
+        """Format OpenAI response into Response."""
         try:
             if not response.choices:
-                return LLMResponse(
+                return Response(type=ResponseType.LLM, 
                     success=False,
                     message="No choices in response",
-                    extra=LLMExtra(
-                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
-                    )
+                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                 )
 
             message = response.choices[0].message
@@ -385,47 +380,43 @@ class ChatOpenAI(BaseModel):
                 # Format tool_calls as string
                 formatted_lines = []
                 functions = []
-                
+
                 for tool_call in message.tool_calls:
                     function_info = tool_call.function
                     name = function_info.name
                     arguments_str = function_info.arguments
-                    
+
                     # Parse arguments if it's a string
                     import json
                     try:
                         arguments = json.loads(arguments_str) if isinstance(arguments_str, str) else arguments_str
                     except json.JSONDecodeError:
                         arguments = {}
-                    
+
                     # Format arguments as keyword arguments
                     if arguments:
                         args_str = ", ".join([f"{k}={v!r}" for k, v in arguments.items()])
                         formatted_lines.append(f"Calling function {name}({args_str})")
                     else:
                         formatted_lines.append(f"Calling function {name}()")
-                    
+
                     functions.append({
                         "name": name,
                         "args": arguments
                     })
-                
+
                 formatted_message = "\n".join(formatted_lines)
-                
-                extra = LLMExtra(
+
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=formatted_message,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                         "functions": functions,
                         "usage": usage,
                         "finish_reason": finish_reason,
                         "reasoning": reasoning,
-                    }
-                )
-                
-                return LLMResponse(
-                    success=True,
-                    message=formatted_message,
-                    extra=extra,
+                    },
                     usage=usage,
                 )
 
@@ -433,92 +424,77 @@ class ChatOpenAI(BaseModel):
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 content = message.content or ""
                 if not content:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message="Empty response content from model",
-                        extra=LLMExtra(
-                            data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
-                        )
+                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
                     )
-                
+
                 # Parse JSON content
                 import json
                 try:
-                    data = json.loads(content)
-                    parsed_model = response_format.model_validate(data)
-                    
+                    json_data = json.loads(content)
+                    parsed_model = response_format.model_validate(json_data)
+
                     # Format as string
                     model_name = response_format.__name__
                     model_dict = parsed_model.model_dump()
-                    
+
                     field_lines = []
                     for field_name, field_value in model_dict.items():
                         field_lines.append(f"{field_name}={field_value!r}")
-                    
+
                     formatted_message = f"Response result:\n\n{model_name}(\n"
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
-                    
-                    extra = LLMExtra(
+
+                    return Response(type=ResponseType.LLM, 
+                        success=True,
+                        message=formatted_message,
                         parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                             "usage": usage,
                             "finish_reason": finish_reason,
                             "reasoning": reasoning,
-                        }
-                    )
-                    
-                    return LLMResponse(
-                        success=True,
-                        message=formatted_message,
-                        extra=extra,
+                        },
                         usage=usage,
                     )
                 except json.JSONDecodeError as e:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        extra=LLMExtra(
-                            data={"error": str(e), "content": content}
-                        )
+                        data={"error": str(e), "content": content}
                     )
                 except Exception as e:
-                    return LLMResponse(
+                    return Response(type=ResponseType.LLM, 
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        extra=LLMExtra(
-                            data={"error": str(e), "content": content}
-                        )
+                        data={"error": str(e), "content": content}
                     )
 
             # Default: return content as string
             else:
                 content = message.content or ""
-                
-                extra = LLMExtra(
+
+                return Response(type=ResponseType.LLM, 
+                    success=True,
+                    message=content,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                         "usage": usage,
                         "finish_reason": finish_reason,
                         "reasoning": reasoning,
-                    }
-                )
-                
-                return LLMResponse(
-                    success=True,
-                    message=content,
-                    extra=extra,
+                    },
                     usage=usage,
                 )
 
         except Exception as e:
             logger.error(f"Failed to format response: {e}")
-            return LLMResponse(
+            return Response(
+                type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                extra=LLMExtra(
-                    data={"error": str(e)}
-                )
+                data={"error": str(e)}
             )
 

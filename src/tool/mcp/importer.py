@@ -16,7 +16,8 @@ from src.dynamic import dynamic_manager
 from src.logger import logger
 from src.registry import TOOL
 from src.tool.server import tool_manager
-from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 
 _MCP_IMPORTER_DESCRIPTION = """Import MCP server tools and register them into tool manager.
@@ -90,7 +91,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 
 
 class {class_name}(Tool):
@@ -113,7 +115,7 @@ class {class_name}(Tool):
     async def __call__(self,
                        action: str,
                        args: Optional[Dict[str, Any]] = None,
-                       **kwargs) -> ToolResponse:
+                       **kwargs) -> Response:
         """
         Route a call to a tool exposed by this MCP server.
 
@@ -126,7 +128,7 @@ class {class_name}(Tool):
                 from langchain_mcp_adapters.client import MultiServerMCPClient
                 from langchain_mcp_adapters.tools import load_mcp_tools
             except Exception as e:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=f"Missing MCP dependency: {{e}}. Install `langchain_mcp_adapters` to use MCP tools.",
                 )
@@ -144,7 +146,7 @@ class {class_name}(Tool):
                 tool = next((t for t in tools if getattr(t, "name", None) == action), None)
                 if tool is None:
                     available = [getattr(t, "name", None) for t in tools]
-                    return ToolResponse(
+                    return Response(type=ResponseType.TOOL, 
                         success=False,
                         message=f"MCP action not found: {{action}} (server={{self.server_name}}). Available: {{available}}",
                     )
@@ -158,13 +160,13 @@ class {class_name}(Tool):
                 else:
                     msg = str(result)
 
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=True,
                     message=msg,
-                    extra=ToolExtra(data={{"server": self.server_name, "action": action, "args": payload}}),
+                    data={{"server": self.server_name, "action": action, "args": payload}},
                 )
         except Exception as e:
-            return ToolResponse(success=False, message=f"MCP tool call failed: {{e}}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"MCP tool call failed: {{e}}")
 '''
 
 
@@ -185,23 +187,23 @@ class MCPImportTool(Tool):
         override: bool = True,
         dry_run: bool = False,
         **kwargs,
-    ) -> ToolResponse:
+    ) -> Response:
         try:
             try:
                 from langchain_mcp_adapters.client import MultiServerMCPClient
             except Exception as e:
-                return ToolResponse(
+                return Response(type=ResponseType.TOOL, 
                     success=False,
                     message=f"Missing MCP dependency: {e}. Install `langchain_mcp_adapters` to import MCP tools.",
                 )
 
             if not isinstance(connections, dict) or not connections:
-                return ToolResponse(success=False, message="`connections` must be a non-empty dict of server configs.")
+                return Response(type=ResponseType.TOOL, success=False, message="`connections` must be a non-empty dict of server configs.")
 
             selected_servers = [server_name] if server_name else list(connections.keys())
             missing = [s for s in selected_servers if s not in connections]
             if missing:
-                return ToolResponse(success=False, message=f"Unknown server(s) in connections: {missing}")
+                return Response(type=ResponseType.TOOL, success=False, message=f"Unknown server(s) in connections: {missing}")
 
             client = MultiServerMCPClient(
                 {s: connections[s] for s in selected_servers},
@@ -258,20 +260,18 @@ class MCPImportTool(Tool):
                 if not dry_run
                 else f"Planned {len(planned)} MCP server tool(s) (dry-run)."
             )
-            return ToolResponse(
+            return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=msg,
-                extra=ToolExtra(
-                    data={
-                        "planned": planned,
-                        "registered": registered,
-                        "servers": selected_servers,
-                        "name_prefix": name_prefix,
-                    }
-                ),
+                data={
+                    "planned": planned,
+                    "registered": registered,
+                    "servers": selected_servers,
+                    "name_prefix": name_prefix,
+                },
             )
 
         except Exception as e:
             logger.error(f"| ❌ MCP importer failed: {e}")
-            return ToolResponse(success=False, message=f"MCP importer failed: {e}")
+            return Response(type=ResponseType.TOOL, success=False, message=f"MCP importer failed: {e}")
 

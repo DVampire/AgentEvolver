@@ -2,7 +2,8 @@
 import datetime
 from typing import Any, Dict, Optional
 from pydantic import Field
-from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.types import Tool
+from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
 
@@ -22,7 +23,7 @@ class HelloWorldTool(Tool):
     def __init__(self, require_grad: bool = True, **kwargs):
         super().__init__(require_grad=require_grad, **kwargs)
 
-    async def __call__(self, name: Optional[str] = "World", **kwargs) -> ToolResponse:
+    async def __call__(self, name: Optional[str] = "World", **kwargs) -> Response:
         """Return a greeting for the given name.
 
         Args:
@@ -30,8 +31,8 @@ class HelloWorldTool(Tool):
         """
         timestamp = datetime.datetime.now().isoformat()
         message = f"Hello, {name}! (Timestamp: {timestamp})"
-        return ToolResponse(
+        return Response(type=ResponseType.TOOL, 
             success=True,
             message=message,
-            extra=ToolExtra(data={"greeting": message, "timestamp": timestamp}),
+            data={"greeting": message, "timestamp": timestamp},
         )

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from src.session import BaseContext
+from src.response.types import Response, ResponseType
 
 
 class SkillContext(BaseContext):
@@ -16,25 +17,6 @@ class SkillContext(BaseContext):
     name: str = Field(default="", description="Name of the skill being invoked.")
     timeout: Optional[int] = Field(default=None, description="Optional timeout for skill execution in seconds")
     work_dir: Optional[str] = Field(default=None)
-    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed by the caller.")
-    extra: Dict[str, Any] = Field(default_factory=dict, description="Reserved — not populated or read by the framework.")
-
-
-class SkillExtra(BaseModel):
-    """Extra data attached to a skill response."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-
-    file_path: Optional[str] = Field(default=None, description="Related file path")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary extra data")
-
-
-class SkillResponse(BaseModel):
-    """Response returned by a skill operation."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-
-    success: bool = Field(description="Whether the operation succeeded")
-    message: str = Field(description="Human-readable result message")
-    extra: Optional[SkillExtra] = Field(default=None, description="Extra data")
 
 
 class SkillConfig(BaseModel):
@@ -79,6 +61,5 @@ class SkillConfig(BaseModel):
 
 __all__ = [
     "SkillConfig",
-    "SkillResponse",
-    "SkillExtra",
+    "SkillContext",
 ]
