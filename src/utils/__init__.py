@@ -17,6 +17,7 @@ from .string_utils import (
     is_same,
 )
 from .name_utils import make_id
+from .screenshot_utils import ScreenshotService
 from .url_utils import fetch_url
 from .args_utils import parse_tool_args
 from .hvac_utils import hvac_client
@@ -50,6 +51,7 @@ __all__ = [
     "extract_boxed_content",
     "dedent",
     "make_id",
+    "ScreenshotService",
     "fetch_url",
     "parse_tool_args",
     "is_same",
