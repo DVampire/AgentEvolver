@@ -1,24 +1,50 @@
-"""Simple integration test for BrowserEnvironment."""
+"""Simple integration test for BrowserEnvironment.
+
+Usage:
+    # Local Playwright (headless)
+    python tests/test_browser_environment.py
+
+    # OpenSandbox Chrome (auto-starts opensandbox-server)
+    USE_SANDBOX=1 python tests/test_browser_environment.py
+"""
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.environment.default.browser.environment import BrowserEnvironment
+USE_SANDBOX = os.getenv("USE_SANDBOX", "0") == "1"
 
 
 async def main():
-    env = BrowserEnvironment(
-        base_dir="tests/browser_output",
-        headless=True,
-    )
+    from src.config import config
+    from src.environment.server import environment_manager
 
-    await env.initialize()
+    # Inject browser environment config before initialize()
+    if USE_SANDBOX:
+        print("🟡 Mode: OpenSandbox Chrome")
+        config["browser_environment"] = {
+            "base_dir": "tests/browser_output",
+            "use_sandbox": True,
+            "sandbox_domain": os.getenv("SANDBOX_DOMAIN", "localhost:8080"),
+            "sandbox_api_key": os.getenv("SANDBOX_API_KEY"),
+        }
+    else:
+        print("🟢 Mode: Local Playwright (headless)")
+        config["browser_environment"] = {
+            "base_dir": "tests/browser_output",
+            "headless": True,
+        }
 
-    # 1. get_state — check URL and screenshot are present
-    print("--- get_state ---")
+    # initialize() auto-discovers and builds all registered environments
+    await environment_manager.initialize()
+    env = await environment_manager.get("browser_environment")
+    assert env is not None, "BrowserEnvironment not found after initialize()"
+
+    # 1. get_state
+    print("\n--- get_state ---")
     state = await env.get_state()
     print(f"URL   : {state['extra']['url']}")
     print(f"Title : {state['extra']['title']}")
@@ -26,31 +52,31 @@ async def main():
     assert state["extra"]["url"], "Expected a non-empty URL"
     assert state["extra"]["screenshots"], "Expected screenshots in state"
 
-    # 2. click — middle of the page
+    # 2. click
     print("\n--- click ---")
     result = await env.click(x=512, y=384)
     print(f"success: {result['success']}  message: {result['message']}")
     assert result["success"]
 
-    # 3. type — search something
+    # 3. type
     print("\n--- type ---")
     result = await env.type_text(text="playwright browser test")
     print(f"success: {result['success']}  message: {result['message']}")
     assert result["success"]
 
-    # 4. keypress — press Enter
+    # 4. keypress
     print("\n--- keypress ---")
     result = await env.keypress(keys=["Enter"])
     print(f"success: {result['success']}  message: {result['message']}")
     assert result["success"]
 
-    # 5. wait — let the page settle
+    # 5. wait
     print("\n--- wait ---")
     result = await env.wait(ms=1500)
     print(f"success: {result['success']}  message: {result['message']}")
     assert result["success"]
 
-    # 6. get_state again — URL should have changed after search
+    # 6. get_state after search
     print("\n--- get_state (after search) ---")
     state = await env.get_state()
     print(f"URL   : {state['extra']['url']}")
@@ -68,7 +94,7 @@ async def main():
     print(f"success: {result['success']}  message: {result['message']}")
     assert result["success"]
 
-    await env.cleanup()
+    await environment_manager.cleanup()
     print("\n✅ All checks passed")
 
 

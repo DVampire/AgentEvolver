@@ -16,6 +16,7 @@ from src.version import version_manager
 from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
 from src.environment.types import Environment, EnvironmentConfig, ActionConfig
+from src.environment.sandbox import SandboxServerManager
 from src.session import SessionContext
 from src.dynamic import dynamic_manager
 from src.registry import ENVIRONMENT
@@ -46,7 +47,8 @@ class EnvironmentContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.default_dir, "environment"))
+            base_root = config.default_dir if hasattr(config, "default_dir") and config.get("default_dir") else config.work_dir
+            self.base_dir = assemble_project_path(os.path.join(base_root, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Environment context manager base directory: {self.base_dir}.")    
         if save_path is not None:
@@ -64,11 +66,14 @@ class EnvironmentContextManager(BaseModel):
         # Environment version history, e.g., {"env_name": {"1.0.0": EnvironmentConfig, "1.0.1": EnvironmentConfig}}
         self._environment_history_versions: Dict[str, Dict[str, EnvironmentConfig]] = {}
 
+        self._sandbox_server = SandboxServerManager()
         self._cleanup_registered = False
         
     async def initialize(self, env_names: Optional[List[str]] = None):
         """Initialize the environment context manager."""
-        
+
+        await version_manager.initialize()
+
         # Register environment-related symbols for auto-injection in dynamic code
         dynamic_manager.register_symbol("ENVIRONMENT", ENVIRONMENT)
         dynamic_manager.register_symbol("Environment", Environment)
@@ -117,6 +122,9 @@ class EnvironmentContextManager(BaseModel):
         if env_names is not None:
             env_configs = {name: env_configs[name] for name in env_names if name in env_configs}
         
+        # Start opensandbox-server once if any environment requires it
+        await self._ensure_sandbox_server(env_configs)
+
         # Build all environments concurrently with a concurrency limit
         env_names_list = list(env_configs.keys())
         tasks = [
@@ -430,6 +438,10 @@ class EnvironmentContextManager(BaseModel):
                 env_config_key = inflection.underscore(env_cls.__name__)
                 env_config_dict = getattr(config, env_config_key, {}) if hasattr(config, env_config_key) else {}
             
+            # Ensure opensandbox-server is running if this environment needs it
+            if env_config_dict and env_config_dict.get("use_sandbox", False):
+                await self._ensure_sandbox_server({}, force=True)
+
             # Instantiate environment immediately (register is a runtime operation)
             try:
                 env_instance = env_cls(**env_config_dict)
@@ -1108,6 +1120,17 @@ class EnvironmentContextManager(BaseModel):
         logger.info(f"| 🔄 Restored environment {env_name} to version {version}")
         return restored_config
     
+    async def _ensure_sandbox_server(self, env_configs: Dict[str, EnvironmentConfig], force: bool = False) -> None:
+        """Start opensandbox-server if any registered environment requires it."""
+        needs_sandbox = force or any(
+            cfg.config and cfg.config.get("use_sandbox", False)
+            for cfg in env_configs.values()
+        )
+        if not needs_sandbox:
+            return
+        logger.info("| 🔍 Sandbox-based environment detected — ensuring opensandbox-server is running")
+        await self._sandbox_server.ensure_running()
+
     async def save_contract(self, env_names: Optional[List[str]] = None):
         """Save the contract for an environment"""
         contract = []
@@ -1148,6 +1171,9 @@ class EnvironmentContextManager(BaseModel):
             # Clear all environment configs and version history
             self._environment_configs.clear()
             self._environment_history_versions.clear()
+
+            # Shut down opensandbox-server if we started it
+            await self._sandbox_server.shutdown()
 
             logger.info("| 🧹 Environment context manager cleaned up")
             

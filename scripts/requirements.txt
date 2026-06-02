@@ -28,3 +28,4 @@ crawl4ai>=0.8.6
 dirtyjson>=1.0.8
 google-cloud-vision>=3.13.0
 json_repair>=0.59.10
+opensandbox>=0.1.9

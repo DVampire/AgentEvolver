@@ -35,7 +35,8 @@ class EnvironmentManagerServer(BaseModel):
             env_names: List of environment names to initialize. If None, initialize all registered environments.
         """
 
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "environment"))
+        base_root = config.default_dir if hasattr(config, "default_dir") and config.get("default_dir") else config.work_dir
+        self.base_dir = assemble_project_path(os.path.join(base_root, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "environment.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")
@@ -103,8 +104,10 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             EnvironmentConfig: Environment configuration
         """
+        if not hasattr(self, "environment_context_manager"):
+            await self.initialize(env_names=[])
         env_config = await self.environment_context_manager.register(
-            env_cls, 
+            env_cls,
             env_config_dict=env_config_dict, 
             override=override,
             version=version

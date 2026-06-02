@@ -1,7 +1,13 @@
-"""Playwright-based browser service."""
+"""Playwright-based browser service.
+
+Supports two launch modes:
+  - Local (default): launches a Chromium process via Playwright directly.
+  - OpenSandbox: spins up an opensandbox/chrome container and connects via CDP.
+"""
 
 import asyncio
 import base64
+from datetime import timedelta
 from typing import Dict, Any, List, Optional
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
@@ -13,24 +19,41 @@ from src.environment.types import ActionResult
 class BrowserService:
     """Browser service backed directly by Playwright."""
 
-    def __init__(self, headless: bool = True, viewport: Dict[str, int] = None):
+    def __init__(
+        self,
+        headless: bool = True,
+        viewport: Dict[str, int] = None,
+        use_sandbox: bool = False,
+        sandbox_domain: str = "localhost:8080",
+        sandbox_api_key: Optional[str] = None,
+        sandbox_image: str = "opensandbox/chrome:latest",
+        sandbox_timeout_minutes: int = 30,
+    ):
         self.headless = headless
         self.viewport = viewport or {"width": 1024, "height": 768}
+        self.use_sandbox = use_sandbox
+        self.sandbox_domain = sandbox_domain
+        self.sandbox_api_key = sandbox_api_key
+        self.sandbox_image = sandbox_image
+        self.sandbox_timeout_minutes = sandbox_timeout_minutes
+        self.sandbox_server_bin = "opensandbox-server"
 
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._sandbox = None  # opensandbox Sandbox instance
 
     async def start(self):
         """Launch the browser and open a default page."""
         try:
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(headless=self.headless)
-            self._context = await self._browser.new_context(
-                viewport=self.viewport,
-                no_viewport=False,
-            )
+
+            if self.use_sandbox:
+                await self._start_sandbox()
+            else:
+                await self._start_local()
+
             self._page = await self._context.new_page()
             await self._page.goto("https://www.google.com")
             await asyncio.sleep(1)
@@ -39,6 +62,67 @@ class BrowserService:
             logger.error(f"| ❌ Failed to start browser: {e}")
             raise
 
+    async def _start_local(self):
+        self._browser = await self._playwright.chromium.launch(headless=self.headless)
+        self._context = await self._browser.new_context(viewport=self.viewport)
+        logger.info("| 🖥️  Local Chromium launched")
+
+    async def _start_sandbox(self):
+        """Connect to a Chrome container managed by opensandbox-server.
+
+        EnvironmentContextManager starts the server before environments are built.
+        When BrowserService is used standalone (e.g. in tests), we ensure the
+        server is running here as a fallback.
+        """
+        from src.environment.sandbox import SandboxServerManager
+        from opensandbox.sandbox import Sandbox
+        from opensandbox.config import ConnectionConfig
+
+        await SandboxServerManager(domain=self.sandbox_domain, server_bin=self.sandbox_server_bin).ensure_running()
+
+        connection_config = ConnectionConfig(
+            domain=self.sandbox_domain,
+            api_key=self.sandbox_api_key,
+            request_timeout=timedelta(seconds=60),
+        )
+        self._sandbox = await Sandbox.create(
+            self.sandbox_image,
+            timeout=timedelta(minutes=self.sandbox_timeout_minutes),
+            entrypoint=["/entrypoint"],
+            connection_config=connection_config,
+        )
+        devtools = await self._sandbox.get_endpoint(9222)
+        proxy_base = f"http://{devtools.endpoint}"  # e.g. http://127.0.0.1:40697/proxy/9222
+        logger.info(f"| 📦 OpenSandbox Chrome DevTools proxy: {proxy_base}")
+
+        # Fetch /json/version through the proxy and rewrite the ws URL so it also
+        # goes through the proxy (the raw ws URL points at the container-internal port)
+        import httpx as _httpx
+
+        ws_url = None
+        for attempt in range(15):
+            try:
+                async with _httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{proxy_base}/json/version")
+                    data = resp.json()
+                    raw_ws = data.get("webSocketDebuggerUrl", "")
+                    # raw_ws looks like ws://127.0.0.1:40697/devtools/browser/<id>
+                    # We need ws://127.0.0.1:40697/proxy/9222/devtools/browser/<id>
+                    proxy_host = devtools.endpoint.split("/proxy/")[0]  # 127.0.0.1:40697
+                    devtools_path = raw_ws.split(proxy_host, 1)[-1]     # /devtools/browser/<id>
+                    ws_url = f"ws://{proxy_host}/proxy/9222{devtools_path}"
+                    logger.info(f"| 📦 CDP WebSocket URL: {ws_url}")
+                    break
+            except Exception:
+                if attempt == 14:
+                    raise
+                await asyncio.sleep(2)
+                logger.info(f"| ⏳ Waiting for Chrome DevTools to be ready (attempt {attempt + 1}/15)")
+
+        self._browser = await self._playwright.chromium.connect_over_cdp(ws_url)
+        contexts = self._browser.contexts
+        self._context = contexts[0] if contexts else await self._browser.new_context(viewport=self.viewport)
+
     async def stop(self):
         """Close the browser."""
         try:
@@ -46,10 +130,13 @@ class BrowserService:
                 await self._browser.close()
             if self._playwright:
                 await self._playwright.stop()
+            if self._sandbox:
+                await self._sandbox.kill()
             self._page = None
             self._context = None
             self._browser = None
             self._playwright = None
+            self._sandbox = None
             logger.info("| 🛑 BrowserService stopped")
         except Exception as e:
             logger.error(f"| ❌ Error stopping browser: {e}")

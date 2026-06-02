@@ -41,6 +41,11 @@ class BrowserEnvironment(Environment):
         base_dir: str = None,
         headless: bool = False,
         viewport: Optional[Dict[str, int]] = None,
+        use_sandbox: bool = False,
+        sandbox_domain: str = "localhost:8080",
+        sandbox_api_key: Optional[str] = None,
+        sandbox_image: str = "opensandbox/chrome:latest",
+        sandbox_timeout_minutes: int = 30,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -50,7 +55,15 @@ class BrowserEnvironment(Environment):
 
         os.makedirs(self.base_dir, exist_ok=True)
 
-        self._service = BrowserService(headless=self.headless, viewport=self.viewport)
+        self._service = BrowserService(
+            headless=headless,
+            viewport=self.viewport,
+            use_sandbox=use_sandbox,
+            sandbox_domain=sandbox_domain,
+            sandbox_api_key=sandbox_api_key,
+            sandbox_image=sandbox_image,
+            sandbox_timeout_minutes=sandbox_timeout_minutes,
+        )
         self._step = 0
         self.screenshot: Optional[ScreenshotInfo] = None
         self.previous_screenshot: Optional[ScreenshotInfo] = None
