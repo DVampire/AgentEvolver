@@ -22,7 +22,7 @@ def _b64_to_image(b64: str) -> Image.Image:
 
 @ENVIRONMENT.register_module(force=True)
 class BrowserEnvironment(Environment):
-    """Playwright-based browser environment compatible with the OpenAI Operator action schema."""
+    """Playwright-based browser environment."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 

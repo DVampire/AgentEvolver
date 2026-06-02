@@ -1,5 +1,5 @@
-from .browser.environment import OperatorBrowserEnvironment
+from .browser.environment import BrowserEnvironment
 
 __all__ = [
-    "OperatorBrowserEnvironment",
+    "BrowserEnvironment",
 ]
