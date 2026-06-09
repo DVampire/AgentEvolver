@@ -10,8 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.environment.context import EnvironmentContextManager
-from src.environment.types import Environment, EnvironmentConfig
-from src.session import SessionContext
+from src.environment.types import Environment, EnvironmentConfig, EnvironmentContext
 from src.utils import assemble_project_path
 
 class EnvironmentManagerServer(BaseModel):
@@ -146,7 +145,7 @@ class EnvironmentManagerServer(BaseModel):
         """
         return await self.environment_context_manager.get_info(env_name)
     
-    async def get_state(self, env_name: str, ctx: SessionContext = None, **kwargs) -> Optional[Dict[str, Any]]:
+    async def get_state(self, env_name: str, ctx: EnvironmentContext = None, **kwargs) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
         
         Args:
@@ -241,19 +240,20 @@ class EnvironmentManagerServer(BaseModel):
                        name: str, 
                        action: str, 
                        input: Dict[str, Any], 
-                       ctx: SessionContext = None,
+                       ctx: EnvironmentContext = None,
                        **kwargs) -> Any:
         """Call an environment action
-        
+
         Args:
             name (str): Name of the environment
             action (str): Name of the action
             input (Dict[str, Any]): Input for the action
-            ctx (SessionContext): Session context
+            ctx (EnvironmentContext): Environment context
             
         Returns:
             Any: Action result
         """
+        ctx = EnvironmentContext.from_text(ctx) if ctx else EnvironmentContext(name=name, action=action, input=input)
         return await self.environment_context_manager(name, action, input, ctx, **kwargs)
 
 

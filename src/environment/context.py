@@ -2,10 +2,9 @@
 
 import os
 import json
-import asyncio
 import inflection
 from datetime import datetime
-from typing import Any, Dict, Callable, Optional, List, Union, Type, Tuple
+from typing import Any, Dict, Optional, List, Type, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from asyncio_atexit import register as async_atexit_register
@@ -15,9 +14,8 @@ from src.config import config
 from src.version import version_manager
 from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
-from src.environment.types import Environment, EnvironmentConfig, ActionConfig
+from src.environment.types import Environment, EnvironmentConfig, ActionConfig, EnvironmentContext
 from src.environment.sandbox import SandboxServerManager
-from src.session import SessionContext
 from src.dynamic import dynamic_manager
 from src.registry import ENVIRONMENT
 
@@ -569,18 +567,18 @@ class EnvironmentContextManager(BaseModel):
         """
         return self._environment_configs.get(env_name)
         
-    async def get_state(self, env_name: str, ctx: SessionContext = None, **kwargs) -> Optional[Dict[str, Any]]:
+    async def get_state(self, env_name: str, ctx: EnvironmentContext = None, **kwargs) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
-        
+
         Args:
             env_name: Environment name
             ctx: Environment context
         Returns:
             Optional[Dict[str, Any]]: State of the environment or None if not found
         """
-        
+
         if ctx is None:
-            ctx = SessionContext()
+            ctx = EnvironmentContext(name=env_name)
             
         env_args = {
             "ctx": ctx,
@@ -1184,7 +1182,7 @@ class EnvironmentContextManager(BaseModel):
                        name: str, 
                        action: str, 
                        input: Dict[str, Any], 
-                       ctx: SessionContext = None,
+                       ctx: EnvironmentContext = None,
                        **kwargs) -> Any:
         """Call an environment action
         
@@ -1196,9 +1194,6 @@ class EnvironmentContextManager(BaseModel):
         Returns:
             Action result
         """
-        if ctx is None:
-            ctx = SessionContext()
-        
         if name in self._environment_configs:
             env_config = self._environment_configs[name]
             

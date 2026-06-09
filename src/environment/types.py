@@ -11,6 +11,19 @@ from typing import Any, Dict, Optional, Union, Type, Callable
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.dynamic import dynamic_manager
+from src.session import BaseContext
+
+
+class EnvironmentContext(BaseContext):
+    """Context passed into environment manager and individual environment instances."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(default="", description="Unique identifier for this environment call.")
+    name: str = Field(default="", description="Name of the environment being called.")
+    action: str = Field(default="", description="Name of the action being invoked.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory for environment operations.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the action.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this environment context.")
 
 
 class Environment(BaseModel):
