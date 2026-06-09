@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from src.message.types import Message
 from src.model.openai.serializer import OpenAIResponseSerializer, OpenAIChatSerializer
 from src.response.types import Response, ResponseType
+from src.model.types import TokenUsage
 from src.logger import logger
 from typing import TYPE_CHECKING
 
@@ -333,13 +334,15 @@ class ResponseOpenAI(BaseModel):
                 optimized = OpenAIChatSerializer.serialize_response_format(response_format)
                 # Extract schema from optimized format
                 schema = optimized['json_schema']['schema']
-                
-                # Build responses API format (flat structure)
+
+                # Honor the serializer's strict decision: it disables strict when the
+                # schema contains an open object (Dict[str, Any]), which strict mode
+                # forbids. Hardcoding strict=True here would re-introduce the 400.
                 params["text"] = {
                     "format": {
                         "type": "json_schema",
                         "name": response_format.__name__,
-                        "strict": True,
+                        "strict": optimized['json_schema'].get('strict', True),
                         "schema": schema
                     }
                 }
@@ -348,12 +351,12 @@ class ResponseOpenAI(BaseModel):
                 model_class = type(response_format)
                 optimized = OpenAIChatSerializer.serialize_response_format(model_class)
                 schema = optimized['json_schema']['schema']
-                
+
                 params["text"] = {
                     "format": {
                         "type": "json_schema",
                         "name": model_class.__name__,
-                        "strict": True,
+                        "strict": optimized['json_schema'].get('strict', True),
                         "schema": schema
                     }
                 }
@@ -480,7 +483,8 @@ class ResponseOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
@@ -488,7 +492,8 @@ class ResponseOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
@@ -496,7 +501,8 @@ class ResponseOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                data={"error": str(e), "status_code": e.status_code, "model": self.name}
+                data={"error": str(e), "status_code": e.status_code, "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "status_code": e.status_code, "model": self.name}.get('usage') if isinstance({"error": str(e), "status_code": e.status_code, "model": self.name}, dict) else None),
             )
         except httpx.TimeoutException:
             raise
@@ -506,7 +512,8 @@ class ResponseOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
 
     async def _format_response(
@@ -524,63 +531,91 @@ class ResponseOpenAI(BaseModel):
             # Handle structured output
             if response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 if not output_text:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message="Empty response content from model",
-                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
+                        usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                     )
-
+                
                 # Parse JSON content
                 import json
                 try:
-                    json_data = json.loads(output_text)
-                    parsed_model = response_format.model_validate(json_data)
-
+                    data = json.loads(output_text)
+                    parsed_model = response_format.model_validate(data)
+                    
                     # Format as string
                     model_name = response_format.__name__
                     model_dict = parsed_model.model_dump()
-
+                    
                     field_lines = []
                     for field_name, field_value in model_dict.items():
                         field_lines.append(f"{field_name}={field_value!r}")
-
+                    
                     formatted_message = f"Response result:\n\n{model_name}(\n"
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
-
-                    return Response(type=ResponseType.LLM, 
+                    
+                    
+                    return Response(
+                        type=ResponseType.LLM,
                         success=True,
                         message=formatted_message,
-                        parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                             "usage": usage,
                             "reasoning": reasoning,
-                        }
+                        },
+                        usage=TokenUsage.from_raw({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "reasoning": reasoning,
+                        }.get('usage') if isinstance({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "reasoning": reasoning,
+                        }, dict) else None),
+                        parsed_model=parsed_model,
                     )
                 except json.JSONDecodeError as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        data={"error": str(e), "content": output_text}
+                        data={"error": str(e), "content": output_text},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": output_text}.get('usage') if isinstance({"error": str(e), "content": output_text}, dict) else None),
                     )
                 except Exception as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        data={"error": str(e), "content": output_text}
+                        data={"error": str(e), "content": output_text},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": output_text}.get('usage') if isinstance({"error": str(e), "content": output_text}, dict) else None),
                     )
 
             # Default: return content as string
             else:
-                return Response(type=ResponseType.LLM, 
+                
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=output_text,
                     data={
                         "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                         "usage": usage,
                         "reasoning": reasoning,
-                    }
+                    },
+                    usage=TokenUsage.from_raw({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "usage": usage,
+                        "reasoning": reasoning,
+                    }.get('usage') if isinstance({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "usage": usage,
+                        "reasoning": reasoning,
+                    }, dict) else None),
                 )
 
         except Exception as e:
@@ -589,6 +624,7 @@ class ResponseOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                data={"error": str(e)}
+                data={"error": str(e)},
+                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 

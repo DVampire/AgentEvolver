@@ -1,34 +1,33 @@
-"""Constraint types — Constraint base class, ConstraintContext, ConstraintResult."""
+"""Constraint types — Constraint base class and ConstraintContext."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, Optional
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+from src.session import BaseContext
+from src.response.types import Response, ResponseType
 
 
-class ConstraintContext(BaseModel):
-    """Runtime snapshot passed to each Constraint.check() call."""
+class ConstraintContext(BaseContext):
+    """Context passed into constraint manager and individual constraint instances."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    task_id: str = Field(description="Task ID — matches the task_id used throughout the agent loop.")
-    agent_name: str = Field(description="Name of the agent being constrained.")
-    step_number: int = Field(default=0, description="Current step index (0-based).")
-    tokens_used: int = Field(default=0, description="Cumulative LLM tokens consumed so far in this task.")
-    elapsed_sec: float = Field(default=0.0, description="Seconds elapsed since the first step of this task.")
-
-
-class ConstraintResult(BaseModel):
-    """Result returned by Constraint.check()."""
-
-    violated: bool = Field(default=False)
-    constraint_name: str = Field(default="")
-    reason: str = Field(default="")
+    id: str = Field(description="Task ID — matches the task_id used throughout the agent loop.")
+    name: Optional[str] = Field(default=None, description="Name of the agent being constrained.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory available to the caller.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload for this constraint check.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this constraint context.")
 
 
 class Constraint(BaseModel):
     """Base class for all constraints.
 
-    Subclass and override ``check`` to implement a new constraint dimension.
-    Attach instances to an Agent via ``constraints=[...]``; an empty list
-    means no constraints are active.
+    Subclass and override ``__call__(input, ctx)`` to implement constraint logic.
+    Return ``Response(success=False, ...)`` when violated, ``success=True`` when passing.
+
+    Per-task state lives in ``_state[task_id]`` — a plain dict lazily initialized
+    on first use inside ``__call__``.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -36,12 +35,13 @@ class Constraint(BaseModel):
     name: str = Field(description="Unique name for this constraint.")
     enabled: bool = Field(default=True, description="Set to False to temporarily disable without removing.")
 
-    async def check(self, ctx: ConstraintContext) -> ConstraintResult:
-        """Return a ConstraintResult indicating whether this constraint is violated.
+    _state: Dict[str, Dict[str, Any]] = PrivateAttr(default_factory=dict)
 
-        The default implementation always returns not-violated; subclasses must override.
-        """
-        return ConstraintResult(violated=False)
+    def _cleanup(self, task_id: str) -> None:
+        self._state.pop(task_id, None)
+
+    async def __call__(self, input: Dict[str, Any], ctx: ConstraintContext) -> Response:
+        return Response(type=ResponseType.CONSTRAINT, success=True, message="")
 
 
-__all__ = ["ConstraintContext", "ConstraintResult", "Constraint"]
+__all__ = ["ConstraintContext", "Constraint"]

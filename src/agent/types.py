@@ -35,9 +35,14 @@ from src.response.types import Response, ResponseType
 
 class AgentContext(BaseContext):
     """Context passed into agent manager and individual agent instances."""
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this agent invocation, useful for tracing and logging.")
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this agent invocation.")
+    name: Optional[str] = Field(default=None, description="Human-readable label for this agent invocation.")
     work_dir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
-    parent_session_id: Optional[str] = Field(default=None, description="ref.name of the parent MetaAgent, used by trace and escalation hooks.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the agent.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this agent context.")
+    parent_session_id: Optional[str] = Field(default=None, description="Name of the parent MetaAgent, used by trace and escalation hooks.")
     subtask_id: Optional[str] = Field(default=None, description="ID of the subtask record in the parent MetaAgent's plan.")
 
 class InputArgs(BaseModel):
@@ -249,6 +254,8 @@ class Agent(BaseModel):
         # Runtime constraints — accept Constraint instances or mmengine-style dicts
         # e.g. {"type": "StepConstraint", "max_steps": 20}
         self.constraints: List[Constraint] = self._build_constraints(constraints)
+        for c in self.constraints:
+            constraint_manager.register(c)
 
     @staticmethod
     def _build_constraints(raw: Optional[List]) -> List[Constraint]:
@@ -382,17 +389,16 @@ class Agent(BaseModel):
         result = None
         reasoning = None
         action_errors = []
+        step_tokens = 0
 
         # --- Constraint checks ---
         if self.constraints:
-            # Auto-start session on first step for this task_id
-            if not constraint_manager.has_session(task_id):
-                constraint_manager.start_session(task_id, self.constraints, self.name)
-
-            violation = await constraint_manager.check(task_id, step_number)
-            if violation and violation.violated:
-                constraint_manager.end_session(task_id)
-                return {"done": True, "result": violation.reason, "reasoning": None, "action_errors": []}
+            ctx = ConstraintContext(id=task_id)
+            for c in self.constraints:
+                violation = await constraint_manager(c.name, {"token": step_tokens}, ctx)
+                if not violation.success:
+                    constraint_manager.cleanup(task_id)
+                    return {"done": True, "result": violation.message, "reasoning": None, "action_errors": []}
 
         await hook_manager(
             name="trace_hook",
@@ -410,9 +416,8 @@ class Agent(BaseModel):
                 input={"messages": messages, "response_format": AgentThinkOutput},
                 ctx=ctx,
             )
-            # Record token usage for constraint tracking
-            if self.constraints and llm_response.usage:
-                constraint_manager.record_tokens(task_id, llm_response.usage.total)
+            if llm_response.usage:
+                step_tokens += llm_response.usage.total
             think_output = llm_response.parsed_model
 
             thinking = think_output.thinking
@@ -510,7 +515,7 @@ class Agent(BaseModel):
 
         # Clean up constraint session when task finishes
         if done and self.constraints:
-            constraint_manager.end_session(task_id)
+            constraint_manager.cleanup(task_id)
 
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
 

@@ -44,6 +44,30 @@ if TYPE_CHECKING:
     from src.tool.types import Tool
 
 
+def _strict_incompatible(o: Any) -> bool:
+    """True if a JSON schema cannot be used with OpenAI strict structured outputs.
+
+    Strict mode requires, for EVERY object: (1) additionalProperties: false, and
+    (2) `required` to list every key in `properties`. A Dict[str, Any] field
+    violates (1); any optional/defaulted field violates (2). Either one makes
+    strict=true 400 with invalid_json_schema (observed on openai/gpt-5.5). When this
+    returns True the caller sends strict=false — OpenAI then relaxes both rules and
+    the result is still validated downstream via pydantic.
+    """
+    if isinstance(o, dict):
+        if o.get("additionalProperties") is True:
+            return True
+        if o.get("type") == "object" or "properties" in o:
+            props = set((o.get("properties") or {}).keys())
+            req = set(o.get("required") or [])
+            if props - req:
+                return True
+        return any(_strict_incompatible(v) for v in o.values())
+    if isinstance(o, list):
+        return any(_strict_incompatible(v) for v in o)
+    return False
+
+
 class OpenAIChatSerializer:
     """Serializer for converting between custom message types and OpenAI chat completions API message param types."""
 
@@ -290,12 +314,16 @@ class OpenAIChatSerializer:
             # For other types, retain all fields (including description, title, etc.)
             return obj
 
+        transformed = transform(schema)
+
+        strict = not _strict_incompatible(transformed)
+
         return {
             "type": "json_schema",
             "json_schema": {
                 "name": "response",
-                "strict": True,
-                "schema": transform(schema),
+                "strict": strict,
+                "schema": transformed,
             },
         }
 

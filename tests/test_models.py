@@ -76,8 +76,8 @@ async def test_chat():
         # "newapi/claude-opus-4.6",
 
         # Aws claude models
-        "aws_claude/claude-opus-4.6",
-        "aws_claude/claude-opus-4.7",
+        # "aws_claude/claude-opus-4.6",
+        # "aws_claude/claude-opus-4.7",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
@@ -96,7 +96,7 @@ async def test_chat():
 
         # int openrouter models
         # "int_openrouter/gpt-5.4",
-        # "int_openrouter/gpt-5.5",
+        "int_openrouter/gpt-5.5",
         # "int_openrouter/gpt-5.4-pro",
         # "int_openrouter/gpt-5.5-pro",
         # "int_openrouter/o3-mini",
@@ -511,8 +511,8 @@ async def main():
     await tool_manager.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tool_manager.list()}")
 
-    # await test_chat()
-    await test_response_format()
+    await test_chat()
+    # await test_response_format()
     # await test_tool_calling()
     # await test_audio()
     # await test_embedding()

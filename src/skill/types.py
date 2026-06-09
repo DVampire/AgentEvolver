@@ -13,10 +13,11 @@ class SkillContext(BaseContext):
     """Context passed into skill manager and individual skill instances."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    id: str = Field(default="", description="Unique identifier for this skill invocation")
+    id: str = Field(default="", description="Unique identifier for this skill invocation.")
     name: str = Field(default="", description="Name of the skill being invoked.")
-    timeout: Optional[int] = Field(default=None, description="Optional timeout for skill execution in seconds")
-    work_dir: Optional[str] = Field(default=None)
+    work_dir: Optional[str] = Field(default=None, description="Working directory available to the skill.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the skill.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this skill context.")
 
 
 class SkillConfig(BaseModel):

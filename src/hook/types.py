@@ -38,14 +38,13 @@ class HookContext(BaseContext):
 
     ``input`` carries the event payload dict passed to ``hook_manager``.
     Hook handlers read event data via ``ctx.input.get("event")``, etc.
-    ``meta`` is reserved and is never populated or read by the framework.
+    ``extra`` carries arbitrary caller-supplied data; not read by the framework.
     """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    id: str = Field(description="Session ID or any unique identifier for this hook context.")
-    name: str = Field(description="Hook name that fired the event.")
-    timeout: Optional[float] = Field(default=3600, description="Optional timeout for this context. Defaults to 1 hour.")
-    work_dir: Optional[str] = Field(default=None, description="Optional working directory for this context.")
-    meta: Optional[Dict[str, Any]] = Field(default=None, description="Reserved — not populated or read by the framework.")
+    id: str = Field(description="Unique identifier for this hook invocation.")
+    name: str = Field(description="Name of the hook that fired.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory available to hook handlers.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this hook context.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Event payload dict passed by the caller.")
 
 

@@ -716,6 +716,24 @@ class ModelContextManager:
                 "fallback_model": "int_openrouter/gpt-5.4",
             },
             {
+                "model_name": "int_openrouter/gpt-5.5",
+                "model_id": "openai/gpt-5.5",
+                "model_type": "chat/completions",
+                "reasoning": {"reasoning": _r()},
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            {
+                "model_name": "int_openrouter/gpt-5.5-pro",
+                "model_id": "openai/gpt-5.5-pro",
+                "model_type": "chat/completions",
+                "reasoning": {"reasoning": _r()},
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            {
                 "model_name": "int_openrouter/claude-sonnet-4.6",
                 "model_id": "anthropic/claude-sonnet-4.6",
                 "model_type": "chat/completions",
@@ -887,6 +905,14 @@ class ModelContextManager:
                 "temperature": None,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "aws_claude/claude-opus-4.6",
+            },
+            {
+                "model_name": "aws_claude/claude-opus-4.8",
+                "model_id": "claude-opus-4-8",
+                "model_type": "chat/completions",
+                "temperature": None,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "aws_claude/claude-opus-4.7",
             },
         ]
 

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 
 from src.message.types import Message, HumanMessage, SystemMessage, ContentPartText
 from src.response.types import Response, ResponseType
+from src.model.types import TokenUsage
 from src.logger import logger
 
 
@@ -227,18 +228,21 @@ class EmbeddingOpenAI(BaseModel):
         else:
             message = f"{len(embeddings)} embedding vectors"
 
+        # Format response
+        extra = {
+            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+            "embeddings": embeddings,
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'prompt_tokens') else None,
+                "total_tokens": response.usage.total_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens') else None,
+            } if hasattr(response, 'usage') else None,
+        }
+
         return Response(
             type=ResponseType.LLM,
             success=True,
             message=message,
-            data={
-                "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                "embeddings": embeddings,
-                "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'prompt_tokens') else None,
-                    "total_tokens": response.usage.total_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens') else None,
-                } if hasattr(response, 'usage') else None,
-            }
+            extra=extra
         )
 
     async def __call__(
@@ -286,7 +290,7 @@ class EmbeddingOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                data={"error": str(e), "model": self.name}
+                extra={"error": str(e), "model": self.name}
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
@@ -294,7 +298,7 @@ class EmbeddingOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                extra={"error": str(e), "model": self.name}
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
@@ -302,7 +306,7 @@ class EmbeddingOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                data={"error": str(e), "status_code": e.status_code, "model": self.name}
+                extra={"error": str(e), "status_code": e.status_code, "model": self.name}
             )
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
@@ -310,6 +314,6 @@ class EmbeddingOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                extra={"error": str(e), "model": self.name}
             )
 

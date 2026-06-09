@@ -1,5 +1,6 @@
 from typing import overload, Any, Union, List, Dict, Type
 import base64
+import io
 import os
 
 try:
@@ -52,6 +53,30 @@ if TYPE_CHECKING:
 from src.utils import assemble_project_path, encode_file_base64
 
 
+def _strict_incompatible(o: Any) -> bool:
+    """True if a JSON schema cannot be used with OpenAI strict structured outputs.
+
+    Strict mode requires, for EVERY object: (1) additionalProperties: false, and
+    (2) `required` to list every key in `properties`. A Dict[str, Any] field
+    violates (1); any optional/defaulted field violates (2). Either one makes
+    strict=true 400 with invalid_json_schema (observed on openai/gpt-5.5). When this
+    returns True the caller sends strict=false — OpenAI then relaxes both rules and
+    the result is still validated downstream via pydantic.
+    """
+    if isinstance(o, dict):
+        if o.get("additionalProperties") is True:
+            return True
+        if o.get("type") == "object" or "properties" in o:
+            props = set((o.get("properties") or {}).keys())
+            req = set(o.get("required") or [])
+            if props - req:
+                return True
+        return any(_strict_incompatible(v) for v in o.values())
+    if isinstance(o, list):
+        return any(_strict_incompatible(v) for v in o)
+    return False
+
+
 class AwsClaudeChatSerializer:
     """
     Serializer for converting between custom message types and the AWS Claude
@@ -67,9 +92,82 @@ class AwsClaudeChatSerializer:
         return ChatCompletionContentPartTextParam(text=part.text, type='text')
 
     @staticmethod
+    def _resize_image_if_needed(image_bytes: bytes, max_dim: int = 8000) -> bytes:
+        """Resize image so neither dimension exceeds max_dim. Returns original bytes if no resize needed."""
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(image_bytes))
+            w, h = img.size
+            if w <= max_dim and h <= max_dim:
+                return image_bytes
+            scale = min(max_dim / w, max_dim / h)
+            new_w, new_h = int(w * scale), int(h * scale)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            buf = io.BytesIO()
+            fmt = img.format or "JPEG"
+            if fmt.upper() == "JPG":
+                fmt = "JPEG"
+            img.save(buf, format=fmt)
+            return buf.getvalue()
+        except Exception:
+            return image_bytes
+
+    @staticmethod
     def _serialize_content_part_image(part: ContentPartImage) -> ChatCompletionContentPartImageParam:
+        url = part.image_url.url
+
+        # For local files and data URLs, resize if needed before sending to AWS Bedrock
+        image_bytes: bytes | None = None
+        media_type = "image/jpeg"
+
+        if url.startswith("http://") or url.startswith("https://"):
+            try:
+                import httpx
+                response = httpx.get(url, timeout=30, follow_redirects=True)
+                response.raise_for_status()
+                image_bytes = response.content
+                content_type = response.headers.get("content-type", "image/jpeg")
+                media_type = content_type.split(";")[0].strip() or "image/jpeg"
+            except Exception:
+                image_bytes = None
+        elif url.startswith("data:"):
+            # data:<media_type>;base64,<data>
+            if "," in url:
+                header, data = url.split(",", 1)
+                if "image/" in header:
+                    media_type = header.split(";")[0].split("data:")[1]
+                image_bytes = base64.b64decode(data)
+        elif url.startswith("file://"):
+            file_path = url[7:]
+            if not os.path.isabs(file_path):
+                file_path = assemble_project_path(file_path)
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    image_bytes = f.read()
+                ext = os.path.splitext(file_path)[1].lower()
+                media_type = {"jpg": "image/jpeg", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                              ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/jpeg")
+        elif os.path.exists(url):
+            with open(url, "rb") as f:
+                image_bytes = f.read()
+            ext = os.path.splitext(url)[1].lower()
+            media_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                          ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/jpeg")
+        elif os.path.exists(assemble_project_path(url)):
+            file_path = assemble_project_path(url)
+            with open(file_path, "rb") as f:
+                image_bytes = f.read()
+            ext = os.path.splitext(file_path)[1].lower()
+            media_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                          ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/jpeg")
+
+        if image_bytes is not None:
+            resized = AwsClaudeChatSerializer._resize_image_if_needed(image_bytes)
+            b64 = base64.b64encode(resized).decode("utf-8")
+            url = f"data:{media_type};base64,{b64}"
+
         return ChatCompletionContentPartImageParam(
-            image_url=OpenAIImageURL(url=part.image_url.url, detail=part.image_url.detail),
+            image_url=OpenAIImageURL(url=url, detail=part.image_url.detail),
             type='image_url',
         )
 
@@ -430,11 +528,15 @@ class AwsClaudeChatSerializer:
 
             return obj
 
+        transformed = transform(schema)
+
+        strict = not _strict_incompatible(transformed)
+
         return {
             "type": "json_schema",
             "json_schema": {
                 "name": "response",
-                "strict": True,
-                "schema": transform(schema),
+                "strict": strict,
+                "schema": transformed,
             },
         }

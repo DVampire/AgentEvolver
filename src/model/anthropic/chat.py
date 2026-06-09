@@ -120,11 +120,12 @@ class ChatAnthropic(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response) -> Optional["TokenUsage"]:
+    def _get_usage(self, response) -> Optional[Dict[str, Any]]:
         """Extract usage information from Anthropic response."""
         if hasattr(response, 'usage') and response.usage is not None:
-            return TokenUsage.from_raw(response.usage.model_dump())
-        return None
+            return response.usage.model_dump()
+        else:
+            return None
 
     async def _build_params(
         self,
@@ -173,7 +174,11 @@ class ChatAnthropic(BaseModel):
         if self.max_tokens is not None:
             params['max_tokens'] = self.max_tokens
         if self.reasoning is not None:
-            params.update(self.reasoning)
+            # Anthropic native API uses `thinking`, not `reasoning_effort` (OpenRouter/OpenAI concept)
+            # Skip `reasoning_effort` — passing it directly causes an unexpected keyword argument error
+            anthropic_reasoning = {k: v for k, v in self.reasoning.items() if k != "reasoning_effort"}
+            if anthropic_reasoning:
+                params.update(anthropic_reasoning)
         
         # Format tools using serializer
         if tools:
@@ -299,7 +304,8 @@ class ChatAnthropic(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
@@ -307,7 +313,8 @@ class ChatAnthropic(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIError as e:
             logger.error(f"API error: {e}")
@@ -315,7 +322,8 @@ class ChatAnthropic(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API error: {str(e)}",
-                data={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name}
+                data={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name}.get('usage') if isinstance({"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name}, dict) else None),
             )
         except httpx.TimeoutException:
             raise
@@ -325,7 +333,8 @@ class ChatAnthropic(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
 
     async def _format_response(
@@ -345,10 +354,12 @@ class ChatAnthropic(BaseModel):
                 content = []
 
             if not content:
-                return Response(type=ResponseType.LLM, 
+                return Response(
+                    type=ResponseType.LLM,
                     success=False,
                     message="No content in response",
-                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
+                    usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                 )
 
             # Extract text content and tool calls
@@ -404,7 +415,9 @@ class ChatAnthropic(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                return Response(type=ResponseType.LLM, 
+
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=formatted_message,
                     data={
@@ -413,23 +426,35 @@ class ChatAnthropic(BaseModel):
                         "usage": usage,
                         "stop_reason": stop_reason,
                     },
-                    usage=usage,
+                    usage=TokenUsage.from_raw({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                        "functions": functions,
+                        "usage": usage,
+                        "stop_reason": stop_reason,
+                    }.get('usage') if isinstance({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                        "functions": functions,
+                        "usage": usage,
+                        "stop_reason": stop_reason,
+                    }, dict) else None),
                 )
 
             # Handle structured output (if response_format was provided)
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 if not message_text:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message="Empty response content from model",
-                        data={"raw_response": response}
+                        data={"raw_response": response},
+                        usage=TokenUsage.from_raw({"raw_response": response}.get('usage') if isinstance({"raw_response": response}, dict) else None),
                     )
 
                 # Try to parse JSON from message text
                 import json
                 try:
-                    json_data = json.loads(message_text)
-                    parsed_model = response_format.model_validate(json_data)
+                    data = json.loads(message_text)
+                    parsed_model = response_format.model_validate(data)
 
                     # Format as string
                     model_name = response_format.__name__
@@ -443,33 +468,49 @@ class ChatAnthropic(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    return Response(type=ResponseType.LLM, 
+
+                    return Response(
+                        type=ResponseType.LLM,
                         success=True,
                         message=formatted_message,
-                        parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
                             "usage": usage,
                             "stop_reason": stop_reason,
                         },
-                        usage=usage,
+                        usage=TokenUsage.from_raw({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                            "usage": usage,
+                            "stop_reason": stop_reason,
+                        }.get('usage') if isinstance({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                            "usage": usage,
+                            "stop_reason": stop_reason,
+                        }, dict) else None),
+                        parsed_model=parsed_model,
                     )
                 except json.JSONDecodeError as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        data={"error": str(e), "content": message_text}
+                        data={"error": str(e), "content": message_text},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": message_text}.get('usage') if isinstance({"error": str(e), "content": message_text}, dict) else None),
                     )
                 except Exception as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        data={"error": str(e), "content": message_text}
+                        data={"error": str(e), "content": message_text},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": message_text}.get('usage') if isinstance({"error": str(e), "content": message_text}, dict) else None),
                     )
 
             # Default: return content as string
             else:
-                return Response(type=ResponseType.LLM, 
+
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=message_text,
                     data={
@@ -477,7 +518,15 @@ class ChatAnthropic(BaseModel):
                         "usage": usage,
                         "stop_reason": stop_reason,
                     },
-                    usage=usage,
+                    usage=TokenUsage.from_raw({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                        "usage": usage,
+                        "stop_reason": stop_reason,
+                    }.get('usage') if isinstance({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                        "usage": usage,
+                        "stop_reason": stop_reason,
+                    }, dict) else None),
                 )
 
         except Exception as e:
@@ -486,6 +535,6 @@ class ChatAnthropic(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                data={"error": str(e)}
+                data={"error": str(e)},
+                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
-

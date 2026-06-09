@@ -11,10 +11,15 @@ from src.session import BaseContext
 
 class MemoryContext(BaseContext):
     """Context passed into memory manager operations."""
-    memory_name: str = Field(default="", description="Name of the memory system.")
-    agent_name: Optional[str] = Field(default=None)
-    task_id: Optional[str] = Field(default=None)
-    extra: Dict[str, Any] = Field(default_factory=dict)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(default="", description="Unique identifier for this memory operation.")
+    name: Optional[str] = Field(default=None, description="Human-readable label for this memory operation.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory available to the memory system.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload for this memory operation.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this memory context.")
+    agent_name: Optional[str] = Field(default=None, description="Name of the agent using this memory context.")
+    task_id: Optional[str] = Field(default=None, description="Task identifier for scoping memory reads and writes.")
 
 
 class EventType(Enum):

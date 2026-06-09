@@ -11,6 +11,7 @@ class ResponseType(str, Enum):
     AGENT = "agent"
     SKILL = "skill"
     LLM = "llm"
+    CONSTRAINT = "constraint"
 
 
 class Response(BaseModel):

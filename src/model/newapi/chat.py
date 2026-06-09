@@ -75,8 +75,10 @@ class ChatNewAPI(BaseModel):
             http_client=self.http_client,
         )
 
-    def _get_usage(self, response: ChatCompletion) -> Optional["TokenUsage"]:
-        return TokenUsage.from_raw(response.usage.model_dump() if response.usage else None)
+    def _get_usage(self, response: ChatCompletion) -> Optional[Dict[str, Any]]:
+        if response.usage is not None:
+            return response.usage.model_dump()
+        return None
 
     def _get_reasoning(self, message) -> Optional[str]:
         reasoning = None
@@ -180,10 +182,12 @@ class ChatNewAPI(BaseModel):
         """Format New-API response into Response."""
         try:
             if not response.choices:
-                return Response(type=ResponseType.LLM, 
+                return Response(
+                    type=ResponseType.LLM,
                     success=False,
                     message="No choices in response",
-                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
+                    usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                 )
 
             message = response.choices[0].message
@@ -216,32 +220,47 @@ class ChatNewAPI(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                return Response(type=ResponseType.LLM, 
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=formatted_message,
                     data={
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                        "reasoning": reasoning,
-                    },
-                    usage=usage,
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "functions": functions,
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        },
+                    usage=TokenUsage.from_raw({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "functions": functions,
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        }.get('usage') if isinstance({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "functions": functions,
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        }, dict) else None),
                 )
 
             # Handle structured output
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 content = message.content or ""
                 if not content:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message="Empty response content from model",
-                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
+                        usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                     )
 
                 try:
-                    json_data = dirtyjson.loads(content)
-                    parsed_model = response_format.model_validate(json_data)
+                    data = dirtyjson.loads(content)
+                    parsed_model = response_format.model_validate(data)
 
                     model_name = response_format.__name__
                     model_dict = parsed_model.model_dump()
@@ -250,44 +269,70 @@ class ChatNewAPI(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=True,
                         message=formatted_message,
-                        parsed_model=parsed_model,
                         data={
-                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                            "reasoning": reasoning,
-                        },
-                        usage=usage,
+                                "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                                "usage": usage,
+                                "finish_reason": finish_reason,
+                                "reasoning": reasoning,
+                            },
+                        usage=TokenUsage.from_raw({
+                                "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                                "usage": usage,
+                                "finish_reason": finish_reason,
+                                "reasoning": reasoning,
+                            }.get('usage') if isinstance({
+                                "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                                "usage": usage,
+                                "finish_reason": finish_reason,
+                                "reasoning": reasoning,
+                            }, dict) else None),
+                        parsed_model=parsed_model,
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        data={"error": str(e), "content": content}
+                        data={"error": str(e), "content": content},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": content}.get('usage') if isinstance({"error": str(e), "content": content}, dict) else None),
                     )
                 except Exception as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        data={"error": str(e), "content": content}
+                        data={"error": str(e), "content": content},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": content}.get('usage') if isinstance({"error": str(e), "content": content}, dict) else None),
                     )
 
             # Default: return content as string
             else:
                 content = message.content or ""
-                return Response(type=ResponseType.LLM, 
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=content,
                     data={
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                        "reasoning": reasoning,
-                    },
-                    usage=usage,
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        },
+                    usage=TokenUsage.from_raw({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        }.get('usage') if isinstance({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        }, dict) else None),
                 )
 
         except Exception as e:
@@ -296,7 +341,8 @@ class ChatNewAPI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                data={"error": str(e)}
+                data={"error": str(e)},
+                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 
     async def __call__(
@@ -348,5 +394,6 @@ class ChatNewAPI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )

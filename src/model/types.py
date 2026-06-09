@@ -1,15 +1,17 @@
 from __future__ import annotations
-
-import json
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from src.session import BaseContext
-from src.response.types import Response, ResponseType
 
 
 class ModelContext(BaseContext):
     """Context passed into model manager and individual model invocations."""
-    pass
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(description="Unique session/call identifier.")
+    name: Optional[str] = Field(default=None, description="Human-readable label for this invocation context.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory available to the caller.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this context.")
 
 
 class ModelConfig(BaseModel):
@@ -49,6 +51,7 @@ class TokenUsage(BaseModel):
     output_tokens: int = 0
     cache_write_tokens: int = 0
     cache_read_tokens: int = 0
+    cost: Optional[float] = None
 
     @property
     def total(self) -> int:
@@ -59,6 +62,14 @@ class TokenUsage(BaseModel):
         """Normalize provider-specific usage dicts into TokenUsage."""
         if not raw:
             return None
+        # cache_read: OpenRouter returns in prompt_tokens_details.cached_tokens
+        cache_read = (
+            raw.get("cache_read_input_tokens") or
+            (raw.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+        )
+        # cost: OpenRouter returns top-level cost field
+        cost_raw = raw.get("cost")
+        cost = float(cost_raw) if cost_raw is not None else None
         return cls(
             input_tokens=(
                 raw.get("prompt_tokens") or raw.get("input_tokens") or
@@ -69,7 +80,8 @@ class TokenUsage(BaseModel):
                 raw.get("candidates_token_count") or 0
             ),
             cache_write_tokens=raw.get("cache_creation_input_tokens") or 0,
-            cache_read_tokens=raw.get("cache_read_input_tokens") or 0,
+            cache_read_tokens=cache_read,
+            cost=cost,
         )
 
     def summary_line(self, model: str = "") -> str:
@@ -78,6 +90,8 @@ class TokenUsage(BaseModel):
             parts.append(f"cache_write={self.cache_write_tokens}")
         if self.cache_read_tokens:
             parts.append(f"cache_read={self.cache_read_tokens}")
+        if self.cost is not None:
+            parts.append(f"cost=${self.cost:.6f}")
         prefix = f"[{model}] " if model else ""
         return f"{prefix}tokens: {', '.join(parts)}"
 

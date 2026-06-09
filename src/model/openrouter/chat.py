@@ -141,9 +141,13 @@ class ChatOpenRouter(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response: ChatCompletion) -> Optional["TokenUsage"]:
+    def _get_usage(self, response: ChatCompletion) -> Optional[Dict[str, Any]]:
         """Extract usage information from response."""
-        return TokenUsage.from_raw(response.usage.model_dump() if response.usage else None)
+        if response.usage is not None:
+            usage = response.usage.model_dump()
+            return usage
+        else:
+            return None
 
     def _get_reasoning(self, message) -> Optional[str]:
         """Extract reasoning information from message."""
@@ -330,10 +334,21 @@ class ChatOpenRouter(BaseModel):
         """Format OpenRouter response into Response."""
         try:
             if not response.choices:
-                return Response(type=ResponseType.LLM, 
+                raw = response.model_dump() if hasattr(response, 'model_dump') else str(response)
+                # Surface the real reason: OpenRouter returns HTTP 200 with an
+                # `error` field (and empty choices) when the upstream provider
+                # fails/rate-limits/filters — this is NOT a schema/strict issue.
+                err = raw.get("error") if isinstance(raw, dict) else None
+                logger.warning(
+                    f"| ⚠️ OpenRouter returned no choices (model={self.model}): "
+                    f"error={err!r} raw={raw}"
+                )
+                return Response(
+                    type=ResponseType.LLM,
                     success=False,
-                    message="No choices in response",
-                    data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                    message=f"No choices in response (upstream error={err})" if err else "No choices in response",
+                    data={"raw_response": raw},
+                    usage=TokenUsage.from_raw({"raw_response": raw}.get('usage') if isinstance({"raw_response": raw}, dict) else None),
                 )
 
             message = response.choices[0].message
@@ -372,7 +387,9 @@ class ChatOpenRouter(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                return Response(type=ResponseType.LLM, 
+
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=formatted_message,
                     data={
@@ -382,23 +399,37 @@ class ChatOpenRouter(BaseModel):
                         "finish_reason": finish_reason,
                         "reasoning": reasoning,
                     },
-                    usage=usage,
+                    usage=TokenUsage.from_raw({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "functions": functions,
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                        "reasoning": reasoning,
+                    }.get('usage') if isinstance({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "functions": functions,
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                        "reasoning": reasoning,
+                    }, dict) else None),
                 )
 
             # Handle structured output
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 content = message.content or ""
                 if not content:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message="Empty response content from model",
-                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                        data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
+                        usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                     )
 
                 # Parse JSON content
                 try:
-                    json_data = dirtyjson.loads(content)
-                    parsed_model = response_format.model_validate(json_data)
+                    data = dirtyjson.loads(content)
+                    parsed_model = response_format.model_validate(data)
 
                     # Format as string
                     model_name = response_format.__name__
@@ -412,36 +443,54 @@ class ChatOpenRouter(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    return Response(type=ResponseType.LLM, 
+
+                    return Response(
+                        type=ResponseType.LLM,
                         success=True,
                         message=formatted_message,
-                        parsed_model=parsed_model,
                         data={
                             "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
                             "usage": usage,
                             "finish_reason": finish_reason,
                             "reasoning": reasoning,
                         },
-                        usage=usage,
+                        usage=TokenUsage.from_raw({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        }.get('usage') if isinstance({
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                            "reasoning": reasoning,
+                        }, dict) else None),
+                        parsed_model=parsed_model,
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        data={"error": str(e), "content": content}
+                        data={"error": str(e), "content": content},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": content}.get('usage') if isinstance({"error": str(e), "content": content}, dict) else None),
                     )
                 except Exception as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        data={"error": str(e), "content": content}
+                        data={"error": str(e), "content": content},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": content}.get('usage') if isinstance({"error": str(e), "content": content}, dict) else None),
                     )
 
             # Default: return content as string
             else:
                 content = message.content or ""
 
-                return Response(type=ResponseType.LLM, 
+
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=content,
                     data={
@@ -450,7 +499,17 @@ class ChatOpenRouter(BaseModel):
                         "finish_reason": finish_reason,
                         "reasoning": reasoning,
                     },
-                    usage=usage,
+                    usage=TokenUsage.from_raw({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                        "reasoning": reasoning,
+                    }.get('usage') if isinstance({
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                        "reasoning": reasoning,
+                    }, dict) else None),
                 )
 
         except Exception as e:
@@ -459,7 +518,8 @@ class ChatOpenRouter(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                data={"error": str(e)}
+                data={"error": str(e)},
+                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 
     async def __call__(
@@ -516,7 +576,8 @@ class ChatOpenRouter(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
@@ -524,7 +585,8 @@ class ChatOpenRouter(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
@@ -532,7 +594,8 @@ class ChatOpenRouter(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                data={"error": str(e), "status_code": e.status_code, "model": self.name}
+                data={"error": str(e), "status_code": e.status_code, "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "status_code": e.status_code, "model": self.name}.get('usage') if isinstance({"error": str(e), "status_code": e.status_code, "model": self.name}, dict) else None),
             )
         except httpx.TimeoutException:
             raise
@@ -542,6 +605,7 @@ class ChatOpenRouter(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                data={"error": str(e), "model": self.name},
+                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
 

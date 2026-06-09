@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.message.types import Message, HumanMessage, ContentPartAudio
 from src.response.types import Response, ResponseType
+from src.model.types import TokenUsage
 from src.logger import logger
 from src.utils import assemble_project_path
 
@@ -405,21 +406,21 @@ class TranscribeOpenAI(BaseModel):
         self._cleanup_file_resources(file_obj, temp_file_path)
 
         # Format response
-        extra_data = {
+        extra = {
             "raw_response": transcription.model_dump() if hasattr(transcription, 'model_dump') else str(transcription),
         }
 
         # Add additional fields if available (for verbose_json format)
         if hasattr(transcription, 'words'):
-            extra_data["words"] = transcription.words
+            extra["words"] = transcription.words
         if hasattr(transcription, 'segments'):
-            extra_data["segments"] = transcription.segments
+            extra["segments"] = transcription.segments
 
         return Response(
             type=ResponseType.LLM,
             success=True,
             message=text,
-            data=extra_data
+            extra=extra
         )
 
     async def __call__(
@@ -482,7 +483,7 @@ class TranscribeOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Rate limit error: {e.message}",
-                data={"error": str(e), "model": self.name}
+                extra={"error": str(e), "model": self.name}
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
@@ -491,7 +492,7 @@ class TranscribeOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                extra={"error": str(e), "model": self.name}
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
@@ -500,7 +501,7 @@ class TranscribeOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API status error: {e.message}",
-                data={"error": str(e), "status_code": e.status_code, "model": self.name}
+                extra={"error": str(e), "status_code": e.status_code, "model": self.name}
             )
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
@@ -510,6 +511,6 @@ class TranscribeOpenAI(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name}
+                extra={"error": str(e), "model": self.name}
             )
 

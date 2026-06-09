@@ -105,11 +105,12 @@ class ChatGoogle(BaseModel):
     def name(self) -> str:
         return str(self.model)
 
-    def _get_usage(self, response) -> Optional["TokenUsage"]:
+    def _get_usage(self, response) -> Optional[Dict[str, Any]]:
         """Extract usage information from Google Gemini response."""
         if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
-            return TokenUsage.from_raw(response.usage_metadata.model_dump())
-        return None
+            return response.usage_metadata.model_dump()
+        else:
+            return None
 
     async def _build_params(
         self,
@@ -305,7 +306,8 @@ class ChatGoogle(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"API error: {error_msg}",
-                data={"error": error_msg, "status_code": status_code, "model": self.name}
+                data={"error": error_msg, "status_code": status_code, "model": self.name},
+                usage=TokenUsage.from_raw({"error": error_msg, "status_code": status_code, "model": self.name}.get('usage') if isinstance({"error": error_msg, "status_code": status_code, "model": self.name}, dict) else None),
             )
 
     async def _format_response(
@@ -326,10 +328,12 @@ class ChatGoogle(BaseModel):
                 candidate = {}
 
             if not candidate:
-                return Response(type=ResponseType.LLM, 
+                return Response(
+                    type=ResponseType.LLM,
                     success=False,
                     message="No candidates in response",
-                    data={"raw_response": str(response)}
+                    data={"raw_response": str(response)},
+                    usage=TokenUsage.from_raw({"raw_response": str(response)}.get('usage') if isinstance({"raw_response": str(response)}, dict) else None),
                 )
 
             # Extract content and function calls
@@ -404,7 +408,9 @@ class ChatGoogle(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                return Response(type=ResponseType.LLM, 
+
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=formatted_message,
                     data={
@@ -413,23 +419,35 @@ class ChatGoogle(BaseModel):
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
-                    usage=usage,
+                    usage=TokenUsage.from_raw({
+                        "raw_response": str(response),
+                        "functions": functions,
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                    }.get('usage') if isinstance({
+                        "raw_response": str(response),
+                        "functions": functions,
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                    }, dict) else None),
                 )
 
             # Handle structured output (if response_format was provided)
             elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 if not message_text:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message="Empty response content from model",
-                        data={"raw_response": str(response)}
+                        data={"raw_response": str(response)},
+                        usage=TokenUsage.from_raw({"raw_response": str(response)}.get('usage') if isinstance({"raw_response": str(response)}, dict) else None),
                     )
 
                 # Try to parse JSON from message text
                 import json
                 try:
-                    json_data = json.loads(message_text)
-                    parsed_model = response_format.model_validate(json_data)
+                    data = json.loads(message_text)
+                    parsed_model = response_format.model_validate(data)
 
                     # Format as string
                     model_name = response_format.__name__
@@ -443,33 +461,49 @@ class ChatGoogle(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    return Response(type=ResponseType.LLM, 
+
+                    return Response(
+                        type=ResponseType.LLM,
                         success=True,
                         message=formatted_message,
-                        parsed_model=parsed_model,
                         data={
                             "raw_response": str(response),
                             "usage": usage,
                             "finish_reason": finish_reason,
                         },
-                        usage=usage,
+                        usage=TokenUsage.from_raw({
+                            "raw_response": str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                        }.get('usage') if isinstance({
+                            "raw_response": str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                        }, dict) else None),
+                        parsed_model=parsed_model,
                     )
                 except json.JSONDecodeError as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        data={"error": str(e), "content": message_text}
+                        data={"error": str(e), "content": message_text},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": message_text}.get('usage') if isinstance({"error": str(e), "content": message_text}, dict) else None),
                     )
                 except Exception as e:
-                    return Response(type=ResponseType.LLM, 
+                    return Response(
+                        type=ResponseType.LLM,
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        data={"error": str(e), "content": message_text}
+                        data={"error": str(e), "content": message_text},
+                        usage=TokenUsage.from_raw({"error": str(e), "content": message_text}.get('usage') if isinstance({"error": str(e), "content": message_text}, dict) else None),
                     )
 
             # Default: return content as string
             else:
-                return Response(type=ResponseType.LLM, 
+
+                return Response(
+                    type=ResponseType.LLM,
                     success=True,
                     message=message_text,
                     data={
@@ -477,7 +511,15 @@ class ChatGoogle(BaseModel):
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
-                    usage=usage,
+                    usage=TokenUsage.from_raw({
+                        "raw_response": str(response),
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                    }.get('usage') if isinstance({
+                        "raw_response": str(response),
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                    }, dict) else None),
                 )
 
         except Exception as e:
@@ -486,6 +528,7 @@ class ChatGoogle(BaseModel):
                 type=ResponseType.LLM,
                 success=False,
                 message=f"Failed to format response: {e}",
-                data={"error": str(e)}
+                data={"error": str(e)},
+                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 
