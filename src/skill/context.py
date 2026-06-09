@@ -172,7 +172,7 @@ class SkillContextManager(BaseModel):
         description = frontmatter.get("description", "")
         version = frontmatter.get("version", "1.0.0")
         require_grad = str(frontmatter.get("require_grad", "false")).lower() == "true"
-        skill_type = frontmatter.get("type", "tool").lower()
+        type_value = frontmatter.get("type", "tool")
         metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "require_grad")}
 
         def _scan_dir(d: Path) -> List[str]:
@@ -189,7 +189,7 @@ class SkillContextManager(BaseModel):
             metadata=metadata,
             require_grad=require_grad,
             version=version,
-            skill_type=skill_type,
+            type=type_value,
             skill_dir=str(skill_dir),
             content=body.strip(),
             scripts=scripts,
@@ -281,7 +281,7 @@ class SkillContextManager(BaseModel):
         parts = [
             f"Skill: {skill_config.name}",
             f"Description: {skill_config.description}",
-            f"Type: {skill_config.skill_type}",
+            f"Type: {skill_config.type}",
             f"Version: {skill_config.version}",
             f"Skill Directory: {skill_config.skill_dir}",
             f"SKILL.md: {os.path.join(skill_config.skill_dir, 'SKILL.md')}",
@@ -714,9 +714,6 @@ class SkillContextManager(BaseModel):
         **kwargs,
     ) -> Response:
         """Execute a skill by returning its SKILL.md as instructions for the calling agent."""
-        skill_ctx = SkillContext.from_context(ctx)
-        skill_ctx = skill_ctx.model_copy(update={"name": name, "input": input})
-
         skill_config = self._skill_configs.get(name)
         if skill_config is None:
             return Response(type=ResponseType.SKILL, 
@@ -747,7 +744,7 @@ class SkillContextManager(BaseModel):
             message=instructions,
             data={
                 "skill_name": name,
-                "skill_type": skill_config.skill_type,
+                "type": skill_config.type,
                 "version": skill_config.version,
                 "input": input,
                 "skill_dir": skill_dir,

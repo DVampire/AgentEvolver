@@ -15,6 +15,7 @@ class WallTimeConstraint(Constraint):
     """Stops the agent when elapsed wall-clock time since the first step exceeds the cap."""
 
     name: str = Field(default="wall_time_constraint")
+    description: str = Field(default="Stops the agent when elapsed wall-clock time since the first step exceeds the cap.")
     max_second: float = Field(default=300.0, description="Maximum wall-clock seconds allowed.")
 
     async def __call__(self, input: Dict[str, Any], ctx: ConstraintContext) -> Response:

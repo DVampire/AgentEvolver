@@ -41,6 +41,7 @@ class VersionManagerServer(BaseModel):
             "skill": {},
             "environment": {},
             "action": {},
+            "constraint": {},
         }
 
     async def initialize(self):

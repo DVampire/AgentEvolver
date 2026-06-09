@@ -35,6 +35,12 @@ class SkillManagerServer(BaseModel):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def _ensure_context_manager(self) -> SkillContextManager:
+        """Lazily create the context manager so methods work before initialize() is called."""
+        if self.skill_context_manager is None:
+            self.skill_context_manager = SkillContextManager()
+        return self.skill_context_manager
+
     async def initialize(self, skill_names: Optional[List[str]] = None):
         """Initialize skills by scanning default (and custom) skill directories.
 
@@ -55,14 +61,13 @@ class SkillManagerServer(BaseModel):
             save_path=self.save_path,
             contract_path=self.contract_path,
         )
-        await self.skill_context_manager.initialize(skill_names=skill_names)
+        await self._ensure_context_manager().initialize(skill_names=skill_names)
 
         logger.info("| ✅ Skills initialization completed")
 
     async def cleanup(self):
         """Release all skills."""
-        if self.skill_context_manager is not None:
-            await self.skill_context_manager.cleanup()
+        await self._ensure_context_manager().cleanup()
 
     # ------------------------------------------------------------------
     # Register / Update / Unregister / Copy / Restore
@@ -84,7 +89,7 @@ class SkillManagerServer(BaseModel):
         Returns:
             The registered SkillConfig.
         """
-        return await self.skill_context_manager.register(
+        return await self._ensure_context_manager().register(
             skill_dir=skill_dir,
             override=override,
             version=version,
@@ -112,7 +117,7 @@ class SkillManagerServer(BaseModel):
         Returns:
             Updated SkillConfig.
         """
-        return await self.skill_context_manager.update(
+        return await self._ensure_context_manager().update(
             name=name,
             skill_dir=skill_dir,
             new_version=new_version,
@@ -130,7 +135,7 @@ class SkillManagerServer(BaseModel):
         Returns:
             True if removed, False if not found.
         """
-        return await self.skill_context_manager.unregister(name)
+        return await self._ensure_context_manager().unregister(name)
 
     async def copy(
         self,
@@ -150,7 +155,7 @@ class SkillManagerServer(BaseModel):
         Returns:
             New SkillConfig.
         """
-        return await self.skill_context_manager.copy(
+        return await self._ensure_context_manager().copy(
             name=name,
             new_name=new_name,
             new_version=new_version,
@@ -167,7 +172,7 @@ class SkillManagerServer(BaseModel):
         Returns:
             Restored SkillConfig, or None if not found.
         """
-        return await self.skill_context_manager.restore(name, version)
+        return await self._ensure_context_manager().restore(name, version)
 
     # ------------------------------------------------------------------
     # Query API
@@ -175,25 +180,15 @@ class SkillManagerServer(BaseModel):
 
     async def get(self, skill_name: str) -> Optional[SkillConfig]:
         """Get a loaded skill by name."""
-        return await self.skill_context_manager.get(skill_name)
+        return await self._ensure_context_manager().get(skill_name)
 
     async def get_info(self, skill_name: str) -> Optional[SkillConfig]:
         """Get skill configuration by name."""
-        return await self.skill_context_manager.get_info(skill_name)
+        return await self._ensure_context_manager().get_info(skill_name)
 
     async def list(self) -> List[str]:
         """List all loaded skill names."""
-        return await self.skill_context_manager.list()
-
-    def is_sop_skill(self, skill_name: str) -> bool:
-        """Check whether a loaded skill is of type 'sop'.
-
-        Synchronous lookup — safe to call from the message-assembly path.
-        """
-        if self.skill_context_manager is None:
-            return False
-        cfg = self.skill_context_manager._skill_configs.get(skill_name)
-        return cfg is not None and cfg.skill_type == "sop"
+        return await self._ensure_context_manager().list()
 
     # ------------------------------------------------------------------
     # Context & Contract
@@ -201,7 +196,7 @@ class SkillManagerServer(BaseModel):
 
     async def get_context(self, skill_names: Optional[List[str]] = None) -> str:
         """Build the skill context string for prompt injection."""
-        return await self.skill_context_manager.get_context(skill_names=skill_names)
+        return await self._ensure_context_manager().get_context(skill_names=skill_names)
 
     async def set_contract(self, skill_names: Optional[List[str]] = None):
         """Set the contract for all skills by aggregating their source code.
@@ -209,11 +204,11 @@ class SkillManagerServer(BaseModel):
         Args:
             skill_names: List of skill names to include in the contract. If None, includes all registered skills.
         """
-        await self.skill_context_manager.save_contract(skill_names=skill_names)
+        await self._ensure_context_manager().save_contract(skill_names=skill_names)
 
     async def get_contract(self) -> str:
         """Load the persisted contract text."""
-        return await self.skill_context_manager.load_contract()
+        return await self._ensure_context_manager().load_contract()
 
     # ------------------------------------------------------------------
     # Skill execution
@@ -234,12 +229,9 @@ class SkillManagerServer(BaseModel):
             ctx: Skill context.
         """
         # Ensure ctx is always an SkillContext instance
-        ctx = SkillContext(
-            id=ctx.id if ctx else make_id(),
-            name=name
-        )
+        ctx = SkillContext.from_context(ctx) if ctx else SkillContext(name=name, input=input)
 
-        return await self.skill_context_manager(
+        return await self._ensure_context_manager()(
             name=name,
             input=input,
             ctx=ctx,

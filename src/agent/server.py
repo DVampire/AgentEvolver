@@ -26,8 +26,17 @@ class AgentManagerServer(BaseModel):
         """Initialize the Agent Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, AgentConfig] = {}  # agent_name -> AgentConfig
+        # Context manager is created lazily (config may not be loaded at import time).
+        # initialize() reconfigures it with proper base_dir / save_path / contract_path.
+        self.agent_context_manager: Optional[AgentContextManager] = None
 
         
+    def _ensure_context_manager(self) -> AgentContextManager:
+        """Lazily create the context manager so methods work before initialize() is called."""
+        if self.agent_context_manager is None:
+            self.agent_context_manager = AgentContextManager()
+        return self.agent_context_manager
+
     async def initialize(self, agent_names: Optional[List[str]] = None):
         """Initialize agents by names using agent context manager with concurrent support.
         
@@ -48,12 +57,12 @@ class AgentManagerServer(BaseModel):
             contract_path=self.contract_path,
             model_name="openrouter/gemini-3-flash-preview",
         )
-        await self.agent_context_manager.initialize(agent_names=agent_names)
+        await self._ensure_context_manager().initialize(agent_names=agent_names)
         
         # Sync registered_configs from context manager after initialization
-        agent_list = await self.agent_context_manager.list()
+        agent_list = await self._ensure_context_manager().list()
         for agent_name in agent_list:
-            agent_config = await self.agent_context_manager.get_info(agent_name)
+            agent_config = await self._ensure_context_manager().get_info(agent_name)
             if agent_config and agent_name not in self._registered_configs:
                 self._registered_configs[agent_name] = agent_config
         
@@ -65,11 +74,11 @@ class AgentManagerServer(BaseModel):
         Args:
             agent_names: List of agent names to include in the contract. If None, includes all registered agents.
         """
-        await self.agent_context_manager.save_contract(agent_names=agent_names)
+        await self._ensure_context_manager().save_contract(agent_names=agent_names)
         
     async def get_contract(self) -> str:
         """Get the contract for all agents"""
-        return await self.agent_context_manager.load_contract()
+        return await self._ensure_context_manager().load_contract()
         
     async def register(self, 
                        agent_cls: Type[Agent],
@@ -87,7 +96,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             AgentConfig: Agent configuration
         """
-        agent_config = await self.agent_context_manager.register(
+        agent_config = await self._ensure_context_manager().register(
             agent_cls, 
             agent_config_dict=agent_config_dict, 
             override=override,
@@ -105,7 +114,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             AgentConfig: Agent configuration or None if not found
         """
-        return await self.agent_context_manager.get_info(agent_name)
+        return await self._ensure_context_manager().get_info(agent_name)
     
     async def list(self) -> List[str]:
         """List all registered agents
@@ -113,7 +122,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             List[str]: List of agent names
         """
-        return await self.agent_context_manager.list()
+        return await self._ensure_context_manager().list()
     
     
     async def get(self, agent_name: str) -> Optional[Agent]:
@@ -125,12 +134,12 @@ class AgentManagerServer(BaseModel):
         Returns:
             Agent: Agent instance or None if not found
         """
-        agent = await self.agent_context_manager.get(agent_name)
+        agent = await self._ensure_context_manager().get(agent_name)
         return agent
     
     async def cleanup(self):
         """Cleanup all agents"""
-        await self.agent_context_manager.cleanup()
+        await self._ensure_context_manager().cleanup()
         self._registered_configs.clear()
     
     async def update(self, 
@@ -149,7 +158,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             AgentConfig: Updated agent configuration
         """
-        agent_config = await self.agent_context_manager.update(
+        agent_config = await self._ensure_context_manager().update(
             agent_cls, agent_config_dict=agent_config_dict, new_version=new_version, description=description
         )
         self._registered_configs[agent_config.name] = agent_config
@@ -171,7 +180,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             AgentConfig: New agent configuration
         """
-        agent_config = await self.agent_context_manager.copy(
+        agent_config = await self._ensure_context_manager().copy(
             agent_name, new_name, new_version, new_config
         )
         self._registered_configs[agent_config.name] = agent_config
@@ -186,7 +195,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             True if unregistered successfully, False otherwise
         """
-        success = await self.agent_context_manager.unregister(agent_name)
+        success = await self._ensure_context_manager().unregister(agent_name)
         if success and agent_name in self._registered_configs:
             del self._registered_configs[agent_name]
         return success
@@ -202,7 +211,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             AgentConfig of the restored version, or None if not found
         """
-        agent_config = await self.agent_context_manager.restore(agent_name, version, auto_initialize)
+        agent_config = await self._ensure_context_manager().restore(agent_name, version, auto_initialize)
         if agent_config:
             self._registered_configs[agent_config.name] = agent_config
         return agent_config
@@ -225,12 +234,9 @@ class AgentManagerServer(BaseModel):
         """
         
         # Ensure ctx is always an AgentContext instance
-        ctx = AgentContext(
-            id = ctx.id if ctx else make_id(),
-            name = name,
-        )
+        ctx = AgentContext.from_context(ctx) if ctx else AgentContext(name=name, input=input)
 
-        return await self.agent_context_manager(name, input, ctx=ctx, **kwargs)
+        return await self._ensure_context_manager()(name, input, ctx=ctx, **kwargs)
 
 
 # Global Agent manager instance

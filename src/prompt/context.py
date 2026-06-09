@@ -17,8 +17,9 @@ from src.config import config
 from src.version import version_manager
 from src.utils import assemble_project_path
 from src.utils.file_utils import file_lock
-from src.prompt.types import Prompt, PromptConfig, parse_prompt_file
+from src.prompt.types import Prompt, PromptConfig, PromptContext, parse_prompt_file
 from src.message.types import Message
+from src.response.types import Response, ResponseType
 from src.permission import permission_manager, PermissionMode
 
 
@@ -321,13 +322,44 @@ class PromptContextManager(BaseModel):
         logger.info(f"| ✅ Rendering user message for {prompt_name} v{cfg.version}")
         return await cfg.to_prompt().get_user_message(modules=modules, reload=reload)
 
-    async def get_messages(self, prompt_name: str,
-                            system_modules: Dict[str, Any] = None,
-                            agent_modules: Dict[str, Any] = None,
-                            **kwargs) -> List[Message]:
-        system_msg = await self.get_system_message(prompt_name, system_modules, reload=False)
-        agent_msg = await self.get_agent_message(prompt_name, agent_modules, reload=True)
-        return [system_msg, agent_msg]
+    async def __call__(self, name: str,
+                       input: Dict[str, Any] = None,
+                       ctx: PromptContext = None,
+                       **kwargs) -> Response:
+        """Render a prompt's system + agent messages.
+
+        Args:
+            name: Prompt name.
+            input: Render payload — ``{"system_modules": {...}, "agent_modules": {...}}``.
+            ctx: Optional prompt context.
+
+        Returns a Response whose data carries both rendered messages:
+            data = {"system_message": ..., "agent_message": ..., "messages": [system, agent]}
+        """
+        input = input or {}
+        system_modules = input.get("system_modules")
+        agent_modules = input.get("agent_modules")
+
+        cfg = self._prompt_configs.get(name)
+        if cfg is None:
+            error_msg = f"Prompt '{name}' is not registered. Available prompts: {list(self._prompt_configs.keys())}"
+            logger.error(f"| ❌ {error_msg}")
+            return Response(type=ResponseType.PROMPT, success=False, message=error_msg)
+
+        system_message = await self.get_system_message(name, system_modules, reload=False)
+        agent_message = await self.get_agent_message(name, agent_modules, reload=True)
+
+        logger.info(f"| ✅ Rendered messages for prompt {name} v{cfg.version}")
+        return Response(
+            type=ResponseType.PROMPT,
+            success=True,
+            message=f"Rendered messages for prompt {name} v{cfg.version}",
+            data={
+                "system_message": system_message,
+                "agent_message": agent_message,
+                "messages": [system_message, agent_message],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Trainable variables

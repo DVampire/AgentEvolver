@@ -30,7 +30,7 @@ class SkillConfig(BaseModel):
     require_grad: bool = Field(default=False, description="Whether the skill is trainable")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the skill")
-    skill_type: str = Field(default="tool", description="Skill type: 'sop' (returns instructions) or 'tool' (LLM executes)")
+    type: str = Field(default="tool", description="Skill type label from YAML frontmatter (free-form parameter, no special handling)")
 
     skill_dir: str = Field(description="Absolute path to the skill directory")
     content: str = Field(default="", description="Full markdown body of SKILL.md (after frontmatter)")
@@ -49,7 +49,7 @@ class SkillConfig(BaseModel):
             "require_grad": self.require_grad,
             "permission_mode": self.permission_mode,
             "version": self.version,
-            "skill_type": self.skill_type,
+            "type": self.type,
             "skill_dir": self.skill_dir,
             "content": self.content,
             "scripts": self.scripts,

@@ -11,9 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.config import config
 from src.utils import assemble_project_path
 from src.logger import logger
-from src.prompt.types import PromptConfig, Prompt
+from src.prompt.types import PromptConfig, Prompt, PromptContext
 from src.prompt.context import PromptContextManager
-from src.message.types import Message
+from src.response.types import Response
+
 
 class PromptManagerServer(BaseModel):
     """Prompt Manager for managing prompt registration and lifecycle."""
@@ -26,6 +27,14 @@ class PromptManagerServer(BaseModel):
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, PromptConfig] = {}
+        # Context manager is created lazily; _ensure_context_manager() initializes it on first use.
+        self.prompt_context_manager: Optional[PromptContextManager] = None
+
+    async def _ensure_context_manager(self) -> PromptContextManager:
+        """Lazily build and initialize the context manager so methods work before an explicit initialize()."""
+        if getattr(self, "prompt_context_manager", None) is None:
+            await self.initialize()
+        return self.prompt_context_manager
 
     async def initialize(self, prompt_names: Optional[List[str]] = None):
         """Initialize prompts from md directory.
@@ -49,46 +58,54 @@ class PromptManagerServer(BaseModel):
         logger.info("| ✅ Prompts initialization completed")
 
     async def register(self, prompt: Dict[str, Any], *, override: bool = False) -> PromptConfig:
-        cfg = await self.prompt_context_manager.register(prompt, override=override)
+        cm = await self._ensure_context_manager()
+        cfg = await cm.register(prompt, override=override)
         self._registered_configs[cfg.name] = cfg
         return cfg
 
     async def list(self) -> List[str]:
-        return await self.prompt_context_manager.list()
+        cm = await self._ensure_context_manager()
+        return await cm.list()
 
     async def get(self, prompt_name: str) -> Optional[Prompt]:
-        return await self.prompt_context_manager.get(prompt_name)
+        cm = await self._ensure_context_manager()
+        return await cm.get(prompt_name)
 
     async def get_info(self, prompt_name: str) -> Optional[PromptConfig]:
-        return await self.prompt_context_manager.get_info(prompt_name)
+        cm = await self._ensure_context_manager()
+        return await cm.get_info(prompt_name)
 
     async def cleanup(self):
-        if hasattr(self, "prompt_context_manager"):
+        if getattr(self, "prompt_context_manager", None) is not None:
             await self.prompt_context_manager.cleanup()
         self._registered_configs.clear()
 
     async def update(self, prompt_name: str, prompt: Dict[str, Any],
                      new_version: Optional[str] = None, description: Optional[str] = None) -> PromptConfig:
-        cfg = await self.prompt_context_manager.update(prompt_name, prompt,
-                                                        new_version=new_version,
-                                                        description=description)
+        cm = await self._ensure_context_manager()
+        cfg = await cm.update(prompt_name, prompt,
+                              new_version=new_version,
+                              description=description)
         self._registered_configs[cfg.name] = cfg
         return cfg
 
     async def copy(self, prompt_name: str, new_name: Optional[str] = None,
                    new_version: Optional[str] = None, **override_config) -> PromptConfig:
-        cfg = await self.prompt_context_manager.copy(prompt_name, new_name, new_version, **override_config)
+        cm = await self._ensure_context_manager()
+        cfg = await cm.copy(prompt_name, new_name, new_version, **override_config)
         self._registered_configs[cfg.name] = cfg
         return cfg
 
     async def unregister(self, prompt_name: str) -> bool:
-        success = await self.prompt_context_manager.unregister(prompt_name)
+        cm = await self._ensure_context_manager()
+        success = await cm.unregister(prompt_name)
         if success:
             self._registered_configs.pop(prompt_name, None)
         return success
 
     async def restore(self, prompt_name: str, version: str, auto_initialize: bool = True) -> Optional[PromptConfig]:
-        cfg = await self.prompt_context_manager.restore(prompt_name, version, auto_initialize)
+        cm = await self._ensure_context_manager()
+        cfg = await cm.restore(prompt_name, version, auto_initialize)
         if cfg:
             self._registered_configs[cfg.name] = cfg
         return cfg
@@ -96,35 +113,41 @@ class PromptManagerServer(BaseModel):
     async def get_system_message(self, prompt_name: str,
                                   modules: Dict[str, Any] = None,
                                   reload: bool = False, **kwargs):
-        if not hasattr(self, "prompt_context_manager"):
-            await self.initialize()
-        return await self.prompt_context_manager.get_system_message(
+        cm = await self._ensure_context_manager()
+        return await cm.get_system_message(
             prompt_name=prompt_name, modules=modules, reload=reload, **kwargs)
 
     async def get_agent_message(self, prompt_name: str,
                                  modules: Dict[str, Any] = None,
                                  reload: bool = True, **kwargs):
-        if not hasattr(self, "prompt_context_manager"):
-            await self.initialize()
-        return await self.prompt_context_manager.get_agent_message(
+        cm = await self._ensure_context_manager()
+        return await cm.get_agent_message(
             prompt_name=prompt_name, modules=modules, reload=reload, **kwargs)
 
-    async def get_messages(self, prompt_name: str,
-                            system_modules: Dict[str, Any] = None,
-                            agent_modules: Dict[str, Any] = None,
-                            **kwargs) -> List[Message]:
-        return await self.prompt_context_manager.get_messages(
-            prompt_name=prompt_name,
-            system_modules=system_modules,
-            agent_modules=agent_modules,
-            **kwargs)
+    async def __call__(self, name: str,
+                       input: Dict[str, Any] = None,
+                       ctx: PromptContext = None,
+                       **kwargs) -> Response:
+        """Render a prompt's system + agent messages.
 
+        Args:
+            name: Prompt name.
+            input: Render payload — ``{"system_modules": {...}, "agent_modules": {...}}``.
+            ctx: Optional prompt context.
+
+        Returns a Response whose data carries both rendered messages:
+            data = {"system_message": ..., "agent_message": ..., "messages": [system, agent]}
+        """
+        cm = await self._ensure_context_manager()
+        return await cm(name, input=input, ctx=ctx, **kwargs)
 
     async def set_contract(self, prompt_names: Optional[List[str]] = None):
-        await self.prompt_context_manager.save_contract(prompt_names=prompt_names)
+        cm = await self._ensure_context_manager()
+        await cm.save_contract(prompt_names=prompt_names)
 
     async def get_contract(self) -> str:
-        return await self.prompt_context_manager.load_contract()
+        cm = await self._ensure_context_manager()
+        return await cm.load_contract()
 
 
 # Global Prompt Manager instance

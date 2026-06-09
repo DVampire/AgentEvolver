@@ -2,8 +2,7 @@
 
 Server implementation for tool management with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Type, Union, TYPE_CHECKING
-import asyncio
+from typing import Any, Dict, List, Optional, Type, Union
 import os
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,7 +11,7 @@ from src.logger import logger
 from src.config import config
 from src.tool.context import ToolContextManager
 from src.tool.types import Tool, ToolConfig, ToolContext
-from src.response.types import Response, ResponseType
+from src.response.types import Response
 from src.utils import assemble_project_path
 
 class ToolManagerServer(BaseModel):
@@ -27,8 +26,16 @@ class ToolManagerServer(BaseModel):
         """Initialize the tool manager Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, ToolConfig] = {}  # tool_name -> ToolConfig
-
+        # Context manager is created lazily (config may not be loaded at import time).
+        # initialize() reconfigures it with proper base_dir / save_path / contract_path.
+        self.tool_context_manager: Optional[ToolContextManager] = None
         
+    def _ensure_context_manager(self) -> ToolContextManager:
+        """Lazily create the context manager so methods work before initialize() is called."""
+        if self.tool_context_manager is None:
+            self.tool_context_manager = ToolContextManager()
+        return self.tool_context_manager
+
     async def initialize(self, tool_names: Optional[List[str]] = None):
         """Initialize tools by names using tool context manager with concurrent support.
         
@@ -49,7 +56,7 @@ class ToolManagerServer(BaseModel):
             contract_path=self.contract_path,
             model_name="openrouter/gemini-3-flash-preview",
         )
-        await self.tool_context_manager.initialize(tool_names=tool_names)
+        await self._ensure_context_manager().initialize(tool_names=tool_names)
         
         logger.info("| ✅ Tools initialization completed")
         
@@ -59,11 +66,11 @@ class ToolManagerServer(BaseModel):
         Args:
             tool_names: List of tool names to include in the contract. If None, includes all registered tools.
         """
-        await self.tool_context_manager.save_contract(tool_names=tool_names)
+        await self._ensure_context_manager().save_contract(tool_names=tool_names)
 
     async def get_contract(self) -> str:
         """Get the contract for all tools"""
-        return await self.tool_context_manager.load_contract()
+        return await self._ensure_context_manager().load_contract()
 
     async def register(self, 
                        tool: Union[Tool, Type[Tool]],
@@ -83,7 +90,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             ToolConfig: Tool configuration
         """
-        tool_config = await self.tool_context_manager.register(
+        tool_config = await self._ensure_context_manager().register(
             tool, 
             tool_config_dict=config, 
             override=override,
@@ -102,7 +109,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             List[str]: List of tool names
         """
-        return await self.tool_context_manager.list()
+        return await self._ensure_context_manager().list()
     
     
     async def get(self, tool_name: str) -> Tool:
@@ -114,7 +121,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             Tool: Tool instance or None if not found
         """
-        tool = await self.tool_context_manager.get(tool_name)
+        tool = await self._ensure_context_manager().get(tool_name)
         return tool
     
     async def get_info(self, tool_name: str) -> Optional[ToolConfig]:
@@ -126,11 +133,11 @@ class ToolManagerServer(BaseModel):
         Returns:
             ToolConfig: Tool configuration or None if not found
         """
-        return await self.tool_context_manager.get_info(tool_name)
+        return await self._ensure_context_manager().get_info(tool_name)
     
     async def cleanup(self):
         """Cleanup all tools"""
-        await self.tool_context_manager.cleanup()
+        await self._ensure_context_manager().cleanup()
         self._registered_configs.clear()
     
     async def update(self,
@@ -153,7 +160,7 @@ class ToolManagerServer(BaseModel):
             ToolConfig: Updated tool configuration
         """
         tool_cls = tool if isinstance(tool, type) else type(tool)
-        tool_config = await self.tool_context_manager.update(
+        tool_config = await self._ensure_context_manager().update(
             tool_cls, tool_config_dict=config, new_version=new_version, description=description, code=code
         )
         self._registered_configs[tool_config.name] = tool_config
@@ -172,7 +179,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             ToolConfig: New tool configuration
         """
-        tool_config = await self.tool_context_manager.copy(
+        tool_config = await self._ensure_context_manager().copy(
             tool_name, new_name, new_version, **override_config
         )
         self._registered_configs[tool_config.name] = tool_config
@@ -187,7 +194,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             True if unregistered successfully, False otherwise
         """
-        success = await self.tool_context_manager.unregister(tool_name)
+        success = await self._ensure_context_manager().unregister(tool_name)
         if success and tool_name in self._registered_configs:
             del self._registered_configs[tool_name]
         return success
@@ -203,7 +210,7 @@ class ToolManagerServer(BaseModel):
         Returns:
             ToolConfig of the restored version, or None if not found
         """
-        tool_config = await self.tool_context_manager.restore(tool_name, version, auto_initialize)
+        tool_config = await self._ensure_context_manager().restore(tool_name, version, auto_initialize)
         if tool_config:
             self._registered_configs[tool_config.name] = tool_config
         return tool_config
@@ -226,11 +233,8 @@ class ToolManagerServer(BaseModel):
             Response: Tool result
         """
         # Ensure ctx is always an ToolContext instance
-        ctx = ToolContext(
-            id =ctx.id if ctx else make_id(),
-            name=name
-        )
-        return await self.tool_context_manager(name, input, ctx=ctx, **kwargs)
+        ctx = ToolContext.from_context(ctx) if ctx else ToolContext(name=name, input=input)
+        return await self._ensure_context_manager()(name, input, ctx=ctx, **kwargs)
 
 
 # Global tool manager instance

@@ -14,6 +14,7 @@ class TokenConstraint(Constraint):
     """Stops the agent when total LLM tokens consumed in this task exceeds the cap."""
 
     name: str = Field(default="token_constraint")
+    description: str = Field(default="Stops the agent when total LLM tokens consumed in this task exceeds the cap.")
     max_token: int = Field(default=10_000_000, description="Maximum cumulative tokens allowed.")
 
     async def __call__(self, input: Dict[str, Any], ctx: ConstraintContext) -> Response:

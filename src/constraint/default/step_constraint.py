@@ -14,6 +14,7 @@ class StepConstraint(Constraint):
     """Hard cap on the number of think-and-act steps."""
 
     name: str = Field(default="step_constraint")
+    description: str = Field(default="Hard cap on the number of think-and-act steps an agent may take.")
     max_step: int = Field(default=30, description="Maximum number of steps allowed.")
 
     async def __call__(self, input: Dict[str, Any], ctx: ConstraintContext) -> Response:

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
 
 from src.logger import logger
 from src.message import Message, SystemMessage, HumanMessage, ContentPartText
+from src.session import BaseContext
 
 
 try:
@@ -243,3 +244,22 @@ class PromptConfig(BaseModel):
 
     def __repr__(self):
         return self.__str__()
+
+
+class PromptContext(BaseContext):
+    """Context passed into the prompt manager when rendering messages."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(default="", description="Unique identifier for this prompt render.")
+    name: str = Field(default="", description="Name of the prompt being rendered.")
+    work_dir: Optional[str] = Field(default=None, description="Working directory available to the caller.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the prompt.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this prompt context.")
+
+
+__all__ = [
+    "Prompt",
+    "PromptConfig",
+    "PromptContext",
+    "parse_prompt_file",
+]

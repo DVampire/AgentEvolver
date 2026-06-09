@@ -83,7 +83,7 @@ class SkillOptimizeAgent(Agent):
             if skill_config:
                 lines.append(f"- **Description**: {skill_config.description}")
                 lines.append(f"- **Version**: {skill_config.version}")
-                lines.append(f"- **Type**: {skill_config.skill_type}")
+                lines.append(f"- **Type**: {skill_config.type}")
                 lines.append(f"- **Skill Directory**: {skill_config.skill_dir}")
                 lines.append(f"- **SKILL.md**: {os.path.join(skill_config.skill_dir, 'SKILL.md')}")
                 if skill_config.scripts:

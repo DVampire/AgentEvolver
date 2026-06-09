@@ -253,9 +253,8 @@ class Agent(BaseModel):
 
         # Runtime constraints — accept Constraint instances or mmengine-style dicts
         # e.g. {"type": "StepConstraint", "max_steps": 20}
+        # Registration with the constraint manager happens in `initialize` (async).
         self.constraints: List[Constraint] = self._build_constraints(constraints)
-        for c in self.constraints:
-            constraint_manager.register(c)
 
     @staticmethod
     def _build_constraints(raw: Optional[List]) -> List[Constraint]:
@@ -274,6 +273,10 @@ class Agent(BaseModel):
     async def initialize(self) -> None:
         """Initialize the agent."""
         logger.info(f"| 📁 Agent working directory: {self.base_dir}")
+
+        # Register runtime constraints with the global constraint manager
+        for c in self.constraints:
+            await constraint_manager.register(c)
 
     def __str__(self) -> str:
         return f"Agent(name={self.name}, model={self.model_name}, prompt_name={self.prompt_name})"
@@ -358,13 +361,17 @@ class Agent(BaseModel):
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         
-        messages = await prompt_manager.get_messages(
-            prompt_name=self.prompt_name,
-            system_modules=system_modules,
-            agent_modules=agent_message_modules,
+        response = await prompt_manager(
+            name=self.prompt_name,
+            input={
+                "system_modules": system_modules,
+                "agent_modules": agent_message_modules,
+            },
         )
+        if not response.success:
+            raise ValueError(response.message)
 
-        return messages
+        return response.data["messages"]
 
     # ------------------------------------------------------------------
     # Shared execution loop — all tool-calling agents use this
@@ -397,7 +404,8 @@ class Agent(BaseModel):
             for c in self.constraints:
                 violation = await constraint_manager(c.name, {"token": step_tokens}, ctx)
                 if not violation.success:
-                    constraint_manager.cleanup(task_id)
+                    for c in self.constraints:
+                        c._cleanup(task_id)
                     return {"done": True, "result": violation.message, "reasoning": None, "action_errors": []}
 
         await hook_manager(
@@ -515,7 +523,8 @@ class Agent(BaseModel):
 
         # Clean up constraint session when task finishes
         if done and self.constraints:
-            constraint_manager.cleanup(task_id)
+            for c in self.constraints:
+                c._cleanup(task_id)
 
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
 

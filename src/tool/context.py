@@ -1047,10 +1047,6 @@ class ToolContextManager(BaseModel):
         Returns:
             Response: Tool result
         """
-
-        ctx = ToolContext.from_context(ctx)
-        ctx = ctx.model_copy(update={"input": input})
-
         tool_info = await self.get_info(name)
         
         if tool_info is None:

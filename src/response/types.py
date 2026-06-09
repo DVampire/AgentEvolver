@@ -12,6 +12,7 @@ class ResponseType(str, Enum):
     SKILL = "skill"
     LLM = "llm"
     CONSTRAINT = "constraint"
+    PROMPT = "prompt"
 
 
 class Response(BaseModel):

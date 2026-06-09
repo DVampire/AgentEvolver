@@ -929,17 +929,21 @@ class MetaAgent(Agent):
             ]
         )
         work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
-        messages = await prompt_manager.get_messages(
-            prompt_name=self.prompt_name,
-            system_modules=dict(
-                project_root=self.project_root,
-                project_context=state._project_context,
-                work_dir=work_dir,
-            ),
-            agent_modules=dict(agent_context=agent_context),
+        response = await prompt_manager(
+            name=self.prompt_name,
+            input={
+                "system_modules": dict(
+                    project_root=self.project_root,
+                    project_context=state._project_context,
+                    work_dir=work_dir,
+                ),
+                "agent_modules": dict(agent_context=agent_context),
+            },
         )
+        if not response.success:
+            raise ValueError(response.message)
 
-        return messages
+        return response.data["messages"]
 
     # ------------------------------------------------------------------
     # Helpers
