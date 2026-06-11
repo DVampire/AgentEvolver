@@ -30,6 +30,8 @@ class ScreenshotService:
     ) -> str:
         filename = screenshot_filename or f"step_{step_number:04d}.png"
         path = self.screenshots_dir / filename
+        # filename may include a per-session subdir (e.g. "<session_id>/step_0001.png")
+        path.parent.mkdir(parents=True, exist_ok=True)
         img.save(path)
         return str(path)
 
@@ -109,6 +111,35 @@ class ScreenshotService:
             label = str(i + 1)
             bbox = draw.textbbox((0, 0), label)
             draw.text((px - (bbox[2] - bbox[0]) // 2, py - (bbox[3] - bbox[1]) // 2), label, fill=(255, 255, 255))
+        return img
+
+    async def draw_som(self, img: Image.Image, elements: List[Dict[str, Any]]) -> Image.Image:
+        """Draw set-of-mark boxes: a numbered bounding box per in-viewport element.
+
+        Each element dict needs: index, left, top, width, height, in_viewport.
+        """
+        draw = ImageDraw.Draw(img)
+        colors = [
+            (229, 57, 53), (30, 136, 229), (67, 160, 71), (251, 140, 0),
+            (142, 36, 170), (0, 137, 123), (216, 27, 96), (93, 64, 55),
+        ]
+        for el in elements:
+            if not el.get("in_viewport"):
+                continue
+            color = colors[el["index"] % len(colors)]
+            left, top = el["left"], el["top"]
+            right, bottom = left + el["width"], top + el["height"]
+            draw.rectangle([left, top, right, bottom], outline=color, width=2)
+
+            label = str(el["index"])
+            bbox = draw.textbbox((0, 0), label)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            # Label sits above the box's top-left corner, clamped inside the image
+            lx = max(0, min(left, img.width - tw - 6))
+            ly = top - th - 6 if top - th - 6 >= 0 else bottom
+            ly = min(ly, img.height - th - 4)
+            draw.rectangle([lx, ly, lx + tw + 6, ly + th + 4], fill=color)
+            draw.text((lx + 3, ly + 2), label, fill=(255, 255, 255))
         return img
 
     async def _draw_arrow(self, draw: ImageDraw.ImageDraw, x: int, y: int, angle: float, size: int):

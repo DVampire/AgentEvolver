@@ -169,8 +169,8 @@ class AgentConfig(BaseModel):
 
 
 class ActionInputArgs(BaseModel):
-    type: str = Field(description='The type of this action: "tool", "skill", or "text".')
-    name: str = Field(description='The name of the tool, skill, or "text" for plain-text responses.')
+    type: str = Field(description='The type of this action: "tool", "skill", "env", "finish", or "text".')
+    name: str = Field(description='The name of the tool, skill, or environment action; "finish" to end the task; "text" for plain-text responses.')
     args: str = Field(description='The arguments as a JSON string. Must be a valid JSON object string. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
 
 
@@ -399,6 +399,21 @@ class Agent(BaseModel):
 
         return response.data["messages"]
 
+    async def _handle_env_action(
+        self,
+        action_name: str,
+        action_args: Dict[str, Any],
+        ctx: "AgentContext",
+    ) -> Any:
+        """Execute an `env`-type action. Agents bound to an environment override this.
+
+        Implementations should raise on failure so the error reaches
+        `action_errors` and is surfaced to the LLM in the next step.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support env actions"
+        )
+
     # ------------------------------------------------------------------
     # Shared execution loop — all tool-calling agents use this
     # ------------------------------------------------------------------
@@ -510,6 +525,20 @@ class Agent(BaseModel):
                         response = await skill_manager(name=action_name, input=action_args, ctx=ctx)
                         action_result = response.message
                         logger.info(f"| ✅ [{self.name}] Skill '{action_name}' completed (success={response.success})")
+
+                    elif action_type == "env":
+                        action_result = await self._handle_env_action(action_name, action_args, ctx)
+                        logger.info(f"| ✅ [{self.name}] Env action '{action_name}' completed")
+
+                    elif action_type == "finish":
+                        # Loop-native termination signal — consumed by the agent
+                        # itself, no manager involved (tool-free agents use this
+                        # instead of done_tool).
+                        done = True
+                        result = action_args.get("result", "")
+                        reasoning = action_args.get("reasoning")
+                        action_result = result
+                        logger.info(f"| 🏁 [{self.name}] Finish: {str(result)[:200]}")
 
                     else:
                         tool_response = await tool_manager(name=action_name, input=action_args, ctx=ctx)

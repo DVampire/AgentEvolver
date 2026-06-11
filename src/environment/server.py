@@ -253,7 +253,11 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             Any: Action result
         """
-        ctx = EnvironmentContext.from_text(ctx) if ctx else EnvironmentContext(name=name, action=action, input=input)
+        if ctx is None:
+            ctx = EnvironmentContext(name=name, action=action, input=input)
+        elif not isinstance(ctx, EnvironmentContext):
+            # Accept a caller's context (e.g. AgentContext) — carry over its id/work_dir
+            ctx = EnvironmentContext.from_context(ctx)
         return await self.environment_context_manager(name, action, input, ctx, **kwargs)
 
 

@@ -36,9 +36,14 @@ class BaseContext(BaseModel):
                        work_dir=None,
                        input={},
                        extra={})
+        # Fall back to the target class's field default when the source value is
+        # None — subclasses may narrow Optional fields (e.g. ToolContext.name: str).
+        name = getattr(ctx, "name", None)
+        if name is None:
+            name = cls.model_fields["name"].default
         return cls(
             id=ctx.id,
-            name=getattr(ctx, "name", None),
+            name=name,
             work_dir=getattr(ctx, "work_dir", None),
             input=getattr(ctx, "input", {}),
             extra=getattr(ctx, "extra", {}),

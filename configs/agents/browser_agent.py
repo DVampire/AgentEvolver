@@ -1,0 +1,17 @@
+browser_agent = dict(
+    base_dir = "work_dir/browser_agent",
+    name = "browser_agent",
+    type = "Agent",
+    description = "A browser agent that navigates and operates web pages through the browser environment: clicking, typing, scrolling, and running Playwright commands as a fallback.",
+    model_name = "openai/o3",
+    prompt_name = "browser_agent",
+    memory_name = "file_system_memory",
+    env_name = "browser_environment",
+    max_actions = 3,
+    max_step = 30,
+    max_screenshots = 2,
+    review_steps = 5,
+    log_max_length = 1000,
+    require_grad = False,
+    use_memory = True,
+)

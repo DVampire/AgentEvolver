@@ -1,3 +1,4 @@
+"""Run BrowserAgent on a web task using the browser environment."""
 import os
 import sys
 import json
@@ -22,6 +23,7 @@ from src.memory import memory_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
+from src.environment import environment_manager
 from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
 from src.trace import trace_manager
@@ -30,10 +32,10 @@ from src.utils import make_id
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run ReasonActAgent on a task")
+    parser = argparse.ArgumentParser(description="Run BrowserAgent on a web task")
     parser.add_argument(
         "--config",
-        default=os.path.join(root, "configs", "reason_act_agent.py"),
+        default=os.path.join(root, "configs", "browser_agent.py"),
         help="Config file path",
     )
     parser.add_argument("--task", default=None, help="Override the task to run")
@@ -47,12 +49,12 @@ def parse_args():
 
 
 async def run_agent(record: TaskRecord):
-    """TaskManager handler: executes the reason_act agent for a given TaskRecord."""
+    """TaskManager handler: executes the browser agent for a given TaskRecord."""
     session_id = record.task.session_id or make_id()
     ctx = SessionContext(id=session_id)
 
     response = await agent_manager(
-        name="reason_act_agent",
+        name="browser_agent",
         input={
             "task": record.task.content,
             "files": record.task.files,
@@ -104,6 +106,10 @@ async def main():
     await skill_manager.initialize(skill_names=skill_names)
     logger.info(f"| ✅ Skills: {await skill_manager.list()}")
 
+    logger.info("| 🌐 Initializing environments...")
+    await environment_manager.initialize(env_names=config.env_names)
+    logger.info(f"| ✅ Environments: {await environment_manager.list()}")
+
     logger.info("| 🤖 Initializing agents...")
     await agent_manager.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents: {await agent_manager.list()}")
@@ -116,7 +122,10 @@ async def main():
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---
-    task_text = args.task or "What is the result of 23 multiplied by 47? Please calculate it step by step."
+    task_text = args.task or (
+        "Search the web for 'pikachu' and report the title and URL of the first three results. "
+        "Then download the image of the first result and save it as 'result1.jpg'."
+    )
 
     logger.info(f"| 📋 Submitting task: {task_text}")
     task_id = await task_manager.submit(
@@ -141,6 +150,7 @@ async def main():
 
     # --- Teardown ---
     await task_manager.stop()
+    await environment_manager.cleanup()
     await trace_manager.stop()
 
 
