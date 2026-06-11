@@ -337,7 +337,7 @@ class BrowserService:
             )
         except httpx.HTTPStatusError as e:
             logger.error(f"| ❌ search HTTP error: {e.response.status_code}")
-            return ActionResult(success=False, message=f"Search failed: HTTP {e.response.status_code} — {e.response.text[:300]}", extra={"error": str(e)})
+            return ActionResult(success=False, message=f"Search failed: HTTP {e.response.status_code} — {e.response.text}", extra={"error": str(e)})
         except Exception as e:
             logger.error(f"| ❌ search failed: {e}")
             return ActionResult(success=False, message=f"Search failed: {e}", extra={"error": str(e)})
@@ -494,8 +494,6 @@ class BrowserService:
             exec(src, ns)
             result = await asyncio.wait_for(ns["__cmd__"](page, page.context), timeout=timeout)
             result_repr = repr(result)
-            if len(result_repr) > 2000:
-                result_repr = result_repr[:2000] + "... (truncated)"
             screenshot = await self._screenshot_b64(page)
             return ActionResult(
                 success=True,
@@ -521,11 +519,14 @@ class BrowserService:
         """
         return await page.evaluate(_OBSERVE_JS)
 
-    async def get_html(self, page: Page, max_chars: int = 20000) -> str:
-        """Return cleaned page HTML (scripts/styles/svg stripped), truncated to max_chars."""
+    async def get_html(self, page: Page, max_chars: Optional[int] = None) -> str:
+        """Return cleaned page HTML (scripts/styles/svg stripped).
+
+        Full HTML by default; pass a positive max_chars to cap it.
+        """
         try:
             html = await page.evaluate(_CLEAN_HTML_JS)
-            if len(html) > max_chars:
+            if max_chars and len(html) > max_chars:
                 html = html[:max_chars] + f"\n<!-- ... truncated, {len(html) - max_chars} more chars -->"
             return html
         except Exception as e:

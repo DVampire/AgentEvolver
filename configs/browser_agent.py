@@ -36,7 +36,7 @@ browser_environment = dict(
     use_sandbox=False,
     use_som=True,
     state_detail="elements",  # "elements" or "html"
-    max_state_elements=80,
+    max_state_elements=0,  # 0 = no truncation (show all interactive elements)
     command_timeout=30.0,
 )
 

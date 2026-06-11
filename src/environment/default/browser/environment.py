@@ -48,7 +48,7 @@ class BrowserEnvironment(Environment):
         sandbox_timeout_minutes: int = 30,
         use_som: bool = True,
         state_detail: str = "elements",
-        max_state_elements: int = 80,
+        max_state_elements: int = 0,  # 0 = no truncation (show all interactive elements)
         command_timeout: float = 30.0,
         **kwargs,
     ):
@@ -311,7 +311,8 @@ class BrowserEnvironment(Environment):
 
     def _render_elements_text(self, elements: List[Dict[str, Any]]) -> str:
         """Render the interactive-elements list as numbered lines for the LLM."""
-        shown = elements[: self.max_state_elements]
+        # max_state_elements <= 0 (or None) means show all elements, no truncation
+        shown = elements[: self.max_state_elements] if self.max_state_elements else elements
         lines = []
         for el in shown:
             tag = f"<{el['tag']}" + (f" type={el['type']}" if el.get("type") else "") + ">"
