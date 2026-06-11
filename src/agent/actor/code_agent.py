@@ -40,7 +40,7 @@ class CodeAgent(Agent):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_actions: int = 10,
-        max_steps: int = 30,
+        max_step: int = 30,
         review_steps: int = 5,
         require_grad: bool = False,
         **kwargs,
@@ -54,7 +54,7 @@ class CodeAgent(Agent):
             prompt_name=prompt_name or "code_agent",
             memory_name=memory_name,
             max_actions=max_actions,
-            max_steps=max_steps,
+            max_step=max_step,
             review_steps=review_steps,
             require_grad=require_grad,
             **kwargs,
@@ -162,21 +162,24 @@ class CodeAgent(Agent):
             "action_errors": [],
         }
 
-        while step_number < self.max_steps:
-            logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
+        while step_number < self.max_step:
+            logger.info(f"| 🔄 Step {step_number+1}/{self.max_step}")
             response = await self._think_and_act(
                 messages, task_id, step_number, ctx=ctx
             )
             step_number += 1
             action_errors = response.get("action_errors") or []
             messages = await self._get_messages(
-                enhanced_task, ctx=ctx, action_errors=action_errors
+                enhanced_task,
+                ctx=ctx,
+                action_errors=action_errors,
+                constraint_status=response.get("constraint_status"),
             )
             if response["done"]:
                 break
 
-        if step_number >= self.max_steps and not response["done"]:
-            logger.warning(f"| 🛑 Reached max steps ({self.max_steps})")
+        if step_number >= self.max_step and not response["done"]:
+            logger.warning(f"| 🛑 Reached max steps ({self.max_step})")
             response = {
                 "done": False,
                 "result": "The task has not been completed.",
@@ -210,11 +213,11 @@ class CodeAgent(Agent):
         )
 
         logger.info(
-            f"| ✅ CodeAgent completed after {step_number}/{self.max_steps} steps"
+            f"| ✅ CodeAgent completed after {step_number}/{self.max_step} steps"
         )
 
         return Response(type=ResponseType.AGENT, 
-            success=response["done"],
+            success=response["done"] and not response.get("stopped_by_constraint", False),
             message=response["result"],
             data=response,
         )

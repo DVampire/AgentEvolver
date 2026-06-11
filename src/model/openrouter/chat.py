@@ -348,7 +348,6 @@ class ChatOpenRouter(BaseModel):
                     success=False,
                     message=f"No choices in response (upstream error={err})" if err else "No choices in response",
                     data={"raw_response": raw},
-                    usage=TokenUsage.from_raw({"raw_response": raw}.get('usage') if isinstance({"raw_response": raw}, dict) else None),
                 )
 
             message = response.choices[0].message
@@ -399,19 +398,7 @@ class ChatOpenRouter(BaseModel):
                         "finish_reason": finish_reason,
                         "reasoning": reasoning,
                     },
-                    usage=TokenUsage.from_raw({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                        "reasoning": reasoning,
-                    }.get('usage') if isinstance({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                        "reasoning": reasoning,
-                    }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
             # Handle structured output
@@ -423,7 +410,6 @@ class ChatOpenRouter(BaseModel):
                         success=False,
                         message="Empty response content from model",
                         data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
-                        usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                     )
 
                 # Parse JSON content
@@ -454,17 +440,7 @@ class ChatOpenRouter(BaseModel):
                             "finish_reason": finish_reason,
                             "reasoning": reasoning,
                         },
-                        usage=TokenUsage.from_raw({
-                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                            "reasoning": reasoning,
-                        }.get('usage') if isinstance({
-                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                            "reasoning": reasoning,
-                        }, dict) else None),
+                        usage=TokenUsage.from_raw(usage),
                         parsed_model=parsed_model,
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
@@ -473,7 +449,6 @@ class ChatOpenRouter(BaseModel):
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
                         data={"error": str(e), "content": content},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": content}.get('usage') if isinstance({"error": str(e), "content": content}, dict) else None),
                     )
                 except Exception as e:
                     return Response(
@@ -481,7 +456,6 @@ class ChatOpenRouter(BaseModel):
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
                         data={"error": str(e), "content": content},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": content}.get('usage') if isinstance({"error": str(e), "content": content}, dict) else None),
                     )
 
             # Default: return content as string
@@ -499,17 +473,7 @@ class ChatOpenRouter(BaseModel):
                         "finish_reason": finish_reason,
                         "reasoning": reasoning,
                     },
-                    usage=TokenUsage.from_raw({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                        "reasoning": reasoning,
-                    }.get('usage') if isinstance({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                        "reasoning": reasoning,
-                    }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
         except Exception as e:
@@ -519,7 +483,6 @@ class ChatOpenRouter(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 data={"error": str(e)},
-                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 
     async def __call__(
@@ -577,7 +540,6 @@ class ChatOpenRouter(BaseModel):
                 success=False,
                 message=f"Rate limit error: {e.message}",
                 data={"error": str(e), "model": self.name},
-                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
@@ -586,7 +548,6 @@ class ChatOpenRouter(BaseModel):
                 success=False,
                 message=f"API connection error: {str(e)}",
                 data={"error": str(e), "model": self.name},
-                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
         except APIStatusError as e:
             logger.error(f"API status error: {e}")
@@ -595,7 +556,6 @@ class ChatOpenRouter(BaseModel):
                 success=False,
                 message=f"API status error: {e.message}",
                 data={"error": str(e), "status_code": e.status_code, "model": self.name},
-                usage=TokenUsage.from_raw({"error": str(e), "status_code": e.status_code, "model": self.name}.get('usage') if isinstance({"error": str(e), "status_code": e.status_code, "model": self.name}, dict) else None),
             )
         except httpx.TimeoutException:
             raise
@@ -606,6 +566,5 @@ class ChatOpenRouter(BaseModel):
                 success=False,
                 message=f"Unexpected error: {str(e)}",
                 data={"error": str(e), "model": self.name},
-                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
 

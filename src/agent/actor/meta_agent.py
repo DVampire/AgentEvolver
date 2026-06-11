@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from src.agent.server import agent_manager
 from src.agent.types import Agent, AgentContext
+from src.constraint import constraint_manager, ConstraintContext, render_status_text
 from src.response.types import Response, ResponseType
 from src.config import config
 from src.hook.server import hook_manager
@@ -180,7 +181,7 @@ class EscalationReply(BaseModel):
 
 
 class MetaReactOutput(BaseModel):
-    thinking: str
+    reasoning: str
     decision: Literal["continue", "stop"]
     plan: List[PlanRound] = Field(default_factory=list)
     escalation_replies: List[EscalationReply] = Field(default_factory=list)
@@ -309,7 +310,7 @@ class MetaAgent(Agent):
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
-        max_steps: int = 50,
+        max_step: int = 50,
         require_grad: bool = False,
         **kwargs,
     ):
@@ -321,7 +322,7 @@ class MetaAgent(Agent):
             model_name=model_name,
             prompt_name=prompt_name or "meta_agent",
             memory_name=memory_name,
-            max_steps=max_steps,
+            max_step=max_step,
             require_grad=require_grad,
             **kwargs,
         )
@@ -516,8 +517,8 @@ class MetaAgent(Agent):
             return
 
         # --- think ---
-        if state.step > self.max_steps:
-            logger.warning(f"| 🛑 Reached max steps ({self.max_steps})")
+        if state.step > self.max_step:
+            logger.warning(f"| 🛑 Reached max steps ({self.max_step})")
             for e in state._pending_escalations.values():
                 if e.reply_future and not e.reply_future.done():
                     e.reply_future.set_result("Max steps reached. Stop gracefully.")
@@ -550,6 +551,10 @@ class MetaAgent(Agent):
         if state is None:
             return
         sid = state.session_id
+        # Clean up constraint session state
+        for c in self.constraints:
+            c._cleanup(sid)
+        self._pending_step_tokens.pop(sid, None)
         _hctx_mem = HookContext(id=sid, name="memory_hook")
         _hctx_trace = HookContext(id=sid, name="trace_hook")
         if self.memory_name:
@@ -592,12 +597,36 @@ class MetaAgent(Agent):
     # ------------------------------------------------------------------
 
     async def _think_and_act(self, state: MetaState, events: List[BaseMessage]) -> None:
-        messages = await self._get_messages(state, events)
+        # --- Constraint checks ---
+        constraint_statuses: List[Dict[str, Any]] = []
+        if self.constraints:
+            constraint_ctx = ConstraintContext(id=state.session_id)
+            check_input = {
+                "token": self._pending_step_tokens.pop(state.session_id, 0),
+                "max_step": self.max_step,
+                "max_token": self.max_token,
+                "max_second": self.timeout,
+            }
+            for c in self.constraints:
+                violation = await constraint_manager(c.name, check_input, constraint_ctx)
+                if not violation.success:
+                    for c in self.constraints:
+                        c._cleanup(state.session_id)
+                    logger.warning(f"| 🛑 MetaAgent constraint violated: {violation.message}")
+                    state.final_answer = self._join_results(state) or violation.message
+                    state.touch()
+                    return
+                if violation.data and violation.data.get("status"):
+                    constraint_statuses.append(violation.data["status"])
+
+        messages = await self._get_messages(state, events, constraint_status=constraint_statuses)
         response = await model_manager(
             name=self.model_name,
             input={"messages": messages, "response_format": MetaReactOutput},
             ctx=state._ctx,
         )
+        if response.usage:
+            self._pending_step_tokens[state.session_id] = response.usage.total
         if response.parsed_model:
             react = response.parsed_model
         else:
@@ -845,7 +874,12 @@ class MetaAgent(Agent):
     # Prompt assembly: situation + memory → messages
     # ------------------------------------------------------------------
 
-    async def _get_messages(self, state: MetaState, events: List[BaseMessage]) -> list:
+    async def _get_messages(
+        self,
+        state: MetaState,
+        events: List[BaseMessage],
+        constraint_status: Optional[List[Dict[str, Any]]] = None,
+    ) -> list:
         # Format current situation for the LLM
         lines: List[str] = []
         existing = [f for f in state.user_files if os.path.exists(f)]
@@ -920,14 +954,17 @@ class MetaAgent(Agent):
                 pass
 
         ctx = state._ctx
-        agent_context = "\n\n".join(
+        sections = [f"### Task\n{state.user_task}"]
+        if constraint_status:
+            sections.append(f"### Constraint Rules\n{render_status_text(constraint_status)}")
+        sections.extend(
             [
-                f"### Task\n{state.user_task}",
                 f"### Available Sub-Agents\n{state._available_agents}",
                 f"### Current Situation\n{situation}",
                 f"### Execution State\n{memory_context or '[No state recorded yet.]'}",
             ]
         )
+        agent_context = "\n\n".join(sections)
         work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
         response = await prompt_manager(
             name=self.prompt_name,

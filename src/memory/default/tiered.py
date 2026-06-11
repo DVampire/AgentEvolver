@@ -250,7 +250,7 @@ class TieredMemory(Memory):
     def _apply_agent_call(self, state: _SessionState, event: TraceEvent) -> bool:
         md = event.metadata
         changed = False
-        # Try to parse message as dict for step-level data (thinking, next_goal)
+        # Try to parse message as dict for step-level data (reasoning)
         out: Dict[str, Any] = {}
         if event.message:
             try:
@@ -262,9 +262,10 @@ class TieredMemory(Memory):
                 out = {}
 
         # ── POST_STEP: flush this step's buffered tool/skill actions ──
-        if event.step_number is not None and "next_goal" in out:
+        if event.step_number is not None and "reasoning" in out:
             step = event.step_number
-            next_goal = (out.get("next_goal") or f"Step {step}")[:_FLOW_LABEL_MAX]
+            reasoning_text = (out.get("reasoning") or "").strip()
+            round_label = (reasoning_text.splitlines()[0] if reasoning_text else f"Step {step}")[:_FLOW_LABEL_MAX]
             pending = state._pending_step_actions.pop(step, [])
             for act in sorted(pending, key=lambda a: a["action_index"]):
                 label = (act["description"] or act["action_name"])[:_FLOW_LABEL_MAX]
@@ -272,7 +273,7 @@ class TieredMemory(Memory):
                 state.flow_steps.append(FlowStep(
                     step=len(state.flow_steps) + 1, label=label,
                     agents=[act["action_name"]], status=status,
-                    round=step, round_label=next_goal))
+                    round=step, round_label=round_label))
                 state.todos.append(TodoEntry(
                     id=f"step{step}-a{act['action_index']}", description=label,
                     agent_name=act["action_name"], status=status))

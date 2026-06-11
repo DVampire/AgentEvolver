@@ -78,6 +78,7 @@ async def test_chat():
         # Aws claude models
         # "aws_claude/claude-opus-4.6",
         # "aws_claude/claude-opus-4.7",
+        "aws_claude/claude-opus-4.8",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
@@ -96,7 +97,7 @@ async def test_chat():
 
         # int openrouter models
         # "int_openrouter/gpt-5.4",
-        "int_openrouter/gpt-5.5",
+        # "int_openrouter/gpt-5.5",
         # "int_openrouter/gpt-5.4-pro",
         # "int_openrouter/gpt-5.5-pro",
         # "int_openrouter/o3-mini",

@@ -42,7 +42,7 @@ class ToolOptimizeAgent(Agent):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_actions: int = 10,
-        max_steps: int = 30,
+        max_step: int = 30,
         review_steps: int = 5,
         require_grad: bool = False,
         **kwargs,
@@ -56,7 +56,7 @@ class ToolOptimizeAgent(Agent):
             prompt_name=prompt_name or "tool_optimize_agent",
             memory_name=memory_name,
             max_actions=max_actions,
-            max_steps=max_steps,
+            max_step=max_step,
             review_steps=review_steps,
             require_grad=require_grad,
             **kwargs,
@@ -160,8 +160,8 @@ class ToolOptimizeAgent(Agent):
         step_number = 0
         response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
-        while step_number < self.max_steps:
-            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_steps}")
+        while step_number < self.max_step:
+            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
             response = await self._think_and_act(
                 messages, task_id, step_number, ctx=ctx, target_name=target_name
             )
@@ -170,11 +170,15 @@ class ToolOptimizeAgent(Agent):
             if response["done"]:
                 break
             messages = await self._get_messages(
-                task, ctx=ctx, target_name=target_name, action_errors=action_errors
+                task,
+                ctx=ctx,
+                target_name=target_name,
+                action_errors=action_errors,
+                constraint_status=response.get("constraint_status"),
             )
 
-        if step_number >= self.max_steps and not response["done"]:
-            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_steps})")
+        if step_number >= self.max_step and not response["done"]:
+            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
             response["result"] = f"{self.name} did not complete within max steps."
 
         if response["done"]:
@@ -215,7 +219,7 @@ class ToolOptimizeAgent(Agent):
         )
 
         return Response(type=ResponseType.AGENT, 
-            success=response["done"],
+            success=response["done"] and not response.get("stopped_by_constraint", False),
             message=response["result"] or "",
             data=response,
         )

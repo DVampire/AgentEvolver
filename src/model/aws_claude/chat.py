@@ -213,7 +213,6 @@ class ChatAwsClaude(BaseModel):
                     success=False,
                     message="No choices in response",
                     data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
-                    usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                 )
 
             message = response.choices[0].message
@@ -245,7 +244,6 @@ class ChatAwsClaude(BaseModel):
                         success=False,
                         message="Empty structured output from model",
                         data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)},
-                        usage=TokenUsage.from_raw({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}.get('usage') if isinstance({"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}, dict) else None),
                     )
 
                 try:
@@ -273,15 +271,7 @@ class ChatAwsClaude(BaseModel):
                             "usage": usage,
                             "finish_reason": finish_reason,
                         },
-                        usage=TokenUsage.from_raw({
-                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                        }.get('usage') if isinstance({
-                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                        }, dict) else None),
+                        usage=TokenUsage.from_raw(usage),
                         parsed_model=parsed_model,
                     )
                 except (dirtyjson.Error, ValueError, TypeError) as e:
@@ -290,7 +280,6 @@ class ChatAwsClaude(BaseModel):
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
                         data={"error": str(e), "content": raw},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": raw}.get('usage') if isinstance({"error": str(e), "content": raw}, dict) else None),
                     )
                 except Exception as e:
                     return Response(
@@ -298,7 +287,6 @@ class ChatAwsClaude(BaseModel):
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
                         data={"error": str(e), "content": raw},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": raw}.get('usage') if isinstance({"error": str(e), "content": raw}, dict) else None),
                     )
 
             # Handle function calling
@@ -340,17 +328,7 @@ class ChatAwsClaude(BaseModel):
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
-                    usage=TokenUsage.from_raw({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }.get('usage') if isinstance({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
             # Default: return content as string
@@ -367,15 +345,7 @@ class ChatAwsClaude(BaseModel):
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
-                    usage=TokenUsage.from_raw({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }.get('usage') if isinstance({
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
         except Exception as e:
@@ -385,7 +355,6 @@ class ChatAwsClaude(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 data={"error": str(e)},
-                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 
     async def __call__(
@@ -441,5 +410,4 @@ class ChatAwsClaude(BaseModel):
                 success=False,
                 message=f"Unexpected error: {str(e)}",
                 data={"error": str(e), "model": self.name},
-                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )

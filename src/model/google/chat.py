@@ -307,7 +307,6 @@ class ChatGoogle(BaseModel):
                 success=False,
                 message=f"API error: {error_msg}",
                 data={"error": error_msg, "status_code": status_code, "model": self.name},
-                usage=TokenUsage.from_raw({"error": error_msg, "status_code": status_code, "model": self.name}.get('usage') if isinstance({"error": error_msg, "status_code": status_code, "model": self.name}, dict) else None),
             )
 
     async def _format_response(
@@ -333,7 +332,6 @@ class ChatGoogle(BaseModel):
                     success=False,
                     message="No candidates in response",
                     data={"raw_response": str(response)},
-                    usage=TokenUsage.from_raw({"raw_response": str(response)}.get('usage') if isinstance({"raw_response": str(response)}, dict) else None),
                 )
 
             # Extract content and function calls
@@ -419,17 +417,7 @@ class ChatGoogle(BaseModel):
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
-                    usage=TokenUsage.from_raw({
-                        "raw_response": str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }.get('usage') if isinstance({
-                        "raw_response": str(response),
-                        "functions": functions,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
             # Handle structured output (if response_format was provided)
@@ -440,7 +428,6 @@ class ChatGoogle(BaseModel):
                         success=False,
                         message="Empty response content from model",
                         data={"raw_response": str(response)},
-                        usage=TokenUsage.from_raw({"raw_response": str(response)}.get('usage') if isinstance({"raw_response": str(response)}, dict) else None),
                     )
 
                 # Try to parse JSON from message text
@@ -471,15 +458,7 @@ class ChatGoogle(BaseModel):
                             "usage": usage,
                             "finish_reason": finish_reason,
                         },
-                        usage=TokenUsage.from_raw({
-                            "raw_response": str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                        }.get('usage') if isinstance({
-                            "raw_response": str(response),
-                            "usage": usage,
-                            "finish_reason": finish_reason,
-                        }, dict) else None),
+                        usage=TokenUsage.from_raw(usage),
                         parsed_model=parsed_model,
                     )
                 except json.JSONDecodeError as e:
@@ -488,7 +467,6 @@ class ChatGoogle(BaseModel):
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
                         data={"error": str(e), "content": message_text},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": message_text}.get('usage') if isinstance({"error": str(e), "content": message_text}, dict) else None),
                     )
                 except Exception as e:
                     return Response(
@@ -496,7 +474,6 @@ class ChatGoogle(BaseModel):
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
                         data={"error": str(e), "content": message_text},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": message_text}.get('usage') if isinstance({"error": str(e), "content": message_text}, dict) else None),
                     )
 
             # Default: return content as string
@@ -511,15 +488,7 @@ class ChatGoogle(BaseModel):
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
-                    usage=TokenUsage.from_raw({
-                        "raw_response": str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }.get('usage') if isinstance({
-                        "raw_response": str(response),
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
         except Exception as e:
@@ -529,6 +498,5 @@ class ChatGoogle(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 data={"error": str(e)},
-                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )
 

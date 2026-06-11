@@ -83,8 +83,7 @@ class TraceHook(Hook):
                 task_id=self._task_id(ctx),
                 agent_name=agent_name,
                 step_number=step,
-                thinking=inp.get("thinking"),
-                next_goal=inp.get("next_goal"),
+                reasoning=inp.get("reasoning"),
                 duration_ms=elapsed,
             )
 

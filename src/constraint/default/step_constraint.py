@@ -4,38 +4,44 @@ from typing import Any, Dict
 
 from pydantic import Field
 
-from src.constraint.types import Constraint, ConstraintContext
+from src.constraint.types import Constraint, ConstraintContext, ConstraintStatus
 from src.response.types import Response, ResponseType
 from src.registry import CONSTRAINT
 
-
 @CONSTRAINT.register_module()
 class StepConstraint(Constraint):
-    """Hard cap on the number of think-and-act steps."""
+    """Hard cap on the number of think-and-act steps.
+
+    The cap may be overridden per call via ``input["max_step"]``.
+    """
 
     name: str = Field(default="step_constraint")
     description: str = Field(default="Hard cap on the number of think-and-act steps an agent may take.")
-    max_step: int = Field(default=30, description="Maximum number of steps allowed.")
+    max_step: int = Field(default=30, description="Default maximum number of steps allowed.")
 
     async def __call__(self, input: Dict[str, Any], ctx: ConstraintContext) -> Response:
-        if ctx.id not in self._state:
-            self._state[ctx.id] = {"step": 0}
-        self._state[ctx.id]["step"] += 1
+        max_step = self._effective_limit(ctx.id, input, "max_step", self.max_step)
+        state = self._state[ctx.id]
+        state["step"] = state.get("step", 0) + 1
 
         data = {
-            "step": self._state[ctx.id]["step"],
-            "max_step": self.max_step
+            "status": ConstraintStatus(
+                name=self.name,
+                used=state["step"],
+                limit=max_step,
+                unit="steps",
+            ).model_dump(),
         }
 
-        if self._state[ctx.id]["step"] > self.max_step:
+        if state["step"] > max_step:
             return Response(
                 type=ResponseType.CONSTRAINT,
                 success=False,
-                message=f"Step limit reached ({self._state[ctx.id]['step']}/{self.max_step})",
+                message=f"Step limit reached ({state['step']}/{max_step})",
                 data=data,
             )
-        return Response(type=ResponseType.CONSTRAINT, 
+        return Response(type=ResponseType.CONSTRAINT,
                         success=True,
-                        message=f"Current step is [{self._state[ctx.id]['step']}/{self.max_step}] within limit.", 
+                        message=f"Current step is [{state['step']}/{max_step}] within limit.",
                         data=data
                         )

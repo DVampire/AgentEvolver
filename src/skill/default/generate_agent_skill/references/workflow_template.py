@@ -24,12 +24,12 @@ class MyWorkflowAgent(Agent):
 
     def __init__(self, base_dir: str, name=None, description=None, metadata=None,
                  model_name=None, prompt_name=None, memory_name=None,
-                 max_actions: int = 10, max_steps: int = 30, review_steps: int = 5,
+                 max_actions: int = 10, max_step: int = 30, review_steps: int = 5,
                  require_grad: bool = True, **kwargs):
         super().__init__(
             base_dir=base_dir, name=name, description=description, metadata=metadata,
             model_name=model_name, prompt_name=prompt_name,
-            memory_name=memory_name, max_actions=max_actions, max_steps=max_steps,
+            memory_name=memory_name, max_actions=max_actions, max_step=max_step,
             review_steps=review_steps, require_grad=require_grad, **kwargs,
         )
 

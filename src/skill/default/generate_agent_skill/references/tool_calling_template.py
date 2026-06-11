@@ -23,12 +23,12 @@ class MyAgent(Agent):
 
     def __init__(self, base_dir: str, name=None, description=None, metadata=None,
                  model_name=None, prompt_name=None, memory_name=None,
-                 max_actions: int = 10, max_steps: int = 30, review_steps: int = 5,
+                 max_actions: int = 10, max_step: int = 30, review_steps: int = 5,
                  require_grad: bool = True, **kwargs):
         super().__init__(
             base_dir=base_dir, name=name, description=description, metadata=metadata,
             model_name=model_name, prompt_name=prompt_name or 'my_agent',
-            memory_name=memory_name, max_actions=max_actions, max_steps=max_steps,
+            memory_name=memory_name, max_actions=max_actions, max_step=max_step,
             review_steps=review_steps, require_grad=require_grad, **kwargs,
         )
 
@@ -59,8 +59,8 @@ class MyAgent(Agent):
         messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
         step_number = 0
         response = {'done': False, 'result': None, 'reasoning': None, 'action_errors': []}
-        while step_number < self.max_steps:
-            logger.info(f'| 🔄 [{self.name}] Step {step_number + 1}/{self.max_steps}')
+        while step_number < self.max_step:
+            logger.info(f'| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}')
             response = await self._think_and_act(messages, task_id, step_number, ctx=ctx, target_name=target_name)
             step_number += 1
             action_errors = response.get('action_errors') or []

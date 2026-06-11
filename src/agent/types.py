@@ -7,31 +7,35 @@ abstractions, aligned with the design of `src.tool.types`.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type
 
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.config import config
 from src.dynamic import dynamic_manager
 from src.logger import logger
 from src.memory import memory_manager
-from src.message.types import Message
+from src.message import Message
 from src.prompt import prompt_manager
-from src.tool.server import tool_manager
-from src.skill.server import skill_manager
+from src.tool import tool_manager
+from src.skill import skill_manager
+from src.constraint import (
+    constraint_manager,
+    ConstraintContext,
+    render_status_text,
+    TokenConstraint,
+    WallTimeConstraint,
+)
+from src.session import BaseContext
+from src.constraint import Constraint
+from src.registry import CONSTRAINT
+from src.response import Response
 from src.utils import (
     assemble_project_path,
     get_project_root,
 )
-from src.session import BaseContext
-from src.constraint.types import Constraint
-from src.registry import CONSTRAINT
-from src.response.types import Response, ResponseType
 
 class AgentContext(BaseContext):
     """Context passed into agent manager and individual agent instances."""
@@ -182,13 +186,14 @@ class AgentThinkOutput(BaseModel):
     The agent outputs only new steps to execute; history is maintained by
     FileSystemMemory. The LLM never re-emits already-executed steps.
     """
-    thinking: str = Field(description="Step-by-step reasoning about what to do next.")
-    evaluation_previous_goal: str = Field(
-        default="",
-        description="One sentence: success, failure, or uncertainty of the last step.",
+    reasoning: str = Field(
+        description=(
+            "Structured reasoning in three parts: "
+            "past — previous goal, last-step outcome, and progress so far; "
+            "present — analysis of the current situation; "
+            "future — the immediate next goal and the plan to achieve it."
+        ),
     )
-    memory: str = Field(default="", description="1-3 sentences of key facts to remember across steps.")
-    next_goal: str = Field(default="", description="One sentence: the immediate next goal.")
     plan: List[AgentPlanStep] = Field(
         default_factory=list,
         description=(
@@ -221,7 +226,9 @@ class Agent(BaseModel):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_actions: int = 10,
-        max_steps: int = 20,
+        max_step: int = 20,
+        max_token: Optional[int] = None,
+        timeout: Optional[float] = None,
         review_steps: int = 5,
         require_grad: bool = False,
         use_memory: bool = True,
@@ -246,15 +253,28 @@ class Agent(BaseModel):
         self.model_name = model_name
 
         # Setup steps
-        self.max_steps = max_steps if max_steps > 0 else int(1e8)
+        self.max_step = max_step if max_step > 0 else int(1e8)
         self.max_actions = max_actions
 
         self.review_steps = review_steps
 
+        # Resource budgets — fed into constraint checks as per-call overrides,
+        # so agent-level limits take precedence over constraint defaults.
+        self.max_token = max_token
+        self.timeout = timeout
+
         # Runtime constraints — accept Constraint instances or mmengine-style dicts
-        # e.g. {"type": "StepConstraint", "max_steps": 20}
+        # e.g. {"type": "StepConstraint", "max_step": 20}
         # Registration with the constraint manager happens in `initialize` (async).
         self.constraints: List[Constraint] = self._build_constraints(constraints)
+
+        # Auto-attach constraints for explicitly requested budgets
+        if max_token is not None and not any(isinstance(c, TokenConstraint) for c in self.constraints):
+            self.constraints.append(TokenConstraint(max_token=max_token))
+        if timeout is not None and not any(isinstance(c, WallTimeConstraint) for c in self.constraints):
+            self.constraints.append(WallTimeConstraint(max_second=timeout))
+        # Tokens consumed by the previous step, fed into the next constraint check (keyed by task_id)
+        self._pending_step_tokens: Dict[str, int] = {}
 
     @staticmethod
     def _build_constraints(raw: Optional[List]) -> List[Constraint]:
@@ -293,7 +313,7 @@ class Agent(BaseModel):
         time_str = datetime.now().isoformat()
         step_info = (
             f"### Step Info\n"
-            f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
+            f"Step {step_number + 1} of {self.max_step} max possible steps\n"
             f"Current date and time: {time_str}"
         )
 
@@ -319,6 +339,12 @@ class Agent(BaseModel):
                 pass
 
         sections = [task_section, step_info]
+
+        # Resource budgets collected from the previous step's constraint checks
+        constraint_status = kwargs.get("constraint_status") or []
+        if constraint_status:
+            sections.append(f"### Constraint Rules\n{render_status_text(constraint_status)}")
+
         if history_section:
             sections.append(history_section)
         sections.append(memory_section)
@@ -397,16 +423,28 @@ class Agent(BaseModel):
         reasoning = None
         action_errors = []
         step_tokens = 0
+        constraint_statuses: List[Dict[str, Any]] = []
 
         # --- Constraint checks ---
         if self.constraints:
-            ctx = ConstraintContext(id=task_id)
+            constraint_ctx = ConstraintContext(id=task_id)
+            # Tokens consumed by the previous step (this step's usage is known only after the LLM call);
+            # agent-level limits are passed as per-call overrides of the constraint defaults.
+            check_input = {
+                "token": self._pending_step_tokens.pop(task_id, 0),
+                "max_step": self.max_step,
+                "max_token": self.max_token,
+                "max_second": self.timeout,
+            }
             for c in self.constraints:
-                violation = await constraint_manager(c.name, {"token": step_tokens}, ctx)
+                violation = await constraint_manager(c.name, check_input, constraint_ctx)
                 if not violation.success:
                     for c in self.constraints:
                         c._cleanup(task_id)
-                    return {"done": True, "result": violation.message, "reasoning": None, "action_errors": []}
+                    self._pending_step_tokens.pop(task_id, None)
+                    return {"done": True, "result": violation.message, "reasoning": None, "action_errors": [], "constraint_status": [], "stopped_by_constraint": True}
+                if violation.data and violation.data.get("status"):
+                    constraint_statuses.append(violation.data["status"])
 
         await hook_manager(
             name="trace_hook",
@@ -414,9 +452,7 @@ class Agent(BaseModel):
             ctx=ctx,
         )
 
-        thinking = ""
-        evaluation_previous_goal = ""
-        next_goal = ""
+        step_reasoning = ""
 
         try:
             llm_response = await model_manager(
@@ -428,13 +464,10 @@ class Agent(BaseModel):
                 step_tokens += llm_response.usage.total
             think_output = llm_response.parsed_model
 
-            thinking = think_output.thinking
-            evaluation_previous_goal = think_output.evaluation_previous_goal
-            next_goal = think_output.next_goal
+            step_reasoning = think_output.reasoning
             plan_steps = think_output.plan
 
-            logger.info(f"| 💭 [{self.name}] Thinking: {thinking}")
-            logger.info(f"| 🎯 [{self.name}] Next Goal: {next_goal}")
+            logger.info(f"| 💭 [{self.name}] Reasoning: {step_reasoning}")
             logger.info(f"| 📋 [{self.name}] Plan steps: {len(plan_steps)}")
 
             for i, step in enumerate(plan_steps):
@@ -512,21 +545,25 @@ class Agent(BaseModel):
 
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "next_goal": next_goal, "use_memory": self.use_memory, "memory_name": self.memory_name},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "thinking": thinking, "evaluation_previous_goal": evaluation_previous_goal, "next_goal": next_goal},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning},
             ctx=ctx,
         )
+
+        # Carry this step's token usage into the next step's constraint check
+        self._pending_step_tokens[task_id] = step_tokens
 
         # Clean up constraint session when task finishes
         if done and self.constraints:
             for c in self.constraints:
                 c._cleanup(task_id)
+            self._pending_step_tokens.pop(task_id, None)
 
-        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors}
+        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": constraint_statuses, "stopped_by_constraint": False}
 
     # ------------------------------------------------------------------
     # Path 1: Direct call

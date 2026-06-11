@@ -318,7 +318,6 @@ class ResponseNewAPI(BaseModel):
                 success=False,
                 message=f"Unexpected error: {str(e)}",
                 data={"error": str(e), "model": self.name},
-                usage=TokenUsage.from_raw({"error": str(e), "model": self.name}.get('usage') if isinstance({"error": str(e), "model": self.name}, dict) else None),
             )
 
     async def _format_response(
@@ -341,7 +340,6 @@ class ResponseNewAPI(BaseModel):
                         success=False,
                         message="Empty response content from model",
                         data={"raw_response": response if isinstance(response, dict) else str(response)},
-                        usage=TokenUsage.from_raw({"raw_response": response if isinstance(response, dict) else str(response)}.get('usage') if isinstance({"raw_response": response if isinstance(response, dict) else str(response)}, dict) else None),
                     )
 
                 import json
@@ -365,15 +363,7 @@ class ResponseNewAPI(BaseModel):
                                 "usage": usage,
                                 "reasoning": reasoning,
                             },
-                        usage=TokenUsage.from_raw({
-                                "raw_response": response if isinstance(response, dict) else str(response),
-                                "usage": usage,
-                                "reasoning": reasoning,
-                            }.get('usage') if isinstance({
-                                "raw_response": response if isinstance(response, dict) else str(response),
-                                "usage": usage,
-                                "reasoning": reasoning,
-                            }, dict) else None),
+                        usage=TokenUsage.from_raw(usage),
                         parsed_model=parsed_model,
                     )
                 except json.JSONDecodeError as e:
@@ -382,7 +372,6 @@ class ResponseNewAPI(BaseModel):
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
                         data={"error": str(e), "content": output_text},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": output_text}.get('usage') if isinstance({"error": str(e), "content": output_text}, dict) else None),
                     )
                 except Exception as e:
                     return Response(
@@ -390,7 +379,6 @@ class ResponseNewAPI(BaseModel):
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
                         data={"error": str(e), "content": output_text},
-                        usage=TokenUsage.from_raw({"error": str(e), "content": output_text}.get('usage') if isinstance({"error": str(e), "content": output_text}, dict) else None),
                     )
 
             # Default: return content as string
@@ -404,15 +392,7 @@ class ResponseNewAPI(BaseModel):
                             "usage": usage,
                             "reasoning": reasoning,
                         },
-                    usage=TokenUsage.from_raw({
-                            "raw_response": response if isinstance(response, dict) else str(response),
-                            "usage": usage,
-                            "reasoning": reasoning,
-                        }.get('usage') if isinstance({
-                            "raw_response": response if isinstance(response, dict) else str(response),
-                            "usage": usage,
-                            "reasoning": reasoning,
-                        }, dict) else None),
+                    usage=TokenUsage.from_raw(usage),
                 )
 
         except Exception as e:
@@ -422,5 +402,4 @@ class ResponseNewAPI(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 data={"error": str(e)},
-                usage=TokenUsage.from_raw({"error": str(e)}.get('usage') if isinstance({"error": str(e)}, dict) else None),
             )

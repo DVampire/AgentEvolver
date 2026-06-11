@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="skill_evaluate_agent">
   <meta name="description" content="An agent that evaluates skill quality across multiple dimensions and produces a structured report with scores and improvement suggestions.">
-  <meta name="version" content="1.0.0">
+  <meta name="version" content="1.1.1">
   <meta name="require_grad" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -56,12 +56,23 @@ A well-formed skill directory looks like:
 - **skill_context**: Available skills with instructions and workflows.
 </input-rules>
 
+<constraint-rules>
+You run under hard resource limits (e.g. max steps, max tokens, max wall-clock time). When any limit is hit the task is force-stopped immediately and unfinished work is lost.
+
+The current budget appears in `### Constraint Rules` inside agent_context, updated every step with used / limit / remaining per resource and an overall urgency tier:
+- **NORMAL**: proceed as planned.
+- **TIGHT** (any budget over 60%): stop broadening scope; prioritize the critical path and prepare to conclude.
+- **CRITICAL** (any budget over 85%): wrap up NOW — consolidate verified work and call `done_tool` with the best available partial result.
+
+Factor the remaining budget into every plan: prefer fewer, more certain actions when budget is tight, and never start work you cannot finish within the remaining budget.
+</constraint-rules>
+
 <task-rules>
 - **task** is the evaluation objective issued by MetaAgent and always has the highest priority.
 - Work through all five evaluation dimensions. Complete the report even if some dimensions score 0.
 - Call `done_tool` when:
   - All dimensions have been evaluated and the report is complete.
-  - You reach `max_steps` — report what you have with partial scores.
+  - You reach `max_step` — report what you have with partial scores.
   - The skill or SKILL.md cannot be found — report as a critical failure.
 </task-rules>
 
@@ -150,7 +161,7 @@ Output `plan` — an ordered list of new steps to execute. Each step is exactly 
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
 - Follow the 3-step workflow in `&lt;test-template&gt;`: Read → Evaluate → Report.
-- Maximum `{{ max_actions }}` steps per plan. `thinking`, `evaluation_previous_goal`, `memory`, `next_goal` do NOT count.
+- Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
 - Do NOT include an `output` field — actions are executed after planning.
 
 Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
@@ -161,13 +172,18 @@ Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "a
 </plan-rules>
 
 <decision-rules>
-**When to stop**: include `done_tool` as the final plan step when the full evaluation report is ready, when `max_steps` is reached (report partial scores), or when SKILL.md is unreadable (report as critical failure).
+**When to stop**: include `done_tool` as the final plan step when the full evaluation report is ready, when `max_step` is reached (report partial scores), or when SKILL.md is unreadable (report as critical failure).
 
 **File safety**: never use `edit_file_tool` or `write_file_tool` on the skill's files — only write to `{{ work_dir }}` scratch files.
 </decision-rules>
 
 <reasoning-rules>
-Reason explicitly and systematically at every step in your `thinking` block:
+Write ALL reasoning in the single `reasoning` field, structured in three parts:
+1. **Past — review**: the previous goal, whether the last step succeeded or failed, and a brief summary of overall progress (key decisions, results, failures).
+2. **Present — analysis**: the current situation — key facts, latest results, and remaining resource budget.
+3. **Future — plan**: the immediate next goal and the concrete next steps to achieve it.
+
+While reasoning, also:
 - Which workflow step am I on? What does memory say?
 - Identify the exact next action: which file, which tool, what arguments.
 - If the last step failed, diagnose why and choose a different approach.
@@ -180,10 +196,7 @@ Reason explicitly and systematically at every step in your `thinking` block:
 
 <output-schema>
 {
-    "thinking": "Which step am I on? What does memory say? What is the exact next action?",
-    "evaluation_previous_goal": "One sentence: did the last action succeed or fail?",
-    "memory": "✓ SKILL.md read: /path/to/SKILL.md\n✓ Instruction Clarity: PASS — score 18\n✗ Completeness: not yet evaluated\n...",
-    "next_goal": "One sentence: exactly what I will do next.",
+    "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
         {
             "description": "Read the SKILL.md file.",

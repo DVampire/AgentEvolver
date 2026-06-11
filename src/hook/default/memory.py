@@ -48,9 +48,7 @@ class MemoryHookInput(BaseModel):
 
     # —— Step loop (sub-agents) ——
     step_number: Optional[int] = None
-    thinking: Optional[str] = None
-    next_goal: Optional[str] = None
-    evaluation_previous_goal: Optional[str] = None
+    reasoning: Optional[str] = None
     action: Optional[Dict[str, Any]] = None
     action_result: Optional[Any] = None
     error: Optional[str] = None
@@ -124,7 +122,7 @@ class MemoryHook(Hook):
         if inp.event == HookEvent.POST_STEP:
             return agent_call_event(
                 session_id=session_id, task_id=task_id, agent_name=inp.agent_name,
-                step_number=inp.step_number, thinking=inp.thinking, next_goal=inp.next_goal,
+                step_number=inp.step_number, reasoning=inp.reasoning,
             )
 
         if inp.event == HookEvent.POST_ACTION:

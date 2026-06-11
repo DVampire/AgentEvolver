@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from src.dynamic import dynamic_manager
@@ -21,11 +21,80 @@ class ConstraintContext(BaseContext):
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this constraint context.")
 
 
+class ConstraintStatus(BaseModel):
+    """Standardized resource-budget snapshot carried in ``Response.data["status"]``.
+
+    Every constraint check returns this alongside its legacy data keys, so the
+    agent can surface remaining budgets to the LLM in the prompt.
+    """
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    name: str = Field(description="Constraint name this status belongs to.")
+    used: float = Field(default=0, description="Amount of the resource consumed so far.")
+    limit: float = Field(description="Effective limit for this task (may be overridden per call via input).")
+    unit: str = Field(default="", description="Resource unit, e.g. 'steps', 'tokens', 'seconds'.")
+
+    @property
+    def remaining(self) -> float:
+        return max(0.0, self.limit - self.used)
+
+    @property
+    def ratio(self) -> float:
+        return self.used / self.limit if self.limit > 0 else 0.0
+
+    def line(self) -> str:
+        """One-line human/LLM-readable budget summary."""
+        if self.unit == "seconds":
+            return f"{self.name}: {self.used:.0f}s / {self.limit:.0f}s ({self.remaining:.0f}s remaining)"
+        return f"{self.name}: {self.used:,.0f} / {self.limit:,.0f} ({self.remaining:,.0f} {self.unit} remaining)"
+
+
+def render_status_text(statuses: List[Union[ConstraintStatus, Dict[str, Any]]],
+                       tight_ratio: float = 0.6,
+                       critical_ratio: float = 0.85) -> str:
+    """Render constraint statuses (collected from check Responses) as a prompt-ready text block.
+
+    Includes per-constraint budget lines plus an overall urgency tier
+    (NORMAL / TIGHT / CRITICAL) driven by the most-consumed budget, with a
+    policy hint so the LLM can plan around remaining resources.
+    Returns "" when ``statuses`` is empty.
+    """
+    parsed = [s if isinstance(s, ConstraintStatus) else ConstraintStatus.model_validate(s) for s in statuses]
+    if not parsed:
+        return ""
+
+    worst = max(s.ratio for s in parsed)
+    if worst >= critical_ratio:
+        tier = "CRITICAL"
+        hint = "Wrap up NOW — consolidate what you have and finish with the best available partial result."
+    elif worst >= tight_ratio:
+        tier = "TIGHT"
+        hint = "Stop broadening scope; prioritize the critical path and prepare to conclude."
+    else:
+        tier = "NORMAL"
+        hint = "Proceed as planned."
+
+    lines = [
+        "You operate under hard resource limits. When any limit is hit the task is force-stopped immediately — an unfinished answer is lost. Budget accordingly.",
+        "",
+        "Current budget (used / limit, remaining):",
+    ]
+    lines.extend(f"- {s.line()}" for s in parsed)
+    lines.append("")
+    lines.append(f"Status: {tier}. {hint}")
+    return "\n".join(lines)
+
+
 class Constraint(BaseModel):
     """Base class for all constraints.
 
     Subclass and override ``__call__(input, ctx)`` to implement constraint logic.
     Return ``Response(success=False, ...)`` when violated, ``success=True`` when passing.
+    Limit parameters may be overridden per call via ``input`` (e.g. ``{"max_step": 50}``);
+    the effective limit is remembered in per-task state for subsequent checks.
+
+    Include a ``ConstraintStatus`` dump under ``Response.data["status"]`` so callers
+    can surface the remaining budget to the LLM (see ``render_status_text``).
 
     Per-task state lives in ``_state[task_id]`` — a plain dict lazily initialized
     on first use inside ``__call__``.
@@ -43,6 +112,17 @@ class Constraint(BaseModel):
 
     def _cleanup(self, task_id: str) -> None:
         self._state.pop(task_id, None)
+
+    def _effective_limit(self, task_id: str, input: Dict[str, Any], key: str, default: float) -> float:
+        """Resolve the effective limit for ``key``: input override > remembered > default.
+
+        When ``input[key]`` is provided it is remembered in per-task state, so the
+        agent can raise/lower its own budget mid-task and ``status()`` stays consistent.
+        """
+        state = self._state.setdefault(task_id, {})
+        if input.get(key) is not None:
+            state[key] = input[key]
+        return state.get(key, default)
 
     async def __call__(self, input: Dict[str, Any], ctx: ConstraintContext) -> Response:
         return Response(type=ResponseType.CONSTRAINT, success=True, message="")
@@ -146,4 +226,4 @@ class ConstraintConfig(BaseModel):
         )
 
 
-__all__ = ["ConstraintContext", "Constraint", "ConstraintConfig"]
+__all__ = ["ConstraintContext", "Constraint", "ConstraintConfig", "ConstraintStatus", "render_status_text"]
