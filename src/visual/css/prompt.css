@@ -1,81 +1,87 @@
 :root {
-  --ivory:    #FAF9F5;
-  --slate:    #141413;
-  --clay:     #D97757;
-  --oat:      #E3DACC;
-  --olive:    #788C5D;
-  --gray-150: #F0EEE6;
-  --gray-300: #D1CFC5;
-  --gray-500: #87867F;
-  --gray-700: #3D3D3A;
-  --white:    #FFFFFF;
+  --ground:      #0E1210;
+  --surface:     #141B12;
+  --surface-2:   #1B2418;
+  --surface-3:   #222C1E;
+  --text:        #C8DDB8;
+  --text-mid:    #6A8E5C;
+  --text-faint:  #2E4428;
+  --green:       #5BAD78;
+  --amber:       #CFA040;
+  --red:         #D45E3E;
+  --blue:        #5E93C0;
+  --border:      #243220;
+  --border-hi:   #384F2E;
 
-  --serif: ui-serif, Georgia, 'Times New Roman', serif;
-  --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+  --mono: 'Courier New', Courier, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: var(--sans);
-  background: var(--ivory);
-  color: var(--gray-700);
-  line-height: 1.55;
-  padding: 56px 32px 120px;
+  font-family: var(--mono);
+  background: var(--ground);
+  color: var(--text);
+  line-height: 1.65;
+  padding: 40px 28px 100px;
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ===== Top-level wrappers ===== */
+/* =====================================================
+   TOP-LEVEL WRAPPERS — div.system / div.user
+   ===================================================== */
 
-div.system {
-  max-width: 1120px;
-  margin: 0 auto 40px;
-  background: var(--white);
-  border: 1.5px solid var(--gray-300);
-  border-radius: 12px;
-  padding: 28px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  counter-reset: section;
-}
-
+div.system,
 div.user {
-  max-width: 1120px;
-  margin: 0 auto 40px;
-  background: var(--white);
-  border: 1.5px solid var(--gray-300);
-  border-radius: 12px;
-  padding: 28px 32px;
+  max-width: 1000px;
+  margin: 0 auto 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   counter-reset: section;
 }
 
-div.system::before,
-div.user::before {
+div.system::before {
   display: block;
-  content: attr(class);
+  content: "SYSTEM";
   font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--gray-500);
-  border-bottom: 1.5px solid var(--gray-150);
-  padding-bottom: 14px;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.22em;
+  color: var(--green);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
   margin-bottom: 4px;
 }
 
-/* ===== Direct children of system/user get numbered headers ===== */
+div.user::before {
+  display: block;
+  content: "USER";
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.22em;
+  color: var(--text-mid);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+
+/* =====================================================
+   DIRECT CHILDREN — div blocks (numbered sections)
+   ===================================================== */
 
 div.system > div,
 div.user > div {
-  background: var(--gray-150);
-  border-radius: 10px;
-  padding: 20px 22px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  border-left: 2px solid var(--border-hi);
+  padding: 14px 16px;
   counter-increment: section;
 }
 
@@ -84,37 +90,24 @@ div.user > div::before {
   display: block;
   content: counter(section, decimal-leading-zero) "  ·  " attr(class);
   font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: bold;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--gray-500);
-  border-bottom: 1px solid var(--gray-300);
-  padding-bottom: 10px;
-  margin-bottom: 14px;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
 }
 
-/* Profile: clay accent override, still inside system */
-div.profile {
-  border-left: 4px solid var(--clay);
-  background: var(--white);
-  border-radius: 0 10px 10px 0;
-  padding: 18px 22px;
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--slate);
-}
-
-/* ===== Nested rule blocks ===== */
-
-/* ===== Nested rule blocks (grandchildren of system/user) ===== */
-
+/* Nested blocks */
 div.system > div > div,
 div.user > div > div {
-  background: var(--white);
-  border-radius: 8px;
-  padding: 12px 14px;
-  margin-top: 12px;
+  background: var(--surface);
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  margin-top: 10px;
   counter-increment: none;
 }
 
@@ -123,35 +116,158 @@ div.user > div > div::before {
   display: block;
   content: attr(class);
   font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9.5px;
+  font-weight: bold;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--gray-500);
-  margin-bottom: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
 }
 
-/* ===== Custom semantic tags (flat, no-class style) ===== */
+/* =====================================================
+   SEMANTIC TAGS — base style
+   All custom tags get the same base, then overridden
+   per section type below.
+   ===================================================== */
 
 div.system > :not(div):not(style),
 div.user > :not(div):not(style) {
   display: block;
-  background: var(--gray-150);
-  border-radius: 10px;
-  padding: 18px 20px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  border-left: 2px solid var(--border-hi);
+  padding: 14px 16px;
   counter-increment: section;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
 }
 
+/* Specificity 0,0,1,1 — all specific tag rules (0,0,1,2) override this */
+div.system > *::before,
+div.user > *::before {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  content: counter(section, decimal-leading-zero);
+}
+
+/* =====================================================
+   SECTION COLOR CATEGORIES
+   HTML stays clean — CSS selects on tag name.
+   ===================================================== */
+
+/* ── GREEN — Identity / Profile ── */
 div.system > profile {
-  border-left: 4px solid var(--clay);
-  background: var(--white);
-  border-radius: 0 10px 10px 0;
-  font-size: 15px;
-  color: var(--slate);
+  border-left-color: var(--green);
+  background: rgba(91,173,120,0.04);
+  font-size: 14px;
+}
+div.system > profile::before {
+  content: counter(section, decimal-leading-zero) "  ·  profile";
+  color: var(--green);
+  border-bottom-color: rgba(91,173,120,0.2);
 }
 
+/* ── AMBER — Constraints / Caution ── */
+div.system > constraint-rules {
+  border-left-color: var(--amber);
+  background: rgba(207,160,64,0.04);
+}
+div.system > constraint-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  constraint-rules";
+  color: var(--amber);
+  border-bottom-color: rgba(207,160,64,0.2);
+}
+
+/* ── RED — Highest Priority Instructions ── */
+div.system > task-rules {
+  border-left-color: var(--red);
+  background: rgba(212,94,62,0.04);
+}
+div.system > task-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  task-rules";
+  color: var(--red);
+  border-bottom-color: rgba(212,94,62,0.2);
+}
+
+/* ── BLUE — Informational / Environmental Context ── */
+div.system > input-rules       { border-left-color: var(--blue); }
+div.system > context-rules     { border-left-color: var(--blue); }
+div.system > situation-rules   { border-left-color: var(--blue); }
+div.system > execution-state-rules { border-left-color: var(--blue); }
+div.system > project           { border-left-color: var(--blue); }
+
+div.system > input-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  input-rules";
+  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+}
+div.system > context-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  context-rules";
+  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+}
+div.system > situation-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  situation-rules";
+  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+}
+div.system > execution-state-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  execution-state-rules";
+  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+}
+div.system > project::before {
+  content: counter(section, decimal-leading-zero) "  ·  project";
+  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+}
+
+/* ── FAINT — Low-Priority Environment Setup ── */
+div.system > language-settings {
+  border-left-color: var(--border);
+  background: var(--surface-2);
+}
+div.system > language-settings::before {
+  content: counter(section, decimal-leading-zero) "  ·  language-settings";
+  color: var(--text-faint);
+}
+
+/* ── DEFAULT behavioral rule sections ── */
+div.system > plan-rules::before         { content: counter(section, decimal-leading-zero) "  ·  plan-rules"; }
+div.system > decision-rules::before     { content: counter(section, decimal-leading-zero) "  ·  decision-rules"; }
+div.system > reasoning-rules::before    { content: counter(section, decimal-leading-zero) "  ·  reasoning-rules"; }
+div.system > action-rules::before       { content: counter(section, decimal-leading-zero) "  ·  action-rules"; }
+div.system > action-selection-rules::before { content: counter(section, decimal-leading-zero) "  ·  action-selection-rules"; }
+div.system > output-rules::before       { content: counter(section, decimal-leading-zero) "  ·  output-rules"; }
+div.system > output-format::before      { content: counter(section, decimal-leading-zero) "  ·  output-format"; }
+div.system > sub-agents-rules::before   { content: counter(section, decimal-leading-zero) "  ·  sub-agents-rules"; }
+div.system > subtask-design::before     { content: counter(section, decimal-leading-zero) "  ·  subtask-design"; }
+div.system > memory-rules::before       { content: counter(section, decimal-leading-zero) "  ·  memory-rules"; }
+div.system > memory-rules-continued::before,
+div.system > memory-read-rules::before,
+div.system > memory-reading-rules::before { content: counter(section, decimal-leading-zero) "  ·  memory-rules"; }
+div.system > tool-context-rules::before { content: counter(section, decimal-leading-zero) "  ·  tool-context-rules"; }
+div.system > tool-use-rules::before     { content: counter(section, decimal-leading-zero) "  ·  tool-use-rules"; }
+div.system > todo-rules::before         { content: counter(section, decimal-leading-zero) "  ·  todo-rules"; }
+div.system > skill-context-rules::before { content: counter(section, decimal-leading-zero) "  ·  skill-context-rules"; }
+div.system > skill-use-rules::before    { content: counter(section, decimal-leading-zero) "  ·  skill-use-rules"; }
+div.system > example-rules::before      { content: counter(section, decimal-leading-zero) "  ·  example-rules"; }
+div.system > reasoning::before          { content: counter(section, decimal-leading-zero) "  ·  reasoning"; }
+div.system > efficiency-guidelines::before { content: counter(section, decimal-leading-zero) "  ·  efficiency-guidelines"; }
+div.system > canonical-workflow::before { content: counter(section, decimal-leading-zero) "  ·  canonical-workflow"; }
+div.system > evaluation-dimensions::before { content: counter(section, decimal-leading-zero) "  ·  evaluation-dimensions"; }
+div.system > optimization-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target-rules"; }
+div.system > code-operation-rules::before { content: counter(section, decimal-leading-zero) "  ·  code-operation-rules"; }
+div.system > evaluation-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  evaluation-target-rules"; }
+div.system > generation-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  generation-target-rules"; }
+div.system > tool-convention::before    { content: counter(section, decimal-leading-zero) "  ·  tool-convention"; }
+div.system > domain-rules::before       { content: counter(section, decimal-leading-zero) "  ·  domain-rules"; }
+
+/* ── CODE BLOCKS — schema / template sections ── */
 div.system > output-schema,
 div.system > done-tool-schema,
 div.system > memory-format,
@@ -163,46 +279,17 @@ div.system > test-template,
 div.system > tool-template,
 div.system > init-template,
 div.system > verification-template {
-  background: var(--slate) !important;
-  color: #E8E6DE;
+  background: var(--surface-3);
+  border: 1px solid var(--border-hi);
+  border-left: 2px solid var(--border-hi);
+  color: var(--text);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.65;
   white-space: pre;
+  overflow-x: auto;
 }
 
-div.user > agent-context,
-div.user > tool-context,
-div.user > skill-context,
-div.user > examples,
-div.user > evaluation-target,
-div.user > optimization-target,
-div.user > generation-target,
-div.user > generation-target {
-  border: 1.5px dashed var(--gray-300);
-  font-family: var(--mono);
-  font-size: 12.5px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* ::before labels for custom tags */
-div.system > :not(div):not(style)::before,
-div.user > :not(div):not(style)::before {
-  display: block;
-  content: counter(section, decimal-leading-zero);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--gray-500);
-  border-bottom: 1px solid var(--gray-300);
-  padding-bottom: 10px;
-  margin-bottom: 14px;
-}
-
-/* Code-type tags: no header */
 div.system > output-schema::before,
 div.system > done-tool-schema::before,
 div.system > memory-format::before,
@@ -215,69 +302,57 @@ div.system > tool-template::before,
 div.system > init-template::before,
 div.system > verification-template::before { display: none; }
 
-/* Named labels for major content sections */
-div.system > profile::before                  { content: counter(section, decimal-leading-zero) "  ·  profile"; }
-div.system > language-settings::before        { content: counter(section, decimal-leading-zero) "  ·  language"; }
-div.system > project::before                  { content: counter(section, decimal-leading-zero) "  ·  project"; }
-div.system > input-rules::before              { content: counter(section, decimal-leading-zero) "  ·  input"; }
-div.system > task-rules::before               { content: counter(section, decimal-leading-zero) "  ·  task"; }
-div.system > memory-rules::before             { content: counter(section, decimal-leading-zero) "  ·  memory"; }
-div.system > memory-rules-continued::before,
-div.system > memory-read-rules::before,
-div.system > memory-reading-rules::before     { content: counter(section, decimal-leading-zero) "  ·  memory-rules"; }
-div.system > action-rules::before             { content: counter(section, decimal-leading-zero) "  ·  actions"; }
-div.system > action-selection-rules::before   { content: counter(section, decimal-leading-zero) "  ·  action-selection"; }
-div.system > efficiency-guidelines::before    { content: counter(section, decimal-leading-zero) "  ·  efficiency"; }
-div.system > tool-context-rules::before       { content: counter(section, decimal-leading-zero) "  ·  tools"; }
-div.system > tool-use-rules::before           { content: counter(section, decimal-leading-zero) "  ·  tool-use"; }
-div.system > todo-rules::before               { content: counter(section, decimal-leading-zero) "  ·  todo"; }
-div.system > skill-context-rules::before      { content: counter(section, decimal-leading-zero) "  ·  skills"; }
-div.system > skill-use-rules::before          { content: counter(section, decimal-leading-zero) "  ·  skill-use"; }
-div.system > example-rules::before            { content: counter(section, decimal-leading-zero) "  ·  examples"; }
-div.system > reasoning-rules::before          { content: counter(section, decimal-leading-zero) "  ·  reasoning"; }
-div.system > output-rules::before             { content: counter(section, decimal-leading-zero) "  ·  output"; }
-div.system > sub-agents-rules::before         { content: counter(section, decimal-leading-zero) "  ·  sub-agents"; }
-div.system > situation-rules::before          { content: counter(section, decimal-leading-zero) "  ·  situation"; }
-div.system > execution-state-rules::before    { content: counter(section, decimal-leading-zero) "  ·  execution-state"; }
-div.system > decision-rules::before           { content: counter(section, decimal-leading-zero) "  ·  decision"; }
-div.system > subtask-design::before           { content: counter(section, decimal-leading-zero) "  ·  subtask-design"; }
-div.system > reasoning::before                { content: counter(section, decimal-leading-zero) "  ·  reasoning"; }
-div.system > output-format::before            { content: counter(section, decimal-leading-zero) "  ·  output-format"; }
-div.system > optimization-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target"; }
-div.system > code-operation-rules::before     { content: counter(section, decimal-leading-zero) "  ·  code-ops"; }
-div.system > evaluation-target-rules::before  { content: counter(section, decimal-leading-zero) "  ·  eval-target"; }
-div.system > canonical-workflow::before       { content: counter(section, decimal-leading-zero) "  ·  workflow"; }
-div.system > evaluation-dimensions::before    { content: counter(section, decimal-leading-zero) "  ·  dimensions"; }
-div.system > generation-target-rules::before  { content: counter(section, decimal-leading-zero) "  ·  gen-target"; }
-div.system > tool-convention::before          { content: counter(section, decimal-leading-zero) "  ·  convention"; }
+/* =====================================================
+   USER SECTION — context blocks
+   ===================================================== */
 
-div.user > agent-context::before       { content: counter(section, decimal-leading-zero) "  ·  agent-context"; }
-div.user > tool-context::before        { content: counter(section, decimal-leading-zero) "  ·  tool-context"; }
-div.user > skill-context::before       { content: counter(section, decimal-leading-zero) "  ·  skill-context"; }
-div.user > examples::before            { content: counter(section, decimal-leading-zero) "  ·  examples"; }
-div.user > evaluation-target::before   { content: counter(section, decimal-leading-zero) "  ·  eval-target"; }
-div.user > optimization-target::before { content: counter(section, decimal-leading-zero) "  ·  optim-target"; }
-div.user > generation-target::before   { content: counter(section, decimal-leading-zero) "  ·  gen-target"; }
-
-/* ===== Code blocks — always dark, override any inherited background ===== */
-div.code {
-  background: var(--slate) !important;
-  color: #E8E6DE;
-  border-radius: 10px;
-  padding: 18px 20px;
-  overflow-x: auto;
-  margin: 12px 0;
+div.user > agent-context,
+div.user > tool-context,
+div.user > skill-context,
+div.user > examples,
+div.user > evaluation-target,
+div.user > optimization-target,
+div.user > generation-target,
+div.user > domain-target {
+  border: 1px dashed var(--border-hi);
+  border-left: 2px solid var(--text-faint);
+  background: var(--surface-2);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-mid);
+}
+
+div.user > agent-context::before   { content: counter(section, decimal-leading-zero) "  ·  agent-context";   color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > tool-context::before    { content: counter(section, decimal-leading-zero) "  ·  tool-context";    color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > skill-context::before   { content: counter(section, decimal-leading-zero) "  ·  skill-context";   color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > examples::before        { content: counter(section, decimal-leading-zero) "  ·  examples";        color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > evaluation-target::before  { content: counter(section, decimal-leading-zero) "  ·  evaluation-target";  color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > optimization-target::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target"; color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > generation-target::before  { content: counter(section, decimal-leading-zero) "  ·  generation-target";  color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > domain-target::before   { content: counter(section, decimal-leading-zero) "  ·  domain-target";   color: var(--text-mid); border-bottom-color: var(--border); }
+
+/* =====================================================
+   INLINE ELEMENTS & TYPOGRAPHY
+   ===================================================== */
+
+div.code {
+  background: var(--surface-3);
+  border: 1px solid var(--border-hi);
+  border-left: 2px solid var(--border-hi);
+  color: var(--text);
+  border-radius: 2px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-family: var(--mono);
+  font-size: 12px;
   line-height: 1.65;
   white-space: pre;
 }
 
-div.code::before {
-  display: none;
-}
-
-/* ===== Context blocks (user section) ===== */
+div.code::before { display: none; }
 
 div.agent-context,
 div.tool-context,
@@ -286,87 +361,88 @@ div.examples,
 div.evaluation-target,
 div.optimization-target,
 div.generation-target {
-  border: 1.5px dashed var(--gray-300);
+  border: 1px dashed var(--border-hi);
+  border-left: 2px solid var(--text-faint);
+  background: var(--surface-2);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
+  color: var(--text-mid);
 }
-
 
 code {
   font-family: var(--mono);
   font-size: 0.88em;
-  background: var(--oat);
-  color: var(--slate);
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--green);
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border-hi);
 }
-
-/* ===== Tables ===== */
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1.5px solid var(--gray-300);
-  border-radius: 8px;
-  overflow: hidden;
-  font-size: 13px;
-  margin: 14px 0;
-}
-
-th {
-  background: var(--gray-150);
-  color: var(--slate);
-  font-size: 11.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 10px 14px;
-  text-align: left;
-  border-bottom: 1.5px solid var(--gray-300);
-}
-
-td {
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--gray-300);
-  vertical-align: top;
-}
-
-tr:last-child td { border-bottom: none; }
-
-/* ===== Lists ===== */
-
-ul, ol {
-  padding-left: 20px;
-  margin: 6px 0;
-}
-
-li {
-  margin-bottom: 5px;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-li > ul, li > ol {
-  margin-top: 4px;
-  margin-bottom: 0;
-}
-
-/* ===== Typography ===== */
 
 strong {
-  color: var(--slate);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: bold;
 }
 
 em {
-  color: var(--gray-500);
+  color: var(--text-mid);
   font-style: italic;
 }
 
 p {
-  font-size: 14px;
-  margin: 6px 0;
-  line-height: 1.6;
+  font-size: 13px;
+  margin: 5px 0;
+  line-height: 1.65;
+  color: var(--text);
 }
+
+ul, ol {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+li {
+  margin-bottom: 4px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+li > ul, li > ol {
+  margin-top: 3px;
+  margin-bottom: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  font-size: 12.5px;
+  margin: 12px 0;
+}
+
+th {
+  background: var(--surface-2);
+  color: var(--text-mid);
+  font-size: 10.5px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-hi);
+  font-family: var(--mono);
+}
+
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text);
+}
+
+tr:last-child td { border-bottom: none; }
