@@ -72,6 +72,10 @@ class HookResult(BaseModel):
     # Generic text output for request/response-style hooks (e.g. compact returns its summary here).
     output: Optional[str] = Field(default=None)
 
+    # Per-step resource-budget snapshot collected by the constraint hook on PRE_STEP
+    # (list of ConstraintStatus dumps). The agent renders this into its prompt.
+    constraint_status: Optional[List[Dict[str, Any]]] = Field(default=None)
+
     @classmethod
     def allow(cls) -> "HookResult":
         return cls(decision=HookDecision.ALLOW)

@@ -306,7 +306,6 @@ div.system > verification-template::before { display: none; }
    USER SECTION — context blocks
    ===================================================== */
 
-div.user > agent-context,
 div.user > tool-context,
 div.user > skill-context,
 div.user > examples,
@@ -324,7 +323,6 @@ div.user > domain-target {
   color: var(--text-mid);
 }
 
-div.user > agent-context::before   { content: counter(section, decimal-leading-zero) "  ·  agent-context";   color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > tool-context::before    { content: counter(section, decimal-leading-zero) "  ·  tool-context";    color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > skill-context::before   { content: counter(section, decimal-leading-zero) "  ·  skill-context";   color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > examples::before        { content: counter(section, decimal-leading-zero) "  ·  examples";        color: var(--text-mid); border-bottom-color: var(--border); }
@@ -332,6 +330,190 @@ div.user > evaluation-target::before  { content: counter(section, decimal-leadin
 div.user > optimization-target::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target"; color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > generation-target::before  { content: counter(section, decimal-leading-zero) "  ·  generation-target";  color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > domain-target::before   { content: counter(section, decimal-leading-zero) "  ·  domain-target";   color: var(--text-mid); border-bottom-color: var(--border); }
+
+/* =====================================================
+   AGENT-CONTEXT — container of nested sub-modules
+   (task / constraints / available-agents / situation /
+    execution-state). The container is a numbered section;
+    each child renders as its own sub-module card.
+   ===================================================== */
+
+div.user > agent-context {
+  display: block;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-hi);
+  border-left: 2px solid var(--text-faint);
+  border-radius: 2px;
+  padding: 14px 16px;
+  counter-increment: section;
+}
+
+div.user > agent-context::before {
+  display: block;
+  content: counter(section, decimal-leading-zero) "  ·  agent-context";
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-mid);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── Sub-module cards ──
+   No white-space: pre-wrap here — these hold marked-generated HTML
+   (<p>/<ul>/<li>), so pre-wrap would turn every newline between tags
+   into a visible blank line. Block-element margins handle the rhythm. */
+div.user > agent-context > * {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--border-hi);
+  border-radius: 3px;
+  padding: 14px 16px;
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  word-break: break-word;
+  color: var(--text-mid);
+}
+div.user > agent-context > :first-child { margin-top: 0; }
+
+/* Tighten marked output inside sub-modules: first/last blocks flush,
+   modest paragraph rhythm. */
+div.user > agent-context > * > :first-child { margin-top: 0; }
+div.user > agent-context > * > :last-child  { margin-bottom: 0; }
+div.user > agent-context > * p { margin: 0 0 8px; }
+div.user > agent-context > * ul,
+div.user > agent-context > * ol { margin: 6px 0 8px; }
+div.user > agent-context > * h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-mid);
+  margin: 12px 0 6px;
+}
+
+div.user > agent-context > *::before {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+div.user > agent-context > task::before            { content: "task"; color: var(--red); }
+div.user > agent-context > task                    { border-left-color: var(--red); }
+div.user > agent-context > available-agents::before { content: "available-agents"; color: var(--blue); }
+div.user > agent-context > available-agents        { border-left-color: var(--blue); }
+div.user > agent-context > events::before          { content: "events"; color: var(--green); }
+div.user > agent-context > events                  { border-left-color: var(--green); }
+div.user > agent-context > plan::before            { content: "plan"; color: var(--blue); }
+div.user > agent-context > plan                    { border-left-color: var(--blue); }
+div.user > agent-context > execution-state::before { content: "execution-state"; color: var(--blue); }
+div.user > agent-context > execution-state         { border-left-color: var(--blue); }
+div.user > agent-context > step-info::before       { content: "step-info"; color: var(--text-mid); }
+div.user > agent-context > step-info               { border-left-color: var(--text-mid); }
+div.user > agent-context > memory::before          { content: "memory"; color: var(--blue); }
+div.user > agent-context > memory                  { border-left-color: var(--blue); }
+div.user > agent-context > workspace::before       { content: "workspace"; color: var(--text-mid); }
+div.user > agent-context > workspace               { border-left-color: var(--text-mid); }
+div.user > agent-context > errors::before          { content: "errors"; color: var(--red); }
+div.user > agent-context > errors                  { border-left-color: var(--red); }
+div.user > agent-context > browser-state::before   { content: "browser-state"; color: var(--blue); }
+div.user > agent-context > browser-state           { border-left-color: var(--blue); }
+
+/* ── constraints sub-module — amber, hosts budget rings ── */
+div.user > agent-context > constraints {
+  border-left-color: var(--amber);
+  background: rgba(207,160,64,0.04);
+}
+div.user > agent-context > constraints::before { content: "constraints"; color: var(--amber); }
+
+/* =====================================================
+   BUDGET RINGS — data-driven conic-gradient progress
+   Built by prompt.js from the "used / limit" lines in the
+   constraints sub-module. --pct (0..100) and --ring set inline.
+   ===================================================== */
+
+/* Badge + rings form a visual summary, separated from the raw budget
+   text by a hairline divider. */
+.budget-summary {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--border-hi);
+}
+
+.budget-rings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 26px;
+  margin-top: 16px;
+}
+
+.budget-ring {
+  --pct: 0;
+  /* Brighter, cleaner accents than the muted base palette so the rings
+     read crisply against the dark ground. */
+  --ring: #63C487;
+  --track: #2F3E29;
+  position: relative;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  /* Donut: the radial layer punches a clean hole (no inner-border seam),
+     the conic layer is the progress arc over a visible track. */
+  background:
+    radial-gradient(closest-side, var(--surface) 70%, transparent 71% 100%),
+    conic-gradient(var(--ring) calc(var(--pct) * 1%), var(--track) 0);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  margin-bottom: 20px; /* room for the label below */
+}
+.budget-ring > .ring-pct {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  color: var(--ring);
+}
+.budget-ring > .ring-label {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-mid);
+}
+.budget-ring.tier-tight    { --ring: #E6B84F; }
+.budget-ring.tier-critical { --ring: #EC6E4C; }
+
+.budget-tier {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid var(--border-hi);
+}
+.budget-tier.tier-normal   { color: #63C487; border-color: rgba(99,196,135,0.45); background: rgba(99,196,135,0.08); }
+.budget-tier.tier-tight    { color: #E6B84F; border-color: rgba(230,184,79,0.45); background: rgba(230,184,79,0.08); }
+.budget-tier.tier-critical { color: #EC6E4C; border-color: rgba(236,110,76,0.45); background: rgba(236,110,76,0.08); }
 
 /* =====================================================
    INLINE ELEMENTS & TYPOGRAPHY

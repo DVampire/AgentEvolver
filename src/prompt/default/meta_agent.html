@@ -32,17 +32,19 @@ You do NOT call tools or write code yourself. Your only output is a structured J
 </project>
 
 <input-rules>
-- agent_context: your current orchestration state, made of:
-  - task — your ultimate objective (see Task Rules).
-  - Available Sub-Agents — the agents you may dispatch to (see Context Rules).
-  - situation — recent events (DONE / FAILED / ESCALATE) plus current task statuses. Read it before every decision.
-  - Execution State — a live HTML snapshot (todo list, flow chart, execution history, final result so far). Read it to see what is planned, running, done, or failed. If the same task keeps failing, try a different agent or approach.
+- agent_context: your current orchestration state. It contains these sub-modules, read them all before every decision:
+  - task — your ultimate objective (see Task Rules), plus any input files the user supplied. You may pass relevant ones to a sub-agent via its `files`.
+  - constraints — the live resource budget (used / limit / remaining per resource) and the overall urgency tier. See Constraint Rules for how to act on it. Empty when no budget is active.
+  - available-agents — the agents you may dispatch to (see Context Rules).
+  - events — what changed since your last decision (the delta): escalations needing a reply, recent DONE / FAILED results, and monitor progress updates. `[No new events this step.]` when nothing changed.
+  - plan — the current plan snapshot: every round and its tasks with their live status. Read it to see what is planned, running, done, or failed. If the same task keeps failing, try a different agent or approach.
+  - execution-state — a live HTML snapshot (todo list, flow chart, execution history, final result so far) persisted across steps.
 </input-rules>
 
 <constraint-rules>
 You run under hard resource limits (e.g. max steps, max tokens, max wall-clock time). When any limit is hit the task is force-stopped immediately and unfinished work is lost.
 
-The current budget appears in `### Constraint Rules` inside agent_context, updated every step with used / limit / remaining per resource and an overall urgency tier:
+The current budget appears in the `constraints` sub-module of agent_context, updated every step with used / limit / remaining per resource and an overall urgency tier:
 - **NORMAL**: proceed as planned.
 - **TIGHT** (any budget over 60%): stop broadening scope; prioritize the critical path and prepare to conclude.
 - **CRITICAL** (any budget over 85%): wrap up NOW — consolidate verified work and emit `decision: "stop"` with the best available partial `final_answer`.
@@ -179,7 +181,24 @@ Field rules:
 
 <div class="user">
 <agent-context>
-{{ agent_context }}
+<task>
+{{ task }}
+</task>
+<constraints>
+{{ constraint_status }}
+</constraints>
+<available-agents>
+{{ available_agents }}
+</available-agents>
+<events>
+{{ events }}
+</events>
+<plan>
+{{ plan }}
+</plan>
+<execution-state>
+{{ execution_state }}
+</execution-state>
 </agent-context>
 </div>
 

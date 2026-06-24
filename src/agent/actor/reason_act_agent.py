@@ -71,10 +71,14 @@ class ReasonActAgent(Agent):
     ) -> Dict[str, Any]:
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
+        # Live workspace listing (see workspace sub-module in reason_act_agent.html).
+        base["workspace"] = self._workspace_snapshot(ctx)
+
+        # Exposed as its own agent_context sub-module (see reason_act_agent.html).
         action_errors = kwargs.get("action_errors") or []
-        if action_errors:
-            error_lines = "\n".join(f"- {e}" for e in action_errors)
-            base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
+        base["errors"] = (
+            "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
+        )
 
         return base
 
@@ -119,22 +123,34 @@ class ReasonActAgent(Agent):
             ctx=ctx,
         )
 
-        messages = await self._get_messages(enhanced_task, ctx=ctx)
-
         step_number = 0
+        action_errors: List[str] = []
         response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_step:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_step}")
-            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
-            step_number += 1
-            action_errors = response.get("action_errors") or []
+            # Check budget BEFORE building the message so the prompt reflects the
+            # current budget (aligned with MetaAgent). Runs once per step;
+            # _think_and_act is told not to repeat it.
+            reason, constraint_status = await self._constraint_check(task_id, ctx)
+            if reason is not None:
+                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
+                response = {"done": True, "result": reason, "reasoning": None,
+                            "action_errors": [], "stopped_by_constraint": True}
+                break
             messages = await self._get_messages(
                 enhanced_task,
                 ctx=ctx,
+                files=files,
+                step_number=step_number,
                 action_errors=action_errors,
-                constraint_status=response.get("constraint_status"),
+                constraint_status=constraint_status,
             )
+            response = await self._think_and_act(
+                messages, task_id, step_number, ctx=ctx
+            )
+            step_number += 1
+            action_errors = response.get("action_errors") or []
             if response["done"]:
                 break
 

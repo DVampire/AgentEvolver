@@ -1,6 +1,5 @@
 """CodeAgent — a code-focused agent that reads, edits, and commits code."""
 
-import os
 from typing import List, Optional, Dict, Any
 from pydantic import Field, ConfigDict
 
@@ -75,27 +74,13 @@ class CodeAgent(Agent):
             task, step_number=step_number, ctx=ctx, **kwargs
         )
 
-        # Inject a live workdir file snapshot so the agent can see current files
-        # without needing to call list_dir_tool just to confirm state.
-        work_dir = os.path.abspath(
-            ctx.work_dir if ctx and ctx.work_dir else self.base_dir
-        )
-        try:
-            entries = sorted(os.listdir(work_dir))
-            lines = []
-            for name in entries:
-                suffix = "/" if os.path.isdir(os.path.join(work_dir, name)) else ""
-                lines.append(f"  {name}{suffix}")
-            snapshot = "\n".join(lines) if lines else "  (empty)"
-        except Exception:
-            snapshot = "  (unavailable)"
-
-        base["agent_context"] += f"\n\n### Work Dir\n{work_dir}\n{snapshot}"
+        # Live workspace listing (see workspace sub-module in code_agent.html).
+        base["workspace"] = self._workspace_snapshot(ctx)
 
         action_errors = kwargs.get("action_errors") or []
-        if action_errors:
-            error_lines = "\n".join(f"- {e}" for e in action_errors)
-            base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
+        base["errors"] = (
+            "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
+        )
 
         return base
 
@@ -152,9 +137,8 @@ class CodeAgent(Agent):
             ctx=ctx,
         )
 
-        messages = await self._get_messages(enhanced_task, ctx=ctx)
-
         step_number = 0
+        action_errors: List[str] = []
         response = {
             "done": False,
             "result": None,
@@ -164,17 +148,28 @@ class CodeAgent(Agent):
 
         while step_number < self.max_step:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_step}")
+            # Check budget BEFORE building the message, so the prompt reflects the
+            # current budget (aligned with MetaAgent). The check runs exactly once
+            # per step; _think_and_act is told not to repeat it.
+            reason, constraint_status = await self._constraint_check(task_id, ctx)
+            if reason is not None:
+                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
+                response = {"done": True, "result": reason, "reasoning": None,
+                            "action_errors": [], "stopped_by_constraint": True}
+                break
+            messages = await self._get_messages(
+                enhanced_task,
+                ctx=ctx,
+                files=files,
+                step_number=step_number,
+                action_errors=action_errors,
+                constraint_status=constraint_status,
+            )
             response = await self._think_and_act(
                 messages, task_id, step_number, ctx=ctx
             )
             step_number += 1
             action_errors = response.get("action_errors") or []
-            messages = await self._get_messages(
-                enhanced_task,
-                ctx=ctx,
-                action_errors=action_errors,
-                constraint_status=response.get("constraint_status"),
-            )
             if response["done"]:
                 break
 

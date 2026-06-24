@@ -27,11 +27,11 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from src.agent.server import agent_manager
 from src.agent.types import Agent, AgentContext
-from src.constraint import constraint_manager, ConstraintContext, render_status_text
+from src.constraint import render_status_text
 from src.response.types import Response, ResponseType
 from src.config import config
 from src.hook.server import hook_manager
-from src.hook.types import HookEvent, HookContext
+from src.hook.types import HookEvent, HookContext, HookDecision
 from src.logger import logger
 from src.memory import memory_manager
 from src.model import model_manager
@@ -597,27 +597,33 @@ class MetaAgent(Agent):
     # ------------------------------------------------------------------
 
     async def _think_and_act(self, state: MetaState, events: List[BaseMessage]) -> None:
-        # --- Constraint checks ---
+        # --- Constraint checks (delegated to the constraint hook on PRE_STEP) ---
         constraint_statuses: List[Dict[str, Any]] = []
         if self.constraints:
-            constraint_ctx = ConstraintContext(id=state.session_id)
-            check_input = {
-                "token": self._pending_step_tokens.pop(state.session_id, 0),
-                "max_step": self.max_step,
-                "max_token": self.max_token,
-                "max_second": self.timeout,
-            }
-            for c in self.constraints:
-                violation = await constraint_manager(c.name, check_input, constraint_ctx)
-                if not violation.success:
-                    for c in self.constraints:
-                        c._cleanup(state.session_id)
-                    logger.warning(f"| 🛑 MetaAgent constraint violated: {violation.message}")
-                    state.final_answer = self._join_results(state) or violation.message
-                    state.touch()
-                    return
-                if violation.data and violation.data.get("status"):
-                    constraint_statuses.append(violation.data["status"])
+            constraint_result = await hook_manager(
+                name="constraint_hook",
+                input={
+                    "event": HookEvent.PRE_STEP,
+                    "agent_name": self.name,
+                    "task_id": state.session_id,
+                    "constraint_names": [c.name for c in self.constraints],
+                    "check_input": {
+                        "token": self._pending_step_tokens.pop(state.session_id, 0),
+                        "max_step": self.max_step,
+                        "max_token": self.max_token,
+                        "max_second": self.timeout,
+                    },
+                },
+                ctx=state._ctx,
+            )
+            if constraint_result.decision == HookDecision.BLOCK:
+                for c in self.constraints:
+                    c._cleanup(state.session_id)
+                logger.warning(f"| 🛑 MetaAgent constraint violated: {constraint_result.reason}")
+                state.final_answer = self._join_results(state) or constraint_result.reason
+                state.touch()
+                return
+            constraint_statuses = constraint_result.constraint_status or []
 
         messages = await self._get_messages(state, events, constraint_status=constraint_statuses)
         response = await model_manager(
@@ -880,66 +886,76 @@ class MetaAgent(Agent):
         events: List[BaseMessage],
         constraint_status: Optional[List[Dict[str, Any]]] = None,
     ) -> list:
-        # Format current situation for the LLM
-        lines: List[str] = []
-        existing = [f for f in state.user_files if os.path.exists(f)]
-        if existing:
-            lines.append("### Provided Files")
-            lines.extend(f"- {f}" for f in existing)
+        # Build the agent_context sub-modules. Each becomes its own nested tag
+        # in the user template (see meta_agent.html). The old single "situation"
+        # blob is split into the delta (events) and the snapshot (plan) so each
+        # is read for what it is.
 
-        if not events and not state.plan:
-            lines.append("No events yet. Produce the initial plan as a list of rounds.")
-        else:
-            escalations = [e for e in events if isinstance(e, EscalationMessage)]
-            completions = [
-                e
-                for e in events
-                if isinstance(e, (SubtaskDoneMessage, SubtaskFailedMessage))
-            ]
-            progresses = [e for e in events if isinstance(e, MonitorProgressMessage)]
-            if escalations:
-                lines.append("### Escalations Requiring Reply")
-                for e in escalations:
-                    lines.append(f"- ESCALATE [{e.task_id}] ({e.agent_name}): {e.text}")
-            if completions:
-                lines.append("### Recent Events")
-                for e in completions:
-                    if isinstance(e, SubtaskDoneMessage):
-                        lines.append(f"- DONE [{e.task_id}]: {e.result}")
-                    else:
-                        lines.append(f"- FAILED [{e.task_id}]: {e.error}")
-            if progresses:
-                lines.append("### Monitor Progress Updates")
-                for e in progresses:
-                    line = f"- [{e.status.upper()}] {e.task_id} ({e.agent_name}) pid={e.pid} elapsed={e.elapsed:.0f}s"
-                    if e.exit_code is not None:
-                        line += f" exit={e.exit_code}"
-                    lines.append(line)
-                    if e.recent_output:
-                        lines.append(f"  Recent output: {e.recent_output[:300]}")
-            lines.append(
-                "\n### Plan Status (rounds run in order; tasks within a round run concurrently)"
+        # ── task: the user objective, plus any input files (folded in — they
+        #    are part of the assignment, not a separate block) ──
+        existing = [f for f in state.user_files if os.path.exists(f)]
+        task_text = state.user_task
+        if existing:
+            task_text += "\n\n**Input files:**\n" + "\n".join(f"- {f}" for f in existing)
+
+        # ── events: what changed since the last decision (the delta) ──
+        event_lines: List[str] = []
+        escalations = [e for e in events if isinstance(e, EscalationMessage)]
+        completions = [
+            e
+            for e in events
+            if isinstance(e, (SubtaskDoneMessage, SubtaskFailedMessage))
+        ]
+        progresses = [e for e in events if isinstance(e, MonitorProgressMessage)]
+        if escalations:
+            event_lines.append("### Escalations Requiring Reply")
+            for e in escalations:
+                event_lines.append(f"- ESCALATE [{e.task_id}] ({e.agent_name}): {e.text}")
+        if completions:
+            event_lines.append("### Recent Events")
+            for e in completions:
+                if isinstance(e, SubtaskDoneMessage):
+                    event_lines.append(f"- DONE [{e.task_id}]: {e.result}")
+                else:
+                    event_lines.append(f"- FAILED [{e.task_id}]: {e.error}")
+        if progresses:
+            event_lines.append("### Monitor Progress Updates")
+            for e in progresses:
+                line = f"- [{e.status.upper()}] {e.task_id} ({e.agent_name}) pid={e.pid} elapsed={e.elapsed:.0f}s"
+                if e.exit_code is not None:
+                    line += f" exit={e.exit_code}"
+                event_lines.append(line)
+                if e.recent_output:
+                    event_lines.append(f"  Recent output: {e.recent_output[:300]}")
+        events_text = "\n".join(event_lines) if event_lines else "[No new events this step.]"
+
+        # ── plan: the current plan snapshot (rounds run in order; tasks within
+        #    a round run concurrently) ──
+        plan_lines: List[str] = []
+        if not state.plan:
+            plan_lines.append(
+                "No plan yet. Produce the initial plan as a list of rounds."
+                if not events
+                else "(no plan yet)"
             )
-            if not state.plan:
-                lines.append("(no plan yet)")
-            for i, rec in enumerate(state.plan, 1):
-                goal = f" — {rec.goal}" if rec.goal else ""
-                lines.append(
-                    f"**Round {i}** [{state.round_display_status(rec).upper()}]{goal}"
-                )
-                for tid in rec.task_ids:
-                    r = state.subtask_records.get(tid)
-                    if not r:
-                        continue
-                    line = f"  - [{r.status.value.upper()}] {tid} ({r.spec.name}): {r.spec.input.task}"
-                    if r.result:
-                        line += f" → {r.result}"
-                    if r.error:
-                        line += f" ✗ {r.error}"
-                    if r.progress:
-                        line += f" [progress: {r.progress[:150]}]"
-                    lines.append(line)
-        situation = "\n".join(lines)
+        for i, rec in enumerate(state.plan, 1):
+            goal = f" — {rec.goal}" if rec.goal else ""
+            plan_lines.append(
+                f"**Round {i}** [{state.round_display_status(rec).upper()}]{goal}"
+            )
+            for tid in rec.task_ids:
+                r = state.subtask_records.get(tid)
+                if not r:
+                    continue
+                line = f"  - [{r.status.value.upper()}] {tid} ({r.spec.name}): {r.spec.input.task}"
+                if r.result:
+                    line += f" → {r.result}"
+                if r.error:
+                    line += f" ✗ {r.error}"
+                if r.progress:
+                    line += f" [progress: {r.progress[:150]}]"
+                plan_lines.append(line)
+        plan_text = "\n".join(plan_lines)
 
         # Fetch memory
         memory_context = ""
@@ -954,17 +970,6 @@ class MetaAgent(Agent):
                 pass
 
         ctx = state._ctx
-        sections = [f"### Task\n{state.user_task}"]
-        if constraint_status:
-            sections.append(f"### Constraint Rules\n{render_status_text(constraint_status)}")
-        sections.extend(
-            [
-                f"### Available Sub-Agents\n{state._available_agents}",
-                f"### Current Situation\n{situation}",
-                f"### Execution State\n{memory_context or '[No state recorded yet.]'}",
-            ]
-        )
-        agent_context = "\n\n".join(sections)
         work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
         response = await prompt_manager(
             name=self.prompt_name,
@@ -974,7 +979,16 @@ class MetaAgent(Agent):
                     project_context=state._project_context,
                     work_dir=work_dir,
                 ),
-                "agent_modules": dict(agent_context=agent_context),
+                # Each entry is a sub-module of agent_context, rendered into its
+                # own nested tag in the user template (see meta_agent.html).
+                "agent_modules": dict(
+                    task=task_text,
+                    constraint_status=render_status_text(constraint_status) if constraint_status else "[No active budget.]",
+                    available_agents=state._available_agents,
+                    events=events_text,
+                    plan=plan_text,
+                    execution_state=memory_context or "[No state recorded yet.]",
+                ),
             },
         )
         if not response.success:

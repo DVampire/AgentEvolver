@@ -28,10 +28,16 @@ You are [agent role]. You receive [input description], then you [core behavior],
 </project>
 
 <input-rules>
-- **agent_context**: current internal state — task, step info, and memory.
-- **domain_target**: the specific target metadata injected by the agent.
-- **tool_context**: available tools.
-- **skill_context**: available skills.
+- agent_context: your current internal state, with these sub-modules:
+  - task — your ultimate objective (see Task Rules).
+  - constraints — the live resource budget and urgency tier (see Constraint Rules). `[No active budget.]` when none is set.
+  - step-info — the current step number, max steps, and date/time.
+  - memory — working memory and recent steps (see Context Rules).
+  - workspace — a live snapshot of your working directory's files.
+  - errors — errors from the last step, shown only when the previous step failed.
+- domain_target: the specific target metadata injected by the agent.
+- tool_context: available tools. Use only these.
+- skill_context: available skills. Use only these.
 </input-rules>
 
 <task-rules>
@@ -40,7 +46,7 @@ You are [agent role]. You receive [input description], then you [core behavior],
 </task-rules>
 
 <context-rules>
-Memory is in `### Memory`: Working Memory (past decisions) and Recent Steps (just done).
+Memory is in the `memory` sub-module: Working Memory (past decisions) and Recent Steps (just done).
 Use only tools/skills listed in their contexts. Do not invent names.
 </context-rules>
 
@@ -69,10 +75,38 @@ Each step: { "description": "...", "action": { "type": "...", "name": "...", "ar
 </div>
 
 <div class="user">
-<agent-context>{{ agent_context }}</agent-context>
-<domain-target>{{ domain_target }}</domain-target>
-<tool-context>{{ tool_context }}</tool-context>
-<skill-context>{{ skill_context }}</skill-context>
+<agent-context>
+<task>
+{{ task }}
+</task>
+<constraints>
+{{ constraint_text }}
+</constraints>
+<step-info>
+{{ step_info }}
+</step-info>
+<memory>
+{{ memory_context }}
+</memory>
+<workspace>
+{{ workspace }}
+</workspace>
+{% if errors %}<errors>
+{{ errors }}
+</errors>
+{% endif %}</agent-context>
+
+<domain-target>
+{{ domain_target }}
+</domain-target>
+
+<tool-context>
+{{ available_tools }}
+</tool-context>
+
+<skill-context>
+{{ available_skills }}
+</skill-context>
 </div>
 
 </body>

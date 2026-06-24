@@ -39,9 +39,9 @@ class MyAgent(Agent):
         target_name = kwargs.get('target_name')
         lines = [f'- **Target**: {target_name}'] if target_name else ['- **Target**: (not specified)']
         base['domain_target'] = '\n'.join(lines)
+        base['workspace'] = self._workspace_snapshot(ctx)
         action_errors = kwargs.get('action_errors') or []
-        if action_errors:
-            base['agent_context'] += '\n\n### Previous Step Errors\n' + '\n'.join(f'- {e}' for e in action_errors)
+        base['errors'] = '\n'.join(f'- {e}' for e in action_errors) if action_errors else ''
         return base
 
     async def __call__(self, task: str, target_name=None, **kwargs) -> Response:
@@ -56,19 +56,34 @@ class MyAgent(Agent):
                     'task': task, 'memory_name': self.memory_name, 'use_memory': self.use_memory}
         await hook_manager(name='memory_hook', input=on_start, ctx=ctx)
         await hook_manager(name='trace_hook', input=on_start, ctx=ctx)
-        messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
         step_number = 0
+        action_errors = []
         response = {'done': False, 'result': None, 'reasoning': None, 'action_errors': []}
         while step_number < self.max_step:
             logger.info(f'| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}')
+            # Canonical loop: check the resource budget ONCE per step, BEFORE building
+            # the message, so the prompt reflects the current budget. _think_and_act
+            # does NOT check (the base no longer does).
+            reason, constraint_status = await self._constraint_check(task_id, ctx)
+            if reason is not None:
+                logger.warning(f'| 🛑 {self.name} constraint violated: {reason}')
+                response = {'done': True, 'result': reason, 'reasoning': None,
+                            'action_errors': [], 'stopped_by_constraint': True}
+                break
+            messages = await self._get_messages(
+                task, ctx=ctx, target_name=target_name,
+                step_number=step_number, action_errors=action_errors,
+                constraint_status=constraint_status,
+            )
             response = await self._think_and_act(messages, task_id, step_number, ctx=ctx, target_name=target_name)
             step_number += 1
             action_errors = response.get('action_errors') or []
             if response['done']:
                 break
-            messages = await self._get_messages(task, ctx=ctx, target_name=target_name, action_errors=action_errors)
         on_stop = {'event': HookEvent.ON_STOP, 'agent_name': self.name, 'task_id': task_id,
                    'result': response.get('result'), 'memory_name': self.memory_name, 'use_memory': self.use_memory}
         await hook_manager(name='memory_hook', input=on_stop, ctx=ctx)
         await hook_manager(name='trace_hook', input=on_stop, ctx=ctx)
-        return Response(type=ResponseType.AGENT, success=response['done'], message=response['result'] or '', data=response)
+        return Response(type=ResponseType.AGENT,
+                        success=response['done'] and not response.get('stopped_by_constraint', False),
+                        message=response['result'] or '', data=response)

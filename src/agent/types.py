@@ -7,6 +7,7 @@ abstractions, aligned with the design of `src.tool.types`.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Type
@@ -23,7 +24,6 @@ from src.tool import tool_manager
 from src.skill import skill_manager
 from src.constraint import (
     constraint_manager,
-    ConstraintContext,
     render_status_text,
     TokenConstraint,
     WallTimeConstraint,
@@ -311,16 +311,14 @@ class Agent(BaseModel):
                                  **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
         time_str = datetime.now().isoformat()
-        step_info = (
-            f"### Step Info\n"
+        step_info_body = (
             f"Step {step_number + 1} of {self.max_step} max possible steps\n"
             f"Current date and time: {time_str}"
         )
 
-        task_section = f"### Task\n{task}"
-
-        history_section = "### Agent History\n[Agent history is disabled.]"
-        memory_section = "### Memory\n[Memory is disabled.]"
+        # Clean per-section bodies (no "### " prefix) — each is rendered as its own
+        # agent_context sub-module (see code_agent.html and the agent prompts).
+        memory_body = "[Memory is disabled.]"
         if self.use_memory and self.memory_name:
             try:
                 memory_info = await memory_manager.get_info(self.memory_name)
@@ -330,39 +328,33 @@ class Agent(BaseModel):
                         session_id=session_id,
                         short_term_n=self.review_steps,
                     )
-                    if mem_text:
-                        memory_section = f"### Memory\n{mem_text}"
-                    else:
-                        memory_section = "### Memory\n[No memory recorded yet.]"
-                    history_section = ""
+                    memory_body = mem_text if mem_text else "[No memory recorded yet.]"
             except Exception:
                 pass
 
-        sections = [task_section, step_info]
-
         # Resource budgets collected from the previous step's constraint checks
         constraint_status = kwargs.get("constraint_status") or []
-        if constraint_status:
-            sections.append(f"### Constraint Rules\n{render_status_text(constraint_status)}")
+        constraint_text = render_status_text(constraint_status) if constraint_status else "[No active budget.]"
 
-        if history_section:
-            sections.append(history_section)
-        sections.append(memory_section)
-        agent_context = "\n\n".join(sections)
-
-        return {"agent_context": agent_context}
+        return {
+            "step_info": step_info_body,
+            "memory_context": memory_body,
+            "constraint_text": constraint_text,
+        }
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
         contract = await tool_manager.get_contract()
-        tool_context = f"### Available Tools\n{contract}" if contract else "### Available Tools\n[No tools loaded.]"
-        return {"tool_context": tool_context}
+        available_tools = contract if contract else "[No tools loaded.]"
+        tool_context = f"### Available Tools\n{available_tools}"
+        return {"tool_context": tool_context, "available_tools": available_tools}
 
     async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the skill context from loaded skills via skill manager."""
         skill_content = await skill_manager.get_context()
-        skill_context = f"### Available Skills\n{skill_content}" if skill_content else "### Available Skills\n[No skills loaded.]"
-        return {"skill_context": skill_context}
+        available_skills = skill_content if skill_content else "[No skills loaded.]"
+        skill_context = f"### Available Skills\n{available_skills}"
+        return {"skill_context": skill_context, "available_skills": available_skills}
 
     async def _resolve_work_dir(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the work_dir surfaced in the prompt's `{{ work_dir }}` slot.
@@ -371,6 +363,38 @@ class Agent(BaseModel):
         self.base_dir so all agents in a MetaAgent run share the same directory.
         """
         return assemble_project_path(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+
+    def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
+        """A live listing of the working directory's files, refreshed each step.
+
+        Lets an agent see what's currently in its scratch directory without
+        spending a tool call. Opt-in: agents that do file work expose this as a
+        `workspace` sub-module from their `_get_agent_context` override.
+        """
+        work_dir = os.path.abspath(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+        try:
+            entries = sorted(os.listdir(work_dir))
+            lines = [
+                f"  {name}{'/' if os.path.isdir(os.path.join(work_dir, name)) else ''}"
+                for name in entries
+            ]
+            snapshot = "\n".join(lines) if lines else "  (empty)"
+        except Exception:
+            snapshot = "  (unavailable)"
+        return f"{work_dir}\n{snapshot}"
+
+    def _task_with_input_files(self, task: str, **kwargs) -> str:
+        """Append the input files the user attached to the task body.
+
+        Input files are part of the assignment (static), so they live inside the
+        `task` module rather than a separate block. Only existing paths are shown.
+        """
+        files = kwargs.get("files") or []
+        existing = [f for f in files if os.path.exists(f)]
+        if not existing:
+            return task
+        listing = "\n".join(f"- {f}" for f in existing)
+        return f"{task}\n\n**Input files:**\n{listing}"
 
     async def _get_messages(self,
                             task: str,
@@ -381,7 +405,7 @@ class Agent(BaseModel):
         work_dir = await self._resolve_work_dir(ctx=ctx, **kwargs)
         project_root = get_project_root()
         system_modules = dict(max_actions=self.max_actions, work_dir=work_dir, project_root=project_root)
-        agent_message_modules = dict(task=task)
+        agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
         
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
@@ -418,6 +442,50 @@ class Agent(BaseModel):
     # Shared execution loop — all tool-calling agents use this
     # ------------------------------------------------------------------
 
+    async def _constraint_check(self, task_id: str, ctx: "AgentContext"):
+        """Run the per-step resource-budget check via the constraint hook, exactly once.
+
+        The agent owns its token accounting: it pops the previous step's tokens
+        and passes the per-call budget in; the hook runs the checks, blocks on a
+        violation, and returns the budget snapshot.
+
+        Returns ``(violation_reason, status_list)``:
+          - ``violation_reason``: a string when a budget is exhausted (the caller
+            should stop the task), else ``None``;
+          - ``status_list``: the budget snapshot to render into the prompt.
+
+        Stateful (step/token counters increment per call), so every agent calls it
+        exactly once per step — at the top of the loop, before ``_get_messages`` —
+        and never inside ``_think_and_act``. See the canonical loop in
+        ``_think_and_act``'s docstring.
+        """
+        if not self.constraints:
+            return None, []
+        from src.hook.server import hook_manager
+        from src.hook.types import HookDecision, HookEvent
+        result = await hook_manager(
+            name="constraint_hook",
+            input={
+                "event": HookEvent.PRE_STEP,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "constraint_names": [c.name for c in self.constraints],
+                "check_input": {
+                    "token": self._pending_step_tokens.pop(task_id, 0),
+                    "max_step": self.max_step,
+                    "max_token": self.max_token,
+                    "max_second": self.timeout,
+                },
+            },
+            ctx=ctx,
+        )
+        if result.decision == HookDecision.BLOCK:
+            for c in self.constraints:
+                c._cleanup(task_id)
+            self._pending_step_tokens.pop(task_id, None)
+            return result.reason, []
+        return None, result.constraint_status or []
+
     async def _think_and_act(
         self,
         messages: List[Message],
@@ -426,40 +494,47 @@ class Agent(BaseModel):
         ctx: "AgentContext",
         **kwargs,
     ) -> Dict[str, Any]:
-        """One step of the think-and-act loop. Returns done/result/reasoning/action_errors."""
+        """One step of the think-and-act loop: run the LLM on ``messages`` and
+        execute the planned actions. Returns done/result/reasoning/action_errors.
+
+        The per-step resource-budget check is the CALLER's responsibility — every
+        agent runs ``_constraint_check`` BEFORE building ``messages`` (so the prompt
+        reflects the current budget) and stops on a violation. The check is stateful
+        (counts a step), so it must run exactly once per step and is NOT repeated
+        here. Canonical loop every agent follows::
+
+            step = 0
+            action_errors = []
+            while step < self.max_step:
+                reason, status = await self._constraint_check(task_id, ctx)
+                if reason is not None:
+                    response = {"done": True, "result": reason,
+                                "stopped_by_constraint": True}
+                    break
+                messages = await self._get_messages(
+                    task, ctx=ctx, step_number=step,
+                    action_errors=action_errors, constraint_status=status)
+                response = await self._think_and_act(messages, task_id, step, ctx=ctx)
+                step += 1
+                action_errors = response.get("action_errors") or []
+                if response["done"]:
+                    break
+        """
         from src.hook.server import hook_manager
         from src.hook.types import HookDecision, HookEvent
         from src.model import model_manager
         from src.utils import parse_tool_args
-        from src.constraint.server import constraint_manager
 
         done = False
         result = None
         reasoning = None
         action_errors = []
         step_tokens = 0
+        # The per-step constraint check runs in the caller's loop, BEFORE the
+        # message is built (see _constraint_check / the canonical loop above), so
+        # it is not repeated here. constraint_status is reported by the caller's
+        # check now; kept here only so the result contract stays stable.
         constraint_statuses: List[Dict[str, Any]] = []
-
-        # --- Constraint checks ---
-        if self.constraints:
-            constraint_ctx = ConstraintContext(id=task_id)
-            # Tokens consumed by the previous step (this step's usage is known only after the LLM call);
-            # agent-level limits are passed as per-call overrides of the constraint defaults.
-            check_input = {
-                "token": self._pending_step_tokens.pop(task_id, 0),
-                "max_step": self.max_step,
-                "max_token": self.max_token,
-                "max_second": self.timeout,
-            }
-            for c in self.constraints:
-                violation = await constraint_manager(c.name, check_input, constraint_ctx)
-                if not violation.success:
-                    for c in self.constraints:
-                        c._cleanup(task_id)
-                    self._pending_step_tokens.pop(task_id, None)
-                    return {"done": True, "result": violation.message, "reasoning": None, "action_errors": [], "constraint_status": [], "stopped_by_constraint": True}
-                if violation.data and violation.data.get("status"):
-                    constraint_statuses.append(violation.data["status"])
 
         await hook_manager(
             name="trace_hook",

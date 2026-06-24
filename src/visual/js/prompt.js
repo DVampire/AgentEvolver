@@ -74,9 +74,74 @@ const _CODE_TAGS = new Set([
   'test-template', 'tool-template', 'init-template', 'verification-template',
 ]);
 
+// Container tags hold nested sub-module cards; render each child as a leaf
+// rather than flattening the container's combined text.
+const _CONTAINER_TAGS = new Set(['agent-context']);
+
+function _renderLeaf(el) {
+  el.innerHTML = marked.parse(el.textContent.trim());
+}
+
+/**
+ * Build conic-gradient budget rings from the "used / limit" lines in the
+ * constraints sub-module, plus an urgency-tier badge. Data-driven: the ring
+ * fill and colour come from the real numbers in the text, which stays intact
+ * below the rings. No-op when no budget line is present (e.g. placeholder).
+ */
+function _renderBudgetRings(el) {
+  const raw = el.textContent;
+  // e.g. "tokens: 5,000 / 10,000 (5,000 remaining)" or "wall_clock: 30s / 120s"
+  const lineRe = /([A-Za-z][A-Za-z0-9 _-]*?):\s*([\d.,]+)\s*s?\s*\/\s*([\d.,]+)\s*s?\b/g;
+  const num = s => parseFloat(s.replace(/,/g, '')) || 0;
+  const rings = [];
+  let m;
+  while ((m = lineRe.exec(raw)) !== null) {
+    const used = num(m[2]);
+    const limit = num(m[3]);
+    if (limit <= 0) continue;
+    const pct = Math.min(100, Math.round((used / limit) * 100));
+    rings.push({ label: m[1].trim(), pct });
+  }
+  if (!rings.length) return;
+
+  const tierMatch = raw.match(/\b(NORMAL|TIGHT|CRITICAL)\b/);
+  const tier = tierMatch ? tierMatch[1] : 'NORMAL';
+  const ringTier = pct => pct >= 85 ? 'tier-critical' : pct >= 60 ? 'tier-tight' : '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'budget-summary';
+  if (tierMatch) {
+    const badge = document.createElement('div');
+    badge.className = 'budget-tier tier-' + tier.toLowerCase();
+    badge.textContent = 'Budget: ' + tier;
+    wrap.appendChild(badge);
+  }
+  const row = document.createElement('div');
+  row.className = 'budget-rings';
+  rings.forEach(r => {
+    const ring = document.createElement('div');
+    ring.className = 'budget-ring ' + ringTier(r.pct);
+    ring.style.setProperty('--pct', r.pct);
+    ring.innerHTML =
+      '<span class="ring-pct">' + r.pct + '%</span>' +
+      '<span class="ring-label">' + r.label + '</span>';
+    row.appendChild(ring);
+  });
+  wrap.appendChild(row);
+  el.prepend(wrap);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('div.system > *, div.user > *').forEach(el => {
-    if (_CODE_TAGS.has(el.tagName.toLowerCase())) return;
-    el.innerHTML = marked.parse(el.textContent.trim());
+    const tag = el.tagName.toLowerCase();
+    if (_CODE_TAGS.has(tag)) return;
+    if (_CONTAINER_TAGS.has(tag)) {
+      el.querySelectorAll(':scope > *').forEach(sub => {
+        _renderLeaf(sub);
+        if (sub.tagName.toLowerCase() === 'constraints') _renderBudgetRings(sub);
+      });
+      return;
+    }
+    _renderLeaf(el);
   });
 });

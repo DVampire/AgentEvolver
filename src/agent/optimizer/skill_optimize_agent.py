@@ -104,10 +104,10 @@ class SkillOptimizeAgent(Agent):
         else:
             base["optimization_target"] = "(no target_name provided)"
 
+        base["workspace"] = self._workspace_snapshot(ctx)
+
         action_errors = kwargs.get("action_errors") or []
-        if action_errors:
-            error_lines = "\n".join(f"- {e}" for e in action_errors)
-            base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
+        base["errors"] = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
 
         return base
 
@@ -137,19 +137,31 @@ class SkillOptimizeAgent(Agent):
         await hook_manager(name="memory_hook", input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": task, "memory_name": self.memory_name, "use_memory": self.use_memory}, ctx=ctx)
         await hook_manager(name="trace_hook", input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": task, "memory_name": self.memory_name, "use_memory": self.use_memory}, ctx=ctx)
 
-        messages = await self._get_messages(task, ctx=ctx, target_name=target_name)
         step_number = 0
+        action_errors: list = []
         response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_step:
             logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
+            reason, constraint_status = await self._constraint_check(task_id, ctx)
+            if reason is not None:
+                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
+                response = {"done": True, "result": reason, "reasoning": None,
+                            "action_errors": [], "stopped_by_constraint": True}
+                break
+            messages = await self._get_messages(
+                task,
+                ctx=ctx,
+                target_name=target_name,
+                step_number=step_number,
+                action_errors=action_errors,
+                constraint_status=constraint_status,
+            )
             response = await self._think_and_act(
                 messages, task_id, step_number, ctx=ctx, target_name=target_name
             )
             step_number += 1
             action_errors = response.get("action_errors") or []
-            if response.get("stopped_by_constraint"):
-                break
             if response["done"]:
                 from src.utils import get_project_root
                 await hook_manager(
@@ -162,13 +174,6 @@ class SkillOptimizeAgent(Agent):
                     ctx=ctx,
                 )
                 break
-            messages = await self._get_messages(
-                task,
-                ctx=ctx,
-                target_name=target_name,
-                action_errors=action_errors,
-                constraint_status=response.get("constraint_status"),
-            )
 
         if step_number >= self.max_step and not response["done"]:
             logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")

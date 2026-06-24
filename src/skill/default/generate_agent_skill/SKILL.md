@@ -46,7 +46,9 @@ Rules:
 Write to `{project_root}/src/prompt/extended/{agent_name}.html` based on `html_prompt_template.html`.
 
 Fill in: `<profile>`, `<domain-rules>`, `<output-schema>` with agent-specific content.
-Keep `{{ agent_context }}`, `{{ tool_context }}`, `{{ skill_context }}` as-is.
+Keep the `<div class="user">` block as-is: `<agent-context>` with its sub-modules
+(`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`),
+plus `<domain-target>`, `<tool-context>` (`{{ available_tools }}`) and `<skill-context>` (`{{ available_skills }}`) as siblings.
 
 ### Step 5: Write the config dict
 

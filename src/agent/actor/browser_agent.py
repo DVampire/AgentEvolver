@@ -113,13 +113,12 @@ class BrowserAgent(Agent):
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
         browser_state = kwargs.get("browser_state")
-        state_text = browser_state.get("state") if browser_state else "[Browser state unavailable.]"
-        base["agent_context"] += f"\n\n### Browser State\n{state_text}"
+        base["browser_state"] = browser_state.get("state") if browser_state else "[Browser state unavailable.]"
+
+        base["workspace"] = self._workspace_snapshot(ctx)
 
         action_errors = kwargs.get("action_errors") or []
-        if action_errors:
-            error_lines = "\n".join(f"- {e}" for e in action_errors)
-            base["agent_context"] += f"\n\n### Previous Step Errors\n{error_lines}"
+        base["errors"] = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
 
         base.update(await self._get_environment_context())
         return base
@@ -223,27 +222,34 @@ class BrowserAgent(Agent):
             ctx=ctx,
         )
 
-        browser_state = await self._observe(ctx)
-        messages = await self._get_messages(enhanced_task, ctx=ctx, browser_state=browser_state)
-
         step_number = 0
+        action_errors: list = []
         response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_step:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_step}")
-            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
-            step_number += 1
-            if response["done"]:
+            reason, constraint_status = await self._constraint_check(task_id, ctx)
+            if reason is not None:
+                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
+                response = {"done": True, "result": reason, "reasoning": None,
+                            "action_errors": [], "stopped_by_constraint": True}
                 break
-            # Observe after acting so the next round reasons over the fresh page
+            # Observe the fresh page before reasoning over it
             browser_state = await self._observe(ctx)
             messages = await self._get_messages(
                 enhanced_task,
                 ctx=ctx,
+                files=files,
                 browser_state=browser_state,
-                action_errors=response.get("action_errors") or [],
-                constraint_status=response.get("constraint_status"),
+                step_number=step_number,
+                action_errors=action_errors,
+                constraint_status=constraint_status,
             )
+            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
+            step_number += 1
+            action_errors = response.get("action_errors") or []
+            if response["done"]:
+                break
 
         if step_number >= self.max_step and not response["done"]:
             logger.warning(f"| 🛑 Reached max steps ({self.max_step}), stopping...")
