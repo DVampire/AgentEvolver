@@ -52,8 +52,10 @@ class PromptContextManager(BaseModel):
         self.contract_path = assemble_project_path(contract_path) if contract_path else os.path.join(self.base_dir, "contract.md")
 
         _src_dir = Path(__file__).resolve().parent
+        # Built-in prompts live in the default/ dir; extension prompts are managed
+        # externally (loaded by ExtensionManager into the active version).
         self.default_prompt_dir = default_prompt_dir or str(_src_dir / "default")
-        self.extended_prompt_dir = extended_prompt_dir or str(_src_dir / "extended")
+        self.extended_prompt_dir = extended_prompt_dir or assemble_project_path(os.path.join("extension", "prompt"))
 
         logger.info(f"| 📁 Prompt context manager base_dir={self.base_dir} save_path={self.save_path}")
 

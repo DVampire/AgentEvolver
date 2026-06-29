@@ -7,10 +7,10 @@ type: sop
 
 # Generate Environment Skill
 
-Creates a new environment under `src/environment/extended/` following the project's environment convention.
+Creates a new environment under `extension/environment/` following the project's environment convention.
 
 An **environment** is an action provider: a registered class exposing actions (methods decorated with `@environment_manager.action`) plus a `get_state` method and `initialize`/`cleanup` lifecycle hooks. It is NOT LLM-driven and has **no HTML prompt**. Generation produces **2 files**:
-- `src/environment/extended/{name}.py` — the Python class
+- `extension/environment/{name}.py` — the Python class
 - `configs/environments/{name}.py` — the config dict
 
 ## Instructions
@@ -21,7 +21,7 @@ Read `{skill_dir}/references/environment_template.py` to learn the required stru
 
 ### Step 2: Write the Python class file
 
-Write to `{project_root}/src/environment/extended/{environment_name}.py`.
+Write to `{project_root}/extension/environment/{environment_name}.py`.
 
 Rules:
 - Use **single quotes** for all string literals.
@@ -46,35 +46,32 @@ my_environment = dict(
 )
 ```
 
-### Step 4: Update `__init__.py`
+### Step 4: Verify syntax
 
-Edit `{project_root}/src/environment/extended/__init__.py` to import the new class so it is registered on package import.
+Run: `python -m py_compile {project_root}/extension/environment/{environment_name}.py && echo "OK"`
 
-### Step 5: Verify syntax
+### Step 5: Call done_tool
 
-Run: `python -m py_compile {project_root}/src/environment/extended/{environment_name}.py && echo "OK"`
-
-### Step 6: Call done_tool
-
-Specify the Python file path in `reasoning` so the environment is auto-registered:
-`reasoning: "src/environment/extended/{name}.py"`
+Specify the Python file path in `reasoning` so the environment is auto-registered (the
+ExtensionManager registers it and archives the version automatically — there is no
+`__init__.py` to edit):
+`reasoning: "extension/environment/{name}.py"`
 
 ## Workflow
 
 ```
 - [ ] Step 1: Read references/environment_template.py
-- [ ] Step 2: Write src/environment/extended/{environment_name}.py
+- [ ] Step 2: Write extension/environment/{environment_name}.py
 - [ ] Step 3: Write configs/environments/{environment_name}.py
-- [ ] Step 4: Update src/environment/extended/__init__.py
-- [ ] Step 5: Verify syntax with py_compile
-- [ ] Step 6: Call done_tool with the Python file path in reasoning
+- [ ] Step 4: Verify syntax with py_compile
+- [ ] Step 5: Call done_tool with the Python file path in reasoning
 ```
 
 ## Output Template
 
 ```
 Generated environment: {environment_name}
-Python: src/environment/extended/{environment_name}.py
+Python: extension/environment/{environment_name}.py
 Config: configs/environments/{environment_name}.py
 Actions: {comma-separated action names}
 ```

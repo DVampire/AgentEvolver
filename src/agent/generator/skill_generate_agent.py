@@ -19,7 +19,7 @@ class SkillGenerateAgent(Agent):
     """Agent that generates a new skill directory and SKILL.md from a natural-language description.
 
     Receives a generation task from MetaAgent describing what the skill should do,
-    creates the skill directory under src/skill/extended/, writes SKILL.md (and optional
+    creates the skill directory under extension/skill/, writes SKILL.md (and optional
     scripts/resources), registers the skill via skill_manager, and reports back via done_tool.
     """
 
@@ -80,8 +80,8 @@ class SkillGenerateAgent(Agent):
         lines = []
         if target_name:
             lines.append(f"- **Requested Skill Name**: `{target_name}`")
-            lines.append(f"- **Target Directory**: `src/skill/extended/{target_name}/`")
-            lines.append(f"- **SKILL.md Path**: `src/skill/extended/{target_name}/SKILL.md`")
+            lines.append(f"- **Target Directory**: `extension/skill/{target_name}/`")
+            lines.append(f"- **SKILL.md Path**: `extension/skill/{target_name}/SKILL.md`")
             existing = await skill_manager.get_info(target_name)
             if existing:
                 lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
@@ -89,8 +89,8 @@ class SkillGenerateAgent(Agent):
                 lines.append("- **Status**: not yet registered — create from scratch")
         else:
             lines.append("- **Requested Skill Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Target Directory**: `src/skill/extended/<inferred_name>/`")
-            lines.append("- **SKILL.md Path**: `src/skill/extended/<inferred_name>/SKILL.md`")
+            lines.append("- **Target Directory**: `extension/skill/<inferred_name>/`")
+            lines.append("- **SKILL.md Path**: `extension/skill/<inferred_name>/SKILL.md`")
 
         base["generation_target"] = "\n".join(lines)
 

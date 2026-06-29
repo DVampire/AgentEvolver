@@ -87,7 +87,7 @@ class HookContextManager:
         self, hook_names: Optional[List[str]] = None
     ) -> Dict[str, HookConfig]:
         """Load hook classes from the HOOK registry and build HookConfig objects."""
-        import src.hook.default  # ensure all default hooks are imported/registered
+        import src.hook  # ensure all default hooks are imported/registered
         from src.registry import HOOK
         from src.config import config
 

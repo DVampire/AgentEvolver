@@ -144,7 +144,10 @@ sys.path.insert(0, '{{ project_root }}')
 async def main():
     # Integration test
     try:
-        from src.agent.extended.TARGET_MODULE import TargetClass
+        import importlib.util
+        _spec = importlib.util.spec_from_file_location("ext_agent", '{{ project_root }}/extension/agent/TARGET_MODULE.py')
+        _mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+        TargetClass = _mod.TargetClass
         import tempfile, os
         tmp_dir = tempfile.mkdtemp()
         agent = TargetClass(

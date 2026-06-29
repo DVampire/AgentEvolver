@@ -7,12 +7,12 @@ type: sop
 
 # Generate Skill Skill
 
-Creates a new skill directory under `src/skill/extended/` following the project's skill convention.
+Creates a new skill directory under `extension/skill/` following the project's skill convention.
 
 ## Skill Directory Structure
 
 ```
-src/skill/extended/{skill_name}/
+extension/skill/{skill_name}/
 ├── SKILL.md          # REQUIRED — YAML frontmatter + step-by-step instructions
 ├── resources/        # optional — runtime data files (JSON, MD) loaded by scripts at runtime
 ├── scripts/          # optional — executable Python scripts invoked via bash_tool
@@ -38,7 +38,7 @@ Read `{skill_dir}/references/skill_md_template.md` to understand the required SK
 
 ### Step 3: Write SKILL.md
 
-Write `{project_root}/src/skill/extended/{skill_name}/SKILL.md`.
+Write `{project_root}/extension/skill/{skill_name}/SKILL.md`.
 
 Rules:
 - Frontmatter must include: `name`, `description`, `version: 1.0.0`, `type: sop`.
@@ -60,14 +60,14 @@ Check all required fields are present and valid.
 ### Step 6: Call done_tool
 
 Include the skill directory path in `reasoning`:
-`reasoning: "Generated src/skill/extended/{skill_name}/. SKILL.md verified."`
+`reasoning: "Generated extension/skill/{skill_name}/. SKILL.md verified."`
 
 ## Workflow
 
 ```
 - [ ] Step 1: Determine skill name
 - [ ] Step 2: Read resources/skill_md_template.md
-- [ ] Step 3: Write src/skill/extended/{skill_name}/SKILL.md
+- [ ] Step 3: Write extension/skill/{skill_name}/SKILL.md
 - [ ] Step 4: Create resources/ scripts/ references/ examples/ as needed
 - [ ] Step 5: Verify YAML frontmatter
 - [ ] Step 6: Call done_tool with skill directory path in reasoning
@@ -77,7 +77,7 @@ Include the skill directory path in `reasoning`:
 
 ```
 Generated skill: {skill_name}
-Directory: src/skill/extended/{skill_name}/
+Directory: extension/skill/{skill_name}/
 Type: sop
 Description: {one-line description}
 ```

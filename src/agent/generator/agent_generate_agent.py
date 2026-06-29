@@ -77,8 +77,8 @@ class AgentGenerateAgent(Agent):
         lines = []
         if target_name:
             lines.append(f"- **Requested Agent Name**: `{target_name}`")
-            lines.append(f"- **Python Class File**: `src/agent/extended/{target_name}.py`")
-            lines.append(f"- **HTML Prompt File**: `src/prompt/extended/{target_name}.html` (tool-calling only)")
+            lines.append(f"- **Python Class File**: `extension/agent/{target_name}.py`")
+            lines.append(f"- **HTML Prompt File**: `extension/prompt/{target_name}.html` (tool-calling only)")
             lines.append(f"- **Config File**: `configs/agents/{target_name}.py`")
             existing = await agent_manager.get_info(target_name)
             if existing:
@@ -87,8 +87,8 @@ class AgentGenerateAgent(Agent):
                 lines.append("- **Status**: not yet registered — create from scratch")
         else:
             lines.append("- **Requested Agent Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Python Class File**: `src/agent/extended/<inferred_name>.py`")
-            lines.append("- **HTML Prompt File**: `src/prompt/extended/<inferred_name>.html` (tool-calling only)")
+            lines.append("- **Python Class File**: `extension/agent/<inferred_name>.py`")
+            lines.append("- **HTML Prompt File**: `extension/prompt/<inferred_name>.html` (tool-calling only)")
             lines.append("- **Config File**: `configs/agents/<inferred_name>.py`")
 
         base["generation_target"] = "\n".join(lines)

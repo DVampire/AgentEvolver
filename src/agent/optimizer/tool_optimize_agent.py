@@ -19,7 +19,7 @@ class ToolOptimizeAgent(Agent):
     """Agent that evolves tool source code to satisfy an evolution task.
 
     Receives an evolution task from MetaAgent, iteratively reads / edits the target
-    tool's .py file under src/tool/extended/ using standard file/bash tools, verifies
+    tool's .py file under extension/tool/ using standard file/bash tools, verifies
     the change, and reports back via done_tool — identical execution loop to CodeAgent.
     """
 

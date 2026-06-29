@@ -16,7 +16,7 @@ class EnvironmentGenerateAgent(Agent):
     """Agent that generates a new environment from a natural-language description.
 
     An environment is an action provider (not LLM-driven), so generation produces
-    2 files: a Python class under ``src/environment/extended/`` and a config dict
+    2 files: a Python class under ``extension/environment/`` and a config dict
     under ``configs/environments/``. Environments have NO HTML prompt.
     """
 
@@ -78,7 +78,7 @@ class EnvironmentGenerateAgent(Agent):
         lines = []
         if target_name:
             lines.append(f"- **Requested Environment Name**: `{target_name}`")
-            lines.append(f"- **Python Class File**: `src/environment/extended/{target_name}.py`")
+            lines.append(f"- **Python Class File**: `extension/environment/{target_name}.py`")
             lines.append(f"- **Config File**: `configs/environments/{target_name}.py`")
             existing = await environment_manager.get_info(target_name)
             if existing:
@@ -87,7 +87,7 @@ class EnvironmentGenerateAgent(Agent):
                 lines.append("- **Status**: not yet registered — create from scratch")
         else:
             lines.append("- **Requested Environment Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Python Class File**: `src/environment/extended/<inferred_name>.py`")
+            lines.append("- **Python Class File**: `extension/environment/<inferred_name>.py`")
             lines.append("- **Config File**: `configs/environments/<inferred_name>.py`")
 
         base["generation_target"] = "\n".join(lines)

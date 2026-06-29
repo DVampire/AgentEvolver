@@ -29,33 +29,23 @@ class ToolRegistrationHook(Hook):
             return HookResult.block(f"[registration failed] {msg}\nInclude the file path in done_tool reasoning and call done_tool again.")
 
         try:
-            from src.tool.server import tool_manager
-            from src.dynamic import dynamic_manager
-            with open(tool_path, "r") as f:
-                code = f.read()
-            new_cls = dynamic_manager.load_class(code, context="tool")
-            new_cls.__source_file__ = tool_path
-            inferred_name = getattr(new_cls, "name", None) or target_name or new_cls.__name__
-            existing = await tool_manager.get_info(inferred_name)
-            if existing:
-                await tool_manager.update(target_name=inferred_name, tool=new_cls, config=existing.config or {}, code=code)
-                logger.info(f"| 🔄 ToolRegistrationHook: '{inferred_name}' updated (re-registered)")
-            else:
-                await tool_manager.register(tool=new_cls, config={}, code=code, override=True)
-                logger.info(f"| 🔄 ToolRegistrationHook: '{inferred_name}' registered from {tool_path}")
+            from src.extension import extension_manager
+            name = await extension_manager.add_component("tool", tool_path)
+            logger.info(f"| 🔄 ToolRegistrationHook: '{name}' registered from {tool_path}")
             return HookResult.allow()
         except Exception as e:
             logger.warning(f"| ⚠️  ToolRegistrationHook: {e}")
             return HookResult.block(f"[registration failed] {e}\nPlease fix the code and call done_tool again.")
 
     def _resolve_tool_path(self, target_name: Optional[str], reasoning: str, project_root: str) -> Optional[str]:
+        from src.extension import extension_manager
         for token in reasoning.split():
             token = token.strip(".,;:()")
-            if "src/tool/extended/" in token and token.endswith(".py"):
+            if "extension/" in token and "/tool/" in token and token.endswith(".py"):
                 candidate = token if token.startswith("/") else os.path.join(project_root, token)
                 if os.path.exists(candidate):
                     return candidate
-        if target_name and project_root:
-            path = os.path.join(project_root, "src", "tool", "extended", f"{target_name}.py")
+        if target_name:
+            path = extension_manager.stage_path("tool", f"{target_name}.py")
             return path if os.path.exists(path) else None
         return None

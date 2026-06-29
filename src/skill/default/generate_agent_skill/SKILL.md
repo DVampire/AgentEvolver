@@ -7,19 +7,19 @@ type: sop
 
 # Generate Agent Skill
 
-Creates a new agent under `src/agent/extended/` following the project's agent convention.
+Creates a new agent under `extension/agent/` following the project's agent convention.
 
 ## Instructions
 
 ### Step 1: Decide agent type
 
 **Tool-calling agent** — LLM drives each step freely. Generates 3 files:
-- `src/agent/extended/{name}.py`
-- `src/prompt/extended/{name}.html`
+- `extension/agent/{name}.py`
+- `extension/prompt/{name}.html`
 - `configs/agents/{name}.py`
 
 **Workflow agent** — fixed sequential steps in Python. Generates 2 files:
-- `src/agent/extended/{name}.py`
+- `extension/agent/{name}.py`
 - `configs/agents/{name}.py`
 
 Choose tool-calling for open-ended tasks; workflow for fixed, predictable pipelines.
@@ -32,7 +32,7 @@ Choose tool-calling for open-ended tasks; workflow for fixed, predictable pipeli
 
 ### Step 3: Write the Python class file
 
-Write to `{project_root}/src/agent/extended/{agent_name}.py`.
+Write to `{project_root}/extension/agent/{agent_name}.py`.
 
 Rules:
 - Use **single quotes** for all string literals.
@@ -43,7 +43,7 @@ Rules:
 
 ### Step 4: Write the HTML prompt (tool-calling only)
 
-Write to `{project_root}/src/prompt/extended/{agent_name}.html` based on `html_prompt_template.html`.
+Write to `{project_root}/extension/prompt/{agent_name}.html` based on `html_prompt_template.html`.
 
 Fill in: `<profile>`, `<domain-rules>`, `<output-schema>` with agent-specific content.
 Keep the `<div class="user">` block as-is: `<agent-context>` with its sub-modules
@@ -54,30 +54,26 @@ plus `<domain-target>`, `<tool-context>` (`{{ available_tools }}`) and `<skill-c
 
 Write to `{project_root}/configs/agents/{agent_name}.py`.
 
-### Step 6: Update `__init__.py`
+### Step 6: Verify syntax
 
-Edit `{project_root}/src/agent/extended/__init__.py` to import the new class.
+Run: `python -m py_compile {project_root}/extension/agent/{agent_name}.py && echo "OK"`
 
-### Step 7: Verify syntax
+### Step 7: Call done_tool
 
-Run: `python -m py_compile {project_root}/src/agent/extended/{agent_name}.py && echo "OK"`
-
-### Step 8: Call done_tool
-
-Specify type and file paths in `reasoning`:
-`reasoning: "type=tool_calling src/agent/extended/{name}.py src/prompt/extended/{name}.html"`
+Specify type and file paths in `reasoning` (the ExtensionManager registers the agent and
+its prompt and archives the version automatically — there is no `__init__.py` to edit):
+`reasoning: "type=tool_calling extension/agent/{name}.py extension/prompt/{name}.html"`
 
 ## Workflow
 
 ```
 - [ ] Step 1: Decide type (tool_calling / workflow)
-- [ ] Step 2: Read appropriate template(s) from resources/
-- [ ] Step 3: Write src/agent/extended/{agent_name}.py
-- [ ] Step 4: Write src/prompt/extended/{agent_name}.html (tool-calling only)
+- [ ] Step 2: Read appropriate template(s) from references/
+- [ ] Step 3: Write extension/agent/{agent_name}.py
+- [ ] Step 4: Write extension/prompt/{agent_name}.html (tool-calling only)
 - [ ] Step 5: Write configs/agents/{agent_name}.py
-- [ ] Step 6: Update src/agent/extended/__init__.py
-- [ ] Step 7: Verify syntax with py_compile
-- [ ] Step 8: Call done_tool with type and file paths in reasoning
+- [ ] Step 6: Verify syntax with py_compile
+- [ ] Step 7: Call done_tool with type and file paths in reasoning
 ```
 
 ## Output Template
@@ -85,7 +81,7 @@ Specify type and file paths in `reasoning`:
 ```
 Generated agent: {agent_name}
 Type: {tool_calling | workflow}
-Python: src/agent/extended/{agent_name}.py
-Prompt: src/prompt/extended/{agent_name}.html (if tool-calling)
+Python: extension/agent/{agent_name}.py
+Prompt: extension/prompt/{agent_name}.html (if tool-calling)
 Config: configs/agents/{agent_name}.py
 ```

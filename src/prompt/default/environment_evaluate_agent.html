@@ -138,7 +138,10 @@ sys.path.insert(0, '{{ project_root }}')
 async def main():
     try:
         from src.environment.server import environment_manager
-        from src.environment.extended.TARGET_MODULE import TargetClass
+        import importlib.util
+        _spec = importlib.util.spec_from_file_location("ext_env", '{{ project_root }}/extension/environment/TARGET_MODULE.py')
+        _mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+        TargetClass = _mod.TargetClass
         await environment_manager.register(env_cls=TargetClass, env_config_dict={}, override=True)
         env = await environment_manager.get(TargetClass.model_fields['name'].default)
         assert env is not None, 'environment_manager.get returned None'

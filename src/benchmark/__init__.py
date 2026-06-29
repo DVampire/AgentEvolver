@@ -1,7 +1,6 @@
 from .types import Benchmark, BenchmarkConfig
 from .server import benchmark_manager, BenchmarkManager
 from .default import *
-from .extended import *
 
 __all__ = [
     "Benchmark",

@@ -29,22 +29,24 @@ class SkillRegistrationHook(Hook):
             return HookResult.block(f"[registration failed] {msg}\nInclude the skill directory path in done_tool reasoning and call done_tool again.")
 
         try:
-            from src.skill.server import skill_manager
-            await skill_manager.register(skill_dir=skill_dir, override=True)
-            logger.info(f"| 🔄 SkillRegistrationHook: '{target_name}' registered from {skill_dir}")
+            from src.extension import extension_manager
+            name = await extension_manager.add_component("skill", skill_dir)
+            logger.info(f"| 🔄 SkillRegistrationHook: '{name}' registered from {skill_dir}")
             return HookResult.allow()
         except Exception as e:
             logger.warning(f"| ⚠️  SkillRegistrationHook: {e}")
             return HookResult.block(f"[registration failed] {e}\nPlease fix the issue and call done_tool again.")
 
     def _resolve_skill_dir(self, target_name: Optional[str], reasoning: str, project_root: str) -> Optional[str]:
+        from src.extension import extension_manager
         for token in reasoning.split():
-            if "src/skill/extended/" in token:
+            if "extension/" in token and "/skill/" in token:
                 candidate = token.strip(".,;:()")
                 if not candidate.startswith("/"):
                     candidate = os.path.join(project_root, candidate)
                 if os.path.isdir(candidate.rstrip("/")):
                     return candidate.rstrip("/")
-        if target_name and project_root:
-            return os.path.join(project_root, "src", "skill", "extended", target_name)
+        if target_name:
+            path = extension_manager.stage_path("skill", target_name)
+            return path if os.path.isdir(path) else None
         return None

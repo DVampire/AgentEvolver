@@ -62,8 +62,10 @@ class SkillContextManager(BaseModel):
             self.contract_path = os.path.join(self.base_dir, "contract.md")
 
         _src_dir = Path(__file__).resolve().parent
+        # Built-in skills live in the default/ dir; extension skills are managed
+        # externally (loaded by ExtensionManager into the active version).
         self.default_skills_dir = default_skills_dir or str(_src_dir / "default")
-        self.extended_skills_dir = extended_skills_dir or str(_src_dir / "extended")
+        self.extended_skills_dir = extended_skills_dir or assemble_project_path(os.path.join("extension", "skill"))
 
         self._skill_configs: Dict[str, SkillConfig] = {}
         self._skill_history_versions: Dict[str, Dict[str, SkillConfig]] = {}

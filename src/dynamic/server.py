@@ -688,8 +688,56 @@ class DynamicModuleManager:
         if base_class is not None:
             if not issubclass(cls, base_class):
                 raise ValueError(f"Class {class_name} is not a subclass of {base_class.__name__}")
-        
+
         return cls
+
+    def load_class_from_path(self,
+                             file_path: str,
+                             class_name: Optional[str] = None,
+                             base_class: Optional[Type[T]] = None,
+                             module_name: Optional[str] = None,
+                             context: Optional[str] = None,
+                             inject_imports: Optional[Dict[str, Any]] = None) -> Type[T]:
+        """Load a class from a Python file on disk.
+
+        Thin wrapper over :meth:`load_class` that reads the file first. Pass an
+        explicit, version-scoped ``module_name`` (e.g. ``ext.v1_0_0.tool.calculator``)
+        so dynamically loaded extensions never collide in ``sys.modules`` across
+        versions and can be cleanly unloaded with :meth:`unload_module`.
+
+        Args:
+            file_path: Path to the .py file containing the class.
+            class_name: Class to extract (auto-detected from base_class if None).
+            base_class: Optional base class to validate against.
+            module_name: Optional explicit (version-scoped) module name.
+            context: Optional context ("tool"/"agent"/...) for auto-injection.
+            inject_imports: Optional manual import injections.
+
+        Returns:
+            The loaded class.
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
+            code = f.read()
+        # Force a fresh load when an explicit module_name is reused (hot-reload).
+        if module_name is not None and module_name in self._loaded_modules:
+            self.unload_module(module_name)
+        return self.load_class(
+            code,
+            class_name=class_name,
+            base_class=base_class,
+            module_name=module_name,
+            context=context,
+            inject_imports=inject_imports,
+        )
+
+    def unload_module(self, module_name: str) -> None:
+        """Remove a dynamically loaded virtual module from memory and sys.modules.
+
+        Used when hot-unloading / swapping an extension version so stale code does
+        not linger. Safe to call on unknown module names.
+        """
+        self._loaded_modules.pop(module_name, None)
+        sys.modules.pop(module_name, None)
     
     def load_function(self, 
                       code: str, 

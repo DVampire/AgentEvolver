@@ -8,39 +8,36 @@ A self-evolving multi-agent framework. A MetaAgent orchestrates sub-agents to co
 ```
 AgentEvolver/
 ├── src/                    # Core framework source
-│   ├── agent/              # All agent implementations
+│   ├── agent/              # All agent implementations (built-ins only; evolved → extension/)
 │   │   ├── actor/          # MetaAgent, CodeAgent, ReasonActAgent
 │   │   ├── optimizer/      # Agents that evolve existing source code
 │   │   ├── evaluator/      # Agents that assess quality
 │   │   ├── generator/      # Agents that create new agents/tools/skills
-│   │   ├── extended/       # Generated agents (auto-created, do not edit manually)
 │   │   ├── types.py        # Base Agent class, AgentContext, AgentResponse
 │   │   └── server.py       # AgentManagerServer (agent_manager singleton)
 │   ├── tool/               # Tool implementations
 │   │   ├── default/        # Built-in tools (bash, read/write/edit file, git, done, ...)
-│   │   ├── extended/       # Generated/evolved tools
 │   │   ├── workflow/       # Workflow tools (todo)
 │   │   ├── types.py        # Base Tool class, ToolResponse
 │   │   └── server.py       # ToolManagerServer (tool_manager singleton)
 │   ├── prompt/             # Prompt templates (one per agent)
-│   │   ├── default/        # Built-in HTML prompts
-│   │   └── extended/       # Generated prompts (tool-calling agents)
+│   │   └── default/        # Built-in HTML prompts
 │   ├── skill/              # Skills (reusable multi-step SOP workflows)
-│   │   ├── default/        # Built-in skills (generate_agent_skill, ...)
-│   │   └── extended/       # Generated skills
+│   │   └── default/        # Built-in skills (generate_agent_skill, ...)
 │   ├── environment/        # Execution environments (browser, sandbox, ...)
 │   │   ├── default/        # Built-in environments
-│   │   ├── extended/       # Generated environments
 │   │   ├── sandbox.py      # Docker-backed sandbox (opensandbox-server)
 │   │   ├── types.py        # Base Environment class, EnvironmentContext
 │   │   └── server.py       # environment_manager singleton
-│   ├── benchmark/          # Benchmarks
+│   ├── benchmark/          # Benchmarks (stay in src; not hot-pluggable)
 │   │   ├── default/        # Built-in benchmarks (aime24/25, gpqa, gsm8k, hle,
 │   │   │                   #   leetcode, deepweb, programbench)
-│   │   ├── extended/       # Generated benchmarks
 │   │   ├── types.py        # Base Benchmark/Task/Stats, llm_judge helper
 │   │   ├── server.py       # benchmark_manager singleton
 │   │   └── utils.py        # clean_text + ensure_dataset (datasets-first/HF download)
+│   ├── extension/          # ExtensionManager — loads/evolves the external extension/ tree
+│   │   ├── types.py        # Manifest, ManifestComponent
+│   │   └── server.py       # extension_manager singleton
 │   ├── data/               # Dataset loaders (DATASET registry, one per dataset)
 │   ├── constraint/         # Run constraints (step/token/wall-time budgets)
 │   │   ├── default/        # Built-in constraints
@@ -75,6 +72,14 @@ AgentEvolver/
 │   ├── tools/              # Per-tool config fragments
 │   └── memory/             # Memory system config fragments
 ├── datasets/               # Vendored benchmark datasets (deepweb-bench, ...)
+├── extension/              # Hot-pluggable evolved content (OUTSIDE src/, loaded by ExtensionManager)
+│   ├── manifest.json       # active set: component -> active version + file (git-ignored)
+│   ├── tool/<name>.py      # active source — flat, normal paths
+│   ├── agent/<name>.py
+│   ├── prompt/<name>.html
+│   ├── skill/<name>/SKILL.md
+│   ├── environment/<name>.py
+│   └── .versions/<module>/<name>/<version>.<ext>   # version archive (git-ignored)
 ├── tests/                  # Unit and integration tests
 ├── examples/               # Runnable entry-point scripts
 │   └── run_meta_agent.py   # Main entry point — MetaAgent orchestrates everything
@@ -87,18 +92,19 @@ AgentEvolver/
 
 - **`{{ project_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
 - **`{{ work_dir }}`**: Per-run scratch directory for temporary files. Do not write source code here.
-- **`default/` vs `extended/`**: Modules that the framework can evolve (`agent`, `tool`, `prompt`, `skill`, `environment`, `benchmark`) split into `default/` (built-in, hand-written) and `extended/` (generated/evolved). `constraint`, `hook`, and `memory` currently ship `default/` only.
-- **Registries**: Evolvable components self-register with an mmengine `Registry` (in `src/registry.py`) via a class decorator, e.g. `@TOOL.register_module()`. The registry then resolves the class by name from config.
+- **Built-ins vs extensions**: Hand-written built-ins live in each module's `default/` folder inside `src/` (e.g. `src/tool/default/`). Generated/evolved components live OUTSIDE `src/`, in the external `extension/` tree, and are loaded at runtime by the **ExtensionManager**. `src/` stays immutable; `extension/` is mutable evolved content.
+- **Hot-plug / ExtensionManager** (`src/extension/`): On startup, after the component managers load their built-ins, `extension_manager.initialize()` layers the active extension set on top. Authoring writes a flat active file (`extension/<module>/<name>.py`); `extension_manager.add_component(...)` registers it via the owning `*_manager`, archives the version under `extension/.versions/`, and records the active version in `extension/manifest.json`. Multiple versions of a component coexist in `.versions/`; `extension_manager.rollback(module, name, version)` restores any of them. There is **no `__init__.py` to edit** for extensions — loading is by directory scan + dynamic import.
+- **Registries**: Components self-register with an mmengine `Registry` (in `src/registry.py`) via a class decorator, e.g. `@TOOL.register_module()`. Built-ins register at import time; extensions are registered at runtime by the ExtensionManager (which loads the class via `dynamic_manager` and calls `<module>_manager.register`).
 
 ## Conventions
 
 Follow these rules when adding or generating code so the framework can discover and evolve it.
 
-1. **Put generated files in the corresponding `extended/` folder.** Any newly generated component goes under its module's `extended/` directory — `src/tool/extended/`, `src/agent/extended/`, `src/prompt/extended/`, `src/skill/extended/`, `src/environment/extended/`, `src/benchmark/extended/`. Never edit `extended/` files by hand; they are auto-managed. Hand-written built-ins go in `default/` (or, for still-flat modules like `data`, directly in the module root).
+1. **Generated/evolved components go in the external `extension/` tree — never in `src/`.** Write the flat active file: `extension/tool/<name>.py`, `extension/agent/<name>.py` (+ `extension/prompt/<name>.html`), `extension/skill/<name>/SKILL.md`, `extension/environment/<name>.py`. The ExtensionManager registers it and archives the version automatically. **Do NOT edit any `__init__.py`** for extensions. Hand-written built-ins (shipped with the framework) still go in the module's `src/<module>/default/` folder.
 
-2. **Export the new class from the package `__init__.py`.** After creating a class, add it to the relevant `__init__.py` (both the `from .x import Y` import and the `__all__` list) — for an extended component, the `extended/__init__.py`; for a flat-module benchmark/dataset, the module's top-level `__init__.py`. A class that is not exported will not be importable or discoverable.
+2. **Built-ins are exported from `default/__init__.py`; extensions are not.** A new hand-written built-in must be imported in its module's `default/__init__.py` (import + `__all__`) so it registers at import time. Extension components are discovered by directory scan, so they need no `__init__.py` entry.
 
-3. **Register with the right Registry.** Decorate the class with the matching registry decorator so it can be built from config by name (see the table below).
+3. **Register with the right Registry.** Decorate the class with the matching registry decorator (see the table below). Built-ins register on import; extensions are registered at runtime by the ExtensionManager via the same registries.
 
 4. **Keep the module's `types.py` / `server.py` contract.** Subclass the base class in `types.py` and implement its abstract methods; do not bypass the module's `*_manager` singleton in `server.py`.
 

@@ -18,7 +18,7 @@ class ToolGenerateAgent(Agent):
     """Agent that generates a new tool from a natural-language description.
 
     Receives a generation task from MetaAgent describing what the new tool should do,
-    writes a new .py file under src/tool/extended/, verifies it, registers it, and
+    writes a new .py file under extension/tool/, verifies it, registers it, and
     reports back via done_tool.
     """
 
@@ -78,7 +78,7 @@ class ToolGenerateAgent(Agent):
         lines = []
         if target_name:
             lines.append(f"- **Requested Tool Name**: `{target_name}`")
-            lines.append(f"- **Target File**: `src/tool/extended/{target_name}.py`")
+            lines.append(f"- **Target File**: `extension/tool/{target_name}.py`")
             existing = await tool_manager.get_info(target_name)
             if existing:
                 lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
@@ -86,7 +86,7 @@ class ToolGenerateAgent(Agent):
                 lines.append("- **Status**: not yet registered — create from scratch")
         else:
             lines.append("- **Requested Tool Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Target File**: `src/tool/extended/<inferred_name>.py`")
+            lines.append("- **Target File**: `extension/tool/<inferred_name>.py`")
 
         base["generation_target"] = "\n".join(lines)
 

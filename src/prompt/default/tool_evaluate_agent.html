@@ -134,9 +134,12 @@ Follow this **exact 4-step workflow**. Do not deviate.
 - Use the template below as a starting point, filled in with the actual tool class and test cases.
 
 ```python
-import asyncio, sys, time
+import asyncio, sys, time, importlib.util
 sys.path.insert(0, '{{ project_root }}')
-from src.tool.extended.<tool_module> import <ToolClass>
+# Extension components live outside src/ — load from the file path, not as a package.
+_spec = importlib.util.spec_from_file_location("ext_tool", '{{ project_root }}/extension/tool/<tool_module>.py')
+_mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+<ToolClass> = _mod.<ToolClass>
 
 async def main():
     tool = <ToolClass>()

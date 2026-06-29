@@ -85,7 +85,7 @@ class EnvironmentEvaluateAgent(Agent):
         target_name = kwargs.get("target_name")
         if target_name:
             env_config = await environment_manager.get_info(target_name)
-            py_path = os.path.join(self.project_root, "src", "environment", "extended", f"{target_name}.py")
+            py_path = os.path.join(self.project_root, "extension", "environment", f"{target_name}.py")
             cfg_path = os.path.join(self.project_root, "configs", "environments", f"{target_name}.py")
 
             lines = [f"- **Environment Name**: `{target_name}`"]

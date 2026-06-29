@@ -7,7 +7,7 @@ type: sop
 
 # Generate Tool Skill
 
-Creates a new tool class under `src/tool/extended/` following the project's tool convention.
+Creates a new tool class under `extension/tool/` following the project's tool convention.
 
 ## Instructions
 
@@ -21,7 +21,7 @@ Read the template file at `{skill_dir}/references/tool_template.py` to understan
 
 ### Step 3: Write the tool file
 
-Write the new tool to `{project_root}/src/tool/extended/{tool_name}.py`.
+Write the new tool to `{project_root}/extension/tool/{tool_name}.py`.
 
 Rules:
 - Always use **single quotes** for all string literals — the code is stored in JSON and double quotes cause `SyntaxError`.
@@ -29,37 +29,33 @@ Rules:
 - The `name` field must exactly match the filename without `.py`.
 - Implement `async def __call__` returning `ToolResponse(success=..., message=..., extra=ToolExtra(data={...}))`.
 
-### Step 4: Update `__init__.py`
+### Step 4: Verify syntax
 
-Edit `{project_root}/src/tool/extended/__init__.py` to add the import and `__all__` entry.
-
-### Step 5: Verify syntax
-
-Run: `python -m py_compile {project_root}/src/tool/extended/{tool_name}.py && echo "OK"`
+Run: `python -m py_compile {project_root}/extension/tool/{tool_name}.py && echo "OK"`
 
 Fix any syntax errors before proceeding.
 
-### Step 6: Call done_tool
+### Step 5: Call done_tool
 
-Include the file path in `reasoning` so auto-registration works:
-`reasoning: "Generated src/tool/extended/{tool_name}.py. Syntax verified."`
+Include the file path in `reasoning` so auto-registration works (the ExtensionManager registers
+it and archives the version automatically — there is no `__init__.py` to edit):
+`reasoning: "Generated extension/tool/{tool_name}.py. Syntax verified."`
 
 ## Workflow
 
 ```
 - [ ] Step 1: Determine tool name (snake_case) and class name (PascalCase)
-- [ ] Step 2: Read resources/tool_template.py
-- [ ] Step 3: Write src/tool/extended/{tool_name}.py
-- [ ] Step 4: Update src/tool/extended/__init__.py
-- [ ] Step 5: Verify syntax with py_compile
-- [ ] Step 6: Call done_tool with file path in reasoning
+- [ ] Step 2: Read references/tool_template.py
+- [ ] Step 3: Write extension/tool/{tool_name}.py
+- [ ] Step 4: Verify syntax with py_compile
+- [ ] Step 5: Call done_tool with file path in reasoning
 ```
 
 ## Output Template
 
 ```
 Generated tool: {tool_name}
-File: src/tool/extended/{tool_name}.py
+File: extension/tool/{tool_name}.py
 Class: {ToolClass}
 Description: {one-line description}
 ```
