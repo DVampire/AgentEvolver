@@ -731,6 +731,7 @@ class LeetCodeBenchmark(Benchmark):
     
     name: str = Field(default="leetcode", description="The name of the benchmark")
     path: str = Field(default="datasets/leetcode", description="The path to the benchmark dataset")
+    hf_repo_id: Optional[str] = Field(default=None, description="HuggingFace repo to download the dataset from when missing locally. None: LeetCode data is sourced live via the browser, not HF.")
     language: str = Field(default="python3", description="Programming language for LeetCode (e.g., python3, cpp, java)")
     batch_size: int = Field(default=5, description="Number of tasks to batch before pushing to GitHub")
     
@@ -780,6 +781,10 @@ class LeetCodeBenchmark(Benchmark):
         try:
             self._submitter = CodeSubmitter(headless=False, base_dir=self.base_dir)
 
+            if self.hf_repo_id:
+                from src.benchmark.utils import ensure_dataset
+                import os
+                ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
             from src.data.leetcode import LeetCodeDataset
             # 1. 加载数据集
             dataset = LeetCodeDataset(

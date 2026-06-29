@@ -1,6 +1,4 @@
-import json
 import os
-import pathlib
 from typing import Optional, List, Dict
 
 from pydantic import Field, ConfigDict, PrivateAttr
@@ -30,6 +28,7 @@ class DeepWebBenchmark(Benchmark):
 
     name: str = Field(default="deepweb", description="The name of the benchmark")
     path: str = Field(default="datasets/deepweb-bench", description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default="deepweb-bench-anon/deepweb-bench", description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     _index: int = PrivateAttr(default=0)
@@ -42,14 +41,11 @@ class DeepWebBenchmark(Benchmark):
         os.makedirs(self.base_dir, exist_ok=True)
 
     async def initialize(self):
-        cases_path = pathlib.Path(__file__).resolve().parents[2] / self.path / "data" / "cases.jsonl"
-        records: List[Dict] = []
-        with open(cases_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    records.append(json.loads(line))
-        self._data_records = self._apply_slice(records)
+        from src.benchmark.utils import ensure_dataset
+        from src.data.deepweb import DeepWebDataset
+        local_dir = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
+        dataset = DeepWebDataset(path=local_dir)
+        self._data_records = self._apply_slice(dataset.data)
         await self.reset()
 
     async def reset(self) -> Optional[Task]:

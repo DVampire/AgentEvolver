@@ -1,13 +1,7 @@
 from .types import Benchmark, BenchmarkConfig
 from .server import benchmark_manager, BenchmarkManager
-from .aime24 import AIME24Benchmark
-from .aime25 import AIME25Benchmark
-from .gpqa import GPQABenchmark
-from .leetcode import LeetCodeBenchmark
-from .gsm8k import GSM8kBenchmark
-from .hle import HLEBenchmark
-from .deepweb import DeepWebBenchmark
-from .programbench import ProgramBenchmark
+from .default import *
+from .extended import *
 
 __all__ = [
     "Benchmark",

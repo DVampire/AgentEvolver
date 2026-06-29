@@ -38,6 +38,8 @@ class HLEBenchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="hle", description="The name of the benchmark")
+    path: str = Field(default="datasets/hle", description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default="cais/hle", description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     _index: int = PrivateAttr(default=0)
@@ -53,7 +55,9 @@ class HLEBenchmark(Benchmark):
     async def initialize(self):
         from datasets import load_dataset
         import pathlib
-        local_path = pathlib.Path(__file__).resolve().parents[2] / "datasets" / "hle"
+        from src.benchmark.utils import ensure_dataset
+        import os
+        local_path = pathlib.Path(ensure_dataset(os.path.basename(self.path), self.hf_repo_id))
         dataset = load_dataset(str(local_path), split="test")
         self._data_records = self._apply_slice(list(dataset))
         tags_path = local_path / "data" / "tags.json"

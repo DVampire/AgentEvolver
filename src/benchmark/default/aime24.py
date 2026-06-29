@@ -24,15 +24,16 @@ SYSTEM_PROMPT = dedent("""
 """)
 
 @BENCHMARK.register_module(force=True)
-class AIME25Benchmark(Benchmark):
+class AIME24Benchmark(Benchmark):
     """
-    AIME 2025 Benchmark implementation
+    AIME 2024 Benchmark implementation
     """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="aime25", description="The name of the benchmark")
-    path: str = Field(default="datasets/AIME25", description="The path to the benchmark dataset")
-    
+    name: str = Field(default="aime24", description="The name of the benchmark")
+    path: str = Field(default="datasets/AIME24", description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default="Maxwell-Jia/AIME_2024", description="HuggingFace repo to download the dataset from when it is missing locally.")
+
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     _index: int = PrivateAttr(default=0)
     _tasks: List[Task] = PrivateAttr(default_factory=list)
@@ -43,8 +44,11 @@ class AIME25Benchmark(Benchmark):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
     async def initialize(self):
-        from src.data.aime25 import AIME25Dataset
-        dataset = AIME25Dataset(
+        from src.benchmark.utils import ensure_dataset
+        import os
+        ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
+        from src.data.aime24 import AIME24Dataset
+        dataset = AIME24Dataset(
             path=self.path,
             name="all",
             split="test"
@@ -87,7 +91,7 @@ class AIME25Benchmark(Benchmark):
         
         task.result = clean_result
         task.ground_truth = clean_ground_truth
-        
+
         task.score = 1.0 if clean_result == clean_ground_truth and clean_result is not None else 0.0
         self._tasks.append(task)
         return task

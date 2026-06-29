@@ -4,6 +4,8 @@ from .GPQA import GPQADataset
 from .gsm8k import GSM8kDataset
 from .leetcode import LeetCodeDataset
 from .hle import HLEDataset
+from .deepweb import DeepWebDataset
+from .programbench import ProgramBenchDataset
 
 __all__ = [
     'AIME24Dataset',
@@ -12,4 +14,6 @@ __all__ = [
     'GSM8kDataset',
     'LeetCodeDataset',
     'HLEDataset',
+    'DeepWebDataset',
+    'ProgramBenchDataset',
 ]

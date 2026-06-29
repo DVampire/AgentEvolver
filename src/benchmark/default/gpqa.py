@@ -36,7 +36,8 @@ class GPQABenchmark(Benchmark):
     
     name: str = Field(default="gpqa", description="The name of the benchmark")
     path: str = Field(default="datasets/GPQA", description="The path to the benchmark dataset")
-    
+    hf_repo_id: str = Field(default="Idavidrein/gpqa", description="HuggingFace repo to download the dataset from when it is missing locally (gated — requires HF auth).")
+
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     _index: int = PrivateAttr(default=0)
     _tasks: List[Task] = PrivateAttr(default_factory=list)
@@ -47,6 +48,9 @@ class GPQABenchmark(Benchmark):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
     async def initialize(self):
+        from src.benchmark.utils import ensure_dataset
+        import os
+        ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
         from src.data.GPQA import GPQADataset
         dataset = GPQADataset(
             path=self.path,

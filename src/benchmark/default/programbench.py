@@ -36,6 +36,11 @@ class ProgramBenchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="programbench", description="The name of the benchmark")
+    # Task definitions (task.yaml/tests.json) ship with the `programbench` pip package.
+    # `path`/`hf_repo_id` govern the per-branch TEST BLOBS, read locally first and
+    # downloaded from HuggingFace on demand by the official evaluator.
+    path: str = Field(default="datasets/ProgramBench-Tests", description="Local directory holding the per-branch test blobs.")
+    hf_repo_id: str = Field(default="programbench/ProgramBench-Tests", description="HuggingFace repo to download the test blobs from when missing locally.")
 
     # Evaluation knobs (passed through to the `programbench eval` CLI)
     docker_cpus: int = Field(default=10, description="CPU cores allotted per docker container during evaluation.")
@@ -54,11 +59,16 @@ class ProgramBenchmark(Benchmark):
         os.makedirs(self.base_dir, exist_ok=True)
 
     async def initialize(self):
-        from programbench.utils.load_data import load_all_instances
-        instances = load_all_instances(include_tests=True)
-        self._instances = {i["instance_id"]: i for i in instances}
-        # Keep a lightweight record list (drop the heavy `branches`/tests payload from the prompt side).
-        self._data_records = self._apply_slice(instances)
+        # Ensure the test blobs exist locally (download from HF on first use), then
+        # point the official evaluator at them so it runs fully offline.
+        from src.benchmark.utils import ensure_dataset
+        blob_dir = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
+        os.environ["PROGRAMBENCH_BLOB_DIR"] = blob_dir
+
+        from src.data.programbench import ProgramBenchDataset
+        dataset = ProgramBenchDataset()
+        self._instances = dataset.instances
+        self._data_records = self._apply_slice(dataset.data)
         await self.reset()
 
     async def reset(self) -> Optional[Task]:

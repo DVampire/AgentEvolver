@@ -1,5 +1,3 @@
-import os
-import json
 import random
 import pandas as pd
 
@@ -9,127 +7,88 @@ from src.utils import assemble_project_path
 
 @DATASET.register_module(force=True)
 class GPQADataset:
-    def __init__(self, path, name, split):
+    def __init__(self, path, name="gpqa_diamond", split="test"):
         """
-        Initialize GPQA Dataset with Diamond/Extended/Main support.
-        
+        Initialize GPQA Dataset (HuggingFace `Idavidrein/gpqa` format — gated).
+
+        Reads from a local snapshot directory (downloaded by `ensure_dataset`).
+        Configs: gpqa_main / gpqa_diamond / gpqa_extended / gpqa_experts. Columns:
+        Question, Correct Answer, Incorrect Answer 1/2/3, Record ID, Subdomain.
+
         Args:
-            path: Base path to the dataset directory
-            name: "all" or specific subset ("GPQA_DIAMOND", "GPQA_EXTENDED", "GPQA_MAIN")
-            split: Dataset split ("test", "validation", "train")
+            path: Local dataset directory (the HF snapshot).
+            name: "all" or a specific config (e.g. "gpqa_diamond").
+            split: Preferred split; falls back to whatever split exists.
         """
+        from datasets import load_dataset, get_dataset_config_names
+
         self.path = path
         self.name = name
         self.split = split
 
-        # 1. Define known subset list
-        all_subsets = ["GPQA_DIAMOND", "GPQA_EXTENDED", "GPQA_MAIN"]
+        local_dir = assemble_project_path(path)
+        try:
+            all_configs = get_dataset_config_names(local_dir)
+        except Exception:
+            all_configs = []
 
-        # 2. Determine target subsets to load
-        if name == "all":
-            target_subsets = all_subsets
-        elif name in all_subsets:
-            target_subsets = [name]
+        if name and name != "all" and (name in all_configs or not all_configs):
+            target_configs = [name]
+        elif all_configs:
+            target_configs = all_configs
         else:
-            # Fault tolerance: try matching upper case if input is lower case
-            upper_name = name.upper()
-            if upper_name in all_subsets:
-                target_subsets = [upper_name]
-            else:
-                # Default fallback to all
-                print(f"[Warning] Unknown subset '{name}'. Loading all GPQA subsets.")
-                target_subsets = all_subsets
+            target_configs = ["gpqa_diamond"]
 
-        path = assemble_project_path(path)
         data_rows = []
-        
-        # Fixed random seed to ensure consistent option order (A/B/C/D mapping)
+        # Fixed seed so the A/B/C/D option order is reproducible across runs.
         rng = random.Random(42)
 
-        # 3. Iterate through subsets to load data
-        for subset_name in target_subsets:
-            # Expected directory structure: /path/split/GPQA_DIAMOND/metadata.jsonl
-            metadata_file = os.path.join(path, split, subset_name, "metadata.jsonl")
-            
-            if not os.path.exists(metadata_file):
-                print(f"[Warning] Metadata file not found for {subset_name}: {metadata_file}")
-                continue
+        for config in target_configs:
+            ds = load_dataset(local_dir, name=config)
+            split_name = split if split in ds else list(ds.keys())[0]
+            for i, row in enumerate(ds[split_name]):
+                q_text = str(row.get("Question", "")).strip()
+                correct_ans = str(row.get("Correct Answer", "")).strip()
+                if not q_text or not correct_ans:
+                    continue
 
-            with open(metadata_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    
-                    # --- GPQA specific data processing logic ---
+                choices = [correct_ans]
+                for j in range(1, 4):
+                    wrong = str(row.get(f"Incorrect Answer {j}", "")).strip()
+                    if wrong:
+                        choices.append(wrong)
+                if len(choices) < 2:
+                    continue
 
-                    # 1. Get basic info
-                    q_text = row.get("Question", "").strip()
-                    correct_ans = row.get("Correct Answer", "").strip()
-                    
-                    # 2. Collect all choices (Correct + 3 Incorrect)
-                    # Note: GPQA contains Incorrect Answer 1, 2, 3
-                    choices = [correct_ans]
-                    for i in range(1, 4):
-                        wrong = row.get(f"Incorrect Answer {i}", "").strip()
-                        if wrong:
-                            choices.append(wrong)
-                    
-                    # Validation: skip if fewer than 2 choices
-                    if len(choices) < 2:
-                        continue
+                rng.shuffle(choices)
+                try:
+                    correct_letter = chr(65 + choices.index(correct_ans))
+                except ValueError:
+                    continue
 
-                    # 3. Shuffle choices
-                    # Must shuffle, otherwise A will always be correct
-                    rng.shuffle(choices)
-                    
-                    # 4. Find position of correct answer in shuffled list, map to A-D
-                    try:
-                        correct_idx = choices.index(correct_ans)
-                        correct_letter = chr(65 + correct_idx) # 0->A, 1->B ...
-                    except ValueError:
-                        continue
+                options_str = "\n".join(f"{chr(65 + idx)}) {c}" for idx, c in enumerate(choices))
+                full_question_prompt = f"{q_text}\n\n{options_str}\nAnswer:"
 
-                    # 5. Construct Prompt text with options
-                    # Format:
-                    # [Question]
-                    # A) [Option1]
-                    # B) [Option2]
-                    # ...
-                    options_str_list = []
-                    for idx, choice_text in enumerate(choices):
-                        letter = chr(65 + idx)
-                        options_str_list.append(f"{letter}) {choice_text}")
-                    
-                    full_question_prompt = f"{q_text}\n\n" + "\n".join(options_str_list) + "\nAnswer:"
+                rec_id = str(row.get("Record ID", "") or f"{config}_{i + 1}")
+                data_rows.append({
+                    "task_id": rec_id,
+                    "question": full_question_prompt,
+                    "true_answer": correct_letter,
+                    "origin_answer": correct_ans,
+                    "task": "GPQA",
+                    "subset": config,
+                    "subdomain": str(row.get("Subdomain", "")),
+                    "file_name": "",
+                })
 
-                    # 6. Construct final data row
-                    # Use Record ID if available, otherwise generate one
-                    rec_id = row.get("Record ID", "")
-                    if not rec_id:
-                        rec_id = f"{subset_name}_{len(data_rows)+1}"
-                        
-                    data_row = {
-                        "task_id": rec_id,
-                        "question": full_question_prompt, # complete prompt containing choices
-                        "true_answer": correct_letter,    # e.g., "C"
-                        "origin_answer": correct_ans,     # (optional) keep original answer for debugging
-                        "task": "GPQA",
-                        "subset": subset_name,            # record source DIAMOND/MAIN/EXTENDED
-                        "subdomain": row.get("Subdomain", ""),
-                        "file_name": ""
-                    }
-                    
-                    data_rows.append(data_row)
-        
         self.data = pd.DataFrame(data_rows)
-    
+
     def __len__(self):
         return len(self.data)
-    
+
     def __getitem__(self, index):
         return self.data.iloc[index]
+
     def get_task_description(self):
         return """
 Answer the following multiple choice question. The last line of your response should be of the following format: 'Answer: $LETTER' (without quotes) where LETTER is one of ABCD. Think step by step before answering.
