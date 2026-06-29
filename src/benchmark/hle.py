@@ -133,6 +133,12 @@ class HLEBenchmark(Benchmark):
 
         task.result = result
         task.ground_truth = ground_truth
+
+        if self.model_name:
+            task.score = await self.llm_judge(task)
+            self._tasks.append(task)
+            return task
+
         task.score = 1.0 if result and is_same(result, ground_truth) else 0.0
 
         self._tasks.append(task)

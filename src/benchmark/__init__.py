@@ -6,6 +6,8 @@ from .gpqa import GPQABenchmark
 from .leetcode import LeetCodeBenchmark
 from .gsm8k import GSM8kBenchmark
 from .hle import HLEBenchmark
+from .deepweb import DeepWebBenchmark
+from .programbench import ProgramBenchmark
 
 __all__ = [
     "Benchmark",
@@ -18,4 +20,6 @@ __all__ = [
     "LeetCodeBenchmark",
     "GSM8kBenchmark",
     "HLEBenchmark",
+    "DeepWebBenchmark",
+    "ProgramBenchmark",
 ]

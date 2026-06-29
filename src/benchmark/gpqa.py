@@ -78,9 +78,14 @@ class GPQABenchmark(Benchmark):
         )
 
     async def eval(self, task: Task) -> Optional[Task]:
+        if self.model_name:
+            task.score = await self.llm_judge(task)
+            self._tasks.append(task)
+            return task
+
         result = str(task.result) if task.result is not None else ""
         ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
-        
+
         clean_result = clean_text(result) if result is not None else None
         clean_ground_truth = clean_text(ground_truth) if ground_truth is not None else None
         

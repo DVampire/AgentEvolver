@@ -6,7 +6,13 @@ import inflection
 from src.logger import logger
 from src.dynamic import dynamic_manager
 from src.config import config
-from src.utils import assemble_project_path
+from src.utils import assemble_project_path, dedent, is_same
+
+
+class JudgeResult(BaseModel):
+    """Structured output for the LLM-based answer judge."""
+    consistent: bool = Field(description="True if the predicted answer is consistent with the ground-truth answer.")
+    reason: str = Field(default="", description="A brief justification for the judgement.")
 
 class Task(BaseModel):
     """Data model for a single benchmark task"""
@@ -54,6 +60,9 @@ class Benchmark(BaseModel):
     start: Optional[int] = Field(default=None, description="Start index for slicing the dataset (inclusive). None means from the beginning.")
     end: Optional[int] = Field(default=None, description="End index for slicing the dataset (exclusive). None means to the last item.")
 
+    # Evaluation
+    model_name: Optional[str] = Field(default=None, description="If set, use this model (via model_manager) as an LLM judge to score each task instead of exact matching.")
+
     def __init__(self, base_dir: Optional[str] = None, start: Optional[int] = None, end: Optional[int] = None, **kwargs):
         """Initialize benchmark system."""
         super().__init__(start=start, end=end, **kwargs)
@@ -94,6 +103,61 @@ class Benchmark(BaseModel):
     async def eval(self, task: Task) -> Optional[Task]:
         """Public interface for single task evaluation."""
         raise NotImplementedError
+
+    async def llm_judge(self, task: Task) -> float:
+        """Score a task with an LLM judge.
+
+        Uses `self.model_name` to ask the model whether the predicted answer is
+        consistent with the ground-truth answer. Returns 1.0 if consistent, else 0.0.
+        Falls back to exact matching if the model call fails.
+        """
+        from src.model import model_manager
+        from src.message.types import SystemMessage, HumanMessage
+
+        pred = str(task.result).strip() if task.result is not None else ""
+        gt = str(task.ground_truth).strip() if task.ground_truth is not None else ""
+
+        if not pred:
+            return 0.0
+
+        system_prompt = dedent("""
+            You are a strict grader. You are given a question, a ground-truth answer,
+            and a predicted answer. Decide whether the predicted answer is consistent
+            with the ground-truth answer (i.e. they convey the same answer to the
+            question). Ignore differences in wording, formatting, or extra explanation.
+            Set "consistent" to true only if the predicted answer matches the
+            ground-truth answer; otherwise set it to false.
+        """)
+        user_prompt = dedent(f"""
+            [Question]
+            {task.input}
+
+            [Ground-truth answer]
+            {gt}
+
+            [Predicted answer]
+            {pred}
+        """)
+
+        try:
+            response = await model_manager(
+                name=self.model_name,
+                input={
+                    "messages": [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ],
+                    "response_format": JudgeResult,
+                },
+            )
+            if response.success and response.parsed_model is not None:
+                return 1.0 if response.parsed_model.consistent else 0.0
+            logger.warning(f"[{self.name}] LLM judge failed for task {task.task_id}: {response.message}")
+        except Exception as e:
+            logger.warning(f"[{self.name}] LLM judge error for task {task.task_id}: {e}")
+
+        # Fallback to exact match
+        return 1.0 if pred and is_same(pred, gt) else 0.0
 
     async def stats(self) -> Optional[Stats]:
         """Calculate current overall statistics."""

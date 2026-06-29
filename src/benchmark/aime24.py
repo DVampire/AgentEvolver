@@ -74,6 +74,11 @@ class AIME24Benchmark(Benchmark):
         )
 
     async def eval(self, task: Task) -> Optional[Task]:
+        if self.model_name:
+            task.score = await self.llm_judge(task)
+            self._tasks.append(task)
+            return task
+
         result = str(task.result) if task.result is not None else ""
         ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
 

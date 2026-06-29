@@ -216,3 +216,5 @@ work_dir/
 # Frontend
 src/trace/ui/node_modules/
 !src/trace/ui/dist/
+
+datasets/
