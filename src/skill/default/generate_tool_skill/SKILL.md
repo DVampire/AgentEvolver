@@ -2,7 +2,7 @@
 name: generate_tool_skill
 description: Guides an agent through generating a new tool Python class. Use when asked to create a new tool.
 version: 1.0.0
-type: sop
+type: worker
 ---
 
 # Generate Tool Skill

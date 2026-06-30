@@ -23,7 +23,7 @@ agent_names = [
 ]
 tool_names = [
     'bash_tool',
-    'python_interpreter_tool',
+    'code_interpreter_tool',
     'done_tool',
 ]
 skill_names = [

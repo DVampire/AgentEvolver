@@ -15,7 +15,7 @@ from src.version import version_manager
 from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
 from src.environment.types import Environment, EnvironmentConfig, ActionConfig, EnvironmentContext
-from src.environment.sandbox import SandboxServerManager
+from src.sandbox import SandboxServerManager
 from src.dynamic import dynamic_manager
 from src.registry import ENVIRONMENT
 

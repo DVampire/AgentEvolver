@@ -2,7 +2,7 @@
 name: generate_skill_skill
 description: Guides an agent through generating a new skill directory with SKILL.md. Use when asked to create a new skill.
 version: 1.0.0
-type: sop
+type: worker
 ---
 
 # Generate Skill Skill
@@ -41,7 +41,8 @@ Read `{skill_dir}/references/skill_md_template.md` to understand the required SK
 Write `{project_root}/extension/skill/{skill_name}/SKILL.md`.
 
 Rules:
-- Frontmatter must include: `name`, `description`, `version: 1.0.0`, `type: sop`.
+- Frontmatter must include: `name`, `description`, `version: 1.0.0`, and `type`.
+- `type` is one of: `worker` (a single-agent SOP — how ONE agent does a task; visible to sub-agents) or `orchestrator` (an agent-composition recipe — how the MetaAgent fans work across sub-agents; visible only to the MetaAgent). Most skills are `worker`. An `orchestrator` skill must stay agent-agnostic (describe roles, never hardcode agent names).
 - `description` must say what the skill does **and when an agent should use it**.
 - Instructions must be concrete and actionable — no vague directives.
 
@@ -78,6 +79,6 @@ Include the skill directory path in `reasoning`:
 ```
 Generated skill: {skill_name}
 Directory: extension/skill/{skill_name}/
-Type: sop
+Type: worker | orchestrator
 Description: {one-line description}
 ```

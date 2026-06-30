@@ -1,5 +1,5 @@
 from .bash import BashTool
-from .python_interpreter import PythonInterpreterTool
+from .code_interpreter import CodeInterpreterTool
 from .done import DoneTool
 from .web_fetcher import WebFetcherTool
 from .web_searcher import WebSearcherTool
@@ -14,7 +14,7 @@ from .grep_search import GrepSearchTool
 
 __all__ = [
     "BashTool",
-    "PythonInterpreterTool",
+    "CodeInterpreterTool",
     "DoneTool",
     "WebFetcherTool",
     "WebSearcherTool",

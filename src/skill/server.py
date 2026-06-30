@@ -194,9 +194,13 @@ class SkillManagerServer(BaseModel):
     # Context & Contract
     # ------------------------------------------------------------------
 
-    async def get_context(self, skill_names: Optional[List[str]] = None) -> str:
-        """Build the skill context string for prompt injection."""
-        return await self._ensure_context_manager().get_context(skill_names=skill_names)
+    async def get_context(self, skill_names: Optional[List[str]] = None, skill_types: Optional[List[str]] = None) -> str:
+        """Build the skill context string for prompt injection.
+
+        ``skill_types`` filters by frontmatter type (e.g. ["worker"] for sub-agents,
+        ["orchestrator"] for the MetaAgent).
+        """
+        return await self._ensure_context_manager().get_context(skill_names=skill_names, skill_types=skill_types)
 
     async def set_contract(self, skill_names: Optional[List[str]] = None):
         """Set the contract for all skills by aggregating their source code.

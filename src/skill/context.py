@@ -561,8 +561,16 @@ class SkillContextManager(BaseModel):
     # Context generation (for agent prompt)
     # ------------------------------------------------------------------
 
-    async def get_context(self, skill_names: Optional[List[str]] = None) -> str:
-        """Build the full skill context string for prompt injection."""
+    async def get_context(self, skill_names: Optional[List[str]] = None, skill_types: Optional[List[str]] = None) -> str:
+        """Build the full skill context string for prompt injection.
+
+        Args:
+            skill_names: if given, only these skills (by name).
+            skill_types: if given, only skills whose frontmatter ``type`` is in
+                this list (e.g. ``["worker"]`` or ``["orchestrator"]``). This is
+                the hard guardrail that keeps worker SOPs out of the MetaAgent's
+                context and orchestration recipes out of workers'.
+        """
         if not self._skill_configs:
             return ""
 
@@ -572,6 +580,8 @@ class SkillContextManager(BaseModel):
         for name in targets:
             cfg = self._skill_configs.get(name)
             if cfg is None:
+                continue
+            if skill_types and cfg.type not in skill_types:
                 continue
             parts.append(f"<skill name=\"{cfg.name}\">\n{cfg.text}\n</skill>")
 

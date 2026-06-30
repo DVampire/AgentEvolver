@@ -349,9 +349,16 @@ class Agent(BaseModel):
         tool_context = f"### Available Tools\n{available_tools}"
         return {"tool_context": tool_context, "available_tools": available_tools}
 
+    def _allowed_skill_types(self) -> List[str]:
+        """Which skill types this agent may see. Workers see 'worker' skills;
+        the MetaAgent overrides this to ['orchestrator']. This is the hard
+        guardrail that keeps the two skill audiences separate regardless of which
+        skills a run happens to load."""
+        return ["worker"]
+
     async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the skill context from loaded skills via skill manager."""
-        skill_content = await skill_manager.get_context()
+        skill_content = await skill_manager.get_context(skill_types=self._allowed_skill_types())
         available_skills = skill_content if skill_content else "[No skills loaded.]"
         skill_context = f"### Available Skills\n{available_skills}"
         return {"skill_context": skill_context, "available_skills": available_skills}

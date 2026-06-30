@@ -44,7 +44,18 @@ tool_names = [
     "list_dir_tool",
     "git_tool",
 ]
-skill_names = []
+skill_names = [
+    # worker skills — sub-agents (code_agent / reason_act_agent) see these; the
+    # MetaAgent sees none (it orchestrates from its prompt + the agent registry).
+    "code_review",
+    "security_review",
+    "deep_research",
+    "simplify",
+    "review",
+    "verify",
+    "run",
+    "init",
+]
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(require_grad=False)

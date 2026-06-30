@@ -1,11 +1,17 @@
-"""OpenSandbox server lifecycle manager.
+"""OpenSandbox server-process lifecycle.
 
-A single instance of this class manages the opensandbox-server process for the
-entire application. Multiple sandbox-based environments share one server.
+A single ``opensandbox-server`` daemon backs every sandbox in the application.
+This module owns starting/health-checking/stopping that daemon. It has no
+dependency on the registry or the manager, so both the manager and individual
+sandbox handles can import it without a cycle.
+
+Moved here from the old ``src/environment/sandbox.py`` (now removed) so the
+sandbox subsystem owns its own server process.
 """
 
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,10 +27,10 @@ class SandboxServerManager:
 
     Usage::
 
-        manager = SandboxServerManager()
-        await manager.ensure_running()   # idempotent — starts server if needed
+        mgr = SandboxServerManager()
+        await mgr.ensure_running()   # idempotent — starts the daemon if needed
         ...
-        await manager.shutdown()         # called once on global cleanup
+        await mgr.shutdown()         # once, on global cleanup
     """
 
     def __init__(
@@ -38,20 +44,14 @@ class SandboxServerManager:
         self.server_bin = server_bin
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
-
         self._process: Optional[subprocess.Popen] = None
 
     # ------------------------------------------------------------------ public
-
     async def ensure_running(self) -> None:
-        """Start the server if it is not already reachable.
-
-        Idempotent — safe to call from multiple environments.
-        """
+        """Start the server if it is not already reachable. Idempotent."""
         if await self.is_healthy():
             logger.info(f"| 📦 opensandbox-server already running at {self.domain}")
             return
-
         await self._start()
         await self._wait_until_ready()
 
@@ -70,7 +70,6 @@ class SandboxServerManager:
             self._process = None
 
     async def is_healthy(self) -> bool:
-        """Return True if the server responds on its health endpoint."""
         url = f"http://{self.domain}/healthz"
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
@@ -79,23 +78,18 @@ class SandboxServerManager:
         except Exception:
             return False
 
-    # ------------------------------------------------------------------ private
-
+    # ----------------------------------------------------------------- private
     def _write_config(self) -> None:
         """Write ~/.sandbox.toml before starting the server.
 
         Drops security options (drop_capabilities, no_new_privileges, pids_limit)
-        that are blocked by restrictive Docker authz plugins on some hosts.
-        Existing config is overwritten only if it exists; otherwise created fresh.
+        blocked by restrictive Docker authz plugins on some hosts.
         """
         config_path = os.path.expanduser("~/.sandbox.toml")
-
-        # Read existing content if present so we preserve user customisations
         try:
             with open(config_path, "r") as f:
                 content = f.read()
         except FileNotFoundError:
-            # Run init-config to create a baseline config, then patch it
             bin_path = shutil.which(self.server_bin) or os.path.join(
                 os.path.dirname(sys.executable), self.server_bin
             )
@@ -106,37 +100,26 @@ class SandboxServerManager:
             with open(config_path, "r") as f:
                 content = f.read()
 
-        # Patch the [docker] section — replace the three problematic keys
-        import re
-
         def _replace_or_append(text: str, key: str, new_value: str) -> str:
             pattern = rf"^({re.escape(key)}\s*=\s*).*$"
             replacement = f"{key} = {new_value}"
             new_text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
             if count == 0:
-                # Key not present — append under [docker] section
-                new_text = re.sub(
-                    r"(\[docker\])", rf"\1\n{replacement}", new_text, count=1
-                )
+                new_text = re.sub(r"(\[docker\])", rf"\1\n{replacement}", new_text, count=1)
             return new_text
 
         content = _replace_or_append(content, "drop_capabilities", "[]")
         content = _replace_or_append(content, "no_new_privileges", "false")
-        # Remove pids_limit line entirely so it falls back to the default (4096)
         content = re.sub(r"^pids_limit\s*=.*\n?", "", content, flags=re.MULTILINE)
 
         with open(config_path, "w") as f:
             f.write(content)
-
         logger.info(f"| 🔧 opensandbox-server config written to {config_path}")
 
     async def _start(self) -> None:
-        """Write config, then locate and launch the opensandbox-server binary."""
         bin_path = shutil.which(self.server_bin)
         if bin_path is None:
-            # Also search alongside the current Python interpreter (conda/venv envs)
-            python_bin_dir = os.path.dirname(sys.executable)
-            candidate = os.path.join(python_bin_dir, self.server_bin)
+            candidate = os.path.join(os.path.dirname(sys.executable), self.server_bin)
             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                 bin_path = candidate
         if bin_path is None:
@@ -146,31 +129,41 @@ class SandboxServerManager:
             )
 
         self._write_config()
-
         env = os.environ.copy()
         env.setdefault("OPENSANDBOX_INSECURE_SERVER", "YES")
-
         logger.info(f"| 🚀 Starting opensandbox-server ({bin_path})")
         self._process = subprocess.Popen(
-            [bin_path],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            [bin_path], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
     async def _wait_until_ready(self) -> None:
-        """Poll the health endpoint until the server is ready or timeout."""
         elapsed = 0.0
         while elapsed < self.startup_timeout:
             if await self.is_healthy():
-                logger.info(
-                    f"| ✅ opensandbox-server ready at {self.domain} "
-                    f"(took {elapsed:.1f}s)"
-                )
+                logger.info(f"| ✅ opensandbox-server ready at {self.domain} (took {elapsed:.1f}s)")
                 return
             await asyncio.sleep(self.poll_interval)
             elapsed += self.poll_interval
-
         raise TimeoutError(
             f"opensandbox-server did not become ready within {self.startup_timeout}s"
         )
+
+
+# A single shared daemon for the whole process. ``ensure_server`` is safe to
+# call from anywhere (manager, handles, environments).
+_server_singletons: dict = {}
+
+
+async def ensure_server(domain: str = "localhost:8080", server_bin: str = "opensandbox-server") -> SandboxServerManager:
+    mgr = _server_singletons.get(domain)
+    if mgr is None:
+        mgr = SandboxServerManager(domain=domain, server_bin=server_bin)
+        _server_singletons[domain] = mgr
+    await mgr.ensure_running()
+    return mgr
+
+
+async def shutdown_all() -> None:
+    for mgr in list(_server_singletons.values()):
+        await mgr.shutdown()
+    _server_singletons.clear()

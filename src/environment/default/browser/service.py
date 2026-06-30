@@ -137,57 +137,21 @@ class BrowserService:
         logger.info("| 🖥️  Local Chromium launched")
 
     async def _start_sandbox(self):
-        """Connect to a Chrome container managed by opensandbox-server.
+        """Connect to a Chrome container via the sandbox subsystem.
 
-        EnvironmentContextManager starts the server before environments are built.
-        When BrowserService is used standalone (e.g. in tests), we ensure the
-        server is running here as a fallback.
+        The PlaywrightSandbox (``src.sandbox``) owns the opensandbox-server
+        daemon lifecycle, container creation, and the CDP proxy ws-url rewrite.
         """
-        from src.environment.sandbox import SandboxServerManager
-        from opensandbox.sandbox import Sandbox
-        from opensandbox.config import ConnectionConfig
+        from src.sandbox import sandbox_manager
 
-        await SandboxServerManager(domain=self.sandbox_domain, server_bin=self.sandbox_server_bin).ensure_running()
-
-        connection_config = ConnectionConfig(
+        self._sandbox = await sandbox_manager.acquire(
+            "playwright",
+            image=self.sandbox_image,
             domain=self.sandbox_domain,
             api_key=self.sandbox_api_key,
-            request_timeout=timedelta(seconds=60),
+            timeout_minutes=self.sandbox_timeout_minutes,
         )
-        self._sandbox = await Sandbox.create(
-            self.sandbox_image,
-            timeout=timedelta(minutes=self.sandbox_timeout_minutes),
-            entrypoint=["/entrypoint"],
-            connection_config=connection_config,
-        )
-        devtools = await self._sandbox.get_endpoint(9222)
-        proxy_base = f"http://{devtools.endpoint}"  # e.g. http://127.0.0.1:40697/proxy/9222
-        logger.info(f"| 📦 OpenSandbox Chrome DevTools proxy: {proxy_base}")
-
-        # Fetch /json/version through the proxy and rewrite the ws URL so it also
-        # goes through the proxy (the raw ws URL points at the container-internal port)
-        import httpx as _httpx
-
-        ws_url = None
-        for attempt in range(15):
-            try:
-                async with _httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get(f"{proxy_base}/json/version")
-                    data = resp.json()
-                    raw_ws = data.get("webSocketDebuggerUrl", "")
-                    # raw_ws looks like ws://127.0.0.1:40697/devtools/browser/<id>
-                    # We need ws://127.0.0.1:40697/proxy/9222/devtools/browser/<id>
-                    proxy_host = devtools.endpoint.split("/proxy/")[0]  # 127.0.0.1:40697
-                    devtools_path = raw_ws.split(proxy_host, 1)[-1]     # /devtools/browser/<id>
-                    ws_url = f"ws://{proxy_host}/proxy/9222{devtools_path}"
-                    logger.info(f"| 📦 CDP WebSocket URL: {ws_url}")
-                    break
-            except Exception:
-                if attempt == 14:
-                    raise
-                await asyncio.sleep(2)
-                logger.info(f"| ⏳ Waiting for Chrome DevTools to be ready (attempt {attempt + 1}/15)")
-
+        ws_url = await self._sandbox.cdp_ws_url()
         self._browser = await self._playwright.chromium.connect_over_cdp(ws_url)
         contexts = self._browser.contexts
         # CDP-connected Chromium may not allow new_context(); keep the existing one as fallback
@@ -203,7 +167,7 @@ class BrowserService:
             if self._playwright:
                 await self._playwright.stop()
             if self._sandbox:
-                await self._sandbox.kill()
+                await self._sandbox.destroy()
             self._sessions.clear()
             self._base_context = None
             self._browser = None
