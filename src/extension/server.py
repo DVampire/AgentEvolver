@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.logger import logger
 from src.utils import assemble_project_path
+from src.utils.file_utils import file_lock
 from src.extension.types import Manifest, ManifestComponent
 
 # Modules whose components are class-based (loaded via dynamic_manager).
@@ -154,26 +155,31 @@ class ExtensionManagerServer(BaseModel):
         manager (via version_manager), so re-adding an existing component evolves it.
         """
         name, version = await self._load_component(module, abspath, None, version=None, config=config, return_version=True)
-        manifest = self.read_manifest()
-        comp = self._record(module, name, abspath, manifest, version=version)
-        self._ensure_archived(module, name, abspath, comp.version)
-        self._write_manifest(manifest)
+        # Serialize the manifest read-modify-write so parallel add_component calls
+        # (e.g. concurrent component evolution) don't lose each other's updates.
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            comp = self._record(module, name, abspath, manifest, version=version)
+            self._ensure_archived(module, name, abspath, comp.version)
+            self._write_manifest(manifest)
         logger.info(f"| ➕ ExtensionManager: added {module}:{name} v{comp.version}")
         return name
 
     async def unload(self, module: str, name: str) -> bool:
         """Unregister an active component and drop it from the manifest (archive kept)."""
         ok = await self._unload_component(module, name)
-        manifest = self.read_manifest()
-        manifest.remove(module, name)
-        self._write_manifest(manifest)
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            manifest.remove(module, name)
+            self._write_manifest(manifest)
         return ok
 
     async def deactivate_all(self) -> None:
-        manifest = self.read_manifest()
-        for comp in list(manifest.components):
-            await self._unload_component(comp.module, comp.name)
-        self._write_manifest(Manifest())
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            for comp in list(manifest.components):
+                await self._unload_component(comp.module, comp.name)
+            self._write_manifest(Manifest())
         logger.info("| 🧹 ExtensionManager: deactivated all extensions.")
 
     async def reload(self) -> Manifest:
@@ -228,9 +234,10 @@ class ExtensionManagerServer(BaseModel):
             shutil.copyfile(archived, dest)
 
         loaded = await self._load_component(module, dest, name, version=version, config=config)
-        manifest = self.read_manifest()
-        self._record(module, loaded, dest, manifest, version=version)
-        self._write_manifest(manifest)
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            self._record(module, loaded, dest, manifest, version=version)
+            self._write_manifest(manifest)
         logger.info(f"| ⏪ ExtensionManager: rolled back {module}:{name} to v{version}")
         return loaded
 

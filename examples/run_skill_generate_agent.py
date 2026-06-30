@@ -24,7 +24,7 @@ from src.memory import memory_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
 from src.hook import hook_manager
-from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
+from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus, add_task_args, resolve_task
 from src.trace import trace_manager
 from src.session.types import SessionContext
 from src.utils import make_id
@@ -37,16 +37,7 @@ def parse_args():
         default=os.path.join(root, "configs", "skill_generate_agent.py"),
         help="Config file path",
     )
-    parser.add_argument(
-        "--task",
-        default=(
-            "Generate a skill called 'code_review_skill' that guides an agent through "
-            "performing a structured code review. The skill should cover: reading the diff, "
-            "checking for correctness bugs, checking for style issues, and producing a "
-            "structured review report with severity levels (critical/warning/suggestion)."
-        ),
-        help="Generation task description",
-    )
+    add_task_args(parser, default_task_file=os.path.join(root, "examples", "tasks", "skill_generate.html"))
     parser.add_argument("--skill-name", default="code_review_skill", help="Name for the skill to generate")
     parser.add_argument(
         "--cfg-options",
@@ -124,7 +115,7 @@ async def main():
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---
-    task_text = args.task
+    task_text, task_files, task_doc_meta = resolve_task(args, task_work_dir)
     target_name = args.skill_name
 
     logger.info(f"| 📋 Submitting skill generation task: target={target_name}")
@@ -134,7 +125,8 @@ async def main():
         content=task_text,
         category=TaskCategory.USER,
         priority=TaskPriority.HIGH,
-        metadata={"target_name": target_name},
+        files=task_files,
+        metadata={"target_name": target_name, **(task_doc_meta or {})},
     )
     logger.info(f"| ✅ Task submitted: {task_id}")
 

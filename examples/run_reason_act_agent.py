@@ -23,7 +23,7 @@ from src.tool import tool_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
 from src.hook import hook_manager
-from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
+from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus, add_task_args, resolve_task
 from src.trace import trace_manager
 from src.session.types import SessionContext
 from src.utils import make_id
@@ -36,7 +36,7 @@ def parse_args():
         default=os.path.join(root, "configs", "reason_act_agent.py"),
         help="Config file path",
     )
-    parser.add_argument("--task", default=None, help="Override the task to run")
+    add_task_args(parser, default_task_file=os.path.join(root, "examples", "tasks", "arithmetic_steps.html"))
     parser.add_argument(
         "--cfg-options",
         nargs="+",
@@ -115,14 +115,18 @@ async def main():
     await task_manager.initialize(work_dir=task_work_dir, handler=run_agent)
     await task_manager.start(num_workers=1)
 
-    # --- Submit task ---
-    task_text = args.task or "What is the result of 23 multiplied by 47? Please calculate it step by step."
-
+    # --- Submit task (inline --task or --task-file document) ---
+    task_text, task_files, task_metadata = resolve_task(
+        args, task_work_dir,
+        default_text="What is the result of 23 multiplied by 47? Please calculate it step by step.",
+    )
     logger.info(f"| 📋 Submitting task: {task_text}")
     task_id = await task_manager.submit(
         content=task_text,
         category=TaskCategory.USER,
         priority=TaskPriority.HIGH,
+        files=task_files,
+        metadata=task_metadata,
     )
     logger.info(f"| ✅ Task submitted: {task_id}")
 

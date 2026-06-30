@@ -39,7 +39,7 @@ from src.skill import skill_manager
 from src.agent import agent_manager
 from src.extension import extension_manager
 from src.hook import hook_manager
-from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
+from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus, add_task_args, resolve_task
 from src.trace import trace_manager
 from src.session.types import SessionContext
 from src.utils import make_id
@@ -52,7 +52,7 @@ def parse_args():
         default=os.path.join(root, "configs", "meta_agent.py"),
         help="Config file path",
     )
-    parser.add_argument("--task", default=None, help="Task to run")
+    add_task_args(parser, default_task_file=os.path.join(root, "examples", "tasks", "calculator_tool.html"))
     parser.add_argument(
         "--cfg-options",
         nargs="+",
@@ -139,20 +139,15 @@ async def main():
     await task_manager.initialize(work_dir=task_work_dir, handler=lambda record: run_agent(record, ctx))
     await task_manager.start(num_workers=1)
 
-    # --- Submit task ---
-    task_text = args.task or (
-        "Generate a calculator tool called 'calculator_tool' that supports "
-        "four basic operations: add, subtract, multiply, divide. "
-        "It should accept 'a' (float), 'b' (float), and 'op' (str: '+', '-', '*', '/') as arguments, "
-        "return the result in the message and in extra data, and raise a clear error on division by zero. "
-        "After generation, evaluate the tool to verify correctness."
-    )
-
-    logger.info(f"| 📋 Submitting task: {task_text}")
+    # --- Build the task (inline --task string or --task-file document) ---
+    task_text, task_files, task_metadata = resolve_task(args, task_work_dir)
+    logger.info(f"| 📋 Submitting task:\n{task_text}")
     task_id = await task_manager.submit(
         content=task_text,
         category=TaskCategory.USER,
         priority=TaskPriority.HIGH,
+        files=task_files,
+        metadata=task_metadata,
     )
     logger.info(f"| ✅ Session id: {session_id}, Task id: {task_id}")
 
