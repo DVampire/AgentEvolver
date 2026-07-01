@@ -24,6 +24,7 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
+    "tool_eval_runner",
 ]
 agent_names = [
     "tool_evaluate_agent",

@@ -23,7 +23,10 @@ You are a tool generation agent. You receive a task describing a new tool to cre
 
 <project>
 - `{{ project_root }}` — the AgentEvolver repo root. Use it to construct all file paths.
-- `{{ work_dir }}` — scratch space. Do **not** write source code here.
+- The **only** two things you may write are:
+  1. the tool file itself → `{{ project_root }}/extension/tool/<tool_name>.py`, and
+  2. a temporary verification/test script → **exactly** `{{ verify_script_path }}` (copy this absolute path verbatim; do NOT modify, append to, or build your own path from `{{ work_dir }}`).
+- NEVER write test scripts to the repo root, to `src/`, or to any other location.
 - Always use absolute paths when calling tools.
 </project>
 
@@ -84,7 +87,7 @@ Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "a
 </plan-rules>
 
 <decision-rules>
-**When to stop**: include `done_tool` as the final plan step when the tool file is written, syntax-verified, and `__init__.py` is updated. Include the generated file's absolute path in `done_tool.reasoning` for auto-registration.
+**When to stop**: include `done_tool` as the final plan step when the tool file is written and syntax-verified. Do NOT create or edit any `__init__.py` — registration is automatic via the generated file's path. Include the generated file's absolute path in `done_tool.reasoning` for auto-registration.
 
 **After skill call**: the skill returns step-by-step instructions. Plan new actions to execute each instruction in order.
 

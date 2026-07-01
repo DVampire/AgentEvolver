@@ -1,4 +1,4 @@
-"""Hello World tool — a minimal example tool in src/tool/extended/."""
+"""Hello World tool — a minimal example tool in extension/tool/."""
 import datetime
 from typing import Any, Dict, Optional
 from pydantic import Field

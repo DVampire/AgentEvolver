@@ -31,14 +31,14 @@ class PromptContextManager(BaseModel):
     save_path: str = Field(default=None)
     contract_path: str = Field(default=None)
     default_prompt_dir: str = Field(default=None, description="Directory for built-in default prompts")
-    extended_prompt_dir: str = Field(default=None, description="Directory for generated/user prompts")
+    extension_prompt_dir: str = Field(default=None, description="Directory for generated/user prompts")
 
     def __init__(self,
                  base_dir: Optional[str] = None,
                  save_path: Optional[str] = None,
                  contract_path: Optional[str] = None,
                  default_prompt_dir: Optional[str] = None,
-                 extended_prompt_dir: Optional[str] = None,
+                 extension_prompt_dir: Optional[str] = None,
                  **kwargs):
         super().__init__(**kwargs)
 
@@ -55,7 +55,7 @@ class PromptContextManager(BaseModel):
         # Built-in prompts live in the default/ dir; extension prompts are managed
         # externally (loaded by ExtensionManager into the active version).
         self.default_prompt_dir = default_prompt_dir or str(_src_dir / "default")
-        self.extended_prompt_dir = extended_prompt_dir or assemble_project_path(os.path.join("extension", "prompt"))
+        self.extension_prompt_dir = extension_prompt_dir or assemble_project_path(os.path.join("extension", "prompt"))
 
         logger.info(f"| 📁 Prompt context manager base_dir={self.base_dir} save_path={self.save_path}")
 
@@ -75,11 +75,11 @@ class PromptContextManager(BaseModel):
 
     async def initialize(self, prompt_names: Optional[List[str]] = None):
         """Load prompts from md directory, then overlay JSON-versioned overrides."""
-        Path(self.extended_prompt_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.extension_prompt_dir).mkdir(parents=True, exist_ok=True)
 
         md_configs = await self._load_from_registry(self.default_prompt_dir)
-        extended_configs = await self._load_from_registry(self.extended_prompt_dir)
-        md_configs.update(extended_configs)  # extended overrides default on name collision
+        extension_configs = await self._load_from_registry(self.extension_prompt_dir)
+        md_configs.update(extension_configs)  # extension overrides default on name collision
 
         json_configs = await self._load_from_code()
 

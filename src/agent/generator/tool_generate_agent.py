@@ -93,6 +93,13 @@ class ToolGenerateAgent(Agent):
         # Live workspace listing (see workspace sub-module in tool_generate_agent.html).
         base["workspace"] = self._workspace_snapshot(ctx)
 
+        # Explicit absolute scratch path so the agent never has to construct one
+        # (constructing it from {{ work_dir }} led to nested/duplicated paths).
+        import os
+        from src.utils import assemble_project_path
+        work_abs = assemble_project_path(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+        base["verify_script_path"] = os.path.join(work_abs, "verify.py")
+
         action_errors = kwargs.get("action_errors") or []
         base["errors"] = (
             "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
@@ -178,6 +185,7 @@ class ToolGenerateAgent(Agent):
                 hook_result = await hook_manager(
                     name="tool_registration_hook",
                     input={
+                        "event": HookEvent.ON_STOP,
                         "target_name": target_name,
                         "reasoning": response.get("reasoning") or "",
                         "project_root": get_project_root(),

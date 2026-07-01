@@ -18,7 +18,7 @@ with read_base():
 tag = "meta_agent"
 work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
-extended_dir = f"work_dir/{tag}/extended"
+extension_dir = f"work_dir/{tag}/extension"
 log_path = "agent.log"
 
 use_local_proxy = True
@@ -43,6 +43,7 @@ tool_names = [
     "edit_file_tool",
     "list_dir_tool",
     "git_tool",
+    "tool_eval_runner",
 ]
 skill_names = [
     # worker skills — sub-agents (code_agent / reason_act_agent) see these; the
@@ -55,6 +56,8 @@ skill_names = [
     "verify",
     "run",
     "init",
+    # generation skill for the tool_generate_agent sub-agent (in agent_names below)
+    "generate_tool_skill",
 ]
 
 #-----------------TOOL CONFIGS-----------------
@@ -70,7 +73,7 @@ file_system_memory.update(
 
 #-----------------ACTOR AGENT CONFIGS-----------------
 code_agent.update(
-    base_dir=extended_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -78,7 +81,7 @@ code_agent.update(
 )
 
 reason_act_agent.update(
-    base_dir=extended_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -87,7 +90,7 @@ reason_act_agent.update(
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------
 tool_optimize_agent.update(
-    base_dir=extended_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -96,7 +99,7 @@ tool_optimize_agent.update(
 
 #-----------------GENERATOR AGENT CONFIGS-----------------
 tool_generate_agent.update(
-    base_dir=extended_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -105,7 +108,7 @@ tool_generate_agent.update(
 
 #-----------------EVALUATOR AGENT CONFIGS-----------------
 tool_evaluate_agent.update(
-    base_dir=extended_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
@@ -114,7 +117,7 @@ tool_evaluate_agent.update(
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(
-    base_dir=extended_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,

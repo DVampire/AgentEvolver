@@ -452,10 +452,15 @@ class ToolContextManager(BaseModel):
             tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
             
             # --- Build ToolConfig ---
-            try:
-                tool_path = inspect.getfile(tool_cls)
-            except Exception:
-                tool_path = None
+            # Dynamically-loaded extension classes have no real module file, so
+            # inspect.getfile() fails on them. The extension loader stamps the
+            # active source path onto the class as __source_file__ — prefer it.
+            tool_path = getattr(tool_cls, "__source_file__", None)
+            if not tool_path:
+                try:
+                    tool_path = inspect.getfile(tool_cls)
+                except Exception:
+                    tool_path = None
             tool_config = ToolConfig(
                 name=tool_name,
                 description=tool_description,

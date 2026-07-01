@@ -24,6 +24,7 @@ tool_names = [
     "write_file_tool",
     "glob_search_tool",
     "grep_search_tool",
+    "environment_eval_runner",
 ]
 agent_names = [
     "environment_evaluate_agent",

@@ -97,6 +97,17 @@ class EnvironmentEvaluateAgent(Agent):
             else:
                 lines.append("- **Status**: not found in registry (will attempt to load from file)")
 
+            # Live-registry facts — the environment is already loaded in THIS process, so
+            # the Integration/Functionality dimensions are answered here without a subprocess.
+            instance = await environment_manager.get(target_name)
+            lines.append(f"- **Registered**: {env_config is not None}")
+            lines.append(f"- **Instantiated (live instance available)**: {instance is not None}")
+            if instance is not None:
+                lines.append(f"- **Live Instance Name**: `{getattr(instance, 'name', None)}`")
+                live_actions = getattr(instance, "actions", None)
+                if live_actions:
+                    lines.append(f"- **Live Actions**: {', '.join(live_actions.keys())}")
+
             lines.append(f"- **Python File**: `{py_path}`")
             lines.append(f"- **Python File Exists**: {os.path.exists(py_path)}")
             lines.append(f"- **Config File**: `{cfg_path}`")

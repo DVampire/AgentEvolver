@@ -11,6 +11,8 @@ from .list_dir import ListDirTool
 from .git import GitTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
+from .tool_eval_runner import ToolEvalRunnerTool
+from .environment_eval_runner import EnvironmentEvalRunnerTool
 
 __all__ = [
     "BashTool",
@@ -26,4 +28,6 @@ __all__ = [
     "GitTool",
     "GlobSearchTool",
     "GrepSearchTool",
+    "ToolEvalRunnerTool",
+    "EnvironmentEvalRunnerTool",
 ]

@@ -198,6 +198,7 @@ class EnvironmentOptimizeAgent(Agent):
                 await hook_manager(
                     name="environment_registration_hook",
                     input={
+                        "event": HookEvent.ON_STOP,
                         "target_name": target_name,
                         "reasoning": response.get("reasoning") or "",
                         "project_root": get_project_root(),

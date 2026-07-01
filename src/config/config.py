@@ -16,9 +16,9 @@ def process_general(config: MMConfig) -> MMConfig:
     else:
         default_dir = work_dir
 
-    if "extended_dir" in config:
-        extended_dir = str(assemble_project_path(config.extended_dir))
-        config.extended_dir = extended_dir
+    if "extension_dir" in config:
+        extension_dir = str(assemble_project_path(config.extension_dir))
+        config.extension_dir = extension_dir
 
     log_path = os.path.join(default_dir, config.log_path)
     config.log_path = log_path

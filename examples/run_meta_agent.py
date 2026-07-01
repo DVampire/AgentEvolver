@@ -168,8 +168,15 @@ async def main():
         logger.error(f"| ❌ Task ended with status {record.task.status}: {record.error}")
 
     # --- Print memory HTML path if available ---
-    if record.result and hasattr(record.result, "extra"):
-        memory_path = (record.result.extra.data or {}).get("memory_path")
+    # Response.extra / Response.data are Optional[dict]; guard against None.
+    if record.result is not None:
+        extra = getattr(record.result, "extra", None)
+        data = getattr(record.result, "data", None)
+        memory_path = None
+        for src in (extra, data):
+            if isinstance(src, dict) and src.get("memory_path"):
+                memory_path = src["memory_path"]
+                break
         if memory_path:
             logger.info(f"| 📄 Memory HTML: {memory_path}")
 

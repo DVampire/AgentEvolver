@@ -27,7 +27,7 @@ Rules:
 - Always use **single quotes** for all string literals — the code is stored in JSON and double quotes cause `SyntaxError`.
 - Set `require_grad = True` so the tool can be evolved later.
 - The `name` field must exactly match the filename without `.py`.
-- Implement `async def __call__` returning `ToolResponse(success=..., message=..., extra=ToolExtra(data={...}))`.
+- Implement `async def __call__` returning `Response(type=ResponseType.TOOL, success=..., message=..., data={...})` — results go in `data` (a dict), NOT in `extra`.
 
 ### Step 4: Verify syntax
 
