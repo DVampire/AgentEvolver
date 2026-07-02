@@ -16,7 +16,7 @@ default_dir = f"work_dir/{tag}/default"
 log_path = "environment_generate_agent.log"
 
 use_local_proxy = True
-model_name = "int_openrouter/gemini-3.1-pro-preview"
+model_name = "aws_claude/claude-opus-4.8"
 
 tool_names = [
     "bash_tool",

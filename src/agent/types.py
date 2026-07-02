@@ -25,6 +25,7 @@ from src.skill import skill_manager
 from src.constraint import (
     constraint_manager,
     render_status_text,
+    StepConstraint,
     TokenConstraint,
     WallTimeConstraint,
 )
@@ -269,6 +270,10 @@ class Agent(BaseModel):
         self.constraints: List[Constraint] = self._build_constraints(constraints)
 
         # Auto-attach constraints for explicitly requested budgets
+        # StepConstraint only DISPLAYS the step budget: the loop (`while step < max_step`)
+        # stops at the same value first, so it never blocks early — no off-by-one kill.
+        if max_step and max_step > 0 and not any(isinstance(c, StepConstraint) for c in self.constraints):
+            self.constraints.append(StepConstraint(max_step=max_step))
         if max_token is not None and not any(isinstance(c, TokenConstraint) for c in self.constraints):
             self.constraints.append(TokenConstraint(max_token=max_token))
         if timeout is not None and not any(isinstance(c, WallTimeConstraint) for c in self.constraints):
@@ -550,6 +555,7 @@ class Agent(BaseModel):
         )
 
         step_reasoning = ""
+        step_plan: List[Dict[str, Any]] = []
 
         try:
             llm_response = await model_manager(
@@ -563,9 +569,27 @@ class Agent(BaseModel):
 
             step_reasoning = think_output.reasoning
             plan_steps = think_output.plan
+            step_plan = [
+                {"description": s.description, "type": s.action.type,
+                 "name": s.action.name, "args": s.action.args}
+                for s in plan_steps
+            ]
 
             logger.info(f"| 💭 [{self.name}] Reasoning: {step_reasoning}")
             logger.info(f"| 📋 [{self.name}] Plan steps: {len(plan_steps)}")
+
+            # An empty plan wastes a step and, left unaddressed, makes the agent
+            # spin until max_step. It usually means the model considers the work
+            # done but did not emit the terminal action. Nudge it (via action_errors,
+            # surfaced in the next prompt) to finish with done_tool now.
+            if not plan_steps:
+                action_errors.append(
+                    "Your previous plan was EMPTY, which is never valid. If the task is "
+                    "already complete, output a plan whose single step calls `done_tool` "
+                    "(with the result) NOW — 'nothing left to do' means 'call done_tool'. "
+                    "If it is not complete, output the next concrete action."
+                )
+                logger.warning(f"| ⚠️ [{self.name}] Empty plan — nudging to call done_tool.")
 
             for i, step in enumerate(plan_steps):
                 action = step.action
@@ -662,6 +686,14 @@ class Agent(BaseModel):
         await hook_manager(
             name="trace_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning},
+            ctx=ctx,
+        )
+        # Persist a per-step HTML snapshot of the rendered messages (see SnapshotHook).
+        await hook_manager(
+            name="snapshot_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
+                   "task_id": task_id, "work_dir": getattr(ctx, "work_dir", None),
+                   "messages": messages, "reasoning": step_reasoning, "plan": step_plan},
             ctx=ctx,
         )
 

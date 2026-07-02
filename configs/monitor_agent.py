@@ -24,7 +24,7 @@ default_dir = f"work_dir/{tag}/default"
 log_path    = "monitor_agent.log"
 
 use_local_proxy = False
-model_name      = "int_openrouter/gemini-3.1-pro-preview"
+model_name      = "aws_claude/claude-opus-4.8"
 
 agent_names  = ["monitor_agent"]
 tool_names   = []
