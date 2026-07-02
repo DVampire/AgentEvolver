@@ -11,6 +11,7 @@ with read_base():
 tag = "tool_evaluate_agent"
 work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
+extension_dir = f"work_dir/{tag}/extension"
 log_path = "tool_evaluate_agent.log"
 
 use_local_proxy = True
@@ -47,7 +48,7 @@ file_system_memory.update(
 
 #-----------------AGENT CONFIG-----------------
 tool_evaluate_agent.update(
-    base_dir=work_dir,
+    base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,

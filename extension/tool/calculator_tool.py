@@ -1,53 +1,46 @@
-from typing import Any, Dict, Optional
-from pydantic import Field
-from src.tool.types import Tool
-from src.response.types import Response, ResponseType
-from src.registry import TOOL
+from typing import Any, Dict
+from src.tool.base import BaseTool
 
-@TOOL.register_module(force=True)
-class CalculatorTool(Tool):
-    '''Performs basic arithmetic operations on two numbers.'''
+class CalculatorTool(BaseTool):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tool_info = {
+            "name": "calculator_tool",
+            "description": "Performs basic arithmetic operations on two numbers.",
+            "args": [
+                {
+                    "name": "a",
+                    "type": "float",
+                    "description": "Left operand."
+                },
+                {
+                    "name": "b",
+                    "type": "float",
+                    "description": "Right operand."
+                },
+                {
+                    "name": "op",
+                    "type": "str",
+                    "description": "One of +, -, *, /."
+                }
+            ]
+        }
 
-    name: str = 'calculator_tool'
-    description: str = (
-        "Performs basic arithmetic operations on two numbers.\n"
-        "Args:\n"
-        "- a (float): Left operand.\n"
-        "- b (float): Right operand.\n"
-        "- op (str): One of +, -, *, /.\n"
-    )
-    metadata: Dict[str, Any] = Field(default={})
-    require_grad: bool = Field(default=False)
-
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
-
-    async def __call__(self, a: float, b: float, op: str, **kwargs) -> Response:
-        '''Execute the tool and return a Response.'''
-        try:
-            if op == '+':
-                result = float(a + b)
-            elif op == '-':
-                result = float(a - b)
-            elif op == '*':
-                result = float(a * b)
-            elif op == '/':
-                if b == 0:
-                    raise ValueError('Division by zero error')
-                result = float(a / b)
-            else:
-                raise ValueError(f'Unknown operation: {op}')
-
-            return Response(
-                type=ResponseType.TOOL,
-                success=True,
-                message=str(result),
-                data={"result": result}
-            )
-        except Exception as e:
-            return Response(
-                type=ResponseType.TOOL,
-                success=False,
-                message=str(e),
-                data=None
-            )
+    def __call__(self, a: float, b: float, op: str) -> Dict[str, Any]:
+        if op == '+':
+            res = float(a + b)
+        elif op == '-':
+            res = float(a - b)
+        elif op == '*':
+            res = float(a * b)
+        elif op == '/':
+            if b == 0:
+                raise ValueError("Division by zero")
+            res = float(a / b)
+        else:
+            raise ValueError(f"Unknown operation: {op}")
+        
+        return {
+            "message": str(res),
+            "data": res
+        }

@@ -27,7 +27,9 @@ def process_general(config: MMConfig) -> MMConfig:
 
 def process_tools(config: MMConfig) -> MMConfig:
     for key in config:
-        if "tool" in key:
+        # Skip agent configs (e.g. tool_generate_agent): their key contains "tool"
+        # but they are agents — handled by process_agent, not as tools.
+        if "tool" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
                 # base_dir in config is already a relative path from project root
                 # (e.g., "defaultdir/tool_calling_agent/browser"), so just assemble it
@@ -39,7 +41,9 @@ def process_tools(config: MMConfig) -> MMConfig:
 
 def process_environments(config: MMConfig) -> MMConfig:
     for key in config:
-        if "environment" in key:
+        # Skip agent configs (e.g. environment_generate_agent): key contains
+        # "environment" but they are agents — handled by process_agent.
+        if "environment" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
                 base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
                 config[key].update(dict(
@@ -65,13 +69,21 @@ def process_memory(config: MMConfig)->MMConfig:
     return config
 
 def process_agent(config: MMConfig) -> MMConfig:
-    if "agent" in config:
-        if "base_dir" in config.agent:
-            config.agent.update(dict(
-                base_dir = str(assemble_project_path(config.default_dir))
+    for key in config:
+        if key != "agent" and not key.endswith("_agent"):
+            continue
+        entry = config[key]
+        if not hasattr(entry, "get"):   # not a config dict (e.g. agent_names list)
+            continue
+        # An agent's base_dir is relative to the project root (e.g.
+        # "work_dir/<tag>/extension"), so assemble it directly. Do NOT join
+        # default_dir — that double-prefixed the path (work_dir/.../default/work_dir/...).
+        if entry.get("base_dir") is not None:
+            config[key].update(dict(
+                base_dir = str(assemble_project_path(entry["base_dir"]))
             ))
-        if "model_name" in config.agent:
-            config.agent.update(dict(
+        if entry.get("model_name") is not None:
+            config[key].update(dict(
                 model_name = config.model_name
             ))
     return config
