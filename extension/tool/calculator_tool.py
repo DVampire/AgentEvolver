@@ -1,4 +1,4 @@
-'''Calculator tool that performs the four basic arithmetic operations.'''
+'''Performs basic arithmetic operations on two numbers.'''
 from typing import Any, Dict
 from pydantic import Field
 from src.tool.types import Tool
@@ -37,15 +37,14 @@ class CalculatorTool(Tool):
                 result = a * b
             elif op == '/':
                 if b == 0:
-                    raise ZeroDivisionError('Division by zero is not allowed: cannot divide {0} by 0.'.format(a))
+                    raise ZeroDivisionError('Division by zero is not allowed: cannot divide {} by 0.'.format(a))
                 result = a / b
             else:
-                raise ValueError('Unknown operation: {0!r}. Supported operations are: +, -, *, /.'.format(op))
-            message = '{0} {1} {2} = {3}'.format(a, op, b, result)
+                raise ValueError('Unknown operation: {!r}. Supported operations are +, -, *, /.'.format(op))
             return Response(
                 type=ResponseType.TOOL,
                 success=True,
-                message=message,
+                message='{} {} {} = {}'.format(a, op, b, result),
                 data={'result': result},
             )
         except Exception as e:

@@ -196,11 +196,13 @@ class AgentThinkOutput(BaseModel):
         ),
     )
     plan: List[AgentPlanStep] = Field(
-        default_factory=list,
+        min_length=1,
         description=(
-            "New steps to execute next, in order. Each step is exactly one action. "
-            "Include done_tool as the last step when the task is complete. "
-            "Do not re-emit steps that have already been executed."
+            "The next action(s) to execute, in order — the plan is NEVER empty. "
+            "Each step is exactly one action. Do not re-emit steps already executed "
+            "in earlier turns. When the task is complete, the plan MUST be exactly one "
+            "step that calls done_tool with the result — 'nothing left to do' means "
+            "'call done_tool now', never an empty plan."
         ),
     )
 
