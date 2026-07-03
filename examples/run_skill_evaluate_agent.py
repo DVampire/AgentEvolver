@@ -23,6 +23,7 @@ from src.tool import tool_manager
 from src.memory import memory_manager
 from src.skill import skill_manager
 from src.agent import agent_manager
+from src.extension import extension_manager
 from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus, add_task_args, resolve_task
 from src.trace import trace_manager
@@ -106,6 +107,11 @@ async def main():
     logger.info("| 🤖 Initializing agent manager...")
     await agent_manager.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents: {await agent_manager.list()}")
+
+    # Layer hot-pluggable extensions (external `extension/`) so extension
+    # components (skills, generated targets) are available.
+    _ext_manifest = await extension_manager.initialize()
+    logger.info(f"| ✅ Extensions loaded: {[f'{c.module}:{c.name}' for c in _ext_manifest.components]}")
 
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 

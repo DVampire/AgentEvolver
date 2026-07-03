@@ -8,15 +8,15 @@ from src.registry import TOOL
 
 @TOOL.register_module(force=True)
 class CalculatorTool(Tool):
-    '''Performs basic arithmetic operations (+, -, *, /) on two numbers.'''
+    '''Performs arithmetic operations (+, -, *, /, %, **) on two numbers.'''
 
     name: str = 'calculator_tool'
     description: str = (
-        'Performs basic arithmetic operations (+, -, *, /) on two numbers.\n'
+        'Performs arithmetic operations (+, -, *, /, %, **) on two numbers.\n'
         'Args:\n'
         '- a (float): Left operand.\n'
         '- b (float): Right operand.\n'
-        '- op (str): One of +, -, *, /.\n'
+        '- op (str): One of +, -, *, /, %, **.\n'
     )
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=True)
@@ -39,8 +39,14 @@ class CalculatorTool(Tool):
                 if b == 0:
                     raise ZeroDivisionError('Division by zero is not allowed: cannot divide {} by 0.'.format(a))
                 result = a / b
+            elif op == '%':
+                if b == 0:
+                    raise ZeroDivisionError('Modulo by zero is not allowed: cannot compute {} % 0.'.format(a))
+                result = a % b
+            elif op == '**':
+                result = a ** b
             else:
-                raise ValueError('Unknown operation: {!r}. Supported operations are +, -, *, /.'.format(op))
+                raise ValueError('Unknown operation: {!r}. Supported operations are +, -, *, /, %, **.'.format(op))
             return Response(
                 type=ResponseType.TOOL,
                 success=True,
