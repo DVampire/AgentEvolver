@@ -5,15 +5,22 @@ from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
-Use this tool to signal that a task or subtask has been finished.
-Provide the `result` and `reasoning` of the task in the result and reasoning parameters.
+_DESCRIPTION = "Indicate that the task has been completed."
 
-Args:
+_INSTRUCTION = """
+## Function
+Indicate that the task has been completed.
+
+## Guidance
+- Use this tool to signal that a task or subtask has been finished.
+- Provide the `result` and `reasoning` of the task in the result and reasoning parameters.
+
+## Parameters
 - result (str): The result of the task completion.
 - reasoning (str): The analysis or explanation of the task completion.
 
-Example: {"name": "done_tool", "args": {"reasoning": "The task has been completed successfully.","result": "The task has been completed."}}.
+## Example
+{"name": "done_tool", "args": {"reasoning": "The task has been completed successfully.","result": "The task has been completed."}}
 """
 
 @TOOL.register_module(force=True)
@@ -21,7 +28,8 @@ class DoneTool(Tool):
     """A tool for indicating that the task has been completed."""
 
     name: str = "done_tool"
-    description: str = _DONE_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     

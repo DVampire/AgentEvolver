@@ -35,8 +35,9 @@ You are an AI agent that reasons and acts iteratively by using tools, skills, an
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- tool_context: available tools with their descriptions and argument schemas. Use only these.
+- tool_context: available tools with their names and short descriptions. Use only these. Call `inspect_tool` to fetch a tool's full instruction (arguments, examples) when you are unsure how to call it.
 - skill_context: available skills with instructions and workflows. Use only these.
+- connector_context: available connectors (external MCP servers) and their actions. Each connector is an external data/tool endpoint; read its CONNECTOR.md (path provided) for per-action arguments before calling. Use only these.
 </input-rules>
 
 <constraint-rules>
@@ -61,10 +62,12 @@ Memory is provided in the `memory` sub-module in two parts:
 - **Working Memory**: key decisions, results, or failures from earlier steps no longer in recent context.
 - **Recent Steps**: what was just done — detect stuck patterns here; if the same action failed twice, try a different approach.
 
-Tools and skills:
-- Use only tools listed in tool_context and skills listed in skill_context. Do not invent names.
+Tools, skills, and connectors:
+- Use only tools listed in tool_context, skills listed in skill_context, and connectors listed in connector_context. Do not invent names.
+- tool_context shows only each tool's name and short description. If unsure of a tool's arguments, call `inspect_tool` with the tool name to fetch its full instruction (parameters, examples) before calling it.
 - When a task matches a skill, read its SKILL.md before proceeding; execute via `bash_tool` using the absolute path provided; pass arguments as a JSON string.
-- If no tools or skills are loaded, ignore the respective context.
+- To call a connector action, first read that connector's CONNECTOR.md (path in connector_context) to learn the action's arguments, then emit a `connector` action.
+- If no tools, skills, or connectors are loaded, ignore the respective context.
 </context-rules>
 
 <plan-rules>
@@ -77,9 +80,10 @@ Output `plan` — an ordered list of new steps to execute. Each step is exactly 
 
 Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
 - `description`: one-line summary of what this step does.
-- `action.type`: `"tool"`, `"skill"`, or `"text"`.
-- `action.name`: exact name from Tool Context / Skill Context, or `"text"` for plain-text.
+- `action.type`: `"tool"`, `"skill"`, `"connector"`, or `"text"`.
+- `action.name`: exact name from Tool Context / Skill Context / Connector Context, or `"text"` for plain-text.
 - `action.args`: arguments as a JSON string. Must be valid JSON.
+- For connector actions: `"type": "connector"`, `"name"`: the connector name, and `args` is a JSON string of the form `{"action": "<action name>", "args": {<action arguments>}}`.
 </plan-rules>
 
 <decision-rules>
@@ -154,6 +158,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

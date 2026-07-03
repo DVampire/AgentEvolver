@@ -52,6 +52,26 @@ async def _make_firecrawl_request(
         return response
 
 
+_DESCRIPTION = "Search the web via Firecrawl API, prioritising research papers and PDFs."
+
+_INSTRUCTION = """
+## Function
+Search the web via Firecrawl API, prioritising research papers and PDFs.
+
+## Guidance
+- Returns results with full scraped markdown content.
+
+## Parameters
+- query (str): The search query string.
+- image (str, optional): Unused image path argument (default: None).
+- num_results (int, optional): Number of results to return (default: 10).
+- filter_year (int, optional): Filter results by year (default: None).
+
+## Example
+{"name": "firecrawl_search_tool", "args": {"query": "transformer architecture survey", "num_results": 5}}
+"""
+
+
 @TOOL.register_module(force=True)
 class FirecrawlSearch(Tool):
     """Web search with scraped markdown content via Firecrawl API.
@@ -63,10 +83,8 @@ class FirecrawlSearch(Tool):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = "firecrawl_search_tool"
-    description: str = (
-        "Search the web via Firecrawl API, prioritising research papers and PDFs. "
-        "Returns results with full scraped markdown content."
-    )
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: str = Field(default="", description="Firecrawl API key")
     api_base: str = Field(default="", description="Firecrawl API base URL")

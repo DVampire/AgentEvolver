@@ -66,6 +66,28 @@ async def _make_serper_request(
         return response
 
 
+_DESCRIPTION = "Search Google via Serper API and return organic search results."
+
+_INSTRUCTION = """
+## Function
+Search Google via Serper API and return organic search results.
+
+## Guidance
+- Returns organic search results with titles, URLs, and snippets.
+
+## Parameters
+- query (str): The search query string.
+- image (str, optional): Unused image path argument (default: None).
+- num_results (int, optional): Number of results to return (default: 10).
+- country (str, optional): Region code in ISO 3166-1 alpha-2 format (default: 'us').
+- lang (str, optional): Language code in ISO 639-1 format (default: 'en').
+- filter_year (int, optional): Filter results by year (default: None).
+
+## Example
+{"name": "serper_search_tool", "args": {"query": "latest AI research", "num_results": 5}}
+"""
+
+
 @TOOL.register_module(force=True)
 class SerperSearch(Tool):
     """Google search via Serper API.
@@ -79,10 +101,8 @@ class SerperSearch(Tool):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = "serper_search_tool"
-    description: str = (
-        "Search Google via Serper API. Returns organic search results "
-        "with titles, URLs, and snippets."
-    )
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: str = Field(default="", description="Serper API key")
     api_base: str = Field(default="", description="Serper API base URL")

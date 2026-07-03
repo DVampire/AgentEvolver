@@ -7,7 +7,7 @@ generated markup never touches the host. A strict CSP meta tag is injected and
 the HTML is loaded via Playwright ``set_content`` over CDP (no file serving
 needed — works identically for local and sandboxed Chrome).
 
-Pairs with the ``artifact_design`` skill: generate HTML → render here → look at
+Pairs with the ``artifact_design_skill``: generate HTML → render here → look at
 the screenshot → fix.
 """
 

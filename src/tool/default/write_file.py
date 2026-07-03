@@ -11,15 +11,22 @@ from src.registry import TOOL
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 
-_WRITE_FILE_TOOL_DESCRIPTION = """Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does.
+_DESCRIPTION = "Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does."
 
-Use this tool to create new files. For modifying existing files, prefer edit_file_tool to make targeted changes.
+_INSTRUCTION = """
+## Function
+Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does.
 
-Args:
+## Guidance
+- Use this tool to create new files.
+- For modifying existing files, prefer edit_file_tool to make targeted changes.
+
+## Parameters
 - path (str): Absolute path to the file to write.
 - content (str): The full content to write to the file.
 
-Example: {"name": "write_file_tool", "args": {"path": "/abs/path/to/new_file.py", "content": "print('hello')"}}
+## Example
+{"name": "write_file_tool", "args": {"path": "/abs/path/to/new_file.py", "content": "print('hello')"}}
 """
 
 
@@ -28,7 +35,8 @@ class WriteFileTool(Tool):
     """Create or overwrite a file with the given content."""
 
     name: str = "write_file_tool"
-    description: str = _WRITE_FILE_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

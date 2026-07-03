@@ -8,15 +8,24 @@ from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_LIST_DIR_TOOL_DESCRIPTION = """List the contents of a directory as a tree structure.
+_DESCRIPTION = "List the contents of a directory as a tree structure."
 
-Args:
+_INSTRUCTION = """
+## Function
+List the contents of a directory as a tree structure.
+
+## Guidance
+- Directories are listed before files and results are rendered as an indented tree.
+- Common noise directories (e.g. .git, __pycache__, node_modules) are ignored by default; add more via the ignore parameter.
+
+## Parameters
 - path (str): Absolute path to the directory to list.
 - depth (int, optional): Maximum depth of the tree. Defaults to 3.
 - ignore (list[str], optional): Directory/file name patterns to ignore. Defaults to common noise dirs like .git, __pycache__, node_modules.
 
-Example: {"name": "list_dir_tool", "args": {"path": "/abs/path/to/project"}}
-Example: {"name": "list_dir_tool", "args": {"path": "/abs/path/to/project", "depth": 2, "ignore": [".git", "node_modules"]}}
+## Example
+{"name": "list_dir_tool", "args": {"path": "/abs/path/to/project"}}
+{"name": "list_dir_tool", "args": {"path": "/abs/path/to/project", "depth": 2, "ignore": [".git", "node_modules"]}}
 """
 
 _DEFAULT_IGNORE = {
@@ -31,7 +40,8 @@ class ListDirTool(Tool):
     """List directory contents as a readable tree."""
 
     name: str = "list_dir_tool"
-    description: str = _LIST_DIR_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

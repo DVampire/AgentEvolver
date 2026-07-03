@@ -1,20 +1,24 @@
 ---
-name: review
-description: Review a GitHub pull request. Use when asked to review a specific PR by number/URL. For reviewing the local working diff instead, use the code_review skill.
+name: review_skill
+description: Review a GitHub pull request. Use when asked to review a specific PR by number/URL. For reviewing the local working diff instead, use the code_review_skill.
 version: 1.0.0
 type: worker
+license: N/A
+category: code-quality
+requirements: [cpu]
+metadata: {}
 ---
 
 # Review Skill (GitHub PR)
 
 Review a GitHub pull request, applying the same correctness + cleanup analysis
-as the code_review skill but scoped to the PR's diff (not the local working tree).
+as the code_review_skill but scoped to the PR's diff (not the local working tree).
 
 ## How to run (read first)
 
 Tools: `bash_tool` to run `gh pr view`/`gh pr diff`, `read_file_tool`/`grep_search_tool`
 for surrounding code. This is a **single-agent procedure**: gather the PR diff,
-then run the multi-angle find/verify from the code_review skill yourself over
+then run the multi-angle find/verify from the code_review_skill yourself over
 that diff. Finish with `done_tool` (`result` = the findings list); if asked to
 post comments, run `gh` via `bash_tool` first.
 
@@ -38,7 +42,7 @@ it matches the PR's branch; otherwise fetch file contents via `gh`.
 
 ## Then review
 
-Run the full multi-angle review process described in the code_review skill
+Run the full multi-angle review process described in the code_review_skill
 (Phase 1 find candidates across correctness + cleanup angles → Phase 2 verify
 3-state → optional sweep) yourself, over the PR diff gathered above. Produce the
 same ranked findings output.

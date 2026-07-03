@@ -1,8 +1,12 @@
 ---
-name: init
+name: init_skill
 description: Initialize a new CLAUDE.md file documenting the codebase. Use when asked to create or improve a CLAUDE.md / agent-guidance file that future agent instances will read to operate in this repository.
 version: 1.0.0
 type: worker
+license: N/A
+category: workflow
+requirements: [cpu]
+metadata: {}
 ---
 
 # Init Skill

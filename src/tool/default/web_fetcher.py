@@ -9,14 +9,21 @@ from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text content.
-Use this tool to fetch and read content from web pages.
-The tool will return the page title and markdown-formatted content.
+_DESCRIPTION = "Visit a webpage at a given URL and return its text content."
 
-Args:
+_INSTRUCTION = """
+## Function
+Visit a webpage at a given URL and return its text content.
+
+## Guidance
+- Use this tool to fetch and read content from web pages.
+- The tool will return the page title and markdown-formatted content.
+
+## Parameters
 - url (str): The URL of the webpage to fetch.
 
-Example: {"name": "web_fetcher_tool", "args": {"url": "https://www.google.com"}}.
+## Example
+{"name": "web_fetcher_tool", "args": {"url": "https://www.google.com"}}
 """
 
 @TOOL.register_module(force=True)
@@ -24,7 +31,8 @@ class WebFetcherTool(Tool):
     """A tool for fetching web content asynchronously."""
 
     name: str = "web_fetcher_tool"
-    description: str = _WEB_FETCHER_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     

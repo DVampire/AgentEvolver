@@ -36,8 +36,15 @@ tool_names = [
     "git_tool",
     "glob_search_tool",
     "grep_search_tool",
+    "inspect_tool",
 ]
 skill_names = []
+connector_names = [
+    "biorxiv",
+    "chembl",
+    "clinical_trials",
+    "pubmed",
+]
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(

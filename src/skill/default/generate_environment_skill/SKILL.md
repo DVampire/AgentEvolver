@@ -3,6 +3,10 @@ name: generate_environment_skill
 description: Guides an agent through generating a new environment (Python class + config dict). Use when asked to create a new environment.
 version: 1.0.0
 type: worker
+license: N/A
+category: generation
+requirements: [cpu]
+metadata: {}
 ---
 
 # Generate Environment Skill

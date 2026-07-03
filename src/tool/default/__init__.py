@@ -12,7 +12,7 @@ from .git import GitTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
 from .tool_eval_runner import ToolEvalRunnerTool
-from .environment_eval_runner import EnvironmentEvalRunnerTool
+from .inspect_tool import InspectTool
 
 __all__ = [
     "BashTool",
@@ -29,5 +29,5 @@ __all__ = [
     "GlobSearchTool",
     "GrepSearchTool",
     "ToolEvalRunnerTool",
-    "EnvironmentEvalRunnerTool",
+    "InspectTool",
 ]

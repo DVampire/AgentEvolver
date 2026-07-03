@@ -39,6 +39,7 @@ class VersionManagerServer(BaseModel):
             "memory": {},
             "benchmark": {},
             "skill": {},
+            "connector": {},
             "environment": {},
             "action": {},
             "constraint": {},

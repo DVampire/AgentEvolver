@@ -3,6 +3,10 @@ name: generate_agent_skill
 description: Guides an agent through generating a new agent (Python class + optional HTML prompt). Use when asked to create a new agent.
 version: 1.0.0
 type: worker
+license: N/A
+category: generation
+requirements: [cpu]
+metadata: {}
 ---
 
 # Generate Agent Skill

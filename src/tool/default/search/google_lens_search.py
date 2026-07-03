@@ -21,6 +21,27 @@ from src.response.types import Response, ResponseType
 CHROMIUM_PATH = "/root/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome"
 
 
+_DESCRIPTION = "Search Google Lens with an image file and an optional text query."
+
+_INSTRUCTION = """
+## Function
+Search Google Lens with an image file and an optional text query.
+
+## Guidance
+- Returns the full result page as markdown content.
+
+## Parameters
+- query (str): Text query to combine with the image search.
+- image (str): Path to the image file to search with.
+- num_results (int, optional): Number of results to return (default: 10).
+- filter_year (int, optional): Filter results by year (default: None).
+- screenshot_dir (str, optional): Directory to save step screenshots into (default: None).
+
+## Example
+{"name": "google_lens_search_tool", "args": {"query": "identify this landmark", "image": "/path/to/photo.jpg"}}
+"""
+
+
 @TOOL.register_module(force=True)
 class GoogleLensSearch(Tool):
     """Search using Google Lens with an image and optional text query.
@@ -32,10 +53,8 @@ class GoogleLensSearch(Tool):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = "google_lens_search_tool"
-    description: str = (
-        "Search Google Lens with an image file and an optional text query. "
-        "Returns the full result page as markdown content."
-    )
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     chromium_path: str = Field(default=CHROMIUM_PATH, description="Path to Chromium binary")
 

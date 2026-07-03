@@ -21,16 +21,16 @@ from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_DESCRIPTION = """Invoke a registered tool in-process and return a raw structured record of the call.
+_DESCRIPTION = "Invoke a registered tool in-process and return a raw structured record of the call."
 
+_INSTRUCTION = """
+## Function
+Invoke a registered tool in-process and return a raw structured record of the call.
+
+## Guidance
 Use this to exercise a tool during evaluation instead of writing a standalone script:
 it runs against the live registry, so there is no import / path / subprocess overhead.
 Call it once per test case; judge correctness/robustness/interface yourself from the record.
-
-Args:
-- name (str): the registered name of the tool to invoke (e.g. "calculator_tool").
-- input (dict): the keyword arguments to pass to that tool, exactly as the tool expects
-  (e.g. {"a": 2, "b": 3, "op": "+"}). Pass invalid/edge inputs here to test robustness.
 
 Returns `data` with:
 - tool_success (bool|None): the invoked tool's Response.success (None if it raised).
@@ -39,7 +39,13 @@ Returns `data` with:
 - interface_ok (bool): whether the return conformed to the Response contract (success:bool, message:str, data:dict|None).
 - elapsed_ms (float): wall time of the single call (import excluded).
 
-Example: {"name": "tool_eval_runner", "args": {"name": "calculator_tool", "input": {"a": 1, "b": 0, "op": "/"}}}
+## Parameters
+- name (str): the registered name of the tool to invoke (e.g. "calculator_tool").
+- input (dict): the keyword arguments to pass to that tool, exactly as the tool expects
+  (e.g. {"a": 2, "b": 3, "op": "+"}). Pass invalid/edge inputs here to test robustness.
+
+## Example
+{"name": "tool_eval_runner", "args": {"name": "calculator_tool", "input": {"a": 1, "b": 0, "op": "/"}}}
 """
 
 
@@ -49,6 +55,7 @@ class ToolEvalRunnerTool(Tool):
 
     name: str = "tool_eval_runner"
     description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

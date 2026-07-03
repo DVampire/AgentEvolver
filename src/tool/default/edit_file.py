@@ -11,18 +11,23 @@ from src.registry import TOOL
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 
-_EDIT_FILE_TOOL_DESCRIPTION = """Edit a file by replacing an exact string with a new string.
+_DESCRIPTION = "Edit a file by replacing an exact string with a new string."
 
-The old_string must appear EXACTLY ONCE in the file. If it appears zero or more than once, the edit is rejected — add more surrounding context to make it unique.
+_INSTRUCTION = """
+## Function
+Edit a file by replacing an exact string with a new string.
 
-Use read_file_tool first to see the current file content before editing.
+## Guidance
+- The old_string must appear EXACTLY ONCE in the file. If it appears zero or more than once, the edit is rejected — add more surrounding context to make it unique.
+- Use read_file_tool first to see the current file content before editing.
 
-Args:
+## Parameters
 - path (str): Absolute path to the file to edit.
 - old_string (str): The exact text to find and replace. Must be unique in the file.
 - new_string (str): The text to replace it with. Use empty string "" to delete old_string.
 
-Example: {"name": "edit_file_tool", "args": {"path": "/abs/path/to/file.py", "old_string": "def foo():\\n    pass", "new_string": "def foo():\\n    return 42"}}
+## Example
+{"name": "edit_file_tool", "args": {"path": "/abs/path/to/file.py", "old_string": "def foo():\\n    pass", "new_string": "def foo():\\n    return 42"}}
 """
 
 
@@ -31,7 +36,8 @@ class EditFileTool(Tool):
     """Precise string-replace file editor. Requires old_string to be unique in the file."""
 
     name: str = "edit_file_tool"
-    description: str = _EDIT_FILE_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

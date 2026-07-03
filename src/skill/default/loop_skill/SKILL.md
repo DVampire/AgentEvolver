@@ -1,8 +1,12 @@
 ---
-name: loop
+name: loop_skill
 description: Run a prompt or slash command on a recurring interval — or with no interval, let the model self-pace based on the task. Use when the user wants a recurring task, to poll for status, or to run something repeatedly (e.g. "check the deploy every 5 minutes", "keep running X"). Do NOT use for one-off tasks. Map the scheduling/wakeup tools below to your framework's equivalents.
 version: 1.0.0
 type: worker
+license: N/A
+category: automation
+requirements: [cpu]
+metadata: {}
 ---
 
 # Loop Skill

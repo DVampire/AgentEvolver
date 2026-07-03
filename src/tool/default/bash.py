@@ -2,7 +2,7 @@
 import asyncio
 import os
 import signal
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from pydantic import Field
 
@@ -11,18 +11,23 @@ from src.registry import TOOL
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 
-_BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell.
+_DESCRIPTION = "Execute bash commands in the shell."
 
-IMPORTANT:
+_INSTRUCTION = """
+## Function
+Execute bash commands in the shell.
+
+## Guidance
 - Use this tool to run system commands, scripts, or any bash operations.
 - Be careful with commands that modify the system or require elevated privileges.
 - For file operations, ALWAYS use ABSOLUTE paths to avoid path-related issues.
 - Input should be a VALID bash command string.
 
-Args:
+## Parameters
 - command (str): The command to execute. If file path is necessary, it should be an absolute path.
 
-Example: {"name": "bash_tool", "args": {"command": "ls -l /path/to/file.txt"}}.
+## Example
+{"name": "bash_tool", "args": {"command": "ls -l /path/to/file.txt"}}
 """
 
 
@@ -31,7 +36,8 @@ class BashTool(Tool):
     """A tool for executing bash commands asynchronously."""
 
     name: str = "bash_tool"
-    description: str = _BASH_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     timeout: int = Field(default=600, description="Timeout in seconds for command execution")
@@ -39,7 +45,7 @@ class BashTool(Tool):
     def __init__(self, require_grad: bool = False, **kwargs):
         super().__init__(require_grad=require_grad, **kwargs)
 
-    async def __call__(self, command: str, work_dir: Optional[str] = None, **kwargs) -> Response:
+    async def __call__(self, command: str, **kwargs) -> Response:
         """Execute a bash command asynchronously.
 
         Args:

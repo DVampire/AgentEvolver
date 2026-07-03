@@ -1,8 +1,12 @@
 ---
-name: deep_research
+name: deep_research_skill
 description: Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, then synthesize a cited report. Use when the user wants a deep, multi-source, fact-checked research report. If the question is underspecified, ask 2-3 clarifying questions to narrow scope first.
 version: 1.0.0
 type: worker
+license: N/A
+category: research
+requirements: [cpu]
+metadata: {}
 ---
 
 # Deep Research Skill

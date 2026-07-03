@@ -15,6 +15,29 @@ from src.registry import TOOL
 from src.utils import hvac_client
 
 
+_DESCRIPTION = "A search engine powered by Jina AI."
+
+_INSTRUCTION = """
+## Function
+A search engine powered by Jina AI.
+
+## Guidance
+- Useful for when you need to answer questions about current events.
+- Input should be a search query.
+
+## Parameters
+- query (str): The query to search for.
+- image (str, optional): Unused image path argument (default: None).
+- num_results (int, optional): The number of search results to return (default: 5).
+- country (str, optional): The country to search in (default: 'us').
+- lang (str, optional): The language to search in (default: 'en').
+- filter_year (int, optional): The year to filter results by (default: None).
+
+## Example
+{"name": "jina_search_tool", "args": {"query": "latest space missions 2026", "num_results": 5}}
+"""
+
+
 @TOOL.register_module(force=True)
 class JinaSearch(Tool):
     """Tool that queries the Jina AI search engine.
@@ -27,11 +50,8 @@ class JinaSearch(Tool):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = "jina_search_tool"
-    description: str = (
-        "a search engine powered by Jina AI. "
-        "useful for when you need to answer questions about current events."
-        " input should be a search query."
-    )
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: str = Field(default="", description="Jina AI API key")
 

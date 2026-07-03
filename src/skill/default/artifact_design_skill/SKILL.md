@@ -1,8 +1,12 @@
 ---
-name: artifact_design
+name: artifact_design_skill
 description: Design guidance and fundamentals for building polished self-contained HTML/web artifacts (pages, dashboards, tools, docs). Use when generating an HTML page or web UI and you want a deliberate, non-templated visual identity calibrated to the task.
 version: 1.0.0
 type: worker
+license: N/A
+category: design
+requirements: [cpu]
+metadata: {}
 ---
 
 # Artifact Design Skill

@@ -1,8 +1,12 @@
 ---
-name: keybindings_help
+name: keybindings_help_skill
 description: Create or modify the keybindings.json file to customize keyboard shortcuts. Use when the user wants to rebind a key, add a chord shortcut, change the submit key, or customize keybindings. Map the file path to your framework's actual keybindings config.
 version: 1.0.0
 type: worker
+license: N/A
+category: config
+requirements: [cpu]
+metadata: {}
 ---
 
 # Keybindings Skill

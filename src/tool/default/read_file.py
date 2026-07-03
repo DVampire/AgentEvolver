@@ -10,15 +10,24 @@ from src.registry import TOOL
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 
-_READ_FILE_TOOL_DESCRIPTION = """Read the contents of a file. Returns the file content with line numbers prefixed.
+_DESCRIPTION = "Read the contents of a file."
 
-Args:
+_INSTRUCTION = """
+## Function
+Read the contents of a file.
+
+## Guidance
+- Returns the file content with line numbers prefixed.
+- By default the whole file is read; use offset/limit to read a specific line range.
+
+## Parameters
 - path (str): Absolute path to the file to read.
 - offset (int, optional): Line number to start reading from (1-based). Defaults to 1.
 - limit (int, optional): Maximum number of lines to read. Defaults to the whole file.
 
-Example: {"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py"}}
-Example: {"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py", "offset": 50, "limit": 100}}
+## Example
+{"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py"}}
+{"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py", "offset": 50, "limit": 100}}
 """
 
 
@@ -27,7 +36,8 @@ class ReadFileTool(Tool):
     """Read file contents with optional line range, returning numbered lines."""
 
     name: str = "read_file_tool"
-    description: str = _READ_FILE_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

@@ -3,6 +3,10 @@ name: generate_skill_skill
 description: Guides an agent through generating a new skill directory with SKILL.md. Use when asked to create a new skill.
 version: 1.0.0
 type: worker
+license: N/A
+category: generation
+requirements: [cpu]
+metadata: {}
 ---
 
 # Generate Skill Skill

@@ -322,35 +322,40 @@ class Todo(BaseModel):
             return "[Current todo.md is empty, fill it with your plan when applicable]"
 
 
-_TODO_TOOL_DESCRIPTION = """Todo tool for managing a todo.md file with task decomposition and step tracking.
-When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
+_DESCRIPTION = "Manage a todo.md file with task decomposition and step tracking."
 
-Available `action` parameters:
-1. add: Add a new step to the todo list at the end or after a specific step.
-    - task: The description of the step.
-    - priority: The priority of the step.
-    - category: The category of the step.
-    - parameters: Optional parameters for the step.
-    - after_step_id: Optional step ID to insert after (if not provided, adds to end).
-2. complete: Mark step as completed (success or failed).
-    - step_id: The ID of the step to complete.
-    - status: Completion status: "success" or "failed".
-    - result: Result description (1-3 sentences).
-3. update: Update step information.
-    - step_id: The ID of the step to update.
-    - task: New step description.
-    - parameters: New step parameters.
+_INSTRUCTION = """
+## Function
+Manage a todo.md file with task decomposition and step tracking.
+
+## Guidance
+Only provide parameters relevant to the specific operation you are performing; do not include unnecessary parameters. The todo.md file is maintained in the base directory and follows a structured format for task management.
+
+Available `action` values:
+1. add: Add a new step to the todo list at the end or after a specific step (task, priority, category, parameters, after_step_id).
+2. complete: Mark a step as completed (step_id, status "success"/"failed", result).
+3. update: Update step information (step_id, task, parameters).
 4. list: List all steps with their status.
 5. clear: Clear completed steps.
 6. show: Show the complete todo.md file content.
-7. export: Export todo.md to a specified path.
-    - export_path: The target path to export the todo.md file.
+7. export: Export todo.md to a specified path (export_path).
 8. cleanup: Clean up and remove the todo from cache (call when done with the todo list).
 
-Example: {"name": "todo_tool", "args": {"action": "add", "task": "Task description", "priority": "high", "category": "work"}}
-Example: {"name": "todo_tool", "args": {"action": "complete", "step_id": "step_1", "status": "success", "result": "Completed successfully"}}
+## Parameters
+- action (str): One of add, complete, update, list, clear, show, export, cleanup.
+- task (str, optional): Step description (add/update).
+- priority (str, optional): Step priority (add).
+- category (str, optional): Step category (add).
+- parameters (dict, optional): Extra step parameters (add/update).
+- after_step_id (str, optional): Step ID to insert after (add).
+- step_id (str, optional): Target step ID (complete/update).
+- status (str, optional): Completion status "success" or "failed" (complete).
+- result (str, optional): Result description (complete).
+- export_path (str, optional): Target path for export.
 
-The todo.md file is maintained in the base directory and follows a structured format for task management.
+## Example
+{"name": "todo_tool", "args": {"action": "add", "task": "Task description", "priority": "high", "category": "work"}}
+{"name": "todo_tool", "args": {"action": "complete", "step_id": "step_1", "status": "success", "result": "Completed successfully"}}
 """
 
 
@@ -360,7 +365,8 @@ class TodoTool(Tool):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = "todo_tool"
-    description: str = _TODO_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     

@@ -1,8 +1,12 @@
 ---
-name: code_review
+name: code_review_skill
 description: Review the current diff for correctness bugs and reuse/simplification/efficiency cleanups at a chosen effort level (low/medium → fewer, high-confidence findings; high → broader coverage, may include uncertain findings). Use when asked to review a diff, find bugs in a change, or check a branch before merge.
 version: 1.0.0
 type: worker
+license: N/A
+category: code-quality
+requirements: [cpu]
+metadata: {}
 ---
 
 # Code Review Skill

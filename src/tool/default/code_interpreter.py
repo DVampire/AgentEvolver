@@ -1,7 +1,6 @@
 """Code interpreter tool — executes code inside an OpenSandbox container.
 
-Replaces the old in-process ``python_interpreter_tool`` (which used the
-``executor`` package). Execution now happens in an isolated, Docker-backed
+Execution now happens in an isolated, Docker-backed
 sandbox via ``src.sandbox`` (the ``code_interpreter`` backend), so it is safe
 and supports Python/Bash/JavaScript/TypeScript/Go/Java.
 
@@ -19,15 +18,22 @@ from src.sandbox import sandbox_manager
 from src.logger import logger
 from src.registry import TOOL
 
-_CODE_INTERPRETER_TOOL_DESCRIPTION = """Execute code in an isolated sandbox and return its output.
+_DESCRIPTION = "Execute code in an isolated sandbox and return its output."
+
+_INSTRUCTION = """
+## Function
+Execute code in an isolated sandbox and return its output.
+
+## Guidance
 Runs in a Docker-backed OpenSandbox container with a persistent kernel, so
 variables/state carry over across calls in the same session.
 
-Args:
+## Parameters
 - code (str): The code to execute.
 - language (str, optional): One of python (default), bash, javascript, typescript, go, java.
 
-Example: {"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}.
+## Example
+{"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}
 """
 
 
@@ -36,7 +42,8 @@ class CodeInterpreterTool(Tool):
     """Execute code in a sandboxed, multi-language interpreter."""
 
     name: str = "code_interpreter_tool"
-    description: str = _CODE_INTERPRETER_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     permission_mode: str = Field(default="danger_full_access", description="Code execution runs in an isolated sandbox.")

@@ -22,6 +22,7 @@ from src.message import Message
 from src.prompt import prompt_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
+from src.connector import connector_manager
 from src.constraint import (
     constraint_manager,
     render_status_text,
@@ -370,6 +371,17 @@ class Agent(BaseModel):
         skill_context = f"### Available Skills\n{available_skills}"
         return {"skill_context": skill_context, "available_skills": available_skills}
 
+    async def _get_connector_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Get the connector context from loaded connectors (MCP servers) via connector manager.
+
+        Concise by design (name/description/actions + CONNECTOR.md path). The agent
+        reads a connector's CONNECTOR.md on demand for per-action argument details.
+        """
+        connector_content = await connector_manager.get_context()
+        available_connectors = connector_content if connector_content else "[No connectors loaded.]"
+        connector_context = f"### Available Connectors\n{available_connectors}"
+        return {"connector_context": connector_context, "available_connectors": available_connectors}
+
     async def _resolve_work_dir(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the work_dir surfaced in the prompt's `{{ work_dir }}` slot.
 
@@ -424,6 +436,7 @@ class Agent(BaseModel):
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
+        agent_message_modules.update(await self._get_connector_context(ctx=ctx))
         
         response = await prompt_manager(
             name=self.prompt_name,
@@ -633,6 +646,11 @@ class Agent(BaseModel):
                         response = await skill_manager(name=action_name, input=action_args, ctx=ctx)
                         action_result = response.message
                         logger.info(f"| ✅ [{self.name}] Skill '{action_name}' completed (success={response.success})")
+
+                    elif action_type == "connector":
+                        response = await connector_manager(name=action_name, input=action_args, ctx=ctx)
+                        action_result = response.message
+                        logger.info(f"| ✅ [{self.name}] Connector '{action_name}' action '{action_args.get('action')}' completed (success={response.success})")
 
                     elif action_type == "env":
                         action_result = await self._handle_env_action(action_name, action_args, ctx)

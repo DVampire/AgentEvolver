@@ -1,8 +1,12 @@
 ---
-name: fewer_permission_prompts
+name: fewer_permission_prompts_skill
 description: Scan transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to the project settings to reduce permission prompts. Use when the user wants fewer permission prompts or wants to build a permission allowlist from their actual usage. Map file paths to your framework's transcript and settings locations.
 version: 1.0.0
 type: worker
+license: N/A
+category: config
+requirements: [cpu]
+metadata: {}
 ---
 
 # Fewer Permission Prompts Skill

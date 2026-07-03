@@ -15,14 +15,24 @@ _IGNORED_DIRS = frozenset({
     "coverage", "__pycache__", ".venv", ".mypy_cache", ".pytest_cache",
 })
 
-_GLOB_SEARCH_TOOL_DESCRIPTION = """Find files matching a glob pattern within a directory tree.
+_DESCRIPTION = "Find files matching a glob pattern within a directory tree."
 
-Args:
+_INSTRUCTION = """
+## Function
+Find files matching a glob pattern within a directory tree.
+
+## Guidance
+- The pattern is matched against both the full relative path from root and the bare filename.
+- Common noise directories (.git, node_modules, __pycache__, .venv, etc.) are skipped automatically.
+- Results are sorted and capped at max_results; refine the pattern if results are truncated.
+
+## Parameters
 - pattern (str): Glob pattern, e.g. "*.py" or "src/**/*.ts".
 - root (str): Absolute path to the directory to search in.
 - max_results (int, optional): Maximum number of results to return. Defaults to 100.
 
-Example: {"name": "glob_search_tool", "args": {"pattern": "*.py", "root": "/abs/path/to/project"}}
+## Example
+{"name": "glob_search_tool", "args": {"pattern": "*.py", "root": "/abs/path/to/project"}}
 """
 
 
@@ -31,7 +41,8 @@ class GlobSearchTool(Tool):
     """Find files matching a glob pattern, skipping common noise directories."""
 
     name: str = "glob_search_tool"
-    description: str = _GLOB_SEARCH_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

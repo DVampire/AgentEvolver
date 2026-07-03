@@ -1,8 +1,12 @@
 ---
-name: verify
+name: verify_skill
 description: Verify that a code change actually does what it's supposed to by running the app and observing behavior. Use when asked to verify a PR, confirm a fix works, test a change manually, check that a feature works, or validate local changes before pushing.
 version: 1.0.0
 type: worker
+license: N/A
+category: workflow
+requirements: [cpu]
+metadata: {}
 ---
 
 # Verify Skill

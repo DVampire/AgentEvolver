@@ -3,6 +3,10 @@ name: generate_tool_skill
 description: Guides an agent through generating a new tool Python class. Use when asked to create a new tool.
 version: 1.0.0
 type: worker
+license: N/A
+category: generation
+requirements: [cpu]
+metadata: {}
 ---
 
 # Generate Tool Skill

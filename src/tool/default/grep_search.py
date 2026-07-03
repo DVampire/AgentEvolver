@@ -15,16 +15,26 @@ _IGNORED_DIRS = frozenset({
     "coverage", "__pycache__", ".venv", ".mypy_cache", ".pytest_cache",
 })
 
-_GREP_SEARCH_TOOL_DESCRIPTION = """Search file contents for lines matching a regex or literal string.
+_DESCRIPTION = "Search file contents for lines matching a regex or literal string."
 
-Args:
+_INSTRUCTION = """
+## Function
+Search file contents for lines matching a regex or literal string.
+
+## Guidance
+- Only files whose names match file_pattern are searched; common noise directories (.git, node_modules, __pycache__, .venv, etc.) are skipped automatically.
+- An invalid regex pattern returns an error rather than matches.
+- Results are capped at max_results; each match reports the file path, line number, and line text.
+
+## Parameters
 - pattern (str): Regular expression (or literal string) to search for.
 - root (str): Absolute path to the directory to search in.
 - file_pattern (str, optional): Glob pattern to filter which files are searched, e.g. "*.py". Defaults to all files.
 - case_sensitive (bool, optional): Whether the search is case-sensitive. Defaults to true.
 - max_results (int, optional): Maximum number of matching lines to return. Defaults to 100.
 
-Example: {"name": "grep_search_tool", "args": {"pattern": "def __call__", "root": "/abs/path/to/project", "file_pattern": "*.py"}}
+## Example
+{"name": "grep_search_tool", "args": {"pattern": "def __call__", "root": "/abs/path/to/project", "file_pattern": "*.py"}}
 """
 
 
@@ -33,7 +43,8 @@ class GrepSearchTool(Tool):
     """Search file contents for regex/literal matches, skipping common noise directories."""
 
     name: str = "grep_search_tool"
-    description: str = _GREP_SEARCH_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
 

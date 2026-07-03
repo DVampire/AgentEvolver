@@ -25,9 +25,16 @@ tool_names = [
     'bash_tool',
     'code_interpreter_tool',
     'done_tool',
+    'inspect_tool',
 ]
 skill_names = [
     "hello_world_skill",
+]
+connector_names = [
+    "biorxiv",
+    "chembl",
+    "clinical_trials",
+    "pubmed",
 ]
 
 #-----------------BASH TOOL CONFIG-----------------

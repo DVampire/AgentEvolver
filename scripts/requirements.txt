@@ -29,3 +29,5 @@ dirtyjson>=1.0.8
 google-cloud-vision>=3.13.0
 json_repair>=0.59.10
 opensandbox>=0.1.9
+langchain-mcp-adapters>=0.3.0
+mcp>=1.26.0

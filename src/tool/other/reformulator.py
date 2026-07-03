@@ -11,15 +11,22 @@ from src.utils import dedent
 from src.registry import TOOL
 
 
-_REFORMULATOR_TOOL_DESCRIPTION = """Reformulator tool for reformulating final answers from agent conversations.
-This tool takes the original task and the conversation history, then uses an LLM to extract and format the final answer.
-Use this tool when you need to produce a clean, formatted final answer from a conversation transcript.
+_DESCRIPTION = "Reformulate a clean, formatted final answer from an agent conversation transcript."
 
-Args:
-- task (str): The original task/question that was asked
+_INSTRUCTION = """
+## Function
+Reformulate a clean, formatted final answer from an agent conversation transcript.
+
+## Guidance
+- Takes the original task and the conversation history, then uses an LLM to extract and format the final answer.
+- Use this tool when you need to produce a clean, formatted final answer from a conversation transcript.
+
+## Parameters
+- task (str): The original task/question that was asked.
 - data (List[str]): Conversation history in the form of a list of message texts.
 
-Example: {"name": "reformulator_tool", "args": {"task": "What is the capital of France?", "data": ["The capital of France is Paris.", "The capital of France is Paris."]}}.
+## Example
+{"name": "reformulator_tool", "args": {"task": "What is the capital of France?", "data": ["The capital of France is Paris.", "The capital of France is Paris."]}}
 """
 
 
@@ -32,7 +39,8 @@ class ReformulatorTool(Tool):
     """A tool for reformulating final answers from agent conversations."""
     
     name: str = "reformulator_tool"
-    description: str = _REFORMULATOR_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     

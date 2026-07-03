@@ -9,8 +9,13 @@ from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_GIT_TOOL_DESCRIPTION = """Run git operations inside the project workdir.
+_DESCRIPTION = "Run git operations inside the project workdir."
 
+_INSTRUCTION = """
+## Function
+Run git operations inside the project workdir.
+
+## Guidance
 Available actions:
 - status: Show working tree status.
 - diff: Show unstaged changes. Optionally pass a file path.
@@ -21,17 +26,18 @@ Available actions:
 - checkout: Checkout a branch or restore a file. Pass target (branch name or file path).
 - branch: List branches.
 
-Args:
+## Parameters
 - action (str): One of: status, diff, diff_staged, log, add, commit, checkout, branch.
 - path (str, optional): File or directory path for diff/add/checkout actions.
 - message (str, optional): Commit message for commit action.
 - count (int, optional): Number of log entries to show (default 10).
 
-Example: {"name": "git_tool", "args": {"action": "status"}}
-Example: {"name": "git_tool", "args": {"action": "diff", "path": "src/foo.py"}}
-Example: {"name": "git_tool", "args": {"action": "add", "path": "."}}
-Example: {"name": "git_tool", "args": {"action": "commit", "message": "fix: handle edge case in parser"}}
-Example: {"name": "git_tool", "args": {"action": "log", "count": 5}}
+## Example
+{"name": "git_tool", "args": {"action": "status"}}
+{"name": "git_tool", "args": {"action": "diff", "path": "src/foo.py"}}
+{"name": "git_tool", "args": {"action": "add", "path": "."}}
+{"name": "git_tool", "args": {"action": "commit", "message": "fix: handle edge case in parser"}}
+{"name": "git_tool", "args": {"action": "log", "count": 5}}
 """
 
 
@@ -40,7 +46,8 @@ class GitTool(Tool):
     """Git operations scoped to the session workdir."""
 
     name: str = "git_tool"
-    description: str = _GIT_TOOL_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     require_grad: bool = Field(default=False)
     timeout: int = Field(default=60)

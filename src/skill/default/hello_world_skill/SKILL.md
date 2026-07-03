@@ -3,6 +3,10 @@ name: hello_world_skill
 description: A demonstration skill that greets users and showcases all skill elements. Use when the user asks for a greeting, wants to test the skill system, or requests a hello world example.
 version: 1.0.0
 type: worker
+license: N/A
+category: example
+requirements: [cpu]
+metadata: {}
 ---
 
 # Hello World Skill

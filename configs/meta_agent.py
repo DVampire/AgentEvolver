@@ -48,14 +48,14 @@ tool_names = [
 skill_names = [
     # worker skills — sub-agents (code_agent / reason_act_agent) see these; the
     # MetaAgent sees none (it orchestrates from its prompt + the agent registry).
-    "code_review",
-    "security_review",
-    "deep_research",
-    "simplify",
-    "review",
-    "verify",
-    "run",
-    "init",
+    "code_review_skill",
+    "security_review_skill",
+    "deep_research_skill",
+    "simplify_skill",
+    "review_skill",
+    "verify_skill",
+    "run_skill",
+    "init_skill",
     # generation skill for the tool_generate_agent sub-agent (in agent_names below)
     "generate_tool_skill",
 ]

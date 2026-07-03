@@ -1,15 +1,19 @@
 ---
-name: simplify
-description: Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for correctness bugs; use code_review for that. Use when asked to clean up, simplify, or improve the quality of a diff.
+name: simplify_skill
+description: Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for correctness bugs; use code_review_skill for that. Use when asked to clean up, simplify, or improve the quality of a diff.
 version: 1.0.0
 type: worker
+license: N/A
+category: code-quality
+requirements: [cpu]
+metadata: {}
 ---
 
 # Simplify Skill
 
 You are improving the quality of the changed code, not hunting for bugs. Review
 it for reuse, simplification, efficiency, and altitude issues, then fix what you
-find. Do not look for correctness bugs — that is what the code_review skill is for.
+find. Do not look for correctness bugs — that is what the code_review_skill is for.
 
 ## How to run (read first)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.dynamic import dynamic_manager
 from src.session import BaseContext
 from src.response.types import Response, ResponseType
@@ -25,6 +25,7 @@ class Tool(BaseModel):
 
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
+    instruction: str = Field(default="", description="Full instruction (function/guidance/parameters/example) fetched on demand via inspect_tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
@@ -39,6 +40,7 @@ class ToolConfig(BaseModel):
     
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
+    instruction: str = Field(default="", description="Full instruction (function/guidance/parameters/example); kept out of the prompt context and fetched on demand via inspect_tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
@@ -55,12 +57,29 @@ class ToolConfig(BaseModel):
     text: Optional[str] = Field(default=None, description="Default text representation")
     args_schema: Optional[Type[BaseModel]] = Field(default=None, description="Default args schema (BaseModel type)")
 
+    @model_validator(mode="after")
+    def _fill_instruction_from_cls(self) -> "ToolConfig":
+        """Backfill `instruction` from the tool class when not explicitly set.
+
+        Lets every ToolConfig construction site (which all pass `cls`) pick up the
+        tool's `instruction` field without threading it through each call.
+        """
+        if not self.instruction and self.cls is not None:
+            try:
+                field = self.cls.model_fields.get("instruction")
+                if field is not None and field.default:
+                    self.instruction = field.default
+            except Exception:
+                pass
+        return self
+
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
         
         result = {
             "name": self.name,
             "description": self.description,
+            "instruction": self.instruction,
             "metadata": self.metadata,
             "require_grad": self.require_grad,
             "permission_mode": self.permission_mode,
@@ -84,6 +103,7 @@ class ToolConfig(BaseModel):
         """Validate the model from a dictionary."""
         name = data.get("name")
         description = data.get("description")
+        instruction = data.get("instruction", "")
         metadata = data.get("metadata")
         require_grad = data.get("require_grad", False)
         permission_mode = data.get("permission_mode", "workspace_write")
@@ -117,6 +137,7 @@ class ToolConfig(BaseModel):
         
         return cls(name=name,
             description=description,
+            instruction=instruction,
             metadata=metadata,
             require_grad=require_grad,
             permission_mode=permission_mode,

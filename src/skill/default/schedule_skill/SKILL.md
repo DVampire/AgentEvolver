@@ -1,8 +1,12 @@
 ---
-name: schedule
+name: schedule_skill
 description: Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule, plus one-time scheduled runs. Use when the user wants a recurring cloud agent, a cron job, or a one-time scheduled run ("run this once at 3pm", "remind me to check X tomorrow"). Map the routine API/tool below to your framework's scheduler.
 version: 1.0.0
 type: worker
+license: N/A
+category: automation
+requirements: [cpu]
+metadata: {}
 ---
 
 # Schedule Skill

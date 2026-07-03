@@ -16,7 +16,13 @@ from src.message.types import HumanMessage, SystemMessage
 from src.utils import dedent
 from src.registry import TOOL
 
-_WEB_SEARCHER_DESCRIPTION = """Search the web for real-time information about any topic.
+_DESCRIPTION = "Search the web for real-time information about any topic."
+
+_INSTRUCTION = """
+## Function
+Search the web for real-time information about any topic.
+
+## Guidance
 This tool performs deep research by:
 1. Using multiple search engines in parallel to find relevant websites
 2. Fetching and analyzing content from each webpage
@@ -24,15 +30,15 @@ This tool performs deep research by:
 4. Merging all summaries into a comprehensive report with citations.
 If the primary search engine fails, it automatically falls back to alternative engines.
 
-
-Args:
+## Parameters
 - query (str): The search query to submit to the search engine.
 - num_results (Optional[int]): The number of search results to return.
 - lang (Optional[str]): Language code for search results.
 - country (Optional[str]): Country code for search results.
 - filter_year (Optional[int]): Filter results by year.
 
-Example: {"name": "web_searcher_tool", "args": {"query": "What is the capital of France?", "num_results": 5, "lang": "en", "country": "us", "filter_year": 2025}}.
+## Example
+{"name": "web_searcher_tool", "args": {"query": "What is the capital of France?", "num_results": 5, "lang": "en", "country": "us", "filter_year": 2025}}
 """
 
 @TOOL.register_module(force=True)
@@ -40,7 +46,8 @@ class WebSearcherTool(Tool):
     """Search the web for information using various search engines."""
 
     name: str = "web_searcher_tool"
-    description: str = _WEB_SEARCHER_DESCRIPTION
+    description: str = _DESCRIPTION
+    instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
 

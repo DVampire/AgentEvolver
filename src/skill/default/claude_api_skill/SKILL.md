@@ -1,8 +1,12 @@
 ---
-name: claude_api
+name: claude_api_skill
 description: Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration. Use when building or debugging apps that call the Claude API, choosing a model, or answering questions about Anthropic models — do not answer from memory.
 version: 1.0.0
 type: worker
+license: N/A
+category: reference
+requirements: [cpu]
+metadata: {}
 ---
 
 # Claude API Skill

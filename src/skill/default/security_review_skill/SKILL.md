@@ -1,8 +1,12 @@
 ---
-name: security_review
+name: security_review_skill
 description: Complete a security review of the pending changes on the current branch, flagging only high-confidence, exploitable vulnerabilities newly introduced by the diff. Use when asked to security-review a branch/PR or audit a change for vulnerabilities.
 version: 1.0.0
 type: worker
+license: N/A
+category: code-quality
+requirements: [cpu]
+metadata: {}
 ---
 
 # Security Review Skill

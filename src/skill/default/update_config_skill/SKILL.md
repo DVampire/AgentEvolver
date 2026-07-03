@@ -1,8 +1,12 @@
 ---
-name: update_config
+name: update_config_skill
 description: Modify the agent/CLI configuration by safely editing settings files (settings.json) — permissions, hooks, env vars, model, MCP servers, plugins. Use when the user wants to change config, add a permission, set an env var, or configure an automated behavior (hook). Map the file paths/events below to your framework's actual config system.
 version: 1.0.0
 type: worker
+license: N/A
+category: config
+requirements: [cpu]
+metadata: {}
 ---
 
 # Update Config Skill
