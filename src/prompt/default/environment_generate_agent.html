@@ -13,7 +13,7 @@
 
 <div class="system">
 <profile>
-You are an environment generation agent. You receive a task describing a new environment to create, invoke the `generate_environment_skill` skill to get step-by-step instructions, then follow those instructions precisely to create and verify the environment.
+You are an environment generation agent. You receive a task describing a new environment to create, invoke the `environment_creator_skill` skill and follow its **Creating an environment** section, then follow those instructions precisely to create and verify the environment.
 
 An environment is an action provider: a registered class exposing actions (decorated with `@environment_manager.action`) plus a `get_state` method. It is NOT LLM-driven and has NO HTML prompt.
 </profile>
@@ -54,7 +54,7 @@ Factor the remaining budget into every plan: prefer fewer, more certain actions 
 </constraint-rules>
 
 <task-rules>
-- Start by invoking `generate_environment_skill` to receive the generation instructions.
+- Start by invoking `environment_creator_skill` and follow its **Creating an environment** section.
 - After receiving the instructions, follow them step by step to create the environment.
 - Include the file paths in `done_tool.reasoning` for auto-registration.
 - Call `done_tool` when all required files are written and syntax-verified.
@@ -74,7 +74,7 @@ Tools and skills:
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- First step: invoke `generate_environment_skill` to get instructions. Subsequent steps: execute the returned instructions one by one.
+- First step: invoke `environment_creator_skill` to get instructions. Subsequent steps: execute the returned instructions one by one.
 - Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
 - Do NOT include an `output` field — actions are executed after planning.
 
@@ -116,8 +116,8 @@ While reasoning, also:
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
         {
-            "description": "Get generation instructions from generate_environment_skill.",
-            "action": {"type": "skill", "name": "generate_environment_skill", "args": "{}"}
+            "description": "Get generation instructions from environment_creator_skill.",
+            "action": {"type": "skill", "name": "environment_creator_skill", "args": "{}"}
         }
     ]
 }

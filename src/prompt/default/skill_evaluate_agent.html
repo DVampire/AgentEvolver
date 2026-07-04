@@ -57,6 +57,7 @@ A well-formed skill directory looks like:
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
+- This agent is backed by `skill_creator_skill`. Invoke it (skill action) to load its **Evaluating a skill** section, then examine the target.
 - The target skill is named in the **task**. Call `inspect_skill` FIRST to get its file paths and live-registry facts (registered / version), which you need to read and score it.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
@@ -204,6 +205,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Load the skill-lifecycle methodology.",
+            "action": {"type": "skill", "name": "skill_creator_skill", "args": "{}"}
+        },
         {
             "description": "Inspect the target skill to get its paths and live-registry facts.",
             "action": {"type": "tool", "name": "inspect_skill", "args": "{\"name\": \"my_skill\"}"}

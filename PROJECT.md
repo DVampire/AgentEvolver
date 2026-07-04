@@ -23,7 +23,7 @@ AgentEvolver/
 │   ├── prompt/             # Prompt templates (one per agent)
 │   │   └── default/        # Built-in HTML prompts
 │   ├── skill/              # Skills (reusable multi-step SOP workflows)
-│   │   └── default/        # Built-in skills (generate_agent_skill, ...)
+│   │   └── default/        # Built-in skills (skill_creator_skill, agent_creator_skill, ...)
 │   ├── environment/        # Execution environments (browser, sandbox, ...)
 │   │   ├── default/        # Built-in environments
 │   │   ├── sandbox.py      # Docker-backed sandbox (opensandbox-server)

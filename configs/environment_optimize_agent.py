@@ -31,7 +31,9 @@ tool_names = [
 agent_names = [
     "environment_optimize_agent",
 ]
-skill_names = []
+skill_names = [
+    "environment_creator_skill",
+]
 connector_names = []
 memory_names = [
     "file_system_memory",

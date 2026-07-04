@@ -1,0 +1,16 @@
+connector_evaluate_agent = dict(
+    name="connector_evaluate_agent",
+    type="ConnectorEvaluateAgent",
+    description="An agent that evaluates connector quality given an evaluation task.",
+    model_name="aws_claude/claude-opus-4.8",
+    prompt_name="connector_evaluate_agent",
+    memory_name="file_system_memory",
+    max_actions=10,
+    max_step=20,
+    max_token=1000000,
+    timeout=1800,
+    review_steps=5,
+    require_grad=False,
+    permission_mode="read_only",
+    use_memory=True,
+)

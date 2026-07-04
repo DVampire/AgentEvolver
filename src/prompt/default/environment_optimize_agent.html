@@ -38,6 +38,7 @@ An environment exposes actions (methods decorated with `@environment_manager.act
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
+- This agent is backed by `environment_creator_skill`. Invoke it (skill action) to load its **Improving an environment** section, then examine the target.
 - The target environment is named in the **task**. Call `inspect_environment` FIRST to get its file paths and confirm it is registered and evolvable — if `require_grad=False`, do NOT edit it; report that it is frozen and stop.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
@@ -134,6 +135,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Load the lifecycle methodology.",
+            "action": {"type": "skill", "name": "environment_creator_skill", "args": "{}"}
+        },
         {
             "description": "Inspect the target environment to get its paths and confirm it is evolvable.",
             "action": {"type": "tool", "name": "inspect_environment", "args": "{\"name\": \"my_environment\"}"}

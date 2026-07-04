@@ -7,6 +7,18 @@ with read_base():
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .agents.tool_generate_agent import tool_generate_agent
+    from .agents.agent_generate_agent import agent_generate_agent
+    from .agents.agent_optimize_agent import agent_optimize_agent
+    from .agents.agent_evaluate_agent import agent_evaluate_agent
+    from .agents.skill_generate_agent import skill_generate_agent
+    from .agents.skill_optimize_agent import skill_optimize_agent
+    from .agents.skill_evaluate_agent import skill_evaluate_agent
+    from .agents.environment_generate_agent import environment_generate_agent
+    from .agents.environment_optimize_agent import environment_optimize_agent
+    from .agents.environment_evaluate_agent import environment_evaluate_agent
+    from .agents.connector_generate_agent import connector_generate_agent
+    from .agents.connector_optimize_agent import connector_optimize_agent
+    from .agents.connector_evaluate_agent import connector_evaluate_agent
     from .tools.bash import bash_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
@@ -34,6 +46,18 @@ agent_names = [
     "tool_optimize_agent",
     "tool_evaluate_agent",
     "tool_generate_agent",
+    "agent_generate_agent",
+    "agent_optimize_agent",
+    "agent_evaluate_agent",
+    "skill_generate_agent",
+    "skill_optimize_agent",
+    "skill_evaluate_agent",
+    "environment_generate_agent",
+    "environment_optimize_agent",
+    "environment_evaluate_agent",
+    "connector_generate_agent",
+    "connector_optimize_agent",
+    "connector_evaluate_agent",
 ]
 tool_names = [
     "bash_tool",
@@ -43,11 +67,9 @@ tool_names = [
     "edit_file_tool",
     "list_dir_tool",
     "git_tool",
-    "tool_eval_runner",
 ]
 skill_names = [
-    # worker skills — sub-agents (code_agent / general_agent) see these; the
-    # MetaAgent sees none (it orchestrates from its prompt + the agent registry).
+    # worker skills — the skill pool for this session's sub-agents (code/general/triads).
     "code_review_skill",
     "security_review_skill",
     "deep_research_skill",
@@ -56,8 +78,14 @@ skill_names = [
     "verify_skill",
     "run_skill",
     "init_skill",
-    # generation skill for the tool_generate_agent sub-agent (in agent_names below)
-    "generate_tool_skill",
+    # per-type creator skills (orchestrator role) — drive each triad's create->eval->improve loop
+    "agent_creator_skill",
+    "tool_creator_skill",
+    "environment_creator_skill",
+    # orchestrator skill: how to drive the skill create->evaluate->improve loop
+    "skill_creator_skill",
+    # orchestrator skill: how to drive the connector create->evaluate->improve loop
+    "connector_creator_skill",
 ]
 connector_names = []
 
@@ -109,6 +137,103 @@ tool_generate_agent.update(
 
 #-----------------EVALUATOR AGENT CONFIGS-----------------
 tool_evaluate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+#-----------------FULL TRIAD CONFIGS (agent/skill/environment/connector)-----------------
+agent_generate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+agent_optimize_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+agent_evaluate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+skill_generate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+skill_optimize_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+skill_evaluate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+environment_generate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+environment_optimize_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+environment_evaluate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+connector_generate_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+connector_optimize_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    require_grad=False,
+    use_memory=True,
+)
+
+connector_evaluate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],

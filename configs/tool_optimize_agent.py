@@ -32,7 +32,9 @@ tool_names = [
 agent_names = [
     "tool_optimize_agent",
 ]
-skill_names = []
+skill_names = [
+    "tool_creator_skill",
+]
 connector_names = []
 memory_names = [
     "file_system_memory",

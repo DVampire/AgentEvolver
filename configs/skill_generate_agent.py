@@ -32,7 +32,8 @@ agent_names = [
     "skill_generate_agent",
 ]
 skill_names = [
-    "generate_skill_skill",
+    # unified skill-lifecycle skill; this agent reads its "Creating a skill" section.
+    "skill_creator_skill",
 ]
 connector_names = []
 memory_names = [

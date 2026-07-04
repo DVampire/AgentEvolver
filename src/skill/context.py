@@ -4,6 +4,7 @@ import os
 import json
 import re
 import shutil
+import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -262,14 +263,15 @@ class SkillContextManager(BaseModel):
         yaml_block = match.group(1)
         body = text[match.end():]
 
-        frontmatter: Dict[str, Any] = {}
-        for line in yaml_block.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if ":" in line:
-                key, _, value = line.partition(":")
-                frontmatter[key.strip()] = value.strip()
+        # Parse the frontmatter as real YAML so structured values (e.g. a multi-label
+        # `type: [orchestrator, worker]` list) are preserved rather than stringified.
+        try:
+            frontmatter = yaml.safe_load(yaml_block) or {}
+            if not isinstance(frontmatter, dict):
+                frontmatter = {}
+        except yaml.YAMLError as e:
+            logger.warning(f"| ⚠️ Failed to parse SKILL.md frontmatter as YAML: {e}")
+            frontmatter = {}
 
         return frontmatter, body
 
@@ -283,7 +285,7 @@ class SkillContextManager(BaseModel):
         parts = [
             f"Skill: {skill_config.name}",
             f"Description: {skill_config.description}",
-            f"Type: {skill_config.type}",
+            f"Type: {', '.join(skill_config.type_tags)}",
             f"Version: {skill_config.version}",
             f"Skill Directory: {skill_config.skill_dir}",
             f"SKILL.md: {os.path.join(skill_config.skill_dir, 'SKILL.md')}",
@@ -581,7 +583,7 @@ class SkillContextManager(BaseModel):
             cfg = self._skill_configs.get(name)
             if cfg is None:
                 continue
-            if skill_types and cfg.type not in skill_types:
+            if skill_types and not any(t in skill_types for t in cfg.type_tags):
                 continue
             parts.append(f"<skill name=\"{cfg.name}\">\n{cfg.text}\n</skill>")
 

@@ -26,6 +26,7 @@ You **never modify the agent**. Your job is observation, testing, and reporting 
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Agent source files live here; read them for evaluation.
 - `{{ work_dir }}` — scratch space for temporary test files.
+- This agent is backed by `agent_creator_skill`. Invoke it (skill action) to load its **Evaluating an agent** section, then examine the target.
 - The target agent is named in the **task**. Call `inspect_agent` to obtain its file paths and live-registry facts. **Never modify any source files.**
 - Always use absolute paths when calling tools.
 </project>
@@ -180,6 +181,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Load the lifecycle methodology.",
+            "action": {"type": "skill", "name": "agent_creator_skill", "args": "{}"}
+        },
         {
             "description": "Inspect the target agent to get its file paths and live-registry facts.",
             "action": {"type": "tool", "name": "inspect_agent", "args": "{\"name\": \"my_agent\"}"}

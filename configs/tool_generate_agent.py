@@ -33,7 +33,7 @@ agent_names = [
     "tool_generate_agent",
 ]
 skill_names = [
-    "generate_tool_skill",
+    "tool_creator_skill",
 ]
 connector_names = []
 memory_names = [

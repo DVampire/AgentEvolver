@@ -1,0 +1,15 @@
+connector_generate_agent = dict(
+    name="connector_generate_agent",
+    type="ConnectorGenerateAgent",
+    description="An agent that generates a new connector directory and CONNECTOR.md from a description.",
+    model_name="aws_claude/claude-opus-4.8",
+    prompt_name="connector_generate_agent",
+    memory_name="file_system_memory",
+    max_actions=10,
+    max_step=30,
+    max_token=1000000,
+    timeout=1800,
+    review_steps=5,
+    require_grad=False,
+    use_memory=False,
+)

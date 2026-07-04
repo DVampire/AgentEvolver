@@ -31,7 +31,10 @@ tool_names = [
 agent_names = [
     "skill_optimize_agent",
 ]
-skill_names = []
+skill_names = [
+    # unified skill-lifecycle skill; this agent reads its "Improving a skill" section.
+    "skill_creator_skill",
+]
 connector_names = []
 memory_names = [
     "file_system_memory",

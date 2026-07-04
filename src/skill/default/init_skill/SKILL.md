@@ -11,7 +11,7 @@ metadata: {}
 
 # Init Skill
 
-Please analyze this codebase and create a CLAUDE.md file, which will be given to future instances of Claude Code to operate in this repository.
+Please analyze this codebase and create a CLAUDE.md file, which will be given to future agent instances to operate in this repository.
 
 ## What to add
 

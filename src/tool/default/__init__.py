@@ -16,9 +16,7 @@ from .inspect_tool import InspectTool
 from .inspect_agent import InspectAgent
 from .inspect_skill import InspectSkill
 from .inspect_environment import InspectEnvironment
-from .skill_eval_runner import SkillEvalRunnerTool
-from .skill_trigger_runner import SkillTriggerRunnerTool
-from .skill_test_runner import SkillTestRunnerTool
+from .inspect_connector import InspectConnector
 
 __all__ = [
     "BashTool",
@@ -39,7 +37,5 @@ __all__ = [
     "InspectAgent",
     "InspectSkill",
     "InspectEnvironment",
-    "SkillEvalRunnerTool",
-    "SkillTriggerRunnerTool",
-    "SkillTestRunnerTool",
+    "InspectConnector",
 ]

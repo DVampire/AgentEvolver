@@ -850,7 +850,15 @@ class MetaAgent(Agent):
         existing_files = [
             f for f in (record.spec.input.files or []) if os.path.exists(f)
         ]
-        args = record.spec.input.args or {}
+        args = dict(record.spec.input.args or {})
+
+        # A sub-task may pin which skills the sub-agent sees — e.g. MetaAgent runs a
+        # with-skill vs baseline probe by dispatching the same agent twice with
+        # different allowlists. Honor an optional `skill_allowlist` in args by injecting
+        # it into the sub-agent's ctx (consumed by Agent._get_skill_context).
+        allowlist = args.pop("skill_allowlist", None)
+        if allowlist is not None:
+            ctx.extra["skill_allowlist"] = allowlist
 
         try:
             if kind == "agent":

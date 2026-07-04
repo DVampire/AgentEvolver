@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from src.session import BaseContext
@@ -30,7 +30,7 @@ class SkillConfig(BaseModel):
     require_grad: bool = Field(default=False, description="Whether the skill is trainable")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the skill")
-    type: str = Field(default="tool", description="Skill type label from YAML frontmatter (free-form parameter, no special handling)")
+    type: Union[str, List[str]] = Field(default="tool", description="Skill type label(s) from YAML frontmatter. May be a single label (e.g. 'worker') or a list of labels (e.g. ['orchestrator', 'worker']) for a skill that serves multiple roles.")
 
     skill_dir: str = Field(description="Absolute path to the skill directory")
     content: str = Field(default="", description="Full markdown body of SKILL.md (after frontmatter)")
@@ -40,6 +40,11 @@ class SkillConfig(BaseModel):
     examples: List[str] = Field(default_factory=list, description="Paths to example files under examples/")
 
     text: Optional[str] = Field(default=None, description="Pre-built text representation for prompt injection")
+
+    @property
+    def type_tags(self) -> List[str]:
+        """Normalize ``type`` (str or list) to a list of labels for filtering/display."""
+        return list(self.type) if isinstance(self.type, list) else [self.type]
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         return {
