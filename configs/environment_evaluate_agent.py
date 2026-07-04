@@ -24,12 +24,14 @@ tool_names = [
     "write_file_tool",
     "glob_search_tool",
     "grep_search_tool",
+    "inspect_environment",
     "environment_eval_runner",
 ]
 agent_names = [
     "environment_evaluate_agent",
 ]
 skill_names = []
+connector_names = []
 memory_names = [
     "file_system_memory",
 ]

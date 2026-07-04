@@ -1,26 +1,26 @@
-"""ReasonActAgent implementation — iterative reasoning and action via tools, skills, and text."""
+"""GeneralAgent — iterative reasoning and action via tools, skills, connectors, and text."""
 
-from typing import List, Optional, Dict, Any
-from pydantic import Field, ConfigDict
+from typing import Any, Dict, List, Optional
 
-from src.logger import logger
+from pydantic import ConfigDict, Field
+
 from src.registry import AGENT
-from src.hook.server import hook_manager
-from src.hook.types import HookEvent
-from src.agent.types import (
-    Agent,
-        AgentContext,
-)
-from src.response.types import Response, ResponseType
-from src.utils.name_utils import make_id
+from src.agent.types import Agent, AgentContext
+from src.response.types import Response
 
 
 @AGENT.register_module(force=True)
-class ReasonActAgent(Agent):
-    """Iterative agent that reasons and acts via tools, skills, and direct text responses."""
+class GeneralAgent(Agent):
+    """Iterative agent that reasons and acts via tools, skills, connectors, and direct text.
+
+    Carries no bespoke loop or context builder: it uses the base-class standard
+    think-and-act loop (``Agent.__call__``) and context builder unchanged, and only
+    supplies its own name/description/prompt.
+    """
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="reason_act_agent")
+    name: str = Field(default="general_agent")
     description: str = Field(
         default="An iterative agent that reasons and acts by using tools, skills, and direct "
                 "responses to accomplish tasks accurately, safely, and efficiently."
@@ -49,7 +49,7 @@ class ReasonActAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name or "reason_act_agent",
+            prompt_name=prompt_name or "general_agent",
             memory_name=memory_name,
             max_actions=max_actions,
             max_step=max_step,
@@ -58,126 +58,12 @@ class ReasonActAgent(Agent):
             **kwargs,
         )
 
-    # ------------------------------------------------------------------
-    # Context builder
-    # ------------------------------------------------------------------
-
-    async def _get_agent_context(
-        self,
-        task: str,
-        step_number: int = 0,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-
-        # Live workspace listing (see workspace sub-module in reason_act_agent.html).
-        base["workspace"] = self._workspace_snapshot(ctx)
-
-        # Exposed as its own agent_context sub-module (see reason_act_agent.html).
-        action_errors = kwargs.get("action_errors") or []
-        base["errors"] = (
-            "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
-        )
-
-        return base
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
-
     async def __call__(
         self,
-        task: str,
+        task: Optional[str] = None,
         files: Optional[List[str]] = None,
+        ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Response:
-        logger.info(f"| 🚀 Starting ReasonActAgent: {task}")
-
-        ctx = kwargs.get("ctx", None)
-        if ctx is None:
-            ctx = AgentContext()
-
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
-
-        if files:
-            logger.info(f"| 📂 Attached files: {files}")
-        enhanced_task = task
-
-        task_id = make_id()
-        logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
-
-        parent_session_id = ctx.parent_session_id if ctx else None
-        subtask_id = ctx.subtask_id if ctx else None
-
-        # ON_START
-        await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
-            ctx=ctx,
-        )
-
-        step_number = 0
-        action_errors: List[str] = []
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
-
-        while step_number < self.max_step:
-            logger.info(f"| 🔄 Step {step_number+1}/{self.max_step}")
-            # Check budget BEFORE building the message so the prompt reflects the
-            # current budget (aligned with MetaAgent). Runs once per step;
-            # _think_and_act is told not to repeat it.
-            reason, constraint_status = await self._constraint_check(task_id, ctx)
-            if reason is not None:
-                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {"done": True, "result": reason, "reasoning": None,
-                            "action_errors": [], "stopped_by_constraint": True}
-                break
-            messages = await self._get_messages(
-                enhanced_task,
-                ctx=ctx,
-                files=files,
-                step_number=step_number,
-                action_errors=action_errors,
-                constraint_status=constraint_status,
-            )
-            response = await self._think_and_act(
-                messages, task_id, step_number, ctx=ctx
-            )
-            step_number += 1
-            action_errors = response.get("action_errors") or []
-            if response["done"]:
-                break
-
-        if step_number >= self.max_step and not response["done"]:
-            logger.warning(f"| 🛑 Reached max steps ({self.max_step}), stopping...")
-            response = {
-                "done": False,
-                "result": "The task has not been completed.",
-                "reasoning": "Reached the maximum number of steps.",
-            }
-
-        # ON_STOP
-        await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
-            ctx=ctx,
-        )
-
-        logger.info(f"| ✅ Agent completed after {step_number}/{self.max_step} steps")
-
-        return Response(type=ResponseType.AGENT, 
-            success=response["done"] and not response.get("stopped_by_constraint", False),
-            message=response["result"],
-            data=response,
-        )
+        """Entry point — runs the base-class standard think-and-act loop unchanged."""
+        return await super().__call__(task=task, files=files, ctx=ctx, **kwargs)

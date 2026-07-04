@@ -22,6 +22,7 @@ agent_names = [
 # Pure environment agent — no tools; the task ends via the built-in `finish` action.
 tool_names = []
 skill_names = []
+connector_names = []
 env_names = [
     "browser_environment",
 ]

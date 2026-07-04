@@ -1,4 +1,4 @@
-"""Run MetaAgent with code_agent and reason_act_agent as sub-agents.
+"""Run MetaAgent with code_agent and general_agent as sub-agents.
 
 Usage
 -----
@@ -36,6 +36,7 @@ from src.prompt import prompt_manager
 from src.memory import memory_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
+from src.connector import connector_manager
 from src.agent import agent_manager
 from src.extension import extension_manager
 from src.hook import hook_manager
@@ -115,6 +116,11 @@ async def main():
     skill_names = getattr(config, "skill_names", None)
     await skill_manager.initialize(skill_names=skill_names)
     logger.info(f"| ✅ Skills: {await skill_manager.list()}")
+
+    logger.info("| 🔌 Initializing connectors...")
+    connector_names = getattr(config, "connector_names", None)
+    await connector_manager.initialize(connector_names=connector_names)
+    logger.info(f"| ✅ Connectors: {await connector_manager.list()}")
 
     logger.info("| 🤖 Initializing agents...")
     await agent_manager.initialize(agent_names=config.agent_names)

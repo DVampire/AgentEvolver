@@ -1,12 +1,12 @@
 from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
-    from .agents.reason_act_agent import reason_act_agent
+    from .agents.general_agent import general_agent
     from .tools.mdify import mdify_tool
     from .tools.bash import bash_tool
     from .memory.file_system_memory import file_system_memory
 
-tag = "reason_act_agent"
+tag = "general_agent"
 work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
 log_path = "agent.log"
@@ -19,13 +19,14 @@ memory_names = [
     "file_system_memory",
 ]
 agent_names = [
-    "reason_act_agent"
+    "general_agent"
 ]
 tool_names = [
     'bash_tool',
     'code_interpreter_tool',
     'done_tool',
     'inspect_tool',
+    'todo_tool',
 ]
 skill_names = [
     "hello_world_skill",
@@ -54,7 +55,7 @@ file_system_memory.update(
 )
 
 #-----------------REASON ACT AGENT CONFIG-----------------
-reason_act_agent.update(
+general_agent.update(
     base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],

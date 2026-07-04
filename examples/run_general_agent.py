@@ -31,10 +31,10 @@ from src.utils import make_id
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run ReasonActAgent on a task")
+    parser = argparse.ArgumentParser(description="Run GeneralAgent on a task")
     parser.add_argument(
         "--config",
-        default=os.path.join(root, "configs", "reason_act_agent.py"),
+        default=os.path.join(root, "configs", "general_agent.py"),
         help="Config file path",
     )
     add_task_args(parser, default_task_file=os.path.join(root, "examples", "tasks", "arithmetic_steps.html"))
@@ -48,12 +48,12 @@ def parse_args():
 
 
 async def run_agent(record: TaskRecord):
-    """TaskManager handler: executes the reason_act agent for a given TaskRecord."""
+    """TaskManager handler: executes the general agent for a given TaskRecord."""
     session_id = record.task.session_id or make_id()
     ctx = SessionContext(id=session_id)
 
     response = await agent_manager(
-        name="reason_act_agent",
+        name="general_agent",
         input={
             "task": record.task.content,
             "files": record.task.files,

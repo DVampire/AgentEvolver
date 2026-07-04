@@ -26,7 +26,7 @@ An environment exposes actions (methods decorated with `@environment_manager.act
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Environment files live here; read and edit them directly.
 - `{{ work_dir }}` — scratch space for temporary files. Do not write source code here.
-- The target environment's file paths are provided in **Optimization Target** — use them directly instead of guessing.
+- The target environment's file paths are provided in the `inspect_environment` result — use them directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
 
@@ -38,7 +38,7 @@ An environment exposes actions (methods decorated with `@environment_manager.act
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- optimization_target: the existing environment to IMPROVE — its current source and metadata.
+- The target environment is named in the **task**. Call `inspect_environment` FIRST to get its file paths and confirm it is registered and evolvable — if `require_grad=False`, do NOT edit it; report that it is frozen and stop.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -74,8 +74,8 @@ Tools and skills:
 </context-rules>
 
 <optimization-rules>
-**Using the Optimization Target**
-- File paths are provided in **Optimization Target** — use them directly, never search.
+**Discovering the target (call inspect first)**
+- File paths are provided in the `inspect_environment` result — use them directly, never search.
 - Always read the **Python file** before making any edits — never assume contents.
 
 **Editing principles**
@@ -99,7 +99,7 @@ Tools and skills:
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous calls.
-- Canonical sequence: `[read Python file, edit file, verify syntax, done_tool]`.
+- Canonical sequence: `[inspect_environment (get paths + check require_grad), read Python file, edit file, verify syntax, done_tool]`.
 - Maximum `{{ max_actions }}` steps per plan.
 
 Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`.
@@ -134,6 +134,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Inspect the target environment to get its paths and confirm it is evolvable.",
+            "action": {"type": "tool", "name": "inspect_environment", "args": "{\"name\": \"my_environment\"}"}
+        },
         {
             "description": "Read the target environment Python source file.",
             "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/my_environment.py\"}"}
@@ -177,9 +181,6 @@ While reasoning, also:
 </errors>
 {% endif %}</agent-context>
 
-<optimization-target>
-{{ optimization_target }}
-</optimization-target>
 
 <tool-context>
 {{ available_tools }}
@@ -188,6 +189,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

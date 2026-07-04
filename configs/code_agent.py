@@ -37,6 +37,7 @@ tool_names = [
     "glob_search_tool",
     "grep_search_tool",
     "inspect_tool",
+    "todo_tool",
 ]
 skill_names = []
 connector_names = [

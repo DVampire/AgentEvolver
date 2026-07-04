@@ -24,7 +24,7 @@ You are an expert skill optimization agent. You receive an optimization task fro
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Skill files live here; read and edit them directly.
 - `{{ work_dir }}` — scratch space for temporary files. Do not write skill content here.
-- The target skill's directory and SKILL.md path are provided in **Optimization Target** — use them directly instead of guessing.
+- The target skill's directory and SKILL.md path are provided in the `inspect_skill` result — use them directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
 
@@ -55,7 +55,7 @@ A well-formed skill directory looks like:
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- optimization_target: the existing skill to IMPROVE — its current source and metadata.
+- The target skill is named in the **task**. Call `inspect_skill` FIRST to get its file paths and confirm it is registered and evolvable — if `require_grad=False`, do NOT edit it; report that it is frozen and stop.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -91,8 +91,8 @@ Tools and skills:
 </context-rules>
 
 <optimization-rules>
-**Using the Optimization Target**
-- The SKILL.md path is provided in **Optimization Target** — use it directly, never search for it.
+**Discovering the target (call inspect first)**
+- The SKILL.md path is provided in the `inspect_skill` result — use it directly, never search for it.
 - Always read SKILL.md **before making any edits** — never assume its contents.
 - If **Scripts** or **Reference Files** are listed, read any that are relevant to the optimization task.
 
@@ -113,7 +113,7 @@ Tools and skills:
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- The canonical sequence: `[read SKILL.md, edit file, verify edit, done_tool]`.
+- The canonical sequence: `[inspect_skill (get dir + check require_grad), read SKILL.md, edit file, verify edit, done_tool]`.
 - Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
 - Do NOT include an `output` field — actions are executed after planning.
 
@@ -151,6 +151,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Inspect the target skill to get its paths and confirm it is evolvable.",
+            "action": {"type": "tool", "name": "inspect_skill", "args": "{\"name\": \"my_skill\"}"}
+        },
         {
             "description": "Read the target SKILL.md.",
             "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/SKILL.md\"}"}
@@ -194,9 +198,6 @@ While reasoning, also:
 </errors>
 {% endif %}</agent-context>
 
-<optimization-target>
-{{ optimization_target }}
-</optimization-target>
 
 <tool-context>
 {{ available_tools }}
@@ -205,6 +206,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

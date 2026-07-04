@@ -3,7 +3,7 @@ with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.meta_agent import meta_agent
     from .agents.code_agent import code_agent
-    from .agents.reason_act_agent import reason_act_agent
+    from .agents.general_agent import general_agent
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .agents.tool_generate_agent import tool_generate_agent
@@ -30,7 +30,7 @@ memory_names = [
 agent_names = [
     "meta_agent",
     "code_agent",
-    "reason_act_agent",
+    "general_agent",
     "tool_optimize_agent",
     "tool_evaluate_agent",
     "tool_generate_agent",
@@ -46,7 +46,7 @@ tool_names = [
     "tool_eval_runner",
 ]
 skill_names = [
-    # worker skills — sub-agents (code_agent / reason_act_agent) see these; the
+    # worker skills — sub-agents (code_agent / general_agent) see these; the
     # MetaAgent sees none (it orchestrates from its prompt + the agent registry).
     "code_review_skill",
     "security_review_skill",
@@ -59,6 +59,7 @@ skill_names = [
     # generation skill for the tool_generate_agent sub-agent (in agent_names below)
     "generate_tool_skill",
 ]
+connector_names = []
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(require_grad=False)
@@ -80,7 +81,7 @@ code_agent.update(
     use_memory=True,
 )
 
-reason_act_agent.update(
+general_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],

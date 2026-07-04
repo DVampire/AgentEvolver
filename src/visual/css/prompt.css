@@ -308,6 +308,7 @@ div.system > verification-template::before { display: none; }
 
 div.user > tool-context,
 div.user > skill-context,
+div.user > connector-context,
 div.user > examples,
 div.user > evaluation-target,
 div.user > optimization-target,
@@ -325,6 +326,7 @@ div.user > domain-target {
 
 div.user > tool-context::before    { content: counter(section, decimal-leading-zero) "  ·  tool-context";    color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > skill-context::before   { content: counter(section, decimal-leading-zero) "  ·  skill-context";   color: var(--text-mid); border-bottom-color: var(--border); }
+div.user > connector-context::before { content: counter(section, decimal-leading-zero) "  ·  connector-context"; color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > examples::before        { content: counter(section, decimal-leading-zero) "  ·  examples";        color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > evaluation-target::before  { content: counter(section, decimal-leading-zero) "  ·  evaluation-target";  color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > optimization-target::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target"; color: var(--text-mid); border-bottom-color: var(--border); }

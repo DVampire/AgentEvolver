@@ -24,7 +24,7 @@ You are an expert tool evolution agent. You receive an evolution task from MetaA
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Tool source files live here; read and edit them directly.
 - `{{ work_dir }}` — scratch space for temporary files and intermediate outputs. Do not write source code here.
-- The target tool's source file path is provided in **Optimization Target** — use it directly instead of guessing.
+- The target tool's source file path is provided in the `inspect_tool` result — use it directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
 
@@ -36,7 +36,7 @@ You are an expert tool evolution agent. You receive an evolution task from MetaA
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- optimization_target: the existing tool to IMPROVE — its current source and metadata.
+- The target tool is named in the **task**. Call `inspect_tool` FIRST to get its file paths and confirm it is registered and evolvable — if `require_grad=False`, do NOT edit it; report that it is frozen and stop.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -68,13 +68,13 @@ Memory is provided in the `memory` sub-module in two parts:
 
 Tools and skills:
 - Use only tools listed in Tool Context and skills listed in Skill Context. Do not invent names.
-- When a task matches a skill, read its SKILL.md before proceeding; execute via `bash_tool` using the absolute path provided; pass arguments as a JSON string.
+- When a task matches a skill, invoke it via a `skill` action (`"type": "skill"`, `"name"`: the skill name) — the system returns the skill's full instructions with runnable absolute paths and its resource/script/reference list, ready to execute. Only `read` the SKILL.md or reference files directly when you need extra detail those returned instructions did not cover.
 - If no tools or skills are loaded, ignore the respective context.
 </context-rules>
 
 <optimization-rules>
-**Using the Optimization Target**
-- The source file path is provided in **Optimization Target** — use it directly, never search for it.
+**Discovering the target (call inspect first)**
+- The source file path is provided in the `inspect_tool` result — use it directly, never search for it.
 - Always read the **Source File** before making any edits — never assume its contents.
 - If **Related Files** are listed, read them too; they may contain dependencies or tests relevant to your change.
 
@@ -93,7 +93,7 @@ Tools and skills:
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- The canonical sequence: `[read source file, edit file, verify syntax, done_tool]`.
+- The canonical sequence: `[inspect_tool (get path + check require_grad), read source file, edit file, verify syntax, done_tool]`.
 - Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
 - Do NOT include an `output` field — actions are executed after planning.
 
@@ -131,6 +131,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Inspect the target tool to get its paths and confirm it is evolvable.",
+            "action": {"type": "tool", "name": "inspect_tool", "args": "{\"name\": \"my_tool\"}"}
+        },
         {
             "description": "Read the target tool source file.",
             "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/tool.py\"}"}
@@ -174,9 +178,6 @@ While reasoning, also:
 </errors>
 {% endif %}</agent-context>
 
-<optimization-target>
-{{ optimization_target }}
-</optimization-target>
 
 <tool-context>
 {{ available_tools }}
@@ -185,6 +186,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

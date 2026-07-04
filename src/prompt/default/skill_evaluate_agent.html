@@ -26,7 +26,7 @@ You **never modify the skill**. Your job is observation, reading, and reporting 
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Skill files live here; read them for evaluation.
 - `{{ work_dir }}` — scratch space for temporary notes.
-- The target skill's directory path is provided in **Evaluation Target** — use it directly. **Never search for it. Never modify any skill files.**
+- The target skill's directory path is provided in the `inspect_skill` result — use it directly. **Never search for it. Never modify any skill files.**
 - Always use absolute paths when calling tools.
 </project>
 
@@ -57,7 +57,7 @@ A well-formed skill directory looks like:
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- evaluation_target: the skill UNDER EVALUATION — its source, metadata, and how to exercise it.
+- The target skill is named in the **task**. Call `inspect_skill` FIRST to get its file paths and live-registry facts (registered / version), which you need to read and score it.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -102,8 +102,8 @@ Tools and skills:
 </context-rules>
 
 <evaluation-rules>
-**Using the Evaluation Target**
-- **Evaluation Target** gives you the exact SKILL.md path. Trust it and use it directly — never search for the file.
+**Discovering the target (call inspect first)**
+- the `inspect_skill` result gives you the exact SKILL.md path. Trust it and use it directly — never search for the file.
 - Read SKILL.md **exactly once** (Step 1). Do NOT read it again in later steps.
 - After reading, record `✓ SKILL.md read: [absolute path]` in your `memory` field.
 - If memory already shows `✓ SKILL.md read: PATH`, skip reading and proceed directly to the next pending dimension.
@@ -148,7 +148,7 @@ Tools and skills:
 Follow this **exact 3-step workflow**. Do not deviate.
 
 **Step 1 — Read SKILL.md (1 action)**
-- Read SKILL.md using the path from **Evaluation Target**.
+- Read SKILL.md using the path from the `inspect_skill` result.
 - Record `✓ SKILL.md read: [path]` in memory. Do NOT evaluate yet.
 
 **Step 2 — Evaluate all dimensions (1 action per dimension, or combine into 1 text action)**
@@ -166,7 +166,7 @@ Ideal total: **3 steps**. If Step 1 fails (file not found), report critical fail
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- Follow the 3-step workflow in `&lt;test-template&gt;`: Read → Evaluate → Report.
+- Follow the workflow in `&lt;test-template&gt;`: Inspect target → Read → Evaluate → Report.
 - Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
 - Do NOT include an `output` field — actions are executed after planning.
 
@@ -205,6 +205,10 @@ While reasoning, also:
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
         {
+            "description": "Inspect the target skill to get its paths and live-registry facts.",
+            "action": {"type": "tool", "name": "inspect_skill", "args": "{\"name\": \"my_skill\"}"}
+        },
+        {
             "description": "Read the SKILL.md file.",
             "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/SKILL.md\"}"}
         },
@@ -239,9 +243,6 @@ While reasoning, also:
 </errors>
 {% endif %}</agent-context>
 
-<evaluation-target>
-{{ evaluation_target }}
-</evaluation-target>
 
 <tool-context>
 {{ available_tools }}
@@ -250,6 +251,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

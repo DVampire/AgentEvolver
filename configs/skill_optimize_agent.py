@@ -26,11 +26,13 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
+    "inspect_skill",
 ]
 agent_names = [
     "skill_optimize_agent",
 ]
 skill_names = []
+connector_names = []
 memory_names = [
     "file_system_memory",
 ]

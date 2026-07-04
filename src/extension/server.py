@@ -9,7 +9,8 @@ Framework code lives in `src/` (immutable). Evolved/generated components live ou
     ├── agent/<name>.py
     ├── prompt/<name>.html
     ├── skill/<name>/SKILL.md
-    ├── environment/<name>.py
+    ├── environment/<name>/{environment.py + ENVIRONMENT.md}
+    ├── connector/<name>/CONNECTOR.md
     └── .versions/<module>/<name>/<version>.<ext>   # archive: every version coexists
 
 Authoring writes the flat active file; ExtensionManager archives each registered
@@ -35,9 +36,14 @@ from src.extension.types import Manifest, ManifestComponent
 # Modules whose components are class-based (loaded via dynamic_manager).
 _CLASS_MODULES = {"tool", "agent", "environment"}
 # All modules the extension tree may carry.
-_MODULES = ["tool", "agent", "prompt", "skill", "environment"]
-# Active-file extension per module ("" => the component is a directory, e.g. skills).
-_EXT = {"tool": ".py", "agent": ".py", "environment": ".py", "prompt": ".html", "skill": ""}
+_MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector"]
+# Active-file extension per module ("" => the component is a directory).
+_EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": ""}
+# Directory-type modules: the active component is a directory holding a manifest file.
+_DIR_MODULES = {"skill", "environment", "connector"}
+_MANIFEST_FILE = {"skill": "SKILL.md", "environment": "ENVIRONMENT.md", "connector": "CONNECTOR.md"}
+# For directory-type class modules, the Python class lives in this file inside the dir.
+_CLASS_ENTRY = {"environment": "environment.py"}
 
 _ARCHIVE = ".versions"
 
@@ -127,8 +133,8 @@ class ExtensionManagerServer(BaseModel):
                 if entry.startswith(".") or entry == "__init__.py":
                     continue
                 abspath = os.path.join(mdir, entry)
-                if module == "skill":
-                    if not (os.path.isdir(abspath) and os.path.exists(os.path.join(abspath, "SKILL.md"))):
+                if module in _DIR_MODULES:
+                    if not (os.path.isdir(abspath) and os.path.exists(os.path.join(abspath, _MANIFEST_FILE[module]))):
                         continue
                 elif not (entry.endswith(ext) and os.path.isfile(abspath)):
                     continue
@@ -204,7 +210,7 @@ class ExtensionManagerServer(BaseModel):
         ext = _EXT[module]
         out = []
         for entry in os.listdir(adir):
-            if module == "skill":
+            if module in _DIR_MODULES:
                 if os.path.isdir(os.path.join(adir, entry)):
                     out.append(entry)
             elif entry.endswith(ext):
@@ -226,7 +232,7 @@ class ExtensionManagerServer(BaseModel):
             dest = os.path.join(self.module_dir(module), f"{name}{ext}")
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if module == "skill":
+        if module in _DIR_MODULES:
             if os.path.exists(dest):
                 shutil.rmtree(dest)
             shutil.copytree(archived, dest)
@@ -259,7 +265,7 @@ class ExtensionManagerServer(BaseModel):
         os.makedirs(adir, exist_ok=True)
         dest = os.path.join(adir, f"{version}{ext}")
         try:
-            if module == "skill":
+            if module in _DIR_MODULES:
                 if os.path.abspath(abspath) != os.path.abspath(dest):
                     if os.path.exists(dest):
                         shutil.rmtree(dest)
@@ -281,19 +287,29 @@ class ExtensionManagerServer(BaseModel):
             return await self._load_prompt(abspath, return_version)
         if module == "skill":
             return await self._load_skill(abspath, version, return_version)
+        if module == "connector":
+            return await self._load_connector(abspath, version, return_version)
         raise ValueError(f"Unknown extension module: {module}")
 
     async def _load_class_component(self, module: str, abspath: str, version: Optional[str],
                                     config: Optional[dict], return_version: bool):
         from src.dynamic import dynamic_manager
         base_cls = self._base_class(module)
-        stem = os.path.splitext(os.path.basename(abspath))[0]
+        # Directory-type class modules (environment) keep the class in a fixed entry
+        # file inside the dir; single-file class modules (tool/agent) load the file itself.
+        entry = _CLASS_ENTRY.get(module)
+        if entry and os.path.isdir(abspath):
+            class_file = os.path.join(abspath, entry)
+            stem = os.path.basename(os.path.normpath(abspath))
+        else:
+            class_file = abspath
+            stem = os.path.splitext(os.path.basename(abspath))[0]
         module_name = f"ext.{module}.{stem}"
         cls = dynamic_manager.load_class_from_path(
-            abspath, base_class=base_cls, context=module, module_name=module_name
+            class_file, base_class=base_cls, context=module, module_name=module_name
         )
-        cls.__source_file__ = abspath
-        with open(abspath, "r", encoding="utf-8") as f:
+        cls.__source_file__ = class_file
+        with open(class_file, "r", encoding="utf-8") as f:
             code = f.read()
 
         if module == "tool":
@@ -323,6 +339,12 @@ class ExtensionManagerServer(BaseModel):
     async def _load_skill(self, abspath: str, version: Optional[str], return_version: bool):
         from src.skill.server import skill_manager
         cfg = await skill_manager.register(skill_dir=abspath, override=True, version=version)
+        name = getattr(cfg, "name", os.path.basename(abspath))
+        return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
+
+    async def _load_connector(self, abspath: str, version: Optional[str], return_version: bool):
+        from src.connector.server import connector_manager
+        cfg = await connector_manager.register(connector_dir=abspath, override=True, version=version)
         name = getattr(cfg, "name", os.path.basename(abspath))
         return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
 
@@ -369,6 +391,9 @@ class ExtensionManagerServer(BaseModel):
         if module == "environment":
             from src.environment.server import environment_manager
             return environment_manager
+        if module == "connector":
+            from src.connector.server import connector_manager
+            return connector_manager
         raise ValueError(f"Unknown extension module: {module}")
 
 

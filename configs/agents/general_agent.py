@@ -1,10 +1,10 @@
-reason_act_agent = dict(
-    base_dir = "work_dir/reason_act_agent",
-    name = "reason_act_agent",
+general_agent = dict(
+    base_dir = "work_dir/general_agent",
+    name = "general_agent",
     type = "Agent",
     description = "An iterative agent that reasons and acts by using tools, skills, and direct responses to accomplish tasks accurately, safely, and efficiently.",
     model_name = "aws_claude/claude-opus-4.8",
-    prompt_name = "reason_act_agent",
+    prompt_name = "general_agent",
     memory_name = "file_system_memory",
     max_actions = 10,
     max_step = 50,

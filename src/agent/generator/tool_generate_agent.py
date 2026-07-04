@@ -1,26 +1,22 @@
-"""ToolGenerateAgent — an agent that generates new tool source code from a description."""
+"""ToolGenerateAgent — generates new tool source code from a description."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext
-from src.response.types import Response, ResponseType
-from src.hook.server import hook_manager
-from src.logger import logger
+from src.response.types import Response
 from src.registry import AGENT
-from src.tool.server import tool_manager
-
 
 
 @AGENT.register_module(force=True)
 class ToolGenerateAgent(Agent):
-    """Agent that generates a new tool from a natural-language description.
+    """Generates a new tool (Python source) from a natural-language description.
 
-    Receives a generation task from MetaAgent describing what the new tool should do,
-    writes a new .py file under extension/tool/, verifies it, registers it, and
-    reports back via done_tool.
-    """
+    Runs the base-class standard loop, then registers the generated tool inline in
+    ``__call__``. The tool name comes from the task text; the agent writes the source
+    under the conventional ``extension/`` path and reports it in its done_tool reasoning
+    so the registration hook can locate it."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -61,175 +57,34 @@ class ToolGenerateAgent(Agent):
             **kwargs,
         )
 
-    # ------------------------------------------------------------------
-    # Override: inject generation context
-    # ------------------------------------------------------------------
-
-    async def _get_agent_context(
-        self,
-        task: str,
-        step_number: int = 0,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-
-        target_name = kwargs.get("target_name")
-        lines = []
-        if target_name:
-            lines.append(f"- **Requested Tool Name**: `{target_name}`")
-            lines.append(f"- **Target File**: `extension/tool/{target_name}.py`")
-            existing = await tool_manager.get_info(target_name)
-            if existing:
-                lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
-            else:
-                lines.append("- **Status**: not yet registered — create from scratch")
-        else:
-            lines.append("- **Requested Tool Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Target File**: `extension/tool/<inferred_name>.py`")
-
-        base["generation_target"] = "\n".join(lines)
-
-        # Live workspace listing (see workspace sub-module in tool_generate_agent.html).
-        base["workspace"] = self._workspace_snapshot(ctx)
-
-        # Explicit absolute scratch path so the agent never has to construct one
-        # (constructing it from {{ work_dir }} led to nested/duplicated paths).
-        import os
-        from src.utils import assemble_project_path
-        work_abs = assemble_project_path(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
-        base["verify_script_path"] = os.path.join(work_abs, "verify.py")
-
-        action_errors = kwargs.get("action_errors") or []
-        base["errors"] = (
-            "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
-        )
-
-        return base
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
-
     async def __call__(
         self,
-        task: str,
-        target_name: Optional[str] = None,
+        task: Optional[str] = None,
+        files: Optional[List[str]] = None,
+        ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Response:
-        from src.utils.name_utils import make_id
+        """Run the base loop, then register the freshly generated tool."""
+        from src.hook.server import hook_manager
         from src.hook.types import HookDecision, HookEvent
         from src.utils import get_project_root
 
-        logger.info(f"| 🚀 Starting {self.name}: {task} (target_name={target_name})")
-        ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
-        task_id = make_id()
+        response = await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
 
-        await hook_manager(
-            name="memory_hook",
-            input={
-                "event": HookEvent.ON_START,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "task": task,
-                "target_name": target_name,
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_START,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "task": task,
-                "target_name": target_name,
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-
-        step_number = 0
-        action_errors = []
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
-
-        while step_number < self.max_step:
-            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
-            reason, constraint_status = await self._constraint_check(task_id, ctx)
-            if reason is not None:
-                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {"done": True, "result": reason, "reasoning": None,
-                            "action_errors": [], "stopped_by_constraint": True}
-                break
-            messages = await self._get_messages(
-                task,
+        if response.success:
+            result = await hook_manager(
+                name="tool_registration_hook",
+                input={
+                    "event": HookEvent.ON_STOP,
+                    "reasoning": (response.data or {}).get("reasoning") or "",
+                    "project_root": get_project_root(),
+                    "model_name": self.model_name,
+                },
                 ctx=ctx,
-                target_name=target_name,
-                step_number=step_number,
-                action_errors=action_errors,
-                constraint_status=constraint_status,
             )
-            response = await self._think_and_act(
-                messages, task_id, step_number, ctx=ctx, target_name=target_name
-            )
-            step_number += 1
-            action_errors = response.get("action_errors") or []
-            if response["done"]:
-                hook_result = await hook_manager(
-                    name="tool_registration_hook",
-                    input={
-                        "event": HookEvent.ON_STOP,
-                        "target_name": target_name,
-                        "reasoning": response.get("reasoning") or "",
-                        "project_root": get_project_root(),
-                        "model_name": self.model_name,
-                    },
-                    ctx=ctx,
-                )
-                if hook_result.decision == HookDecision.BLOCK:
-                    response["done"] = False
-                    action_errors = [hook_result.reason or "Registration failed."]
-                else:
-                    break
-
-        if step_number >= self.max_step and not response["done"]:
-            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
-            response["result"] = f"{self.name} did not complete within max steps."
-
-        await hook_manager(
-            name="memory_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-
-        return Response(type=ResponseType.AGENT, 
-            success=response["done"] and not response.get("stopped_by_constraint", False),
-            message=response["result"] or "",
-            data=response,
-        )
+            if result.decision == HookDecision.BLOCK:
+                response.success = False
+                response.message = result.reason or "Registration failed; include the generated tool file path in the done_tool reasoning."
+        return response

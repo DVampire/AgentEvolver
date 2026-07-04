@@ -1,4 +1,9 @@
-'''One-line description of what this environment provides (e.g. a key-value store, a shell, a game).'''
+'''One-line description of what this environment provides (e.g. a key-value store, a shell, a game).
+
+This is the EXECUTION half of an environment. The environment's rules and per-action
+docs live in a sibling ENVIRONMENT.md (same directory) — this class only implements
+the actions, get_state, and lifecycle. Do NOT write a get_rules() method.
+'''
 from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
@@ -18,12 +23,8 @@ class MyEnvironment(Environment):
 
     name: str = Field(default='my_environment')
     description: str = Field(default='Human-readable description of the environment.')
-    metadata: Dict[str, Any] = Field(default={
-        'has_vision': False,
-        'additional_rules': {
-            'state': 'Describe what get_state returns for this environment.',
-        },
-    })
+    # has_vision=True if actions return screenshots/images. Rules & action docs go in ENVIRONMENT.md.
+    metadata: Dict[str, Any] = Field(default={'has_vision': False})
     require_grad: bool = Field(default=True)
 
     def __init__(self, base_dir: str = None, **kwargs):

@@ -344,10 +344,30 @@ class Agent(BaseModel):
         constraint_status = kwargs.get("constraint_status") or []
         constraint_text = render_status_text(constraint_status) if constraint_status else "[No active budget.]"
 
+        # Errors from the previous step (shown only when the last step failed) — a
+        # universal agent-context sub-module, provided here so subclasses don't each
+        # re-derive it. Same for the live workspace snapshot below.
+        action_errors = kwargs.get("action_errors") or []
+        errors_body = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
+
+        # Running todo — injected every step (like memory) when the agent uses todo_tool,
+        # so its plan/checklist is always visible without spending a `show` action.
+        todo_body = ""
+        if ctx is not None:
+            try:
+                todo_info = await tool_manager.get_info("todo_tool")
+                if todo_info and todo_info.instance is not None:
+                    todo_body = await todo_info.instance.content(ctx.id)
+            except Exception:
+                todo_body = ""
+
         return {
             "step_info": step_info_body,
             "memory_context": memory_body,
             "constraint_text": constraint_text,
+            "workspace": self._workspace_snapshot(ctx),
+            "errors": errors_body,
+            "todo": todo_body,
         }
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
@@ -365,9 +385,22 @@ class Agent(BaseModel):
         return ["worker"]
 
     async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Get the skill context from loaded skills via skill manager."""
-        skill_content = await skill_manager.get_context(skill_types=self._allowed_skill_types())
-        available_skills = skill_content if skill_content else "[No skills loaded.]"
+        """Get the skill context from loaded skills via skill manager.
+
+        Honors an optional per-run allowlist in ``ctx.extra["skill_allowlist"]`` (a list
+        of skill names) — used by skill evaluation to run a "with-skill" vs a "baseline"
+        agent over the same task. ``None`` (default) = all skills of the allowed type;
+        an empty list = no skills (the baseline). Normal runs never set it, so behavior
+        is unchanged.
+        """
+        allowlist = ctx.extra.get("skill_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
+        if allowlist is not None and len(allowlist) == 0:
+            available_skills = "[No skills loaded.]"
+        else:
+            skill_content = await skill_manager.get_context(
+                skill_names=allowlist, skill_types=self._allowed_skill_types()
+            )
+            available_skills = skill_content if skill_content else "[No skills loaded.]"
         skill_context = f"### Available Skills\n{available_skills}"
         return {"skill_context": skill_context, "available_skills": available_skills}
 
@@ -738,13 +771,98 @@ class Agent(BaseModel):
                        ctx: Optional[AgentContext] = None,
                        **kwargs: Any,
                        ) -> "Response":
-        """Direct invocation — no runtime machinery involved.
+        """Standard synchronous think-and-act loop shared by all tool-calling agents.
 
-        Subclasses **must** override this to implement their task logic.
-        This is the only method simple actor agents need to implement.
+        Runs: ON_START hooks → [constraint check → build messages → think & act] until
+        done or max_step → ON_STOP hooks. Extra keyword arguments flow through to
+        ``_get_messages`` / ``_think_and_act`` / the context builder.
+
+        Every tool-calling subclass defines its own ``__call__`` as the explicit entry
+        point: simple actors (general, code, evaluate) just delegate to
+        ``super().__call__(...)``; agents that must register a produced artifact
+        (generate, optimize) call ``super().__call__(...)`` and then run their
+        registration inline on the returned Response.
+
+        Event-driven / orchestrator agents (MetaAgent, MonitorAgent) override
+        ``on_start`` / ``on_event`` instead; an agent with a bespoke loop
+        (BrowserAgent) replaces this loop entirely.
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement __call__"
+        from src.hook.server import hook_manager
+        from src.hook.types import HookEvent
+        from src.utils.name_utils import make_id
+        from src.response import ResponseType
+
+        logger.info(f"| 🚀 Starting {self.name}: {task}")
+
+        if ctx is None:
+            ctx = AgentContext()
+        if not ctx.work_dir:
+            ctx.work_dir = self.base_dir
+        if files:
+            logger.info(f"| 📂 Attached files: {files}")
+
+        task_id = make_id()
+        logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
+
+        # Shared ON_START / ON_STOP hook payload (memory + trace).
+        lifecycle_input = {
+            "agent_name": self.name,
+            "task_id": task_id,
+            "memory_name": self.memory_name,
+            "use_memory": self.use_memory,
+            "parent_session_id": ctx.parent_session_id, 
+            "subtask_id": ctx.subtask_id,
+        }
+        for hook_name in ("memory_hook", "trace_hook"):
+            await hook_manager(
+                name=hook_name,
+                input={"event": HookEvent.ON_START, "task": task, **lifecycle_input},
+                ctx=ctx,
+            )
+
+        step_number = 0
+        action_errors: List[str] = []
+        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
+
+        while step_number < self.max_step:
+            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
+            # Budget check BEFORE building messages so the prompt reflects the current
+            # budget. Runs exactly once per step (_think_and_act does not repeat it).
+            reason, constraint_status = await self._constraint_check(task_id, ctx)
+            if reason is not None:
+                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
+                response = {"done": True, "result": reason, "reasoning": None,
+                            "action_errors": [], "stopped_by_constraint": True}
+                break
+            messages = await self._get_messages(
+                task, ctx=ctx, files=files, step_number=step_number,
+                action_errors=action_errors, constraint_status=constraint_status, **kwargs)
+            response = await self._think_and_act(
+                messages, task_id, step_number, ctx=ctx, **kwargs)
+            step_number += 1
+            action_errors = response.get("action_errors") or []
+            if response["done"]:
+                break
+
+        if step_number >= self.max_step and not response["done"]:
+            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
+            response = {"done": False, "result": "The task has not been completed.",
+                        "reasoning": "Reached the maximum number of steps."}
+
+        for hook_name in ("memory_hook", "trace_hook"):
+            await hook_manager(
+                name=hook_name,
+                input={"event": HookEvent.ON_STOP, "result": response.get("result"), **lifecycle_input},
+                ctx=ctx,
+            )
+
+        logger.info(f"| ✅ {self.name} completed after {step_number}/{self.max_step} steps")
+
+        return Response(
+            type=ResponseType.AGENT,
+            success=response["done"] and not response.get("stopped_by_constraint", False),
+            message=response.get("result") or "",
+            data=response,
         )
 
     # ------------------------------------------------------------------

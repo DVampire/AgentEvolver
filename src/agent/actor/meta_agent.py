@@ -67,24 +67,33 @@ _SUBTASK_EVENTS = frozenset(
 class SubTaskInput(BaseModel):
     task: str
     files: List[str] = Field(default_factory=list)
-    target_name: Optional[str] = Field(default=None)
+    args: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SubTaskSpec(BaseModel):
     id: str = Field(default_factory=lambda: make_id())
     category: SubTaskCategory = SubTaskCategory.ACTOR
-    name: str = Field(description="Agent name to dispatch this subtask to.")
+    kind: str = Field(default="agent", description="What to invoke: agent / tool / skill / connector.")
+    name: str = Field(description="Name of the sub-agent / tool / skill / connector to invoke.")
     input: SubTaskInput
 
 
 class TaskSpec(BaseModel):
-    """LLM-facing task spec (no id/status — all LLM-output tasks are pending)."""
+    """LLM-facing task spec (no id/status — all LLM-output tasks are pending).
 
-    name: str = Field(description="Exact registered sub-agent name.")
+    Like Claude Code, MetaAgent invokes four kinds of capability, chosen via ``kind``:
+    - ``agent``: dispatch a self-contained ``task`` to a registered sub-agent (default).
+    - ``tool``: call a registered tool directly with ``args``.
+    - ``skill``: invoke a skill by name (``args`` optional).
+    - ``connector``: call an MCP connector action; ``args`` = {"action": ..., "args": {...}}.
+    """
+
+    kind: str = Field(default="agent", description="One of: agent, tool, skill, connector.")
+    name: str = Field(description="Exact registered name of the sub-agent / tool / skill / connector.")
     category: SubTaskCategory = SubTaskCategory.ACTOR
-    task: str = Field(description="Self-contained instruction for the sub-agent.")
+    task: str = Field(default="", description="For kind=agent: the self-contained instruction. Ignored for tool/skill/connector.")
     files: List[str] = Field(default_factory=list)
-    target_name: Optional[str] = Field(default=None)
+    args: Dict[str, Any] = Field(default_factory=dict, description="For kind=tool/skill/connector: the call arguments.")
 
 
 class PlanRound(BaseModel):
@@ -765,12 +774,13 @@ class MetaAgent(Agent):
                 rec = PlanRoundRecord(goal=round_spec.goal)
                 for task_spec in round_spec.tasks:
                     spec = SubTaskSpec(
+                        kind=task_spec.kind,
                         category=task_spec.category,
                         name=task_spec.name,
                         input=SubTaskInput(
                             task=task_spec.task,
                             files=task_spec.files,
-                            target_name=task_spec.target_name,
+                            args=task_spec.args,
                         ),
                     )
                     state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
@@ -830,6 +840,7 @@ class MetaAgent(Agent):
         session_id = record.session_id or record.spec.id
         agent_name = record.spec.name
 
+        kind = getattr(record.spec, "kind", "agent")
         ctx = AgentContext(
             id=session_id,
             work_dir=self.base_dir,
@@ -839,28 +850,44 @@ class MetaAgent(Agent):
         existing_files = [
             f for f in (record.spec.input.files or []) if os.path.exists(f)
         ]
-        extra_kwargs: Dict[str, Any] = {"parent_ref": parent_ref}
-        if record.spec.input.target_name is not None:
-            extra_kwargs["target_name"] = record.spec.input.target_name
+        args = record.spec.input.args or {}
 
         try:
-            sub_agent = await agent_manager.get(agent_name)
-            if sub_agent is None:
-                raise ValueError(f"No registered agent named {agent_name!r}")
-            response = await runtime_manager.invoke(
-                sub_agent,
-                name=session_id,
-                task=record.spec.input.task,
-                files=existing_files or None,
-                ctx=ctx,
-                **extra_kwargs,
-            )
+            if kind == "agent":
+                extra_kwargs: Dict[str, Any] = {"parent_ref": parent_ref}
+                sub_agent = await agent_manager.get(agent_name)
+                if sub_agent is None:
+                    raise ValueError(f"No registered agent named {agent_name!r}")
+                response = await runtime_manager.invoke(
+                    sub_agent,
+                    name=session_id,
+                    task=record.spec.input.task,
+                    files=existing_files or None,
+                    ctx=ctx,
+                    **extra_kwargs,
+                )
+                result_msg = response.message
+            elif kind == "tool":
+                from src.tool.server import tool_manager
+                resp = await tool_manager(name=agent_name, input=args, ctx=ctx)
+                result_msg = resp.message
+            elif kind == "skill":
+                from src.skill.server import skill_manager
+                resp = await skill_manager(name=agent_name, input=args, ctx=ctx)
+                result_msg = resp.message
+            elif kind == "connector":
+                from src.connector.server import connector_manager
+                resp = await connector_manager(name=agent_name, input=args, ctx=ctx)
+                result_msg = resp.message
+            else:
+                raise ValueError(f"Unknown task kind {kind!r} (expected agent/tool/skill/connector)")
+
             await parent_ref._inbox.put(
                 SubtaskDoneMessage(
                     task_id=task_id,
                     agent_name=agent_name,
                     session_id=session_id,
-                    result=response.message,
+                    result=result_msg,
                 )
             )
         except asyncio.CancelledError:
@@ -957,20 +984,23 @@ class MetaAgent(Agent):
                 plan_lines.append(line)
         plan_text = "\n".join(plan_lines)
 
-        # Fetch memory
-        memory_context = ""
-        if self.memory_name:
-            try:
-                info = await memory_manager.get_info(self.memory_name)
-                if info and info.instance:
-                    memory_context = (
-                        await info.instance.get(session_id=state.session_id) or ""
-                    )
-            except Exception:
-                pass
-
         ctx = state._ctx
         work_dir = str(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+
+        # Produce the universal agent-context sub-modules with the SAME base-class
+        # methods every other agent uses, so MetaAgent's input structure is identical:
+        #   _get_agent_context     → step_info, memory_context, constraint_text, workspace, errors
+        #   _get_tool_context      → tool_context, available_tools
+        #   _get_skill_context     → skill_context, available_skills
+        #   _get_connector_context → connector_context, available_connectors
+        # On top, MetaAgent adds only its orchestration sub-modules: available_agents, events, plan.
+        base = await self._get_agent_context(
+            task_text, step_number=state.step, ctx=ctx, constraint_status=constraint_status
+        )
+        tool_mod = await self._get_tool_context(ctx=ctx)
+        skill_mod = await self._get_skill_context(ctx=ctx)
+        conn_mod = await self._get_connector_context(ctx=ctx)
+
         response = await prompt_manager(
             name=self.prompt_name,
             input={
@@ -979,15 +1009,15 @@ class MetaAgent(Agent):
                     project_context=state._project_context,
                     work_dir=work_dir,
                 ),
-                # Each entry is a sub-module of agent_context, rendered into its
-                # own nested tag in the user template (see meta_agent.html).
                 "agent_modules": dict(
                     task=task_text,
-                    constraint_status=render_status_text(constraint_status) if constraint_status else "[No active budget.]",
+                    **base,
+                    **tool_mod,
+                    **skill_mod,
+                    **conn_mod,
                     available_agents=state._available_agents,
                     events=events_text,
                     plan=plan_text,
-                    execution_state=memory_context or "[No state recorded yet.]",
                 ),
             },
         )

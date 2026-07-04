@@ -37,7 +37,7 @@ An environment is an action provider: a registered class exposing actions (decor
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- generation_target: the environment to CREATE — its requested name, target file paths, and registration status.
+- The environment to CREATE is named in the **task**. Optionally call `inspect_environment` to check whether that name is already registered before creating it.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -146,9 +146,6 @@ While reasoning, also:
 </errors>
 {% endif %}</agent-context>
 
-<generation-target>
-{{ generation_target }}
-</generation-target>
 
 <tool-context>
 {{ available_tools }}
@@ -157,6 +154,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

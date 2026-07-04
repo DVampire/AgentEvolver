@@ -306,20 +306,25 @@ class Todo(BaseModel):
         
         return completed_steps
 
-    def get_content(self) -> str:
-        """Get the content of the todo.md file.
-        
-        Returns:
-            str: The todo file content or empty message
+    @staticmethod
+    def read_content(path: str) -> str:
+        """Read a todo.md file's content, or an empty-plan hint if it doesn't exist yet.
+
+        The single source of truth for reading todo content — used both by a Todo
+        instance (get_content) and directly by TodoTool.content (no instance needed).
         """
-        if not os.path.exists(self.todo_file):
-            return "[Current todo.md is empty, fill it with your plan when applicable]"
-        
+        empty = "[Current todo.md is empty, fill it with your plan when applicable]"
+        if not os.path.exists(path):
+            return empty
         try:
-            with open(self.todo_file, 'r', encoding='utf-8') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception:
-            return "[Current todo.md is empty, fill it with your plan when applicable]"
+            return empty
+
+    def get_content(self) -> str:
+        """Get the content of this todo's markdown file."""
+        return self.read_content(self.todo_file)
 
 
 _DESCRIPTION = "Manage a todo.md file with task decomposition and step tracking."
@@ -401,20 +406,19 @@ class TodoTool(Tool):
         # Lock for managing the cache dictionaries themselves
         self._cache_lock = asyncio.Lock()
     
-    def _get_todo_file_path(self, id: str) -> str:
-        """Generate a fixed todo file path based on id."""
-        safe_id = re.sub(r'[^\w\s-]', '', id).strip().replace(' ', '_')
-        if not safe_id:
-            safe_id = "todo"
-        return os.path.join(self.base_dir, f"{safe_id}_todo.md")
-    
-    def _get_steps_file_path(self, id: str) -> str:
-        """Generate a fixed steps file path based on id."""
-        safe_id = re.sub(r'[^\w\s-]', '', id).strip().replace(' ', '_')
-        if not safe_id:
-            safe_id = "todo"
-        return os.path.join(self.base_dir, f"{safe_id}_steps.json")
-    
+    def _file_path(self, id: str, name: str) -> str:
+        """Per-id file path under base_dir, e.g. `<safe_id>_todo.md` / `<safe_id>_steps.json`."""
+        safe_id = re.sub(r'[^\w\s-]', '', id).strip().replace(' ', '_') or "todo"
+        return os.path.join(self.base_dir, f"{safe_id}_{name}")
+
+    async def content(self, id: str) -> str:
+        """Current todo.md content for `id`, read directly — no Todo instance is created.
+
+        Injects the running todo into an agent's prompt each step (like memory), so the
+        agent always sees its plan without spending a `show` action.
+        """
+        return Todo.read_content(self._file_path(id, "todo.md"))
+
     async def _get_or_create_todo(self, id: str) -> tuple[Todo, asyncio.Lock]:
         """Get or create a Todo instance for the given id with proper locking.
         
@@ -431,8 +435,8 @@ class TodoTool(Tool):
             
             # Get or create todo for this id
             if id not in self._todo_cache:
-                todo_file = self._get_todo_file_path(id)
-                steps_file = self._get_steps_file_path(id)
+                todo_file = self._file_path(id, "todo.md")
+                steps_file = self._file_path(id, "steps.json")
                 
                 # Load existing steps if file exists
                 steps = []
@@ -769,17 +773,3 @@ class TodoTool(Tool):
             
         except Exception as e:
             return Response(type=ResponseType.TOOL, success=False, message=f"Error exporting todo.md: {str(e)}")
-
-    def get_todo_content(self, ctx: ToolContext, **kwargs) -> str:
-        """Get the content of the todo.md file for a specific id.
-        
-        Args:
-            ctx: Tool context
-        
-        Returns:
-            str: The content of the todo.md file
-        """
-        id = ctx.id
-        if id not in self._todo_cache:
-            return "[Current todo.md is empty, fill it with your plan when applicable]"
-        return self._todo_cache[id].get_content()

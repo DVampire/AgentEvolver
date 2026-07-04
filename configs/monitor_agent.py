@@ -29,6 +29,7 @@ model_name      = "aws_claude/claude-opus-4.8"
 agent_names  = ["monitor_agent"]
 tool_names   = []
 skill_names  = []
+connector_names = []
 memory_names = []
 
 monitor_agent.update(

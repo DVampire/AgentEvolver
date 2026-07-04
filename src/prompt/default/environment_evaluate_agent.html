@@ -26,7 +26,7 @@ You **never modify the environment**. Your job is observation, testing, and repo
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Environment source files live here; read them for evaluation.
 - `{{ work_dir }}` — scratch space for temporary test files.
-- The target environment's file paths are provided in **Evaluation Target** — use them directly. **Never modify any source files.**
+- The target environment's file paths are provided in the `inspect_environment` result — use them directly. **Never modify any source files.**
 - Always use absolute paths when calling tools.
 </project>
 
@@ -38,7 +38,7 @@ You **never modify the environment**. Your job is observation, testing, and repo
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- evaluation_target: the environment UNDER EVALUATION — its source, metadata, and how to exercise it.
+- The target environment is named in the **task**. Call `inspect_environment` FIRST to get its file paths and live-registry facts (registered / version), which you need to read and score it.
 - tool_context: available tools with their descriptions and argument schemas. Use only these.
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -79,8 +79,8 @@ Use `✓` for confirmed facts, `✗` for pending or failed. Include score for ea
 </context-rules>
 
 <evaluation-rules>
-**Using the Evaluation Target**
-- File paths are provided in **Evaluation Target** — use them directly, never search.
+**Discovering the target (call inspect first)**
+- File paths are provided in the `inspect_environment` result — use them directly, never search.
 - Read the Python file **exactly once** (Step 1). Record `✓ Python file read: [path]` in memory.
 - If memory already shows `✓ Python file read: PATH`, skip reading and proceed.
 - If memory shows a dimension already scored, skip to the next pending dimension.
@@ -107,7 +107,7 @@ Use `✓` for confirmed facts, `✗` for pending or failed. Include score for ea
 - Score guide: 20 = clear, well-typed actions; deduct per vague/malformed action; 0 = no actions defined.
 
 **Integration (20 pts)** — Can the environment be registered and built without errors?
-- Read this **directly from the Evaluation Target's live-registry facts** (`Registered`, `Instantiated`). The environment is already loaded in this process — no script needed.
+- Read this **directly from the `inspect_environment` result's live-registry facts** (`Registered`, `Instantiated`). The environment is already loaded in this process — no script needed.
 - Score guide: 20 = Registered and Instantiated both true; 0 = not registered / no live instance.
 
 **Functionality (20 pts)** — Does `get_state` (and a sample action, if safe) return a valid shape?
@@ -116,15 +116,16 @@ Use `✓` for confirmed facts, `✗` for pending or failed. Include score for ea
 </evaluation-rules>
 
 <test-template>
-The environment is already registered and instantiated in THIS process (see the Evaluation Target's live-registry facts), and `environment_eval_runner` exercises it in-process. Nothing runs in a subprocess. Follow this **exact 3-step workflow**. Do not deviate.
+The environment is already registered and instantiated in THIS process (see the `inspect_environment` result's live-registry facts), and `environment_eval_runner` exercises it in-process. Nothing runs in a subprocess. Follow this **exact 3-step workflow**. Do not deviate.
 
-**Step 1 — Read source file (1 action)**
-- Read the Python file using the path from **Evaluation Target**.
+**Step 1 — Inspect target + read source**
+- Call `inspect_environment` with the target name to get its file paths and registry facts, then read the source file.
+- Read the Python file using the path from the `inspect_environment` result.
 - Record `✓ Python file read: [path]` in memory.
 
 **Step 2 — Assess dimensions + probe functionality**
 - Interface Compliance, Code Quality, Action Quality → from the source you read.
-- Integration → directly from the Evaluation Target's `Registered` / `Instantiated` facts.
+- Integration → directly from the `inspect_environment` result's `Registered` / `Instantiated` facts.
 - Functionality → call `environment_eval_runner` with `name` (and optionally a safe `action` + `input`); read `get_state_ok`, `action_result`, `action_raised` from the returned record.
 - Record each dimension's score in memory.
 
@@ -138,7 +139,7 @@ Do NOT write or run a standalone test script (`bash_tool`/`code_interpreter_tool
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed.
-- Follow the 3-step workflow: Read source → Assess + probe functionality → Report.
+- Follow the workflow: Inspect target → Read source → Assess + probe functionality → Report.
 - Maximum `{{ max_actions }}` steps per plan.
 
 Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`.
@@ -171,6 +172,10 @@ While reasoning, also:
 {
     "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
     "plan": [
+        {
+            "description": "Inspect the target environment to get its paths and live-registry facts.",
+            "action": {"type": "tool", "name": "inspect_environment", "args": "{\"name\": \"my_environment\"}"}
+        },
         {
             "description": "Read the environment Python source file.",
             "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/my_environment.py\"}"}
@@ -210,9 +215,6 @@ While reasoning, also:
 </errors>
 {% endif %}</agent-context>
 
-<evaluation-target>
-{{ evaluation_target }}
-</evaluation-target>
 
 <tool-context>
 {{ available_tools }}
@@ -221,6 +223,10 @@ While reasoning, also:
 <skill-context>
 {{ available_skills }}
 </skill-context>
+
+<connector-context>
+{{ available_connectors }}
+</connector-context>
 </div>
 
 </body>

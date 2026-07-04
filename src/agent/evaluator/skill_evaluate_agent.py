@@ -1,30 +1,21 @@
-"""SkillEvaluateAgent — evaluates a skill's SKILL.md quality across multiple dimensions."""
+"""SkillEvaluateAgent — evaluates an existing skill's quality given an evaluation task."""
 
-import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext
-from src.response.types import Response, ResponseType
-from src.hook.server import hook_manager
-from src.hook.types import HookEvent
-from src.logger import logger
+from src.response.types import Response
 from src.registry import AGENT
-from src.skill.server import skill_manager
-from src.utils.name_utils import make_id
 
 
 @AGENT.register_module(force=True)
 class SkillEvaluateAgent(Agent):
-    """Agent that evaluates skill quality across multiple dimensions and produces a report.
+    """Evaluates an existing skill's quality and returns a scored report.
 
-    Receives an evaluation task from MetaAgent, reads the target skill's SKILL.md,
-    assesses instruction clarity, completeness, usability, structure, and optional
-    components, and reports a structured evaluation with per-dimension scores via done_tool.
-
-    Never modifies the skill. Observation and reporting only.
-    """
+    Produces no registrable artifact, so its ``__call__`` just runs the base-class
+    standard loop. The target skill is named in the task; the agent should call
+    ``inspect_skill`` to obtain its registry facts and directory before reading it."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -65,133 +56,13 @@ class SkillEvaluateAgent(Agent):
             **kwargs,
         )
 
-    # ------------------------------------------------------------------
-    # Override: inject skill info into agent context
-    # ------------------------------------------------------------------
-
-    async def _get_agent_context(
-        self,
-        task: str,
-        step_number: int = 0,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-
-        target_name = kwargs.get("target_name")
-        if target_name:
-            skill_config = await skill_manager.get_info(target_name)
-            lines = [f"- **Skill Name**: {target_name}"]
-            if skill_config:
-                lines.append(f"- **Description**: {skill_config.description}")
-                lines.append(f"- **Version**: {skill_config.version}")
-                lines.append(f"- **Type**: {skill_config.type}")
-                lines.append(f"- **Skill Directory**: {skill_config.skill_dir}")
-                lines.append(f"- **SKILL.md**: {os.path.join(skill_config.skill_dir, 'SKILL.md')}")
-                if skill_config.scripts:
-                    lines.append(f"- **Scripts**: {', '.join(skill_config.scripts)}")
-                if skill_config.resources:
-                    lines.append(f"- **Resources**: {', '.join(skill_config.resources)}")
-                if skill_config.references:
-                    lines.append(f"- **References**: {', '.join(skill_config.references)}")
-            else:
-                lines.append("- (skill not found in registry)")
-            base["evaluation_target"] = "\n".join(lines)
-        else:
-            base["evaluation_target"] = "(no target_name provided)"
-
-        base["workspace"] = self._workspace_snapshot(ctx)
-
-        action_errors = kwargs.get("action_errors") or []
-        base["errors"] = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
-
-        return base
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
-
     async def __call__(
         self,
-        task: str,
-        target_name: Optional[str] = None,
+        task: Optional[str] = None,
+        files: Optional[List[str]] = None,
+        ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Response:
-        logger.info(f"| 🚀 Starting {self.name}: {task} (skill={target_name})")
-
-        ctx = kwargs.get("ctx", None)
-        if ctx is None:
-            ctx = AgentContext()
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
-
-        if not target_name:
-            logger.warning(f"| ⚠️ {self.name} called without target_name")
-
-        task_id = make_id()
-
-        await hook_manager(name="memory_hook", input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": task, "memory_name": self.memory_name, "use_memory": self.use_memory}, ctx=ctx)
-        await hook_manager(name="trace_hook", input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": task, "memory_name": self.memory_name, "use_memory": self.use_memory}, ctx=ctx)
-
-        step_number = 0
-        action_errors: list = []
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
-
-        while step_number < self.max_step:
-            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
-            reason, constraint_status = await self._constraint_check(task_id, ctx)
-            if reason is not None:
-                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {"done": True, "result": reason, "reasoning": None,
-                            "action_errors": [], "stopped_by_constraint": True}
-                break
-            messages = await self._get_messages(
-                task,
-                ctx=ctx,
-                target_name=target_name,
-                step_number=step_number,
-                action_errors=action_errors,
-                constraint_status=constraint_status,
-            )
-            response = await self._think_and_act(
-                messages, task_id, step_number, ctx=ctx, target_name=target_name
-            )
-            step_number += 1
-            action_errors = response.get("action_errors") or []
-            if response["done"]:
-                break
-
-        if step_number >= self.max_step and not response["done"]:
-            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
-            response["result"] = f"{self.name} did not complete within max steps."
-
-        await hook_manager(
-            name="memory_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-
-        return Response(type=ResponseType.AGENT, 
-            success=response["done"] and not response.get("stopped_by_constraint", False),
-            message=response["result"] or "",
-            data=response,
-        )
+        """Entry point — evaluation produces no registrable artifact, so it runs the
+        base-class standard think-and-act loop unchanged."""
+        return await super().__call__(task=task, files=files, ctx=ctx, **kwargs)

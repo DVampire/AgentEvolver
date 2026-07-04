@@ -1,4 +1,5 @@
-"""Inspect tool — fetch a registered tool's full instruction on demand."""
+"""Inspect tool — fetch a registered tool's full instruction + registry facts on demand."""
+import os
 from typing import Dict, Any
 from pydantic import Field
 from src.tool.types import Tool
@@ -6,14 +7,15 @@ from src.tool.server import tool_manager
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_DESCRIPTION = "Fetch the full instruction (function, guidance, parameters, examples) of a registered tool by name."
+_DESCRIPTION = "Fetch a registered tool's full instruction plus its live registry facts (version, evolvability/require_grad, source file path) by name."
 
 _INSTRUCTION = """
 ## Function
-Fetch the full instruction (function, guidance, parameters, examples) of a registered tool by name.
+Fetch a registered tool's full instruction (function, guidance, parameters, examples) plus its live registry facts (version, evolvability/require_grad, source file path).
 
 ## Guidance
 - The tool context lists only each tool's name and one-line description. Before calling a tool whose arguments you are unsure of, call inspect_tool to read its full instruction.
+- When optimizing or evaluating a tool: the registry facts give you its source file path (to read/edit) and its `require_grad` — optimization requires require_grad=True; a frozen tool (require_grad=False) must NOT be edited.
 - Pass the exact tool name as shown in the tool context.
 
 ## Parameters
@@ -57,9 +59,22 @@ class InspectTool(Tool):
             # No authored instruction — fall back to the short description.
             instruction = f"## Function\n{info.description}"
 
+        # Registry facts — used by tool optimize/evaluate agents (source path + evolvability).
+        path = getattr(info, "path", None)
+        require_grad = bool(getattr(info, "require_grad", False))
+        version = getattr(info, "version", "")
+        facts = (
+            "\n\n## Registry Facts\n"
+            f"- **Registered**: True\n"
+            f"- **Version**: {version}\n"
+            f"- **Evolvable (require_grad)**: {require_grad}\n"
+            f"- **Source File**: `{path}`"
+            + (f" (exists: {os.path.exists(path)})" if path else " (unknown — not a file-backed tool)")
+        )
+
         return Response(
             type=ResponseType.TOOL,
             success=True,
-            message=instruction,
-            data={"tool": name},
+            message=instruction + facts,
+            data={"tool": name, "registered": True, "require_grad": require_grad, "path": path},
         )

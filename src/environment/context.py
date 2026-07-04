@@ -1,10 +1,15 @@
 """Environment Context Manager for managing environment lifecycle and resources with lazy loading."""
 
 import os
+import re
 import json
+import inspect
 import inflection
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional, List, Type, Tuple
+
+import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from asyncio_atexit import register as async_atexit_register
@@ -148,6 +153,48 @@ class EnvironmentContextManager(BaseModel):
         
         logger.info(f"| ✅ Environments initialization completed")
     
+    # ------------------------------------------------------------------
+    # ENVIRONMENT.md parsing (rules + docs live in the md, not in code)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_frontmatter(text: str) -> Tuple[Dict[str, Any], str]:
+        """Split YAML frontmatter (between --- delimiters) from the markdown body."""
+        pattern = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+        match = pattern.match(text)
+        if not match:
+            return {}, text
+        try:
+            frontmatter = yaml.safe_load(match.group(1)) or {}
+        except yaml.YAMLError as e:
+            logger.warning(f"| ⚠️ Failed to parse ENVIRONMENT.md frontmatter: {e}")
+            frontmatter = {}
+        if not isinstance(frontmatter, dict):
+            frontmatter = {}
+        return frontmatter, text[match.end():]
+
+    def _load_environment_md(self, env_cls: Type[Environment]) -> Optional[Tuple[Dict[str, Any], str, str]]:
+        """Locate and parse the ENVIRONMENT.md that sits next to an environment class.
+
+        Returns (frontmatter, body, md_path) or None if the class has no source file
+        or no ENVIRONMENT.md beside it (e.g. dynamically generated environments).
+        """
+        try:
+            env_file = inspect.getfile(env_cls)
+        except (TypeError, OSError):
+            env_file = getattr(env_cls, "__source_file__", None)
+        if not env_file:
+            return None
+        md_path = Path(env_file).parent / "ENVIRONMENT.md"
+        if not md_path.exists():
+            return None
+        try:
+            frontmatter, body = self._parse_frontmatter(md_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"| ⚠️ Failed to read {md_path}: {e}")
+            return None
+        return frontmatter, body.strip(), str(md_path)
+
     async def _load_from_registry(self):
         """Load environments from ENVIRONMENT registry."""
         
@@ -168,7 +215,17 @@ class EnvironmentContextManager(BaseModel):
                 env_name = env_cls.model_fields['name'].default
                 env_description = env_cls.model_fields['description'].default
                 env_metadata = env_cls.model_fields['metadata'].default
-                
+
+                # Rules + docs come from the ENVIRONMENT.md beside the class (not get_rules()).
+                env_rules = ""
+                md = self._load_environment_md(env_cls)
+                if md:
+                    frontmatter, body, _ = md
+                    env_description = frontmatter.get("description", env_description)
+                    env_rules = body
+                else:
+                    logger.warning(f"| ⚠️ No ENVIRONMENT.md found for environment '{env_name}'; rules will be empty")
+
                 # Get or generate version from version_manager
                 env_version = await version_manager.get_version("environment", env_name)
                 
@@ -224,7 +281,7 @@ class EnvironmentContextManager(BaseModel):
                     instance=None,
                     code=env_code,
                     actions=env_actions,
-                    rules="",  # Will be generated when needed
+                    rules=env_rules,  # from ENVIRONMENT.md body
                 )
                 
                 env_configs[env_name] = env_config
@@ -392,11 +449,11 @@ class EnvironmentContextManager(BaseModel):
                 await env_instance.initialize()
                 
             env_config.instance = env_instance
-            
-            # Generate rules if not already generated
+
+            # Rules come from ENVIRONMENT.md (loaded at registration) — no code-generated fallback.
             if not env_config.rules:
-                env_config.rules = env_instance.get_rules()
-            
+                logger.warning(f"| ⚠️ Environment {env_config.name} has empty rules (missing ENVIRONMENT.md?)")
+
             # Store metadata
             self._environment_configs[env_config.name] = env_config
             
@@ -503,8 +560,9 @@ class EnvironmentContextManager(BaseModel):
                     
                     actions[action_name] = action_config
             
-            # Get rules from instance
-            env_rules = env_instance.get_rules() if hasattr(env_instance, 'get_rules') else ""
+            # Rules from the ENVIRONMENT.md beside the class (no code-generated get_rules)
+            _env_md = self._load_environment_md(type(env_instance))
+            env_rules = _env_md[1] if _env_md else ""
             
             # --- Build EnvironmentConfig ---
             env_config = EnvironmentConfig(
@@ -692,8 +750,9 @@ class EnvironmentContextManager(BaseModel):
                     
                     actions[action_name] = action_config
             
-            # Get rules from instance
-            env_rules = env_instance.get_rules() if hasattr(env_instance, 'get_rules') else ""
+            # Rules from the ENVIRONMENT.md beside the class (no code-generated get_rules)
+            _env_md = self._load_environment_md(type(env_instance))
+            env_rules = _env_md[1] if _env_md else ""
             
             # --- Build EnvironmentConfig ---
             updated_config = EnvironmentConfig(
@@ -833,8 +892,9 @@ class EnvironmentContextManager(BaseModel):
                     
                     actions[action_name] = action_config
             
-            # Get rules from instance
-            env_rules = env_instance.get_rules() if hasattr(env_instance, 'get_rules') else ""
+            # Rules from the ENVIRONMENT.md beside the class (no code-generated get_rules)
+            _env_md = self._load_environment_md(type(env_instance))
+            env_rules = _env_md[1] if _env_md else ""
             
             # --- Build EnvironmentConfig ---
             copied_config = EnvironmentConfig(

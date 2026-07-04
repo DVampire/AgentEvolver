@@ -1,24 +1,22 @@
-"""EnvironmentGenerateAgent — generates a new environment (Python class + config dict) from a description."""
+"""EnvironmentGenerateAgent — generates a new environment (Python class + config) from a description."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
 from src.agent.types import Agent, AgentContext
-from src.response.types import Response, ResponseType
-from src.hook.server import hook_manager
-from src.logger import logger
+from src.response.types import Response
 from src.registry import AGENT
 
 
 @AGENT.register_module(force=True)
 class EnvironmentGenerateAgent(Agent):
-    """Agent that generates a new environment from a natural-language description.
+    """Generates a new environment (Python class + config) from a natural-language description.
 
-    An environment is an action provider (not LLM-driven), so generation produces
-    2 files: a Python class under ``extension/environment/`` and a config dict
-    under ``configs/environments/``. Environments have NO HTML prompt.
-    """
+    Runs the base-class standard loop, then registers the generated environment inline
+    in ``__call__``. The environment name comes from the task text; the agent writes
+    files under the conventional ``extension/`` path and reports them in its done_tool
+    reasoning so the registration hook can locate them."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -59,171 +57,34 @@ class EnvironmentGenerateAgent(Agent):
             **kwargs,
         )
 
-    # ------------------------------------------------------------------
-    # Override: inject generation target context
-    # ------------------------------------------------------------------
-
-    async def _get_agent_context(
-        self,
-        task: str,
-        step_number: int = 0,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-
-        from src.environment.server import environment_manager
-
-        target_name = kwargs.get("target_name")
-        lines = []
-        if target_name:
-            lines.append(f"- **Requested Environment Name**: `{target_name}`")
-            lines.append(f"- **Python Class File**: `extension/environment/{target_name}.py`")
-            lines.append(f"- **Config File**: `configs/environments/{target_name}.py`")
-            existing = await environment_manager.get_info(target_name)
-            if existing:
-                lines.append(f"- **Status**: already registered (version {existing.version}) — regenerate/overwrite if instructed")
-            else:
-                lines.append("- **Status**: not yet registered — create from scratch")
-        else:
-            lines.append("- **Requested Environment Name**: (not specified — infer a snake_case name from the task)")
-            lines.append("- **Python Class File**: `extension/environment/<inferred_name>.py`")
-            lines.append("- **Config File**: `configs/environments/<inferred_name>.py`")
-
-        base["generation_target"] = "\n".join(lines)
-
-        # Live workspace listing (see workspace sub-module in environment_generate_agent.html).
-        base["workspace"] = self._workspace_snapshot(ctx)
-
-        action_errors = kwargs.get("action_errors") or []
-        base["errors"] = (
-            "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
-        )
-
-        return base
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
-
     async def __call__(
         self,
-        task: str,
-        target_name: Optional[str] = None,
+        task: Optional[str] = None,
+        files: Optional[List[str]] = None,
+        ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Response:
-        from src.utils.name_utils import make_id
+        """Run the base loop, then register the freshly generated environment."""
+        from src.hook.server import hook_manager
         from src.hook.types import HookDecision, HookEvent
         from src.utils import get_project_root
 
-        logger.info(f"| 🚀 Starting {self.name}: {task} (target_name={target_name})")
-        ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
-        task_id = make_id()
+        response = await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
 
-        await hook_manager(
-            name="memory_hook",
-            input={
-                "event": HookEvent.ON_START,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "task": task,
-                "target_name": target_name,
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_START,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "task": task,
-                "target_name": target_name,
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-
-        step_number = 0
-        action_errors = []
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
-
-        while step_number < self.max_step:
-            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
-            reason, constraint_status = await self._constraint_check(task_id, ctx)
-            if reason is not None:
-                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {"done": True, "result": reason, "reasoning": None,
-                            "action_errors": [], "stopped_by_constraint": True}
-                break
-            messages = await self._get_messages(
-                task,
+        if response.success:
+            result = await hook_manager(
+                name="environment_registration_hook",
+                input={
+                    "event": HookEvent.ON_STOP,
+                    "reasoning": (response.data or {}).get("reasoning") or "",
+                    "project_root": get_project_root(),
+                    "model_name": self.model_name,
+                },
                 ctx=ctx,
-                target_name=target_name,
-                step_number=step_number,
-                action_errors=action_errors,
-                constraint_status=constraint_status,
             )
-            response = await self._think_and_act(
-                messages, task_id, step_number, ctx=ctx, target_name=target_name
-            )
-            step_number += 1
-            action_errors = response.get("action_errors") or []
-            if response["done"]:
-                hook_result = await hook_manager(
-                    name="environment_registration_hook",
-                    input={
-                        "event": HookEvent.ON_STOP,
-                        "target_name": target_name,
-                        "reasoning": response.get("reasoning") or "",
-                        "project_root": get_project_root(),
-                    },
-                    ctx=ctx,
-                )
-                if hook_result.decision == HookDecision.BLOCK:
-                    response["done"] = False
-                    action_errors = [hook_result.reason or "Registration failed."]
-                else:
-                    break
-
-        if step_number >= self.max_step and not response["done"]:
-            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
-            response["result"] = f"{self.name} did not complete within max steps."
-
-        await hook_manager(
-            name="memory_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-            },
-            ctx=ctx,
-        )
-
-        return Response(type=ResponseType.AGENT,
-            success=response["done"] and not response.get("stopped_by_constraint", False),
-            message=response["result"] or "",
-            data=response,
-        )
+            if result.decision == HookDecision.BLOCK:
+                response.success = False
+                response.message = result.reason or "Registration failed; include the generated environment file path in the done_tool reasoning."
+        return response

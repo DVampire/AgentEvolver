@@ -3,7 +3,7 @@
 Design
 ------
 - parent_session_id (= MetaAgent's ref.name) is passed in the hook input dict by
-  sub-agents that support escalation (e.g. ReasonActAgent includes it from ctx.parent_session_id).
+  sub-agents that support escalation (e.g. GeneralAgent includes it from ctx.parent_session_id).
 - The hook looks up the parent AgentRef in runtime_manager._refs by that name, then
   calls runtime_manager.ask(parent_ref, EscalationMessage) and blocks until MetaAgent
   sets the reply_future — no separate session registry needed.

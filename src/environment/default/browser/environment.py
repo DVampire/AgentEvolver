@@ -28,12 +28,7 @@ class BrowserEnvironment(Environment):
 
     name: str = Field(default="browser_environment")
     description: str = Field(default="Playwright browser environment for web automation")
-    metadata: Dict[str, Any] = Field(default={
-        "has_vision": True,
-        "additional_rules": {
-            "state": "The state of the browser environment including current URL, title, and open tabs.",
-        },
-    })
+    metadata: Dict[str, Any] = Field(default={"has_vision": True})
     require_grad: bool = Field(default=False)
 
     def __init__(

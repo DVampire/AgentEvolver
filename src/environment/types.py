@@ -5,7 +5,6 @@ Core type definitions for the Environment Context Protocol.
 
 import json
 import uuid
-import inflection
 from enum import Enum
 from typing import Any, Dict, Optional, Union, Type, Callable
 from pydantic import BaseModel, Field, ConfigDict
@@ -71,72 +70,7 @@ class Environment(BaseModel):
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the environment"""
         raise NotImplementedError("Get state method not implemented")
-    
-    def get_rules(self) -> str:
-        """Generate environment rules from environment instance.
-        
-        Returns:
-            str: Generated environment rules
-        """
-        metadata = self.metadata if self.metadata else {}
-        has_vision = metadata.get('has_vision', False)
-        additional_rules = metadata.get('additional_rules', None)
-        env_name = self.name
-        actions = self.actions
-        
-        # Start building the rules
-        rules_parts = [f"<environment_{inflection.underscore(env_name)}>"]
-        
-        # Add state section
-        rules_parts.append("<state>")
-        if additional_rules and 'state' in additional_rules:
-            rules_parts.append(additional_rules['state'])
-        else:
-            rules_parts.append(f"The environment state about {env_name}.")
-        rules_parts.append("</state>")
-        
-        # Add vision section
-        rules_parts.append("<vision>")
-        if additional_rules and 'vision' in additional_rules:
-            rules_parts.append(additional_rules['vision'])
-        else:
-            if has_vision:
-                rules_parts.append("The environment vision information.")
-            else:
-                rules_parts.append("No vision available.")
-        rules_parts.append("</vision>")
-        
-        # Add additional rules if provided (for backward compatibility)
-        if additional_rules and 'additional_rules' in additional_rules:
-            rules_parts.append("<additional_rules>")
-            rules_parts.append(additional_rules['additional_rules'])
-            rules_parts.append("</additional_rules>")
-        
-        # Add interaction section with actions
-        rules_parts.append("<interaction>")
-        
-        if additional_rules and 'interaction' in additional_rules:
-            # Use custom interaction rules
-            rules_parts.append(additional_rules['interaction'])
-        else:
-            # Use default interaction rules
-            rules_parts.append("Available actions:")
-            
-            # Sort actions by name for consistent output
-            sorted_actions = sorted(actions.items(), key=lambda x: x[0])
-            
-            for i, (action_name, action_config) in enumerate(sorted_actions, 1):
-                rules_parts.append(f"{i}. {action_name}: {action_config.description}")
-            
-            rules_parts.append("Input format: JSON string with action-specific parameters.")
-            rules_parts.append("Example: {\"name\": \"action_name\", \"args\": {\"action-specific parameters\"}}")
-        
-        rules_parts.append("</interaction>")
-        
-        # Close the environment tag
-        rules_parts.append(f"</environment_{inflection.underscore(env_name)}>")
-        
-        return "\n".join(rules_parts)
+
 
 class ECPErrorCode(Enum):
     """ECP error codes"""
