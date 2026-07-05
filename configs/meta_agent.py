@@ -80,6 +80,15 @@ skill_names = [
     "init_skill",
     "report_design_skill",
     "artifact_design_skill",
+    "theme_factory_skill",
+    "doc_coauthoring_skill",
+    # document / data I/O skills — deliver real Office & PDF artifacts
+    "docx_skill",
+    "xlsx_skill",
+    "pdf_skill",
+    "pptx_skill",
+    # browser automation — test/verify local web apps, capture screenshots
+    "webapp_testing_skill",
     # per-type creator skills (orchestrator role) — drive each triad's create->eval->improve loop
     "agent_creator_skill",
     "tool_creator_skill",

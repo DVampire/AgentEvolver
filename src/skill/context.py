@@ -508,15 +508,23 @@ class SkillContextManager(BaseModel):
                 continue
             if types and not any(t in types for t in cfg.type_tags):
                 continue
+            # The card is for discovery, not a file manifest: list a few bundled
+            # files by basename, but for deep script trees (vendored skills can
+            # ship 50+ files) show only a count so the card doesn't bloat the
+            # prompt — the full paths come from SKILL.md when the skill is invoked.
+            def _bundle(label: str, items: List[str], cap: int = 6) -> Optional[str]:
+                if not items:
+                    return None
+                if len(items) <= cap:
+                    return f"- **{label}**: {', '.join(os.path.basename(p) for p in items)}"
+                return f"- **{label}**: {len(items)} files (see SKILL.md)"
+
             detail = [f"- **SKILL.md**: {os.path.join(cfg.skill_dir, 'SKILL.md')}"]
-            if cfg.scripts:
-                detail.append(f"- **Scripts**: {', '.join(cfg.scripts)}")
-            if cfg.references:
-                detail.append(f"- **References**: {', '.join(cfg.references)}")
-            if cfg.resources:
-                detail.append(f"- **Resources**: {', '.join(cfg.resources)}")
-            if cfg.examples:
-                detail.append(f"- **Examples**: {', '.join(cfg.examples)}")
+            for _label, _items in (("Scripts", cfg.scripts), ("References", cfg.references),
+                                   ("Resources", cfg.resources), ("Examples", cfg.examples)):
+                line = _bundle(_label, _items)
+                if line:
+                    detail.append(line)
             parts.append(render_capability_card(
                 name=cfg.name,
                 description=cfg.description or "",
