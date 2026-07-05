@@ -17,7 +17,7 @@ from src.skill.types import SkillConfig
 from src.response.types import Response, ResponseType
 from src.session import SessionContext
 from src.skill.types import SkillContext
-from src.utils import assemble_project_path, file_lock
+from src.utils import assemble_project_path, file_lock, render_capability_card
 from src.version import version_manager
 from src.permission import permission_manager, PermissionMode
 
@@ -508,8 +508,22 @@ class SkillContextManager(BaseModel):
                 continue
             if types and not any(t in types for t in cfg.type_tags):
                 continue
-            parts.append(f"<skill name=\"{cfg.name}\">\n{cfg.text}\n</skill>")
-        text = "\n".join(parts)
+            detail = [f"- **SKILL.md**: {os.path.join(cfg.skill_dir, 'SKILL.md')}"]
+            if cfg.scripts:
+                detail.append(f"- **Scripts**: {', '.join(cfg.scripts)}")
+            if cfg.references:
+                detail.append(f"- **References**: {', '.join(cfg.references)}")
+            if cfg.resources:
+                detail.append(f"- **Resources**: {', '.join(cfg.resources)}")
+            if cfg.examples:
+                detail.append(f"- **Examples**: {', '.join(cfg.examples)}")
+            parts.append(render_capability_card(
+                name=cfg.name,
+                description=cfg.description or "",
+                meta=f"`[{', '.join(cfg.type_tags)}]` v{cfg.version}",
+                body="\n".join(detail),
+            ))
+        text = "\n\n".join(parts)
         self._instr_cache[key] = text
         return text
 

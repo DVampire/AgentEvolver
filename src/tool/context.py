@@ -14,7 +14,8 @@ from src.logger import logger
 from src.config import config
 from src.utils import (assemble_project_path,
                        gather_with_concurrency,
-                       file_lock
+                       file_lock,
+                       render_capability_card,
                        )
 from src.tool.types import Tool, ToolConfig, ToolContext
 from src.response.types import Response, ResponseType
@@ -723,16 +724,17 @@ class ToolContextManager(BaseModel):
             return self._instr_cache
         targets = list(self._tool_configs.keys()) if allowlist is None else allowlist
         parts = []
-        for index, name in enumerate(targets):
+        for name in targets:
             info = await self.get_info(name)
             if info is None:
                 continue
-            block = f"Tool: {info.name}\nDescription: {info.description}"
-            instruction = (getattr(info, "instruction", "") or "").strip()
-            if instruction:
-                block += f"\n{instruction}"
-            parts.append(f"{index + 1:04d}\n{block}\n")
-        text = "---\n".join(parts)
+            block = render_capability_card(
+                name=info.name,
+                description=(info.description or ""),
+                body=(getattr(info, "instruction", "") or ""),
+            )
+            parts.append(block)
+        text = "\n\n".join(parts)
         self._instr_key = key
         self._instr_cache = text
         return text

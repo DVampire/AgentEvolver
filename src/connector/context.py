@@ -16,7 +16,7 @@ from src.config import config
 from src.connector.types import ConnectorConfig, ConnectorContext
 from src.response.types import Response, ResponseType
 from src.session import SessionContext
-from src.utils import assemble_project_path, file_lock
+from src.utils import assemble_project_path, file_lock, render_capability_card
 from src.version import version_manager
 from src.permission import permission_manager, PermissionMode
 
@@ -549,8 +549,17 @@ class ConnectorContextManager(BaseModel):
                 continue
             if types and cfg.type not in types:
                 continue
-            parts.append(f"<connector name=\"{cfg.name}\">\n{cfg.text}\n</connector>")
-        text = "\n".join(parts)
+            transport = (cfg.connection or {}).get("transport", "unknown")
+            detail = [f"- **CONNECTOR.md**: {os.path.join(cfg.connector_dir, 'CONNECTOR.md')}"]
+            if cfg.actions:
+                detail.append(f"- **Actions**: {', '.join(cfg.actions)}")
+            parts.append(render_capability_card(
+                name=cfg.name,
+                description=cfg.description or "",
+                meta=f"`{transport}` v{cfg.version}",
+                body="\n".join(detail),
+            ))
+        text = "\n\n".join(parts)
         self._instr_cache[key] = text
         return text
 

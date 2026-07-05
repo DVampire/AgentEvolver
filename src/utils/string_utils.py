@@ -1,4 +1,43 @@
 import hashlib
+import re
+
+
+def render_capability_card(name: str, description: str = "", body: str = "", meta: str = "") -> str:
+    """Render one tool/skill/connector as a compact markdown "card" for prompt injection.
+
+    Layout (rendered by the message viewer's markdown + `prompt.css` card styling):
+
+        ## <name>
+        <description>  ·  <meta>
+
+        <body>
+
+    The `name` is the *only* heading (an H2 card header — the CSS turns it into a
+    ruled divider so consecutive capabilities read as separate cards). Any markdown
+    headings inside `body` (e.g. a tool's `## Parameters` / `## Example`) are
+    downgraded to bold labels so they render as tight sub-sections instead of
+    oversized headers. Blank lines inside `body` are collapsed to keep it compact.
+    """
+    header_line = f"## {name.strip()}"
+    subtitle = description.strip()
+    if meta.strip():
+        subtitle = f"{subtitle}  ·  {meta.strip()}" if subtitle else meta.strip()
+
+    body = (body or "").strip()
+    if body:
+        # Downgrade any markdown headings (#..######) to bold inline labels.
+        body = re.sub(r"(?m)^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$", r"**\1**", body)
+        # Collapse runs of blank lines to a single blank line.
+        body = re.sub(r"\n{3,}", "\n\n", body)
+
+    lines = [header_line]
+    if subtitle:
+        lines.append(subtitle)
+    parts = ["\n".join(lines)]
+    if body:
+        parts.append(body)
+    return "\n\n".join(parts)
+
 
 def hash_text_sha256(text: str) -> str:
     hash_object = hashlib.sha256(text.encode())
@@ -39,6 +78,7 @@ def is_same(a: str, b: str) -> bool:
     return a.strip().lower() == b.strip().lower()
 
 __all__ = [
+    "render_capability_card",
     "hash_text_sha256",
     "extract_boxed_content",
     "dedent",

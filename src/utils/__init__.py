@@ -12,6 +12,7 @@ from .file_utils import (
     file_lock
 )
 from .string_utils import (
+    render_capability_card,
     extract_boxed_content,
     dedent,
     is_same,
