@@ -78,6 +78,8 @@ skill_names = [
     "verify_skill",
     "run_skill",
     "init_skill",
+    "report_design_skill",
+    "artifact_design_skill",
     # per-type creator skills (orchestrator role) — drive each triad's create->eval->improve loop
     "agent_creator_skill",
     "tool_creator_skill",
