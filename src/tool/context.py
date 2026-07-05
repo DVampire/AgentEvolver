@@ -23,18 +23,16 @@ from src.dynamic import dynamic_manager
 from src.registry import TOOL
 from src.permission import permission_manager, PermissionMode
 
+_UNSET = object()  # sentinel: get_instruction cache is empty / invalidated
+
 class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="The base directory to use for the tools")
-    save_path: str = Field(default=None, description="The path to save the tools")
-    contract_path: str = Field(default=None, description="The path to save the tool contract")
     
     def __init__(self, 
                  base_dir: Optional[str] = None,
-                 save_path: Optional[str] = None,
-                 contract_path: Optional[str] = None,
                  model_name: str = "openrouter/gemini-3-flash-preview",
                  default_timeout: Optional[float] = 1800.0,
                  **kwargs):
@@ -42,7 +40,6 @@ class ToolContextManager(BaseModel):
 
         Args:
             base_dir: Base directory for storing tool data
-            save_path: Path to save tool configurations
             model_name: The model to use for the tools
             default_timeout: Default timeout in seconds for tool calls (None means no timeout, default 1800s = 30 minutes)
         """
@@ -54,21 +51,15 @@ class ToolContextManager(BaseModel):
             self.base_dir = assemble_project_path(os.path.join(config.default_dir, "tool"))
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "tool.json")
-        logger.info(f"| 📁 Tool context manager save path: {self.save_path}.")
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Tool context manager contract path: {self.contract_path}.")
+        logger.info(f"| 📁 Tool context manager.")
 
         self._tool_configs: Dict[str, ToolConfig] = {}  # Current active configs (latest version)
         # Tool version history, e.g., {"tool_name": {"1.0.0": ToolConfig, "1.0.1": ToolConfig}}
         self._tool_history_versions: Dict[str, Dict[str, ToolConfig]] = {}
-        
+        # get_instruction cache: (allowlist tuple) -> assembled text; invalidated on registry change.
+        self._instr_key: Any = _UNSET
+        self._instr_cache: str = ""
+
         self.model_name = model_name
         self.default_timeout = default_timeout
 
@@ -101,7 +92,7 @@ class ToolContextManager(BaseModel):
         tool_configs.update(registry_tool_configs)
         
         # Load tools from code
-        code_tool_configs: Dict[str, ToolConfig] = await self._load_from_code()
+        code_tool_configs: Dict[str, ToolConfig] = {}
         
         # Merge code configs with registry configs, only override if code version is strictly greater
         for tool_name, code_config in code_tool_configs.items():
@@ -141,9 +132,8 @@ class ToolContextManager(BaseModel):
             logger.info(f"| 🔧 Tool {tool_name} initialized")
         
         # Save tool configs to json file
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract(tool_names=tool_names)
+        self._invalidate_instruction()
         
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -240,114 +230,6 @@ class ToolContextManager(BaseModel):
         
         return tool_configs
     
-    async def _load_from_code(self):
-        """Load tools from code files.
-        
-        JSON file content example:
-        {
-            "metadata": {
-                "saved_at": str,  # "YYYY-MM-DD HH:MM:SS"
-                "num_tools": int,  # total tool count
-                "num_versions": int  # total version count
-            },
-            "tools": {
-                "tool_name": {
-                    "current_version": "1.0.0",
-                    "versions": {
-                        "1.0.0": {
-                            "name": str,
-                            "description": str,
-                            "metadata": dict,
-                            "require_grad": bool,
-                            "version": str,
-                            "cls": Type[Tool],
-                            "config": dict,
-                            "instance": Tool, # will be built when needed
-                            "function_calling": dict, 
-                            "text": str, 
-                            "args_schema": BaseModel,
-                            "code": str
-                        },
-                        ...
-                    }
-                }
-            }
-        }
-        """
-        
-        tool_configs: Dict[str, ToolConfig] = {}
-        
-        # If save file does not exist yet, nothing to load
-        if not os.path.exists(self.save_path):
-            logger.info(f"| 📂 Tool config file not found at {self.save_path}, skipping code-based loading")
-            return tool_configs
-        
-        # Load all tool configs from json file
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse tool config JSON from {self.save_path}: {e}")
-            return tool_configs
-        
-        metadata = load_data.get("metadata", {})
-        tools_data = load_data.get("tools", {})
-
-        async def register_tool_class(tool_name: str, tool_data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, ToolConfig], Optional[ToolConfig]]]:
-            """Load all versions for a single tool from JSON."""
-            try:
-                current_version = tool_data.get("current_version", "1.0.0")
-                versions = tool_data.get("versions", {})
-                
-                if not versions:
-                    logger.warning(f"| ⚠️ Tool {tool_name} has no versions")
-                    return None
-                
-                version_map: Dict[str, ToolConfig] = {}
-                current_tool_config: Optional[ToolConfig] = None
-                
-                for _, version_data in versions.items():
-                    tool_config = ToolConfig.model_validate(version_data)
-                    version = tool_config.version
-                    version_map[version] = tool_config
-                    
-                    if version == current_version:
-                        current_tool_config = tool_config
-                
-                return tool_name, version_map, current_tool_config
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load tool {tool_name} from code JSON: {e}")
-                return None
-
-        # Launch loading of each tool concurrently with a concurrency limit
-        tasks = [
-            register_tool_class(tool_name, tool_data) for tool_name, tool_data in tools_data.items()
-        ]
-        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
-
-        for result in results:
-            if isinstance(result, Exception) or result is None:
-                continue
-            tool_name, version_map, current_tool_config = result
-            if not version_map:
-                continue
-            # Store all versions in history (mapped by version string)
-            self._tool_history_versions[tool_name] = version_map
-            # Active config: the one corresponding to current_version
-            if current_tool_config is not None:
-                tool_configs[tool_name] = current_tool_config
-            else:
-                # Fallback: if current_version is not found, use the last available version
-                logger.warning(f"| ⚠️ Tool {tool_name} current_version not found, using last available version")
-                tool_configs[tool_name] = list(version_map.values())[-1]
-            
-            # Register all versions to version manager
-            for tool_config in version_map.values():
-                await version_manager.register_version("tool", tool_name, tool_config.version)
-            
-        logger.info(f"| 📂 Loaded {len(tool_configs)} tools from {self.save_path}")
-        return tool_configs
-    
     async def build(self, tool_config: ToolConfig) -> ToolConfig:
         """Create a tool instance and store it.
         
@@ -364,7 +246,7 @@ class ToolContextManager(BaseModel):
         
         # Create new tool instance
         try:
-            # cls should already be loaded (either from registry or from code in _load_from_code)
+            # cls should already be loaded (either from registry or from code)
             if tool_config.cls is None:
                 raise ValueError(f"Cannot create tool {tool_config.name}: no class provided. Class should be loaded during initialization.")
             
@@ -489,9 +371,8 @@ class ToolContextManager(BaseModel):
             await version_manager.register_version("tool", tool_name, tool_config.version)
             
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
+            self._invalidate_instruction()
             
             logger.info(f"| 📝 Registered tool config: {tool_name}: {tool_config.version}")
             return tool_config
@@ -631,9 +512,8 @@ class ToolContextManager(BaseModel):
             )
             
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
+            self._invalidate_instruction()
             
             logger.info(f"| 🔄 Updated tool {tool_name} from v{original_config.version} to v{new_version}")
             return updated_config
@@ -744,9 +624,8 @@ class ToolContextManager(BaseModel):
             )
             
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
+            self._invalidate_instruction()
             
             logger.info(f"| 📋 Copied tool {tool_name}@{original_config.version} to {new_name}@{new_version}")
             return new_config
@@ -774,179 +653,11 @@ class ToolContextManager(BaseModel):
         del self._tool_configs[tool_name]
 
         # Persist to JSON after unregister
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract()
+        self._invalidate_instruction()
         
         logger.info(f"| 🗑️ Unregistered tool {tool_name}@{tool_config.version}")
         return True
-    
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all tool configurations with version history to JSON.
-        
-        Only saves basic configuration fields (name, description, version, config, etc.).
-        Instance is not saved as it's runtime state and will be recreated via build() on load.
-        
-        Args:
-            file_path: File path to save to
-            
-        Returns:
-            Path to saved file
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            # Ensure parent directory exists
-            parent_dir = os.path.dirname(file_path)
-            if parent_dir:  # Only create if there's a directory component
-                os.makedirs(parent_dir, exist_ok=True)
-            
-            # Prepare save data - save all versions for each tool
-            save_data = {
-                "metadata": {
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "num_tools": len(self._tool_configs),
-                    "num_versions": sum(len(versions) for versions in self._tool_history_versions.values()),
-                },
-                "tools": {}
-            }
-            
-            for tool_name, version_map in self._tool_history_versions.items():
-                try:
-                    versions_data: Dict[str, Dict[str, Any]] = {}
-                    for _, tool_config in version_map.items():
-                        config_dict = tool_config.model_dump()
-                        versions_data[tool_config.version] = config_dict
-                    
-                    # Get current_version from active config if it exists
-                    # If not in active configs, use the latest version from history
-                    current_version = None
-                    if tool_name in self._tool_configs:
-                        current_config = self._tool_configs[tool_name]
-                        if current_config is not None:
-                            current_version = current_config.version
-                    
-                    # If not found in active configs, use latest version from history
-                    if current_version is None and version_map:
-                        # Find latest version by comparing version strings
-                        latest_version_str = None
-                        for version_str in version_map.keys():
-                            if latest_version_str is None:
-                                latest_version_str = version_str
-                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
-                                latest_version_str = version_str
-                        current_version = latest_version_str
-                    
-                    save_data["tools"][tool_name] = {
-                        "versions": versions_data,
-                        "current_version": current_version
-                    }
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to serialize tool {tool_name}: {e}")
-                    continue
-            
-            # Save to file
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-            
-            logger.info(f"| 💾 Saved {len(self._tool_configs)} tools with version history to {file_path}")
-            return str(file_path)
-    
-    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
-        """Load tool configurations with version history from JSON.
-        
-        Loads basic configuration only (instance is not saved, must be created via build()).
-        Only the latest version will be instantiated by default if auto_initialize=True.
-        
-        Args:
-            file_path: File path to load from
-            auto_initialize: Whether to automatically create instance via build() after loading
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
-        
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Tool file not found: {file_path}")
-                return False
-            
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-                
-                tools_data = load_data.get("tools", {})
-                loaded_count = 0
-                
-                for tool_name, tool_data in tools_data.items():
-                    try:
-                        # Expected format: multiple versions stored as a dict {version_str: config_dict}
-                        versions_data = tool_data.get("versions")
-                        if not isinstance(versions_data, dict):
-                            logger.warning(f"| ⚠️ Tool {tool_name} has invalid format for 'versions' (expected dict), skipping")
-                            continue
-                        
-                        current_version_str = tool_data.get("current_version")
-                        
-                        # Load all versions
-                        version_configs = []
-                        latest_config = None
-                        latest_version = None
-                        
-                        for version_str, config_dict in versions_data.items():
-                            # Ensure version field is present
-                            if "version" not in config_dict:
-                                config_dict["version"] = version_str
-                            
-                            try:
-                                tool_config = ToolConfig.model_validate(config_dict)
-                                version_configs.append(tool_config)
-                            except Exception as e:
-                                logger.warning(f"| ⚠️ Failed to load tool config for {tool_name}@{version_str}: {e}")
-                                continue
-                            
-                            # Track latest version
-                            if latest_config is None or (
-                                current_version_str and tool_config.version == current_version_str
-                            ) or (
-                                not current_version_str and (
-                                    latest_version is None or 
-                                    version_manager.compare_versions(tool_config.version, latest_version) > 0
-                                )
-                            ):
-                                latest_config = tool_config
-                                latest_version = tool_config.version
-                        
-                        # Store all versions in history (dict-based)
-                        self._tool_history_versions[tool_name] = {
-                            cfg.version: cfg for cfg in version_configs
-                        }
-                        
-                        # Only set latest version as active
-                        if latest_config:
-                            self._tool_configs[tool_name] = latest_config
-                            
-                            # Register all versions to version manager (only version records)
-                            for tool_config in version_configs:
-                                await version_manager.register_version("tool", tool_name, tool_config.version)
-                            
-                            # Create instance if requested (instance is not saved in JSON, must be created via build)
-                            if auto_initialize and latest_config.cls is not None:
-                                await self.build(latest_config)
-                            
-                            loaded_count += 1
-                    except Exception as e:
-                        logger.error(f"| ❌ Failed to load tool {tool_name}: {e}")
-                        continue
-                
-                logger.info(f"| 📂 Loaded {loaded_count} tools with version history from {file_path}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load tools from {file_path}: {e}")
-                return False
     
     async def restore(self, tool_name: str, version: str, auto_initialize: bool = True) -> Optional[ToolConfig]:
         """Restore a specific version of a tool from history
@@ -990,40 +701,37 @@ class ToolContextManager(BaseModel):
             await self.build(restored_config)
         
         # Persist to JSON (current_version changes)
-        await self.save_to_json()
         
         logger.info(f"| 🔄 Restored tool {tool_name} to version {version}")
         return restored_config
     
-    async def save_contract(self, tool_names: Optional[List[str]] = None):
-        """Save the contract for a tool"""
-        contract = []
-        if tool_names is not None:
-            for index, tool_name in enumerate(tool_names):
-                tool_info = await self.get_info(tool_name)
-                if tool_info is None:
-                    logger.warning(f"| ⚠️ Tool '{tool_name}' not found in registry, skipping")
-                    continue
-                text = tool_info.text
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        else:
-            for index, tool_name in enumerate(self._tool_configs.keys()):
-                tool_info = await self.get_info(tool_name)
-                if tool_info is None:
-                    logger.warning(f"| ⚠️ Tool '{tool_name}' not found in registry, skipping")
-                    continue
-                text = tool_info.text
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        contract_text = "---\n".join(contract)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved {len(contract)} tools contract to {self.contract_path}")
-        
-    async def load_contract(self) -> str:
-        """Load the contract for a tool"""
-        with open(self.contract_path, "r", encoding="utf-8") as f:
-            contract_text = f.read()
-        return contract_text
+    async def get_instruction(self, allowlist=None, types=None) -> str:
+        """Assemble the tool instruction text for prompt injection, on demand.
+
+        `allowlist` (list of tool names) selects which tools to include: None = all
+        loaded tools; [] = none; [names] = only those. The result is cached by
+        allowlist and reused until the registry changes (register/update/remove call
+        `_invalidate_instruction`). `types` is accepted for a uniform manager interface
+        but tools have no type filter.
+        """
+        key = None if allowlist is None else tuple(allowlist)
+        if key == self._instr_key:
+            return self._instr_cache
+        targets = list(self._tool_configs.keys()) if allowlist is None else allowlist
+        parts = []
+        for index, name in enumerate(targets):
+            info = await self.get_info(name)
+            if info is None:
+                continue
+            parts.append(f"{index + 1:04d}\n{info.text}\n")
+        text = "---\n".join(parts)
+        self._instr_key = key
+        self._instr_cache = text
+        return text
+
+    def _invalidate_instruction(self) -> None:
+        """Drop the cached instruction so the next get_instruction rebuilds it."""
+        self._instr_key = _UNSET
     
     async def cleanup(self):
         """Cleanup all active tools."""

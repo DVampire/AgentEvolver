@@ -18,8 +18,6 @@ class EnvironmentManagerServer(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
-    save_path: str = Field(default=None, description="The path to save the environments")
-    contract_path: str = Field(default=None, description="The path to save the environment contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the ECP Server."""
@@ -37,32 +35,16 @@ class EnvironmentManagerServer(BaseModel):
         base_root = config.default_dir if hasattr(config, "default_dir") and config.get("default_dir") else config.work_dir
         self.base_dir = assemble_project_path(os.path.join(base_root, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "environment.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 ECP Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
+        logger.info(f"| 📁 ECP Server base directory: {self.base_dir}")
 
         # Initialize environment context manager
         self.environment_context_manager = EnvironmentContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
         )
         await self.environment_context_manager.initialize(env_names=env_names)
         
         logger.info("| ✅ Environments initialization completed")
         
-    async def set_contract(self, env_names: Optional[List[str]] = None):
-        """Set the contract for all environments by aggregating their source code.
-
-        Args:
-            env_names: List of environment names to include in the contract. If None, includes all registered environments.
-        """
-        await self.environment_context_manager.save_contract(env_names=env_names)
-
-    async def get_contract(self) -> str:
-        """Get the contract for all environments"""
-        return await self.environment_context_manager.load_contract()
-    
     def action(self, 
                name: str = None, 
                description: str = "",

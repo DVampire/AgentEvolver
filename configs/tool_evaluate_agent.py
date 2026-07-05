@@ -26,7 +26,6 @@ tool_names = [
     "glob_search_tool",
     "grep_search_tool",
     "inspect_tool",
-    "tool_eval_runner",
 ]
 agent_names = [
     "tool_evaluate_agent",

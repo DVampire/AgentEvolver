@@ -14,8 +14,6 @@ class BenchmarkManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="Base directory for benchmarks")
-    save_path: str = Field(default=None, description="Path to save benchmarks")
-    contract_path: str = Field(default=None, description="Path to save benchmark contract")
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -25,13 +23,9 @@ class BenchmarkManager(BaseModel):
         """Initialize benchmarks."""
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "benchmark"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "benchmark.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
         
         self.benchmark_context_manager = BenchmarkContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path
         )
         await self.benchmark_context_manager.initialize(benchmark_names=benchmark_names)
         logger.info("| ✅ Benchmark systems initialization completed")

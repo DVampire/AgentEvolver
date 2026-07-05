@@ -23,20 +23,14 @@ class BenchmarkContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="The base directory to use for the benchmarks")
-    save_path: str = Field(default=None, description="The path to save the benchmarks")
-    contract_path: str = Field(default=None, description="The path to save the benchmark contract")
     
     def __init__(self, 
                  base_dir: Optional[str] = None,
-                 save_path: Optional[str] = None,
-                 contract_path: Optional[str] = None,
                  **kwargs):
         """Initialize the benchmark context manager.
         
         Args:
             base_dir: Base directory for storing benchmark data
-            save_path: Path to save benchmark configurations
-            contract_path: Path to save benchmark contract
         """
         super().__init__(**kwargs)
         
@@ -47,17 +41,7 @@ class BenchmarkContextManager(BaseModel):
         logger.info(f"| 📁 Benchmark context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "benchmark.json")
-        logger.info(f"| 📁 Benchmark context manager save path: {self.save_path}.")
         
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Benchmark context manager contract path: {self.contract_path}.")
 
         self._benchmark_configs: Dict[str, BenchmarkConfig] = {}  # Current active configs (latest version)
         self._benchmark_history_versions: Dict[str, Dict[str, BenchmarkConfig]] = {}
@@ -85,7 +69,7 @@ class BenchmarkContextManager(BaseModel):
         benchmark_configs.update(registry_benchmark_configs)
         
         # Load benchmarks from code (JSON file)
-        code_benchmark_configs: Dict[str, BenchmarkConfig] = await self._load_from_code()
+        code_benchmark_configs: Dict[str, BenchmarkConfig] = {}
         
         # Merge code configs with registry configs, only override if code version is strictly greater
         for benchmark_name, code_config in code_benchmark_configs.items():
@@ -118,8 +102,6 @@ class BenchmarkContextManager(BaseModel):
             logger.info(f"| 🔧 Benchmark {name} initialized")
         
         # Save to JSON and contract
-        await self.save_to_json()
-        await self.save_contract(benchmark_names=names_list)
         
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -181,65 +163,6 @@ class BenchmarkContextManager(BaseModel):
         
         return benchmark_configs
 
-    async def _load_from_code(self):
-        """Load benchmarks from JSON file."""
-        benchmark_configs: Dict[str, BenchmarkConfig] = {}
-        
-        if not os.path.exists(self.save_path):
-            logger.info(f"| 📂 Benchmark config file not found at {self.save_path}, skipping code-based loading")
-            return benchmark_configs
-        
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse benchmark config JSON from {self.save_path}: {e}")
-            return benchmark_configs
-        
-        benchmarks_data = load_data.get("benchmark_systems", {})
-        
-        async def register_single_benchmark(name: str, data: Dict[str, Any]):
-            try:
-                current_version = data.get("current_version", "1.0.0")
-                versions = data.get("versions", {})
-                
-                if not versions:
-                    return None
-                
-                version_map: Dict[str, BenchmarkConfig] = {}
-                current_config: Optional[BenchmarkConfig] = None
-                
-                for _, version_data in versions.items():
-                    benchmark_config = BenchmarkConfig.model_validate(version_data)
-                    v = benchmark_config.version
-                    version_map[v] = benchmark_config
-                    if v == current_version:
-                        current_config = benchmark_config
-                
-                return name, version_map, current_config
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load benchmark {name} from code JSON: {e}")
-                return None
-        
-        tasks = [register_single_benchmark(n, d) for n, d in benchmarks_data.items()]
-        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception) or result is None:
-                continue
-            name, version_map, current_config = result
-            self._benchmark_history_versions[name] = version_map
-            if current_config:
-                benchmark_configs[name] = current_config
-            else:
-                benchmark_configs[name] = list(version_map.values())[-1]
-            
-            for cfg in version_map.values():
-                await version_manager.register_version("benchmark", name, cfg.version)
-        
-        logger.info(f"| 📂 Loaded {len(benchmark_configs)} benchmarks from {self.save_path}")
-        return benchmark_configs
-
     async def register(self, 
                        benchmark: Union[Benchmark, Type[Benchmark]],
                        benchmark_config_dict: Optional[Dict[str, Any]] = None,
@@ -295,8 +218,6 @@ class BenchmarkContextManager(BaseModel):
             self._benchmark_history_versions[benchmark_name][version] = benchmark_config
             
             await version_manager.register_version("benchmark", benchmark_name, version)
-            await self.save_to_json()
-            await self.save_contract()
             
             logger.info(f"| 📝 Registered benchmark config: {benchmark_name}: {version}")
             return benchmark_config
@@ -352,8 +273,6 @@ class BenchmarkContextManager(BaseModel):
                 "benchmark", benchmark_name, new_version,
                 description=description or f"Updated from {original_config.version}"
             )
-            await self.save_to_json()
-            await self.save_contract()
             
             logger.info(f"| 🔄 Updated benchmark {benchmark_name} from v{original_config.version} to v{new_version}")
             return updated_config
@@ -412,47 +331,8 @@ class BenchmarkContextManager(BaseModel):
         if auto_initialize and restored_config.cls is not None:
             await self.build(restored_config)
         
-        await self.save_to_json()
         logger.info(f"| 🔄 Restored benchmark {name} to version {version}")
         return restored_config
-
-    async def save_to_json(self):
-        """Save all benchmark configurations with history to JSON."""
-        save_data = {
-            "metadata": {
-                "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "num_benchmarks": len(self._benchmark_configs),
-                "num_versions": sum(len(v) for v in self._benchmark_history_versions.values()),
-            },
-            "benchmark_systems": {}
-        }
-        
-        for name, version_map in self._benchmark_history_versions.items():
-            versions_data = {v: cfg.model_dump() for v, cfg in version_map.items()}
-            current_version = self._benchmark_configs[name].version if name in self._benchmark_configs else None
-            save_data["benchmark_systems"][name] = {
-                "versions": versions_data,
-                "current_version": current_version
-            }
-            
-        async with file_lock(self.save_path):
-            with open(self.save_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-
-    async def save_contract(self, benchmark_names: Optional[List[str]] = None):
-        """Save benchmark contract to file."""
-        contract = []
-        names = benchmark_names if benchmark_names is not None else list(self._benchmark_configs.keys())
-        for index, name in enumerate(names):
-            cfg = self._benchmark_configs.get(name)
-            if cfg:
-                text = f"Name: {cfg.name}\nDescription: {cfg.description}\nVersion: {cfg.version}"
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        
-        contract_text = "---\n".join(contract)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved benchmark contract to {self.contract_path}")
 
     async def cleanup(self):
         """Cleanup active benchmarks."""

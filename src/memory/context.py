@@ -27,20 +27,14 @@ class MemoryContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="The base directory to use for the memory systems")
-    save_path: str = Field(default=None, description="The path to save the memory systems")
-    contract_path: str = Field(default=None, description="The path to save the memory contract")
     
     def __init__(self, 
                  base_dir: Optional[str] = None,
-                 save_path: Optional[str] = None,
-                 contract_path: Optional[str] = None,
                  **kwargs):
         """Initialize the memory context manager.
         
         Args:
             base_dir: Base directory for storing memory data
-            save_path: Path to save memory configurations
-            contract_path: Path to save memory contract
         """
         super().__init__(**kwargs)
         
@@ -50,16 +44,7 @@ class MemoryContextManager(BaseModel):
             self.base_dir = assemble_project_path(os.path.join(config.default_dir, "memory"))
         logger.info(f"| 📁 Memory context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "memory.json")
-        logger.info(f"| 📁 Memory context manager save path: {self.save_path}.")
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Memory context manager contract path: {self.contract_path}.")
+        logger.info(f"| 📁 Memory context manager.")
 
         self._memory_configs: Dict[str, MemoryConfig] = {}  # Current active configs (latest version)
         # Memory version history, e.g., {"memory_name": {"1.0.0": MemoryConfig, "1.0.1": MemoryConfig}}
@@ -89,7 +74,7 @@ class MemoryContextManager(BaseModel):
         memory_configs.update(registry_memory_configs)
         
         # Load memory systems from code (JSON file)
-        code_memory_configs: Dict[str, MemoryConfig] = await self._load_from_code()
+        code_memory_configs: Dict[str, MemoryConfig] = {}
         
         # Merge code configs with registry configs, only override if code version is strictly greater
         for memory_name, code_config in code_memory_configs.items():
@@ -129,9 +114,7 @@ class MemoryContextManager(BaseModel):
             logger.info(f"| 🔧 Memory {memory_name} initialized")
         
         # Save memory configs to json file
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract(memory_names=memory_names_list)
         
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -229,111 +212,6 @@ class MemoryContextManager(BaseModel):
         
         logger.info(f"| ✅ Discovered and registered {success_count}/{len(memory_classes)} memory systems from MEMORY_SYSTEM registry")
         
-        return memory_configs
-    
-    async def _load_from_code(self):
-        """Load memory systems from JSON file.
-        
-        JSON file content example:
-        {
-            "metadata": {
-                "saved_at": str,  # "YYYY-MM-DD HH:MM:SS"
-                "num_memories": int,  # total memory count
-                "num_versions": int  # total version count
-            },
-            "memory_systems": {
-                "memory_name": {
-                    "current_version": "1.0.0",
-                    "versions": {
-                        "1.0.0": {
-                            "name": str,
-                            "description": str,
-                            "require_grad": bool,
-                            "version": str,
-                            "cls": Type[Memory],
-                            "config": dict,
-                            "metadata": dict,
-                            "code": str
-                        },
-                        ...
-                    }
-                }
-            }
-        }
-        """
-        memory_configs: Dict[str, MemoryConfig] = {}
-        
-        # If save file does not exist yet, nothing to load
-        if not os.path.exists(self.save_path):
-            logger.info(f"| 📂 Memory config file not found at {self.save_path}, skipping code-based loading")
-            return memory_configs
-        
-        # Load all memory configs from json file
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse memory config JSON from {self.save_path}: {e}")
-            return memory_configs
-        
-        metadata = load_data.get("metadata", {})
-        memories_data = load_data.get("memory_systems", {})
-        
-        async def register_memory_class(memory_name: str, memory_data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, MemoryConfig], Optional[MemoryConfig]]]:
-            """Load all versions for a single memory from JSON."""
-            try:
-                current_version = memory_data.get("current_version", "1.0.0")
-                versions = memory_data.get("versions", {})
-                
-                if not versions:
-                    logger.warning(f"| ⚠️ Memory {memory_name} has no versions")
-                    return None
-                
-                version_map: Dict[str, MemoryConfig] = {}
-                current_config: Optional[MemoryConfig] = None  # Active config for current_version
-                
-                for _, version_data in versions.items():
-                    # Create MemoryConfig using model_validate to handle cls and code
-                    memory_config = MemoryConfig.model_validate(version_data)
-                    version = memory_config.version
-                    version_map[version] = memory_config
-                    
-                    if version == current_version:
-                        current_config = memory_config
-                
-                return memory_name, version_map, current_config
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load memory {memory_name} from code JSON: {e}")
-                return None
-        
-        # Launch loading of each memory concurrently with a concurrency limit
-        tasks = [
-            register_memory_class(memory_name, memory_data) for memory_name, memory_data in memories_data.items()
-        ]
-        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception) or result is None:
-                continue
-            memory_name, version_map, current_config = result
-            if not version_map:
-                continue
-            
-            # Store all versions in history (mapped by version string)
-            self._memory_history_versions[memory_name] = version_map
-            # Active config: the one corresponding to current_version
-            if current_config is not None:
-                memory_configs[memory_name] = current_config
-            else:
-                # Fallback: if current_version is not found, use the last available version
-                logger.warning(f"| ⚠️ Memory {memory_name} current_version not found, using last available version")
-                memory_configs[memory_name] = list(version_map.values())[-1]
-            
-            # Register all versions to version manager
-            for memory_config in version_map.values():
-                await version_manager.register_version("memory", memory_name, memory_config.version)
-        
-        logger.info(f"| 📂 Loaded {len(memory_configs)} memory systems from {self.save_path}")
         return memory_configs
     
     async def register(self, 
@@ -437,9 +315,7 @@ class MemoryContextManager(BaseModel):
             await version_manager.register_version("memory", memory_name, memory_config.version)
             
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
             
             logger.info(f"| 📝 Registered memory config: {memory_name}: {memory_config.version}")
             return memory_config
@@ -547,9 +423,7 @@ class MemoryContextManager(BaseModel):
             )
             
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
             
             logger.info(f"| 🔄 Updated memory {memory_name} from v{original_config.version} to v{new_version}")
             return updated_config
@@ -651,9 +525,7 @@ class MemoryContextManager(BaseModel):
             )
             
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
             
             logger.info(f"| 📋 Copied memory {memory_name}@{original_config.version} to {new_name}@{new_version}")
             return new_memory_config
@@ -681,9 +553,7 @@ class MemoryContextManager(BaseModel):
         del self._memory_configs[memory_name]
 
         # Persist to JSON after unregister
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract()
         
         logger.info(f"| 🗑️ Unregistered memory {memory_name}@{memory_config.version}")
         return True
@@ -737,7 +607,7 @@ class MemoryContextManager(BaseModel):
         
         # Create new memory instance
         try:
-            # cls should already be loaded (either from registry or from code in _load_from_code)
+            # cls should already be loaded (either from registry or from code)
             if memory_config.cls is None:
                 raise ValueError(f"Cannot create memory {memory_config.name}: no class provided. Class should be loaded during initialization.")
             
@@ -765,205 +635,6 @@ class MemoryContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Failed to create memory {memory_config.name}: {e}")
             raise
-    
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all memory configurations with version history to JSON.
-        
-        Only saves basic configuration fields (name, description, version, config, etc.).
-        Instance is not saved as it's runtime state and will be recreated via build() on load.
-        
-        Args:
-            file_path: File path to save to
-            
-        Returns:
-            Path to saved file
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            # Ensure parent directory exists
-            parent_dir = os.path.dirname(file_path)
-            if parent_dir:  # Only create if there's a directory component
-                os.makedirs(parent_dir, exist_ok=True)
-            
-            # Prepare save data - save all versions for each memory
-            save_data = {
-                "metadata": {
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "num_memories": len(self._memory_configs),
-                    "num_versions": sum(len(versions) for versions in self._memory_history_versions.values()),
-                },
-                "memory_systems": {}
-            }
-            
-            for memory_name, version_map in self._memory_history_versions.items():
-                try:
-                    versions_data: Dict[str, Dict[str, Any]] = {}
-                    for _, memory_config in version_map.items():
-                        config_dict = memory_config.model_dump()
-                        versions_data[memory_config.version] = config_dict
-                    
-                    # Get current_version from active config if it exists
-                    # If not in active configs, use the latest version from history
-                    current_version = None
-                    if memory_name in self._memory_configs:
-                        current_config = self._memory_configs[memory_name]
-                        if current_config is not None:
-                            current_version = current_config.version
-                    
-                    # If not found in active configs, use latest version from history
-                    if current_version is None and version_map:
-                        # Find latest version by comparing version strings
-                        latest_version_str = None
-                        for version_str in version_map.keys():
-                            if latest_version_str is None:
-                                latest_version_str = version_str
-                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
-                                latest_version_str = version_str
-                        current_version = latest_version_str
-                    
-                    save_data["memory_systems"][memory_name] = {
-                        "versions": versions_data,
-                        "current_version": current_version
-                    }
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to serialize memory {memory_name}: {e}")
-                    continue
-            
-            # Save to file
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-            
-            logger.info(f"| 💾 Saved {len(self._memory_configs)} memory systems with version history to {file_path}")
-            return str(file_path)
-    
-    async def save_contract(self, memory_names: Optional[List[str]] = None):
-        """Save the contract for a memory system"""
-        contract = []
-        if memory_names is not None:
-            for index, memory_name in enumerate(memory_names):
-                memory_info = await self.get_info(memory_name)
-                if memory_info:
-                    text = f"Name: {memory_info.name}\nDescription: {memory_info.description}\nRequire Grad: {memory_info.require_grad}"
-                    contract.append(f"{index + 1:04d}\n{text}\n")
-        else:
-            for index, memory_name in enumerate(self._memory_configs.keys()):
-                memory_info = await self.get_info(memory_name)
-                if memory_info:
-                    text = f"Name: {memory_info.name}\nDescription: {memory_info.description}\nRequire Grad: {memory_info.require_grad}"
-                    contract.append(f"{index + 1:04d}\n{text}\n")
-        contract_text = "---\n".join(contract)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved {len(contract)} memory systems contract to {self.contract_path}")
-        
-    async def load_contract(self) -> str:
-        """Load the contract for memory systems
-        
-        Returns:
-            str: Contract text
-        """
-        if not os.path.exists(self.contract_path):
-            return ""
-        with open(self.contract_path, "r", encoding="utf-8") as f:
-            contract_text = f.read()
-        return contract_text
-    
-    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
-        """Load memory configurations with version history from JSON.
-        
-        Loads basic configuration only (instance is not saved, must be created via build()).
-        Only the latest version will be instantiated by default if auto_initialize=True.
-        
-        Args:
-            file_path: File path to load from
-            auto_initialize: Whether to automatically create instance via build() after loading
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
-        
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Memory file not found: {file_path}")
-                return False
-            
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-                
-                memories_data = load_data.get("memory_systems", {})
-                loaded_count = 0
-                
-                for memory_name, memory_data in memories_data.items():
-                    try:
-                        # Expected format: multiple versions stored as a dict {version_str: config_dict}
-                        versions_data = memory_data.get("versions")
-                        if not isinstance(versions_data, dict):
-                            logger.warning(f"| ⚠️ Memory {memory_name} has invalid format for 'versions' (expected dict), skipping")
-                            continue
-                        
-                        current_version_str = memory_data.get("current_version")
-                        
-                        # Load all versions
-                        version_configs = []
-                        latest_config = None
-                        latest_version = None
-                        
-                        for version_str, config_dict in versions_data.items():
-                            # Ensure version field is present
-                            if "version" not in config_dict:
-                                config_dict["version"] = version_str
-                            
-                            try:
-                                memory_config = MemoryConfig.model_validate(config_dict)
-                                version_configs.append(memory_config)
-                            except Exception as e:
-                                logger.warning(f"| ⚠️ Failed to load memory config for {memory_name}@{version_str}: {e}")
-                                continue
-                            
-                            # Track latest version
-                            if latest_config is None or (
-                                current_version_str and memory_config.version == current_version_str
-                            ) or (
-                                not current_version_str and (
-                                    latest_version is None or 
-                                    version_manager.compare_versions(memory_config.version, latest_version) > 0
-                                )
-                            ):
-                                latest_config = memory_config
-                                latest_version = memory_config.version
-                        
-                        # Store all versions in history (dict-based)
-                        self._memory_history_versions[memory_name] = {
-                            cfg.version: cfg for cfg in version_configs
-                        }
-                        
-                        # Only set latest version as active
-                        if latest_config:
-                            self._memory_configs[memory_name] = latest_config
-                            
-                            # Register all versions to version manager (only version records)
-                            for memory_config in version_configs:
-                                await version_manager.register_version("memory", memory_name, memory_config.version)
-                            
-                            # Create instance if requested (instance is not saved in JSON, must be created via build)
-                            if auto_initialize and latest_config.cls is not None:
-                                await self.build(latest_config)
-                            
-                            loaded_count += 1
-                    except Exception as e:
-                        logger.error(f"| ❌ Failed to load memory {memory_name}: {e}")
-                        continue
-                
-                logger.info(f"| 📂 Loaded {loaded_count} memory systems with version history from {file_path}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load memory systems from {file_path}: {e}")
-                return False
     
     async def restore(self, memory_name: str, version: str, auto_initialize: bool = True) -> Optional[MemoryConfig]:
         """Restore a specific version of a memory system from history
@@ -1007,7 +678,6 @@ class MemoryContextManager(BaseModel):
             await self.build(restored_config)
         
         # Persist to JSON (current_version changes)
-        await self.save_to_json()
         
         logger.info(f"| 🔄 Restored memory {memory_name} to version {version}")
         return restored_config

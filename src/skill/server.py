@@ -24,8 +24,6 @@ class SkillManagerServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None, description="Base directory for skill data")
-    save_path: str = Field(default=None, description="Path to persist skill configs")
-    contract_path: str = Field(default=None, description="Path to save skill contract")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -49,17 +47,12 @@ class SkillManagerServer(BaseModel):
         """
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "skill.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
         logger.info(
             f"| 📁 skill manager Server base directory: {self.base_dir} "
-            f"with save path: {self.save_path} and contract path: {self.contract_path}"
         )
 
         self.skill_context_manager = SkillContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
         )
         await self._ensure_context_manager().initialize(skill_names=skill_names)
 
@@ -194,25 +187,14 @@ class SkillManagerServer(BaseModel):
     # Context & Contract
     # ------------------------------------------------------------------
 
-    async def get_context(self, skill_names: Optional[List[str]] = None, skill_types: Optional[List[str]] = None) -> str:
-        """Build the skill context string for prompt injection.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+        """Assemble the skill instruction text for prompt injection.
 
-        ``skill_types`` filters by frontmatter type (e.g. ["worker"] for sub-agents,
-        ["orchestrator"] for the MetaAgent).
+        `allowlist` (skill names) selects which skills to include (None = all, [] = none).
+        `types` filters by frontmatter type (["worker"] for sub-agents, ["orchestrator"]
+        for the MetaAgent). Cached per (allowlist, types) until the registry changes.
         """
-        return await self._ensure_context_manager().get_context(skill_names=skill_names, skill_types=skill_types)
-
-    async def set_contract(self, skill_names: Optional[List[str]] = None):
-        """Set the contract for all skills by aggregating their source code.
-
-        Args:
-            skill_names: List of skill names to include in the contract. If None, includes all registered skills.
-        """
-        await self._ensure_context_manager().save_contract(skill_names=skill_names)
-
-    async def get_contract(self) -> str:
-        """Load the persisted contract text."""
-        return await self._ensure_context_manager().load_contract()
+        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
 
     # ------------------------------------------------------------------
     # Skill execution

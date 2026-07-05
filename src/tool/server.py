@@ -19,15 +19,13 @@ class ToolManagerServer(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the tools")
-    save_path: str = Field(default=None, description="The path to save the tools")
-    contract_path: str = Field(default=None, description="The path to save the tool contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the tool manager Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, ToolConfig] = {}  # tool_name -> ToolConfig
         # Context manager is created lazily (config may not be loaded at import time).
-        # initialize() reconfigures it with proper base_dir / save_path / contract_path.
+        # initialize() reconfigures it with proper base_dir .
         self.tool_context_manager: Optional[ToolContextManager] = None
         
     def _ensure_context_manager(self) -> ToolContextManager:
@@ -45,32 +43,24 @@ class ToolManagerServer(BaseModel):
         
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "tool"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "tool.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 tool manager Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
+        logger.info(f"| 📁 tool manager Server base directory: {self.base_dir}")
         
         # Initialize tool context manager
         self.tool_context_manager = ToolContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
             model_name="openrouter/gemini-3-flash-preview",
         )
         await self._ensure_context_manager().initialize(tool_names=tool_names)
         
         logger.info("| ✅ Tools initialization completed")
         
-    async def set_contract(self, tool_names: Optional[List[str]] = None):
-        """Set the contract for all tools by aggregating their source code.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+        """Assemble the tool instruction text for prompt injection.
 
-        Args:
-            tool_names: List of tool names to include in the contract. If None, includes all registered tools.
+        `allowlist` (list of tool names) selects which tools to include: None = all;
+        [] = none; [names] = only those. Cached by allowlist until the registry changes.
         """
-        await self._ensure_context_manager().save_contract(tool_names=tool_names)
-
-    async def get_contract(self) -> str:
-        """Get the contract for all tools"""
-        return await self._ensure_context_manager().load_contract()
+        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
 
     async def register(self, 
                        tool: Union[Tool, Type[Tool]],

@@ -20,15 +20,13 @@ class ConstraintManagerServer(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the constraints")
-    save_path: str = Field(default=None, description="The path to save the constraints")
-    contract_path: str = Field(default=None, description="The path to save the constraint contract")
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the constraint manager Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, ConstraintConfig] = {}  # constraint_name -> ConstraintConfig
         # Context manager is created lazily (config may not be loaded at import time).
-        # initialize() reconfigures it with proper base_dir / save_path / contract_path.
+        # initialize() reconfigures it with proper base_dir .
         self.constraint_context_manager: Optional[ConstraintContextManager] = None
 
     def _ensure_context_manager(self) -> ConstraintContextManager:
@@ -46,32 +44,16 @@ class ConstraintManagerServer(BaseModel):
 
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "constraint"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "constraint.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 constraint manager Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
+        logger.info(f"| 📁 constraint manager Server base directory: {self.base_dir}")
 
         # Initialize constraint context manager
         self.constraint_context_manager = ConstraintContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
             model_name="openrouter/gemini-3-flash-preview",
         )
         await self._ensure_context_manager().initialize(constraint_names=constraint_names)
 
         logger.info("| ✅ Constraints initialization completed")
-
-    async def set_contract(self, constraint_names: Optional[List[str]] = None):
-        """Set the contract for all constraints by aggregating their text representation.
-
-        Args:
-            constraint_names: List of constraint names to include in the contract. If None, includes all registered constraints.
-        """
-        await self._ensure_context_manager().save_contract(constraint_names=constraint_names)
-
-    async def get_contract(self) -> str:
-        """Get the contract for all constraints"""
-        return await self._ensure_context_manager().load_contract()
 
     async def register(self,
                        constraint: Union[Constraint, Type[Constraint]],

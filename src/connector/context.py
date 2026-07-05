@@ -33,8 +33,6 @@ class ConnectorContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None, description="Base directory for connector runtime data")
-    save_path: str = Field(default=None, description="Path to persist loaded connector configs")
-    contract_path: str = Field(default=None, description="Path to save the connector contract")
     default_connectors_dir: str = Field(default=None, description="Directory for built-in default connectors")
     extension_connectors_dir: str = Field(default=None, description="Directory for generated/user connectors")
 
@@ -44,8 +42,6 @@ class ConnectorContextManager(BaseModel):
     def __init__(
         self,
         base_dir: Optional[str] = None,
-        save_path: Optional[str] = None,
-        contract_path: Optional[str] = None,
         default_connectors_dir: Optional[str] = None,
         extension_connectors_dir: Optional[str] = None,
         **kwargs,
@@ -58,15 +54,7 @@ class ConnectorContextManager(BaseModel):
             self.base_dir = assemble_project_path(os.path.join(config.default_dir, "connector"))
         os.makedirs(self.base_dir, exist_ok=True)
 
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "connector.json")
 
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
 
         _src_dir = Path(__file__).resolve().parent
         # Built-in connectors live in the default/ dir; extension connectors are
@@ -76,6 +64,7 @@ class ConnectorContextManager(BaseModel):
 
         self._connector_configs: Dict[str, ConnectorConfig] = {}
         self._connector_history_versions: Dict[str, Dict[str, ConnectorConfig]] = {}
+        self._instr_cache: Dict[Any, str] = {}
 
         logger.info(f"| 📁 Connector context manager base directory: {self.base_dir}")
 
@@ -104,16 +93,6 @@ class ConnectorContextManager(BaseModel):
         extension_configs = await self._load_from_directory(Path(self.extension_connectors_dir))
         discovered.update(extension_configs)
 
-        # 2. Load previously persisted connectors from JSON (may contain user-registered connectors)
-        persisted_configs = await self._load_from_json()
-        for name, persisted_cfg in persisted_configs.items():
-            if name in discovered:
-                existing = discovered[name]
-                if version_manager.compare_versions(persisted_cfg.version, existing.version) > 0:
-                    logger.info(f"| 🔄 Overriding connector '{name}' from directory (v{existing.version}) with persisted (v{persisted_cfg.version})")
-                    discovered[name] = persisted_cfg
-            else:
-                discovered[name] = persisted_cfg
 
         # 3. Filter by name if requested
         if connector_names is not None:
@@ -143,8 +122,7 @@ class ConnectorContextManager(BaseModel):
             logger.info(f"| 🎯 Connector '{name}' v{connector_config.version} loaded from {connector_config.connector_dir}")
 
         # 5. Persist
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| ✅ Connectors initialization completed — {len(self._connector_configs)} connector(s) loaded")
 
@@ -241,60 +219,6 @@ class ConnectorContextManager(BaseModel):
         body = text[match.end():]
         return frontmatter, body
 
-    async def _load_from_json(self) -> Dict[str, ConnectorConfig]:
-        """Load previously persisted connector configs (with version history) from JSON."""
-        configs: Dict[str, ConnectorConfig] = {}
-
-        if not os.path.exists(self.save_path):
-            return configs
-
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse connector config JSON: {e}")
-            return configs
-
-        connectors_data = load_data.get("connectors", {})
-        for connector_name, connector_data in connectors_data.items():
-            try:
-                current_version = connector_data.get("current_version", "1.0.0")
-                versions = connector_data.get("versions", {})
-
-                if not versions:
-                    continue
-
-                version_map: Dict[str, ConnectorConfig] = {}
-                current_cfg: Optional[ConnectorConfig] = None
-
-                for ver_str, ver_data in versions.items():
-                    cfg = ConnectorConfig(**ver_data)
-                    version_map[ver_str] = cfg
-                    if ver_str == current_version:
-                        current_cfg = cfg
-
-                if connector_name not in self._connector_history_versions:
-                    self._connector_history_versions[connector_name] = {}
-                self._connector_history_versions[connector_name].update(version_map)
-
-                if current_cfg is not None:
-                    configs[connector_name] = current_cfg
-                elif version_map:
-                    configs[connector_name] = list(version_map.values())[-1]
-
-                for cfg in version_map.values():
-                    await version_manager.register_version("connector", connector_name, cfg.version)
-
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load connector '{connector_name}' from JSON: {e}")
-
-        logger.info(f"| 📂 Loaded {len(configs)} connector(s) from {self.save_path}")
-        return configs
-
-    # ------------------------------------------------------------------
-    # Text representation (for prompt injection)
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _build_text_representation(connector_config: ConnectorConfig) -> str:
         """Build a concise summary for prompt injection (name + description + actions)."""
@@ -361,8 +285,7 @@ class ConnectorContextManager(BaseModel):
 
         await version_manager.register_version("connector", connector_config.name, connector_config.version)
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 📝 Registered connector: {connector_config.name} v{connector_config.version}")
         return connector_config
@@ -432,8 +355,7 @@ class ConnectorContextManager(BaseModel):
             description=description or f"Updated from {original.version}",
         )
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 🔄 Updated connector '{name}' from v{original.version} to v{new_version}")
         return updated
@@ -454,8 +376,7 @@ class ConnectorContextManager(BaseModel):
         version = self._connector_configs[name].version
         del self._connector_configs[name]
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 🗑️ Unregistered connector '{name}' v{version}")
         return True
@@ -513,8 +434,7 @@ class ConnectorContextManager(BaseModel):
             description=f"Copied from {name}@{original.version}",
         )
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 📋 Copied connector '{name}' v{original.version} -> '{new_name}' v{new_version}")
         return copied
@@ -547,7 +467,6 @@ class ConnectorContextManager(BaseModel):
         else:
             await version_manager.register_version("connector", name, version)
 
-        await self.save_to_json()
 
         logger.info(f"| 🔄 Restored connector '{name}' to v{version}")
         return restored
@@ -583,8 +502,7 @@ class ConnectorContextManager(BaseModel):
             cfg.actions = action_names
             cfg.text = self._build_text_representation(cfg)
 
-            await self.save_to_json()
-            await self.save_contract()
+            self._invalidate_instruction()
 
             logger.info(f"| 🔎 Connector '{name}' discovered {len(action_names)} action(s)")
             return action_names
@@ -612,158 +530,42 @@ class ConnectorContextManager(BaseModel):
     # Context generation (for agent prompt)
     # ------------------------------------------------------------------
 
-    async def get_context(self, connector_names: Optional[List[str]] = None, connector_types: Optional[List[str]] = None) -> str:
-        """Build the full connector context string for prompt injection.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+        """Assemble the connector instruction text for prompt injection, on demand.
 
-        Args:
-            connector_names: if given, only these connectors (by name).
-            connector_types: if given, only connectors whose ``type`` is in this list.
+        `allowlist` (connector names) selects which connectors to include: None = all;
+        [] = none; [names] = only those. `types` filters by ``type``. Cached per
+        (allowlist, types); invalidated on registry change via `_invalidate_instruction`.
         """
-        if not self._connector_configs:
-            return ""
-
-        targets = connector_names if connector_names else list(self._connector_configs.keys())
+        key = (None if allowlist is None else tuple(allowlist),
+               None if types is None else tuple(types))
+        if key in self._instr_cache:
+            return self._instr_cache[key]
+        targets = list(self._connector_configs.keys()) if allowlist is None else allowlist
         parts: List[str] = []
-
         for name in targets:
             cfg = self._connector_configs.get(name)
             if cfg is None:
                 continue
-            if connector_types and cfg.type not in connector_types:
+            if types and cfg.type not in types:
                 continue
             parts.append(f"<connector name=\"{cfg.name}\">\n{cfg.text}\n</connector>")
+        text = "\n".join(parts)
+        self._instr_cache[key] = text
+        return text
 
-        return "\n".join(parts)
+    def _invalidate_instruction(self) -> None:
+        """Drop cached instructions so the next get_instruction rebuilds."""
+        self._instr_cache.clear()
 
     # ------------------------------------------------------------------
     # Contract (persistent text summary)
     # ------------------------------------------------------------------
 
-    async def save_contract(self, connector_names: Optional[List[str]] = None):
-        """Save a human-readable contract file listing all loaded connectors."""
-        targets = connector_names if connector_names else list(self._connector_configs.keys())
-        lines: List[str] = []
-        for idx, name in enumerate(targets):
-            cfg = self._connector_configs.get(name)
-            if cfg is None:
-                continue
-            lines.append(f"{idx + 1:04d}\n{cfg.text}\n")
 
-        contract_text = "---\n".join(lines)
-        os.makedirs(os.path.dirname(self.contract_path), exist_ok=True)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved {len(lines)} connector(s) contract to {self.contract_path}")
-
-    async def load_contract(self) -> str:
-        """Load the contract text from disk."""
-        if not os.path.exists(self.contract_path):
-            return ""
-        with open(self.contract_path, "r", encoding="utf-8") as f:
-            return f.read()
 
     # ------------------------------------------------------------------
     # Persistence (JSON) — with version history
-    # ------------------------------------------------------------------
-
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Persist all loaded connector configs with version history to JSON."""
-        file_path = file_path or self.save_path
-
-        async with file_lock(file_path):
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            save_data: Dict[str, Any] = {
-                "metadata": {
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "num_connectors": len(self._connector_configs),
-                    "num_versions": sum(len(v) for v in self._connector_history_versions.values()),
-                },
-                "connectors": {},
-            }
-
-            for connector_name, version_map in self._connector_history_versions.items():
-                versions_data: Dict[str, Any] = {}
-                for ver, cfg in version_map.items():
-                    versions_data[ver] = cfg.model_dump()
-
-                current_version = None
-                if connector_name in self._connector_configs:
-                    current_version = self._connector_configs[connector_name].version
-                if current_version is None and version_map:
-                    latest = None
-                    for v in version_map:
-                        if latest is None or version_manager.compare_versions(v, latest) > 0:
-                            latest = v
-                    current_version = latest
-
-                save_data["connectors"][connector_name] = {
-                    "current_version": current_version,
-                    "versions": versions_data,
-                }
-
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-
-            logger.info(f"| 💾 Saved {len(self._connector_configs)} connector(s) with version history to {file_path}")
-            return file_path
-
-    async def load_from_json(self, file_path: Optional[str] = None) -> bool:
-        """Load connector configs with version history from JSON."""
-        file_path = file_path or self.save_path
-
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Connector file not found: {file_path}")
-                return False
-
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-
-                connectors_data = load_data.get("connectors", {})
-                loaded = 0
-
-                for connector_name, connector_data in connectors_data.items():
-                    try:
-                        versions = connector_data.get("versions", {})
-                        if not isinstance(versions, dict):
-                            continue
-
-                        current_version_str = connector_data.get("current_version")
-
-                        version_configs: Dict[str, ConnectorConfig] = {}
-                        latest_cfg: Optional[ConnectorConfig] = None
-
-                        for ver_str, ver_data in versions.items():
-                            cfg = ConnectorConfig(**ver_data)
-                            version_configs[ver_str] = cfg
-
-                            if current_version_str and cfg.version == current_version_str:
-                                latest_cfg = cfg
-                            elif latest_cfg is None:
-                                latest_cfg = cfg
-
-                        self._connector_history_versions[connector_name] = version_configs
-
-                        if latest_cfg:
-                            self._connector_configs[connector_name] = latest_cfg
-                            for cfg in version_configs.values():
-                                await version_manager.register_version("connector", connector_name, cfg.version)
-                            loaded += 1
-
-                    except Exception as e:
-                        logger.error(f"| ❌ Failed to load connector '{connector_name}': {e}")
-
-                logger.info(f"| 📂 Loaded {loaded} connector(s) with version history from {file_path}")
-                return True
-
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load connectors from {file_path}: {e}")
-                return False
-
-    # ------------------------------------------------------------------
-    # Connector execution (__call__) — route an action/args call to the MCP server
     # ------------------------------------------------------------------
 
     async def __call__(

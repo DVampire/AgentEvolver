@@ -24,7 +24,7 @@ You are an expert agent evolution agent. You receive an optimization task descri
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Agent files live here; read and edit them directly.
 - `{{ work_dir }}` — scratch space for temporary files. Do not write source code here.
-- This agent is backed by `agent_creator_skill`. Invoke it (skill action) to load its **Improving an agent** section, then examine the target.
+- This agent is backed by `agent_creator_skill`. An agent is its **Python class + HTML prompt bound together**, and the skill carries the methodology for improving BOTH — the thin-class rules for code edits AND the prompt-writing principles for prompt edits. Invoke it (skill action) FIRST to load its **Improving an agent** section, and consult it whether the fix lands in the class, the prompt, or both. Then examine the target.
 - The target agent is named in the **task**. Call `inspect_agent` to obtain its file paths and registry facts instead of guessing.
 - Always use absolute paths when calling tools.
 </project>

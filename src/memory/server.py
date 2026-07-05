@@ -19,8 +19,6 @@ class MemoryManagerServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="The base directory to use for the memory systems")
-    save_path: str = Field(default=None, description="The path to save the memory systems")
-    contract_path: str = Field(default=None, description="The path to save the memory contract")
     
     def __init__(self, **kwargs):
         """Initialize the Memory Manager."""
@@ -35,15 +33,11 @@ class MemoryManagerServer(BaseModel):
         """
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "memory"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "memory.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Memory Manager base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
+        logger.info(f"| 📁 Memory Manager base directory: {self.base_dir}")
         
         # Initialize memory context manager
         self.memory_context_manager = MemoryContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path
         )
         await self.memory_context_manager.initialize(memory_names=memory_names)
         
@@ -102,22 +96,6 @@ class MemoryManagerServer(BaseModel):
         """
         return await self.memory_context_manager.list()
     
-    async def set_contract(self, memory_names: Optional[List[str]] = None):
-        """Set the contract for all memory systems by aggregating their source code.
-
-        Args:
-            memory_names: List of memory names to include in the contract. If None, includes all registered memory systems.
-        """
-        await self.memory_context_manager.save_contract(memory_names=memory_names)
-
-    async def get_contract(self) -> str:
-        """Get the contract for all memory systems
-
-        Returns:
-            str: Contract text
-        """
-        return await self.memory_context_manager.load_contract()
-
     async def get(self, memory_name: str) -> Memory:
         """Get memory system instance by name (similar to tool_manager.get()).
         

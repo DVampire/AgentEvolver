@@ -59,6 +59,8 @@ The three sub-agents are headless: each runs one phase autonomously and returns 
 
 ## Creating a connector
 
+**Start from the template**: read `references/connector_md_template.md`, copy it to the connector directory, and fill in the connection + actions.
+
 The common case: an MCP server already exists (hosted, or someone gives you a URL/command) and you write a `CONNECTOR.md` for it.
 
 ### 1. Identify the server and how to reach it
@@ -173,6 +175,7 @@ Keep a plan/todo of the loop so you don't lose track across rounds.
 
 ## Reference files
 
+- `references/connector_md_template.md` — the CONNECTOR.md skeleton (frontmatter connection/actions + per-action docs).
 - `references/mcp_best_practices.md` — MCP tool-design principles (naming, context, errors).
 - `references/python_mcp_server.md` / `references/node_mcp_server.md` — how to build an MCP server.
 - `references/evaluation.md` — how to write evaluation questions and judge an MCP server/connector.

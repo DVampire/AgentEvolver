@@ -27,8 +27,6 @@ class SkillContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None, description="Base directory for skill runtime data")
-    save_path: str = Field(default=None, description="Path to persist loaded skill configs")
-    contract_path: str = Field(default=None, description="Path to save the skill contract")
     default_skills_dir: str = Field(default=None, description="Directory for built-in default skills")
     extension_skills_dir: str = Field(default=None, description="Directory for generated/user skills")
 
@@ -38,8 +36,6 @@ class SkillContextManager(BaseModel):
     def __init__(
         self,
         base_dir: Optional[str] = None,
-        save_path: Optional[str] = None,
-        contract_path: Optional[str] = None,
         default_skills_dir: Optional[str] = None,
         extension_skills_dir: Optional[str] = None,
         **kwargs,
@@ -52,15 +48,7 @@ class SkillContextManager(BaseModel):
             self.base_dir = assemble_project_path(os.path.join(config.default_dir, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
 
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "skill.json")
 
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
 
         _src_dir = Path(__file__).resolve().parent
         # Built-in skills live in the default/ dir; extension skills are managed
@@ -70,6 +58,8 @@ class SkillContextManager(BaseModel):
 
         self._skill_configs: Dict[str, SkillConfig] = {}
         self._skill_history_versions: Dict[str, Dict[str, SkillConfig]] = {}
+        # get_instruction cache: (allowlist, types) -> text; cleared on registry change.
+        self._instr_cache: Dict[Any, str] = {}
 
         logger.info(f"| 📁 Skill context manager base directory: {self.base_dir}")
 
@@ -94,16 +84,6 @@ class SkillContextManager(BaseModel):
         extension_configs = await self._load_from_directory(Path(self.extension_skills_dir))
         discovered.update(extension_configs)
 
-        # 2. Load previously persisted skills from JSON (may contain user-registered skills)
-        persisted_configs = await self._load_from_json()
-        for name, persisted_cfg in persisted_configs.items():
-            if name in discovered:
-                existing = discovered[name]
-                if version_manager.compare_versions(persisted_cfg.version, existing.version) > 0:
-                    logger.info(f"| 🔄 Overriding skill '{name}' from directory (v{existing.version}) with persisted (v{persisted_cfg.version})")
-                    discovered[name] = persisted_cfg
-            else:
-                discovered[name] = persisted_cfg
 
         # 3. Filter by name if requested
         if skill_names is not None:
@@ -133,8 +113,7 @@ class SkillContextManager(BaseModel):
             logger.info(f"| 🎯 Skill '{name}' v{skill_config.version} loaded from {skill_config.skill_dir}")
 
         # 5. Persist
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| ✅ Skills initialization completed — {len(self._skill_configs)} skill(s) loaded")
 
@@ -200,56 +179,6 @@ class SkillContextManager(BaseModel):
             references=references,
             examples=examples,
         )
-
-    async def _load_from_json(self) -> Dict[str, SkillConfig]:
-        """Load previously persisted skill configs (with version history) from JSON."""
-        configs: Dict[str, SkillConfig] = {}
-
-        if not os.path.exists(self.save_path):
-            return configs
-
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse skill config JSON: {e}")
-            return configs
-
-        skills_data = load_data.get("skills", {})
-        for skill_name, skill_data in skills_data.items():
-            try:
-                current_version = skill_data.get("current_version", "1.0.0")
-                versions = skill_data.get("versions", {})
-
-                if not versions:
-                    continue
-
-                version_map: Dict[str, SkillConfig] = {}
-                current_cfg: Optional[SkillConfig] = None
-
-                for ver_str, ver_data in versions.items():
-                    cfg = SkillConfig(**ver_data)
-                    version_map[ver_str] = cfg
-                    if ver_str == current_version:
-                        current_cfg = cfg
-
-                if skill_name not in self._skill_history_versions:
-                    self._skill_history_versions[skill_name] = {}
-                self._skill_history_versions[skill_name].update(version_map)
-
-                if current_cfg is not None:
-                    configs[skill_name] = current_cfg
-                elif version_map:
-                    configs[skill_name] = list(version_map.values())[-1]
-
-                for cfg in version_map.values():
-                    await version_manager.register_version("skill", skill_name, cfg.version)
-
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load skill '{skill_name}' from JSON: {e}")
-
-        logger.info(f"| 📂 Loaded {len(configs)} skill(s) from {self.save_path}")
-        return configs
 
     @staticmethod
     def _parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
@@ -360,8 +289,7 @@ class SkillContextManager(BaseModel):
 
         await version_manager.register_version("skill", skill_config.name, skill_config.version)
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 📝 Registered skill: {skill_config.name} v{skill_config.version}")
         return skill_config
@@ -423,8 +351,7 @@ class SkillContextManager(BaseModel):
             description=description or f"Updated from {original.version}",
         )
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 🔄 Updated skill '{name}' from v{original.version} to v{new_version}")
         return updated
@@ -445,8 +372,7 @@ class SkillContextManager(BaseModel):
         version = self._skill_configs[name].version
         del self._skill_configs[name]
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 🗑️ Unregistered skill '{name}' v{version}")
         return True
@@ -504,8 +430,7 @@ class SkillContextManager(BaseModel):
             description=f"Copied from {name}@{original.version}",
         )
 
-        await self.save_to_json()
-        await self.save_contract()
+        self._invalidate_instruction()
 
         logger.info(f"| 📋 Copied skill '{name}' v{original.version} -> '{new_name}' v{new_version}")
         return copied
@@ -538,7 +463,6 @@ class SkillContextManager(BaseModel):
         else:
             await version_manager.register_version("skill", name, version)
 
-        await self.save_to_json()
 
         logger.info(f"| 🔄 Restored skill '{name}' to v{version}")
         return restored
@@ -563,161 +487,42 @@ class SkillContextManager(BaseModel):
     # Context generation (for agent prompt)
     # ------------------------------------------------------------------
 
-    async def get_context(self, skill_names: Optional[List[str]] = None, skill_types: Optional[List[str]] = None) -> str:
-        """Build the full skill context string for prompt injection.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+        """Assemble the skill instruction text for prompt injection, on demand.
 
-        Args:
-            skill_names: if given, only these skills (by name).
-            skill_types: if given, only skills whose frontmatter ``type`` is in
-                this list (e.g. ``["worker"]`` or ``["orchestrator"]``). This is
-                the hard guardrail that keeps worker SOPs out of the MetaAgent's
-                context and orchestration recipes out of workers'.
+        `allowlist` (list of skill names) selects which skills to include: None = all;
+        [] = none; [names] = only those. `types` filters by frontmatter ``type``
+        (``["worker"]`` / ``["orchestrator"]``) — the hard guardrail keeping worker SOPs
+        out of the MetaAgent and orchestration recipes out of workers. Cached per
+        (allowlist, types); invalidated on registry change via `_invalidate_instruction`.
         """
-        if not self._skill_configs:
-            return ""
-
-        targets = skill_names if skill_names else list(self._skill_configs.keys())
+        key = (None if allowlist is None else tuple(allowlist),
+               None if types is None else tuple(types))
+        if key in self._instr_cache:
+            return self._instr_cache[key]
+        targets = list(self._skill_configs.keys()) if allowlist is None else allowlist
         parts: List[str] = []
-
         for name in targets:
             cfg = self._skill_configs.get(name)
             if cfg is None:
                 continue
-            if skill_types and not any(t in skill_types for t in cfg.type_tags):
+            if types and not any(t in types for t in cfg.type_tags):
                 continue
             parts.append(f"<skill name=\"{cfg.name}\">\n{cfg.text}\n</skill>")
+        text = "\n".join(parts)
+        self._instr_cache[key] = text
+        return text
 
-        return "\n".join(parts)
+    def _invalidate_instruction(self) -> None:
+        """Drop cached instructions so the next get_instruction rebuilds."""
+        self._instr_cache.clear()
 
     # ------------------------------------------------------------------
     # Contract (persistent text summary)
     # ------------------------------------------------------------------
 
-    async def save_contract(self, skill_names: Optional[List[str]] = None):
-        """Save a human-readable contract file listing all loaded skills."""
-        targets = skill_names if skill_names else list(self._skill_configs.keys())
-        lines: List[str] = []
-        for idx, name in enumerate(targets):
-            cfg = self._skill_configs.get(name)
-            if cfg is None:
-                continue
-            lines.append(f"{idx + 1:04d}\n{cfg.text}\n")
-
-        contract_text = "---\n".join(lines)
-        os.makedirs(os.path.dirname(self.contract_path), exist_ok=True)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved {len(lines)} skill(s) contract to {self.contract_path}")
-
-    async def load_contract(self) -> str:
-        """Load the contract text from disk."""
-        if not os.path.exists(self.contract_path):
-            return ""
-        with open(self.contract_path, "r", encoding="utf-8") as f:
-            return f.read()
-
     # ------------------------------------------------------------------
     # Persistence (JSON) — with version history
-    # ------------------------------------------------------------------
-
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Persist all loaded skill configs with version history to JSON."""
-        file_path = file_path or self.save_path
-
-        async with file_lock(file_path):
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            save_data: Dict[str, Any] = {
-                "metadata": {
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "num_skills": len(self._skill_configs),
-                    "num_versions": sum(len(v) for v in self._skill_history_versions.values()),
-                },
-                "skills": {},
-            }
-
-            for skill_name, version_map in self._skill_history_versions.items():
-                versions_data: Dict[str, Any] = {}
-                for ver, cfg in version_map.items():
-                    versions_data[ver] = cfg.model_dump()
-
-                current_version = None
-                if skill_name in self._skill_configs:
-                    current_version = self._skill_configs[skill_name].version
-                if current_version is None and version_map:
-                    latest = None
-                    for v in version_map:
-                        if latest is None or version_manager.compare_versions(v, latest) > 0:
-                            latest = v
-                    current_version = latest
-
-                save_data["skills"][skill_name] = {
-                    "current_version": current_version,
-                    "versions": versions_data,
-                }
-
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-
-            logger.info(f"| 💾 Saved {len(self._skill_configs)} skill(s) with version history to {file_path}")
-            return file_path
-
-    async def load_from_json(self, file_path: Optional[str] = None) -> bool:
-        """Load skill configs with version history from JSON."""
-        file_path = file_path or self.save_path
-
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Skill file not found: {file_path}")
-                return False
-
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-
-                skills_data = load_data.get("skills", {})
-                loaded = 0
-
-                for skill_name, skill_data in skills_data.items():
-                    try:
-                        versions = skill_data.get("versions", {})
-                        if not isinstance(versions, dict):
-                            continue
-
-                        current_version_str = skill_data.get("current_version")
-
-                        version_configs: Dict[str, SkillConfig] = {}
-                        latest_cfg: Optional[SkillConfig] = None
-
-                        for ver_str, ver_data in versions.items():
-                            cfg = SkillConfig(**ver_data)
-                            version_configs[ver_str] = cfg
-
-                            if current_version_str and cfg.version == current_version_str:
-                                latest_cfg = cfg
-                            elif latest_cfg is None:
-                                latest_cfg = cfg
-
-                        self._skill_history_versions[skill_name] = version_configs
-
-                        if latest_cfg:
-                            self._skill_configs[skill_name] = latest_cfg
-                            for cfg in version_configs.values():
-                                await version_manager.register_version("skill", skill_name, cfg.version)
-                            loaded += 1
-
-                    except Exception as e:
-                        logger.error(f"| ❌ Failed to load skill '{skill_name}': {e}")
-
-                logger.info(f"| 📂 Loaded {loaded} skill(s) with version history from {file_path}")
-                return True
-
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load skills from {file_path}: {e}")
-                return False
-
-    # ------------------------------------------------------------------
-    # Skill execution (__call__)
     # ------------------------------------------------------------------
 
     async def __call__(

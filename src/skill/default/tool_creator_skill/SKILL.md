@@ -26,6 +26,8 @@ The sub-agents are headless: each runs one phase autonomously and returns a resu
 - A tool is a single Python file: `{project_root}/extension/tool/{name}.py`.
 - **Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `tool_registration_hook` registers it.
 
+**Start from the template**: read `references/tool_template.py`, copy it, and adapt — it already encodes the convention below.
+
 ### Anatomy: description + instruction (progressive disclosure)
 
 A tool splits its docs in two, so the agent's tool_context stays small and the full detail is fetched on demand via `inspect_tool`:
@@ -109,3 +111,7 @@ The target is named in the task. Call `inspect_tool` FIRST for its source path a
 2. **Evaluate** — dispatch `tool_evaluate_agent` (optionally after a sample call) to score.
 3. **Improve** — dispatch `tool_optimize_agent` with the evaluation; it edits and re-registers.
 4. **Repeat** until the tool is good.
+
+## Reference files
+
+- `references/tool_template.py` — a ready-to-copy tool class (the `_DESCRIPTION`/`_INSTRUCTION` split + `__call__` returning a `Response`).

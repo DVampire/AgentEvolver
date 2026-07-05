@@ -28,13 +28,9 @@ class ConstraintContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None, description="The base directory to use for the constraints")
-    save_path: str = Field(default=None, description="The path to save the constraints")
-    contract_path: str = Field(default=None, description="The path to save the constraint contract")
 
     def __init__(self,
                  base_dir: Optional[str] = None,
-                 save_path: Optional[str] = None,
-                 contract_path: Optional[str] = None,
                  model_name: str = "openrouter/gemini-3-flash-preview",
                  default_timeout: Optional[float] = 1800.0,
                  **kwargs):
@@ -42,8 +38,6 @@ class ConstraintContextManager(BaseModel):
 
         Args:
             base_dir: Base directory for storing constraint data
-            save_path: Path to save constraint configurations
-            contract_path: Path to save the constraint contract
             model_name: The model to use for the constraints
             default_timeout: Default timeout in seconds for constraint calls (None means no timeout, default 1800s = 30 minutes)
         """
@@ -55,16 +49,7 @@ class ConstraintContextManager(BaseModel):
             self.base_dir = assemble_project_path(os.path.join(config.default_dir, "constraint"))
         logger.info(f"| 📁 Constraint context manager base directory: {self.base_dir}.")
         os.makedirs(self.base_dir, exist_ok=True)
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "constraint.json")
-        logger.info(f"| 📁 Constraint context manager save path: {self.save_path}.")
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Constraint context manager contract path: {self.contract_path}.")
+        logger.info(f"| 📁 Constraint context manager.")
 
         self._constraint_configs: Dict[str, ConstraintConfig] = {}  # Current active configs (latest version)
         # Constraint version history, e.g., {"constraint_name": {"1.0.0": ConstraintConfig, "1.0.1": ConstraintConfig}}
@@ -102,7 +87,7 @@ class ConstraintContextManager(BaseModel):
         constraint_configs.update(registry_constraint_configs)
 
         # Load constraints from code
-        code_constraint_configs: Dict[str, ConstraintConfig] = await self._load_from_code()
+        code_constraint_configs: Dict[str, ConstraintConfig] = {}
 
         # Merge code configs with registry configs, only override if code version is strictly greater
         for constraint_name, code_config in code_constraint_configs.items():
@@ -142,9 +127,7 @@ class ConstraintContextManager(BaseModel):
             logger.info(f"| 🔒 Constraint {constraint_name} initialized")
 
         # Save constraint configs to json file
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract(constraint_names=constraint_names)
 
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -241,115 +224,6 @@ class ConstraintContextManager(BaseModel):
 
         return constraint_configs
 
-    async def _load_from_code(self):
-        """Load constraints from code files.
-
-        JSON file content example:
-        {
-            "metadata": {
-                "saved_at": str,  # "YYYY-MM-DD HH:MM:SS"
-                "num_constraints": int,  # total constraint count
-                "num_versions": int  # total version count
-            },
-            "constraints": {
-                "constraint_name": {
-                    "current_version": "1.0.0",
-                    "versions": {
-                        "1.0.0": {
-                            "name": str,
-                            "description": str,
-                            "metadata": dict,
-                            "require_grad": bool,
-                            "enabled": bool,
-                            "version": str,
-                            "cls": Type[Constraint],
-                            "config": dict,
-                            "instance": Constraint, # will be built when needed
-                            "function_calling": dict,
-                            "text": str,
-                            "args_schema": BaseModel,
-                            "code": str
-                        },
-                        ...
-                    }
-                }
-            }
-        }
-        """
-
-        constraint_configs: Dict[str, ConstraintConfig] = {}
-
-        # If save file does not exist yet, nothing to load
-        if not os.path.exists(self.save_path):
-            logger.info(f"| 📂 Constraint config file not found at {self.save_path}, skipping code-based loading")
-            return constraint_configs
-
-        # Load all constraint configs from json file
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse constraint config JSON from {self.save_path}: {e}")
-            return constraint_configs
-
-        metadata = load_data.get("metadata", {})
-        constraints_data = load_data.get("constraints", {})
-
-        async def register_constraint_class(constraint_name: str, constraint_data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, ConstraintConfig], Optional[ConstraintConfig]]]:
-            """Load all versions for a single constraint from JSON."""
-            try:
-                current_version = constraint_data.get("current_version", "1.0.0")
-                versions = constraint_data.get("versions", {})
-
-                if not versions:
-                    logger.warning(f"| ⚠️ Constraint {constraint_name} has no versions")
-                    return None
-
-                version_map: Dict[str, ConstraintConfig] = {}
-                current_constraint_config: Optional[ConstraintConfig] = None
-
-                for _, version_data in versions.items():
-                    constraint_config = ConstraintConfig.model_validate(version_data)
-                    version = constraint_config.version
-                    version_map[version] = constraint_config
-
-                    if version == current_version:
-                        current_constraint_config = constraint_config
-
-                return constraint_name, version_map, current_constraint_config
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load constraint {constraint_name} from code JSON: {e}")
-                return None
-
-        # Launch loading of each constraint concurrently with a concurrency limit
-        tasks = [
-            register_constraint_class(constraint_name, constraint_data) for constraint_name, constraint_data in constraints_data.items()
-        ]
-        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
-
-        for result in results:
-            if isinstance(result, Exception) or result is None:
-                continue
-            constraint_name, version_map, current_constraint_config = result
-            if not version_map:
-                continue
-            # Store all versions in history (mapped by version string)
-            self._constraint_history_versions[constraint_name] = version_map
-            # Active config: the one corresponding to current_version
-            if current_constraint_config is not None:
-                constraint_configs[constraint_name] = current_constraint_config
-            else:
-                # Fallback: if current_version is not found, use the last available version
-                logger.warning(f"| ⚠️ Constraint {constraint_name} current_version not found, using last available version")
-                constraint_configs[constraint_name] = list(version_map.values())[-1]
-
-            # Register all versions to version manager
-            for constraint_config in version_map.values():
-                await version_manager.register_version("constraint", constraint_name, constraint_config.version)
-
-        logger.info(f"| 📂 Loaded {len(constraint_configs)} constraints from {self.save_path}")
-        return constraint_configs
-
     async def build(self, constraint_config: ConstraintConfig) -> ConstraintConfig:
         """Create a constraint instance and store it.
 
@@ -366,7 +240,7 @@ class ConstraintContextManager(BaseModel):
 
         # Create new constraint instance
         try:
-            # cls should already be loaded (either from registry or from code in _load_from_code)
+            # cls should already be loaded (either from registry or from code)
             if constraint_config.cls is None:
                 raise ValueError(f"Cannot create constraint {constraint_config.name}: no class provided. Class should be loaded during initialization.")
 
@@ -486,9 +360,7 @@ class ConstraintContextManager(BaseModel):
             await version_manager.register_version("constraint", constraint_name, constraint_config.version)
 
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
 
             logger.info(f"| 📝 Registered constraint config: {constraint_name}: {constraint_config.version}")
             return constraint_config
@@ -638,9 +510,7 @@ class ConstraintContextManager(BaseModel):
             )
 
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
 
             logger.info(f"| 🔄 Updated constraint {constraint_name} from v{original_config.version} to v{new_version}")
             return updated_config
@@ -752,9 +622,7 @@ class ConstraintContextManager(BaseModel):
             )
 
             # Persist to JSON
-            await self.save_to_json()
             # Save contract to file
-            await self.save_contract()
 
             logger.info(f"| 📋 Copied constraint {constraint_name}@{original_config.version} to {new_name}@{new_version}")
             return new_config
@@ -782,179 +650,10 @@ class ConstraintContextManager(BaseModel):
         del self._constraint_configs[constraint_name]
 
         # Persist to JSON after unregister
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract()
 
         logger.info(f"| 🗑️ Unregistered constraint {constraint_name}@{constraint_config.version}")
         return True
-
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all constraint configurations with version history to JSON.
-
-        Only saves basic configuration fields (name, description, version, config, etc.).
-        Instance is not saved as it's runtime state and will be recreated via build() on load.
-
-        Args:
-            file_path: File path to save to
-
-        Returns:
-            Path to saved file
-        """
-        file_path = file_path if file_path is not None else self.save_path
-
-        async with file_lock(file_path):
-            # Ensure parent directory exists
-            parent_dir = os.path.dirname(file_path)
-            if parent_dir:  # Only create if there's a directory component
-                os.makedirs(parent_dir, exist_ok=True)
-
-            # Prepare save data - save all versions for each constraint
-            save_data = {
-                "metadata": {
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "num_constraints": len(self._constraint_configs),
-                    "num_versions": sum(len(versions) for versions in self._constraint_history_versions.values()),
-                },
-                "constraints": {}
-            }
-
-            for constraint_name, version_map in self._constraint_history_versions.items():
-                try:
-                    versions_data: Dict[str, Dict[str, Any]] = {}
-                    for _, constraint_config in version_map.items():
-                        config_dict = constraint_config.model_dump()
-                        versions_data[constraint_config.version] = config_dict
-
-                    # Get current_version from active config if it exists
-                    # If not in active configs, use the latest version from history
-                    current_version = None
-                    if constraint_name in self._constraint_configs:
-                        current_config = self._constraint_configs[constraint_name]
-                        if current_config is not None:
-                            current_version = current_config.version
-
-                    # If not found in active configs, use latest version from history
-                    if current_version is None and version_map:
-                        # Find latest version by comparing version strings
-                        latest_version_str = None
-                        for version_str in version_map.keys():
-                            if latest_version_str is None:
-                                latest_version_str = version_str
-                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
-                                latest_version_str = version_str
-                        current_version = latest_version_str
-
-                    save_data["constraints"][constraint_name] = {
-                        "versions": versions_data,
-                        "current_version": current_version
-                    }
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to serialize constraint {constraint_name}: {e}")
-                    continue
-
-            # Save to file
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-
-            logger.info(f"| 💾 Saved {len(self._constraint_configs)} constraints with version history to {file_path}")
-            return str(file_path)
-
-    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
-        """Load constraint configurations with version history from JSON.
-
-        Loads basic configuration only (instance is not saved, must be created via build()).
-        Only the latest version will be instantiated by default if auto_initialize=True.
-
-        Args:
-            file_path: File path to load from
-            auto_initialize: Whether to automatically create instance via build() after loading
-
-        Returns:
-            True if loaded successfully, False otherwise
-        """
-
-        file_path = file_path if file_path is not None else self.save_path
-
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Constraint file not found: {file_path}")
-                return False
-
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-
-                constraints_data = load_data.get("constraints", {})
-                loaded_count = 0
-
-                for constraint_name, constraint_data in constraints_data.items():
-                    try:
-                        # Expected format: multiple versions stored as a dict {version_str: config_dict}
-                        versions_data = constraint_data.get("versions")
-                        if not isinstance(versions_data, dict):
-                            logger.warning(f"| ⚠️ Constraint {constraint_name} has invalid format for 'versions' (expected dict), skipping")
-                            continue
-
-                        current_version_str = constraint_data.get("current_version")
-
-                        # Load all versions
-                        version_configs = []
-                        latest_config = None
-                        latest_version = None
-
-                        for version_str, config_dict in versions_data.items():
-                            # Ensure version field is present
-                            if "version" not in config_dict:
-                                config_dict["version"] = version_str
-
-                            try:
-                                constraint_config = ConstraintConfig.model_validate(config_dict)
-                                version_configs.append(constraint_config)
-                            except Exception as e:
-                                logger.warning(f"| ⚠️ Failed to load constraint config for {constraint_name}@{version_str}: {e}")
-                                continue
-
-                            # Track latest version
-                            if latest_config is None or (
-                                current_version_str and constraint_config.version == current_version_str
-                            ) or (
-                                not current_version_str and (
-                                    latest_version is None or
-                                    version_manager.compare_versions(constraint_config.version, latest_version) > 0
-                                )
-                            ):
-                                latest_config = constraint_config
-                                latest_version = constraint_config.version
-
-                        # Store all versions in history (dict-based)
-                        self._constraint_history_versions[constraint_name] = {
-                            cfg.version: cfg for cfg in version_configs
-                        }
-
-                        # Only set latest version as active
-                        if latest_config:
-                            self._constraint_configs[constraint_name] = latest_config
-
-                            # Register all versions to version manager (only version records)
-                            for constraint_config in version_configs:
-                                await version_manager.register_version("constraint", constraint_name, constraint_config.version)
-
-                            # Create instance if requested (instance is not saved in JSON, must be created via build)
-                            if auto_initialize and latest_config.cls is not None:
-                                await self.build(latest_config)
-
-                            loaded_count += 1
-                    except Exception as e:
-                        logger.error(f"| ❌ Failed to load constraint {constraint_name}: {e}")
-                        continue
-
-                logger.info(f"| 📂 Loaded {loaded_count} constraints with version history from {file_path}")
-                return True
-
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load constraints from {file_path}: {e}")
-                return False
 
     async def restore(self, constraint_name: str, version: str, auto_initialize: bool = True) -> Optional[ConstraintConfig]:
         """Restore a specific version of a constraint from history
@@ -998,40 +697,9 @@ class ConstraintContextManager(BaseModel):
             await self.build(restored_config)
 
         # Persist to JSON (current_version changes)
-        await self.save_to_json()
 
         logger.info(f"| 🔄 Restored constraint {constraint_name} to version {version}")
         return restored_config
-
-    async def save_contract(self, constraint_names: Optional[List[str]] = None):
-        """Save the contract for constraints"""
-        contract = []
-        if constraint_names is not None:
-            for index, constraint_name in enumerate(constraint_names):
-                constraint_info = await self.get_info(constraint_name)
-                if constraint_info is None:
-                    logger.warning(f"| ⚠️ Constraint '{constraint_name}' not found in registry, skipping")
-                    continue
-                text = constraint_info.text
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        else:
-            for index, constraint_name in enumerate(self._constraint_configs.keys()):
-                constraint_info = await self.get_info(constraint_name)
-                if constraint_info is None:
-                    logger.warning(f"| ⚠️ Constraint '{constraint_name}' not found in registry, skipping")
-                    continue
-                text = constraint_info.text
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        contract_text = "---\n".join(contract)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved {len(contract)} constraints contract to {self.contract_path}")
-
-    async def load_contract(self) -> str:
-        """Load the contract for constraints"""
-        with open(self.contract_path, "r", encoding="utf-8") as f:
-            contract_text = f.read()
-        return contract_text
 
     async def cleanup(self):
         """Cleanup all active constraints."""

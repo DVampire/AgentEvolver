@@ -25,8 +25,6 @@ class ConnectorManagerServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None, description="Base directory for connector data")
-    save_path: str = Field(default=None, description="Path to persist connector configs")
-    contract_path: str = Field(default=None, description="Path to save connector contract")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -50,17 +48,12 @@ class ConnectorManagerServer(BaseModel):
         """
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "connector"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "connector.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
         logger.info(
             f"| 📁 connector manager Server base directory: {self.base_dir} "
-            f"with save path: {self.save_path} and contract path: {self.contract_path}"
         )
 
         self.connector_context_manager = ConnectorContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
         )
         await self._ensure_context_manager().initialize(connector_names=connector_names)
 
@@ -209,24 +202,14 @@ class ConnectorManagerServer(BaseModel):
     # Context & Contract
     # ------------------------------------------------------------------
 
-    async def get_context(self, connector_names: Optional[List[str]] = None, connector_types: Optional[List[str]] = None) -> str:
-        """Build the connector context string for prompt injection.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+        """Assemble the connector instruction text for prompt injection.
 
-        ``connector_types`` filters by connector.json type.
+        `allowlist` (connector names) selects which connectors to include (None = all,
+        [] = none). `types` filters by connector type. Cached per (allowlist, types)
+        until the registry changes.
         """
-        return await self._ensure_context_manager().get_context(connector_names=connector_names, connector_types=connector_types)
-
-    async def set_contract(self, connector_names: Optional[List[str]] = None):
-        """Set the contract for all connectors.
-
-        Args:
-            connector_names: List of connector names to include in the contract. If None, includes all registered connectors.
-        """
-        await self._ensure_context_manager().save_contract(connector_names=connector_names)
-
-    async def get_contract(self) -> str:
-        """Load the persisted contract text."""
-        return await self._ensure_context_manager().load_contract()
+        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
 
     # ------------------------------------------------------------------
     # Connector execution

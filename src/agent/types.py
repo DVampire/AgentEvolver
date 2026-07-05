@@ -371,9 +371,15 @@ class Agent(BaseModel):
         }
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Get the tool context."""
-        contract = await tool_manager.get_contract()
-        available_tools = contract if contract else "[No tools loaded.]"
+        """Get the tool context.
+
+        Honors an optional per-run allowlist in ``ctx.extra["tool_allowlist"]`` (a list
+        of tool names) — used to run a "with-tool" vs "baseline" agent over the same task.
+        ``None`` (default) = all loaded tools; an empty list = no tools (the baseline).
+        """
+        allowlist = ctx.extra.get("tool_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
+        content = await tool_manager.get_instruction(allowlist=allowlist)
+        available_tools = content if content else "[No tools loaded.]"
         tool_context = f"### Available Tools\n{available_tools}"
         return {"tool_context": tool_context, "available_tools": available_tools}
 
@@ -394,13 +400,10 @@ class Agent(BaseModel):
         is unchanged.
         """
         allowlist = ctx.extra.get("skill_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
-        if allowlist is not None and len(allowlist) == 0:
-            available_skills = "[No skills loaded.]"
-        else:
-            skill_content = await skill_manager.get_context(
-                skill_names=allowlist, skill_types=self._allowed_skill_types()
-            )
-            available_skills = skill_content if skill_content else "[No skills loaded.]"
+        skill_content = await skill_manager.get_instruction(
+            allowlist=allowlist, types=self._allowed_skill_types()
+        )
+        available_skills = skill_content if skill_content else "[No skills loaded.]"
         skill_context = f"### Available Skills\n{available_skills}"
         return {"skill_context": skill_context, "available_skills": available_skills}
 
@@ -409,8 +412,12 @@ class Agent(BaseModel):
 
         Concise by design (name/description/actions + CONNECTOR.md path). The agent
         reads a connector's CONNECTOR.md on demand for per-action argument details.
+
+        Honors an optional per-run allowlist in ``ctx.extra["connector_allowlist"]`` —
+        ``None`` (default) = all loaded connectors; an empty list = none (baseline).
         """
-        connector_content = await connector_manager.get_context()
+        allowlist = ctx.extra.get("connector_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
+        connector_content = await connector_manager.get_instruction(allowlist=allowlist)
         available_connectors = connector_content if connector_content else "[No connectors loaded.]"
         connector_context = f"### Available Connectors\n{available_connectors}"
         return {"connector_context": connector_context, "available_connectors": available_connectors}

@@ -11,7 +11,6 @@ from .list_dir import ListDirTool
 from .git import GitTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
-from .tool_eval_runner import ToolEvalRunnerTool
 from .inspect_tool import InspectTool
 from .inspect_agent import InspectAgent
 from .inspect_skill import InspectSkill
@@ -32,7 +31,6 @@ __all__ = [
     "GitTool",
     "GlobSearchTool",
     "GrepSearchTool",
-    "ToolEvalRunnerTool",
     "InspectTool",
     "InspectAgent",
     "InspectSkill",

@@ -63,6 +63,8 @@ Start by understanding the intent. The task (or conversation history) may alread
 
 ### Write the SKILL.md
 
+**Start from the template**: read `references/skill_md_template.md`, copy it, and fill it in.
+
 Fill in these components:
 
 - **name**: the skill identifier (`snake_case`, ends in `_skill`).
@@ -228,6 +230,7 @@ Keep a plan/todo of the loop so you don't lose track across rounds.
 
 ## Reference files
 
+- `references/skill_md_template.md` — the SKILL.md skeleton (frontmatter + progressive-disclosure-aware structure).
 - `references/schemas.md` — JSON structures for evals.json, grading.json, and the benchmark.
 - `scripts/quick_validate.py` — fast structural validation of a skill directory (pure Python, run via bash).
 - `scripts/aggregate_benchmark.py` — aggregate per-iteration run results into a benchmark (pure Python).

@@ -29,20 +29,14 @@ class EnvironmentContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
-    save_path: str = Field(default=None, description="The path to save the environments")
-    contract_path: str = Field(default=None, description="The path to save the environment contract")
             
     def __init__(self,
                  base_dir: Optional[str] = None,
-                 save_path: Optional[str] = None,
-                 contract_path: Optional[str] = None,
                  **kwargs):
         """Initialize the environment context manager.
 
         Args:
             base_dir: Base directory for storing environment data
-            save_path: Path to save environment configurations
-            contract_path: Path to save environment contract
         """
         super().__init__(**kwargs)
         
@@ -54,16 +48,7 @@ class EnvironmentContextManager(BaseModel):
             self.base_dir = assemble_project_path(os.path.join(base_root, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Environment context manager base directory: {self.base_dir}.")    
-        if save_path is not None:
-            self.save_path = assemble_project_path(save_path)
-        else:
-            self.save_path = os.path.join(self.base_dir, "environment.json")
-        logger.info(f"| 📁 Environment context manager save path: {self.save_path}.")
-        if contract_path is not None:
-            self.contract_path = assemble_project_path(contract_path)
-        else:
-            self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Environment context manager contract path: {self.contract_path}.")
+        logger.info(f"| 📁 Environment context manager.")
 
         self._environment_configs: Dict[str, EnvironmentConfig] = {}  # Current active configs (latest version)
         # Environment version history, e.g., {"env_name": {"1.0.0": EnvironmentConfig, "1.0.1": EnvironmentConfig}}
@@ -100,7 +85,7 @@ class EnvironmentContextManager(BaseModel):
         env_configs.update(registry_env_configs)
         
         # Load environments from code
-        code_configs: Dict[str, EnvironmentConfig] = await self._load_from_code()
+        code_configs: Dict[str, EnvironmentConfig] = {}
         
         # Merge code configs with registry configs, only override if code version is strictly greater
         for env_name, code_config in code_configs.items():
@@ -143,9 +128,7 @@ class EnvironmentContextManager(BaseModel):
             logger.info(f"| 🎮 Environment {env_name} initialized")
         
         # Save environment configs to json file
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract(env_names=env_names)
         
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -318,112 +301,6 @@ class EnvironmentContextManager(BaseModel):
         
         return env_configs
     
-    async def _load_from_code(self):
-        """Load environments from code files.
-        
-        JSON file content example:
-        {
-            "metadata": {
-                "saved_at": str,  # "YYYY-MM-DD HH:MM:SS"
-                "num_environments": int,  # total environment count
-                "num_versions": int  # total version count
-            },
-            "environments": {
-                "env_name": {
-                    "current_version": "1.0.0",
-                    "versions": {
-                        "1.0.0": {
-                            "name": str,
-                            "description": str,
-                            "metadata": dict,
-                            "version": str,
-                            "cls": Type[Environment], # will be loaded from code
-                            "config": dict,
-                            "instance": Environment, # will be built when needed
-                            "code": str,
-                            "actions": dict, # will be built when needed
-                            "rules": str,
-                        },
-                        ...
-                    }
-                }
-            }
-        }
-        """
-        
-        env_configs: Dict[str, EnvironmentConfig] = {}
-        
-        # If save file does not exist yet, nothing to load
-        if not os.path.exists(self.save_path):
-            logger.info(f"| 📂 Environment config file not found at {self.save_path}, skipping code-based loading")
-            return env_configs
-        
-        # Load all environment configs from json file
-        try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"| ⚠️ Failed to parse environment config JSON from {self.save_path}: {e}")
-            return env_configs
-        
-        metadata = load_data.get("metadata", {})
-        environments_data = load_data.get("environments", {})
-
-        async def register_environment_class(env_name: str, env_data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, EnvironmentConfig], Optional[EnvironmentConfig]]]:
-            """Load all versions for a single environment from JSON."""
-            try:
-                current_version = env_data.get("current_version", "1.0.0")
-                versions = env_data.get("versions", {})
-                
-                if not versions:
-                    logger.warning(f"| ⚠️ Environment {env_name} has no versions")
-                    return None
-                
-                version_map: Dict[str, EnvironmentConfig] = {}
-                current_config: Optional[EnvironmentConfig] = None  # Active config for current_version
-                
-                for _, version_data in versions.items():
-                    env_config = EnvironmentConfig.model_validate(version_data)
-                    version = env_config.version
-                    version_map[version] = env_config
-                    
-                    if version == current_version:
-                        current_config = env_config
-                        
-                return env_name, version_map, current_config
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load environment {env_name} from code JSON: {e}")
-                return None
-
-        # Launch loading of each environment concurrently with a concurrency limit
-        tasks = [
-            register_environment_class(env_name, env_data) for env_name, env_data in environments_data.items()
-        ]
-        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
-
-        for result in results:
-            if isinstance(result, Exception) or result is None:
-                continue
-            env_name, version_map, current_environment_config = result
-            if not version_map:
-                continue
-            # Store all versions in history (mapped by version string)
-            self._environment_history_versions[env_name] = version_map
-            # Active config: the one corresponding to current_version
-            if current_environment_config is not None:
-                env_configs[env_name] = current_environment_config
-            else:
-                # Fallback: if current_version is not found, use the last available version
-                logger.warning(f"| ⚠️ Environment {env_name} current_version not found, using last available version")
-                env_configs[env_name] = list(version_map.values())[-1]
-            
-            # Register all versions to version manager
-            for env_config in version_map.values():
-                await version_manager.register_version("environment", env_name, env_config.version)
-            
-        logger.info(f"| 📂 Loaded {len(env_configs)} environments from {self.save_path}")
-        return env_configs
-    
     async def build(self, env_config: EnvironmentConfig) -> EnvironmentConfig:
         """Build an environment instance from config (internal helper, similar to tool's build).
         
@@ -591,7 +468,6 @@ class EnvironmentContextManager(BaseModel):
             await version_manager.register_version("environment", env_name, env_config.version)
             
             # Persist to JSON
-            await self.save_to_json()
             
             logger.info(f"| 📝 Registered environment config: {env_name}: {env_config.version}")
             return env_config
@@ -786,7 +662,6 @@ class EnvironmentContextManager(BaseModel):
             )
             
             # Persist to JSON
-            await self.save_to_json()
             
             logger.info(f"| 🔄 Updated environment {env_name} from v{original_config.version} to v{new_version}")
             return updated_config
@@ -928,7 +803,6 @@ class EnvironmentContextManager(BaseModel):
             )
             
             # Persist to JSON
-            await self.save_to_json()
             
             logger.info(f"| 📋 Copied environment {env_name}@{original_config.version} to {new_name}@{new_version}")
             return copied_config
@@ -956,180 +830,10 @@ class EnvironmentContextManager(BaseModel):
         del self._environment_configs[env_name]
 
         # Persist to JSON after unregister
-        await self.save_to_json()
         # Save contract to file
-        await self.save_contract()
         
         logger.info(f"| 🗑️ Unregistered environment {env_name}@{env_config.version}")
         return True
-    
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all environment configurations with version history to JSON.
-        
-        Only saves basic configuration fields (name, description, version, config, etc.).
-        Instance is not saved as it's runtime state and will be recreated via build() on load.
-        
-        Args:
-            file_path: File path to save to
-            
-        Returns:
-            Path to saved file
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            # Ensure parent directory exists
-            parent_dir = os.path.dirname(file_path)
-            if parent_dir:  # Only create if there's a directory component
-                os.makedirs(parent_dir, exist_ok=True)
-            
-            # Prepare save data - save all versions for each environment
-            save_data = {
-                "metadata": {
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "num_environments": len(self._environment_configs),
-                    "num_versions": sum(len(versions) for versions in self._environment_history_versions.values()),
-                },
-                "environments": {}
-            }
-            
-            for env_name, version_map in self._environment_history_versions.items():
-                try:
-                    versions_data: Dict[str, Dict[str, Any]] = {}
-                    for _, env_config in version_map.items():
-                        config_dict = env_config.model_dump()
-                        versions_data[env_config.version] = config_dict
-                    
-                    # Get current_version from active config if it exists
-                    # If not in active configs, use the latest version from history
-                    current_version = None
-                    if env_name in self._environment_configs:
-                        current_config = self._environment_configs[env_name]
-                        if current_config is not None:
-                            current_version = current_config.version
-                    
-                    # If not found in active configs, use latest version from history
-                    if current_version is None and version_map:
-                        # Find latest version by comparing version strings
-                        latest_version_str = None
-                        for version_str in version_map.keys():
-                            if latest_version_str is None:
-                                latest_version_str = version_str
-                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
-                                latest_version_str = version_str
-                        current_version = latest_version_str
-                    
-                    save_data["environments"][env_name] = {
-                        "versions": versions_data,
-                        "current_version": current_version
-                    }
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to serialize environment {env_name}: {e}")
-                    continue
-            
-            # Save to file
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-            
-            logger.info(f"| 💾 Saved {len(self._environment_configs)} environments with version history to {file_path}")
-            return str(file_path)
-    
-    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
-        """Load environment configurations with version history from JSON.
-        
-        Loads basic configuration only (instance is not saved, must be created via build()).
-        Only the latest version will be instantiated by default if auto_initialize=True.
-        
-        Args:
-            file_path: File path to load from
-            auto_initialize: Whether to automatically create instance via build() after loading
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
-        
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Environment file not found: {file_path}")
-                return False
-            
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-                
-                environments_data = load_data.get("environments", {})
-                loaded_count = 0
-                
-                for env_name, env_data in environments_data.items():
-                    try:
-                        # Expected format: multiple versions stored as a dict {version_str: config_dict}
-                        versions_data = env_data.get("versions")
-                        if not isinstance(versions_data, dict):
-                            logger.warning(f"| ⚠️ Environment {env_name} has invalid format for 'versions' (expected dict), skipping")
-                            continue
-                        
-                        current_version_str = env_data.get("current_version")
-                        
-                        # Load all versions
-                        version_configs = []
-                        latest_config = None
-                        latest_version = None
-                        
-                        for version_str, config_dict in versions_data.items():
-                            # Ensure version field is present
-                            if "version" not in config_dict:
-                                config_dict["version"] = version_str
-                            
-                            try:
-                                env_config = EnvironmentConfig.model_validate(config_dict)
-                                version_configs.append(env_config)
-                            except Exception as e:
-                                logger.warning(f"| ⚠️ Failed to load environment config for {env_name}@{version_str}: {e}")
-                                continue
-                            
-                            # Track latest version
-                            if latest_config is None or (
-                                current_version_str and env_config.version == current_version_str
-                            ) or (
-                                not current_version_str and (
-                                    latest_version is None or 
-                                    version_manager.compare_versions(env_config.version, latest_version) > 0
-                                )
-                            ):
-                                latest_config = env_config
-                                latest_version = env_config.version
-                        
-                        # Store all versions in history (dict-based)
-                        self._environment_history_versions[env_name] = {
-                            cfg.version: cfg for cfg in version_configs
-                        }
-                        
-                        # Only set latest version as active
-                        if latest_config:
-                            self._environment_configs[env_name] = latest_config
-                            
-                            # Register all versions to version manager (only version records)
-                            for env_config in version_configs:
-                                await version_manager.register_version("environment", env_name, env_config.version)
-                            
-                            # Create instance if requested (instance is not saved in JSON, must be created via build)
-                            if auto_initialize and latest_config.cls is not None:
-                                await self.build(latest_config)
-                            
-                            loaded_count += 1
-                    except Exception as e:
-                        logger.error(f"| ❌ Failed to load environment {env_name}: {e}")
-                        continue
-                
-                logger.info(f"| 📂 Loaded {loaded_count} environments with version history from {file_path}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load environments from {file_path}: {e}")
-                return False
-    
     
     async def restore(self, env_name: str, version: str, auto_initialize: bool = True) -> Optional[EnvironmentConfig]:
         """Restore a specific version of an environment from history
@@ -1173,7 +877,6 @@ class EnvironmentContextManager(BaseModel):
             await self.build(restored_config)
         
         # Persist to JSON (current_version changes)
-        await self.save_to_json()
         
         logger.info(f"| 🔄 Restored environment {env_name} to version {version}")
         return restored_config
@@ -1189,32 +892,6 @@ class EnvironmentContextManager(BaseModel):
         logger.info("| 🔍 Sandbox-based environment detected — ensuring opensandbox-server is running")
         await self._sandbox_server.ensure_running()
 
-    async def save_contract(self, env_names: Optional[List[str]] = None):
-        """Save the contract for an environment"""
-        contract = []
-        if env_names is not None:
-            for index, env_name in enumerate(env_names):
-                env_info = await self.get_info(env_name)
-                if env_info is None:
-                    continue
-                text = env_info.rules
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        else:
-            for index, env_name in enumerate(self._environment_configs.keys()):
-                env_info = await self.get_info(env_name)
-                text = env_info.rules
-                contract.append(f"{index + 1:04d}\n{text}\n")
-        contract_text = "---\n".join(contract)
-        with open(self.contract_path, "w", encoding="utf-8") as f:
-            f.write(contract_text)
-        logger.info(f"| 📝 Saved {len(contract)} environments contract to {self.contract_path}")
-    
-    async def load_contract(self) -> str:
-        """Load the contract for an environment"""
-        with open(self.contract_path, "r", encoding="utf-8") as f:
-            contract_text = f.read()
-        return contract_text
-    
     async def cleanup(self):
         """Cleanup all active environments."""
         try:

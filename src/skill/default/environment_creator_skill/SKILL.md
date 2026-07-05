@@ -32,6 +32,8 @@ An environment is a directory: `{project_root}/extension/environment/{name}/`
 ```
 **Registration is automatic via a hook**: after writing the files, include the environment directory (or `environment.py`) path in your `done_tool` reasoning — the `environment_registration_hook` registers it.
 
+**Start from the templates**: read `references/environment_template.py` (the class) and `references/environment_md_template.md` (the manifest), copy them, and adapt.
+
 ### The Python class
 
 ```python
@@ -124,3 +126,8 @@ The target is named in the task. Call `inspect_environment` FIRST for its file p
 2. **Evaluate** — dispatch `environment_evaluate_agent` (optionally after exercising an action) to score.
 3. **Improve** — dispatch `environment_optimize_agent` with the evaluation; it edits and re-registers.
 4. **Repeat** until the environment is good.
+
+## Reference files
+
+- `references/environment_template.py` — a ready-to-copy environment class (`@environment_manager.action`, initialize/cleanup, per-session state).
+- `references/environment_md_template.md` — the ENVIRONMENT.md manifest skeleton (State / Vision / Actions).

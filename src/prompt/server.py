@@ -21,8 +21,6 @@ class PromptManagerServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None)
-    save_path: str = Field(default=None)
-    contract_path: str = Field(default=None)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
@@ -45,14 +43,10 @@ class PromptManagerServer(BaseModel):
         """
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "prompt"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "prompt.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
         logger.info(f"| 📁 Prompt Manager base_dir={self.base_dir}")
 
         self.prompt_context_manager = PromptContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
         )
         await self.prompt_context_manager.initialize(prompt_names=prompt_names)
         logger.info("| ✅ Prompts initialization completed")
@@ -140,14 +134,6 @@ class PromptManagerServer(BaseModel):
         """
         cm = await self._ensure_context_manager()
         return await cm(name, input=input, ctx=ctx, **kwargs)
-
-    async def set_contract(self, prompt_names: Optional[List[str]] = None):
-        cm = await self._ensure_context_manager()
-        await cm.save_contract(prompt_names=prompt_names)
-
-    async def get_contract(self) -> str:
-        cm = await self._ensure_context_manager()
-        return await cm.load_contract()
 
 
 # Global Prompt Manager instance

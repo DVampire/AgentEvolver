@@ -52,7 +52,7 @@ Factor the remaining budget into every plan: prefer fewer, more certain actions 
 </constraint-rules>
 
 <task-rules>
-- Start by invoking `agent_creator_skill` and follow its **Creating an agent** section.
+- Start by invoking `agent_creator_skill` and follow its **Creating an agent** section. An agent is a **Python class + HTML prompt bound together** (tool-calling agents); the skill's templates cover producing BOTH — the thin class AND its HTML prompt — plus the config. Build every piece it prescribes, not just the class.
 - After receiving the instructions, follow them step by step to create the agent.
 - Include type and file paths in `done_tool.reasoning` for auto-registration.
 - Call `done_tool` when all required files are written and syntax-verified.

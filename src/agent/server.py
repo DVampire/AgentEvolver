@@ -19,15 +19,13 @@ class AgentManagerServer(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the agents")
-    save_path: str = Field(default=None, description="The path to save the agents")
-    contract_path: str = Field(default=None, description="The path to save the agent contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the Agent Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, AgentConfig] = {}  # agent_name -> AgentConfig
         # Context manager is created lazily (config may not be loaded at import time).
-        # initialize() reconfigures it with proper base_dir / save_path / contract_path.
+        # initialize() reconfigures it with proper base_dir .
         self.agent_context_manager: Optional[AgentContextManager] = None
 
         
@@ -46,15 +44,11 @@ class AgentManagerServer(BaseModel):
         
         self.base_dir = assemble_project_path(os.path.join(config.default_dir, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "agent.json")
-        self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 agent manager Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
+        logger.info(f"| 📁 agent manager Server base directory: {self.base_dir}")
         
         # Initialize agent context manager
         self.agent_context_manager = AgentContextManager(
             base_dir=self.base_dir,
-            save_path=self.save_path,
-            contract_path=self.contract_path,
             model_name="openrouter/gemini-3-flash-preview",
         )
         await self._ensure_context_manager().initialize(agent_names=agent_names)
@@ -68,18 +62,6 @@ class AgentManagerServer(BaseModel):
         
         logger.info("| ✅ Agents initialization completed")
 
-    async def set_contract(self, agent_names: Optional[List[str]] = None):
-        """Set the contract for all agents by aggregating their class source code.
-        
-        Args:
-            agent_names: List of agent names to include in the contract. If None, includes all registered agents.
-        """
-        await self._ensure_context_manager().save_contract(agent_names=agent_names)
-        
-    async def get_contract(self) -> str:
-        """Get the contract for all agents"""
-        return await self._ensure_context_manager().load_contract()
-        
     async def register(self, 
                        agent_cls: Type[Agent],
                        agent_config_dict: Optional[Dict[str, Any]] = None,

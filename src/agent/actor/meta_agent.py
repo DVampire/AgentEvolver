@@ -852,13 +852,14 @@ class MetaAgent(Agent):
         ]
         args = dict(record.spec.input.args or {})
 
-        # A sub-task may pin which skills the sub-agent sees — e.g. MetaAgent runs a
-        # with-skill vs baseline probe by dispatching the same agent twice with
-        # different allowlists. Honor an optional `skill_allowlist` in args by injecting
-        # it into the sub-agent's ctx (consumed by Agent._get_skill_context).
-        allowlist = args.pop("skill_allowlist", None)
-        if allowlist is not None:
-            ctx.extra["skill_allowlist"] = allowlist
+        # A sub-task may pin which skills/tools/connectors the sub-agent sees — e.g.
+        # MetaAgent runs a with-X vs baseline probe by dispatching the same agent twice
+        # with different allowlists. Honor optional `{skill,tool,connector}_allowlist` in
+        # args by injecting them into the sub-agent's ctx (consumed by Agent._get_*_context).
+        for _al in ("skill_allowlist", "tool_allowlist", "connector_allowlist"):
+            _val = args.pop(_al, None)
+            if _val is not None:
+                ctx.extra[_al] = _val
 
         try:
             if kind == "agent":
