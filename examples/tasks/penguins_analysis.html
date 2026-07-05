@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="penguins_analysis">
+  <meta name="description" content="Self-contained HTML data analysis report on the Palmer Penguins dataset">
+  <meta name="version" content="1.1.0">
+  <link rel="stylesheet" href="../../src/visual/css/task.css">
+  <script src="../../src/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Produce a polished data analysis report on the Palmer Penguins dataset,
+comparing the three species (Adelie, Chinstrap, Gentoo) by body-size
+morphology. Deliver a single self-contained HTML report that renders
+anywhere — every chart embedded inline as a `data:` URI so the report
+needs no external files. Do all work with Python via bash in the work
+directory.
+</objective>
+
+<requirements>
+- Download the CSV from
+  `https://raw.githubusercontent.com/allisonhorst/palmerpenguins/main/inst/extdata/penguins.csv`
+  into the work directory and confirm it is non-empty.
+- Load and clean it with pandas: drop rows with missing values in the key
+  numeric columns (`bill_length_mm`, `bill_depth_mm`, `flipper_length_mm`,
+  `body_mass_g`) and `species`; report how many rows were dropped.
+- Compute per-species summary statistics: row count and the mean of
+  `bill_length_mm`, `bill_depth_mm`, `flipper_length_mm`, `body_mass_g`.
+- Generate at least three charts (matplotlib/seaborn, Agg backend, titles
+  and axis labels): a scatter of bill length vs bill depth colored by
+  species; a body-mass-by-species boxplot; an average-flipper-length-by-species
+  bar chart.
+- Deliver `analysis_report.html` as a polished, self-contained analysis
+  report following the report_design_skill discipline (and artifact_design_skill
+  for visual craft): inline all CSS, and **embed every chart directly in the
+  HTML as a base64 `data:image/png;base64,...` URI** (do NOT reference external
+  .png files) so the single .html file renders on its own. Place each chart
+  under the finding it supports, with a caption.
+</requirements>
+
+<acceptance>
+```
+work_dir/penguins.csv          non-empty raw dataset
+work_dir/analysis_report.html  single self-contained file; opens standalone
+                               with all 3 charts visible (data: URIs, no
+                               external image files needed)
+verify_report.py <report>      PASS — figures embedded and resolve
+```
+</acceptance>
+
+<plan>
+- Download the dataset and confirm it loaded.
+- Write and run a python script that cleans the data, computes per-species
+  stats, renders the three charts, and base64-encodes each chart PNG.
+- Author analysis_report.html via report_design_skill / artifact_design_skill,
+  inlining CSS and embedding every chart as a data: URI.
+- Verify the report is self-contained and embeds every figure.
+</plan>
+</div>
+
+</body>
+</html>
