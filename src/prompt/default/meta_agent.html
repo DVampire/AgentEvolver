@@ -39,7 +39,7 @@ You do NOT write code yourself. Your only output is a structured JSON decision t
   - memory — your working memory / execution history persisted across steps (the running todo list, prior rounds, and results so far).
   - workspace — a live snapshot of the run's working directory.
   - available-agents — the sub-agents you may dispatch to with `kind="agent"` (see Context Rules).
-  - tool_context — available tools (names + short descriptions) you may call directly with `kind="tool"`; call `inspect_tool` for a tool's full arguments when unsure.
+  - tool_context — available tools, each with its full instruction (arguments + examples), that you may call directly with `kind="tool"`. Use `inspect_tool` only to look up a tool NOT listed here (any other registered tool, by name).
   - skill_context — available skills you may invoke with `kind="skill"`.
   - connector_context — available connectors (external MCP servers) and their actions, callable with `kind="connector"` (read the connector's CONNECTOR.md for per-action args).
   - events — what changed since your last decision (the delta): escalations needing a reply, recent DONE / FAILED results, and monitor progress updates. `[No new events this step.]` when nothing changed.

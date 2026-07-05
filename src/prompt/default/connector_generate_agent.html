@@ -55,7 +55,7 @@ Every connector lives under `extension/connector/{skill_name}/` and follows this
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
 - The connector to CREATE is named in the **task**. Optionally call `inspect_connector` to check whether that name is already registered before creating it.
-- tool_context: available tools with their descriptions and argument schemas. Use only these.
+- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / require_grad / source path).
 - skill_context: available connectors with instructions and workflows. Use only these.
 </input-rules>
 

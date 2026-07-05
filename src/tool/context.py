@@ -708,11 +708,15 @@ class ToolContextManager(BaseModel):
     async def get_instruction(self, allowlist=None, types=None) -> str:
         """Assemble the tool instruction text for prompt injection, on demand.
 
+        Each tool renders its name + description + full `_INSTRUCTION` (Function /
+        Guidance / Parameters / Example) so the agent has the arguments inline and
+        rarely needs `inspect_tool`. These are the agent's resident tools (its
+        configured set), so the set is small and inlining the instruction is affordable.
+
         `allowlist` (list of tool names) selects which tools to include: None = all
-        loaded tools; [] = none; [names] = only those. The result is cached by
-        allowlist and reused until the registry changes (register/update/remove call
-        `_invalidate_instruction`). `types` is accepted for a uniform manager interface
-        but tools have no type filter.
+        loaded tools; [] = none; [names] = only those. Cached by allowlist and reused
+        until the registry changes (register/update/remove call `_invalidate_instruction`).
+        `types` is accepted for a uniform manager interface but tools have no type filter.
         """
         key = None if allowlist is None else tuple(allowlist)
         if key == self._instr_key:
@@ -723,7 +727,11 @@ class ToolContextManager(BaseModel):
             info = await self.get_info(name)
             if info is None:
                 continue
-            parts.append(f"{index + 1:04d}\n{info.text}\n")
+            block = f"Tool: {info.name}\nDescription: {info.description}"
+            instruction = (getattr(info, "instruction", "") or "").strip()
+            if instruction:
+                block += f"\n{instruction}"
+            parts.append(f"{index + 1:04d}\n{block}\n")
         text = "---\n".join(parts)
         self._instr_key = key
         self._instr_cache = text
