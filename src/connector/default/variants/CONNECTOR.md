@@ -1,5 +1,5 @@
 ---
-name: variants
+name: variants_connector
 description: Human genetic variants — gnomAD population frequencies/constraint (r4), ClinVar records/search (direct NCBI), dbSNP, structural and mitochondrial variants. Public APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/variants/server.py
+    - server.py
 actions:
   - get_variant
   - search_variants
@@ -60,5 +60,4 @@ A self-contained MCP connector for human genetic variants over **public** APIs
 - The **gnomAD** API is 403-blocked from some networks (including this build sandbox). The gnomAD
   tools follow the official gnomAD GraphQL schema and work where the API is reachable; they degrade
   gracefully with a clear message otherwise. ClinVar/dbSNP tools are verified.
-- The `connection.command` / `args` above are absolute paths for this machine — update them if the
-  repo or the Python environment moves.
+- The `connection` uses a relative `server.py` and `command: python`, which the connector manager resolves to absolute paths at load time, so no machine-specific paths are needed.

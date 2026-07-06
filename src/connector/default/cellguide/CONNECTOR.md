@@ -1,5 +1,5 @@
 ---
-name: cellguide
+name: cellguide_connector
 description: Cell type information from CZ CELLxGENE CellGuide — descriptions, marker genes, tissue distribution, and source datasets. Public data (CC-BY-4.0), no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/cellguide/server.py
+    - server.py
 actions:
   - search_cell_types
   - get_cell_type_info
@@ -62,5 +62,6 @@ Source datasets/collections describing the cell type (with CELLxGENE + publicati
 ## Notes
 
 - Read-only; reads the public CellGuide CDN snapshot (auto-resolved to latest).
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

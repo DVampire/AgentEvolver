@@ -1,5 +1,5 @@
 ---
-name: molecule_toolkit
+name: molecule_toolkit_connector
 description: Local cheminformatics via RDKit — convert molecules between SMILES/MOL/SDF/InChI, render 2D structure depictions as SVG, compute molecular descriptors, extract scaffolds, and parse reaction SMILES. Fully local, no network, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/molecule_toolkit/server.py
+    - server.py
 actions:
   - molecule_convert
   - molecule_descriptors
@@ -50,5 +50,6 @@ handles the same `.smi/.mol/.sdf/.rxn` (and InChI) formats.
 - Fully local (RDKit); no external API, so it is fast and always available offline.
 - This connector does **not** provide an interactive drawing canvas (that requires a
   client-side UI surface); it provides the equivalent programmatic molecule operations.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

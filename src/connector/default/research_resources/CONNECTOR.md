@@ -1,5 +1,5 @@
 ---
-name: research_resources
+name: research_resources_connector
 description: Research resources — Grants.gov funding opportunity search and Antibody Registry (RRID) antibody lookups. Public APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/research_resources/server.py
+    - server.py
 actions:
   - search_grants
   - search_antibodies
@@ -42,5 +42,4 @@ A self-contained MCP connector for research-support lookups over **public** APIs
 
 - Read-only; hits the public Grants.gov and Antibody Registry APIs, so responses depend on
   their uptime.
-- The `connection.command` / `args` above are absolute paths for this machine — update them if
-  the repo or the Python environment moves.
+- The `connection` uses a relative `server.py` and `command: python`, which the connector manager resolves to absolute paths at load time, so no machine-specific paths are needed.

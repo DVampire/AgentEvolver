@@ -1,5 +1,5 @@
 ---
-name: rna
+name: rna_connector
 description: RNA families via Rfam — family metadata, seed alignments, covariance models, phylogenetic trees, PDB structure mappings, accession/id conversion, and sequence search. Public API, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/rna/server.py
+    - server.py
 actions:
   - get_family
   - get_seed_alignment
@@ -53,5 +53,4 @@ alignments, consensus secondary structures, and covariance models.
 - `get_sequence_regions` returns an FTP pointer (Rfam does not serve full regions over the web
   API); `search_sequence` uses Rfam's async cmscan service, which can be rate-limited (the tool
   degrades gracefully with a hint when it is unavailable).
-- The `connection.command` / `args` above are absolute paths for this machine — update them if
-  the repo or the Python environment moves.
+- The `connection` uses a relative `server.py` and `command: python`, which the connector manager resolves to absolute paths at load time, so no machine-specific paths are needed.

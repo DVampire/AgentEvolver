@@ -1,5 +1,5 @@
 ---
-name: literature_graph
+name: literature_graph_connector
 description: Scholarly literature graph — OpenAlex works/citations/references/authors/venues plus arXiv preprint search. Public APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/literature_graph/server.py
+    - server.py
 actions:
   - openalex_search_works
   - openalex_get_work
@@ -56,5 +56,6 @@ servers (e.g. [benedict2310/Scientific-Papers-MCP](https://github.com/benedict23
 
 - Read-only; hits public OpenAlex + arXiv APIs (OpenAlex "polite pool" via a mailto UA),
   so responses depend on their uptime.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

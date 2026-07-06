@@ -1,5 +1,5 @@
 ---
-name: regulation
+name: regulation_connector
 description: Gene regulation — ENCODE experiments/files/biosamples, JASPAR transcription-factor binding matrices, UniBind TFBS datasets. Public APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/regulation/server.py
+    - server.py
 actions:
   - encode_search_experiments
   - encode_search_biosamples
@@ -64,5 +64,4 @@ A self-contained MCP connector for gene-regulation resources over **public** API
 - `unibind_tfbs_in_region` returns download pointers (no public per-region JSON API exists).
   (The Claude Science original also lists UCSC Genome Browser as a region backend; UCSC is not
   reachable from this build environment, so region queries are pointer-only here.)
-- The `connection.command` / `args` above are absolute paths for this machine — update them if
-  the repo or the Python environment moves.
+- The `connection` uses a relative `server.py` and `command: python`, which the connector manager resolves to absolute paths at load time, so no machine-specific paths are needed.

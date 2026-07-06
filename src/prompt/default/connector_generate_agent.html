@@ -107,7 +107,7 @@ Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "a
 
 **After connector call**: the connector returns step-by-step instructions. Plan new actions to execute each instruction in order.
 
-**Verification**: after writing CONNECTOR.md, confirm the YAML frontmatter is valid and `name` matches the directory name. Do NOT call `done_tool` without verifying frontmatter.
+**Verification**: after writing CONNECTOR.md, confirm the YAML frontmatter is valid and `name` follows the `<directory>_connector` convention (e.g. directory `pubmed` → `name: pubmed_connector`). For a `stdio` connection, declare it portably — `command: python` and a **relative** script path in `args` (e.g. `server.py`), never a machine-specific absolute path; the connector manager resolves both at load time. Do NOT call `done_tool` without verifying frontmatter.
 </decision-rules>
 
 <reasoning-rules>

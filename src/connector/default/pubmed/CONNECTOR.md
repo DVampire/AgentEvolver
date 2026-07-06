@@ -1,5 +1,5 @@
 ---
-name: pubmed
+name: pubmed_connector
 description: PubMed — search biomedical literature, fetch article metadata and full text, and resolve citations and related articles.
 version: 1.0.0
 type: worker

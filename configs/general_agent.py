@@ -32,10 +32,10 @@ skill_names = [
     "hello_world_skill",
 ]
 connector_names = [
-    "biorxiv",
-    "chembl",
-    "clinical_trials",
-    "pubmed",
+    "biorxiv_connector",
+    "chembl_connector",
+    "clinical_trials_connector",
+    "pubmed_connector",
 ]
 
 #-----------------BASH TOOL CONFIG-----------------

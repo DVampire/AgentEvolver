@@ -21,7 +21,7 @@ Fetch a connector's live registry facts: whether it is registered, its version, 
 - name (str): The exact name of the connector to inspect.
 
 ## Example
-{"name": "inspect_connector", "args": {"name": "pubmed"}}
+{"name": "inspect_connector", "args": {"name": "pubmed_connector"}}
 """
 
 

@@ -1,5 +1,5 @@
 ---
-name: chembl
+name: chembl_connector
 description: EMBL-EBI ChEMBL database (v34) — search compounds, targets, bioactivity, mechanisms of action, approved drugs, and ADMET properties.
 version: 1.0.0
 type: worker

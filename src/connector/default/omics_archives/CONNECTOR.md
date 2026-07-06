@@ -1,5 +1,5 @@
 ---
-name: omics_archives
+name: omics_archives_connector
 description: Omics data archives — ArrayExpress/BioStudies experiments, GEO series, MGnify metagenomics, PRIDE proteomics, MetaboLights metabolomics. Public EBI/NCBI APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/omics_archives/server.py
+    - server.py
 actions:
   - arrayexpress_search_experiments
   - arrayexpress_get_experiment
@@ -75,5 +75,6 @@ and **MetaboLights**. GEO uses NCBI E-utilities (referenced from the open-source
   endpoints, so responses depend on their uptime.
 - PRIDE offers no public per-project protein-list API (`pride_search_project_proteins`
   returns pointers instead).
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

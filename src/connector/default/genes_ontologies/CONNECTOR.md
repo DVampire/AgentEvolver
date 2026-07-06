@@ -1,5 +1,5 @@
 ---
-name: genes_ontologies
+name: genes_ontologies_connector
 description: Gene identity and ontologies — MyGene queries, OLS4 ontology terms, GO annotations (QuickGO), UniProt entries, Reactome pathways. Aggregates five public APIs (no auth).
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/genes_ontologies/server.py
+    - server.py
 actions:
   - query_genes
   - list_ontologies
@@ -69,5 +69,6 @@ Reactome pathways a gene/protein participates in.
 
 - Read-only; hits public MyGene / OLS / QuickGO / UniProt / Reactome endpoints, so
   responses depend on their uptime.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

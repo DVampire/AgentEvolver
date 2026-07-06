@@ -1,5 +1,5 @@
 ---
-name: chemistry
+name: chemistry_connector
 description: Small-molecule chemistry — PubChem compounds/properties/similarity, ChEBI ontology, Rhea reactions, BindingDB affinities. Aggregates four public APIs (no auth).
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/chemistry/server.py
+    - server.py
 actions:
   - pubchem_search_compounds
   - pubchem_get_compounds
@@ -21,7 +21,8 @@ actions:
   - chebi_get_ontology
   - rhea_search_reactions
   - rhea_get_reaction
-  - bindingdb_get_affinities
+  - bindingdb_ligands_by_target
+  - bindingdb_targets_by_compound
 ---
 
 # Chemistry
@@ -49,8 +50,10 @@ A self-contained MCP connector for small-molecule chemistry, aggregating four
 - `rhea_get_reaction` — equation, status, ChEBI participants. Args: `rhea_id` (e.g. `RHEA:10280`).
 
 ### BindingDB — binding affinities
-- `bindingdb_get_affinities` — measured affinities for a protein target, sorted by potency.
+- `bindingdb_ligands_by_target` — measured ligand affinities for a protein target, sorted by potency.
   Args: `uniprot` (e.g. `P00533`), `cutoff_nm` (default 100), `limit`.
+- `bindingdb_targets_by_compound` — targets bound by compounds similar to a query molecule.
+  Args: `smiles`, `similarity_cutoff` (Tanimoto, default 0.85), `limit`.
 
 ## Typical workflow
 
@@ -59,12 +62,14 @@ A self-contained MCP connector for small-molecule chemistry, aggregating four
    ontology definition; `pubchem_get_safety` for GHS hazards.
 3. `pubchem_similarity_search` for structural analogs.
 4. `rhea_search_reactions` / `rhea_get_reaction` for the metabolic reactions a compound
-   participates in; `bindingdb_get_affinities` for a target's potent binders.
+   participates in; `bindingdb_ligands_by_target` for a target's potent binders, or
+   `bindingdb_targets_by_compound` to find what a molecule's analogs bind.
 
 ## Notes
 
 - Read-only; hits public PubChem/ChEBI(OLS)/Rhea/BindingDB endpoints, so responses depend
   on their uptime. BindingDB responses for well-studied targets can be large — use a tight
   `cutoff_nm`.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

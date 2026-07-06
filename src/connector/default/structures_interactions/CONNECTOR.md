@@ -1,5 +1,5 @@
 ---
-name: structures_interactions
+name: structures_interactions_connector
 description: Structures and molecular interactions — RCSB PDB structures, AlphaFold predictions, EMDB cryo-EM entries, Complex Portal complexes, IntAct interaction networks. Public APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/structures_interactions/server.py
+    - server.py
 actions:
   - pdb_search_structures
   - pdb_get_structures
@@ -69,5 +69,4 @@ open-source [cyanheads/protein-mcp-server](https://github.com/cyanheads/protein-
 - Read-only; hits public RCSB / AlphaFold / EMDB / Complex Portal / IntAct APIs, so responses
   depend on their uptime.
 - `emdb_get_validation` summarizes processing/resolution (EMDB serves full validation reports as
-  PDFs). The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+  PDFs). The `connection` uses a relative `server.py` and `command: python`, which the connector manager resolves to absolute paths at load time, so no machine-specific paths are needed.

@@ -1,5 +1,5 @@
 ---
-name: human_genetics
+name: human_genetics_connector
 description: Human genetics associations — GWAS Catalog variant/gene/trait associations & studies, eQTL Catalogue expression QTLs, and FinnGen/BioBank-Japan PheWAS. Public APIs, no auth.
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/human_genetics/server.py
+    - server.py
 actions:
   - gwas_associations_for_variant
   - gwas_associations_for_gene
@@ -73,5 +73,4 @@ the open-source [koido/gwas-catalog-mcp](https://github.com/koido/gwas-catalog-m
   (e.g. APOE rs429358) — they time out gracefully with a hint if so. The other 11 tools are fast.
 - PheWAS phenotype/gene tools use FinnGen's public r12 API. BioBank Japan (pheweb.jp) is listed as
   an instance but exposes only a limited public API.
-- The `connection.command` / `args` above are absolute paths for this machine — update them if the
-  repo or the Python environment moves.
+- The `connection` uses a relative `server.py` and `command: python`, which the connector manager resolves to absolute paths at load time, so no machine-specific paths are needed.

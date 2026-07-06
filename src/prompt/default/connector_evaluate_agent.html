@@ -132,7 +132,8 @@ Tools and connectors:
 
 **Structure &amp; Format (20 pts)** — Is the CONNECTOR.md well-formed and consistent?
 - Check: valid YAML frontmatter (no tabs, correct delimiters `---`)
-- Check: `name` in frontmatter matches the directory name
+- Check: `name` in frontmatter follows the `<directory>_connector` convention (e.g. directory `pubmed` → `name: pubmed_connector`)
+- Check: for a `stdio` connection, the config is portable — `command: python` + a relative script path in `args`, not a machine-specific absolute path
 - Check: logical section order (Instructions → Workflow → Output → Examples)
 - Check: consistent heading levels, no broken markdown
 - Score guide: 20 = clean structure; deduct per formatting issue

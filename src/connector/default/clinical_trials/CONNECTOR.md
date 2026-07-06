@@ -1,5 +1,5 @@
 ---
-name: clinical_trials
+name: clinical_trials_connector
 description: ClinicalTrials.gov (API v2) — search and analyze FDA-regulated clinical studies by condition, intervention, sponsor, investigator, eligibility, and endpoints.
 version: 1.0.0
 type: worker

@@ -1,5 +1,5 @@
 ---
-name: clinical_genomics
+name: clinical_genomics_connector
 description: Clinical genomics knowledge — ClinGen gene validity/dosage/variant curations, CIViC clinical evidence & assertions, Open Targets target/disease/drug associations. Aggregates three public sources (no auth).
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/clinical_genomics/server.py
+    - server.py
 actions:
   - clingen_gene_validity
   - clingen_dosage_sensitivity
@@ -79,5 +79,6 @@ Gene args accept HGNC symbols; Open Targets args accept names or ontology ids
 
 - Read-only; hits public ClinGen (FTP/ERepo), CIViC (GraphQL), and Open Targets (GraphQL)
   endpoints, so responses depend on their uptime. ClinGen actionability has no public API.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

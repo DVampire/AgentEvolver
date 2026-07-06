@@ -33,6 +33,14 @@ def _get(path: str, **params) -> list:
     return j.get("data", []) if isinstance(j, dict) else []
 
 
+def _get_raw(path: str, **params) -> dict:
+    """GET returning the full JSON object (for endpoints that are not paginated lists)."""
+    r = requests.get(f"{BASE}{path}", params=params, headers=HDRS, timeout=TIMEOUT)
+    if r.status_code >= 400:
+        raise RuntimeError(f"GTEx {path} -> {r.status_code}: {r.text[:200]}")
+    return r.json() or {}
+
+
 def _paging_total(path: str, **params) -> Optional[int]:
     r = requests.get(f"{BASE}{path}", params=params, headers=HDRS, timeout=TIMEOUT)
     if r.status_code >= 400:
@@ -233,6 +241,100 @@ def gtex_single_tissue_eqtls(gene: str, tissue: str, limit: int = 25) -> str:
     for d in data:
         rows.append(f"{d.get('variantId','')}\t{d.get('snpId','')}\t{d.get('pValue','')}\t{d.get('nes','')}")
     return _cap(rows, "eQTLs")
+
+
+def _resolve_variant(variant: str) -> str:
+    """Resolve a dbSNP rsID to a GTEx variantId; pass a variantId through unchanged."""
+    if not variant.lower().startswith("rs"):
+        return variant
+    data = _get("/dataset/variant", snpId=variant, datasetId=DATASET)
+    if not data:
+        raise RuntimeError(f"No GTEx variant for rsID '{variant}'.")
+    return data[0]["variantId"]
+
+
+@mcp.tool()
+def gtex_multi_tissue_eqtls(gene: str, limit: int = 40) -> str:
+    """Multi-tissue eQTL meta-analysis for a gene.
+
+    Attempts GTEx's Metasoft cross-tissue meta-analysis (per-tissue m-value/p-value).
+    Metasoft is not populated for every gene in the v2 API, so when it is empty this
+    falls back to aggregating the gene's significant single-tissue cis-eQTLs across all
+    tissues, grouped per variant: how many tissues each lead variant is significant in,
+    its best p-value, and its effect-size range — a practical multi-tissue summary.
+
+    Args:
+        gene: gene symbol or gencodeId (e.g. "ERAP2").
+        limit: max variants/rows to return (default 40).
+    """
+    gid, sym = _resolve_gene(gene)
+    cap = max(1, min(limit, MAX_ROWS))
+    meta = _get("/association/metasoft", gencodeId=gid, datasetId=DATASET, itemsPerPage=cap)
+    if meta:
+        rows = [f"# {sym} ({gid}) — multi-tissue eQTL meta-analysis (Metasoft, {DATASET})",
+                "variantId\ttissue\tmValue(posterior)\tpValue\tnes"]
+        for d in meta:
+            rows.append(f"{d.get('variantId','')}\t{d.get('tissueSiteDetailId','')}\t"
+                        f"{d.get('mValue','')}\t{d.get('pValue','')}\t{d.get('nes','')}")
+        return _cap(rows, "associations")
+
+    # Fallback: aggregate significant single-tissue eQTLs across tissues.
+    assoc = _get("/association/singleTissueEqtl", gencodeId=gid, datasetId=DATASET, itemsPerPage=1000)
+    if not assoc:
+        return f"No multi-tissue eQTL results for {sym} ({gid})."
+    by_variant: dict[str, dict] = {}
+    for a in assoc:
+        vid = a.get("variantId", "")
+        p = a.get("pValue")
+        nes = a.get("nes")
+        rec = by_variant.setdefault(vid, {"snpId": a.get("snpId", ""), "tissues": set(),
+                                          "best_p": None, "nes": []})
+        rec["tissues"].add(a.get("tissueSiteDetailId", ""))
+        if isinstance(p, (int, float)) and (rec["best_p"] is None or p < rec["best_p"]):
+            rec["best_p"] = p
+        if isinstance(nes, (int, float)):
+            rec["nes"].append(nes)
+    ranked = sorted(by_variant.items(), key=lambda kv: len(kv[1]["tissues"]), reverse=True)
+    rows = [f"# {sym} ({gid}) — multi-tissue eQTL summary across tissues ({DATASET}); "
+            f"Metasoft empty, aggregated from {len(assoc)} single-tissue eQTLs over "
+            f"{len({a.get('tissueSiteDetailId') for a in assoc})} tissues",
+            "variantId\tsnpId\tn_tissues\tbest_pValue\tnes_min..max"]
+    for vid, rec in ranked[:cap]:
+        nes = rec["nes"]
+        nes_rng = f"{min(nes):.3f}..{max(nes):.3f}" if nes else ""
+        rows.append(f"{vid}\t{rec['snpId']}\t{len(rec['tissues'])}\t{rec['best_p']}\t{nes_rng}")
+    return _cap(rows, "variants")
+
+
+@mcp.tool()
+def gtex_calculate_eqtl(gene: str, variant: str, tissue: str) -> str:
+    """Compute a single-tissue cis-eQTL for an arbitrary gene-variant pair on the fly.
+
+    Runs GTEx's dynamic eQTL calculation (dyneqtl): regresses the gene's expression
+    on the variant's genotype in one tissue and returns the association statistics,
+    even for pairs not in the pre-computed significant-eQTL tables.
+
+    Args:
+        gene: gene symbol or gencodeId (e.g. "TP53").
+        variant: GTEx variantId (e.g. "chr17_7676154_G_C_b38") or dbSNP rsID (resolved automatically).
+        tissue: tissueSiteDetailId (e.g. "Whole_Blood").
+    """
+    gid, sym = _resolve_gene(gene)
+    vid = _resolve_variant(variant)
+    res = _get_raw("/association/dyneqtl", gencodeId=gid, variantId=vid,
+                   tissueSiteDetailId=tissue, datasetId=DATASET)
+    if res.get("pValue") is None:
+        return f"No eQTL result for {sym} / {variant} in {tissue}."
+    n = len(res.get("genotypes") or res.get("data") or [])
+    fields = ["variantId", "gencodeId", "geneSymbol", "tissueSiteDetailId", "pValue",
+              "nes", "tStatistic", "maf", "homoRefCount", "hetCount", "homoAltCount",
+              "pValueThreshold"]
+    out = [f"# on-the-fly eQTL: {sym} ({gid}) vs {vid} in {tissue} ({DATASET})",
+           f"samples: {n}"]
+    for f in fields:
+        if res.get(f) is not None:
+            out.append(f"{f}: {res[f]}")
+    return "\n".join(out)
 
 
 if __name__ == "__main__":

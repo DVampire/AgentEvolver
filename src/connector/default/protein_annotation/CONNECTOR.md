@@ -1,15 +1,15 @@
 ---
-name: protein_annotation
-description: Protein annotation via EBI InterPro — InterPro entries (domains/families/sites), protein domain architecture, and Pfam clans & families. Public API, no auth.
+name: protein_annotation_connector
+description: Protein annotation via EBI InterPro (InterPro entries, domain architecture, Pfam clans & families), the Human Protein Atlas (per-gene records, tissue/subcellular search), and STRING (protein-protein interaction networks, homology). Public APIs, no auth.
 version: 1.0.0
 type: worker
 permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/protein_annotation/server.py
+    - server.py
 actions:
   - search_interpro_entries
   - get_interpro_entry
@@ -18,16 +18,28 @@ actions:
   - get_pfam_clan
   - get_pfam_family_proteins
   - get_pfam_family_proteomes
+  - get_protein_atlas_gene
+  - search_protein_atlas
+  - map_string_ids
+  - get_string_network
+  - get_string_similarity_scores
+  - get_string_best_similarity_hits
 ---
 
 # Protein Annotation
 
-A self-contained MCP connector for protein domains and families over the **public**
-EBI **InterPro** API (`www.ebi.ac.uk/interpro/api`), no authentication. Pfam is
-integrated into InterPro, so both InterPro entries and Pfam clans/families are covered.
+A self-contained MCP connector for protein domains, families, tissue expression and
+interaction networks over three **public** APIs (no authentication):
+
+- **EBI InterPro** (`www.ebi.ac.uk/interpro/api`) — InterPro entries and Pfam
+  clans/families (Pfam is integrated into InterPro).
+- **Human Protein Atlas** (`www.proteinatlas.org`) — per-gene records and search over
+  tissue/subcellular expression columns.
+- **STRING** (`string-db.org`) — protein-protein interaction networks and homology.
 
 ## Tools
 
+### InterPro / Pfam
 - `search_interpro_entries` — search entries (domains/families/sites) by keyword. Args: `query`, `limit`.
 - `get_interpro_entry` — entry details: type, GO terms, member DBs, description. Args: `interpro_id`.
 - `get_domain_architecture` — all InterPro/member entries on a protein. Args: `uniprot`, `limit`.
@@ -36,19 +48,29 @@ integrated into InterPro, so both InterPro entries and Pfam clans/families are c
 - `get_pfam_family_proteins` — UniProt proteins containing a Pfam family. Args: `pfam_id` (e.g. "PF00069"), `limit`.
 - `get_pfam_family_proteomes` — proteomes (organisms) containing a Pfam family. Args: `pfam_id`, `limit`.
 
+### Human Protein Atlas
+- `get_protein_atlas_gene` — single-gene HPA record (identity, protein class, RNA/protein tissue specificity, subcellular location). Args: `gene` (Ensembl id or symbol).
+- `search_protein_atlas` — search HPA and download selected columns. Args: `query`, `columns` (HPA column codes), `limit`.
+
+### STRING
+- `map_string_ids` — map gene symbols to STRING protein ids. Args: `genes` (list), `species`.
+- `get_string_network` — interaction network for a gene set. Args: `genes` (list), `species`, `required_score`.
+- `get_string_similarity_scores` — all-vs-all homology bit-scores within a gene set. Args: `genes` (list), `species`.
+- `get_string_best_similarity_hits` — each protein's best homolog in target species. Args: `genes` (list), `species`, `species_b`.
+
 ## Typical workflow
 
-1. `search_interpro_entries` to find a domain/family; `get_interpro_entry` for its GO terms
-   and member databases.
-2. `get_domain_architecture` for the domains on a specific protein (by UniProt accession).
-3. `search_pfam_clans` / `get_pfam_clan` for superfamilies; `get_pfam_family_proteins` /
-   `get_pfam_family_proteomes` to see where a Pfam family occurs.
+1. `search_interpro_entries` → `get_interpro_entry`; `get_domain_architecture` for a specific protein.
+2. `search_pfam_clans` / `get_pfam_clan`; `get_pfam_family_proteins` / `get_pfam_family_proteomes`.
+3. `get_protein_atlas_gene` / `search_protein_atlas` for tissue expression and localization.
+4. `map_string_ids` → `get_string_network` for interactions; `get_string_similarity_scores` /
+   `get_string_best_similarity_hits` for within-set and cross-species homology.
 
 ## Notes
 
-- Read-only; hits the public EBI InterPro API, so responses depend on its uptime.
-  (STRING interaction networks and Human Protein Atlas were intentionally excluded — their
-  hosts are not reachable from this build environment; they can be added separately where
-  reachable.)
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- Read-only; hits the public InterPro, Human Protein Atlas and STRING APIs, so responses
+  depend on their uptime. STRING uses POST with a `caller_identity`; HPA search uses its
+  `search_download.php` column codes (see proteinatlas.org for the full list).
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

@@ -107,7 +107,7 @@ Tools and connectors:
 **Verification**
 - After every edit, read back the affected section to confirm the change is correct.
 - Verify YAML frontmatter remains valid (no tabs, correct `---` delimiters).
-- Before calling `done_tool`, confirm `name` in frontmatter still matches the directory name.
+- Before calling `done_tool`, confirm `name` in frontmatter still follows the `<directory>_connector` convention (e.g. directory `pubmed` → `name: pubmed_connector`). Do not rename it to the bare directory name. For `stdio` connections keep the connection portable — `command: python` + a relative script path in `args`, never a machine-specific absolute path.
 </optimization-rules>
 
 <plan-rules>

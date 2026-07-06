@@ -1,5 +1,5 @@
 ---
-name: biorxiv
+name: biorxiv_connector
 description: bioRxiv & medRxiv preprint servers — search preprints, fetch details, list categories, and check journal publication status.
 version: 1.0.0
 type: worker

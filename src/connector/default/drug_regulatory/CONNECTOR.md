@@ -1,5 +1,5 @@
 ---
-name: drug_regulatory
+name: drug_regulatory_connector
 description: FDA drug data — Drugs@FDA applications, approvals, pharmacologic classes, generic equivalents, SPL drug labels. Over the public openFDA API (no auth).
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/drug_regulatory/server.py
+    - server.py
 actions:
   - search_drug_applications
   - get_drug_application
@@ -69,5 +69,6 @@ Search SPL drug labels; returns brand, indications snippet, SPL id.
 
 - Read-only; hits the public openFDA API (rate-limited without an API key), so responses
   depend on openFDA uptime.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

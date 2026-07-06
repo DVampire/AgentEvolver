@@ -35,17 +35,24 @@ The three sub-agents are headless: each runs one phase autonomously and returns 
   ├── CONNECTOR.md    # REQUIRED — YAML frontmatter (connection + actions) + markdown body (module intro + per-action docs)
   └── references/     # optional — extra docs the agent READs as needed
   ```
+- **Naming**: the frontmatter `name` (registry key) follows the `<directory>_connector` convention — directory `pubmed` → `name: pubmed_connector`. Keep it snake_case.
+- **Portable stdio connections**: never hard-code machine-specific absolute paths. Use `command: python` and a **relative** script path in `args` (e.g. `server.py`, relative to the connector directory). The connector manager resolves these at load time — `command` → the running interpreter (`sys.executable`), and the relative `*.py` → an absolute path under the connector directory — so the same `CONNECTOR.md` works on any machine/checkout/env. (`streamable_http`/`sse` connectors carry only a `url` and need no paths.)
 - **CONNECTOR.md frontmatter** — required: `name`, `description`, `version`, `type`, plus `connection` and `actions`:
   ```yaml
   ---
-  name: pubmed
+  name: pubmed_connector
   description: PubMed — search biomedical literature, fetch article metadata and full text.
   version: 1.0.0
   type: worker
   permission_mode: read_only
   connection:
     transport: streamable_http        # or: stdio | sse
-    url: https://pubmed.mcp.claude.com/mcp   # for stdio: use command + args instead
+    url: https://pubmed.mcp.claude.com/mcp
+    # for a local stdio server instead of url:
+    # transport: stdio
+    # command: python                 # resolved to sys.executable
+    # args:
+    #   - server.py                    # relative to this connector dir; resolved to an absolute path
   actions:
     - search_articles
     - get_article_metadata

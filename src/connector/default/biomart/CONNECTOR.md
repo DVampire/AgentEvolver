@@ -1,5 +1,5 @@
 ---
-name: biomart
+name: biomart_connector
 description: Ensembl BioMart — genomic annotations, identifier translation, and cross-reference queries over the public Ensembl BioMart REST API (no auth).
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/biomart/server.py
+    - server.py
 actions:
   - list_marts
   - list_datasets
@@ -76,5 +76,6 @@ Translate many identifiers at once between two attribute types.
 ## Notes
 
 - Read-only; queries hit public Ensembl mirrors, so responses depend on Ensembl uptime.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

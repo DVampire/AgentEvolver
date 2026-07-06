@@ -1,5 +1,5 @@
 ---
-name: cbioportal
+name: cbioportal_connector
 description: Cancer genomics cohorts — cBioPortal studies, mutations, copy-number alterations, and clinical attributes, over the public cBioPortal REST API (no auth).
 version: 1.0.0
 type: worker
@@ -7,9 +7,9 @@ permission_mode: read_only
 featured: true
 connection:
   transport: stdio
-  command: /mnt/agent-framework/wentaozhang/miniconda3/envs/agentos/bin/python
+  command: python
   args:
-    - /mnt/agent-framework/wentaozhang/AgentEvolver/src/connector/default/cbioportal/server.py
+    - server.py
 actions:
   - cbioportal_list_studies
   - cbioportal_get_study
@@ -67,5 +67,6 @@ Clinical attributes recorded for a study's patients/samples.
 ## Notes
 
 - Read-only; hits the public cBioPortal API, so responses depend on its uptime.
-- The `connection.command` / `args` above are absolute paths for this machine — update
-  them if the repo or the Python environment moves.
+- The `connection` above uses a relative `server.py` and `command: python`; the connector
+  manager resolves both at load time (`server.py` → this connector's directory, `python` →
+  the running interpreter via `sys.executable`), so no machine-specific paths are needed.

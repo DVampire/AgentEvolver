@@ -271,14 +271,43 @@ def rhea_get_reaction(rhea_id: str) -> str:
 
 
 # ====================================================================== BindingDB
+def _bdb_find_list(obj):
+    """Defensively locate the list of affinity records in a BindingDB JSON response."""
+    if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+        return obj
+    if isinstance(obj, dict):
+        for v in obj.values():
+            got = _bdb_find_list(v)
+            if got:
+                return got
+    return None
+
+
+def _bdb_num(x):
+    try:
+        return float(str(x).lstrip("<>=~"))
+    except Exception:
+        return float("inf")
+
+
+def _bdb_field(d: dict, *names):
+    """Read a field that BindingDB may return bare or prefixed with 'bdb.'."""
+    for n in names:
+        for key in (n, f"bdb.{n}"):
+            if d.get(key) not in (None, ""):
+                return d[key]
+    return ""
+
+
 @mcp.tool()
-def bindingdb_get_affinities(uniprot: str, cutoff_nm: int = 100, limit: int = 40) -> str:
-    """Get measured binding affinities for a protein target from BindingDB.
+def bindingdb_ligands_by_target(uniprot: str, cutoff_nm: int = 100, limit: int = 40) -> str:
+    """Get measured ligand binding affinities for a protein target from BindingDB.
 
     Args:
         uniprot: UniProt accession of the target (e.g. "P00533" for EGFR).
         cutoff_nm: only return ligands with affinity <= this many nM (default 100 = potent).
         limit: max ligands (default 40).
+    Returns ligands sorted by affinity (most potent first).
     """
     r = _get(f"{BINDINGDB}/getLigandsByUniprots", uniprot=uniprot, cutoff=cutoff_nm,
              code="0", response="application/json")
@@ -286,33 +315,48 @@ def bindingdb_get_affinities(uniprot: str, cutoff_nm: int = 100, limit: int = 40
         data = r.json()
     except Exception:
         return f"BindingDB returned no parseable data for {uniprot}."
-
-    # Defensively locate the list of affinity records.
-    def _find_list(obj):
-        if isinstance(obj, list) and obj and isinstance(obj[0], dict):
-            return obj
-        if isinstance(obj, dict):
-            for v in obj.values():
-                got = _find_list(v)
-                if got:
-                    return got
-        return None
-    recs = _find_list(data) or []
+    recs = _bdb_find_list(data) or []
     if not recs:
         return f"No BindingDB affinities for {uniprot} within {cutoff_nm} nM."
-
-    def num(x):
-        try:
-            return float(str(x).lstrip("<>=~"))
-        except Exception:
-            return float("inf")
-    recs.sort(key=lambda d: num(d.get("affinity")))
-    rows = ["monomerId\taffinity_type\taffinity(nM)\tsmiles"]
+    recs.sort(key=lambda d: _bdb_num(_bdb_field(d, "affinity")))
+    rows = [f"# BindingDB ligands for {uniprot} (<= {cutoff_nm} nM)",
+            "monomerId\taffinity_type\taffinity(nM)\tsmiles"]
     for d in recs[:max(1, limit)]:
-        mid = d.get("monomerid") or d.get("monomerId", "")
-        smi = d.get("smile") or d.get("smiles", "") or ""
-        rows.append(f"{mid}\t{d.get('affinity_type','')}\t{d.get('affinity','')}\t{smi[:60]}")
+        mid = _bdb_field(d, "monomerid", "monomerId")
+        smi = _bdb_field(d, "smile", "smiles")
+        rows.append(f"{mid}\t{_bdb_field(d,'affinity_type')}\t{_bdb_field(d,'affinity')}\t{smi[:60]}")
     return _cap(rows, "ligands")
+
+
+@mcp.tool()
+def bindingdb_targets_by_compound(smiles: str, similarity_cutoff: float = 0.85, limit: int = 40) -> str:
+    """Find protein targets bound by compounds structurally similar to a query molecule.
+
+    Uses BindingDB's getTargetByCompound: does a 2D similarity search for the query
+    SMILES and returns the targets its similar compounds bind, with measured affinities.
+
+    Args:
+        smiles: query molecule SMILES (e.g. "CC(=O)OC1=CC=CC=C1C(=O)O" for aspirin).
+        similarity_cutoff: Tanimoto similarity threshold, 0-1 (default 0.85).
+        limit: max target-affinity rows (default 40).
+    """
+    r = _get(f"{BINDINGDB}/getTargetByCompound", smiles=smiles,
+             cutoff=str(similarity_cutoff), response="application/json")
+    try:
+        data = r.json()
+    except Exception:
+        return f"BindingDB returned no parseable data for SMILES '{smiles}'."
+    recs = _bdb_find_list(data) or []
+    if not recs:
+        return f"No BindingDB targets for compounds similar to '{smiles}' (Tanimoto >= {similarity_cutoff})."
+    recs.sort(key=lambda d: _bdb_num(_bdb_field(d, "affinity")))
+    rows = [f"# BindingDB targets for compounds similar to query (Tanimoto >= {similarity_cutoff})",
+            "target\tspecies\taffinity_type\taffinity(nM)\tsmiles"]
+    for d in recs[:max(1, limit)]:
+        smi = _bdb_field(d, "smiles", "smile")
+        rows.append(f"{_bdb_field(d,'target')}\t{_bdb_field(d,'species')}\t"
+                    f"{_bdb_field(d,'affinity_type')}\t{_bdb_field(d,'affinity')}\t{smi[:50]}")
+    return _cap(rows, "targets")
 
 
 if __name__ == "__main__":

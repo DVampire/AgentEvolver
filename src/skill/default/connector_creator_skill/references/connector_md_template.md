@@ -1,4 +1,5 @@
 ---
+# name follows the `<directory>_connector` convention (dir `example` -> `example_connector`)
 name: my_connector
 description: One line — what this MCP server provides and when to use it (this is how an agent decides to reach for it).
 version: 1.0.0
@@ -9,9 +10,11 @@ connection:
   transport: streamable_http
   # for streamable_http / sse: a URL endpoint
   url: https://example.mcp.host/mcp
-  # for stdio instead of url, use:
-  # command: python
-  # args: ["-m", "my_mcp_server"]
+  # for a LOCAL stdio server instead of url, use command + args. Keep it portable:
+  # command: python           # resolved to sys.executable (the running interpreter)
+  # args:
+  #   - server.py             # RELATIVE to this connector dir; resolved to an absolute path at load time
+  # (do NOT hard-code machine-specific absolute paths)
 actions:
   - search_items
   - get_item

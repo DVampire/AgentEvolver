@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Quick structural validation for a connector directory (CONNECTOR.md)."""
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -51,6 +52,11 @@ def validate_connector(connector_path):
     name = str(fm.get('name', '')).strip()
     if not re.match(r'^[a-z0-9_]+$', name):
         return False, f"Name '{name}' should be snake_case (lowercase letters, digits, underscores)"
+    if not name.endswith('_connector'):
+        return False, (
+            f"Name '{name}' must follow the '<directory>_connector' convention "
+            f"(e.g. directory 'pubmed' -> name 'pubmed_connector')"
+        )
 
     # connection must specify a transport and an endpoint (url or command)
     conn = fm.get('connection')
@@ -60,6 +66,23 @@ def validate_connector(connector_path):
         return False, "'connection.transport' is required (streamable_http | sse | stdio)"
     if not (conn.get('url') or conn.get('command')):
         return False, "'connection' must have a 'url' (http/sse) or a 'command' (stdio)"
+
+    # stdio connections must be portable — no machine-specific absolute paths.
+    if conn.get('transport') == 'stdio':
+        command = str(conn.get('command', ''))
+        if os.path.isabs(command):
+            return False, (
+                f"stdio 'connection.command' should be portable — use 'python' "
+                f"(resolved to sys.executable at load time), not the absolute path '{command}'"
+            )
+        for a in (conn.get('args') or []):
+            a = str(a)
+            if a.endswith('.py') and os.path.isabs(a):
+                return False, (
+                    f"stdio 'connection.args' should use a RELATIVE script path "
+                    f"(e.g. 'server.py', resolved against the connector dir at load time), "
+                    f"not the absolute path '{a}'"
+                )
 
     # actions must be a non-empty list of names
     actions = fm.get('actions')

@@ -1,6 +1,7 @@
 """Connector Context Manager for loading, managing, and serving connectors (MCP servers)."""
 
 import os
+import sys
 import json
 import re
 import shutil
@@ -152,6 +153,49 @@ class ConnectorContextManager(BaseModel):
 
         return configs
 
+    @staticmethod
+    def _resolve_connection(connection: Dict[str, Any], connector_dir: Path) -> Dict[str, Any]:
+        """Make a stdio connection config portable across machines/environments.
+
+        CONNECTOR.md should declare the connection relative to the connector, e.g.::
+
+            connection:
+              transport: stdio
+              command: python
+              args:
+                - server.py
+
+        This resolves that at load time so the config never needs machine-specific
+        absolute paths:
+
+        * ``command`` — any Python interpreter (``python``/``python3`` or an absolute
+          ``.../bin/python``) is replaced with ``sys.executable``, i.e. the interpreter
+          currently running the framework, so it always matches the active environment.
+        * ``args`` — a relative ``*.py`` script is resolved against ``connector_dir``
+          (the connector's own directory), so it works wherever the repo is checked out.
+
+        Non-stdio transports (e.g. ``streamable_http`` hosted connectors) are returned
+        unchanged.
+        """
+        conn = dict(connection or {})
+        if conn.get("transport") != "stdio":
+            return conn
+
+        cmd = str(conn.get("command", "")).strip()
+        if cmd and Path(cmd).name.startswith("python"):
+            conn["command"] = sys.executable
+
+        resolved_args = []
+        for a in (conn.get("args") or []):
+            a_str = str(a)
+            if a_str.endswith(".py") and not os.path.isabs(a_str):
+                resolved_args.append(str((connector_dir / a_str).resolve()))
+            else:
+                resolved_args.append(a)
+        if "args" in conn:
+            conn["args"] = resolved_args
+        return conn
+
     def _parse_connector_dir(self, connector_dir: Path) -> ConnectorConfig:
         """Parse a single connector directory (its CONNECTOR.md) into a ConnectorConfig.
 
@@ -170,7 +214,7 @@ class ConnectorContextManager(BaseModel):
         require_grad = str(frontmatter.get("require_grad", "false")).lower() == "true"
         type_value = frontmatter.get("type", "worker")
         permission_mode = frontmatter.get("permission_mode", "workspace_write")
-        connection = frontmatter.get("connection", {}) or {}
+        connection = self._resolve_connection(frontmatter.get("connection", {}) or {}, connector_dir)
         actions = list(frontmatter.get("actions", []) or [])
         action_schemas = frontmatter.get("action_schemas", {}) or {}
 

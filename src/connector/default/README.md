@@ -20,12 +20,12 @@ and refresh the real action list.
 
 | field            | required | meaning                                                             |
 |------------------|----------|---------------------------------------------------------------------|
-| `name`           | yes      | Connector name (registry key); should match the directory name.     |
+| `name`           | yes      | Connector name (registry key); convention is `<dir>_connector` (e.g. dir `biomart` → `biomart_connector`). |
 | `description`    | yes      | One-line description shown in the prompt context.                   |
 | `version`        | no       | Defaults to `1.0.0`.                                                 |
 | `type`           | no       | Free-form label (e.g. `worker`); defaults to `worker`.              |
 | `permission_mode`| no       | `read_only` / `workspace_write` / `danger_full_access`.             |
-| `connection`     | yes      | MCP connection config in `MultiServerMCPClient` format (nested).    |
+| `connection`     | yes      | MCP connection config in `MultiServerMCPClient` format (nested). For stdio, declare it portably — `command: python` and a **relative** `server.py` under `args`; see "Portable paths" below. |
 | `actions`        | no       | Statically declared MCP tool names for prompt display.              |
 | `action_schemas` | no       | Optional per-action argument schemas.                               |
 
@@ -40,7 +40,7 @@ Example — see [`biomart/CONNECTOR.md`](./biomart/CONNECTOR.md):
 
 ```markdown
 ---
-name: biomart
+name: biomart_connector
 description: Ensembl BioMart — genomic annotations, identifier translation, and cross-reference queries.
 version: 1.0.0
 type: worker
@@ -48,7 +48,7 @@ connection:
   transport: stdio
   command: python
   args:
-    - ./servers/biomart_server.py
+    - server.py
 actions:
   - list_marts
   - query
@@ -72,7 +72,26 @@ tool manager. Call it directly:
 
 ```python
 await connector_manager(
-    name="biomart",
+    name="biomart_connector",
     input={"action": "list_marts", "args": {}},
 )
 ```
+
+## Portable paths (stdio connectors)
+
+Do **not** hard-code machine-specific absolute paths in `connection`. Declare it
+relative to the connector and let `connector_manager` resolve it at load time:
+
+```yaml
+connection:
+  transport: stdio
+  command: python          # resolved to sys.executable (the running interpreter)
+  args:
+    - server.py            # resolved against this connector's own directory
+```
+
+`ConnectorContext._resolve_connection` rewrites `command` (any `python`/`python3` or
+absolute `.../bin/python`) to `sys.executable`, and any relative `*.py` arg to an
+absolute path under the connector directory. So the same `CONNECTOR.md` works on any
+machine, checkout location, or Python environment. `streamable_http` (hosted) connectors
+carry only a `url` and are left untouched.
