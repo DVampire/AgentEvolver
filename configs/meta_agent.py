@@ -98,7 +98,27 @@ skill_names = [
     # orchestrator skill: how to drive the connector create->evaluate->improve loop
     "connector_creator_skill",
 ]
-connector_names = []
+connector_names = [
+    "biomart",
+    "cbioportal",
+    "cellguide",
+    "chemistry",
+    "clinical_genomics",
+    "drug_regulatory",
+    "expression",
+    "genes_ontologies",
+    "genomes",
+    "human_genetics",
+    "molecule_toolkit",
+    "literature_graph",
+    "omics_archives",
+    "protein_annotation",
+    "regulation",
+    "research_resources",
+    "rna",
+    "structures_interactions",
+    "variants",
+]
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(require_grad=False)
