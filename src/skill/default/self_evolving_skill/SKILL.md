@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: The global playbook for self-evolution — how MetaAgent improves the system's OWN capabilities (agents, prompts, tools, skills, connectors, environments) while serving a user task. Use whenever a task is blocked or degraded by a missing/weak capability, when a sub-agent repeatedly fails for a fixable reason, or when the user explicitly asks to create/improve/evaluate a capability. Provides the cross-cutting loop (decide → generate/optimize → evaluate → adopt or roll back), the enable_evolving gate rules, and how to drive the per-type creator skills. NOT for the user's own deliverable work.
-version: 1.0.0
+version: 1.1.0
 type: [orchestrator]
 license: N/A
 category: meta
@@ -49,15 +49,41 @@ tries to overwrite a frozen entity is **blocked at registration**.
 
 ## When to trigger evolution
 
-Trigger only on a real signal, and keep it subordinate to the user task and the budget:
-- A capability the task needs is **missing** → `generator`.
-- An existing **evolvable** capability is present but **weak/buggy** and that is blocking
-  progress → `optimizer`.
-- A sub-agent **repeatedly fails** (same failure ≥2×) for a reason a better
-  tool/prompt/skill would fix → evolve that capability, then retry the user task.
+**The core question every defect forces: fix *this deliverable*, or evolve a *capability*?**
+When a verifier (e.g. `browser_agent`, `reviewer_agent`) or a failed sub-task surfaces a
+problem, decide with this discriminator:
 
-Do NOT evolve for its own sake, when the budget is TIGHT/CRITICAL, or to "improve" a
-built-in you cannot touch.
+> *If I re-dispatch the same agent with "fix X", will it plausibly succeed using the
+> capabilities it already has?*
+> **Yes → `continue`** (redo/fix the work — the default). **No, it structurally lacks the
+> means and will fail the same way → `evolve`.**
+
+Evolution targets a **capability** defect, not a one-off weak attempt. Trigger only on a
+real, observed signal — one of:
+
+1. **Missing capability** — the task needs an operation NO tool/skill/connector provides,
+   and retrying with existing ones cannot work → `generator` (build it in `extension/`).
+   *Example: the deliverable needs real product images and there is no image/media search tool.*
+2. **Recurring structural failure** — the same agent fails the same way **≥2×** despite
+   corrective guidance → the fault is in its prompt/tool, not the attempt → `optimizer`
+   (if the target is evolvable) or `generator` (a skill that encodes the fix).
+   *Example: a code agent keeps emitting oversized single actions that fail to parse.*
+3. **Quality ceiling from a missing method** — output is *systematically* below bar on a
+   dimension because the agent has no method/knowledge to do better and per-task
+   instruction won't close the gap → `generator` (a skill carrying the methodology).
+   *Example: UIs keep coming out generic because no design skill is being consulted.*
+
+**Check the cheap fixes BEFORE evolving** — most "missing capability" is really "not
+wired in / not used":
+- Is a suitable capability already registered but **not in the roster / allowlist**? Add it,
+  don't regenerate a duplicate. (E.g. a web-search or media tool that exists but wasn't loaded.)
+- Did the sub-agent **ignore an existing skill** it should have used? Re-dispatch instructing
+  it to invoke that skill (e.g. a design skill for UI), rather than building a new one.
+- Only `generator` when the capability is genuinely absent.
+
+**Do NOT evolve** on a first-time fixable deliverable defect (→ `continue`), a one-off
+transient error (→ retry), when the budget is TIGHT/CRITICAL (→ finish the task), or to
+"improve" a frozen built-in (blocked at registration — generate an `extension/` capability).
 
 ## The loop (run it as ordered rounds)
 

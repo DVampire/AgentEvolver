@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="online_shop_site">
   <meta name="description" content="Build and deploy a large, polished React shopping website with a product recommendation system">
-  <meta name="version" content="4.0.0">
+  <meta name="version" content="4.1.0">
   <link rel="stylesheet" href="../../src/visual/css/task.css">
   <script src="../../src/visual/js/task.js"></script>
 </head>
@@ -23,8 +23,10 @@ past orders.
 - A substantial catalog: at least ~30 products spanning several categories (e.g.
   electronics, home, fashion, books…), each with a name, price, image, rating,
   short description, and category.
-- Product images must be self-contained (bundled/inline) — do not depend on an external
-  image service.
+- **Real, attractive product images** — actual photos relevant to each product, not
+  placeholder boxes or generic colored SVGs. Fetch real images and **bundle them into the
+  project** so the deployed site is self-contained (no dependency on an external image
+  host at runtime, which breaks when that host is blocked/offline).
 - A real React single-page app with multiple routed pages, not a single static file.
 </scope>
 

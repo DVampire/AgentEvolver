@@ -80,6 +80,10 @@ tool_names = [
     "deploy_tool",
     "evolution_tool",
     "escalate_tool",
+    # web retrieval — search the web, fetch a page, and download REAL images to bundle
+    "web_searcher_tool",
+    "web_fetcher_tool",
+    "media_search_tool",
 ]
 skill_names = [
     # worker skills — the skill pool for this session's sub-agents (code/general/triads).

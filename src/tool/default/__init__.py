@@ -3,6 +3,7 @@ from .code_interpreter import CodeInterpreterTool
 from .done import DoneTool
 from .web_fetcher import WebFetcherTool
 from .web_searcher import WebSearcherTool
+from .media_search import MediaSearchTool
 from .mdify import MdifyTool
 from .read_file import ReadFileTool
 from .write_file import WriteFileTool
