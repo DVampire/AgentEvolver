@@ -125,6 +125,17 @@ class HostSandbox(Sandbox):
         with open(path, "rb") as fh:
             return fh.read()
 
+    def launched_alive(self) -> bool:
+        """True if a background server was launched and is still running.
+
+        Returns True when nothing has been launched yet (nothing to judge), and False
+        only when we started a server that has since exited (e.g. failed to bind a port)
+        — the deployment manager uses this so a dead server is not mistaken for "up".
+        """
+        if not self._procs:
+            return True
+        return any(p.poll() is None for p in self._procs)
+
     # ------------------------------------------------------------- network
     async def expose_port(self, port: int) -> str:
         # The server binds a host port directly; it is reachable at localhost on this host.

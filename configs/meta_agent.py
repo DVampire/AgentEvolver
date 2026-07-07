@@ -6,6 +6,7 @@ with read_base():
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
     from .agents.monitor_agent import monitor_agent
+    from .agents.browser_agent import browser_agent
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .agents.tool_generate_agent import tool_generate_agent
@@ -49,6 +50,9 @@ agent_names = [
     "general_agent",
     "reviewer_agent",
     "monitor_agent",
+    # browser agent — drives a real browser to VERIFY web/UI deliverables hands-on
+    # (render, click, check images/console) via the browser_environment.
+    "browser_agent",
     "tool_optimize_agent",
     "tool_evaluate_agent",
     "tool_generate_agent",
@@ -135,6 +139,23 @@ connector_names = [
     "ketcher_chemistry_connector",
 ]
 
+#-----------------ENVIRONMENT CONFIGS-----------------
+# browser_agent needs a real browser to verify web/UI deliverables. use_sandbox=False
+# so it runs Playwright/chromium directly on the host (no container runtime required).
+env_names = [
+    "browser_environment",
+]
+browser_environment = dict(
+    base_dir="environment/browser",
+    headless=True,
+    viewport=dict(width=1280, height=900),
+    use_sandbox=False,
+    use_som=True,
+    state_detail="elements",
+    max_state_elements=0,
+    command_timeout=30.0,
+)
+
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(enable_evolving=False)
 git_tool.update(timeout=60)
@@ -174,6 +195,15 @@ reviewer_agent.update(
 monitor_agent.update(
     base_dir=workspace_dir,
     enable_evolving=False,
+)
+
+browser_agent.update(
+    base_dir=workspace_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    env_name="browser_environment",
+    enable_evolving=False,
+    use_memory=True,
 )
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------

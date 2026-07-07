@@ -37,6 +37,7 @@ from src.memory import memory_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
 from src.connector import connector_manager
+from src.environment import environment_manager
 from src.agent import agent_manager
 from src.extension import extension_manager
 from src.hook import hook_manager
@@ -121,6 +122,12 @@ async def main():
     connector_names = getattr(config, "connector_names", None)
     await connector_manager.initialize(connector_names=connector_names)
     logger.info(f"| ✅ Connectors: {await connector_manager.list()}")
+
+    logger.info("| 🌐 Initializing environments...")
+    env_names = getattr(config, "env_names", None)
+    if env_names:
+        await environment_manager.initialize(env_names=env_names)
+        logger.info(f"| ✅ Environments: {await environment_manager.list()}")
 
     logger.info("| 🤖 Initializing agents...")
     await agent_manager.initialize(agent_names=config.agent_names)

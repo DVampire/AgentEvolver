@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="name" content="online_shop_site">
-  <meta name="description" content="Build, deploy, and verify a small online shopping website">
-  <meta name="version" content="1.0.0">
+  <meta name="description" content="Build and deploy a large, polished React shopping website with a product recommendation system">
+  <meta name="version" content="4.0.0">
   <link rel="stylesheet" href="../../src/visual/css/task.css">
   <script src="../../src/visual/js/task.js"></script>
 </head>
@@ -12,51 +12,60 @@
 
 <div class="task">
 <objective>
-Build a small but working online shopping website, deploy it so it is reachable at
-a URL, and confirm it actually serves. Product browsing → add to cart → checkout →
-an order is recorded and viewable in a simple admin/orders view. Put all source under
-`{project_root}/work_dir/online_shop/` (do NOT modify `src/`); deploy it with the
-`deploy_tool` / `deploy_skill`.
+Build and deploy a **large, polished, production-quality React online shopping website**
+centered on a **product recommendation** experience. It should feel like a real modern
+e-commerce site: visually beautiful, responsive, and feature-complete — a user can
+discover products, get relevant recommendations, manage a cart, check out, and review
+past orders.
 </objective>
 
+<scope>
+- A substantial catalog: at least ~30 products spanning several categories (e.g.
+  electronics, home, fashion, books…), each with a name, price, image, rating,
+  short description, and category.
+- Product images must be self-contained (bundled/inline) — do not depend on an external
+  image service.
+- A real React single-page app with multiple routed pages, not a single static file.
+</scope>
+
 <requirements>
-- Storefront: a product catalog (at least 6 seeded products with name, price, image
-  placeholder), a product/detail view, and a shopping cart (add / remove / change qty,
-  running total).
-- Checkout: a form (name + shipping address) that places an order and shows an order
-  confirmation with an order id.
-- Orders/admin: a page (or API endpoint) that lists placed orders with their items and
-  totals — this is the "backend order management" piece.
-- Persistence: orders survive within the running server (in-memory store is acceptable
-  for this demo; a file/SQLite store is better).
-- Deployed: the app is served via `deploy_tool` and bound to a reachable URL. The server
-  MUST listen on `0.0.0.0` (not `127.0.0.1`).
-- Self-contained and runnable from a clean checkout of its own directory.
+Discovery & catalog:
+- A home/landing page with hero, featured products, and recommended sections.
+- Category browsing, keyword search, and filtering (by category, price range, rating)
+  plus sorting (price, rating, newest).
+- A product detail page for each product.
+
+Recommendations (the headline feature):
+- A recommendation system that surfaces relevant products — e.g. "related products" and
+  "you may also like" on the product page and cart, plus a personalized/recommended
+  section driven by what the user has viewed or added.
+
+Cart, checkout & orders:
+- Cart: add / remove / change quantity with a running total; persists across reloads.
+- Checkout: a form that places an order and shows a confirmation with an order id.
+- Orders: an order-history view listing past orders with items and totals, persisted so
+  they survive a page reload.
+- A wishlist / favorites feature.
+
+UI/UX quality (must be beautiful and coherent):
+- A consistent, modern design system (typography, spacing, color), responsive across
+  desktop and mobile, with polished components and sensible loading/empty states.
+
+Deployment:
+- Deployed and reachable at a URL.
 </requirements>
 
 <acceptance>
-The reviewer must verify HANDS-ON (reach the URL / drive it / hit the API), not by
-reading claims:
-```
-GET  <url>/                      → storefront renders, shows >= 6 products
-add two products to the cart     → cart shows both, total = sum of prices*qty
-POST checkout with name+address  → returns an order confirmation with an order id
-GET  <url>/orders (or admin)     → the just-placed order appears with its items & total
-```
+"Done" means the live site genuinely works and looks good when a real user drives it in
+a browser:
+- The home page and storefront render richly, with product images loading.
+- Search, filtering, sorting, and category browsing work.
+- Recommendation sections appear and show relevant products.
+- Adding products updates the cart and total; checkout produces an order confirmation
+  with an order id; the orders view lists it and it survives a reload.
+- The UI is visually polished and responsive, with no broken images and no JavaScript
+  errors.
 </acceptance>
-
-<plan>
-- Decide the stack (a single Python/FastAPI app with server-rendered pages + an in-memory
-  or SQLite order store is the simplest thing that meets every requirement; a static
-  storefront alone cannot record orders).
-- Build the app under `work_dir/online_shop/` (storefront, cart, checkout, orders).
-- Deploy it with `deploy_tool` (runtime `python`; ensure the server binds 0.0.0.0) and
-  obtain its URL.
-- Verify every acceptance step hands-on against the live URL.
-- If a needed capability is missing or a step keeps failing, self-evolve (generate/optimize
-  the missing tool/skill) or escalate, then retry — do not silently give up.
-- Report the deployed URL and which acceptance checks passed.
-</plan>
 </div>
 
 </body>

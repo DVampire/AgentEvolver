@@ -132,6 +132,26 @@ class DeploymentManagerServer(BaseModel):
         base = os.path.dirname(self._registry_path) if self._registry_path else os.path.join("work_dir", "run", "deploy")
         return os.path.join(base, "sites", site_id, "app")
 
+    @staticmethod
+    def _free_port(preferred: int) -> int:
+        """Return ``preferred`` if free on the host, else an OS-assigned free port.
+
+        Used only for the host backend, where sites share the host's port space (a
+        container backend has its own isolated ports, so no collision).
+        """
+        import socket
+        for cand in (preferred, 0):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("0.0.0.0", cand))
+                return s.getsockname()[1]
+            except OSError:
+                continue
+            finally:
+                s.close()
+        return preferred
+
     # --------------------------------------------------------------- registry io
     def _load(self) -> None:
         if self._registry_path and os.path.exists(self._registry_path):
@@ -180,8 +200,19 @@ class DeploymentManagerServer(BaseModel):
         if backend == "host":
             spec.workdir = self._host_site_dir(request.site_id)
             log_path = os.path.join(os.path.dirname(spec.workdir), "server.log")
+            # Host sites share the machine's ports: if the requested one is taken, move to
+            # a free port and reflect it in the start command (literal port) and PORT env.
+            free = self._free_port(spec.port)
+            if free != spec.port:
+                logger.info(f"| 🖥️  port {spec.port} busy → using free port {free} for '{request.site_id}'")
+                spec.start = spec.start.replace(str(spec.port), str(free))
+                spec.port = free
         else:
             log_path = "/tmp/deploy_site.log"
+
+        # Expose the chosen port as $PORT so start commands using it (e.g. custom
+        # `... --port $PORT`) resolve, regardless of backend.
+        spec.env = {**spec.env, "PORT": str(spec.port)}
 
         rec = SiteRecord(
             site_id=request.site_id,
@@ -282,9 +313,16 @@ class DeploymentManagerServer(BaseModel):
         hc = spec.health
         if hc.type == "none":
             return True
+        # If the backend can tell us our launched server has died (e.g. failed to bind
+        # its port), stop immediately — otherwise a stale/other server on the same port
+        # could answer the probe and produce a false "healthy".
+        alive_check = getattr(sandbox, "launched_alive", None)
         deadline = asyncio.get_event_loop().time() + hc.timeout_s
         probe_url = url.rstrip("/") + hc.path
         while asyncio.get_event_loop().time() < deadline:
+            if alive_check is not None and not alive_check():
+                logger.warning(f"| ⚠️ deploy: launched server process exited before becoming healthy")
+                return False
             try:
                 if hc.type == "command" and hc.command:
                     res = await sandbox.run_command(hc.command, work_dir=spec.workdir, timeout=15)
