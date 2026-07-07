@@ -20,7 +20,7 @@ with read_base():
 
 tag         = "monitor_agent"
 work_dir    = f"work_dir/{tag}"
-default_dir = f"work_dir/{tag}/default"
+run_dir = f"work_dir/{tag}/run"
 log_path    = "monitor_agent.log"
 
 model_name      = "aws_claude/claude-opus-4.8"

@@ -39,7 +39,7 @@ Deploy a web service into an isolated sandbox container and bind it to a reachab
 ## Guidance
 - The service MUST listen on `0.0.0.0` (not `127.0.0.1`) or the URL won't be reachable.
 - `static` serves the uploaded directory; for `node`, put a buildable project (has package.json) as source; for `python`, default entrypoint is `app:app` — override `start` for a different one (e.g. `uvicorn main:app --host 0.0.0.0 --port 8000`).
-- Requires a working Docker-backed sandbox (opensandbox) on the host.
+- Backend is automatic: uses the isolated opensandbox (Docker) sandbox when a container runtime is available, else falls back to running on the host directly (no isolation). Force it with the `DEPLOY_BACKEND` env var (`sandbox` | `host` | `auto`). On the host backend, run distinct sites on distinct ports.
 
 ## Example
 {"name": "deploy_tool", "args": {"action": "deploy", "site_id": "coffee-shop", "runtime": "static", "source_dir": "/abs/path/to/site"}}

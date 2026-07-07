@@ -45,7 +45,7 @@ class SkillContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.default_dir, "skill"))
+            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
 
 

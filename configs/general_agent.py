@@ -8,7 +8,7 @@ with read_base():
 
 tag = "general_agent"
 work_dir = f"work_dir/{tag}"
-default_dir = f"work_dir/{tag}/default"
+run_dir = f"work_dir/{tag}/run"
 log_path = "agent.log"
 
 version = "0.1.0"

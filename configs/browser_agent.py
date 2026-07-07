@@ -6,7 +6,7 @@ with read_base():
 
 tag = "browser_agent"
 work_dir = f"work_dir/{tag}"
-default_dir = f"work_dir/{tag}/default"
+run_dir = f"work_dir/{tag}/run"
 log_path = "agent.log"
 
 version = "0.1.0"
@@ -27,7 +27,7 @@ env_names = [
 ]
 
 #-----------------BROWSER ENVIRONMENT CONFIG-----------------
-# base_dir is joined onto default_dir by config.process_environments
+# base_dir is joined onto run_dir by config.process_environments
 # → default/environment/browser; screenshots go to screenshots/<session_id>/
 browser_environment = dict(
     base_dir="environment/browser",

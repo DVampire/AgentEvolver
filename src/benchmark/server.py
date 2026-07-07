@@ -21,7 +21,7 @@ class BenchmarkManager(BaseModel):
 
     async def initialize(self, benchmark_names: Optional[List[str]] = None):
         """Initialize benchmarks."""
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "benchmark"))
+        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "benchmark"))
         os.makedirs(self.base_dir, exist_ok=True)
         
         self.benchmark_context_manager = BenchmarkContextManager(

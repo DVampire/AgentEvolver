@@ -34,8 +34,8 @@ with read_base():
 
 tag = "meta_agent"
 work_dir = f"work_dir/{tag}"
-default_dir = f"work_dir/{tag}/default"
-extension_dir = f"work_dir/{tag}/extension"
+run_dir = f"work_dir/{tag}/run"
+workspace_dir = f"work_dir/{tag}/workspace"
 log_path = "agent.log"
 
 model_name = "aws_claude/claude-opus-4.8"
@@ -148,7 +148,7 @@ file_system_memory.update(
 
 #-----------------ACTOR AGENT CONFIGS-----------------
 code_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -156,7 +156,7 @@ code_agent.update(
 )
 
 general_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -164,7 +164,7 @@ general_agent.update(
 )
 
 reviewer_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -172,13 +172,13 @@ reviewer_agent.update(
 )
 
 monitor_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     enable_evolving=False,
 )
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------
 tool_optimize_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -187,7 +187,7 @@ tool_optimize_agent.update(
 
 #-----------------GENERATOR AGENT CONFIGS-----------------
 tool_generate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -196,7 +196,7 @@ tool_generate_agent.update(
 
 #-----------------EVALUATOR AGENT CONFIGS-----------------
 tool_evaluate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -205,7 +205,7 @@ tool_evaluate_agent.update(
 
 #-----------------FULL TRIAD CONFIGS (agent/skill/environment/connector)-----------------
 agent_generate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -213,7 +213,7 @@ agent_generate_agent.update(
 )
 
 agent_optimize_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -221,7 +221,7 @@ agent_optimize_agent.update(
 )
 
 agent_evaluate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -229,7 +229,7 @@ agent_evaluate_agent.update(
 )
 
 skill_generate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -237,7 +237,7 @@ skill_generate_agent.update(
 )
 
 skill_optimize_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -245,7 +245,7 @@ skill_optimize_agent.update(
 )
 
 skill_evaluate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -253,7 +253,7 @@ skill_evaluate_agent.update(
 )
 
 environment_generate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -261,7 +261,7 @@ environment_generate_agent.update(
 )
 
 environment_optimize_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -269,7 +269,7 @@ environment_optimize_agent.update(
 )
 
 environment_evaluate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -277,7 +277,7 @@ environment_evaluate_agent.update(
 )
 
 connector_generate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -285,7 +285,7 @@ connector_generate_agent.update(
 )
 
 connector_optimize_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -293,7 +293,7 @@ connector_optimize_agent.update(
 )
 
 connector_evaluate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -302,7 +302,7 @@ connector_evaluate_agent.update(
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

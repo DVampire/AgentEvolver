@@ -45,7 +45,7 @@ class SkillManagerServer(BaseModel):
         Args:
             skill_names: If provided, only these skills are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "skill"))
+        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(
             f"| 📁 skill manager Server base directory: {self.base_dir} "

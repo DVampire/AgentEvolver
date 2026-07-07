@@ -10,17 +10,17 @@ def process_general(config: MMConfig) -> MMConfig:
     work_dir = str(assemble_project_path(config.work_dir))
     config.work_dir = work_dir
 
-    if "default_dir" in config:
-        default_dir = str(assemble_project_path(config.default_dir))
-        config.default_dir = default_dir
+    if "run_dir" in config:
+        run_dir = str(assemble_project_path(config.run_dir))
+        config.run_dir = run_dir
     else:
-        default_dir = work_dir
+        run_dir = work_dir
 
-    if "extension_dir" in config:
-        extension_dir = str(assemble_project_path(config.extension_dir))
-        config.extension_dir = extension_dir
+    if "workspace_dir" in config:
+        workspace_dir = str(assemble_project_path(config.workspace_dir))
+        config.workspace_dir = workspace_dir
 
-    log_path = os.path.join(default_dir, config.log_path)
+    log_path = os.path.join(run_dir, config.log_path)
     config.log_path = log_path
 
     return config
@@ -33,7 +33,7 @@ def process_tools(config: MMConfig) -> MMConfig:
             if "base_dir" in config[key]:
                 # base_dir in config is already a relative path from project root
                 # (e.g., "defaultdir/tool_calling_agent/browser"), so just assemble it
-                base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
+                base_dir = str(assemble_project_path(os.path.join(config.run_dir, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -45,7 +45,7 @@ def process_environments(config: MMConfig) -> MMConfig:
         # "environment" but they are agents — handled by process_agent.
         if "environment" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
-                base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
+                base_dir = str(assemble_project_path(os.path.join(config.run_dir, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -55,7 +55,7 @@ def process_memory(config: MMConfig)->MMConfig:
     for key in config:
         if "memory" in key:
             if "base_dir" in config[key]:
-                base_dir = str(assemble_project_path(os.path.join(config.default_dir, config[key]["base_dir"])))
+                base_dir = str(assemble_project_path(os.path.join(config.run_dir, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -77,7 +77,7 @@ def process_agent(config: MMConfig) -> MMConfig:
             continue
         # An agent's base_dir is relative to the project root (e.g.
         # "work_dir/<tag>/extension"), so assemble it directly. Do NOT join
-        # default_dir — that double-prefixed the path (work_dir/.../default/work_dir/...).
+        # run_dir — that double-prefixed the path (work_dir/.../default/work_dir/...).
         if entry.get("base_dir") is not None:
             config[key].update(dict(
                 base_dir = str(assemble_project_path(entry["base_dir"]))

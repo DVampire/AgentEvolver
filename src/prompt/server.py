@@ -41,7 +41,7 @@ class PromptManagerServer(BaseModel):
             prompt_names: List of prompt names (md frontmatter `name:`) to load.
                           If None, all md files are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "prompt"))
+        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "prompt"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Prompt Manager base_dir={self.base_dir}")
 

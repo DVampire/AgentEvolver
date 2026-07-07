@@ -41,7 +41,7 @@ class ToolManagerServer(BaseModel):
             tool_names: List of tool names to initialize. If None, initialize all registered tools.
         """
         
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "tool"))
+        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "tool"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 tool manager Server base directory: {self.base_dir}")
         

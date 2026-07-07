@@ -141,7 +141,7 @@ async def main():
     )
 
     # --- TaskManager ---
-    task_work_dir = os.path.join(config.default_dir, "tasks")
+    task_work_dir = os.path.join(config.run_dir, "tasks")
     await task_manager.initialize(work_dir=task_work_dir, handler=lambda record: run_agent(record, ctx))
     await task_manager.start(num_workers=1)
 

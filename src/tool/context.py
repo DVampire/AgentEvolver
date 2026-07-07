@@ -49,7 +49,7 @@ class ToolContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.default_dir, "tool"))
+            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "tool"))
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Tool context manager.")

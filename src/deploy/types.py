@@ -113,6 +113,7 @@ class SiteRecord(BaseModel):
     url: Optional[str] = None
     port: Optional[int] = None
     image: Optional[str] = None
+    backend: str = "opensandbox"  # which sandbox backend served it: opensandbox | host
     reuse_key: str = ""
     created_at: str = ""
     updated_at: str = ""

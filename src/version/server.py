@@ -47,7 +47,7 @@ class VersionManagerServer(BaseModel):
 
     async def initialize(self):
         """Initialize version manager (for backward compatibility)"""
-        base_root = config.default_dir if hasattr(config, "default_dir") and config.get("default_dir") else config.work_dir
+        base_root = config.run_dir if hasattr(config, "run_dir") and config.get("run_dir") else config.work_dir
         self.base_dir = assemble_project_path(os.path.join(base_root, "version"))
         self.save_path = os.path.join(self.base_dir, "version.json")
         os.makedirs(self.base_dir, exist_ok=True)

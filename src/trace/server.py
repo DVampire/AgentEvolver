@@ -52,7 +52,7 @@ class TraceManager(metaclass=Singleton):
             return
         if work_dir is None:
             from src.config import config
-            work_dir = os.path.join(config.default_dir, "trace")
+            work_dir = os.path.join(config.run_dir, "trace")
         self._work_dir = work_dir
         os.makedirs(work_dir, exist_ok=True)
 

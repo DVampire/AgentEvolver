@@ -73,8 +73,8 @@ class DeploymentManagerServer(BaseModel):
 
         # Prefer the framework's per-run default dir; fall back to a local path so the
         # subsystem still works if it is exercised before config.initialize() has run.
-        default_dir = getattr(config, "default_dir", None) or os.path.join("work_dir", "default")
-        base = work_dir or os.path.join(default_dir, "deploy")
+        run_dir = getattr(config, "run_dir", None) or os.path.join("work_dir", "run")
+        base = work_dir or os.path.join(run_dir, "deploy")
         os.makedirs(base, exist_ok=True)
         self._registry_path = os.path.join(base, "sites.json")
         self._load()
@@ -105,6 +105,32 @@ class DeploymentManagerServer(BaseModel):
                 f"No deploy profile {runtime!r}. Available: {sorted(DEPLOYER.module_dict.keys())}"
             )
         return cls()
+
+    # --------------------------------------------------------------- backend selection
+    @staticmethod
+    def _container_runtime_available() -> bool:
+        """True if a Docker daemon (or remote host) is reachable — i.e. opensandbox can work."""
+        if os.environ.get("DOCKER_HOST"):
+            return True
+        return os.path.exists("/var/run/docker.sock")
+
+    def _backend_kind(self) -> str:
+        """Pick the sandbox backend.
+
+        ``DEPLOY_BACKEND`` env overrides: ``sandbox`` (opensandbox), ``host`` (local, no
+        isolation), or ``auto`` (default): use opensandbox when a container runtime is
+        available, else fall back to the host backend so deploys still work.
+        """
+        choice = (os.environ.get("DEPLOY_BACKEND") or "auto").lower().strip()
+        if choice in ("host", "local"):
+            return "host"
+        if choice in ("sandbox", "opensandbox", "docker"):
+            return "opensandbox"
+        return "opensandbox" if self._container_runtime_available() else "host"
+
+    def _host_site_dir(self, site_id: str) -> str:
+        base = os.path.dirname(self._registry_path) if self._registry_path else os.path.join("work_dir", "run", "deploy")
+        return os.path.join(base, "sites", site_id, "app")
 
     # --------------------------------------------------------------- registry io
     def _load(self) -> None:
@@ -148,29 +174,47 @@ class DeploymentManagerServer(BaseModel):
         await self._ensure_initialized()
         spec = self._resolve_spec(request)  # raises on bad profile / missing custom.start
 
+        backend = self._backend_kind()
+        # The host backend has no container filesystem, so run in a real host directory
+        # and write the server log beside it (containers keep a per-container /tmp log).
+        if backend == "host":
+            spec.workdir = self._host_site_dir(request.site_id)
+            log_path = os.path.join(os.path.dirname(spec.workdir), "server.log")
+        else:
+            log_path = "/tmp/deploy_site.log"
+
         rec = SiteRecord(
             site_id=request.site_id,
             runtime=spec.runtime,
             status=SiteStatus.BUILDING,
             port=spec.port,
             image=spec.image,
+            backend=backend,
             reuse_key=request.site_id,
             created_at=self._sites.get(request.site_id, SiteRecord(site_id=request.site_id, runtime=spec.runtime)).created_at or _now(),
             updated_at=_now(),
+            log_path=log_path,
             request=request.model_dump(),
         )
         self._sites[request.site_id] = rec
         self._save()
 
         try:
-            sandbox = await sandbox_manager.acquire(
-                _SANDBOX_KIND,
-                reuse_key=request.site_id,
-                image=spec.image,
-                env=spec.env,
-                timeout_minutes=spec.timeout_minutes,
-                network=True,
-            )
+            if backend == "host":
+                sandbox = await sandbox_manager.acquire(
+                    "host", reuse_key=request.site_id, env=spec.env,
+                    host_base=os.path.dirname(os.path.dirname(spec.workdir)),
+                )
+                logger.info(f"| 🖥️  '{request.site_id}': no container runtime → deploying on HOST (no isolation)")
+            else:
+                sandbox = await sandbox_manager.acquire(
+                    _SANDBOX_KIND,
+                    reuse_key=request.site_id,
+                    image=spec.image,
+                    env=spec.env,
+                    timeout_minutes=spec.timeout_minutes,
+                    network=True,
+                )
 
             # --- upload source ---------------------------------------------------
             if request.git_url:
@@ -277,7 +321,7 @@ class DeploymentManagerServer(BaseModel):
         rec = self._sites.get(site_id)
         if rec is None:
             raise ValueError(f"No such site {site_id!r}")
-        await sandbox_manager.release(_SANDBOX_KIND, reuse_key=site_id)
+        await sandbox_manager.release(rec.backend or _SANDBOX_KIND, reuse_key=site_id)
         rec.status = SiteStatus.STOPPED
         rec.url = None
         rec.updated_at = _now()
@@ -291,14 +335,14 @@ class DeploymentManagerServer(BaseModel):
         rec = self._sites.get(site_id)
         if rec is None or not rec.request:
             raise ValueError(f"No redeployable request stored for site {site_id!r}")
-        await sandbox_manager.release(_SANDBOX_KIND, reuse_key=site_id)
+        await sandbox_manager.release(rec.backend or _SANDBOX_KIND, reuse_key=site_id)
         return await self.deploy(DeployRequest(**rec.request))
 
     async def cleanup(self) -> None:
         """Stop all live sites (called on global teardown)."""
-        for site_id in list(self._sites.keys()):
+        for site_id, rec in list(self._sites.items()):
             try:
-                await sandbox_manager.release(_SANDBOX_KIND, reuse_key=site_id)
+                await sandbox_manager.release(rec.backend or _SANDBOX_KIND, reuse_key=site_id)
             except Exception as e:
                 logger.warning(f"| ⚠️ Error releasing site '{site_id}': {e}")
 

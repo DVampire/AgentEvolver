@@ -142,7 +142,7 @@ async def main():
     session_id = make_id()
     ctx = SessionContext(id=session_id, name="run_monitor_agent")
 
-    task_work_dir = os.path.join(config.default_dir, "tasks")
+    task_work_dir = os.path.join(config.run_dir, "tasks")
     await task_manager.initialize(
         work_dir=task_work_dir,
         handler=lambda record: run_monitor(record, ctx),

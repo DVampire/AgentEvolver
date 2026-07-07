@@ -46,7 +46,7 @@ class ConnectorManagerServer(BaseModel):
         Args:
             connector_names: If provided, only these connectors are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "connector"))
+        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "connector"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(
             f"| 📁 connector manager Server base directory: {self.base_dir} "

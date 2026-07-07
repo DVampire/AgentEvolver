@@ -42,7 +42,7 @@ class ConstraintManagerServer(BaseModel):
             constraint_names: List of constraint names to initialize. If None, initialize all registered constraints.
         """
 
-        self.base_dir = assemble_project_path(os.path.join(config.default_dir, "constraint"))
+        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "constraint"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 constraint manager Server base directory: {self.base_dir}")
 

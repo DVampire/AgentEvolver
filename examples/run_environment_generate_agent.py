@@ -121,7 +121,7 @@ async def main():
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
-    task_work_dir = os.path.join(config.default_dir, "tasks")
+    task_work_dir = os.path.join(config.run_dir, "tasks")
     await task_manager.initialize(work_dir=task_work_dir, handler=run_generate_environment)
     await task_manager.start(num_workers=1)
 

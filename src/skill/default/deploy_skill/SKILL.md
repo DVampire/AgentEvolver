@@ -22,11 +22,14 @@ This is *not* rendering a static HTML artifact (that's `artifact_design_skill`) 
 `webapp_testing_skill`). Use this when the deliverable is a **running service at a
 URL**.
 
-## Prerequisite
+## Backend (automatic)
 
-`deploy_tool` runs on a **Docker-backed sandbox (opensandbox)**. If deploys fail with
-a sandbox/Docker error, the host lacks a working sandbox backend — report that
-plainly rather than retrying; deployment can't proceed without it.
+`deploy_tool` picks its backend automatically: it uses the isolated **opensandbox**
+(Docker) sandbox when a container runtime is available, and otherwise **falls back to
+running the service directly on the host** (no container isolation) so deploys still
+work on a plain machine. You can force it with the `DEPLOY_BACKEND` env var
+(`sandbox` | `host` | `auto`). On the host backend, give each concurrent site a distinct
+port. Either way you get a reachable URL; verify it hands-on (Step 4).
 
 ## Step 1 — Pick the runtime
 

@@ -10,8 +10,8 @@ with read_base():
 
 tag = "tool_evaluate_agent"
 work_dir = f"work_dir/{tag}"
-default_dir = f"work_dir/{tag}/default"
-extension_dir = f"work_dir/{tag}/extension"
+run_dir = f"work_dir/{tag}/run"
+workspace_dir = f"work_dir/{tag}/workspace"
 log_path = "tool_evaluate_agent.log"
 
 model_name = "aws_claude/claude-opus-4.8"
@@ -50,7 +50,7 @@ file_system_memory.update(
 
 #-----------------AGENT CONFIG-----------------
 tool_evaluate_agent.update(
-    base_dir=extension_dir,
+    base_dir=workspace_dir,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
