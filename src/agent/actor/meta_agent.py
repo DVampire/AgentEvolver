@@ -1133,8 +1133,11 @@ class MetaAgent(Agent):
             return None  # trivial / no substantive work — nothing to review
         if state._review_cycles >= self.MAX_STOP_REVIEWS:
             return None  # cap reached — allow stop to avoid an unbounded review loop
-        if state._reviewer_ran and state._last_review_verdict == "stop":
-            return None  # already reviewed and passed
+        # Keep gating only when a review actively says "not done" (continue/evolve). A
+        # review that passed ("stop") or was inconclusive/unparsed ("") allows the stop —
+        # don't burn the cap re-reviewing when there is no actionable verdict to act on.
+        if state._reviewer_ran and state._last_review_verdict not in ("continue", "evolve"):
+            return None
 
         state._review_cycles += 1
         summary = self._join_results(state)

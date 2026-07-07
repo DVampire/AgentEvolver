@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="online_shop_site">
+  <meta name="description" content="Build, deploy, and verify a small online shopping website">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../src/visual/css/task.css">
+  <script src="../../src/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Build a small but working online shopping website, deploy it so it is reachable at
+a URL, and confirm it actually serves. Product browsing → add to cart → checkout →
+an order is recorded and viewable in a simple admin/orders view. Put all source under
+`{project_root}/work_dir/online_shop/` (do NOT modify `src/`); deploy it with the
+`deploy_tool` / `deploy_skill`.
+</objective>
+
+<requirements>
+- Storefront: a product catalog (at least 6 seeded products with name, price, image
+  placeholder), a product/detail view, and a shopping cart (add / remove / change qty,
+  running total).
+- Checkout: a form (name + shipping address) that places an order and shows an order
+  confirmation with an order id.
+- Orders/admin: a page (or API endpoint) that lists placed orders with their items and
+  totals — this is the "backend order management" piece.
+- Persistence: orders survive within the running server (in-memory store is acceptable
+  for this demo; a file/SQLite store is better).
+- Deployed: the app is served via `deploy_tool` and bound to a reachable URL. The server
+  MUST listen on `0.0.0.0` (not `127.0.0.1`).
+- Self-contained and runnable from a clean checkout of its own directory.
+</requirements>
+
+<acceptance>
+The reviewer must verify HANDS-ON (reach the URL / drive it / hit the API), not by
+reading claims:
+```
+GET  <url>/                      → storefront renders, shows >= 6 products
+add two products to the cart     → cart shows both, total = sum of prices*qty
+POST checkout with name+address  → returns an order confirmation with an order id
+GET  <url>/orders (or admin)     → the just-placed order appears with its items & total
+```
+</acceptance>
+
+<plan>
+- Decide the stack (a single Python/FastAPI app with server-rendered pages + an in-memory
+  or SQLite order store is the simplest thing that meets every requirement; a static
+  storefront alone cannot record orders).
+- Build the app under `work_dir/online_shop/` (storefront, cart, checkout, orders).
+- Deploy it with `deploy_tool` (runtime `python`; ensure the server binds 0.0.0.0) and
+  obtain its URL.
+- Verify every acceptance step hands-on against the live URL.
+- If a needed capability is missing or a step keeps failing, self-evolve (generate/optimize
+  the missing tool/skill) or escalate, then retry — do not silently give up.
+- Report the deployed URL and which acceptance checks passed.
+</plan>
+</div>
+
+</body>
+</html>
