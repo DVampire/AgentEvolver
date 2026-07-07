@@ -1,4 +1,4 @@
 grep_search_tool = dict(
-    require_grad=False,
+    enable_evolving=False,
     permission_mode="workspace_write",
 )

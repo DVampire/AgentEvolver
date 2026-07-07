@@ -1,4 +1,4 @@
 git_tool = dict(
-    require_grad=False,
+    enable_evolving=False,
     timeout=60,
 )

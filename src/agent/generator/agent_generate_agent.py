@@ -29,7 +29,7 @@ class AgentGenerateAgent(Agent):
         default="An agent that generates a new agent Python class and optional HTML prompt from a description."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class AgentGenerateAgent(Agent):
         max_actions: int = 10,
         max_step: int = 30,
         review_steps: int = 5,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -57,7 +57,7 @@ class AgentGenerateAgent(Agent):
             max_actions=max_actions,
             max_step=max_step,
             review_steps=review_steps,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
 

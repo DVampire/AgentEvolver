@@ -39,6 +39,16 @@ from src.utils import (
     get_project_root,
 )
 
+# Tools that mutate the framework / deliverables. A read_only agent (e.g. an evaluator)
+# is refused these at dispatch time — a coarse guard so a "read-only" agent cannot edit
+# source, commit, deploy, or roll back evolution. Read/inspect/probe tools (and calling
+# the target under test) stay allowed so evaluators still work. Op-level enforcement
+# (allow reads, deny writes per call) is future work.
+_READ_ONLY_DENIED_TOOLS = {
+    "write_file_tool", "edit_file_tool", "git_tool", "deploy_tool", "evolution_tool",
+}
+
+
 class AgentContext(BaseContext):
     """Context passed into agent manager and individual agent instances."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -63,7 +73,7 @@ class AgentConfig(BaseModel):
     description: str = Field(description="The description of the agent")
     version: str = Field(default="1.0.0", description="Version of the agent")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the agent may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
 
     cls: Optional[Any] = None
@@ -90,7 +100,7 @@ class AgentConfig(BaseModel):
             "description": self.description,
             "metadata": self.metadata,
             "version": self.version,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             
             "permission_mode": self.permission_mode,
 
@@ -113,7 +123,7 @@ class AgentConfig(BaseModel):
         description = data.get("description")
         metadata = data.get("metadata", {})
         version = data.get("version")
-        require_grad = data.get("require_grad", False)
+        enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
 
         cls_ = None
@@ -148,7 +158,7 @@ class AgentConfig(BaseModel):
             description=description,
             metadata=metadata,
             version=version,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             permission_mode=permission_mode,
             cls=cls_,
             config=config,
@@ -162,7 +172,7 @@ class AgentConfig(BaseModel):
         return (
             f"AgentConfig(name={self.name}, "
             f"description={self.description}, "
-            f"require_grad={self.require_grad})"
+            f"enable_evolving={self.enable_evolving})"
         )
 
     def __repr__(self) -> str:
@@ -217,7 +227,7 @@ class Agent(BaseModel):
     description: str = Field(description="The description of the agent.")
     metadata: Dict[str, Any] = Field(description="The metadata of the agent.")
     version: str = Field(default="1.0.0", description="Version of the agent")
-    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the agent may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
 
     def __init__(
@@ -234,7 +244,7 @@ class Agent(BaseModel):
         max_token: Optional[int] = None,
         timeout: Optional[float] = None,
         review_steps: int = 5,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         use_memory: bool = True,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
@@ -245,7 +255,7 @@ class Agent(BaseModel):
         self.name = name or self.name
         self.description = description or self.description
         self.metadata = metadata or self.metadata
-        self.require_grad = require_grad
+        self.enable_evolving = enable_evolving
 
         # Set working directory
         self.base_dir = base_dir
@@ -678,6 +688,14 @@ class Agent(BaseModel):
                 error = None
 
                 try:
+                    if (self.permission_mode == "read_only"
+                            and action_type not in ("text", "finish")
+                            and action_name in _READ_ONLY_DENIED_TOOLS):
+                        raise PermissionError(
+                            f"read_only agent '{self.name}' may not invoke framework-mutating "
+                            f"tool '{action_name}'. Report findings instead of modifying anything."
+                        )
+
                     if action_type == "text":
                         action_result = action_args.get("content", "")
                         logger.info(f"| 💬 [{self.name}] Text: {str(action_result)}")

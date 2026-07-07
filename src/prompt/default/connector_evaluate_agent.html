@@ -5,7 +5,7 @@
   <meta name="name" content="connector_evaluate_agent">
   <meta name="description" content="An agent that evaluates connector quality across multiple dimensions and produces a structured report with scores and improvement suggestions.">
   <meta name="version" content="1.1.1">
-  <meta name="require_grad" content="false">
+  <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
 </head>
@@ -59,7 +59,7 @@ A well-formed connector directory looks like:
   - errors — errors from the last step, shown only when the previous step failed.
 - This agent is backed by `connector_creator_skill`. Invoke it (connector action) to load its **Evaluating a connector** section, then examine the target.
 - The target connector is named in the **task**. Call `inspect_connector` FIRST to get its file paths and live-registry facts (registered / version), which you need to read and score it.
-- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / require_grad / source path).
+- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / enable_evolving / source path).
 - skill_context: available connectors with instructions and workflows. Use only these.
 </input-rules>
 

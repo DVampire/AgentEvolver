@@ -30,7 +30,9 @@ class SkillRegistrationHook(Hook):
 
         try:
             from src.extension import extension_manager
-            name = await extension_manager.add_component("skill", skill_dir)
+            # Newly generated components are registered evolvable so a later round can optimize
+            # them. Overwriting an existing *frozen* entity is still refused inside add_component.
+            name = await extension_manager.add_component("skill", skill_dir, config={"enable_evolving": True})
             logger.info(f"| 🔄 SkillRegistrationHook: '{name}' registered from {skill_dir}")
             return HookResult.allow()
         except Exception as e:

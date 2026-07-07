@@ -9,5 +9,5 @@ monitor_agent = dict(
     poll_interval = 30,    # seconds between progress reports
     max_wait      = 3600,  # kill process after this many seconds
     tail_lines    = 50,    # stdout lines included in each progress snapshot
-    require_grad  = False,
+    enable_evolving  = False,
 )

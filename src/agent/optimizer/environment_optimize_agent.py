@@ -16,7 +16,7 @@ class EnvironmentOptimizeAgent(Agent):
     Runs the base-class standard loop, then re-registers the edited environment inline in
     ``__call__``. The target environment is named in the task; the agent should call
     ``inspect_environment`` first to confirm it is registered and evolvable
-    (require_grad=True) and to obtain its file paths — a frozen environment must NOT be optimized."""
+    (enable_evolving=True) and to obtain its file paths — a frozen environment must NOT be optimized."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -25,7 +25,7 @@ class EnvironmentOptimizeAgent(Agent):
         default="An agent that evolves an existing environment (Python class and/or config) given an evolution task."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     def __init__(
         self,
@@ -39,7 +39,7 @@ class EnvironmentOptimizeAgent(Agent):
         max_actions: int = 10,
         max_step: int = 30,
         review_steps: int = 5,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -53,7 +53,7 @@ class EnvironmentOptimizeAgent(Agent):
             max_actions=max_actions,
             max_step=max_step,
             review_steps=review_steps,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
 

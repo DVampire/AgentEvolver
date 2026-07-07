@@ -150,7 +150,7 @@ class ConstraintContextManager(BaseModel):
                 # Get constraint config from global config
                 constraint_config_key = inflection.underscore(constraint_cls.__name__)
                 constraint_config_dict = config.get(constraint_config_key, {})
-                constraint_require_grad = constraint_config_dict.get("require_grad", False) if constraint_config_dict and "require_grad" in constraint_config_dict else False
+                constraint_enable_evolving = constraint_config_dict.get("enable_evolving", False) if constraint_config_dict and "enable_evolving" in constraint_config_dict else False
 
                 # Get constraint properties from constraint class
                 constraint_name = constraint_cls.model_fields['name'].default
@@ -184,7 +184,7 @@ class ConstraintContextManager(BaseModel):
                     text=constraint_text,
                     args_schema=constraint_args_schema,
                     metadata=constraint_metadata,
-                    require_grad=constraint_require_grad,
+                    enable_evolving=constraint_enable_evolving,
                     code=constraint_code,
                     path=constraint_path,
                 )
@@ -286,7 +286,7 @@ class ConstraintContextManager(BaseModel):
                 constraint_cls = type(constraint)
                 if constraint_config_dict is None:
                     # Derive config from instance fields (excluding base fields)
-                    base_fields = {"name", "description", "metadata", "require_grad", "enabled"}
+                    base_fields = {"name", "description", "metadata", "enable_evolving", "enabled"}
                     constraint_config_dict = {
                         k: v for k, v in constraint_instance.model_dump().items() if k not in base_fields
                     }
@@ -306,8 +306,8 @@ class ConstraintContextManager(BaseModel):
             constraint_name = constraint_instance.name
             constraint_description = constraint_instance.description
             constraint_metadata = constraint_instance.metadata
-            # Get require_grad from constraint_config_dict if provided, otherwise from constraint_instance
-            constraint_require_grad = constraint_config_dict.get("require_grad", constraint_instance.require_grad) if constraint_config_dict and "require_grad" in constraint_config_dict else constraint_instance.require_grad
+            # Get enable_evolving from constraint_config_dict if provided, otherwise from constraint_instance
+            constraint_enable_evolving = constraint_config_dict.get("enable_evolving", constraint_instance.enable_evolving) if constraint_config_dict and "enable_evolving" in constraint_config_dict else constraint_instance.enable_evolving
 
             # Get or generate version from version_manager
             if version is None:
@@ -335,7 +335,7 @@ class ConstraintContextManager(BaseModel):
                 name=constraint_name,
                 description=constraint_description,
                 metadata=constraint_metadata,
-                require_grad=constraint_require_grad,
+                enable_evolving=constraint_enable_evolving,
                 enabled=constraint_instance.enabled,
                 version=constraint_version,
                 cls=constraint_cls,
@@ -428,7 +428,7 @@ class ConstraintContextManager(BaseModel):
                 constraint_instance = constraint
                 constraint_cls = type(constraint)
                 if constraint_config_dict is None:
-                    base_fields = {"name", "description", "metadata", "require_grad", "enabled"}
+                    base_fields = {"name", "description", "metadata", "enable_evolving", "enabled"}
                     constraint_config_dict = {
                         k: v for k, v in constraint_instance.model_dump().items() if k not in base_fields
                     }
@@ -454,8 +454,8 @@ class ConstraintContextManager(BaseModel):
 
             constraint_description = constraint_instance.description
             constraint_metadata = constraint_instance.metadata
-            # Get require_grad from constraint_config_dict if provided, otherwise from constraint_instance
-            constraint_require_grad = constraint_config_dict.get("require_grad", constraint_instance.require_grad) if constraint_config_dict and "require_grad" in constraint_config_dict else constraint_instance.require_grad
+            # Get enable_evolving from constraint_config_dict if provided, otherwise from constraint_instance
+            constraint_enable_evolving = constraint_config_dict.get("enable_evolving", constraint_instance.enable_evolving) if constraint_config_dict and "enable_evolving" in constraint_config_dict else constraint_instance.enable_evolving
 
             # Determine new version from version_manager
             if new_version is None:
@@ -481,7 +481,7 @@ class ConstraintContextManager(BaseModel):
                 name=constraint_name,  # Keep same name
                 description=constraint_description,
                 metadata=constraint_metadata,
-                require_grad=constraint_require_grad,
+                enable_evolving=constraint_enable_evolving,
                 enabled=constraint_instance.enabled,
                 version=new_version,
                 cls=constraint_cls,
@@ -566,7 +566,7 @@ class ConstraintContextManager(BaseModel):
 
             constraint_description = constraint_instance.description
             constraint_metadata = constraint_instance.metadata
-            constraint_require_grad = constraint_config_dict.get("require_grad", constraint_instance.require_grad) if constraint_config_dict and "require_grad" in constraint_config_dict else constraint_instance.require_grad
+            constraint_enable_evolving = constraint_config_dict.get("enable_evolving", constraint_instance.enable_evolving) if constraint_config_dict and "enable_evolving" in constraint_config_dict else constraint_instance.enable_evolving
 
             # Determine new version from version_manager
             if new_version is None:
@@ -593,7 +593,7 @@ class ConstraintContextManager(BaseModel):
                 name=new_name,
                 description=constraint_description,
                 metadata=constraint_metadata,
-                require_grad=constraint_require_grad,
+                enable_evolving=constraint_enable_evolving,
                 enabled=constraint_instance.enabled,
                 version=new_version,
                 cls=original_config.cls,

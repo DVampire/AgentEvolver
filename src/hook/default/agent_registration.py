@@ -34,7 +34,7 @@ class AgentRegistrationHook(Hook):
             agent_config = {
                 "base_dir": os.path.join(project_root, "work_dir", target_name or "agent"),
                 "model_name": model_name,
-                "require_grad": True,
+                "enable_evolving": True,
             }
             inferred_name = await extension_manager.add_component("agent", py_path, config=agent_config)
             logger.info(f"| 🔄 AgentRegistrationHook: '{inferred_name}' registered from {py_path}")

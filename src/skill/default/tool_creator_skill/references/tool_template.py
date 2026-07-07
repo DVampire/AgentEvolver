@@ -40,11 +40,11 @@ class MyTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    # require_grad=True marks the tool as evolvable (the optimize agent may edit it).
-    require_grad: bool = Field(default=True, description="Whether the tool requires gradients")
+    # enable_evolving=True marks the tool as evolvable (the optimize agent may edit it).
+    enable_evolving: bool = Field(default=True, description="Whether the tool may be evolved (self-optimized)")
 
-    def __init__(self, require_grad: bool = True, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = True, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, arg_name: str, **kwargs) -> Response:
         """Do the work. Keyword args mirror the ## Parameters block above.

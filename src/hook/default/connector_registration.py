@@ -30,7 +30,9 @@ class ConnectorRegistrationHook(Hook):
 
         try:
             from src.extension import extension_manager
-            name = await extension_manager.add_component("connector", connector_dir)
+            # Newly generated components are registered evolvable so a later round can optimize
+            # them. Overwriting an existing *frozen* entity is still refused inside add_component.
+            name = await extension_manager.add_component("connector", connector_dir, config={"enable_evolving": True})
             logger.info(f"| 🔄 ConnectorRegistrationHook: '{name}' registered from {connector_dir}")
             return HookResult.allow()
         except Exception as e:

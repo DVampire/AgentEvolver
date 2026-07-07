@@ -211,7 +211,7 @@ class ConnectorContextManager(BaseModel):
         name = frontmatter.get("name", connector_dir.name)
         description = frontmatter.get("description", "")
         version = str(frontmatter.get("version", "1.0.0"))
-        require_grad = str(frontmatter.get("require_grad", "false")).lower() == "true"
+        enable_evolving = str(frontmatter.get("enable_evolving", "false")).lower() == "true"
         type_value = frontmatter.get("type", "worker")
         permission_mode = frontmatter.get("permission_mode", "workspace_write")
         connection = self._resolve_connection(frontmatter.get("connection", {}) or {}, connector_dir)
@@ -219,7 +219,7 @@ class ConnectorContextManager(BaseModel):
         action_schemas = frontmatter.get("action_schemas", {}) or {}
 
         reserved = {
-            "name", "description", "version", "require_grad", "type",
+            "name", "description", "version", "enable_evolving", "type",
             "permission_mode", "connection", "actions", "action_schemas",
         }
         metadata = {k: v for k, v in frontmatter.items() if k not in reserved}
@@ -228,7 +228,7 @@ class ConnectorContextManager(BaseModel):
             name=name,
             description=description,
             metadata=metadata,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             permission_mode=permission_mode,
             version=version,
             type=type_value,
@@ -291,6 +291,7 @@ class ConnectorContextManager(BaseModel):
         connector_dir: str,
         override: bool = False,
         version: Optional[str] = None,
+        enable_evolving: Optional[bool] = None,
     ) -> ConnectorConfig:
         """Register a connector from a directory containing connector.json.
 
@@ -298,6 +299,8 @@ class ConnectorContextManager(BaseModel):
             connector_dir: Path to the connector directory.
             override: If True, overwrite an existing connector with the same name.
             version: Explicit version string. If None, reads from connector.json or auto-generates.
+            enable_evolving: If not None, override the frontmatter-parsed evolvability flag
+                (newly generated connectors are registered evolvable so they can be optimized later).
 
         Returns:
             The registered ConnectorConfig.
@@ -307,6 +310,8 @@ class ConnectorContextManager(BaseModel):
             raise FileNotFoundError(f"No CONNECTOR.md found in {connector_dir}")
 
         connector_config = self._parse_connector_dir(connector_dir_path)
+        if enable_evolving is not None:
+            connector_config.enable_evolving = enable_evolving
 
         if version is not None:
             connector_config.version = version

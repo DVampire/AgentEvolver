@@ -373,7 +373,7 @@ class TodoTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     
     # Configuration parameters
     base_dir: str = Field(
@@ -384,11 +384,11 @@ class TodoTool(Tool):
     def __init__(
         self, 
         base_dir: Optional[str] = None, 
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs
     ):
         """Initialize the todo tool."""
-        super().__init__(require_grad=require_grad, **kwargs)
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
         
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)

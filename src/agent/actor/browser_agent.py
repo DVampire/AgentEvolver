@@ -35,7 +35,7 @@ class BrowserAgent(Agent):
                 "Playwright commands as a fallback."
     )
     metadata: Dict[str, Any] = Field(default={})
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     def __init__(
         self,
@@ -51,7 +51,7 @@ class BrowserAgent(Agent):
         max_step: int = 30,
         max_screenshots: int = 2,
         review_steps: int = 5,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -65,7 +65,7 @@ class BrowserAgent(Agent):
             max_actions=max_actions,
             max_step=max_step,
             review_steps=review_steps,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
         self.env_name = env_name

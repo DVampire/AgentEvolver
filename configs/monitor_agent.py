@@ -23,7 +23,6 @@ work_dir    = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
 log_path    = "monitor_agent.log"
 
-use_local_proxy = False
 model_name      = "aws_claude/claude-opus-4.8"
 
 agent_names  = ["monitor_agent"]
@@ -34,5 +33,5 @@ memory_names = []
 
 monitor_agent.update(
     base_dir = work_dir,
-    require_grad = False,
+    enable_evolving = False,
 )

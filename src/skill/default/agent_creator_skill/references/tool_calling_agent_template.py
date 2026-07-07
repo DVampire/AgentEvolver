@@ -32,8 +32,8 @@ class MyAgent(Agent):
         default="What this agent does AND when to use it (the description is how it gets chosen)."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    # require_grad=True marks the agent as evolvable (the optimize agent may edit it).
-    require_grad: bool = Field(default=True)
+    # enable_evolving=True marks the agent as evolvable (the optimize agent may edit it).
+    enable_evolving: bool = Field(default=True)
 
     def __init__(
         self,
@@ -47,7 +47,7 @@ class MyAgent(Agent):
         max_actions: int = 10,
         max_step: int = 20,
         review_steps: int = 5,
-        require_grad: bool = True,
+        enable_evolving: bool = True,
         **kwargs,
     ):
         super().__init__(
@@ -61,7 +61,7 @@ class MyAgent(Agent):
             max_actions=max_actions,
             max_step=max_step,
             review_steps=review_steps,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
 

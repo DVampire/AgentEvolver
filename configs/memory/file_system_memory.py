@@ -4,5 +4,5 @@ file_system_memory = dict(
     base_dir = f"work_dir/memory/file_system",
     model_name = "openrouter/gemini-3-flash-preview",
     max_todo_length = 80,
-    require_grad = False,
+    enable_evolving = False,
 )

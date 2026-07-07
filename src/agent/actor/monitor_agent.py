@@ -58,7 +58,7 @@ class MonitorAgent(Agent):
         )
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     poll_interval: int = Field(default=30, description="Seconds between progress reports.")
     max_wait: int = Field(default=3600, description="Maximum seconds to wait before killing the process.")
@@ -80,7 +80,7 @@ class MonitorAgent(Agent):
         poll_interval: int = 30,
         max_wait: int = 3600,
         tail_lines: int = 50,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -88,7 +88,7 @@ class MonitorAgent(Agent):
             name=name,
             description=description,
             metadata=metadata,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
         self.poll_interval = poll_interval

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -238,6 +239,11 @@ class MetaState(BaseModel):
     _project_context: str = PrivateAttr(default="")
     _available_agents: str = PrivateAttr(default="")
     _t0: float = PrivateAttr(default=0.0)
+    # Reviewer stop-gate: how many reviewer rounds have been auto-injected before stop,
+    # and the latest parsed reviewer verdict (stop | continue | evolve | "").
+    _review_cycles: int = PrivateAttr(default=0)
+    _reviewer_ran: bool = PrivateAttr(default=False)
+    _last_review_verdict: str = PrivateAttr(default="")
 
     # ------------------------------------------------------------------
     # Round queries
@@ -306,7 +312,7 @@ class MetaAgent(Agent):
         "reacts to results, and triggers self-evolution when agents underperform."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     _state: Optional[MetaState] = PrivateAttr(default=None)
 
@@ -320,7 +326,7 @@ class MetaAgent(Agent):
         prompt_name: Optional[str] = None,
         memory_name: Optional[str] = None,
         max_step: int = 50,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -332,7 +338,7 @@ class MetaAgent(Agent):
             prompt_name=prompt_name or "meta_agent",
             memory_name=memory_name,
             max_step=max_step,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
         from pathlib import Path
@@ -448,6 +454,11 @@ class MetaAgent(Agent):
             state.step += 1
             if rec := state.subtask_records.get(msg.task_id):
                 rec.mark_done(msg.result)
+                # Track reviewer verdicts so the stop-gate knows the run was reviewed.
+                if rec.spec.name == "reviewer_agent":
+                    state._reviewer_ran = True
+                    state._last_review_verdict = self._parse_review_verdict(msg.result)
+                    logger.info(f"| 🔎 Reviewer verdict: {state._last_review_verdict or 'unparsed'}")
             await self._record(
                 state.session_id,
                 state.step,
@@ -675,6 +686,15 @@ class MetaAgent(Agent):
             return
 
         if react.decision == "stop":
+            review_round = self._stop_review_gate(state)
+            if review_round is not None:
+                logger.info(
+                    f"| 🔎 Stop gated (cycle {state._review_cycles}): dispatching reviewer_agent "
+                    f"before finishing"
+                )
+                await self._dispatch(state, [review_round])
+                state.touch()
+                return
             state.final_answer = react.final_answer or self._join_results(state)
             state.touch()
             return
@@ -1083,4 +1103,56 @@ class MetaAgent(Agent):
                 f"[{r.spec.input.task}]\n{r.result}" for r in state.done() if r.result
             )
             or "Task completed."
+        )
+
+    # ------------------------------------------------------------------
+    # Reviewer stop-gate (advisory reviewer, softly bound to `stop`)
+    # ------------------------------------------------------------------
+    #: How many reviewer rounds may be auto-injected before a stop is allowed regardless
+    #: (prevents a review↔re-plan loop from never terminating).
+    MAX_STOP_REVIEWS: int = 2
+
+    @staticmethod
+    def _parse_review_verdict(text: str) -> str:
+        """Extract 'stop' | 'continue' | 'evolve' from a reviewer's report (or '')."""
+        if not text:
+            return ""
+        m = re.search(r"RECOMMENDATION[:\s\-]*\**\s*(stop|continue|evolve)", text, re.IGNORECASE)
+        return m.group(1).lower() if m else ""
+
+    def _stop_review_gate(self, state: MetaState) -> Optional[PlanRound]:
+        """Decide whether a `stop` must first pass an independent review.
+
+        Returns a reviewer PlanRound to run instead of stopping, or None to allow the
+        stop. Bounded by ``MAX_STOP_REVIEWS`` so it can never loop forever; skipped for
+        trivial runs (no sub-task actually completed) and once the reviewer has returned
+        a `stop` verdict.
+        """
+        did_work = any(r.status == TaskStatus.DONE for r in state.subtask_records.values())
+        if not did_work:
+            return None  # trivial / no substantive work — nothing to review
+        if state._review_cycles >= self.MAX_STOP_REVIEWS:
+            return None  # cap reached — allow stop to avoid an unbounded review loop
+        if state._reviewer_ran and state._last_review_verdict == "stop":
+            return None  # already reviewed and passed
+
+        state._review_cycles += 1
+        summary = self._join_results(state)
+        if len(summary) > 2000:
+            summary = summary[:2000] + " …(truncated)"
+        task = (
+            "Independently review whether the user's task was actually accomplished. "
+            "Verify the real deliverable HANDS-ON (reach the URL / run it / open the file) — "
+            "do not trust claims. List remaining defects, judge whether any self-evolution "
+            "helped, and END your report with a line 'RECOMMENDATION: stop | continue | evolve'.\n\n"
+            f"USER TASK:\n{state.user_task}\n\nWHAT WAS PRODUCED / EXECUTED (summary):\n{summary}"
+        )
+        return PlanRound(
+            goal="Independent review before finishing",
+            tasks=[TaskSpec(
+                kind="agent",
+                name="reviewer_agent",
+                category=SubTaskCategory.EVALUATOR,
+                task=task,
+            )],
         )

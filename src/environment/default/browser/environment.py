@@ -29,7 +29,7 @@ class BrowserEnvironment(Environment):
     name: str = Field(default="browser_environment")
     description: str = Field(default="Playwright browser environment for web automation")
     metadata: Dict[str, Any] = Field(default={"has_vision": True})
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     def __init__(
         self,

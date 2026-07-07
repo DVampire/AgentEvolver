@@ -4,6 +4,8 @@ with read_base():
     from .agents.meta_agent import meta_agent
     from .agents.code_agent import code_agent
     from .agents.general_agent import general_agent
+    from .agents.reviewer_agent import reviewer_agent
+    from .agents.monitor_agent import monitor_agent
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .agents.tool_generate_agent import tool_generate_agent
@@ -25,6 +27,9 @@ with read_base():
     from .tools.edit_file import edit_file_tool
     from .tools.list_dir import list_dir_tool
     from .tools.git import git_tool
+    from .tools.deploy import deploy_tool
+    from .tools.evolution import evolution_tool
+    from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "meta_agent"
@@ -33,7 +38,6 @@ default_dir = f"work_dir/{tag}/default"
 extension_dir = f"work_dir/{tag}/extension"
 log_path = "agent.log"
 
-use_local_proxy = True
 model_name = "aws_claude/claude-opus-4.8"
 
 memory_names = [
@@ -43,6 +47,8 @@ agent_names = [
     "meta_agent",
     "code_agent",
     "general_agent",
+    "reviewer_agent",
+    "monitor_agent",
     "tool_optimize_agent",
     "tool_evaluate_agent",
     "tool_generate_agent",
@@ -67,6 +73,9 @@ tool_names = [
     "edit_file_tool",
     "list_dir_tool",
     "git_tool",
+    "deploy_tool",
+    "evolution_tool",
+    "escalate_tool",
 ]
 skill_names = [
     # worker skills — the skill pool for this session's sub-agents (code/general/triads).
@@ -89,6 +98,8 @@ skill_names = [
     "pptx_skill",
     # browser automation — test/verify local web apps, capture screenshots
     "webapp_testing_skill",
+    # deployment — run a web service in a sandbox and bind it to a URL (drives deploy_tool)
+    "deploy_skill",
     # per-type creator skills (orchestrator role) — drive each triad's create->eval->improve loop
     "agent_creator_skill",
     "tool_creator_skill",
@@ -97,6 +108,8 @@ skill_names = [
     "skill_creator_skill",
     # orchestrator skill: how to drive the connector create->evaluate->improve loop
     "connector_creator_skill",
+    # global self-evolution playbook: WHEN to evolve + the loop + enable_evolving gate (ties the triads together)
+    "self_evolving_skill",
 ]
 connector_names = [
     "biomart_connector",
@@ -123,14 +136,14 @@ connector_names = [
 ]
 
 #-----------------TOOL CONFIGS-----------------
-bash_tool.update(require_grad=False)
+bash_tool.update(enable_evolving=False)
 git_tool.update(timeout=60)
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
-    require_grad=False,
+    enable_evolving=False,
 )
 
 #-----------------ACTOR AGENT CONFIGS-----------------
@@ -138,7 +151,7 @@ code_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -146,8 +159,21 @@ general_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
+)
+
+reviewer_agent.update(
+    base_dir=extension_dir,
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+monitor_agent.update(
+    base_dir=extension_dir,
+    enable_evolving=False,
 )
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------
@@ -155,7 +181,7 @@ tool_optimize_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -164,7 +190,7 @@ tool_generate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -173,7 +199,7 @@ tool_evaluate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -182,7 +208,7 @@ agent_generate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -190,7 +216,7 @@ agent_optimize_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -198,7 +224,7 @@ agent_evaluate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -206,7 +232,7 @@ skill_generate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -214,7 +240,7 @@ skill_optimize_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -222,7 +248,7 @@ skill_evaluate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -230,7 +256,7 @@ environment_generate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -238,7 +264,7 @@ environment_optimize_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -246,7 +272,7 @@ environment_evaluate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -254,7 +280,7 @@ connector_generate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -262,7 +288,7 @@ connector_optimize_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -270,7 +296,7 @@ connector_evaluate_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )
 
@@ -279,6 +305,6 @@ meta_agent.update(
     base_dir=extension_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )

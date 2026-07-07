@@ -53,7 +53,7 @@ class ArtifactRendererEnvironment(Environment):
     name: str = Field(default="artifact_renderer")
     description: str = Field(default="Render self-contained HTML in an isolated browser and screenshot it.")
     metadata: Dict[str, Any] = Field(default={"has_vision": True})
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     def __init__(
         self,

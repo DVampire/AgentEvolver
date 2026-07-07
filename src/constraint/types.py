@@ -105,7 +105,7 @@ class Constraint(BaseModel):
     name: str = Field(description="Unique name for this constraint.")
     description: str = Field(default="", description="The description of the constraint.")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the constraint.")
-    require_grad: bool = Field(default=False, description="Whether the constraint requires gradients.")
+    enable_evolving: bool = Field(default=False, description="Whether the constraint may be evolved (self-optimized).")
     enabled: bool = Field(default=True, description="Set to False to temporarily disable without removing.")
 
     _state: Dict[str, Dict[str, Any]] = PrivateAttr(default_factory=dict)
@@ -135,7 +135,7 @@ class ConstraintConfig(BaseModel):
     name: str = Field(description="The name of the constraint")
     description: str = Field(default="", description="The description of the constraint")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the constraint")
-    require_grad: bool = Field(default=False, description="Whether the constraint requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the constraint may be evolved (self-optimized)")
     enabled: bool = Field(default=True, description="Whether the constraint is enabled")
     version: str = Field(default="1.0.0", description="Version of the constraint")
 
@@ -157,7 +157,7 @@ class ConstraintConfig(BaseModel):
             "name": self.name,
             "description": self.description,
             "metadata": self.metadata,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             "enabled": self.enabled,
             "version": self.version,
 
@@ -180,7 +180,7 @@ class ConstraintConfig(BaseModel):
         name = data.get("name")
         description = data.get("description", "")
         metadata = data.get("metadata")
-        require_grad = data.get("require_grad", False)
+        enable_evolving = data.get("enable_evolving", False)
         enabled = data.get("enabled", True)
         version = data.get("version")
 
@@ -213,7 +213,7 @@ class ConstraintConfig(BaseModel):
         return cls(name=name,
             description=description,
             metadata=metadata,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             enabled=enabled,
             version=version,
             cls=cls_,

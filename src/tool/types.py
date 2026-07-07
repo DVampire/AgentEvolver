@@ -27,7 +27,7 @@ class Tool(BaseModel):
     description: str = Field(description="The description of the tool")
     instruction: str = Field(default="", description="Full instruction (function/guidance/parameters/example) fetched on demand via inspect_tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
 
     async def __call__(self, **kwargs) -> Response:
@@ -42,7 +42,7 @@ class ToolConfig(BaseModel):
     description: str = Field(description="The description of the tool")
     instruction: str = Field(default="", description="Full instruction (function/guidance/parameters/example); kept out of the prompt context and fetched on demand via inspect_tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the tool")
 
@@ -81,7 +81,7 @@ class ToolConfig(BaseModel):
             "description": self.description,
             "instruction": self.instruction,
             "metadata": self.metadata,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
             "version": self.version,
 
@@ -105,7 +105,7 @@ class ToolConfig(BaseModel):
         description = data.get("description")
         instruction = data.get("instruction", "")
         metadata = data.get("metadata")
-        require_grad = data.get("require_grad", False)
+        enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
         version = data.get("version")
         
@@ -139,7 +139,7 @@ class ToolConfig(BaseModel):
             description=description,
             instruction=instruction,
             metadata=metadata,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             permission_mode=permission_mode,
             version=version,
             cls=cls_,

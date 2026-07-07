@@ -72,6 +72,7 @@ class ConnectorManagerServer(BaseModel):
         connector_dir: str,
         override: bool = False,
         version: Optional[str] = None,
+        enable_evolving: Optional[bool] = None,
     ) -> ConnectorConfig:
         """Register a connector from a directory containing connector.json.
 
@@ -79,6 +80,7 @@ class ConnectorManagerServer(BaseModel):
             connector_dir: Path to the connector directory.
             override: If True, overwrite an existing connector with the same name.
             version: Explicit version string.
+            enable_evolving: If not None, override the frontmatter-parsed evolvability flag.
 
         Returns:
             The registered ConnectorConfig.
@@ -87,6 +89,7 @@ class ConnectorManagerServer(BaseModel):
             connector_dir=connector_dir,
             override=override,
             version=version,
+            enable_evolving=enable_evolving,
         )
 
     async def update(

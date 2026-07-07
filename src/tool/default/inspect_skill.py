@@ -6,15 +6,15 @@ from src.tool.types import Tool
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_DESCRIPTION = "Fetch a registered skill's live registry facts (registration status, version, evolvability/require_grad, skill directory + SKILL.md path) by name."
+_DESCRIPTION = "Fetch a registered skill's live registry facts (registration status, version, evolvability/enable_evolving, skill directory + SKILL.md path) by name."
 
 _INSTRUCTION = """
 ## Function
-Fetch a skill's live registry facts: whether it is registered, its version and type, whether it is evolvable (require_grad), and its skill directory + SKILL.md path.
+Fetch a skill's live registry facts: whether it is registered, its version and type, whether it is evolvable (enable_evolving), and its skill directory + SKILL.md path.
 
 ## Guidance
 - Use this before optimizing or evaluating a skill named in your task: it reports the target's real state in the registry, which reading files alone cannot.
-- Optimization requires require_grad=True. If inspect_skill reports require_grad=False, the skill is frozen — do NOT optimize it; refuse and report why.
+- Optimization requires enable_evolving=True. If inspect_skill reports enable_evolving=False, the skill is frozen — do NOT optimize it; refuse and report why.
 - The returned skill_dir / SKILL.md path tells you exactly which files to read/edit.
 
 ## Parameters
@@ -33,10 +33,10 @@ class InspectSkill(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
 
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = False, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, name: str, **kwargs) -> Response:
         """Return live registry facts for the named skill.
@@ -55,7 +55,7 @@ class InspectSkill(Tool):
             lines.append(f"\nAvailable skills: {available}")
             return Response(
                 type=ResponseType.TOOL, success=False, message="\n".join(lines),
-                data={"skill": name, "registered": False, "require_grad": False},
+                data={"skill": name, "registered": False, "enable_evolving": False},
             )
 
         skill_dir = getattr(info, "skill_dir", "") or ""
@@ -64,7 +64,7 @@ class InspectSkill(Tool):
         lines.append(f"- **Description**: {info.description}")
         lines.append(f"- **Version**: {info.version}")
         lines.append(f"- **Type**: {getattr(info, 'type', '')}")
-        lines.append(f"- **Evolvable (require_grad)**: {getattr(info, 'require_grad', False)}")
+        lines.append(f"- **Evolvable (enable_evolving)**: {getattr(info, 'enable_evolving', False)}")
         lines.append(f"- **Skill Directory**: `{skill_dir}` (exists: {os.path.isdir(skill_dir) if skill_dir else False})")
         lines.append(f"- **SKILL.md**: `{md_path}` (exists: {os.path.exists(md_path) if md_path else False})")
 
@@ -75,7 +75,7 @@ class InspectSkill(Tool):
             data={
                 "skill": name,
                 "registered": True,
-                "require_grad": bool(getattr(info, "require_grad", False)),
+                "enable_evolving": bool(getattr(info, "enable_evolving", False)),
                 "skill_dir": skill_dir,
             },
         )

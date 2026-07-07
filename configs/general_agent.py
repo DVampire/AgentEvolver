@@ -11,7 +11,6 @@ work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
 log_path = "agent.log"
 
-use_local_proxy = True
 version = "0.1.0"
 model_name = "aws_claude/claude-opus-4.8"
 
@@ -40,7 +39,7 @@ connector_names = [
 
 #-----------------BASH TOOL CONFIG-----------------
 bash_tool.update(
-    require_grad=False,
+    enable_evolving=False,
 )
 #-----------------MDIFY TOOL CONFIG-----------------
 mdify_tool.update(
@@ -51,7 +50,7 @@ mdify_tool.update(
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
-    require_grad=False,
+    enable_evolving=False,
 )
 
 #-----------------REASON ACT AGENT CONFIG-----------------
@@ -59,6 +58,6 @@ general_agent.update(
     base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )

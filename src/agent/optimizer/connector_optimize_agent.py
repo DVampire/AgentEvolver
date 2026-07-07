@@ -14,7 +14,7 @@ class ConnectorOptimizeAgent(Agent):
     """Evolves an existing connector (its CONNECTOR.md — connection config and per-action docs) to satisfy an
     evolution task. Runs the base-class standard loop, then re-registers the edited connector inline in
     ``__call__``. The target connector is named in the task; the agent should call ``inspect_connector`` first
-    to confirm it is registered and evolvable (require_grad=True) and to obtain its directory — a frozen
+    to confirm it is registered and evolvable (enable_evolving=True) and to obtain its directory — a frozen
     connector must NOT be optimized."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -24,7 +24,7 @@ class ConnectorOptimizeAgent(Agent):
         default="An agent that evolves an existing connector (CONNECTOR.md) given an evolution task."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
 
     def __init__(
         self,
@@ -38,7 +38,7 @@ class ConnectorOptimizeAgent(Agent):
         max_actions: int = 10,
         max_step: int = 30,
         review_steps: int = 5,
-        require_grad: bool = False,
+        enable_evolving: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -52,7 +52,7 @@ class ConnectorOptimizeAgent(Agent):
             max_actions=max_actions,
             max_step=max_step,
             review_steps=review_steps,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
 

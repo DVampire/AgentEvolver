@@ -52,7 +52,10 @@ class VersionManagerServer(BaseModel):
         self.save_path = os.path.join(self.base_dir, "version.json")
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Version manager base directory: {self.base_dir} and save path: {self.save_path}")
-        logger.info(f"| 📁 Version manager initialized.")
+        # Restore persisted version histories so version numbers / lineage survive a
+        # process restart (no-op the first time, when version.json does not yet exist).
+        loaded = await self.load_from_json()
+        logger.info(f"| 📁 Version manager initialized (history {'restored' if loaded else 'started fresh'}).")
     
     async def register_version(self, component_type: str, name: str, version: str,
                         description: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> ComponentVersionHistory:

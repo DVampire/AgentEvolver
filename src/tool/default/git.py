@@ -49,11 +49,11 @@ class GitTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
-    require_grad: bool = Field(default=False)
+    enable_evolving: bool = Field(default=False)
     timeout: int = Field(default=60)
 
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = False, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def _run(self, args: list[str], cwd: str) -> tuple[int, str, str]:
         """Run a git command, return (returncode, stdout, stderr)."""

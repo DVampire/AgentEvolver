@@ -10,7 +10,7 @@ import yaml
 
 ALLOWED_PROPERTIES = {
     'name', 'description', 'version', 'type', 'license', 'category',
-    'requirements', 'metadata', 'require_grad', 'permission_mode',
+    'requirements', 'metadata', 'enable_evolving', 'permission_mode',
     'featured', 'connection', 'actions', 'action_schemas',
 }
 

@@ -42,18 +42,18 @@ class ReformulatorTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     
     model_name: str = Field(default="openrouter/gemini-3-flash-preview", description="The model to use for reformulation.")
     
-    def __init__(self, model_name: Optional[str] = None, require_grad: bool = False, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, enable_evolving: bool = False, **kwargs):
         """
         Initialize the reformulator tool.
         
         Args:
             model_name: The model to use for reformulation. Default: "openrouter/gemini-3-flash-preview"
         """
-        super().__init__(require_grad=require_grad, **kwargs)
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
         if model_name:
             self.model_name = model_name
     

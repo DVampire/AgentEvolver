@@ -7,15 +7,15 @@ from src.response.types import Response, ResponseType
 from src.registry import TOOL
 from src.utils import get_project_root
 
-_DESCRIPTION = "Fetch a registered environment's live registry facts (registration status, version, evolvability/require_grad, source file / ENVIRONMENT.md path) by name."
+_DESCRIPTION = "Fetch a registered environment's live registry facts (registration status, version, evolvability/enable_evolving, source file / ENVIRONMENT.md path) by name."
 
 _INSTRUCTION = """
 ## Function
-Fetch an environment's live registry facts: whether it is registered, its version, whether it is evolvable (require_grad), and its source file / ENVIRONMENT.md paths.
+Fetch an environment's live registry facts: whether it is registered, its version, whether it is evolvable (enable_evolving), and its source file / ENVIRONMENT.md paths.
 
 ## Guidance
 - Use this before optimizing or evaluating an environment named in your task: it reports the target's real state in the registry, which reading files alone cannot.
-- Optimization requires require_grad=True. If inspect_environment reports require_grad=False, the environment is frozen — do NOT optimize it; refuse and report why.
+- Optimization requires enable_evolving=True. If inspect_environment reports enable_evolving=False, the environment is frozen — do NOT optimize it; refuse and report why.
 - The returned paths tell you exactly which files to read/edit.
 
 ## Parameters
@@ -34,10 +34,10 @@ class InspectEnvironment(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
 
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = False, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, name: str, **kwargs) -> Response:
         """Return live registry facts for the named environment.
@@ -63,13 +63,13 @@ class InspectEnvironment(Tool):
             lines.append(f"\nAvailable environments: {available}")
             return Response(
                 type=ResponseType.TOOL, success=False, message="\n".join(lines),
-                data={"environment": name, "registered": False, "require_grad": False},
+                data={"environment": name, "registered": False, "enable_evolving": False},
             )
 
         lines.append("- **Registered**: True")
         lines.append(f"- **Description**: {getattr(info, 'description', '')}")
         lines.append(f"- **Version**: {getattr(info, 'version', '')}")
-        lines.append(f"- **Evolvable (require_grad)**: {getattr(info, 'require_grad', False)}")
+        lines.append(f"- **Evolvable (enable_evolving)**: {getattr(info, 'enable_evolving', False)}")
         lines.append(f"- **Python File (flat)**: `{py_flat}` (exists: {os.path.exists(py_flat)})")
         lines.append(f"- **Python File (dir)**: `{py_dir}` (exists: {os.path.exists(py_dir)})")
         lines.append(f"- **ENVIRONMENT.md**: `{md_path}` (exists: {os.path.exists(md_path)})")
@@ -81,6 +81,6 @@ class InspectEnvironment(Tool):
             data={
                 "environment": name,
                 "registered": True,
-                "require_grad": bool(getattr(info, "require_grad", False)),
+                "enable_evolving": bool(getattr(info, "enable_evolving", False)),
             },
         )

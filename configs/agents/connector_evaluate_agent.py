@@ -10,7 +10,7 @@ connector_evaluate_agent = dict(
     max_token=1000000,
     timeout=1800,
     review_steps=5,
-    require_grad=False,
+    enable_evolving=False,
     permission_mode="read_only",
     use_memory=True,
 )

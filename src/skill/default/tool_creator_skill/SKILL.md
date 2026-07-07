@@ -65,10 +65,10 @@ class MyTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
 
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = False, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, arg_name: str, **kwargs) -> Response:
         """Do the work. Args mirror the Parameters block."""
@@ -90,7 +90,7 @@ After writing: `python -m py_compile /abs/path/{name}.py`. When it compiles, put
 
 ## Evaluating a tool
 
-Call `inspect_tool` on the target — it returns the full instruction plus registry facts (version, require_grad, source path). Score across:
+Call `inspect_tool` on the target — it returns the full instruction plus registry facts (version, enable_evolving, source path). Score across:
 1. **Interface Compliance** — `@TOOL.register_module`, subclass `Tool`, has `name`/`description`/`instruction`, `__call__` returns a `Response`.
 2. **Code Quality** — valid, clean, proper error handling (failures returned as `success=False`, not raised).
 3. **Instruction Quality** — `_INSTRUCTION` has the four blocks (Function/Guidance/Parameters/Example); every parameter documented; example is valid JSON.
@@ -101,7 +101,7 @@ Call `inspect_tool` on the target — it returns the full instruction plus regis
 
 ## Improving a tool
 
-The target is named in the task. Call `inspect_tool` FIRST for its source path and `require_grad` — if `require_grad=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` short and `_INSTRUCTION`'s four blocks intact. Verify with `py_compile`, then re-register via the path in `done_tool` reasoning.
+The target is named in the task. Call `inspect_tool` FIRST for its source path and `enable_evolving` — if `enable_evolving=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` short and `_INSTRUCTION`'s four blocks intact. Verify with `py_compile`, then re-register via the path in `done_tool` reasoning.
 
 ---
 

@@ -5,7 +5,7 @@
   <meta name="name" content="skill_generate_agent">
   <meta name="description" content="An agent that generates a new skill directory and SKILL.md from a description.">
   <meta name="version" content="1.4.1">
-  <meta name="require_grad" content="false">
+  <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
 </head>
@@ -55,7 +55,7 @@ Every skill lives under `extension/skill/{skill_name}/` and follows this layout:
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
 - The skill to CREATE is named in the **task**. Optionally call `inspect_skill` to check whether that name is already registered before creating it.
-- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / require_grad / source path).
+- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / enable_evolving / source path).
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
 

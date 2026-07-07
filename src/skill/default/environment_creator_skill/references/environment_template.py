@@ -34,7 +34,7 @@ class MyEnvironment(Environment):
     name: str = Field(default="my_environment")
     description: str = Field(default="What the environment is and when to use it.")
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=True)
+    enable_evolving: bool = Field(default=True)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)

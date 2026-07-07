@@ -27,7 +27,7 @@ class SkillConfig(BaseModel):
     name: str = Field(description="Skill name from YAML frontmatter")
     description: str = Field(description="Skill description from YAML frontmatter")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional YAML frontmatter fields")
-    require_grad: bool = Field(default=False, description="Whether the skill is trainable")
+    enable_evolving: bool = Field(default=False, description="Whether the skill is trainable")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the skill")
     type: Union[str, List[str]] = Field(default="tool", description="Skill type label(s) from YAML frontmatter. May be a single label (e.g. 'worker') or a list of labels (e.g. ['orchestrator', 'worker']) for a skill that serves multiple roles.")
@@ -51,7 +51,7 @@ class SkillConfig(BaseModel):
             "name": self.name,
             "description": self.description,
             "metadata": self.metadata,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
             "version": self.version,
             "type": self.type,

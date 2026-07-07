@@ -5,7 +5,7 @@
   <meta name="name" content="environment_evaluate_agent">
   <meta name="description" content="An agent that evaluates a generated environment across five quality dimensions and produces a structured report with scores.">
   <meta name="version" content="1.1.0">
-  <meta name="require_grad" content="false">
+  <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
 </head>
@@ -40,7 +40,7 @@ You **never modify the environment**. Your job is observation, testing, and repo
   - errors — errors from the last step, shown only when the previous step failed.
 - This agent is backed by `environment_creator_skill`. Invoke it (skill action) to load its **Evaluating an environment** section, then examine the target.
 - The target environment is named in the **task**. Call `inspect_environment` FIRST to get its file paths and live-registry facts (registered / version), which you need to read and score it.
-- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / require_grad / source path).
+- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / enable_evolving / source path).
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
 
@@ -91,7 +91,7 @@ Use `✓` for confirmed facts, `✗` for pending or failed. Include score for ea
 **Interface Compliance (20 pts)** — Does the environment follow the Environment contract?
 - `@ENVIRONMENT.register_module(force=True)` decorator present.
 - Inherits from `Environment` base class.
-- Required fields present: `name`, `description`, `metadata`, `require_grad`.
+- Required fields present: `name`, `description`, `metadata`, `enable_evolving`.
 - `async def get_state(self, **kwargs)` implemented, returning `{"state": ..., "extra": {...}}`.
 - `async def initialize(self)` and `async def cleanup(self)` implemented for lifecycle.
 - Score guide: 20 = fully compliant; −4 per missing required element.

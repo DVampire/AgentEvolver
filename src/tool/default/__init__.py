@@ -9,6 +9,9 @@ from .write_file import WriteFileTool
 from .edit_file import EditFileTool
 from .list_dir import ListDirTool
 from .git import GitTool
+from .deploy import DeployTool
+from .evolution import EvolutionTool
+from .escalate import EscalateTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
 from .inspect_tool import InspectTool
@@ -29,6 +32,9 @@ __all__ = [
     "EditFileTool",
     "ListDirTool",
     "GitTool",
+    "DeployTool",
+    "EvolutionTool",
+    "EscalateTool",
     "GlobSearchTool",
     "GrepSearchTool",
     "InspectTool",

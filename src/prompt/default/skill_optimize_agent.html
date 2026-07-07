@@ -5,7 +5,7 @@
   <meta name="name" content="skill_optimize_agent">
   <meta name="description" content="An agent that evolves a skill's SKILL.md given an optimization task from MetaAgent.">
   <meta name="version" content="1.1.1">
-  <meta name="require_grad" content="false">
+  <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
 </head>
@@ -56,8 +56,8 @@ A well-formed skill directory looks like:
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
 - This agent is backed by `skill_creator_skill`. Invoke it (skill action) to load its **Improving a skill** section, then examine the target.
-- The target skill is named in the **task**. Call `inspect_skill` FIRST to get its file paths and confirm it is registered and evolvable — if `require_grad=False`, do NOT edit it; report that it is frozen and stop.
-- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / require_grad / source path).
+- The target skill is named in the **task**. Call `inspect_skill` FIRST to get its file paths and confirm it is registered and evolvable — if `enable_evolving=False`, do NOT edit it; report that it is frozen and stop.
+- tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / enable_evolving / source path).
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
 
@@ -114,7 +114,7 @@ Tools and skills:
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- The canonical sequence: `[inspect_skill (get dir + check require_grad), read SKILL.md, edit file, verify edit, done_tool]`.
+- The canonical sequence: `[inspect_skill (get dir + check enable_evolving), read SKILL.md, edit file, verify edit, done_tool]`.
 - Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
 - Do NOT include an `output` field — actions are executed after planning.
 

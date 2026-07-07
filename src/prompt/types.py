@@ -98,7 +98,7 @@ def parse_prompt_text(text: str) -> "PromptConfig":
     name = meta.get("name", "")
     description = meta.get("description", "")
     version = str(meta.get("version", "1.0.0"))
-    require_grad = meta.get("require_grad", "false").lower() == "true"
+    enable_evolving = meta.get("enable_evolving", "false").lower() == "true"
 
     system_template = parser.sections.get("system", "")
     user_template = parser.sections.get("user", "")
@@ -107,7 +107,7 @@ def parse_prompt_text(text: str) -> "PromptConfig":
         name=name,
         description=description,
         version=version,
-        require_grad=require_grad,
+        enable_evolving=enable_evolving,
         system_template=system_template,
         user_template=user_template,
     )
@@ -125,7 +125,7 @@ def parse_prompt_file(path: str) -> "PromptConfig":
 
 def reconstruct_prompt_text(prompt: "Prompt") -> str:
     """Rebuild the canonical HTML file text from a Prompt instance's stored fields."""
-    req_grad = "true" if prompt.require_grad else "false"
+    req_grad = "true" if prompt.enable_evolving else "false"
     desc = html_module.escape(prompt.description, quote=True)
     return (
         f'<!DOCTYPE html>\n'
@@ -135,7 +135,7 @@ def reconstruct_prompt_text(prompt: "Prompt") -> str:
         f'  <meta name="name" content="{prompt.name}">\n'
         f'  <meta name="description" content="{desc}">\n'
         f'  <meta name="version" content="{prompt.version}">\n'
-        f'  <meta name="require_grad" content="{req_grad}">\n'
+        f'  <meta name="enable_evolving" content="{req_grad}">\n'
         f'</head>\n'
         f'<body>\n\n'
         f'<div class="system">\n{prompt.system_template}\n</div>\n\n'
@@ -152,7 +152,7 @@ class Prompt(BaseModel):
     name: str = Field(description="Prompt name, from md frontmatter")
     description: str = Field(default="", description="Short description of the agent")
     version: str = Field(default="1.0.0", description="Version string")
-    require_grad: bool = Field(default=False, description="Whether this prompt is a trainable variable")
+    enable_evolving: bool = Field(default=False, description="Whether this prompt is a trainable variable")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     system_template: str = Field(default="", description="System prompt text (Jinja2)")
     user_template: str = Field(default="", description="User/agent message text (Jinja2)")
@@ -192,7 +192,7 @@ class PromptConfig(BaseModel):
     name: str = Field(description="Prompt name")
     description: str = Field(default="", description="Short description")
     version: str = Field(default="1.0.0", description="Version string")
-    require_grad: bool = Field(default=False, description="Whether the whole prompt is a trainable variable")
+    enable_evolving: bool = Field(default=False, description="Whether the whole prompt is a trainable variable")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     system_template: str = Field(default="", description="System prompt text")
     user_template: str = Field(default="", description="User/agent message text")
@@ -204,7 +204,7 @@ class PromptConfig(BaseModel):
             name=self.name,
             description=self.description,
             version=self.version,
-            require_grad=self.require_grad,
+            enable_evolving=self.enable_evolving,
             permission_mode=self.permission_mode,
             system_template=self.system_template,
             user_template=self.user_template,
@@ -217,7 +217,7 @@ class PromptConfig(BaseModel):
             "name": self.name,
             "description": self.description,
             "version": self.version,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
             "system_template": self.system_template,
             "user_template": self.user_template,
@@ -231,7 +231,7 @@ class PromptConfig(BaseModel):
             name=data.get("name", ""),
             description=data.get("description", ""),
             version=data.get("version", "1.0.0"),
-            require_grad=data.get("require_grad", False),
+            enable_evolving=data.get("enable_evolving", False),
             permission_mode=data.get("permission_mode", "workspace_write"),
             system_template=data.get("system_template", ""),
             user_template=data.get("user_template", ""),

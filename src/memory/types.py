@@ -103,7 +103,7 @@ class Memory(BaseModel):
     name: str = Field(default="", description="The name of the memory system")
     description: str = Field(default="", description="The description of the memory system")
     save_path: Optional[str] = Field(default=None, description="Path to save/load memory JSON file")
-    require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the memory system may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     prompt_readable: bool = Field(default=True, description="Whether get() returns text suitable for prompt injection. Set False for HTML-based memories.")
 
@@ -129,7 +129,7 @@ class MemoryConfig(BaseModel):
     """Memory configuration for registration"""
     name: str = Field(description="The name of the memory system")
     description: str = Field(description="The description of the memory system")
-    require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the memory system may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the memory system")
     
@@ -144,7 +144,7 @@ class MemoryConfig(BaseModel):
         return {
             "name": self.name,
             "description": self.description,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
             "version": self.version,
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
@@ -159,7 +159,7 @@ class MemoryConfig(BaseModel):
         """Validate the model from a dictionary."""
         name = data.get("name")
         description = data.get("description")
-        require_grad = data.get("require_grad", False)
+        enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
         version = data.get("version", "1.0.0")
         
@@ -189,7 +189,7 @@ class MemoryConfig(BaseModel):
         return cls(
             name=name,
             description=description,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             permission_mode=permission_mode,
             version=version,
             cls=cls_,

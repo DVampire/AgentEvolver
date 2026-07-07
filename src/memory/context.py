@@ -137,7 +137,7 @@ class MemoryContextManager(BaseModel):
                 # Get memory config from global config
                 memory_config_key = inflection.underscore(memory_cls.__name__)
                 memory_config_dict = config.get(memory_config_key, {})
-                memory_require_grad = memory_config_dict.get("require_grad", False) if memory_config_dict and "require_grad" in memory_config_dict else False
+                memory_enable_evolving = memory_config_dict.get("enable_evolving", False) if memory_config_dict and "enable_evolving" in memory_config_dict else False
                 
                 # Create temporary instance to get name and description
                 try:
@@ -170,7 +170,7 @@ class MemoryContextManager(BaseModel):
                 memory_config = MemoryConfig(
                     name=memory_name,
                     description=memory_description,
-                    require_grad=memory_require_grad,
+                    enable_evolving=memory_enable_evolving,
                     version=memory_version,
                     cls=memory_cls,
                     config=memory_config_dict,
@@ -264,8 +264,8 @@ class MemoryContextManager(BaseModel):
             memory_name = memory_instance.name
             memory_description = memory_instance.description
             memory_metadata = getattr(memory_instance, 'metadata', {})
-            # Get require_grad from memory_config_dict if provided, otherwise from memory_instance
-            memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
+            # Get enable_evolving from memory_config_dict if provided, otherwise from memory_instance
+            memory_enable_evolving = memory_config_dict.get("enable_evolving", memory_instance.enable_evolving) if memory_config_dict and "enable_evolving" in memory_config_dict else memory_instance.enable_evolving
 
             # Register with permission manager
             permission_manager.register(
@@ -294,7 +294,7 @@ class MemoryContextManager(BaseModel):
             memory_config = MemoryConfig(
                 name=memory_name,
                 description=memory_description,
-                require_grad=memory_require_grad,
+                enable_evolving=memory_enable_evolving,
                 version=memory_version,
                 cls=memory_cls,
                 config=memory_config_dict or {},
@@ -377,8 +377,8 @@ class MemoryContextManager(BaseModel):
             
             memory_description = memory_instance.description
             memory_metadata = getattr(memory_instance, 'metadata', {})
-            # Get require_grad from memory_config_dict if provided, otherwise from memory_instance
-            memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
+            # Get enable_evolving from memory_config_dict if provided, otherwise from memory_instance
+            memory_enable_evolving = memory_config_dict.get("enable_evolving", memory_instance.enable_evolving) if memory_config_dict and "enable_evolving" in memory_config_dict else memory_instance.enable_evolving
             
             # Determine new version from version_manager
             if new_version is None:
@@ -397,7 +397,7 @@ class MemoryContextManager(BaseModel):
             updated_config = MemoryConfig(
                 name=memory_name,  # Keep same name
                 description=memory_description,
-                require_grad=memory_require_grad,
+                enable_evolving=memory_enable_evolving,
                 version=new_version,
                 cls=memory_cls,
                 config=memory_config_dict or {},
@@ -479,7 +479,7 @@ class MemoryContextManager(BaseModel):
             
             memory_description = memory_instance.description
             memory_metadata = getattr(memory_instance, 'metadata', {})
-            memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
+            memory_enable_evolving = memory_config_dict.get("enable_evolving", memory_instance.enable_evolving) if memory_config_dict and "enable_evolving" in memory_config_dict else memory_instance.enable_evolving
             
             # Determine new version from version_manager
             if new_version is None:
@@ -499,7 +499,7 @@ class MemoryContextManager(BaseModel):
             new_memory_config = MemoryConfig(
                 name=new_name,
                 description=memory_description,
-                require_grad=memory_require_grad,
+                enable_evolving=memory_enable_evolving,
                 version=new_version,
                 cls=original_config.cls,
                 config=memory_config_dict,

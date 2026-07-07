@@ -160,7 +160,12 @@ class ExtensionManagerServer(BaseModel):
         Returns the registered component name. The version is assigned by the owning
         manager (via version_manager), so re-adding an existing component evolves it.
         """
-        name, version = await self._load_component(module, abspath, None, version=None, config=config, return_version=True)
+        # add_component is the evolution-write entry point, so it enforces the
+        # enable_evolving gate: overwriting an already-registered *frozen* entity is
+        # refused here (rollback / reload / startup load do not pass this flag).
+        name, version = await self._load_component(
+            module, abspath, None, version=None, config=config, return_version=True, enforce_evolvable=True
+        )
         # Serialize the manifest read-modify-write so parallel add_component calls
         # (e.g. concurrent component evolution) don't lose each other's updates.
         async with file_lock(self._manifest_path()):
@@ -201,8 +206,68 @@ class ExtensionManagerServer(BaseModel):
         return manifest
 
     # ------------------------------------------------------------------
-    # Versioning: list / rollback
+    # Versioning: list / read / diff / rollback
     # ------------------------------------------------------------------
+    def read_component_version(self, module: str, name: str, version: str) -> Dict[str, str]:
+        """Return the archived source of a version as ``{relative_path: text}``.
+
+        Single-file modules (tool/agent/prompt) return one entry; directory modules
+        (skill/environment/connector) return one entry per file in the archived dir.
+        """
+        ext = _EXT[module]
+        path = os.path.join(self._archive_dir(module, name), f"{version}{ext}")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"No archived {module}:{name} version '{version}' at {path}")
+        out: Dict[str, str] = {}
+        if os.path.isdir(path):
+            for root, _dirs, files in os.walk(path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    rel = os.path.relpath(fp, path)
+                    try:
+                        out[rel] = open(fp, encoding="utf-8").read()
+                    except Exception:
+                        out[rel] = "<binary or unreadable>"
+        else:
+            # Single-file module: use a version-independent key (the component's canonical
+            # filename) so the same logical file aligns across versions in a diff — the
+            # archived filename is "<version><ext>", which would otherwise differ per version.
+            key = f"{name}{ext}"
+            try:
+                out[key] = open(path, encoding="utf-8").read()
+            except Exception:
+                out[key] = "<binary or unreadable>"
+        return out
+
+    def diff_versions(self, module: str, name: str, version_a: str, version_b: Optional[str] = None) -> str:
+        """Unified source diff between two archived versions.
+
+        ``version_b`` defaults to the currently active version (from the manifest), so
+        ``diff(module, name, old)`` shows what the live version changed relative to ``old``.
+        """
+        import difflib
+
+        if version_b is None:
+            comp = self.read_manifest().find(module, name)
+            version_b = comp.version if comp else version_a
+        a = self.read_component_version(module, name, version_a)
+        b = self.read_component_version(module, name, version_b)
+        chunks: List[str] = []
+        for rel in sorted(set(a) | set(b)):
+            if rel not in a:
+                chunks.append(f"+++ added in {version_b}: {rel}")
+                continue
+            if rel not in b:
+                chunks.append(f"--- removed in {version_b}: {rel}")
+                continue
+            d = list(difflib.unified_diff(
+                a[rel].splitlines(keepends=True), b[rel].splitlines(keepends=True),
+                fromfile=f"{version_a}/{rel}", tofile=f"{version_b}/{rel}",
+            ))
+            if d:
+                chunks.append("".join(d))
+        return "\n".join(chunks) if chunks else f"(no differences between v{version_a} and v{version_b})"
+
     def list_component_versions(self, module: str, name: str) -> List[str]:
         adir = self._archive_dir(module, name)
         if not os.path.isdir(adir):
@@ -279,20 +344,76 @@ class ExtensionManagerServer(BaseModel):
     # ------------------------------------------------------------------
     # Per-module load / unload dispatch
     # ------------------------------------------------------------------
+    async def _assert_evolvable(self, module: str, name: str) -> None:
+        """Refuse to overwrite an already-registered *frozen* entity (enable_evolving=False).
+
+        A brand-new entity (not yet registered) returns None → allowed. On any lookup
+        error we fail open (allow) so generation of new components is never blocked by a
+        transient registry hiccup.
+        """
+        current = await self._current_enable_evolving(module, name)
+        if current is False:
+            raise PermissionError(
+                f"{module}:{name} is frozen (enable_evolving=False) and cannot be overwritten by "
+                f"evolution. Set 'enable_evolving: true' on it first if you intend to evolve it."
+            )
+
+    async def _current_enable_evolving(self, module: str, name: str):
+        """The currently-registered entity's enable_evolving flag, or None if not registered."""
+        try:
+            if module == "tool":
+                from src.tool.server import tool_manager
+                inst = await tool_manager.get(name)
+                return getattr(inst, "enable_evolving", None) if inst is not None else None
+            if module == "agent":
+                from src.agent.server import agent_manager
+                info = await agent_manager.get_info(name)
+                return getattr(info, "enable_evolving", None) if info is not None else None
+            if module == "environment":
+                from src.environment.server import environment_manager
+                info = await environment_manager.get_info(name)
+                return getattr(info, "enable_evolving", None) if info is not None else None
+            if module == "skill":
+                from src.skill.server import skill_manager
+                info = await skill_manager.get_info(name)
+                return getattr(info, "enable_evolving", None) if info is not None else None
+            if module == "connector":
+                from src.connector.server import connector_manager
+                info = await connector_manager.get_info(name)
+                return getattr(info, "enable_evolving", None) if info is not None else None
+        except Exception as e:
+            logger.warning(f"| ⚠️ ExtensionManager: evolvability check for {module}:{name} failed ({e}); allowing.")
+        return None
+
+    @staticmethod
+    def _dir_component_name(abspath: str, md_name: str, default: str) -> str:
+        """Read the `name:` from a dir component's SKILL.md/CONNECTOR.md frontmatter."""
+        import re as _re
+        import yaml as _yaml
+        try:
+            raw = open(os.path.join(abspath, md_name), encoding="utf-8").read()
+            m = _re.match(r"^---\s*\n(.*?)\n---", raw, _re.DOTALL)
+            fm = _yaml.safe_load(m.group(1)) if m else {}
+            return (fm or {}).get("name") or default
+        except Exception:
+            return default
+
     async def _load_component(self, module: str, abspath: str, name_hint: Optional[str],
-                              version: Optional[str], config: Optional[dict], return_version: bool = False):
+                              version: Optional[str], config: Optional[dict], return_version: bool = False,
+                              enforce_evolvable: bool = False):
         if module in _CLASS_MODULES:
-            return await self._load_class_component(module, abspath, version, config, return_version)
+            return await self._load_class_component(module, abspath, version, config, return_version, enforce_evolvable)
         if module == "prompt":
-            return await self._load_prompt(abspath, return_version)
+            return await self._load_prompt(abspath, return_version)  # prompts carry no enable_evolving flag
         if module == "skill":
-            return await self._load_skill(abspath, version, return_version)
+            return await self._load_skill(abspath, version, return_version, enforce_evolvable, config)
         if module == "connector":
-            return await self._load_connector(abspath, version, return_version)
+            return await self._load_connector(abspath, version, return_version, enforce_evolvable, config)
         raise ValueError(f"Unknown extension module: {module}")
 
     async def _load_class_component(self, module: str, abspath: str, version: Optional[str],
-                                    config: Optional[dict], return_version: bool):
+                                    config: Optional[dict], return_version: bool,
+                                    enforce_evolvable: bool = False):
         from src.dynamic import dynamic_manager
         base_cls = self._base_class(module)
         # Directory-type class modules (environment) keep the class in a fixed entry
@@ -311,6 +432,12 @@ class ExtensionManagerServer(BaseModel):
         cls.__source_file__ = class_file
         with open(class_file, "r", encoding="utf-8") as f:
             code = f.read()
+
+        if enforce_evolvable:
+            fields = getattr(cls, "model_fields", {})
+            intended = fields["name"].default if "name" in fields else getattr(cls, "name", stem)
+            if isinstance(intended, str) and intended:
+                await self._assert_evolvable(module, intended)
 
         if module == "tool":
             from src.tool.server import tool_manager
@@ -336,15 +463,23 @@ class ExtensionManagerServer(BaseModel):
         registered = await prompt_manager.register(prompt=cfg.model_dump(), override=True)
         return (registered.name, getattr(registered, "version", "1.0.0")) if return_version else registered.name
 
-    async def _load_skill(self, abspath: str, version: Optional[str], return_version: bool):
+    async def _load_skill(self, abspath: str, version: Optional[str], return_version: bool,
+                          enforce_evolvable: bool = False, config: Optional[dict] = None):
         from src.skill.server import skill_manager
-        cfg = await skill_manager.register(skill_dir=abspath, override=True, version=version)
+        if enforce_evolvable:
+            await self._assert_evolvable("skill", self._dir_component_name(abspath, "SKILL.md", os.path.basename(abspath)))
+        ev = (config or {}).get("enable_evolving")
+        cfg = await skill_manager.register(skill_dir=abspath, override=True, version=version, enable_evolving=ev)
         name = getattr(cfg, "name", os.path.basename(abspath))
         return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
 
-    async def _load_connector(self, abspath: str, version: Optional[str], return_version: bool):
+    async def _load_connector(self, abspath: str, version: Optional[str], return_version: bool,
+                              enforce_evolvable: bool = False, config: Optional[dict] = None):
         from src.connector.server import connector_manager
-        cfg = await connector_manager.register(connector_dir=abspath, override=True, version=version)
+        if enforce_evolvable:
+            await self._assert_evolvable("connector", self._dir_component_name(abspath, "CONNECTOR.md", os.path.basename(abspath)))
+        ev = (config or {}).get("enable_evolving")
+        cfg = await connector_manager.register(connector_dir=abspath, override=True, version=version, enable_evolving=ev)
         name = getattr(cfg, "name", os.path.basename(abspath))
         return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
 

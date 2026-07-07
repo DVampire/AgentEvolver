@@ -39,11 +39,11 @@ class BashTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     timeout: int = Field(default=600, description="Timeout in seconds for command execution")
 
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = False, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, command: str, **kwargs) -> Response:
         """Execute a bash command asynchronously.

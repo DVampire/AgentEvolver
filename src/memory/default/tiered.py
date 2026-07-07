@@ -25,7 +25,10 @@ LLM-summary logic lives in exactly one place.
 from __future__ import annotations
 
 import asyncio
+import ast
+import json
 import os
+import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional
@@ -64,6 +67,27 @@ def _as_text(value: Any) -> str:
     if value is None:
         return ""
     return value if isinstance(value, str) else str(value)
+
+
+def _parse_message_dict(message: Any) -> Dict[str, Any]:
+    """Best-effort parse of an event message into a dict.
+
+    Agent step output may be JSON or a Python-dict repr; try JSON first (fast, safe),
+    then ``ast.literal_eval`` as a fallback, then give up with an empty dict. Never
+    raises, so a malformed message can't break memory ingestion.
+    """
+    if isinstance(message, dict):
+        return message
+    if not message or not isinstance(message, str):
+        return {}
+    for parse in (json.loads, ast.literal_eval):
+        try:
+            out = parse(message)
+            if isinstance(out, dict):
+                return out
+        except Exception:
+            continue
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +136,10 @@ class _SessionState:
         self.final_result: Optional[str] = None
         self.result_success: bool = True
 
+        self.last_access: float = time.monotonic()  # for LRU eviction
+        self._dirty: bool = False                    # unpersisted changes pending
+        self._flush_task: Optional[asyncio.Task] = None  # single coalescing writer
+
         # Buffer tool/skill actions per step until POST_STEP flushes them into the flow chart.
         self._pending_step_actions: Dict[int, List[Dict[str, Any]]] = {}
         # subtask_id → index, for O(1) MetaAgent status updates.
@@ -143,6 +171,9 @@ class TieredMemory(Memory):
     working_max: int = Field(default=10, description="Max working-memory summaries kept.")
     working_fetch: int = Field(default=5, description="Working summaries injected by get().")
     compact_chunk: int = Field(default=10, description="Records consolidated per compaction.")
+
+    persist_debounce: float = Field(default=0.2, description="Seconds to coalesce a burst of events into a single file write per session.")
+    max_sessions: int = Field(default=256, description="Max in-memory sessions kept; least-recently-used ones are evicted beyond this.")
 
     file_ext: str = Field(default="txt", description="Persisted file extension.")
 
@@ -212,12 +243,14 @@ class TieredMemory(Memory):
             changed = False
 
         if changed:
-            asyncio.create_task(self._persist(state))
+            self._schedule_persist(state)
 
     async def get(self, session_id: str, short_term_n: Optional[int] = None, **kwargs) -> Optional[str]:
         """Return a markdown memory context string for prompt injection."""
         async with self._registry_lock:
             state = self._sessions.get(session_id)
+            if state is not None:
+                state.last_access = time.monotonic()
         if state is None:
             return None
 
@@ -251,15 +284,7 @@ class TieredMemory(Memory):
         md = event.metadata
         changed = False
         # Try to parse message as dict for step-level data (reasoning)
-        out: Dict[str, Any] = {}
-        if event.message:
-            try:
-                import ast
-                out = ast.literal_eval(event.message)
-                if not isinstance(out, dict):
-                    out = {}
-            except Exception:
-                out = {}
+        out: Dict[str, Any] = _parse_message_dict(event.message)
 
         # ── POST_STEP: flush this step's buffered tool/skill actions ──
         if event.step_number is not None and "reasoning" in out:
@@ -407,11 +432,37 @@ class TieredMemory(Memory):
     # Persistence
     # ------------------------------------------------------------------
 
+    def _schedule_persist(self, state: _SessionState) -> None:
+        """Mark the session dirty and ensure exactly one coalescing writer is running.
+
+        Called on the hot path (every event). Instead of spawning a full-file write per
+        event, a single per-session flush task absorbs bursts and writes once per debounce
+        window — far fewer full re-renders/overwrites. Safe under asyncio's single thread:
+        the dirty flag and task check/create happen without an intervening await.
+        """
+        state._dirty = True
+        t = state._flush_task
+        if t is None or t.done():
+            state._flush_task = asyncio.create_task(self._flush_loop(state))
+
+    async def _flush_loop(self, state: _SessionState) -> None:
+        """Drain the dirty flag, coalescing a burst of events into as few writes as possible."""
+        try:
+            while state._dirty:
+                state._dirty = False               # events during the window re-set this → loop again
+                if self.persist_debounce > 0:
+                    await asyncio.sleep(self.persist_debounce)
+                await self._persist(state)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"| ⚠️ {self.name}: persist flush failed ({e})")
+
     async def _persist(self, state: _SessionState) -> None:
         if not self.base_dir:
             return
         async with state._write_lock:
-            content = self._render(state)
+            content = self._render(state)          # synchronous + atomic → consistent snapshot
             await asyncio.to_thread(_write_sync, state.file_path, content)
 
     def _render(self, state: _SessionState) -> str:
@@ -423,6 +474,7 @@ class TieredMemory(Memory):
     # ------------------------------------------------------------------
 
     async def _get_or_create(self, session_id: str, event: TraceEvent) -> _SessionState:
+        victims: List[_SessionState] = []
         async with self._registry_lock:
             if session_id not in self._sessions:
                 task = ""
@@ -435,4 +487,33 @@ class TieredMemory(Memory):
                     session_id=session_id, task=task, file_path=file_path,
                     working_max=self.working_max)
                 logger.info(f"| 📄 {self.name}: created session {session_id}")
-            return self._sessions[session_id]
+            state = self._sessions[session_id]
+            state.last_access = time.monotonic()
+            # Bound in-memory sessions: evict least-recently-used ones (never the current
+            # one). Collect victims under the lock; finalize them AFTER releasing it so a
+            # victim's final flush can't deadlock against this registry lock.
+            if len(self._sessions) > self.max_sessions:
+                for sid, st in sorted(self._sessions.items(), key=lambda kv: kv[1].last_access):
+                    if len(self._sessions) <= self.max_sessions:
+                        break
+                    if sid == session_id:
+                        continue
+                    victims.append(self._sessions.pop(sid))
+        for st in victims:
+            await self._evict(st)
+        return state
+
+    async def _evict(self, state: _SessionState) -> None:
+        """Flush a session's final state to disk, then drop its coalescing writer.
+
+        Called only after the session was removed from ``_sessions`` (under the registry
+        lock), so no new events can reach it while we finalize.
+        """
+        try:
+            await self._persist(state)
+        except Exception as e:
+            logger.warning(f"| ⚠️ {self.name}: final persist on evict failed ({e})")
+        t = state._flush_task
+        if t is not None and not t.done():
+            t.cancel()
+        logger.info(f"| 🧹 {self.name}: evicted LRU session {state.session_id}")

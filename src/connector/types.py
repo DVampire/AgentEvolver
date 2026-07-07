@@ -27,7 +27,7 @@ class ConnectorConfig(BaseModel):
     name: str = Field(description="Connector (MCP server) name from connector.json")
     description: str = Field(default="", description="Connector description from connector.json")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional connector.json fields")
-    require_grad: bool = Field(default=False, description="Whether the connector is trainable")
+    enable_evolving: bool = Field(default=False, description="Whether the connector is trainable")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the connector")
     type: str = Field(default="worker", description="Connector type label from connector.json (free-form parameter, no special handling)")
@@ -45,7 +45,7 @@ class ConnectorConfig(BaseModel):
             "name": self.name,
             "description": self.description,
             "metadata": self.metadata,
-            "require_grad": self.require_grad,
+            "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
             "version": self.version,
             "type": self.type,

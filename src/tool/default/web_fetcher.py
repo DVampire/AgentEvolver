@@ -34,11 +34,11 @@ class WebFetcherTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     
-    def __init__(self, require_grad: bool = False, **kwargs):
+    def __init__(self, enable_evolving: bool = False, **kwargs):
         """A tool for fetching web content asynchronously."""
-        super().__init__(require_grad=require_grad, **kwargs)
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, url: str, **kwargs) -> Response:
         """

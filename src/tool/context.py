@@ -157,7 +157,7 @@ class ToolContextManager(BaseModel):
                 # Get tool config from global config
                 tool_config_key = inflection.underscore(tool_cls.__name__)
                 tool_config_dict = config.get(tool_config_key, {})
-                tool_require_grad = tool_config_dict.get("require_grad", False) if tool_config_dict and "require_grad" in tool_config_dict else False
+                tool_enable_evolving = tool_config_dict.get("enable_evolving", False) if tool_config_dict and "enable_evolving" in tool_config_dict else False
                 
                 # Get tool properties from tool class
                 tool_name = tool_cls.model_fields['name'].default
@@ -191,7 +191,7 @@ class ToolContextManager(BaseModel):
                     text=tool_text,
                     args_schema=tool_args_schema,
                     metadata=tool_metadata,
-                    require_grad=tool_require_grad,
+                    enable_evolving=tool_enable_evolving,
                     code=tool_code,
                     path=tool_path,
                 )
@@ -308,8 +308,8 @@ class ToolContextManager(BaseModel):
             tool_name = tool_instance.name
             tool_description = tool_instance.description
             tool_metadata = tool_instance.metadata
-            # Get require_grad from tool_config_dict if provided, otherwise from tool_instance
-            tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict and "require_grad" in tool_config_dict else tool_instance.require_grad
+            # Get enable_evolving from tool_config_dict if provided, otherwise from tool_instance
+            tool_enable_evolving = tool_config_dict.get("enable_evolving", tool_instance.enable_evolving) if tool_config_dict and "enable_evolving" in tool_config_dict else tool_instance.enable_evolving
 
             # Register with permission manager
             permission_manager.register(
@@ -348,7 +348,7 @@ class ToolContextManager(BaseModel):
                 name=tool_name,
                 description=tool_description,
                 metadata=tool_metadata,
-                require_grad=tool_require_grad,
+                enable_evolving=tool_enable_evolving,
                 version=tool_version,
                 cls=tool_cls,
                 config=tool_config_dict or {},
@@ -458,8 +458,8 @@ class ToolContextManager(BaseModel):
             
             tool_description = tool_instance.description
             tool_metadata = tool_instance.metadata
-            # Get require_grad from tool_config_dict if provided, otherwise from tool_instance
-            tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict and "require_grad" in tool_config_dict else tool_instance.require_grad
+            # Get enable_evolving from tool_config_dict if provided, otherwise from tool_instance
+            tool_enable_evolving = tool_config_dict.get("enable_evolving", tool_instance.enable_evolving) if tool_config_dict and "enable_evolving" in tool_config_dict else tool_instance.enable_evolving
             
             # Determine new version from version_manager
             if new_version is None:
@@ -485,7 +485,7 @@ class ToolContextManager(BaseModel):
                 name=tool_name,  # Keep same name
                 description=tool_description,
                 metadata=tool_metadata,
-                require_grad=tool_require_grad,
+                enable_evolving=tool_enable_evolving,
                 version=new_version,
                 cls=tool_cls,
                 config=tool_config_dict or {},
@@ -570,7 +570,7 @@ class ToolContextManager(BaseModel):
             
             tool_description = tool_instance.description
             tool_metadata = tool_instance.metadata
-            tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict and "require_grad" in tool_config_dict else tool_instance.require_grad
+            tool_enable_evolving = tool_config_dict.get("enable_evolving", tool_instance.enable_evolving) if tool_config_dict and "enable_evolving" in tool_config_dict else tool_instance.enable_evolving
             
             # Determine new version from version_manager
             if new_version is None:
@@ -597,7 +597,7 @@ class ToolContextManager(BaseModel):
                 name=new_name,
                 description=tool_description,
                 metadata=tool_metadata,
-                require_grad=tool_require_grad,
+                enable_evolving=tool_enable_evolving,
                 version=new_version,
                 cls=original_config.cls,
                 config=tool_config_dict,

@@ -57,7 +57,7 @@ When unsure, prefer a tool-calling agent — it's the more general, more capable
 ### The class is THIN — inherit, don't reinvent
 
 The base `Agent` already implements the standard think-and-act loop (`__call__`) and the context builder (`_get_agent_context`, `_get_messages`, `_think_and_act`). A well-formed tool-calling agent **inherits all of it** and only supplies:
-- its identity fields (`name`, `description`, `metadata`, `require_grad`),
+- its identity fields (`name`, `description`, `metadata`, `enable_evolving`),
 - an `__init__` that sets `prompt_name` (must match the HTML prompt's `<meta name="name">`),
 - a thin `__call__` that delegates to `super().__call__(...)`.
 
@@ -94,7 +94,7 @@ Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta n
 
 Call `inspect_agent` on the target for its registry facts (registered / instantiated / version / file paths). Score across five dimensions (0–20 each):
 
-1. **Interface Compliance** — `@AGENT.register_module`, inherits `Agent`, has `name`/`description`/`metadata`/`require_grad`; **cleanly inherits the base loop** (does NOT re-implement `__call__`/`_get_agent_context`/`_think_and_act` without reason — a generator overriding only `__call__` to register is fine; a workflow agent legitimately overrides `__call__`).
+1. **Interface Compliance** — `@AGENT.register_module`, inherits `Agent`, has `name`/`description`/`metadata`/`enable_evolving`; **cleanly inherits the base loop** (does NOT re-implement `__call__`/`_get_agent_context`/`_think_and_act` without reason — a generator overriding only `__call__` to register is fine; a workflow agent legitimately overrides `__call__`).
 2. **Code Quality** — clean, valid, no dead code; lifecycle hooks come from the inherited loop, not re-implemented.
 3. **Prompt Quality** — HTML present (tool-calling) with the required sections, the container-vs-sibling `agent-context` layout, correct template variables, and an `output-schema` matching the loop. Auto-pass for workflow agents (no prompt).
 4. **Integration** — `inspect_agent` shows Registered + Instantiated.
@@ -106,7 +106,7 @@ For an empirical check, MetaAgent can dispatch the agent on a sample task and in
 
 ## Improving an agent
 
-Most agent improvement is **prompt improvement**. The target is named in the task. Call `inspect_agent` FIRST for its file paths and `require_grad` — if `require_grad=False`, the agent is frozen; do NOT edit it, report and stop.
+Most agent improvement is **prompt improvement**. The target is named in the task. Call `inspect_agent` FIRST for its file paths and `enable_evolving` — if `enable_evolving=False`, the agent is frozen; do NOT edit it, report and stop.
 
 - Read the Python and HTML before editing. Decide whether the fix is in the **prompt** (behavior, rules, reasoning — most common) or the **class** (a real code bug).
 - Make the smallest correct change. Preserve `@AGENT.register_module`, `name`, and the prompt's `agent-context` structure / template variables / output-schema.

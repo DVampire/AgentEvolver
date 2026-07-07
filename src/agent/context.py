@@ -158,7 +158,7 @@ class AgentContextManager(BaseModel):
                 # Get agent config from global config
                 agent_config_key = inflection.underscore(agent_cls.__name__)
                 agent_config_dict = getattr(config, agent_config_key, {})
-                agent_require_grad = agent_config_dict.get("require_grad", False) if agent_config_dict and "require_grad" in agent_config_dict else False
+                agent_enable_evolving = agent_config_dict.get("enable_evolving", False) if agent_config_dict and "enable_evolving" in agent_config_dict else False
                 
                 # Get agent properties from agent class
                 agent_name = agent_cls.model_fields['name'].default
@@ -181,7 +181,7 @@ class AgentContextManager(BaseModel):
                     name=agent_name,
                     description=agent_description,
                     version=agent_version,
-                    require_grad=agent_require_grad,
+                    enable_evolving=agent_enable_evolving,
                     cls=agent_cls,
                     config=agent_config_dict,
                     instance=None,
@@ -302,7 +302,7 @@ class AgentContextManager(BaseModel):
             agent_name = agent_instance.name
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
-            agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict and "require_grad" in agent_config_dict else agent_instance.require_grad
+            agent_enable_evolving = agent_config_dict.get("enable_evolving", agent_instance.enable_evolving) if agent_config_dict and "enable_evolving" in agent_config_dict else agent_instance.enable_evolving
 
             # Register with permission manager
             permission_manager.register(
@@ -333,7 +333,7 @@ class AgentContextManager(BaseModel):
                 description=agent_description,
                 metadata=agent_metadata,
                 version=agent_version,
-                require_grad=agent_require_grad,
+                enable_evolving=agent_enable_evolving,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
@@ -441,7 +441,7 @@ class AgentContextManager(BaseModel):
             
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
-            agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict else agent_instance.require_grad
+            agent_enable_evolving = agent_config_dict.get("enable_evolving", agent_instance.enable_evolving) if agent_config_dict else agent_instance.enable_evolving
             
             # Determine new version from version_manager
             if new_version is None:
@@ -468,7 +468,7 @@ class AgentContextManager(BaseModel):
                 description=agent_description,
                 metadata=agent_metadata,
                 version=new_version,
-                require_grad=agent_require_grad,
+                enable_evolving=agent_enable_evolving,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
@@ -553,7 +553,7 @@ class AgentContextManager(BaseModel):
             
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
-            agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict and "require_grad" in agent_config_dict else agent_instance.require_grad
+            agent_enable_evolving = agent_config_dict.get("enable_evolving", agent_instance.enable_evolving) if agent_config_dict and "enable_evolving" in agent_config_dict else agent_instance.enable_evolving
             
             # Determine new version from version_manager
             if new_version is None:
@@ -581,7 +581,7 @@ class AgentContextManager(BaseModel):
                 description=agent_description,
                 metadata=agent_metadata,
                 version=new_version,
-                require_grad=agent_require_grad,
+                enable_evolving=agent_enable_evolving,
                 cls=original_config.cls,
                 config=agent_config_dict,
                 instance=agent_instance,

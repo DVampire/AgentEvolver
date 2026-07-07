@@ -10,6 +10,7 @@ with read_base():
     from .tools.git import git_tool
     from .tools.glob_search import glob_search_tool
     from .tools.grep_search import grep_search_tool
+    from .tools.deploy import deploy_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "code_agent"
@@ -17,7 +18,6 @@ work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
 log_path = "agent.log"
 
-use_local_proxy = True
 model_name = "aws_claude/claude-opus-4.8"
 
 memory_names = [
@@ -36,6 +36,7 @@ tool_names = [
     "git_tool",
     "glob_search_tool",
     "grep_search_tool",
+    "deploy_tool",
     "inspect_tool",
     "todo_tool",
 ]
@@ -49,7 +50,7 @@ connector_names = [
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(
-    require_grad=False,
+    enable_evolving=False,
 )
 git_tool.update(
     timeout=60,
@@ -59,7 +60,7 @@ git_tool.update(
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
-    require_grad=False,
+    enable_evolving=False,
 )
 
 #-----------------CODE AGENT CONFIG-----------------
@@ -67,6 +68,6 @@ code_agent.update(
     base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )

@@ -14,6 +14,6 @@ browser_agent = dict(
     max_screenshots = 2,
     review_steps = 5,
     log_max_length = 1000,
-    require_grad = False,
+    enable_evolving = False,
     use_memory = True,
 )

@@ -30,7 +30,9 @@ class ToolRegistrationHook(Hook):
 
         try:
             from src.extension import extension_manager
-            name = await extension_manager.add_component("tool", tool_path)
+            # Newly generated components are registered evolvable so a later round can optimize
+            # them. Overwriting an existing *frozen* entity is still refused inside add_component.
+            name = await extension_manager.add_component("tool", tool_path, config={"enable_evolving": True})
             logger.info(f"| 🔄 ToolRegistrationHook: '{name}' registered from {tool_path}")
             return HookResult.allow()
         except Exception as e:

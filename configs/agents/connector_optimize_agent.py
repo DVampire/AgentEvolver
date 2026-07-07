@@ -10,6 +10,6 @@ connector_optimize_agent = dict(
     max_token=1000000,
     timeout=1800,
     review_steps=5,
-    require_grad=False,
+    enable_evolving=False,
     use_memory=False,
 )

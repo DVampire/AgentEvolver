@@ -2,7 +2,6 @@
 tag = "base"
 work_dir = f"work_dir/{tag}"
 log_path = "base.log"
-use_local_proxy = False
 model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 #---------------MEMORY CONFIG---------------

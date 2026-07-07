@@ -29,7 +29,7 @@ class MyWorkflowAgent(Agent):
     name: str = Field(default="my_workflow_agent")
     description: str = Field(default="What this workflow does and when to use it.")
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    require_grad: bool = Field(default=True)
+    enable_evolving: bool = Field(default=True)
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class MyWorkflowAgent(Agent):
         max_actions: int = 10,
         max_step: int = 30,
         review_steps: int = 5,
-        require_grad: bool = True,
+        enable_evolving: bool = True,
         **kwargs,
     ):
         super().__init__(
@@ -57,7 +57,7 @@ class MyWorkflowAgent(Agent):
             max_actions=max_actions,
             max_step=max_step,
             review_steps=review_steps,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             **kwargs,
         )
 

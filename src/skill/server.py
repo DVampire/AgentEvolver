@@ -71,6 +71,7 @@ class SkillManagerServer(BaseModel):
         skill_dir: str,
         override: bool = False,
         version: Optional[str] = None,
+        enable_evolving: Optional[bool] = None,
     ) -> SkillConfig:
         """Register a skill from a directory containing SKILL.md.
 
@@ -78,6 +79,7 @@ class SkillManagerServer(BaseModel):
             skill_dir: Path to the skill directory.
             override: If True, overwrite an existing skill with the same name.
             version: Explicit version string.
+            enable_evolving: If not None, override the frontmatter-parsed evolvability flag.
 
         Returns:
             The registered SkillConfig.
@@ -86,6 +88,7 @@ class SkillManagerServer(BaseModel):
             skill_dir=skill_dir,
             override=override,
             version=version,
+            enable_evolving=enable_evolving,
         )
 
     async def update(

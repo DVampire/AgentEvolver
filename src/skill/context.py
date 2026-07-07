@@ -153,9 +153,9 @@ class SkillContextManager(BaseModel):
         name = frontmatter.get("name", skill_dir.name)
         description = frontmatter.get("description", "")
         version = frontmatter.get("version", "1.0.0")
-        require_grad = str(frontmatter.get("require_grad", "false")).lower() == "true"
+        enable_evolving = str(frontmatter.get("enable_evolving", "false")).lower() == "true"
         type_value = frontmatter.get("type", "tool")
-        metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "require_grad")}
+        metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "enable_evolving")}
 
         def _scan_dir(d: Path) -> List[str]:
             return [str(p) for p in sorted(d.rglob("*")) if p.is_file()] if d.is_dir() else []
@@ -169,7 +169,7 @@ class SkillContextManager(BaseModel):
             name=name,
             description=description,
             metadata=metadata,
-            require_grad=require_grad,
+            enable_evolving=enable_evolving,
             version=version,
             type=type_value,
             skill_dir=str(skill_dir),
@@ -251,6 +251,7 @@ class SkillContextManager(BaseModel):
         skill_dir: str,
         override: bool = False,
         version: Optional[str] = None,
+        enable_evolving: Optional[bool] = None,
     ) -> SkillConfig:
         """Register a skill from a directory containing SKILL.md.
 
@@ -258,6 +259,8 @@ class SkillContextManager(BaseModel):
             skill_dir: Path to the skill directory.
             override: If True, overwrite an existing skill with the same name.
             version: Explicit version string. If None, reads from frontmatter or auto-generates.
+            enable_evolving: If not None, override the frontmatter-parsed evolvability flag
+                (newly generated skills are registered evolvable so they can be optimized later).
 
         Returns:
             The registered SkillConfig.
@@ -267,6 +270,8 @@ class SkillContextManager(BaseModel):
             raise FileNotFoundError(f"No SKILL.md found in {skill_dir}")
 
         skill_config = self._parse_skill_dir(skill_dir_path)
+        if enable_evolving is not None:
+            skill_config.enable_evolving = enable_evolving
 
         if version is not None:
             skill_config.version = version

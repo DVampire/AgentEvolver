@@ -15,7 +15,6 @@ work_dir = f"work_dir/{tag}"
 default_dir = f"work_dir/{tag}/default"
 log_path = "agent_evaluate_agent.log"
 
-use_local_proxy = True
 model_name = "aws_claude/claude-opus-4.8"
 
 tool_names = [
@@ -41,13 +40,13 @@ memory_names = [
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(
-    require_grad=False,
+    enable_evolving=False,
 )
 #-----------------MEMORY CONFIG-----------------
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
-    require_grad=False,
+    enable_evolving=False,
 )
 
 #-----------------AGENT CONFIG-----------------
@@ -55,6 +54,6 @@ agent_evaluate_agent.update(
     base_dir=work_dir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )

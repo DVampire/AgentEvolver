@@ -19,10 +19,10 @@ class CalculatorTool(Tool):
         '- op (str): One of +, -, *, /, %, **.\n'
     )
     metadata: Dict[str, Any] = Field(default={})
-    require_grad: bool = Field(default=True)
+    enable_evolving: bool = Field(default=True)
 
-    def __init__(self, require_grad: bool = True, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = True, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, a: float, b: float, op: str, **kwargs) -> Response:
         '''Execute the arithmetic operation and return a Response.'''

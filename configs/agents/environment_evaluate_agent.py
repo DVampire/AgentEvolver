@@ -5,11 +5,12 @@ environment_evaluate_agent = dict(
     model_name="aws_claude/claude-opus-4.8",
     prompt_name="environment_evaluate_agent",
     memory_name="file_system_memory",
+    permission_mode="read_only",
     max_actions=10,
     max_step=20,
     max_token=1000000,
     timeout=1800,
     review_steps=5,
-    require_grad=False,
+    enable_evolving=False,
     use_memory=True,
 )

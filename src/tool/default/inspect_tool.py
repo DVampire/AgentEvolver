@@ -7,15 +7,15 @@ from src.tool.server import tool_manager
 from src.response.types import Response, ResponseType
 from src.registry import TOOL
 
-_DESCRIPTION = "Fetch a registered tool's full instruction plus its live registry facts (version, evolvability/require_grad, source file path) by name."
+_DESCRIPTION = "Fetch a registered tool's full instruction plus its live registry facts (version, evolvability/enable_evolving, source file path) by name."
 
 _INSTRUCTION = """
 ## Function
-Fetch a registered tool's full instruction (function, guidance, parameters, examples) plus its live registry facts (version, evolvability/require_grad, source file path).
+Fetch a registered tool's full instruction (function, guidance, parameters, examples) plus its live registry facts (version, evolvability/enable_evolving, source file path).
 
 ## Guidance
 - The tool context lists only each tool's name and one-line description. Before calling a tool whose arguments you are unsure of, call inspect_tool to read its full instruction.
-- When optimizing or evaluating a tool: the registry facts give you its source file path (to read/edit) and its `require_grad` — optimization requires require_grad=True; a frozen tool (require_grad=False) must NOT be edited.
+- When optimizing or evaluating a tool: the registry facts give you its source file path (to read/edit) and its `enable_evolving` — optimization requires enable_evolving=True; a frozen tool (enable_evolving=False) must NOT be edited.
 - Pass the exact tool name as shown in the tool context.
 
 ## Parameters
@@ -34,10 +34,10 @@ class InspectTool(Tool):
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
 
-    def __init__(self, require_grad: bool = False, **kwargs):
-        super().__init__(require_grad=require_grad, **kwargs)
+    def __init__(self, enable_evolving: bool = False, **kwargs):
+        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, name: str, **kwargs) -> Response:
         """Return the full instruction of the named tool.
@@ -61,13 +61,13 @@ class InspectTool(Tool):
 
         # Registry facts — used by tool optimize/evaluate agents (source path + evolvability).
         path = getattr(info, "path", None)
-        require_grad = bool(getattr(info, "require_grad", False))
+        enable_evolving = bool(getattr(info, "enable_evolving", False))
         version = getattr(info, "version", "")
         facts = (
             "\n\n## Registry Facts\n"
             f"- **Registered**: True\n"
             f"- **Version**: {version}\n"
-            f"- **Evolvable (require_grad)**: {require_grad}\n"
+            f"- **Evolvable (enable_evolving)**: {enable_evolving}\n"
             f"- **Source File**: `{path}`"
             + (f" (exists: {os.path.exists(path)})" if path else " (unknown — not a file-backed tool)")
         )
@@ -76,5 +76,5 @@ class InspectTool(Tool):
             type=ResponseType.TOOL,
             success=True,
             message=instruction + facts,
-            data={"tool": name, "registered": True, "require_grad": require_grad, "path": path},
+            data={"tool": name, "registered": True, "enable_evolving": enable_evolving, "path": path},
         )

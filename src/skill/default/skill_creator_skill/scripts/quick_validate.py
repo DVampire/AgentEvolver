@@ -41,7 +41,7 @@ def validate_skill(skill_path):
     # Define allowed properties (this framework's SKILL.md frontmatter schema)
     ALLOWED_PROPERTIES = {
         'name', 'description', 'version', 'type', 'license', 'category',
-        'requirements', 'metadata', 'require_grad', 'permission_mode',
+        'requirements', 'metadata', 'enable_evolving', 'permission_mode',
         'compatibility', 'allowed-tools',
     }
 

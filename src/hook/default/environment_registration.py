@@ -32,7 +32,7 @@ class EnvironmentRegistrationHook(Hook):
 
         try:
             from src.extension import extension_manager
-            inferred_name = await extension_manager.add_component("environment", py_path, config={"require_grad": True})
+            inferred_name = await extension_manager.add_component("environment", py_path, config={"enable_evolving": True})
             logger.info(f"| 🔄 EnvironmentRegistrationHook: '{inferred_name}' registered from {py_path}")
         except Exception as e:
             logger.warning(f"| ⚠️  EnvironmentRegistrationHook: {e}")

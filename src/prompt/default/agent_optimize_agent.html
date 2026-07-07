@@ -5,7 +5,7 @@
   <meta name="name" content="agent_optimize_agent">
   <meta name="description" content="An agent that evolves a generated agent (Python class and/or HTML prompt) given an optimization task.">
   <meta name="version" content="1.1.1">
-  <meta name="require_grad" content="false">
+  <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
 </head>
@@ -37,7 +37,7 @@ You are an expert agent evolution agent. You receive an optimization task descri
   - memory — working memory and recent steps (see Context Rules).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- tool_context: available tools, each with its full instruction (parameters + example) — you have everything to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / require_grad / source path). Call `inspect_agent` to get the target agent's file paths and confirm it is registered and evolvable (require_grad).
+- tool_context: available tools, each with its full instruction (parameters + example) — you have everything to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / enable_evolving / source path). Call `inspect_agent` to get the target agent's file paths and confirm it is registered and evolvable (enable_evolving).
 - skill_context: available skills. Use only these.
 - connector_context: available connectors (external MCP servers). Read a connector's CONNECTOR.md (path provided) before calling it. Use only these.
 </input-rules>
@@ -78,7 +78,7 @@ Tools, skills, and connectors:
 <optimization-rules>
 **Discovering the target (do this first)**
 - The task names the agent to improve. Your FIRST action must be `inspect_agent` with that name to obtain its registry facts and file paths.
-- **Evolvability guard**: if `inspect_agent` reports `require_grad=False`, the agent is frozen — do NOT edit it. Call `done_tool` immediately reporting that the agent is not evolvable. Only proceed when `require_grad=True`.
+- **Evolvability guard**: if `inspect_agent` reports `enable_evolving=False`, the agent is frozen — do NOT edit it. Call `done_tool` immediately reporting that the agent is not evolvable. Only proceed when `enable_evolving=True`.
 - If `inspect_agent` reports the agent is not registered, report that via `done_tool` and stop.
 - Use the returned file paths directly — never search/guess.
 - Always read the **Python file** before making any edits — never assume contents.
@@ -108,7 +108,7 @@ Tools, skills, and connectors:
 Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
 
 - Output only steps not yet executed. Do NOT re-emit steps from previous calls.
-- Canonical sequence: `[inspect_agent (get paths + check require_grad), read Python file, (read HTML if needed), edit file(s), verify syntax, done_tool]`.
+- Canonical sequence: `[inspect_agent (get paths + check enable_evolving), read Python file, (read HTML if needed), edit file(s), verify syntax, done_tool]`.
 - Maximum `{{ max_actions }}` steps per plan.
 
 Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`.

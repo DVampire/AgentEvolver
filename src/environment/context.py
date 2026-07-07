@@ -192,7 +192,7 @@ class EnvironmentContextManager(BaseModel):
             try:
                 env_config_key = inflection.underscore(env_cls.__name__)
                 env_config_dict= config.get(env_config_key, {})
-                env_require_grad = env_config_dict.get("require_grad", False) if env_config_dict and "require_grad" in env_config_dict else False
+                env_enable_evolving = env_config_dict.get("enable_evolving", False) if env_config_dict and "enable_evolving" in env_config_dict else False
                 
                 # Get environment properties from environment class
                 env_name = env_cls.model_fields['name'].default
@@ -258,7 +258,7 @@ class EnvironmentContextManager(BaseModel):
                     description=env_description,
                     metadata=env_metadata,
                     version=env_version,
-                    require_grad=env_require_grad,
+                    enable_evolving=env_enable_evolving,
                     cls=env_cls,
                     config=env_config_dict,
                     instance=None,
@@ -384,7 +384,7 @@ class EnvironmentContextManager(BaseModel):
             env_name = env_instance.name
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
-            env_require_grad = getattr(env_instance, 'require_grad', False)
+            env_enable_evolving = getattr(env_instance, 'enable_evolving', False)
             
             if not env_name:
                 raise ValueError("Environment.name cannot be empty.")
@@ -447,7 +447,7 @@ class EnvironmentContextManager(BaseModel):
                 description=env_description,
                 rules=env_rules,
                 version=env_version,
-                require_grad=env_require_grad,
+                enable_evolving=env_enable_evolving,
                 actions=actions,
                 cls=env_cls,
                 config=env_config_dict or {},
@@ -577,7 +577,7 @@ class EnvironmentContextManager(BaseModel):
             
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
-            env_require_grad = env_config_dict.get("require_grad", getattr(env_instance, 'require_grad', False)) if env_config_dict and "require_grad" in env_config_dict else getattr(env_instance, 'require_grad', False)
+            env_enable_evolving = env_config_dict.get("enable_evolving", getattr(env_instance, 'enable_evolving', False)) if env_config_dict and "enable_evolving" in env_config_dict else getattr(env_instance, 'enable_evolving', False)
             
             # Determine new version from version_manager
             if new_version is None:
@@ -636,7 +636,7 @@ class EnvironmentContextManager(BaseModel):
                 description=env_description,
                 rules=env_rules,
                 version=new_version,
-                require_grad=env_require_grad,
+                enable_evolving=env_enable_evolving,
                 actions=actions,
                 cls=env_cls,
                 config=env_config_dict or {},
@@ -717,7 +717,7 @@ class EnvironmentContextManager(BaseModel):
             
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
-            env_require_grad = env_config_dict.get("require_grad", getattr(env_instance, 'require_grad', False)) if env_config_dict and "require_grad" in env_config_dict else getattr(env_instance, 'require_grad', False)
+            env_enable_evolving = env_config_dict.get("enable_evolving", getattr(env_instance, 'enable_evolving', False)) if env_config_dict and "enable_evolving" in env_config_dict else getattr(env_instance, 'enable_evolving', False)
             
             # Determine new version from version_manager
             if new_version is None:
@@ -777,7 +777,7 @@ class EnvironmentContextManager(BaseModel):
                 description=env_description,
                 rules=env_rules,
                 version=new_version,
-                require_grad=env_require_grad,
+                enable_evolving=env_enable_evolving,
                 actions=actions,
                 cls=original_config.cls,
                 config=env_config_dict,
