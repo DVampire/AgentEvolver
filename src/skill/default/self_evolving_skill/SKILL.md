@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: The global playbook for self-evolution — how MetaAgent improves the system's OWN capabilities (agents, prompts, tools, skills, connectors, environments) while serving a user task. Use whenever a task is blocked or degraded by a missing/weak capability, when a sub-agent repeatedly fails for a fixable reason, or when the user explicitly asks to create/improve/evaluate a capability. Provides the cross-cutting loop (decide → generate/optimize → evaluate → adopt or roll back), the enable_evolving gate rules, and how to drive the per-type creator skills. NOT for the user's own deliverable work.
-version: 1.1.0
+version: 1.2.0
 type: [orchestrator]
 license: N/A
 category: meta
@@ -105,12 +105,13 @@ skill for the exact agent names, e.g. `tool_generate_agent` / `tool_optimize_age
    substantial change or before finishing the task — an independent `reviewer_agent` pass
    (it verifies hands-on whether the task is done and whether the evolution actually helped,
    returning a `stop` / `continue` / `evolve` verdict):
-   - **Helped** → keep it (it's already live) and continue the user task using it.
-   - **No better / regressed** → do NOT rely on it, and **undo it** (register-is-live means a
-     bad change is already active). Use `evolution_tool`: `rollback` an optimized entity to its
-     previous version (`list_versions` first to see what to restore), or `unload` a brand-new
-     entity that has no prior good version. Then either re-dispatch the `optimizer` with the
-     failure evidence, or regenerate.
+   - **Helped (evaluation shows a clear improvement)** → keep it (it's already live) and continue the user task using it.
+   - **No better / regressed / not evaluated** → you MUST NOT leave it live. Because register-is-live
+     means a bad change is already active, **rolling it back is required, not optional**. Use
+     `evolution_tool`: `rollback` an optimized entity to its previous version (`list_versions` first
+     to see what to restore), or `unload` a brand-new entity that has no prior good version. Then
+     either re-dispatch the `optimizer` with the failure evidence, or regenerate. A change that was
+     never evaluated counts as unproven — evaluate it or roll it back; never rely on it blind.
 6. **Record** — state in your reasoning what you evolved, the score, the decision, and why.
 
 Typical shape: `Round N` generator|optimizer → `Round N+1` evaluator (+ optional baseline

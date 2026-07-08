@@ -168,11 +168,23 @@ class ExtensionManagerServer(BaseModel):
         )
         # Serialize the manifest read-modify-write so parallel add_component calls
         # (e.g. concurrent component evolution) don't lose each other's updates.
-        async with file_lock(self._manifest_path()):
-            manifest = self.read_manifest()
-            comp = self._record(module, name, abspath, manifest, version=version)
-            self._ensure_archived(module, name, abspath, comp.version)
-            self._write_manifest(manifest)
+        try:
+            async with file_lock(self._manifest_path()):
+                manifest = self.read_manifest()
+                comp = self._record(module, name, abspath, manifest, version=version)
+                # STRICT archive: guarantee a rollback target BEFORE committing the manifest.
+                self._ensure_archived(module, name, abspath, comp.version)
+                self._write_manifest(manifest)
+        except Exception as e:
+            # Transactional safety: we registered it live but cannot guarantee it is
+            # recoverable (no archived version = nothing to roll back to). Unload the
+            # half-committed component and fail, rather than leave an unrecoverable change live.
+            logger.error(f"| ❌ ExtensionManager: add {module}:{name} not committed ({e}); unloading.")
+            try:
+                await self._unload_component(module, name)
+            except Exception:
+                pass
+            raise
         logger.info(f"| ➕ ExtensionManager: added {module}:{name} v{comp.version}")
         return name
 
@@ -325,21 +337,23 @@ class ExtensionManagerServer(BaseModel):
         return comp
 
     def _ensure_archived(self, module: str, name: str, abspath: str, version: str) -> None:
+        """Copy the active file into the version archive. STRICT: raises if the archive
+        cannot be produced — a live version with no archived copy has no rollback target,
+        so ``add_component`` treats an archiving failure as fatal rather than silent."""
         ext = _EXT[module]
         adir = self._archive_dir(module, name)
         os.makedirs(adir, exist_ok=True)
         dest = os.path.join(adir, f"{version}{ext}")
-        try:
-            if module in _DIR_MODULES:
-                if os.path.abspath(abspath) != os.path.abspath(dest):
-                    if os.path.exists(dest):
-                        shutil.rmtree(dest)
-                    shutil.copytree(abspath, dest)
-            else:
-                if os.path.abspath(abspath) != os.path.abspath(dest):
-                    shutil.copyfile(abspath, dest)
-        except Exception as e:
-            logger.warning(f"| ⚠️ ExtensionManager: archiving {module}:{name} v{version} failed: {e}")
+        if module in _DIR_MODULES:
+            if os.path.abspath(abspath) != os.path.abspath(dest):
+                if os.path.exists(dest):
+                    shutil.rmtree(dest)
+                shutil.copytree(abspath, dest)
+        else:
+            if os.path.abspath(abspath) != os.path.abspath(dest):
+                shutil.copyfile(abspath, dest)
+        if not os.path.exists(dest):
+            raise RuntimeError(f"archiving {module}:{name} v{version} produced no file at {dest}")
 
     # ------------------------------------------------------------------
     # Per-module load / unload dispatch
@@ -347,11 +361,18 @@ class ExtensionManagerServer(BaseModel):
     async def _assert_evolvable(self, module: str, name: str) -> None:
         """Refuse to overwrite an already-registered *frozen* entity (enable_evolving=False).
 
-        A brand-new entity (not yet registered) returns None → allowed. On any lookup
-        error we fail open (allow) so generation of new components is never blocked by a
-        transient registry hiccup.
+        A brand-new entity (not yet registered) returns None → allowed. If the lookup
+        itself ERRORS we **fail closed** (refuse the overwrite): we cannot confirm the
+        target is not a frozen built-in, so blocking is the safe default — a genuine new
+        component looks up cleanly as "not found" (None) and is unaffected.
         """
-        current = await self._current_enable_evolving(module, name)
+        try:
+            current = await self._current_enable_evolving(module, name)
+        except Exception as e:
+            raise PermissionError(
+                f"{module}:{name}: could not verify evolvability ({e}). Refusing the overwrite to "
+                f"protect frozen built-ins (fail-closed). Retry once the registry is healthy."
+            )
         if current is False:
             raise PermissionError(
                 f"{module}:{name} is frozen (enable_evolving=False) and cannot be overwritten by "
@@ -359,30 +380,32 @@ class ExtensionManagerServer(BaseModel):
             )
 
     async def _current_enable_evolving(self, module: str, name: str):
-        """The currently-registered entity's enable_evolving flag, or None if not registered."""
-        try:
-            if module == "tool":
-                from src.tool.server import tool_manager
-                inst = await tool_manager.get(name)
-                return getattr(inst, "enable_evolving", None) if inst is not None else None
-            if module == "agent":
-                from src.agent.server import agent_manager
-                info = await agent_manager.get_info(name)
-                return getattr(info, "enable_evolving", None) if info is not None else None
-            if module == "environment":
-                from src.environment.server import environment_manager
-                info = await environment_manager.get_info(name)
-                return getattr(info, "enable_evolving", None) if info is not None else None
-            if module == "skill":
-                from src.skill.server import skill_manager
-                info = await skill_manager.get_info(name)
-                return getattr(info, "enable_evolving", None) if info is not None else None
-            if module == "connector":
-                from src.connector.server import connector_manager
-                info = await connector_manager.get_info(name)
-                return getattr(info, "enable_evolving", None) if info is not None else None
-        except Exception as e:
-            logger.warning(f"| ⚠️ ExtensionManager: evolvability check for {module}:{name} failed ({e}); allowing.")
+        """The currently-registered entity's enable_evolving flag, or None if not registered.
+
+        Lookups return None cleanly for an unregistered name; any *exception* here is a real
+        registry malfunction and is propagated so the caller can fail closed (see
+        ``_assert_evolvable``) rather than silently allowing an overwrite.
+        """
+        if module == "tool":
+            from src.tool.server import tool_manager
+            inst = await tool_manager.get(name)
+            return getattr(inst, "enable_evolving", None) if inst is not None else None
+        if module == "agent":
+            from src.agent.server import agent_manager
+            info = await agent_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "environment":
+            from src.environment.server import environment_manager
+            info = await environment_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "skill":
+            from src.skill.server import skill_manager
+            info = await skill_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "connector":
+            from src.connector.server import connector_manager
+            info = await connector_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
         return None
 
     @staticmethod

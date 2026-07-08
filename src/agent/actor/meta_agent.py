@@ -69,6 +69,7 @@ class SubTaskInput(BaseModel):
     task: str
     files: List[str] = Field(default_factory=list)
     args: Dict[str, Any] = Field(default_factory=dict)
+    target_name: Optional[str] = Field(default=None, description="For generator/optimizer/evaluator: the capability being created/improved/evaluated.")
 
 
 class SubTaskSpec(BaseModel):
@@ -95,6 +96,7 @@ class TaskSpec(BaseModel):
     task: str = Field(default="", description="For kind=agent: the self-contained instruction. Ignored for tool/skill/connector.")
     files: List[str] = Field(default_factory=list)
     args: Dict[str, Any] = Field(default_factory=dict, description="For kind=tool/skill/connector: the call arguments.")
+    target_name: Optional[str] = Field(default=None, description="ONLY for evaluator/optimizer/generator tasks: the capability to evaluate/improve/create. null otherwise.")
 
 
 class PlanRound(BaseModel):
@@ -801,6 +803,7 @@ class MetaAgent(Agent):
                             task=task_spec.task,
                             files=task_spec.files,
                             args=task_spec.args,
+                            target_name=task_spec.target_name,
                         ),
                     )
                     state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
@@ -887,10 +890,17 @@ class MetaAgent(Agent):
                 sub_agent = await agent_manager.get(agent_name)
                 if sub_agent is None:
                     raise ValueError(f"No registered agent named {agent_name!r}")
+                # For evolution tasks, hard-anchor the target: fold target_name into the
+                # instruction so the generator/optimizer/evaluator always knows the exact
+                # capability, even if it wasn't restated in the task prose.
+                sub_task = record.spec.input.task
+                _target = getattr(record.spec.input, "target_name", None)
+                if _target:
+                    sub_task = f"Target capability: {_target}\n\n{sub_task}"
                 response = await runtime_manager.invoke(
                     sub_agent,
                     name=session_id,
-                    task=record.spec.input.task,
+                    task=sub_task,
                     files=existing_files or None,
                     ctx=ctx,
                     **extra_kwargs,

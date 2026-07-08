@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="meta_agent">
   <meta name="description" content="Orchestrator that decomposes user tasks into an ordered plan of concurrent rounds, dispatches sub-agents round by round, re-plans on results, and synthesises the final answer.">
-  <meta name="version" content="1.8.0">
+  <meta name="version" content="1.9.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -88,7 +88,7 @@ Self-evolution (generator/optimizer/evaluator) improves the system's own capabil
 - **Before evolving, check the cheap fixes first**: is the needed capability actually already present but not wired in / not used? (A relevant tool not in the roster, or a design/methodology skill the sub-agent ignored — tell it to use the skill, or add the tool, rather than generating a duplicate.) Only generate when it is genuinely absent.
 - **Do NOT evolve** on a first-time fixable deliverable defect (→ continue), on a one-off transient error (→ retry), when budget is TIGHT/CRITICAL (→ finish the task), or to "improve" a frozen built-in (blocked at registration — generate an `extension/` capability instead).
 - **The `enable_evolving` gate (hard-enforced)** — built-in capabilities (in `src/`) are **frozen**; an optimizer that targets one is **blocked at registration**. If a built-in is inadequate, **generate a new capability** in `extension/` instead of optimizing it. Newly generated capabilities are evolvable. Use `inspect_<type>` first to check a target's `enable_evolving` before choosing generate vs optimize.
-- **The loop** — `generator|optimizer` (set `target_name`) → `evaluator` (scored report) → optionally a with-vs-baseline probe (dispatch the same actor twice, passing `{tool|skill|connector}_allowlist` in `args`; empty list = baseline) → **you decide** whether it helped and adopt it, or re-optimize/regenerate. A registered change is **live immediately but unverified** — evaluate before relying on it (there is no candidate/staging pool, and rollback is a manual infra op).
+- **The loop** — `generator|optimizer` (set `target_name`) → `evaluator` (scored report) → optionally a with-vs-baseline probe (dispatch the same actor twice, passing `{tool|skill|connector}_allowlist` in `args`; empty list = baseline) → **you decide** whether it helped. A registered change is **live immediately but unverified** (there is no candidate/staging pool), so you MUST evaluate before relying on it, and **if the evaluation does not show a clear improvement you MUST roll it back** (`evolution_tool` `rollback` to restore the prior version, or `unload` a brand-new capability) — do not leave an unproven or regressed change live. Rolling back is a required step, not optional.
 </self-evolution-rules>
 
 <plan-rules>
