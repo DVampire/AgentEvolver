@@ -481,7 +481,15 @@ class TieredMemory(Memory):
                 if event.event_type == TraceEventType.AGENT_START:
                     task = (event.input or {}).get("task", "")
                 agent_name = (event.agent_name or "").strip()
-                stem = f"{agent_name}_{session_id}" if agent_name else session_id
+                # MetaAgent-dispatched sub-agents already carry the agent name in their
+                # session_id (e.g. "code_agent-<id>"); don't prepend it again or the file
+                # name becomes "code_agent_code_agent-<id>".
+                if agent_name and not (
+                    session_id == agent_name or session_id.startswith(f"{agent_name}-")
+                ):
+                    stem = f"{agent_name}_{session_id}"
+                else:
+                    stem = session_id
                 file_path = os.path.join(self.base_dir, f"{stem}.{self.file_ext}") if self.base_dir else ""
                 self._sessions[session_id] = _SessionState(
                     session_id=session_id, task=task, file_path=file_path,
