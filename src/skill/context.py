@@ -28,6 +28,7 @@ class SkillContextManager(BaseModel):
 
     base_dir: str = Field(default=None, description="Base directory for skill runtime data")
     default_skills_dir: str = Field(default=None, description="Directory for built-in default skills")
+    science_skills_dir: str = Field(default=None, description="Directory for built-in science/domain skills")
     extension_skills_dir: str = Field(default=None, description="Directory for generated/user skills")
 
     _skill_configs: Dict[str, SkillConfig] = {}
@@ -51,9 +52,11 @@ class SkillContextManager(BaseModel):
 
 
         _src_dir = Path(__file__).resolve().parent
-        # Built-in skills live in the default/ dir; extension skills are managed
+        # Built-in skills live in the default/ dir; domain skills (biomodels,
+        # bioinformatics, etc.) live in science/; extension skills are managed
         # externally (loaded by ExtensionManager into the active version).
         self.default_skills_dir = default_skills_dir or str(_src_dir / "default")
+        self.science_skills_dir = str(_src_dir / "science")
         self.extension_skills_dir = extension_skills_dir or assemble_project_path(os.path.join("extension", "skill"))
 
         self._skill_configs: Dict[str, SkillConfig] = {}
@@ -78,6 +81,10 @@ class SkillContextManager(BaseModel):
         # 1. Load from built-in default directory
         default_configs = await self._load_from_directory(Path(self.default_skills_dir))
         discovered.update(default_configs)
+
+        # 1a. Load from built-in science/domain directory
+        science_configs = await self._load_from_directory(Path(self.science_skills_dir))
+        discovered.update(science_configs)
 
         # 1b. Load from extension directory (generated/user skills); extension overrides default
         Path(self.extension_skills_dir).mkdir(parents=True, exist_ok=True)

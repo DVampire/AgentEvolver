@@ -118,6 +118,26 @@ skill_names = [
     "connector_creator_skill",
     # global self-evolution playbook: WHEN to evolve + the loop + enable_evolving gate (ties the triads together)
     "self_evolving_skill",
+    # science / domain skills (src/skill/science) — biomodels & bioinformatics workers.
+    # GPU-backed structure/sequence models and CPU analysis/design skills; available to
+    # sub-agents for drug-discovery, protein, genomics, and single-cell tasks.
+    "alphafold2_skill",
+    "openfold3_skill",
+    "esmfold2_skill",
+    "boltz_skill",
+    "chai1_skill",
+    "diffdock_skill",
+    "esm2_skill",
+    "evo2_skill",
+    "borzoi_skill",
+    "scgpt_skill",
+    "scvi_tools_skill",
+    "proteinmpnn_skill",
+    "solublempnn_skill",
+    "ligandmpnn_skill",
+    "literature_review_skill",
+    "indication_dossier_skill",
+    "drawio_skill",
 ]
 connector_names = [
     "biomart_connector",
