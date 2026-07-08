@@ -155,10 +155,17 @@ class AnthropicChatSerializer:
                     "data": base64_data,
                 }
             }
+        elif image_url.startswith(("http://", "https://")):
+            # Remote URL — the Anthropic API fetches it server-side.
+            return {
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "url": image_url,
+                }
+            }
         else:
-            # URL - try to decode if it's base64, otherwise raise error
-            # Anthropic doesn't support direct URLs, only base64
-            raise ValueError(f"Anthropic API only supports base64-encoded images or local files. Got: {image_url}")
+            raise ValueError(f"Unsupported image source for Anthropic API: {image_url}")
 
     @staticmethod
     def _serialize_user_content(

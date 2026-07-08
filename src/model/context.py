@@ -21,6 +21,7 @@ from src.model.openai.embedding import EmbeddingOpenAI
 from src.model.openrouter.chat import ChatOpenRouter
 from src.model.anthropic.chat import ChatAnthropic
 from src.model.aws_claude.chat import ChatAwsClaude
+from src.model.aws_claude.native import ChatAwsClaudeNative
 from src.model.google.chat import ChatGoogle
 from src.model.newapi.chat import ChatNewAPI
 from src.model.newapi.response import ResponseNewAPI
@@ -907,11 +908,18 @@ class ModelContextManager:
                 "fallback_model": "aws_claude/claude-opus-4.6",
             },
             {
+                # Anthropic-native /v1/messages route: the gateway forwards
+                # `thinking`/`output_config` there (the /chat/completions
+                # route silently drops them), so adaptive thinking works.
                 "model_name": "aws_claude/claude-opus-4.8",
                 "model_id": "claude-opus-4-8",
-                "model_type": "chat/completions",
+                "model_type": "messages",
                 "temperature": None,
                 "max_completion_tokens": self.max_tokens,
+                "reasoning": {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "high"},
+                },
                 "fallback_model": "aws_claude/claude-opus-4.7",
             },
         ]
@@ -930,6 +938,7 @@ class ModelContextManager:
                 api_base=api_base,
                 api_key=api_key,
                 temperature=model.get("temperature"),
+                reasoning=model.get("reasoning"),
                 max_completion_tokens=model.get("max_completion_tokens"),
                 timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=True,
@@ -1190,6 +1199,18 @@ class ModelContextManager:
                     temperature=config.temperature,
                     max_completion_tokens=config.max_completion_tokens
                     or self.max_tokens,
+                )
+            elif config.model_type == "messages":
+                # Anthropic-native route — required for thinking support.
+                # temperature is passed through as-is (None for Opus 4.7+,
+                # which rejects the parameter).
+                return ChatAwsClaudeNative(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
+                    reasoning=config.reasoning if config.reasoning else None,
+                    temperature=config.temperature,
+                    max_tokens=config.max_completion_tokens or self.max_tokens,
                 )
             else:
                 raise ValueError(
