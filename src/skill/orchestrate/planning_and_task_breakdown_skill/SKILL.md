@@ -155,7 +155,7 @@ If a task is L or larger, it should be broken into smaller tasks. An agent perfo
 - **Plan document:** Save the implementation plan to `tasks/plan.md`.
 - **Task list:** Save the checklist-style task list to `tasks/todo.md`.
 
-Create the `tasks/` directory if it does not exist. These paths are the convention expected by the `/build` command and other downstream tooling.
+Create the `tasks/` directory if it does not exist. These are conventional output paths that the orchestrator or a follow-up implementation step reads.
 
 ## Plan Document Template
 

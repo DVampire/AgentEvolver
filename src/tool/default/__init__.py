@@ -13,6 +13,7 @@ from .git import GitTool
 from .deploy import DeployTool
 from .evolution import EvolutionTool
 from .escalate import EscalateTool
+from .ask_question import AskQuestionTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
 from .inspect_tool import InspectTool
@@ -36,6 +37,7 @@ __all__ = [
     "DeployTool",
     "EvolutionTool",
     "EscalateTool",
+    "AskQuestionTool",
     "GlobSearchTool",
     "GrepSearchTool",
     "InspectTool",

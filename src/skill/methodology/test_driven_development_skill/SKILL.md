@@ -29,7 +29,7 @@ Write a failing test before writing the code that makes it pass. For bug fixes, 
 
 **When NOT to use:** Pure configuration changes, documentation updates, or static content changes that have no behavioral impact.
 
-**Related:** For browser-based changes, combine TDD with runtime verification using Chrome DevTools MCP — see the Browser Testing section below.
+**Related:** For browser-based changes, combine TDD with runtime verification using the project's browser-testing skill (`webapp_testing_skill`, Playwright) — see the Browser Testing section below.
 
 ## The TDD Cycle
 
@@ -307,7 +307,7 @@ describe('TaskService', () => {
 
 ## Browser Testing with DevTools
 
-For anything that runs in a browser, unit tests alone aren't enough — you need runtime verification. Use Chrome DevTools MCP to give your agent eyes into the browser: DOM inspection, console logs, network requests, performance traces, and screenshots.
+For anything that runs in a browser, unit tests alone aren't enough — you need runtime verification. Use the project's `webapp_testing_skill` (Playwright) to give your agent eyes into the browser: DOM inspection, console logs, network requests, and screenshots.
 
 ### The DevTools Debugging Workflow
 
