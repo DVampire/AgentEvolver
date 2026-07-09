@@ -44,10 +44,29 @@ sudo apt-get install -y \
   build-essential \
   ca-certificates
 
-echo "[2b/8] Installing Node.js (LTS) and pnpm..."
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt-get install -y nodejs
-sudo npm install -g pnpm yarn
+echo "[2b/8] Installing Node.js 20.20.2 (via nvm) and pnpm/yarn..."
+# Vault's web UI (ember) build pins Node 20.x via package.json `devEngines`.
+# A newer Node (e.g. 22.x from nodesource LTS) aborts `make static-dist` /
+# `make dev-ui` with `EBADDEVENGINES`. Pin the exact version with nvm so the
+# `nvm use` stays active for the build step (7/8) in this same shell.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [[ ! -s "${NVM_DIR}/nvm.sh" ]]; then
+  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+fi
+# nvm.sh references unset vars; relax `set -u` only while sourcing/using it.
+set +u
+# shellcheck source=/dev/null
+. "${NVM_DIR}/nvm.sh"
+nvm install 20.20.2 && nvm use 20.20.2
+set -u
+# Use corepack (bundled with Node) so the UI build gets the EXACT package
+# manager pinned in ui/package.json `packageManager` (pnpm@10.22.0, tested
+# against Node 20). Do NOT `npm install -g pnpm`: that pulls pnpm@latest (v11+),
+# which requires Node 22.13+ and crashes under Node 20 with
+# `node:sqlite` ERR_UNKNOWN_BUILTIN_MODULE during `pnpm i`.
+corepack enable
+corepack prepare pnpm@10.22.0 --activate
+echo "Using Node $(node -v) / pnpm $(pnpm -v)"
 
 echo "[3/8] Fetching latest stable Go version from go.dev..."
 GO_JSON_URL="https://go.dev/dl/?include=stable&mode=json"

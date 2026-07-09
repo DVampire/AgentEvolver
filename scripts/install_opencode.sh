@@ -53,12 +53,10 @@ vault_get() {
   vault kv get -field="$1" "${SECRET_ENGINE_PATH}"
 }
 
-OPENROUTER_API_BASE="$(vault_get OPENROUTER_API_BASE)"
-OPENROUTER_API_KEY="$(vault_get OPENROUTER_API_KEY)"
-OPENAI_API_BASE="$(vault_get OPENAI_API_BASE)"
-OPENAI_API_KEY="$(vault_get OPENAI_API_KEY)"
-NEWAPI_API_BASE="$(vault_get NEWAPI_API_BASE)"
-NEWAPI_API_KEY="$(vault_get NEWAPI_API_KEY)"
+INT_OPENROUTER_API_BASE="$(vault_get INT_OPENROUTER_API_BASE)"
+INT_OPENROUTER_API_KEY="$(vault_get INT_OPENROUTER_API_KEY)"
+AWS_CLAUDE_API_BASE="$(vault_get AWS_CLAUDE_API_BASE)"
+AWS_CLAUDE_API_KEY="$(vault_get AWS_CLAUDE_API_KEY)"
 
 # ---------------------------------------------------------------------------
 # Step 3: Write opencode.json
@@ -76,36 +74,44 @@ cat > "${OPENCODE_CONFIG}" <<EOF
   "provider": {
     "openrouter": {
       "options": {
-        "baseURL": "${OPENROUTER_API_BASE}",
-        "apiKey": "${OPENROUTER_API_KEY}"
+        "baseURL": "${INT_OPENROUTER_API_BASE}",
+        "apiKey": "${INT_OPENROUTER_API_KEY}"
       },
       "models": {
         "anthropic/claude-opus-4.6": {}
       }
     },
 
-    "newapi": {
+    "anthropic": {
       "options": {
-        "baseURL": "${NEWAPI_API_BASE}",
-        "apiKey": "${NEWAPI_API_KEY}"
+        "baseURL": "${AWS_CLAUDE_API_BASE}",
+        "apiKey": "${AWS_CLAUDE_API_KEY}"
       },
       "models": {
-        "claude-opus-4-6": {}
-      }
-    },
-
-    "openai": {
-      "options": {
-        "baseURL": "${OPENAI_API_BASE}",
-        "apiKey": "${OPENAI_API_KEY}"
-      },
-      "models": {
-        "gpt-5.4": {},
-        "gpt-5.4-pro": {}
+        "claude-opus-4-6": {
+          "options": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "output_config": {
+              "effort": "high"
+            }
+          }
+        },
+        "claude-opus-4-8": {
+          "options": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "output_config": {
+              "effort": "high"
+            }
+          }
+        }
       }
     }
   },
-  "model": "newapi/claude-opus-4-6"
+  "model": "anthropic/claude-opus-4-8"
 }
 EOF
 

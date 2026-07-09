@@ -1,7 +1,4 @@
 mmengine>=0.10.7
-fastapi>=0.111.0,<0.200.0
-starlette>=0.37.2,<0.50.0
-uvicorn[standard]>=0.24.0
 dirtyjson>=1.0.8
 pydantic>=2.12.5
 python-dotenv>=1.2.2
@@ -27,7 +24,3 @@ hvac>=2.4.0
 crawl4ai>=0.8.6
 dirtyjson>=1.0.8
 google-cloud-vision>=3.13.0
-json_repair>=0.59.10
-opensandbox>=0.1.9
-langchain-mcp-adapters>=0.3.0
-mcp>=1.26.0
