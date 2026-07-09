@@ -200,7 +200,8 @@ class AgentThinkOutput(BaseModel):
     """
     reasoning: str = Field(
         description=(
-            "Structured reasoning in three parts: "
+            "Structured reasoning in three parts — be concise but complete, "
+            "include all information necessary to understand the decision, omit padding: "
             "past — previous goal, last-step outcome, and progress so far; "
             "present — analysis of the current situation; "
             "future — the immediate next goal and the plan to achieve it."

@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Type, Union
+import re
 
 import dirtyjson
 from pydantic import BaseModel, ValidationError
@@ -13,6 +14,25 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.tool.types import Tool
+
+
+def _extract_json_from_text(text: str) -> Optional[str]:
+    """Try to extract a JSON object from text that may contain markdown or prose.
+
+    Handles two common cases when the model answers in text instead of calling
+    the structured-output tool:
+    1. JSON wrapped in a markdown code fence:  ```json { ... } ```
+    2. A bare JSON object somewhere in the text: { ... }
+    Returns the extracted JSON string, or None if nothing plausible is found.
+    """
+    # 1. Prefer ```json ... ``` or ``` ... ``` fences that contain a JSON object
+    for m in re.finditer(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', text):
+        return m.group(1)
+    # 2. Find the outermost {...} span (greedy, last match wins to capture full object)
+    m = re.search(r'(\{[\s\S]*\})', text)
+    if m:
+        return m.group(1)
+    return None
 
 
 class ChatAwsClaudeNative(ChatAnthropic):
@@ -95,7 +115,15 @@ class ChatAwsClaudeNative(ChatAnthropic):
             # tool_choice {"type": "tool"} would silently disable thinking —
             # keep auto and instruct the model instead.
             params["tool_choice"] = {"type": "auto"}
-            instruction = f"You must call the `{tool_name}` tool exactly once to return your final answer."
+            # Build a compact JSON example from the schema's required fields so the
+            # model knows exactly what to produce even when it answers in text.
+            required_fields = schema.get("required", [])
+            example_hint = "{" + ", ".join(f'"{f}": ...' for f in required_fields) + "}"
+            instruction = (
+                f"IMPORTANT: You MUST call the `{tool_name}` tool exactly once to return "
+                f"your final answer — do NOT reply in plain text. "
+                f"The tool expects these required fields: {example_hint}."
+            )
             params["system"] = f"{params['system']}\n\n{instruction}" if params.get("system") else instruction
 
         return built
@@ -141,11 +169,13 @@ class ChatAwsClaudeNative(ChatAnthropic):
                         text_parts.append(text)
 
             if raw is None:
-                raw = fallback_raw
-            if raw is None:
+                # Do NOT fall back to fallback_raw (another tool's input) for structured
+                # output validation — it would have a completely different schema and always
+                # fail with misleading ValidationErrors.  Only use text content as fallback.
                 # tool_choice is auto (to keep thinking on), so the model may
-                # occasionally answer in text — try to parse that as JSON.
-                raw = "\n".join(text_parts)
+                # occasionally answer in text — try to extract JSON from that text.
+                combined_text = "\n".join(text_parts)
+                raw = _extract_json_from_text(combined_text) or combined_text
 
             if not raw:
                 return Response(
