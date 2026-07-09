@@ -77,3 +77,13 @@ fix would change intended behavior, require changes well outside the reviewed
 diff, or that you judge to be a false positive — note the skip rather than
 arguing with it. Finish with a brief summary of what was fixed and what was
 skipped (or confirm the code was already clean).
+
+## Simplification principles (merged from agent-skills code-simplification)
+
+1. **Preserve behavior exactly** — same output/errors/side-effects/ordering for every input; if unsure a change preserves behavior, don't make it.
+2. **Follow project conventions** — match neighboring code; consistency over external preference.
+3. **Clarity over cleverness** — explicit beats compact when the compact form needs a mental pause (dense ternary chains, chained reduces with inline logic).
+4. **Chesterton's Fence** — understand why code exists (check git blame) before removing it.
+5. **Watch over-simplification** — don't inline a helper that named a concept, don't merge unrelated logic, don't chase line-count. Fewer lines is not the goal; faster comprehension is.
+
+Scope to what changed; keep refactors separate from feature/bug-fix changes.

@@ -27,8 +27,7 @@ class SkillContextManager(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default=None, description="Base directory for skill runtime data")
-    default_skills_dir: str = Field(default=None, description="Directory for built-in default skills")
-    science_skills_dir: str = Field(default=None, description="Directory for built-in science/domain skills")
+    builtin_skills_dir: str = Field(default=None, description="Root directory for built-in skills, grouped into category folders (creator/, authoring/, web/, review/, research/, misc/, science/) and discovered recursively")
     extension_skills_dir: str = Field(default=None, description="Directory for generated/user skills")
 
     _skill_configs: Dict[str, SkillConfig] = {}
@@ -37,7 +36,7 @@ class SkillContextManager(BaseModel):
     def __init__(
         self,
         base_dir: Optional[str] = None,
-        default_skills_dir: Optional[str] = None,
+        builtin_skills_dir: Optional[str] = None,
         extension_skills_dir: Optional[str] = None,
         **kwargs,
     ):
@@ -52,11 +51,11 @@ class SkillContextManager(BaseModel):
 
 
         _src_dir = Path(__file__).resolve().parent
-        # Built-in skills live in the default/ dir; domain skills (biomodels,
-        # bioinformatics, etc.) live in science/; extension skills are managed
-        # externally (loaded by ExtensionManager into the active version).
-        self.default_skills_dir = default_skills_dir or str(_src_dir / "default")
-        self.science_skills_dir = str(_src_dir / "science")
+        # Built-in skills live directly under src/skill/, grouped into category
+        # folders (creator/, authoring/, web/, review/, research/, misc/ and the
+        # domain science/ folder) and discovered recursively. Extension skills
+        # (generated/user) are managed externally under extension/skill.
+        self.builtin_skills_dir = builtin_skills_dir or str(_src_dir)
         self.extension_skills_dir = extension_skills_dir or assemble_project_path(os.path.join("extension", "skill"))
 
         self._skill_configs: Dict[str, SkillConfig] = {}
@@ -78,15 +77,14 @@ class SkillContextManager(BaseModel):
         """
         discovered: Dict[str, SkillConfig] = {}
 
-        # 1. Load from built-in default directory
-        default_configs = await self._load_from_directory(Path(self.default_skills_dir))
-        discovered.update(default_configs)
+        # 1. Load all built-in skills. They live directly under src/skill/, grouped
+        #    into category folders (creator/, authoring/, web/, review/, research/,
+        #    misc/, science/) and discovered recursively — the category layout can
+        #    change freely without touching this loader.
+        builtin_configs = await self._load_from_directory(Path(self.builtin_skills_dir))
+        discovered.update(builtin_configs)
 
-        # 1a. Load from built-in science/domain directory
-        science_configs = await self._load_from_directory(Path(self.science_skills_dir))
-        discovered.update(science_configs)
-
-        # 1b. Load from extension directory (generated/user skills); extension overrides default
+        # 1b. Load from extension directory (generated/user skills); extension overrides built-in
         Path(self.extension_skills_dir).mkdir(parents=True, exist_ok=True)
         extension_configs = await self._load_from_directory(Path(self.extension_skills_dir))
         discovered.update(extension_configs)
@@ -129,24 +127,28 @@ class SkillContextManager(BaseModel):
     # ------------------------------------------------------------------
 
     async def _load_from_directory(self, root_dir: Path) -> Dict[str, SkillConfig]:
-        """Scan *root_dir* for sub-directories that contain a SKILL.md file."""
+        """Discover skills under *root_dir* — any directory that contains a SKILL.md,
+        at any depth.
+
+        This supports both a flat layout (``science/<skill>/SKILL.md``) and a
+        category-nested layout (``default/<category>/<skill>/SKILL.md``). A skill is
+        identified by its SKILL.md; the enclosing directory is the skill directory.
+        """
         configs: Dict[str, SkillConfig] = {}
 
         if not root_dir.exists():
             logger.info(f"| 📂 Skill directory does not exist, skipping: {root_dir}")
             return configs
 
-        for child in sorted(root_dir.iterdir()):
-            if not child.is_dir():
-                continue
-            skill_md = child / "SKILL.md"
-            if not skill_md.exists():
+        for skill_md in sorted(root_dir.rglob("SKILL.md")):
+            skill_dir = skill_md.parent
+            if not skill_dir.is_dir():
                 continue
             try:
-                skill_config = self._parse_skill_dir(child)
+                skill_config = self._parse_skill_dir(skill_dir)
                 configs[skill_config.name] = skill_config
             except Exception as e:
-                logger.error(f"| ❌ Failed to parse skill at {child}: {e}")
+                logger.error(f"| ❌ Failed to parse skill at {skill_dir}: {e}")
 
         return configs
 

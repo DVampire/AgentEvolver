@@ -118,6 +118,29 @@ skill_names = [
     "connector_creator_skill",
     # global self-evolution playbook: WHEN to evolve + the loop + enable_evolving gate (ties the triads together)
     "self_evolving_skill",
+    # engineering-workflow skills (adapted from agent-skills) — orchestrator-side planning/decomposition
+    "planning_and_task_breakdown_skill",
+    "spec_driven_development_skill",
+    "context_engineering_skill",
+    "doubt_driven_development_skill",
+    # interactive (define/discovery) skills — for task-intake / user turns, not autonomous batch
+    "interview_me_skill",
+    "idea_refine_skill",
+    # build methodology (worker) — how to implement/test/debug/document correctly
+    "test_driven_development_skill",
+    "debugging_and_error_recovery_skill",
+    "source_driven_development_skill",
+    "api_and_interface_design_skill",
+    "incremental_implementation_skill",
+    "documentation_and_adrs_skill",
+    "git_workflow_and_versioning_skill",
+    # code quality / web / ops (worker)
+    "performance_optimization_skill",
+    "ci_cd_and_automation_skill",
+    "shipping_and_launch_skill",
+    "frontend_ui_engineering_skill",
+    "deprecation_and_migration_skill",
+    "observability_and_instrumentation_skill",
     # science / domain skills (src/skill/science) — biomodels & bioinformatics workers.
     # GPU-backed structure/sequence models and CPU analysis/design skills; available to
     # sub-agents for drug-discovery, protein, genomics, and single-cell tasks.

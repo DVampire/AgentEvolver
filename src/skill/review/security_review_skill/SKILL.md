@@ -137,3 +137,9 @@ Do this in 3 steps, all yourself:
 3. Drop any vulnerability with confidence below 8.
 
 Finish with `done_tool`; the `result` must contain the markdown report and nothing else.
+
+## Threat-model & hardening reference (merged from agent-skills security-and-hardening)
+
+Before judging controls, spend five minutes as an attacker: map trust boundaries (HTTP input, uploads, webhooks, third-party APIs, queues, **and LLM output**), name the assets, run STRIDE over each boundary, and write abuse cases next to use cases.
+
+High-signal checks: parameterized queries (no string-built SQL); output encoding (no `eval`/`innerHTML` on untrusted data); authorization on every protected resource (not just authentication); secrets out of code and logs; SSRF allowlists on server-side URL fetches (block link-local `169.254.169.254`); and for any LLM feature treat model output as untrusted input (no eval/SQL/shell/innerHTML), keep secrets and cross-tenant data out of the prompt, and scope tool/agent permissions. Full list: `references/security-checklist.md`.

@@ -5,15 +5,10 @@ Supports version tracking, evolution, and history management.
 """
 
 from typing import Any, Dict, List, Optional, TypeVar
-from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
-import json
-import os
+
+from pydantic import BaseModel, ConfigDict
 
 from src.logger import logger
-from src.config import config
-from src.utils import assemble_project_path
-from src.utils.file_utils import file_lock
 from src.version.types import ComponentVersionHistory
 
 T = TypeVar('T', bound=BaseModel)
@@ -23,10 +18,7 @@ T = TypeVar('T', bound=BaseModel)
 class VersionManagerServer(BaseModel):
     """Unified version manager server for all components - only manages version records"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    base_dir: str = Field(default=None, description="The base directory to use for the version histories")
-    save_path: str = Field(default=None, description="The path to save version histories")
-    
+
     def __init__(self, **kwargs):
         """Initialize version manager"""
         super().__init__(**kwargs)
@@ -46,16 +38,13 @@ class VersionManagerServer(BaseModel):
         }
 
     async def initialize(self):
-        """Initialize version manager (for backward compatibility)"""
-        base_root = config.run_dir if hasattr(config, "run_dir") and config.get("run_dir") else config.work_dir
-        self.base_dir = assemble_project_path(os.path.join(base_root, "version"))
-        self.save_path = os.path.join(self.base_dir, "version.json")
-        os.makedirs(self.base_dir, exist_ok=True)
-        logger.info(f"| 📁 Version manager base directory: {self.base_dir} and save path: {self.save_path}")
-        # Restore persisted version histories so version numbers / lineage survive a
-        # process restart (no-op the first time, when version.json does not yet exist).
-        loaded = await self.load_from_json()
-        logger.info(f"| 📁 Version manager initialized (history {'restored' if loaded else 'started fresh'}).")
+        """Initialize version manager.
+
+        Version histories are kept in memory only — consistent with the other
+        component managers (tool/agent/skill/connector/environment), which no
+        longer persist to JSON. Retained as an awaitable no-op for callers.
+        """
+        logger.info("| 📁 Version manager initialized (in-memory).")
     
     async def register_version(self, component_type: str, name: str, version: str,
                         description: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> ComponentVersionHistory:
@@ -85,10 +74,7 @@ class VersionManagerServer(BaseModel):
             version_history = self._version_histories[component_type][name]
         
         version_history.add_version(version, description, metadata)
-        
-        # Save to JSON after registering version
-        await self.save_to_json()
-        
+
         return version_history
     
     async def list(self) -> Dict[str, Dict[str, List[str]]]:
@@ -229,10 +215,7 @@ class VersionManagerServer(BaseModel):
             raise ValueError(f"Component {component_type}/{name} not found")
         
         version_history.deprecate_version(version)
-        
-        # Save to JSON after deprecating version
-        await self.save_to_json()
-    
+
     async def archive_version(self, component_type: str, name: str, version: str):
         """Archive a version for a component
         
@@ -246,91 +229,6 @@ class VersionManagerServer(BaseModel):
             raise ValueError(f"Component {component_type}/{name} not found")
         
         version_history.archive_version(version)
-        
-        # Save to JSON after archiving version
-        await self.save_to_json()
-    
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all version histories to JSON
-        
-        Args:
-            file_path: File path to save to
-            
-        Returns:
-            Path to saved file
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
-            # Serialize all version histories
-            save_data = {
-                "component_type": {},
-                "metadata": {
-                    "saved_at": datetime.now().isoformat()
-                }
-            }
-            
-            for component_type, histories in self._version_histories.items():
-                save_data["component_type"][component_type] = {}
-                for name, version_history in histories.items():
-                    # Convert to dict
-                    history_dict = version_history.model_dump(mode="json")
-                    save_data["component_type"][component_type][name] = history_dict
-            
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=4, ensure_ascii=False)
-            
-            logger.info(f"| 💾 Saved version histories to {file_path}")
-            return str(file_path)
-    
-    async def load_from_json(self, file_path: Optional[str] = None) -> bool:
-        """Load version histories from JSON
-        
-        Args:
-            file_path: File path to load from
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        
-        async with file_lock(file_path):
-            if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Version file not found: {file_path}")
-                return False
-            
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    load_data = json.load(f)
-                
-                # Clear existing histories
-                for component_type in self._version_histories:
-                    self._version_histories[component_type].clear()
-                
-                # Load histories
-                component_types = load_data.get("component_type", {})
-                for component_type, histories in component_types.items():
-                    if component_type not in self._version_histories:
-                        logger.warning(f"| ⚠️ Unknown component type: {component_type}")
-                        continue
-                    
-                    for name, history_dict in histories.items():
-                        try:
-                            # Reconstruct ComponentVersionHistory
-                            version_history = ComponentVersionHistory(**history_dict)
-                            self._version_histories[component_type][name] = version_history
-                        except Exception as e:
-                            logger.error(f"| ❌ Failed to load version history for {name}: {e}")
-                            continue
-                
-                logger.info(f"| 📂 Loaded version histories from {file_path}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"| ❌ Failed to load version data from {file_path}: {e}")
-                return False
 
     @staticmethod
     def compare_versions(v1: str, v2: str) -> int:

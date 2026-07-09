@@ -193,3 +193,16 @@ Return findings as a JSON array of at most N objects (N = the effort cap):
 
 Ranked most-severe first. If more than N survive, keep the N most severe. If
 nothing survives verification, return `[]`.
+
+## Review axes & structural remedies (merged from agent-skills code-review-and-quality)
+
+Beyond correctness bugs, weigh every change on five axes: **correctness, readability/simplicity, architecture, security, performance**. Label findings by severity — **Critical** (blocks merge), required (no prefix), **Nit**/**Optional** (author may ignore) — and lead with the highest-leverage issue, not a pile of nits.
+
+Structural smells and the remedy (propose the move, not just the problem):
+- Chain of conditionals on the same shape → typed model or explicit dispatcher.
+- A new conditional bolted onto an unrelated flow → push it into its own helper/state/policy.
+- A "refactor" that relocates complexity without reducing the concepts a reader must hold → prefer the version where whole branches/modes disappear; prefer deleting an abstraction over polishing it.
+- Feature-specific logic in a shared module → move it to the owning package; reuse the canonical helper instead of a near-duplicate.
+- A change that grows an already-large file (~1000+ lines) → decompose first, then add.
+
+Detailed checks: `references/security-checklist.md`, `references/performance-checklist.md`.
