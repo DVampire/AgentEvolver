@@ -187,6 +187,7 @@ class ChatAwsClaudeNative(ChatAnthropic):
 
             try:
                 data = dirtyjson.loads(raw) if isinstance(raw, str) else raw
+                logger.debug(f"| 🔍 Structured output raw data for {schema_model.__name__}: keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
                 parsed_model = schema_model.model_validate(data)
             except ValidationError as e:
                 # dirtyjson tolerates truncated JSON, so an output cut off at
@@ -196,6 +197,7 @@ class ChatAwsClaudeNative(ChatAnthropic):
                     msg = f"Structured output truncated at max_tokens (stop_reason=max_tokens): {e}"
                 else:
                     msg = f"Structured output failed schema validation: {e}"
+                logger.debug(f"| 🔍 Failed raw data for {schema_model.__name__}: {data!r}")
                 return Response(
                     type=ResponseType.LLM,
                     success=False,

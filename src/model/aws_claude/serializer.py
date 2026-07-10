@@ -514,6 +514,17 @@ class AwsClaudeChatSerializer:
                     result["title"] = obj["title"]
                 return result
 
+            # Handle enum fields — add explicit "type" if missing so models
+            # understand the expected value type (e.g. Literal["a", "b"] → string enum).
+            if "enum" in obj and "type" not in obj:
+                values = obj["enum"]
+                if values and all(isinstance(v, str) for v in values):
+                    result = {"type": "string", **obj}
+                    return result
+                elif values and all(isinstance(v, (int, float)) for v in values):
+                    result = {"type": "number", **obj}
+                    return result
+
             # Handle arrays
             if obj.get("type") == "array":
                 result = {

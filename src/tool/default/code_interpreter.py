@@ -2,10 +2,12 @@
 
 Execution now happens in an isolated, Docker-backed
 sandbox via ``src.sandbox`` (the ``code_interpreter`` backend), so it is safe
-and supports Python/Bash/JavaScript/TypeScript/Go/Java.
+and supports Python/Bash/JavaScript/TypeScript/Go/Java/R.
 
 The sandbox is reused per session (``ctx.id``), giving REPL-like state
-persistence across successive calls within the same session.
+persistence across successive calls within the same session — except for R,
+which runs as a fresh ``Rscript`` process on every call (no persisted
+variables across calls; see ``src/sandbox/default/code_interpreter.py``).
 """
 
 from typing import Any, Dict
@@ -30,10 +32,13 @@ variables/state carry over across calls in the same session.
 
 ## Parameters
 - code (str): The code to execute.
-- language (str, optional): One of python (default), bash, javascript, typescript, go, java.
+- language (str, optional): One of python (default), bash, javascript, typescript, go, java, r.
+  Note: r runs as a fresh process each call — variables do NOT persist across calls
+  the way they do for the other languages.
 
 ## Example
 {"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}
+{"name": "code_interpreter_tool", "args": {"code": "cat(R.version.string)", "language": "r"}}
 """
 
 
