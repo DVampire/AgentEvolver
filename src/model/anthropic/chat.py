@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ConfigDict
 import json
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage
+from src.model.types import TokenUsage, build_response_from_stream
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -254,6 +254,67 @@ class ChatAnthropic(BaseModel):
         
         return response
 
+    async def stream(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        **kwargs: Any,
+    ):
+        """Stream a completion, yielding canonical stream events (provider-agnostic).
+
+        Opens the Anthropic SSE stream and normalizes its events
+        (content_block_start/delta/stop, message_delta) into the canonical event
+        set defined in ``src.model.types``.
+        """
+        if AsyncAnthropic is None:
+            raise ImportError("anthropic package is required. Install it with: pip install anthropic")
+        built = await self._build_params(
+            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
+        )
+        params = dict(built["params"])
+        params.pop("stream", None)
+        client = self.get_client()
+        create = client.beta.messages.create if built.get("use_beta_api") else client.messages.create
+        raw = await create(stream=True, **params)
+        async for ev in self._parse_stream(raw):
+            yield ev
+
+    async def _parse_stream(self, raw):
+        """Translate Anthropic SSE events → canonical stream events. Unit-testable."""
+        from src.model.types import (
+            TextDelta, ThinkingDelta, ToolCallStart, ToolCallArgsDelta, StreamDone, normalize_stop_reason,
+        )
+        usage: Dict[str, Any] = {}
+        stop = None
+        async for ev in raw:
+            t = getattr(ev, "type", None)
+            if t == "message_start":
+                u = getattr(getattr(ev, "message", None), "usage", None)
+                if u is not None:
+                    usage.update(u.model_dump() if hasattr(u, "model_dump") else dict(u))
+            elif t == "content_block_start":
+                cb = getattr(ev, "content_block", None)
+                if getattr(cb, "type", None) == "tool_use":
+                    yield ToolCallStart(index=ev.index, id=cb.id, name=cb.name)
+            elif t == "content_block_delta":
+                d = ev.delta
+                dt = getattr(d, "type", None)
+                if dt == "text_delta":
+                    yield TextDelta(d.text)
+                elif dt == "thinking_delta":
+                    yield ThinkingDelta(d.thinking)
+                elif dt == "input_json_delta":
+                    yield ToolCallArgsDelta(index=ev.index, partial_json=d.partial_json)
+            elif t == "message_delta":
+                d = getattr(ev, "delta", None)
+                if d is not None and getattr(d, "stop_reason", None):
+                    stop = d.stop_reason
+                u = getattr(ev, "usage", None)
+                if u is not None:
+                    usage.update(u.model_dump() if hasattr(u, "model_dump") else dict(u))
+        yield StreamDone(stop_reason=normalize_stop_reason(stop), usage=usage or None)
+
     async def __call__(
         self,
         messages: List[Message],
@@ -279,6 +340,13 @@ class ChatAnthropic(BaseModel):
             raise ImportError("anthropic package is required. Install it with: pip install anthropic")
 
         try:
+            if stream:
+                # Buffered call over the streaming path: stream internally, fold into
+                # the same Response shape (functions / parsed_model / text).
+                return await build_response_from_stream(
+                    self.stream(messages=messages, tools=tools, response_format=response_format, **kwargs),
+                    tools=tools, response_format=response_format,
+                )
             params = await self._build_params(
                 messages=messages,
                 tools=tools,

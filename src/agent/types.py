@@ -247,6 +247,7 @@ class Agent(BaseModel):
         review_steps: int = 5,
         enable_evolving: bool = False,
         use_memory: bool = True,
+        use_native_tools: bool = False,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -265,6 +266,10 @@ class Agent(BaseModel):
         self.prompt_name = prompt_name
         self.memory_name = memory_name
         self.use_memory = use_memory
+        # Native tool-calling mode: when True, the run loop passes the agent's
+        # capabilities as native tools and dispatches tool_calls (see
+        # _think_and_act_native) instead of parsing a structured AgentThinkOutput.
+        self.use_native_tools = use_native_tools
         self.model_name = model_name
 
         # Setup steps
@@ -473,6 +478,64 @@ class Agent(BaseModel):
         listing = "\n".join(f"- {f}" for f in existing)
         return f"{task}\n\n**Input files:**\n{listing}"
 
+    def _response_protocol_text(self) -> str:
+        """The 'how to respond' block injected as the ``{{ response_protocol }}`` module.
+
+        Structured mode → the AgentThinkOutput plan+reasoning format. Native mode →
+        native tool-calling guidance. Switching here (instead of per-template) is
+        what lets one agent template serve both run-loop modes.
+        """
+        if getattr(self, "use_native_tools", False):
+            return (
+                "<response-protocol>\n"
+                "You have tools available (provided to you directly). To act, CALL a tool — "
+                "do NOT describe the call in text and do NOT emit a JSON `plan`.\n"
+                "- Put brief reasoning in your normal response text before the tool call(s); "
+                "you may call several tools when they are independent.\n"
+                "- When the task is COMPLETE, call the `done` tool with the final `result` "
+                "(and optional `reasoning`). Completion is signaled ONLY by calling `done` — "
+                "never by a plain-text answer.\n"
+                "- If a task matches a skill, call the corresponding `skill__<name>` tool; "
+                "for a connector action call `connector__<name>__<action>`.\n"
+                "</response-protocol>"
+            )
+        # Structured (default) — the AgentThinkOutput plan + reasoning format.
+        # Faithfully reproduces the plan-rules / reasoning-rules / output-format /
+        # output-schema blocks that used to live inline in each agent template, so
+        # structured mode is unchanged when a template swaps them for {{ response_protocol }}.
+        return (
+            "<plan-rules>\n"
+            "Output `plan` — an ordered list of new steps to execute. Each step is exactly one action.\n"
+            "- Output only steps not yet executed; history is maintained by the agent.\n"
+            f"- Maximum {self.max_actions} steps per plan. `reasoning` does NOT count.\n"
+            "- Do NOT include an `output` field — actions are executed after planning.\n\n"
+            'Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:\n'
+            '- `action.type`: `"tool"`, `"skill"`, `"connector"`, `"env"`, `"finish"`, or `"text"`.\n'
+            "- `action.name`: exact name from Tool/Skill/Connector/Environment Context, or `\"text\"` for plain-text.\n"
+            '- `action.args`: arguments as a JSON string, e.g. `"{\\"path\\": \\"/abs/path\\"}"`.\n'
+            '- Connector actions: `"type": "connector"`, `"name"`: connector name, `args` a JSON string '
+            'of the form `{"action": "<action name>", "args": {<action arguments>}}`.\n'
+            "</plan-rules>\n\n"
+            "<reasoning-rules>\n"
+            "Write ALL reasoning in the single `reasoning` field, structured in three parts: "
+            "past — previous goal, last-step outcome, progress; present — current situation and remaining budget; "
+            "future — the immediate next goal and concrete next steps. Be concise but complete.\n"
+            "</reasoning-rules>\n\n"
+            "<output-format>\n"
+            "- `plan` must not be empty — always output at least one step.\n"
+            "- Respond with valid JSON only — no markdown fences, no extra text.\n"
+            "</output-format>\n\n"
+            "<output-schema>\n"
+            "{\n"
+            '    "reasoning": "Past: ... Present: ... Future: ...",\n'
+            '    "plan": [\n'
+            '        {"description": "Read the target file.", "action": {"type": "tool", "name": "read_file_tool", "args": "{\\"path\\": \\"/abs/path/file.py\\"}"}},\n'
+            '        {"description": "Complete the task.", "action": {"type": "tool", "name": "done_tool", "args": "{\\"result\\": \\"Summary.\\", \\"reasoning\\": \\"Why done.\\"}"}}\n'
+            "    ]\n"
+            "}\n"
+            "</output-schema>"
+        )
+
     async def _get_messages(self,
                             task: str,
                             ctx: AgentContext,
@@ -481,9 +544,14 @@ class Agent(BaseModel):
 
         work_dir = await self._resolve_work_dir(ctx=ctx, **kwargs)
         project_root = get_project_root()
-        system_modules = dict(max_actions=self.max_actions, work_dir=work_dir, project_root=project_root)
+        system_modules = dict(
+            max_actions=self.max_actions, work_dir=work_dir, project_root=project_root,
+            # response_protocol lives in the SYSTEM section of the agent templates
+            # (it replaced the inline <plan-rules> block there).
+            response_protocol=self._response_protocol_text(),
+        )
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
-        
+
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
@@ -598,6 +666,11 @@ class Agent(BaseModel):
                 if response["done"]:
                     break
         """
+        if getattr(self, "use_native_tools", False):
+            return await self._think_and_act_native(
+                messages, task_id, step_number, ctx=ctx, **kwargs
+            )
+
         from src.hook.server import hook_manager
         from src.hook.types import HookDecision, HookEvent
         from src.model import model_manager
@@ -750,6 +823,11 @@ class Agent(BaseModel):
                     input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
                     ctx=ctx,
                 )
+                await hook_manager(
+                    name="trajectory_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
+                )
 
                 if done:
                     break
@@ -775,6 +853,14 @@ class Agent(BaseModel):
                    "messages": messages, "reasoning": step_reasoning, "plan": step_plan},
             ctx=ctx,
         )
+        # Trajectory capture: effective prompt + structured decision + tokens for this step.
+        await hook_manager(
+            name="trajectory_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
+                   "task_id": task_id, "messages": messages, "reasoning": step_reasoning,
+                   "plan": step_plan, "step_tokens": step_tokens},
+            ctx=ctx,
+        )
 
         # Carry this step's token usage into the next step's constraint check
         self._pending_step_tokens[task_id] = step_tokens
@@ -786,6 +872,172 @@ class Agent(BaseModel):
             self._pending_step_tokens.pop(task_id, None)
 
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": constraint_statuses, "stopped_by_constraint": False}
+
+    async def _think_and_act_native(self, messages, task_id, step_number, ctx=None, **kwargs):
+        """Native tool-calling step: pass capabilities as tools, dispatch tool_calls.
+
+        Mirrors ``_think_and_act``'s hook lifecycle (PRE_STEP / PRE_ACTION /
+        POST_ACTION / POST_STEP + snapshot + trajectory) so trace/memory/trajectory
+        capture is identical — but the model call streams native tool_calls instead
+        of a structured ``AgentThinkOutput``. Reasoning is the model's thinking/text
+        blocks; completion is an explicit ``done`` tool call (never inferred from
+        plain text — a text-only turn is nudged to act or call done).
+        """
+        import json as _json
+        from src.hook.server import hook_manager
+        from src.hook.types import HookDecision, HookEvent
+        from src.model import model_manager
+        from src.model.types import accumulate_stream
+        from src.agent.native_tools import assemble_native_tools
+
+        done = False
+        result = None
+        reasoning = None
+        action_errors: List[str] = []
+        step_tokens = 0
+
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.PRE_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id},
+            ctx=ctx,
+        )
+
+        tools, routing = await assemble_native_tools(self, ctx)
+        step_plan: List[Dict[str, Any]] = []
+        step_reasoning = ""
+
+        try:
+            acc = await accumulate_stream(
+                model_manager.stream(
+                    name=self.model_name,
+                    input={"messages": messages, "tools": tools},
+                    ctx=ctx,
+                )
+            )
+            step_tokens += int((acc.get("usage") or {}).get("output_tokens", 0) or 0)
+            step_reasoning = acc.get("thinking") or acc.get("text") or ""
+            reasoning = step_reasoning
+            tool_calls = acc.get("tool_calls") or []
+
+            logger.info(f"| 💭 [{self.name}] Reasoning: {step_reasoning[:200]}")
+            logger.info(f"| 🔧 [{self.name}] Tool calls: {[c.name for c in tool_calls]}")
+
+            if not tool_calls:
+                # A text-only turn is NOT completion (see redesign §6.1). Nudge the
+                # model to take an action or, if finished, call `done` explicitly.
+                action_errors.append(
+                    "You produced text but called no tool. Take the next action by calling a tool, "
+                    "or if the task is COMPLETE call `done` with the result now. Do not answer in plain text."
+                )
+                logger.warning(f"| ⚠️ [{self.name}] No tool call — nudging to act or call done.")
+
+            for i, call in enumerate(tool_calls):
+                route = routing.get(call.name)
+                kind = route[0] if route else "tool"
+                args_str = _json.dumps(call.input, ensure_ascii=False)
+                action_dict = {
+                    "index": i, "description": "", "type": kind,
+                    "name": call.name, "args": args_str, "args_parsed": call.input,
+                }
+                step_plan.append({"description": "", "type": kind, "name": call.name, "args": args_str})
+
+                logger.info(f"| 📝 [{self.name}] [{kind}] {call.name}: {call.input}")
+
+                pre_result = await hook_manager(
+                    name="trace_hook",
+                    input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
+                    ctx=ctx,
+                )
+                if pre_result.decision == HookDecision.BLOCK:
+                    logger.warning(f"| 🚫 [{self.name}] Action blocked by hook: {pre_result.reason}")
+                    continue
+
+                action_result = None
+                error = None
+                try:
+                    if route is None:
+                        raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
+                    if kind == "finish":
+                        done = True
+                        result = call.input.get("result", "")
+                        reasoning = call.input.get("reasoning") or reasoning
+                        action_result = result
+                        logger.info(f"| 🏁 [{self.name}] done: {str(result)[:200]}")
+                    elif kind == "tool":
+                        tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx)
+                        action_result = tool_response.message
+                        if route[1] == "done_tool":
+                            done = True
+                            result = action_result
+                    elif kind == "skill":
+                        response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
+                        action_result = response.message
+                    elif kind == "connector":
+                        response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
+                        action_result = response.message
+                    elif kind == "env":
+                        action_result = await self._handle_env_action(route[1], call.input, ctx)
+                    else:
+                        raise ValueError(f"Unknown route kind {kind!r}")
+                except Exception as e:
+                    error = str(e)
+                    action_errors.append(f"Action '{call.name}' failed: {error}")
+                    logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
+
+                await hook_manager(
+                    name="memory_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "use_memory": self.use_memory, "memory_name": self.memory_name},
+                    ctx=ctx,
+                )
+                await hook_manager(
+                    name="trace_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
+                )
+                await hook_manager(
+                    name="trajectory_hook",
+                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+                    ctx=ctx,
+                )
+
+                if done:
+                    break
+
+        except Exception as e:
+            logger.error(f"| ❌ [{self.name}] Error in _think_and_act_native: {e}")
+
+        await hook_manager(
+            name="memory_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="snapshot_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
+                   "task_id": task_id, "work_dir": getattr(ctx, "work_dir", None),
+                   "messages": messages, "reasoning": step_reasoning, "plan": step_plan},
+            ctx=ctx,
+        )
+        await hook_manager(
+            name="trajectory_hook",
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
+                   "task_id": task_id, "messages": messages, "reasoning": step_reasoning,
+                   "plan": step_plan, "step_tokens": step_tokens},
+            ctx=ctx,
+        )
+
+        self._pending_step_tokens[task_id] = step_tokens
+        if done and self.constraints:
+            for c in self.constraints:
+                c._cleanup(task_id)
+            self._pending_step_tokens.pop(task_id, None)
+
+        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": [], "stopped_by_constraint": False}
 
     # ------------------------------------------------------------------
     # Path 1: Direct call
@@ -839,7 +1091,7 @@ class Agent(BaseModel):
             "parent_session_id": ctx.parent_session_id, 
             "subtask_id": ctx.subtask_id,
         }
-        for hook_name in ("memory_hook", "trace_hook"):
+        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
                 input={"event": HookEvent.ON_START, "task": task, **lifecycle_input},
@@ -875,15 +1127,21 @@ class Agent(BaseModel):
             response = {"done": False, "result": "The task has not been completed.",
                         "reasoning": "Reached the maximum number of steps."}
 
-        for hook_name in ("memory_hook", "trace_hook"):
+        stop_success = response["done"] and not response.get("stopped_by_constraint", False)
+        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
-                input={"event": HookEvent.ON_STOP, "result": response.get("result"), **lifecycle_input},
+                input={"event": HookEvent.ON_STOP, "result": response.get("result"),
+                       "success": stop_success, **lifecycle_input},
                 ctx=ctx,
             )
 
         logger.info(f"| ✅ {self.name} completed after {step_number}/{self.max_step} steps")
 
+        # Surface the run's task_id so a caller (e.g. a benchmark/evaluator driver)
+        # can correlate this run with its captured trajectory and later call
+        # trajectory_manager.set_reward(task_id, reward).
+        response["task_id"] = task_id
         return Response(
             type=ResponseType.AGENT,
             success=response["done"] and not response.get("stopped_by_constraint", False),

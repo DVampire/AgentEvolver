@@ -1390,8 +1390,11 @@ class ModelContextManager:
         caller = input.get("caller")
 
         self._current_caller = caller
-        if tools and response_format:
-            raise ValueError("tools and response_format cannot be used together")
+        # tools + response_format may be used together: the tool schemas constrain
+        # tool-call arguments; response_format constrains the final answer. A turn
+        # resolves to one or the other (provider serializers handle both). On the
+        # aws_claude backend, structured output is emulated as an optional "final
+        # answer" tool so real tools stay callable — see ChatAwsClaude._build_params.
 
         if name not in self.model_clients:
             return Response(
@@ -1496,6 +1499,43 @@ class ModelContextManager:
                 )
 
         return Response(type=ResponseType.LLM, success=False, message=str(last_exc))
+
+    async def stream(
+        self,
+        name: str,
+        input: Dict[str, Any],
+        ctx: ModelContext = None,
+        **kwargs: Any,
+    ):
+        """Stream a model invocation, yielding canonical stream events.
+
+        Provider-agnostic: delegates to the provider client's ``stream()``, which
+        normalizes its wire format into the canonical event set (see
+        ``src.model.types``). No retry/fallback on the streaming path (v1) — the
+        buffered ``__call__`` keeps those.
+        """
+        ctx = ModelContext.from_context(ctx)
+        messages = input.get("messages", [])
+        tools = input.get("tools")
+        response_format = input.get("response_format")
+
+        if name not in self.model_clients:
+            raise ValueError(f"Model {name} not found. Available: {list(self.models.keys())}")
+        client = await self._get_client(name)
+        if hasattr(client, "stream"):
+            async for ev in client.stream(
+                messages=messages, tools=tools, response_format=response_format, **kwargs
+            ):
+                yield ev
+        else:
+            # Graceful fallback for any provider without a stream(): buffer, then
+            # re-emit the final Response as canonical events (uniform interface).
+            from src.model.types import buffered_response_to_events
+            resp = await client(
+                messages=messages, tools=tools, response_format=response_format, **kwargs
+            )
+            async for ev in buffered_response_to_events(resp):
+                yield ev
 
 
 __all__ = ["ApiKeyPool", "ModelContextManager"]

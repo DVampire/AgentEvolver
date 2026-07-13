@@ -343,19 +343,20 @@ class AnthropicChatSerializer:
         """
         formatted_tools = []
         for tool in tools:
-            if isinstance(tool, Tool):
-                # Convert Tool instance to Anthropic format
-                function_call = tool.function_calling
-                function_def = function_call.get("function", {})
-                
-                # Anthropic uses "input_schema" instead of "parameters"
-                anthropic_tool = {
-                    "name": function_def.get("name", tool.name),
-                    "description": function_def.get("description", tool.description),
-                    "input_schema": function_def.get("parameters", {}),
-                }
-                formatted_tools.append(anthropic_tool)
-        
+            # Accept a Tool-like instance (carries .function_calling) OR a raw
+            # OpenAI-style function_calling dict. Avoid isinstance(Tool) — Tool is
+            # only imported under TYPE_CHECKING here, and native tool assembly passes
+            # schema-only Tool shims / dicts.
+            fc = tool if isinstance(tool, dict) else getattr(tool, "function_calling", None)
+            if not fc:
+                continue
+            function_def = fc.get("function", {})
+            formatted_tools.append({
+                "name": function_def.get("name") or getattr(tool, "name", ""),
+                "description": function_def.get("description") or getattr(tool, "description", ""),
+                "input_schema": function_def.get("parameters") or {"type": "object", "properties": {}},
+            })
+
         return formatted_tools
     
     @staticmethod

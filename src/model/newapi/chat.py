@@ -160,6 +160,25 @@ class ChatNewAPI(BaseModel):
             "params": params,
         }
 
+    async def stream(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        **kwargs: Any,
+    ):
+        """Canonical stream via graceful degradation (single-POST REST client).
+
+        Buffers a normal call and re-emits the final Response as canonical events,
+        so callers get a uniform ``stream()`` interface.
+        """
+        from src.model.types import buffered_response_to_events
+        resp = await self.__call__(
+            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
+        )
+        async for ev in buffered_response_to_events(resp):
+            yield ev
+
     async def _call_model(
         self,
         messages: List[Dict[str, Any]],

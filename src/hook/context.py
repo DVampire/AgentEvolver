@@ -14,7 +14,20 @@ from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.logger import logger
-from src.hook.types import Hook, HookContext, HookEvent, HookResult
+from src.hook.types import Hook, HookContext, HookDecision, HookEvent, HookResult, check_message_contract
+
+
+def _contract_mode() -> str:
+    """Resolve hook contract mode: env > config.hook_contract_mode > 'warn'."""
+    import os
+    env = os.environ.get("AGENTEVOLVER_CONTRACT_MODE")
+    if env:
+        return env.strip().lower()
+    try:
+        from src.config import config
+        return str(getattr(config, "hook_contract_mode", "warn")).lower()
+    except Exception:
+        return "warn"
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +267,12 @@ class HookContextManager:
         except Exception as e:
             logger.warning(f"| ⚠️ Hook '{name}' raised on {event}: {e}")
             result = HookResult.allow()
+
+        # Contract-as-code: validate a MODIFY hook's rewritten messages. In strict
+        # mode a violation propagates (caught by no one here — surfaces to the run
+        # loop); in warn mode it only logs. Off skips entirely.
+        if result.decision == HookDecision.MODIFY and result.modified_messages is not None:
+            check_message_contract(result.modified_messages, mode=_contract_mode(), hook_name=name)
 
         if result.additional_context:
             logger.debug(

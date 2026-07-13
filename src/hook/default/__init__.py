@@ -9,6 +9,7 @@ from .agent_registration import AgentRegistrationHook
 from .environment_registration import EnvironmentRegistrationHook
 from .connector_registration import ConnectorRegistrationHook
 from .snapshot_hook import SnapshotHook
+from .trajectory_hook import TrajectoryHook
 
 __all__ = [
     "CompactHook",
@@ -22,4 +23,5 @@ __all__ = [
     "EnvironmentRegistrationHook",
     "ConnectorRegistrationHook",
     "SnapshotHook",
+    "TrajectoryHook",
 ]

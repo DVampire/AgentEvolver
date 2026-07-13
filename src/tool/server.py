@@ -112,6 +112,17 @@ class ToolManagerServer(BaseModel):
             Tool: Tool instance or None if not found
         """
         tool = await self._ensure_context_manager().get(tool_name)
+        # The parameter schema (function_calling) is generated onto the ToolConfig,
+        # not the instance — attach it here so a tool passed to a model as
+        # ``input["tools"]`` serializes correctly (serialize_tools reads
+        # ``tool.function_calling``). Without this the tool is sent with name=None.
+        if tool is not None and not getattr(tool, "function_calling", None):
+            try:
+                info = await self._ensure_context_manager().get_info(tool_name)
+                if info is not None and getattr(info, "function_calling", None):
+                    tool.function_calling = info.function_calling
+            except Exception:
+                pass
         return tool
     
     async def get_info(self, tool_name: str) -> Optional[ToolConfig]:

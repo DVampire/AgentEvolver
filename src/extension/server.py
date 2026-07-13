@@ -154,11 +154,19 @@ class ExtensionManagerServer(BaseModel):
     # ------------------------------------------------------------------
     # Authoring: hot-add / evolve a single component
     # ------------------------------------------------------------------
-    async def add_component(self, module: str, abspath: str, config: Optional[dict] = None) -> str:
+    async def add_component(self, module: str, abspath: str, config: Optional[dict] = None,
+                            run_smoke: Optional[bool] = None) -> str:
         """Register an already-written flat active file, archive its version, update the manifest.
 
         Returns the registered component name. The version is assigned by the owning
         manager (via version_manager), so re-adding an existing component evolves it.
+
+        ``run_smoke`` opt-in gates the newly registered component behind a replay
+        smoke run (see ``src/extension/smoke_gate.py``). On failure the component is
+        rolled back to its previous version (or unloaded if brand-new) and
+        ``EvolutionRejected`` is raised. Default (``None``) reads ``config.extension``
+        ``smoke_gate`` and otherwise stays off — zero behavior change to callers that
+        don't opt in.
         """
         # add_component is the evolution-write entry point, so it enforces the
         # enable_evolving gate: overwriting an already-registered *frozen* entity is
@@ -166,6 +174,11 @@ class ExtensionManagerServer(BaseModel):
         name, version = await self._load_component(
             module, abspath, None, version=None, config=config, return_version=True, enforce_evolvable=True
         )
+        # The manifest still holds the PREVIOUS active version here (it is rewritten
+        # below), so this is the rollback target if the smoke gate fails
+        # (None => brand-new component, which is unloaded instead of rolled back).
+        _prev = self.read_manifest().find(module, name)
+        prev_version = _prev.version if _prev else None
         # Serialize the manifest read-modify-write so parallel add_component calls
         # (e.g. concurrent component evolution) don't lose each other's updates.
         try:
@@ -186,7 +199,41 @@ class ExtensionManagerServer(BaseModel):
                 pass
             raise
         logger.info(f"| ➕ ExtensionManager: added {module}:{name} v{comp.version}")
+
+        if self._smoke_enabled(run_smoke):
+            await self._smoke_gate_or_revert(module, name, prev_version)
+
         return name
+
+    def _smoke_enabled(self, run_smoke: Optional[bool]) -> bool:
+        """Resolve the smoke-gate flag: explicit arg wins, else config.extension.smoke_gate, else off."""
+        if run_smoke is not None:
+            return bool(run_smoke)
+        try:
+            from src.config import config
+            ext_cfg = getattr(config, "extension", {}) or {}
+            return bool(ext_cfg.get("smoke_gate", False)) if isinstance(ext_cfg, dict) else False
+        except Exception:
+            return False
+
+    async def _smoke_gate_or_revert(self, module: str, name: str, prev_version: Optional[str]) -> None:
+        """Run the replay smoke gate; on failure revert (rollback or unload) and raise."""
+        from src.extension.smoke_gate import replay_smoke, EvolutionRejected
+
+        report = await replay_smoke(module, name)
+        if report.ok:
+            return
+        # Revert: roll back to the prior version, or unload a brand-new component.
+        try:
+            if prev_version is not None:
+                await self.rollback(module, name, prev_version)
+                logger.warning(f"| ⏪ ExtensionManager: {module}:{name} reverted to v{prev_version} (smoke gate).")
+            else:
+                await self.unload(module, name)
+                logger.warning(f"| 🧹 ExtensionManager: {module}:{name} unloaded (smoke gate, no prior version).")
+        except Exception as e:
+            logger.error(f"| ❌ ExtensionManager: revert after failed smoke gate errored: {e}")
+        raise EvolutionRejected(f"{module}:{name} rejected by replay smoke gate: {report.reason}")
 
     async def unload(self, module: str, name: str) -> bool:
         """Unregister an active component and drop it from the manifest (archive kept)."""

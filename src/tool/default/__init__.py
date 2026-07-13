@@ -12,6 +12,7 @@ from .list_dir import ListDirTool
 from .git import GitTool
 from .deploy import DeployTool
 from .evolution import EvolutionTool
+from .journal import JournalTool
 from .escalate import EscalateTool
 from .ask_question import AskQuestionTool
 from .glob_search import GlobSearchTool
@@ -36,6 +37,7 @@ __all__ = [
     "GitTool",
     "DeployTool",
     "EvolutionTool",
+    "JournalTool",
     "EscalateTool",
     "AskQuestionTool",
     "GlobSearchTool",

@@ -43,6 +43,7 @@ from src.extension import extension_manager
 from src.hook import hook_manager
 from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus, add_task_args, resolve_task
 from src.trace import trace_manager
+from src.trajectory import trajectory_manager
 from src.session.types import SessionContext
 from src.utils import make_id
 
@@ -84,6 +85,11 @@ async def main():
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
 
+    # Validate the assembled config (duplicate whitelist entries silently shadow).
+    from src.config import validate_assembly
+    for _problem in validate_assembly(config):
+        logger.warning(f"| ⚠️ Config: {_problem}")
+
     # --- Core managers ---
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
@@ -93,6 +99,9 @@ async def main():
     await trace_manager.initialize()
     await trace_manager.start()
     logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
+
+    # --- Trajectory (training-data capture; fed by trajectory_hook) ---
+    await trajectory_manager.initialize()
 
     # --- Hooks ---
     await hook_manager.initialize()

@@ -148,8 +148,16 @@ class ChatAwsClaude(BaseModel):
                         "parameters": schema,
                     },
                 }
+                # Bedrock has no native structured-output param, so structured output
+                # is emulated as a synthetic tool. When the caller ALSO passed real
+                # tools, do NOT force tool_choice — that would block the real tools.
+                # Instead expose the structured tool as an optional "final answer"
+                # tool the model calls when it is done; force it only when there are
+                # no real tools (guaranteed structured output for the no-tools case).
+                had_real_tools = bool(params.get("tools"))
                 params["tools"] = (params.get("tools") or []) + [structured_tool]
-                params["tool_choice"] = {"type": "function", "function": {"name": tool_name}}
+                if not had_real_tools:
+                    params["tool_choice"] = {"type": "function", "function": {"name": tool_name}}
             elif isinstance(response_format, dict):
                 params['response_format'] = response_format
             else:
@@ -166,6 +174,26 @@ class ChatAwsClaude(BaseModel):
             "messages": aws_messages,
             "params": params,
         }
+
+    async def stream(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        **kwargs: Any,
+    ):
+        """Canonical stream via graceful degradation.
+
+        The AWS Claude client is a single-POST REST client (no token-level
+        streaming), so this buffers a normal call and re-emits the final Response
+        as canonical events — giving callers a uniform ``stream()`` interface.
+        """
+        from src.model.types import buffered_response_to_events
+        resp = await self.__call__(
+            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
+        )
+        async for ev in buffered_response_to_events(resp):
+            yield ev
 
     async def _call_model(
         self,
@@ -225,19 +253,27 @@ class ChatAwsClaude(BaseModel):
             # tool call (see `_build_params`), so the structured result lives in
             # the tool call arguments — NOT in `message.content`. Parse it from
             # there, falling back to content for older/looser gateway behavior.
+            # Resolve the structured-output payload ONLY if this turn is actually a
+            # structured answer: the model called the synthetic structured tool by
+            # name, or there are no real tools (legacy forced path), or there were no
+            # tool calls at all (content JSON). If real tools were called instead
+            # (tools + response_format used together), leave `raw` None so we fall
+            # through to the regular tool-dispatch path below.
+            raw: Optional[Any] = None
             if response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 tool_name = response_format.__name__
-                raw: Optional[Any] = None
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
                         if tool_call.function.name == tool_name:
                             raw = tool_call.function.arguments
                             break
-                    if raw is None:
+                    if raw is None and not tools:
+                        # No real tools → the (single) tool call IS the structured one.
                         raw = message.tool_calls[0].function.arguments
-                if raw is None:
+                else:
                     raw = message.content or ""
 
+            if raw is not None:
                 if not raw:
                     return Response(
                         type=ResponseType.LLM,

@@ -90,75 +90,13 @@ Tools and skills:
 - Run any available tests or a quick functional check with `bash_tool` before calling `done_tool`.
 </optimization-rules>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
-
-- Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- The canonical sequence: `[inspect_tool (get path + check enable_evolving), read source file, edit file, verify syntax, done_tool]`.
-- Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
-- Do NOT include an `output` field — actions are executed after planning.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
-- `description`: one-line summary of what this step does.
-- `action.type`: `"tool"`, `"skill"`, or `"text"`.
-- `action.name`: exact name from Tool Context / Skill Context.
-- `action.args`: arguments as a JSON string. Must be valid JSON.
-</plan-rules>
+{{ response_protocol }}
 
 <decision-rules>
 **When to stop**: include `done_tool` as the final plan step when the evolution is fully completed and verified. Always verify changes work before calling `done_tool`.
 
 **Efficiency**: Read → Edit → Verify → done_tool is the canonical loop. Avoid redundant re-reads of files you just read and didn't change. After syntax verification passes, call `done_tool` immediately.
 </decision-rules>
-
-<reasoning-rules>
-Write ALL reasoning in the single `reasoning` field, structured in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
-1. **Past — review**: the previous goal, whether the last step succeeded or failed, and a brief summary of overall progress (key decisions, results, failures).
-2. **Present — analysis**: the current situation — key facts, latest results, and remaining resource budget.
-3. **Future — plan**: the immediate next goal and the concrete next steps to achieve it.
-
-While reasoning, also:
-- Identify the exact next action: which file, which tool, what change.
-- If the last step failed, diagnose why and choose a different approach.
-- Before calling `done_tool`, confirm the evolution is correct and verified.
-</reasoning-rules>
-
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
-    "plan": [
-        {
-            "description": "Load the lifecycle methodology.",
-            "action": {"type": "skill", "name": "tool_creator_skill", "args": "{}"}
-        },
-        {
-            "description": "Inspect the target tool to get its paths and confirm it is evolvable.",
-            "action": {"type": "tool", "name": "inspect_tool", "args": "{\"name\": \"my_tool\"}"}
-        },
-        {
-            "description": "Read the target tool source file.",
-            "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/tool.py\"}"}
-        },
-        {
-            "description": "Edit the function to apply the evolution.",
-            "action": {"type": "tool", "name": "edit_file_tool", "args": "{\"path\": \"/abs/path/tool.py\", \"old_string\": \"...\", \"new_string\": \"...\"}"}
-        },
-        {
-            "description": "Verify syntax compiles cleanly.",
-            "action": {"type": "tool", "name": "bash_tool", "args": "{\"command\": \"python -m py_compile /abs/path/tool.py && echo 'syntax OK'\"}"}
-        },
-        {
-            "description": "Complete the task.",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Explained what was changed and why.\", \"result\": \"Summary of the completed evolution.\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

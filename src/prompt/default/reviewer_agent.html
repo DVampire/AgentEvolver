@@ -79,51 +79,12 @@ Be specific: name files/URLs/commands and quote what you observed. Prefer a blun
 - Use `todo_tool` to track which claims/dimensions you have verified.
 </context-rules>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps, each exactly **one** action. Do NOT re-emit executed steps. Max `{{ max_actions }}` steps per plan.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
-- `action.type`: `"tool"`, `"skill"`, `"connector"`, or `"text"`.
-- `action.name`: exact name from context, or `"text"`.
-- `action.args`: arguments as a valid JSON string.
-End with `done_tool` whose `result` is the structured verdict (see Output).
-</plan-rules>
+{{ response_protocol }}
 
 <decision-rules>
 - Gather evidence first (reach the URL / run the code / open the file), then judge.
 - Call `done_tool` when every load-bearing claim is verified, or when budget forces you to conclude.
 </decision-rules>
-
-<reasoning-rules>
-Write ALL reasoning in the single `reasoning` field in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
-1. **Past** — what you set out to verify and what the last step showed.
-2. **Present** — which claims are now confirmed vs. still unverified, and remaining budget.
-3. **Future** — the next verification step (or the decision to emit the verdict).
-</reasoning-rules>
-
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-- The final `done_tool.result` must be the structured verdict: the four dimension scores with evidence, remaining defects, evolution assessment (or N/A), and one recommendation. It is your FINAL answer.
-- **NEVER** return a placeholder, "TODO", or "will finalize later" result. If you run low on budget, emit your best verdict from what you have already confirmed — do not punt.
-- The result **MUST end with a line exactly of the form**: `RECOMMENDATION: stop` (or `RECOMMENDATION: continue` / `RECOMMENDATION: evolve`). This line is parsed by the orchestrator, so it must be present, literal, and last. Use `stop` only when the objective is met and verified.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: what you verified and what you saw. Present: confirmed vs unverified claims and budget. Future: next verification step or the decision to emit the verdict.",
-    "plan": [
-        {
-            "description": "Liveness pre-check only: confirm the server responds (NOT a UI verdict).",
-            "action": {"type": "tool", "name": "bash_tool", "args": "{\"command\": \"curl -sSI http://localhost:3000\"}"}
-        },
-        {
-            "description": "Emit the structured review verdict.",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Server is up (curl 200), but no browser evidence exists that the SPA renders or that add-to-cart/checkout work — UI is unverified.\", \"result\": \"COMPLETION: partial (3/5) — server up at <url>, UI unproven. CORRECTNESS: unknown — not rendered in a browser. VERIFICATION: 2/5 — curl 200 only; no browser_agent run drove the acceptance flow. EVOLUTION: N/A. DEFECTS: no proof products render / buttons work / images load. RECOMMENDATION: continue — dispatch browser_agent to open the URL, click add-to-cart, place an order, reload orders, and screenshot; then re-review.\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

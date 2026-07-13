@@ -302,23 +302,19 @@ class GoogleChatSerializer:
         Returns:
             List containing a single dict with function_declarations array
         """
-        # Lazy import to avoid circular dependency
-        from src.tool.types import Tool
-        
         function_declarations = []
         for tool in tools:
-            if isinstance(tool, Tool):
-                # Convert Tool instance to Google Gemini format
-                function_call = tool.function_calling
-                function_def = function_call.get("function", {})
-                
-                # Google Gemini uses "parameters" (same as OpenAI)
-                gemini_function = {
-                    "name": function_def.get("name", tool.name),
-                    "description": function_def.get("description", tool.description),
-                    "parameters": function_def.get("parameters", {}),
-                }
-                function_declarations.append(gemini_function)
+            # Accept a Tool-like instance (carries .function_calling) OR a raw
+            # OpenAI-style function_calling dict.
+            fc = tool if isinstance(tool, dict) else getattr(tool, "function_calling", None)
+            if not fc:
+                continue
+            function_def = fc.get("function", {})
+            function_declarations.append({
+                "name": function_def.get("name") or getattr(tool, "name", ""),
+                "description": function_def.get("description") or getattr(tool, "description", ""),
+                "parameters": function_def.get("parameters") or {"type": "object", "properties": {}},
+            })
         
         # Google Gemini expects tools as a list with a single object containing function_declarations
         if function_declarations:

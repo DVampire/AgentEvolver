@@ -104,15 +104,7 @@ Tools, skills, and connectors:
 - Run any available integration check with `bash_tool` before calling `done_tool`.
 </optimization-rules>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
-
-- Output only steps not yet executed. Do NOT re-emit steps from previous calls.
-- Canonical sequence: `[inspect_agent (get paths + check enable_evolving), read Python file, (read HTML if needed), edit file(s), verify syntax, done_tool]`.
-- Maximum `{{ max_actions }}` steps per plan.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`.
-</plan-rules>
+{{ response_protocol }}
 
 <decision-rules>
 **When to stop**: include `done_tool` when the optimization is fully completed and verified.
@@ -122,56 +114,6 @@ Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "a
 **Python edit safety**: never modify `@AGENT.register_module(force=True)`, `name` field, or `__call__` signature without explicit task instruction.
 **HTML edit safety**: never break the `&lt;agent-context&gt;` sub-module structure or its template variables (`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ available_tools }}`, `{{ available_skills }}`).
 </decision-rules>
-
-<reasoning-rules>
-Write ALL reasoning in the single `reasoning` field, structured in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
-1. **Past — review**: the previous goal, whether the last step succeeded or failed, and a brief summary of overall progress (key decisions, results, failures).
-2. **Present — analysis**: the current situation — key facts, latest results, and remaining resource budget.
-3. **Future — plan**: the immediate next goal and the concrete next steps to achieve it.
-
-While reasoning, also:
-- Does this task require editing Python, HTML, or both?
-- Identify the exact change: which file, what string to replace, what to replace it with.
-- If the last step failed, diagnose why and choose a different approach.
-- Before `done_tool`, confirm the optimization is correct and verified.
-</reasoning-rules>
-
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
-    "plan": [
-        {
-            "description": "Load the lifecycle methodology.",
-            "action": {"type": "skill", "name": "agent_creator_skill", "args": "{}"}
-        },
-        {
-            "description": "Inspect the target agent to get its file paths and confirm it is evolvable.",
-            "action": {"type": "tool", "name": "inspect_agent", "args": "{\"name\": \"my_agent\"}"}
-        },
-        {
-            "description": "Read the target agent Python source file.",
-            "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/my_agent.py\"}"}
-        },
-        {
-            "description": "Edit the Python file to apply the optimization.",
-            "action": {"type": "tool", "name": "edit_file_tool", "args": "{\"path\": \"/abs/path/my_agent.py\", \"old_string\": \"...\", \"new_string\": \"...\"}"}
-        },
-        {
-            "description": "Verify Python syntax compiles cleanly.",
-            "action": {"type": "tool", "name": "bash_tool", "args": "{\"command\": \"python -m py_compile /abs/path/my_agent.py && echo 'syntax OK'\"}"}
-        },
-        {
-            "description": "Complete the task.",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Explained what was changed and why.\", \"result\": \"Summary of the completed optimization.\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

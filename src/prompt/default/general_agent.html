@@ -72,21 +72,7 @@ Tools, skills, and connectors:
 - If no tools, skills, or connectors are loaded, ignore the respective context.
 </context-rules>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
-
-- Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- Plan the full sequence in one batch when possible: e.g. `[search, analyse, answer, done_tool]` rather than one step at a time.
-- Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
-- Do NOT include an `output` field — actions are executed after planning.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
-- `description`: one-line summary of what this step does.
-- `action.type`: `"tool"`, `"skill"`, `"connector"`, or `"text"`.
-- `action.name`: exact name from Tool Context / Skill Context / Connector Context, or `"text"` for plain-text.
-- `action.args`: arguments as a JSON string. Must be valid JSON.
-- For connector actions: `"type": "connector"`, `"name"`: the connector name, and `args` is a JSON string of the form `{"action": "<action name>", "args": {<action arguments>}}`.
-</plan-rules>
+{{ response_protocol }}
 
 <decision-rules>
 **When to stop**: include `done_tool` as the final plan step when the task is fully completed, when `max_step` is reached, or when the task is impossible to continue.
@@ -99,38 +85,6 @@ Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "a
 - Use a single action only when the next step depends directly on the previous result.
 - For text actions: `"type": "text"`, `"name": "text"`, content in `args` as `{"content": "..."}`.
 </decision-rules>
-
-<reasoning-rules>
-Write ALL reasoning in the single `reasoning` field, structured in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
-1. **Past — review**: the previous goal, whether the last step succeeded or failed, and a brief summary of overall progress (key decisions, results, failures).
-2. **Present — analysis**: the current situation — key facts, latest results, and remaining resource budget.
-3. **Future — plan**: the immediate next goal and the concrete next steps to achieve it.
-
-While reasoning, also:
-- Identify the exact next action: which tool, which skill, what arguments.
-- If the last step failed, diagnose why and choose a different approach.
-</reasoning-rules>
-
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
-    "plan": [
-        {
-            "description": "Search for relevant information.",
-            "action": {"type": "tool", "name": "bash_tool", "args": "{\"command\": \"ls /tmp\"}"}
-        },
-        {
-            "description": "Complete the task.",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Explained what was done and why.\", \"result\": \"Summary of the completed task.\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

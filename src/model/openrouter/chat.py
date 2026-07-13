@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage
+from src.model.types import TokenUsage, build_response_from_stream
 from src.message.types import Message
 from src.model.openrouter.serializer import OpenRouterChatSerializer
 from src.model.openrouter.rest import OpenRouterClient
@@ -485,6 +485,75 @@ class ChatOpenRouter(BaseModel):
                 data={"error": str(e)},
             )
 
+    async def stream(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Optional[Union[BaseModel, Dict]] = None,
+        plugins: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ):
+        """Stream a completion, yielding canonical stream events (OpenAI-shaped).
+
+        Uses the AsyncOpenAI-compatible client (OpenRouter's OpenAI endpoint), which
+        streams natively. Plugins are passed via ``extra_body`` when present.
+        """
+        built = await self._build_params(
+            messages=messages, tools=tools, response_format=response_format,
+            stream=False, plugins=plugins, **kwargs,
+        )
+        params = dict(built["params"])
+        params.pop("stream", None)
+        params.setdefault("stream_options", {"include_usage": True})
+        if built.get("plugins"):
+            extra = dict(params.get("extra_body") or {})
+            extra["plugins"] = built["plugins"]
+            params["extra_body"] = extra
+        client = self.get_openai_client()
+        raw = await client.chat.completions.create(
+            model=self.model, messages=built["messages"], stream=True, **params
+        )
+        async for ev in self._parse_stream(raw):
+            yield ev
+
+    async def _parse_stream(self, raw):
+        """Translate OpenAI-shaped chunks → canonical stream events. Unit-testable."""
+        from src.model.types import (
+            TextDelta, ThinkingDelta, ToolCallStart, ToolCallArgsDelta, StreamDone, normalize_stop_reason,
+        )
+        usage = None
+        finish = None
+        async for chunk in raw:
+            u = getattr(chunk, "usage", None)
+            if u is not None:
+                usage = u.model_dump() if hasattr(u, "model_dump") else dict(u)
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            choice = choices[0]
+            delta = getattr(choice, "delta", None)
+            if delta is not None:
+                content = getattr(delta, "content", None)
+                if content:
+                    yield TextDelta(content)
+                rc = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+                if rc:
+                    yield ThinkingDelta(rc)
+                for tc in (getattr(delta, "tool_calls", None) or []):
+                    idx = getattr(tc, "index", 0)
+                    fn = getattr(tc, "function", None)
+                    name = getattr(fn, "name", None) if fn else None
+                    tc_id = getattr(tc, "id", None)
+                    if tc_id or name:
+                        yield ToolCallStart(index=idx, id=tc_id or "", name=name or "")
+                    args = getattr(fn, "arguments", None) if fn else None
+                    if args:
+                        yield ToolCallArgsDelta(index=idx, partial_json=args)
+            fr = getattr(choice, "finish_reason", None)
+            if fr:
+                finish = fr
+        yield StreamDone(stop_reason=normalize_stop_reason(finish), usage=usage)
+
     async def __call__(
         self,
         messages: List[Message],
@@ -509,6 +578,12 @@ class ChatOpenRouter(BaseModel):
             Response with formatted message
         """
         try:
+            if stream:
+                return await build_response_from_stream(
+                    self.stream(messages=messages, tools=tools, response_format=response_format,
+                                plugins=plugins, **kwargs),
+                    tools=tools, response_format=response_format,
+                )
             # Step 1: Build parameters
             params = await self._build_params(
                 messages=messages,

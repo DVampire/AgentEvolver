@@ -144,62 +144,13 @@ The agent is already loaded and instantiated in THIS process (confirmed via `ins
 Do NOT write or run a standalone test script (`bash_tool`/`code_interpreter_tool`): a fresh process re-imports the whole framework (~40s) with an empty registry. All facts you need are already in-process.
 </test-template>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
-
-- Output only steps not yet executed.
-- Follow the workflow: Inspect target → Read source → Assess all dimensions → Report.
-- Maximum `{{ max_actions }}` steps per plan.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`.
-</plan-rules>
+{{ response_protocol }}
 
 <decision-rules>
 **When to stop**: include `done_tool` when the full report is ready, when `max_step` is reached (report partial scores), or when the agent file is unloadable (critical failure).
 
 **Source file safety**: never use `edit_file_tool` or `write_file_tool` on the agent's source files — only write to `{{ work_dir }}` scratch files.
 </decision-rules>
-
-<reasoning-rules>
-Write ALL reasoning in the single `reasoning` field, structured in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
-1. **Past — review**: the previous goal, whether the last step succeeded or failed, and a brief summary of overall progress (key decisions, results, failures).
-2. **Present — analysis**: the current situation — key facts, latest results, and remaining resource budget.
-3. **Future — plan**: the immediate next goal and the concrete next steps to achieve it.
-
-While reasoning, also:
-- Which workflow step am I on? What does memory say?
-- Identify the exact next action.
-- If the last step failed, diagnose and choose a different approach.
-</reasoning-rules>
-
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
-    "plan": [
-        {
-            "description": "Load the lifecycle methodology.",
-            "action": {"type": "skill", "name": "agent_creator_skill", "args": "{}"}
-        },
-        {
-            "description": "Inspect the target agent to get its file paths and live-registry facts.",
-            "action": {"type": "tool", "name": "inspect_agent", "args": "{\"name\": \"my_agent\"}"}
-        },
-        {
-            "description": "Read the agent Python source file.",
-            "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/my_agent.py\"}"}
-        },
-        {
-            "description": "Complete the evaluation and report (all dimensions from source + live-registry facts).",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Brief summary.\", \"result\": \"# Agent Evaluation Report\\n\\n## Scores\\n- Interface Compliance: 20/20\\n- Code Quality: 18/20\\n- Prompt Quality: 20/20\\n- Integration: 20/20\\n- Task Execution: 15/20\\n- **Total: 93/100**\\n\\n## Findings\\n...\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

@@ -97,6 +97,48 @@ class HookResult(BaseModel):
         return cls(decision=HookDecision.MODIFY, modified_action=action)
 
 
+class ContractViolation(Exception):
+    """Raised (in strict mode) when a hook's MODIFY result violates message invariants."""
+
+
+_VALID_ROLES = {"user", "system", "assistant"}
+
+
+def check_message_contract(messages: List[Message], *, mode: str = "warn", hook_name: str = "") -> None:
+    """Validate a hook's ``modified_messages`` against basic invariants (contract-as-code).
+
+    Borrowed from HarnessX's strict/warn contract. Catches a MODIFY hook that would
+    corrupt the prompt — the failure mode for LLM-generated evolution hooks. Checks:
+      * result is non-empty (a hook returning ``[]`` would blank the prompt),
+      * every message has a valid role,
+      * at most one system message, and if present it is at position 0.
+
+    ``mode``: ``strict`` raises :class:`ContractViolation`; ``warn`` logs; ``off`` skips.
+    """
+    if mode == "off" or messages is None:
+        return
+    problems: List[str] = []
+    if len(messages) == 0:
+        problems.append("modified_messages is empty (would blank the prompt)")
+    roles = [getattr(m, "role", None) for m in messages]
+    bad = [r for r in roles if r not in _VALID_ROLES]
+    if bad:
+        problems.append(f"invalid message role(s): {bad}")
+    sys_idx = [i for i, r in enumerate(roles) if r == "system"]
+    if len(sys_idx) > 1:
+        problems.append(f"more than one system message (at {sys_idx})")
+    elif sys_idx and sys_idx[0] != 0:
+        problems.append(f"system message not at position 0 (at {sys_idx[0]})")
+
+    if not problems:
+        return
+    detail = f"Hook '{hook_name}' MODIFY contract violation: " + "; ".join(problems)
+    if mode == "strict":
+        raise ContractViolation(detail)
+    from src.logger import logger
+    logger.warning(f"| ⚠️ {detail}")
+
+
 def _merge_results(results: List[HookResult]) -> HookResult:
     """Merge results from parallel middleware handlers.
 

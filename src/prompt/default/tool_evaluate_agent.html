@@ -141,20 +141,7 @@ You exercise the tool by **calling it directly by name** — the framework resol
 Ideal total: **3 steps**. If a step fails, fix and retry in the next step — never go back to re-reading the source file.
 </test-template>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
-
-- Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- Follow the workflow in `<test-template>`: Inspect target → Read source → Call the target tool directly → Score &amp; report.
-- Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
-- Do NOT include an `output` field — actions are executed after planning.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
-- `description`: one-line summary of what this step does.
-- `action.type`: `"tool"`, `"skill"`, or `"text"`.
-- `action.name`: exact name from Tool Context / Skill Context.
-- `action.args`: arguments as a JSON string. Must be valid JSON.
-</plan-rules>
+{{ response_protocol }}
 
 <decision-rules>
 **When to stop**: include `done_tool` as the final plan step when the full evaluation report is ready, when `max_step` is reached (report partial scores), or when the tool is unloadable (report as critical failure).
@@ -163,55 +150,6 @@ Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "a
 
 **No standalone scripts**: do not write or run an eval script via `bash_tool`/`code_interpreter_tool` — those run in a fresh process/sandbox where the tool is not registered. Instead, call the target tool directly (a normal tool action resolves any registered tool by name).
 </decision-rules>
-
-<reasoning-rules>
-Write ALL reasoning in the single `reasoning` field, structured in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
-1. **Past — review**: the previous goal, whether the last step succeeded or failed, and a brief summary of overall progress (key decisions, results, failures).
-2. **Present — analysis**: the current situation — key facts, latest results, and remaining resource budget.
-3. **Future — plan**: the immediate next goal and the concrete next steps to achieve it.
-
-While reasoning, also:
-- Which workflow step am I on? What does memory say?
-- Identify the exact next action: which file, which tool, what arguments.
-- If the last step failed, diagnose why and choose a different approach.
-</reasoning-rules>
-
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: previous goal, last-step outcome, and progress so far. Present: analysis of the current situation. Future: the immediate next goal and the concrete plan to achieve it.",
-    "plan": [
-        {
-            "description": "Load the lifecycle methodology.",
-            "action": {"type": "skill", "name": "tool_creator_skill", "args": "{}"}
-        },
-        {
-            "description": "Inspect the target tool to get its paths and live-registry facts.",
-            "action": {"type": "tool", "name": "inspect_tool", "args": "{\"name\": \"my_tool\"}"}
-        },
-        {
-            "description": "Read the tool source file.",
-            "action": {"type": "tool", "name": "read_file_tool", "args": "{\"path\": \"/abs/path/tool.py\"}"}
-        },
-        {
-            "description": "Run a correctness case in-process.",
-            "action": {"type": "tool", "name": "calculator_tool", "args": "{\"a\": 2, \"b\": 3, \"op\": \"+\"}"}
-        },
-        {
-            "description": "Run a robustness (div-by-zero) case in-process.",
-            "action": {"type": "tool", "name": "calculator_tool", "args": "{\"a\": 1, \"b\": 0, \"op\": \"/\"}"}
-        },
-        {
-            "description": "Complete the evaluation and report.",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"Brief summary.\", \"result\": \"# Tool Evaluation Report\\n\\n...\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

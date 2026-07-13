@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ConfigDict
 import json
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage
+from src.model.types import TokenUsage, build_response_from_stream
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.google.serializer import GoogleChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -244,6 +244,99 @@ class ChatGoogle(BaseModel):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: client.generate_content(**kwargs))
 
+    async def stream(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        **kwargs: Any,
+    ):
+        """Stream a completion, yielding canonical stream events (provider-agnostic).
+
+        The google-generativeai SDK is synchronous, so the sync streaming generator
+        is bridged to async via a background thread → asyncio.Queue. Gemini delivers
+        each function_call as a whole part → emitted as ToolCallComplete.
+        """
+        import asyncio
+        import threading
+
+        if genai is None:
+            raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
+        built = await self._build_params(
+            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
+        )
+        client = self.get_client(system_instruction=built.get("system_instruction"))
+        call_kwargs: Dict[str, Any] = {}
+        if built.get("contents"):
+            call_kwargs["contents"] = built["contents"]
+        if built.get("generation_config"):
+            call_kwargs["generation_config"] = built["generation_config"]
+        if built.get("tools"):
+            call_kwargs["tools"] = built["tools"]
+
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _produce():
+            try:
+                for chunk in client.generate_content(stream=True, **call_kwargs):
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+            except Exception as exc:  # surface producer errors to the consumer
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+
+        threading.Thread(target=_produce, daemon=True).start()
+
+        async def _aiter():
+            while True:
+                kind, payload = await queue.get()
+                if kind == "done":
+                    break
+                if kind == "error":
+                    raise payload
+                yield payload
+
+        async for ev in self._parse_stream(_aiter()):
+            yield ev
+
+    async def _parse_stream(self, raw):
+        """Translate Gemini chunks → canonical stream events. Unit-testable."""
+        from src.model.types import TextDelta, ToolCallComplete, StreamDone, normalize_stop_reason
+
+        usage = None
+        finish = None
+        tool_index = 0
+        async for chunk in raw:
+            u = getattr(chunk, "usage_metadata", None)
+            if u is not None:
+                usage = u.model_dump() if hasattr(u, "model_dump") else dict(u)
+            cands = getattr(chunk, "candidates", None) or []
+            if not cands:
+                continue
+            cand = cands[0]
+            fr = getattr(cand, "finish_reason", None)
+            if fr:
+                finish = fr
+            content = getattr(cand, "content", None)
+            parts = (getattr(content, "parts", None) or []) if content else []
+            for part in parts:
+                txt = getattr(part, "text", None)
+                if txt:
+                    yield TextDelta(txt)
+                fc = getattr(part, "function_call", None)
+                if fc is not None:
+                    name = getattr(fc, "name", "") or ""
+                    args = getattr(fc, "args", {}) or {}
+                    try:
+                        args = dict(args)  # Gemini args may be a proto Map
+                    except Exception:
+                        pass
+                    yield ToolCallComplete(index=tool_index, id=f"call_{tool_index}", name=name, input=args)
+                    tool_index += 1
+        fr_name = getattr(finish, "name", None) or (str(finish) if finish is not None else None)
+        yield StreamDone(stop_reason=normalize_stop_reason(fr_name), usage=usage)
+
     async def __call__(
         self,
         messages: List[Message],
@@ -269,6 +362,11 @@ class ChatGoogle(BaseModel):
             raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
 
         try:
+            if stream:
+                return await build_response_from_stream(
+                    self.stream(messages=messages, tools=tools, response_format=response_format, **kwargs),
+                    tools=tools, response_format=response_format,
+                )
             params = await self._build_params(
                 messages=messages,
                 tools=tools,

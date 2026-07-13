@@ -1,3 +1,4 @@
 # Runtime-generated extension state
 manifest.json
 .versions/
+.journal/
