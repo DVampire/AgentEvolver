@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union, List, Dict, ClassVar
+from typing import Any, Optional, Union, List, Dict
 import httpx
 
 try:
@@ -35,25 +35,15 @@ class ChatAnthropic(BaseChatModel):
 
     Chat/stream orchestration lives in BaseChatModel; this class supplies the
     Anthropic /v1/messages wire details (true SSE streaming). Structured output is
-    native ``output_format`` (beta), supported only on the models listed in
-    ``OUTPUT_FORMAT_SUPPORTED_MODELS`` — hence mode "native".
-
-    Note: Only certain models support output_format (structured outputs):
-    - claude-sonnet-4-5-20250929 and newer models support output_format
-    - Older models like claude-3-7-sonnet-20250219 and claude-sonnet-4-20250514 do not support it
+    native ``output_format`` (beta) — hence mode "native". Only register models
+    that support output_format in the catalog; callers are expected to request
+    structured output only on such models.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     supports_true_streaming: bool = True
     structured_output_mode: str = "native"
-
-    # Models that support output_format (structured outputs)
-    OUTPUT_FORMAT_SUPPORTED_MODELS: ClassVar[List[str]] = [
-        'claude-sonnet-4-5-20250929',
-        'claude-opus-4-1-20250805',  # Opus 4.1
-        # Add newer models here as they become available
-    ]
 
     # Model configuration
     model: str
@@ -191,38 +181,22 @@ class ChatAnthropic(BaseChatModel):
             if formatted_tools:
                 params['tools'] = formatted_tools
         
-        # Handle response_format (Anthropic uses output_format parameter with beta API)
-        # Only certain models support output_format
+        # Handle response_format (Anthropic uses the beta output_format parameter)
         use_beta_api = False
         if response_format:
-            # Check if model supports output_format
-            model_supports_output_format = any(
-                supported_model in self.model 
-                for supported_model in ChatAnthropic.OUTPUT_FORMAT_SUPPORTED_MODELS
-            )
-            
-            if not model_supports_output_format:
-                logger.warning(
-                    f"Model {self.model} does not support output_format. "
-                    f"Supported models: {', '.join(ChatAnthropic.OUTPUT_FORMAT_SUPPORTED_MODELS)}. "
-                    f"Skipping structured output."
-                )
-            else:
-                try:
-                    params['output_format'] = AnthropicChatSerializer.serialize_response_format(response_format)
-                    use_beta_api = True
-                except ValueError as e:
-                    logger.warning(f"Failed to serialize response_format: {e}")
-        
+            try:
+                params['output_format'] = AnthropicChatSerializer.serialize_response_format(response_format)
+                use_beta_api = True
+            except ValueError as e:
+                logger.warning(f"Failed to serialize response_format: {e}")
+
         # Add betas parameter if using structured outputs
         if use_beta_api:
             params['betas'] = ['structured-outputs-2025-11-13']
-        
-        # Handle streaming
-        if stream:
-            params['stream'] = True
-            logger.warning("Streaming is not yet fully implemented for Anthropic API")
-        
+
+        # Streaming: the stream flag is applied by _open_stream (which passes
+        # stream=True explicitly), so nothing to set on params here.
+
         # Merge additional kwargs
         params.update(kwargs)
         

@@ -20,11 +20,7 @@ from src.model.openai.transcribe import TranscribeOpenAI
 from src.model.openai.embedding import EmbeddingOpenAI
 from src.model.openrouter.chat import ChatOpenRouter
 from src.model.anthropic.chat import ChatAnthropic
-from src.model.aws_claude.chat import ChatAwsClaude
-from src.model.aws_claude.native import ChatAwsClaudeNative
 from src.model.google.chat import ChatGoogle
-from src.model.newapi.chat import ChatNewAPI
-from src.model.newapi.response import ResponseNewAPI
 from src.message.types import Message
 from src.logger import logger
 from src.utils import hvac_client
@@ -125,23 +121,12 @@ class ModelContextManager:
             self._key_pool.register("openai", "OPENAI_API_KEY", "OPENAI_API_BASE", "")
             .register("openrouter", "OPENROUTER_API_KEY", "OPENROUTER_API_BASE", "")
             .register("anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_API_BASE", "")
-            .register("aws_claude", "AWS_CLAUDE_API_KEY", "AWS_CLAUDE_API_BASE", "")
             .register("google", "GOOGLE_API_KEY", "GOOGLE_API_BASE", "")
-            .register("newapi", "NEWAPI_API_KEY", "NEWAPI_API_BASE", "")
-            .register(
-                "int_openrouter",
-                "INT_OPENROUTER_API_KEY",
-                "INT_OPENROUTER_API_BASE",
-                "",
-            )
         )
         await self._initialize_openai_models()
         await self._initialize_openrouter_models()
-        await self._initialize_internal_openrouter_models()
         await self._initialize_anthropic_models()
-        await self._initialize_aws_claude_models()
         await self._initialize_google_models()
-        await self._initialize_newapi_models()
         logger.info(
             f"| Model context manager initialized with {len(self.models)} models."
         )
@@ -246,334 +231,15 @@ class ModelContextManager:
             await self._create_client(cfg)
 
     async def _initialize_openrouter_models(self):
-        _r = lambda enabled=True: {"reasoning": {"enabled": enabled}}
-        chat_models = [
-            {
-                "model_name": "openrouter/gpt-4o",
-                "model_id": "openai/gpt-4o",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-4.1",
-                "model_id": "openai/gpt-4.1",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5",
-                "model_id": "openai/gpt-5",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5.1",
-                "model_id": "openai/gpt-5.1",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5.2",
-                "model_id": "openai/gpt-5.2",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5.3",
-                "model_id": "openai/gpt-5.3",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5.4",
-                "model_id": "openai/gpt-5.4",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5.4-pro",
-                "model_id": "openai/gpt-5.4-pro",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/o3",
-                "model_id": "openai/o3",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": 1.0,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/o3-mini",
-                "model_id": "openai/o3-mini",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": 1.0,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gpt-5.3-codex",
-                "model_id": "openai/gpt-5.3-codex",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-sonnet-3.5",
-                "model_id": "anthropic/claude-3.5-sonnet",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-sonnet-3.7",
-                "model_id": "anthropic/claude-3.7-sonnet",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-sonnet-4",
-                "model_id": "anthropic/claude-sonnet-4",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-opus-4",
-                "model_id": "anthropic/claude-opus-4",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-sonnet-4.5",
-                "model_id": "anthropic/claude-sonnet-4.5",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-opus-4.5",
-                "model_id": "anthropic/claude-opus-4.5",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-sonnet-4.6",
-                "model_id": "anthropic/claude-sonnet-4.6",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/claude-opus-4.6",
-                "model_id": "anthropic/claude-opus-4.6",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                # reasoning is capped at 8k thinking tokens so long chains of
-                # thought can't consume the whole max_completion_tokens budget
-                # and truncate the structured-output JSON body (which produced
-                # "Unterminated string" parse failures). extra_body is passed
-                # straight through to OpenRouter as the top-level `reasoning`.
-                "model_name": "openrouter/claude-opus-4.8",
-                "model_id": "anthropic/claude-opus-4.8",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": {"max_tokens": 8000}},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-2.5-flash",
-                "model_id": "google/gemini-2.5-flash",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-2.5-pro",
-                "model_id": "google/gemini-2.5-pro",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3-pro-preview",
-                "model_id": "google/gemini-3-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3.1-pro-preview",
-                "model_id": "google/gemini-3.1-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3-flash-preview",
-                "model_id": "google/gemini-3-flash-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                # Fast, cheap flash used as the universal fallback for every
-                # openrouter model above. Its own fallback points elsewhere to
-                # avoid a self-loop.
-                "model_name": "openrouter/gemini-3.5-flash",
-                "model_id": "google/gemini-3.5-flash",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "openrouter/gemini-2.5-flash-plugins",
-                "model_id": "google/gemini-2.5-flash",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "plugins": self.default_plugins,
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3-flash-preview-plugins",
-                "model_id": "google/gemini-3-flash-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "plugins": self.default_plugins,
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3.1-flash-lite-preview",
-                "model_id": "google/gemini-3.1-flash-lite-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3.1-flash-lite-preview-plugins",
-                "model_id": "google/gemini-3.1-flash-lite-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "plugins": self.default_plugins,
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/gemini-3.1-pro-preview-plugins",
-                "model_id": "google/gemini-3.1-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "plugins": self.default_plugins,
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/qwen3-coder",
-                "model_id": "qwen/qwen3-coder",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/qwen3-max",
-                "model_id": "qwen/qwen3-max",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/deepseek-v3.2",
-                "model_id": "deepseek/deepseek-v3.2",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-            {
-                "model_name": "openrouter/grok-4.1-fast",
-                "model_id": "x-ai/grok-4.1-fast",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.5-flash",
-            },
-        ]
+        from src.model.config import openrouter_models
+        specs = openrouter_models(
+            max_tokens=self.max_tokens,
+            default_temperature=self.default_temperature,
+            default_timeout=self.default_timeout,
+            default_plugins=self.default_plugins,
+            default_reasoning=self.default_reasoning,
+        )
+        chat_models = specs["chat"]
 
         api_base = await self._key_pool.get_base("openrouter")
         api_key = await self._key_pool.get_key("openrouter")
@@ -601,192 +267,16 @@ class ModelContextManager:
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
 
-    async def _initialize_internal_openrouter_models(self):
-        _r = lambda: {"reasoning": {"enabled": True}}
-        chat_models = [
-            {
-                "model_name": "int_openrouter/o3-mini",
-                "model_id": "openai/o3-mini",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": 1.0,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/gpt-5.3-codex",
-                "model_id": "openai/gpt-5.3-codex",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/gpt-5.4",
-                "model_id": "openai/gpt-5.4",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/gpt-5.4-pro",
-                "model_id": "openai/gpt-5.4-pro",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/gpt-5.5",
-                "model_id": "openai/gpt-5.5",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/gpt-5.5-pro",
-                "model_id": "openai/gpt-5.5-pro",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/claude-sonnet-4.6",
-                "model_id": "anthropic/claude-sonnet-4.6",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/claude-opus-4.6",
-                "model_id": "anthropic/claude-opus-4.6",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gpt-5.4",
-            },
-            {
-                "model_name": "int_openrouter/gemini-3.1-pro-preview",
-                "model_id": "google/gemini-3.1-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gemini-3.1-pro-preview",
-            },
-            {
-                "model_name": "int_openrouter/gemini-3-flash-preview",
-                "model_id": "google/gemini-3-flash-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "int_openrouter/gemini-3.1-flash-lite-preview",
-                "model_id": "google/gemini-3.1-flash-lite-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gemini-3-flash-preview-plugins",
-            },
-            {
-                "model_name": "int_openrouter/gemini-3.1-flash-lite-preview-plugins",
-                "model_id": "google/gemini-3.1-flash-lite-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "plugins": self.default_plugins,
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gemini-3-flash-preview-plugins",
-            },
-            {
-                "model_name": "int_openrouter/gemini-3.1-pro-preview-plugins",
-                "model_id": "google/gemini-3.1-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "plugins": self.default_plugins,
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/gemini-3-flash-preview-plugins",
-            },
-            {
-                "model_name": "int_openrouter/grok-4.1-fast",
-                "model_id": "x-ai/grok-4.1-fast",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "int_openrouter/grok-4.1-fast",
-            },
-        ]
-
-        api_base = await self._key_pool.get_base("int_openrouter")
-        api_key = await self._key_pool.get_key("int_openrouter")
-
-        for m in chat_models:
-            cfg = ModelConfig(
-                model_name=m["model_name"],
-                model_id=m["model_id"],
-                model_type=m["model_type"],
-                provider="openrouter",
-                key_pool_name="int_openrouter",
-                api_base=api_base,
-                api_key=api_key,
-                reasoning=m.get("reasoning") or None,
-                plugins=m.get("plugins") or None,
-                temperature=m.get("temperature"),
-                max_completion_tokens=m.get("max_completion_tokens"),
-                timeout=m.get("timeout", self.default_timeout),
-                supports_streaming=True,
-                supports_functions=True,
-                supports_vision=True,
-                output_version=None,
-                fallback_model=m.get("fallback_model"),
-            )
-            self.models[cfg.model_name] = cfg
-            await self._create_client(cfg)
-
     async def _initialize_anthropic_models(self):
-        chat_models = [
-            {
-                "model_name": "anthropic/claude-sonnet-3.7",
-                "model_id": "claude-3-7-sonnet-20250219",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "anthropic/claude-sonnet-4.5",
-            },
-            {
-                "model_name": "anthropic/claude-sonnet-4",
-                "model_id": "claude-sonnet-4-20250514",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "anthropic/claude-sonnet-4.5",
-            },
-            {
-                "model_name": "anthropic/claude-sonnet-4.5",
-                "model_id": "claude-sonnet-4-5-20250929",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "anthropic/claude-sonnet-4.5",
-            },
-        ]
+        from src.model.config import anthropic_models
+        specs = anthropic_models(
+            max_tokens=self.max_tokens,
+            default_temperature=self.default_temperature,
+            default_timeout=self.default_timeout,
+            default_plugins=self.default_plugins,
+            default_reasoning=self.default_reasoning,
+        )
+        chat_models = specs["chat"]
 
         api_base = await self._key_pool.get_base("anthropic")
         api_key = await self._key_pool.get_key("anthropic")
@@ -812,111 +302,11 @@ class ModelContextManager:
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
 
-    async def _initialize_aws_claude_models(self):
-        """Initialize AWS Claude models (OpenAI-compatible /chat/completions gateway)."""
-        chat_models = [
-            {
-                "model_name": "aws_claude/claude-opus-4.6",
-                "model_id": "claude-opus-4-6",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "aws_claude/claude-opus-4.6",
-            },
-            {
-                "model_name": "aws_claude/claude-opus-4.7",
-                "model_id": "claude-opus-4-7",
-                "model_type": "chat/completions",
-                "temperature": None,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "aws_claude/claude-opus-4.6",
-            },
-        ]
-
-        api_base = await self._key_pool.get_base("aws_claude")
-        api_key = await self._key_pool.get_key("aws_claude")
-
-        # Register AWS Claude models
-        for model in chat_models:
-            config = ModelConfig(
-                model_name=model["model_name"],
-                model_id=model["model_id"],
-                model_type=model["model_type"],
-                provider="aws_claude",
-                key_pool_name="aws_claude",
-                api_base=api_base,
-                api_key=api_key,
-                temperature=model.get("temperature"),
-                reasoning=model.get("reasoning"),
-                max_completion_tokens=model.get("max_completion_tokens"),
-                timeout=model.get("timeout", self.default_timeout),
-                supports_streaming=True,
-                supports_functions=True,
-                supports_vision=True,
-                output_version=None,
-                fallback_model=model.get("fallback_model"),
-            )
-            self.models[config.model_name] = config
-            await self._create_client(config)
-
     async def _initialize_google_models(self):
         _r = lambda: {"reasoning": {"enabled": True}}
-        chat_models = [
-            {
-                "model_name": "google/gemini-2.5-flash",
-                "model_id": "gemini-2.5-flash",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "google/gemini-2.5-pro",
-                "model_id": "gemini-2.5-pro",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "google/gemini-3-pro-preview",
-                "model_id": "gemini-3-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "google/gemini-3.1-pro-preview",
-                "model_id": "gemini-3.1-pro-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "google/gemini-3-flash-preview",
-                "model_id": "gemini-3-flash-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-            {
-                "model_name": "google/gemini-3.1-flash-lite-preview",
-                "model_id": "gemini-3.1-flash-lite-preview",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
-            },
-        ]
+        from src.model.config import google_models
+        specs = google_models(max_tokens=self.max_tokens, default_temperature=self.default_temperature, default_timeout=self.default_timeout, default_plugins=self.default_plugins, default_reasoning=self.default_reasoning)
+        chat_models = specs["chat"]
 
         api_base = await self._key_pool.get_base("google")
         api_key = await self._key_pool.get_key("google")
@@ -942,104 +332,6 @@ class ModelContextManager:
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
 
-    async def _initialize_newapi_models(self):
-        _r = lambda: {"reasoning": {"enabled": True}}
-        chat_models = [
-            {
-                "model_name": "newapi/gemini-3.1-pro-preview",
-                "model_id": "gemini-3.1-pro-preview",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-            {
-                "model_name": "newapi/gemini-3.1-flash-lite-preview",
-                "model_id": "gemini-3.1-flash-lite-preview",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-            {
-                "model_name": "newapi/gpt-5.4",
-                "model_id": "gpt-5.4",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-            {
-                "model_name": "newapi/gpt-5.4-pro",
-                "model_id": "gpt-5.4-pro",
-                "model_type": "responses",
-                "timeout": 3600.0,
-                "reasoning": self.default_reasoning,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-            {
-                "model_name": "newapi/gpt-5-nano",
-                "model_id": "gpt-5-nano",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-            {
-                "model_name": "newapi/o3-mini",
-                "model_id": "o3-mini",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": 1.0,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "newapi/gpt-5.4",
-            },
-            {
-                "model_name": "newapi/claude-opus-4.6",
-                "model_id": "claude-opus-4-6",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-            {
-                "model_name": "newapi/grok-4.1-fast",
-                "model_id": "grok-4.1-fast",
-                "model_type": "chat/completions",
-                "reasoning": {"reasoning": _r()},
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/grok-4.1-fast",
-            },
-        ]
-
-        api_base = await self._key_pool.get_base("newapi")
-        api_key = await self._key_pool.get_key("newapi")
-
-        for m in chat_models:
-            cfg = ModelConfig(
-                model_name=m["model_name"],
-                model_id=m["model_id"],
-                model_type=m["model_type"],
-                provider="newapi",
-                key_pool_name="newapi",
-                api_base=api_base,
-                api_key=api_key,
-                temperature=m.get("temperature"),
-                max_completion_tokens=m.get("max_completion_tokens"),
-                reasoning=m.get("reasoning") or None,
-                timeout=m.get("timeout", self.default_timeout),
-                supports_streaming=True,
-                supports_functions=True,
-                supports_vision=True,
-                output_version=None,
-                fallback_model=m.get("fallback_model"),
-            )
-            self.models[cfg.model_name] = cfg
-            await self._create_client(cfg)
-
     # ------------------------------------------------------------------
     # Client lifecycle
     # ------------------------------------------------------------------
@@ -1049,28 +341,7 @@ class ModelContextManager:
         logger.info(f"| Created client for {config.model_name}")
 
     async def _build_client(self, config: ModelConfig):
-        if config.provider == "newapi":
-            if config.model_type == "chat/completions":
-                return ChatNewAPI(
-                    model=config.model_id,
-                    api_key=config.api_key,
-                    base_url=config.api_base,
-                    temperature=config.temperature or self.default_temperature,
-                    max_completion_tokens=config.max_completion_tokens
-                    or self.max_tokens,
-                )
-            elif config.model_type == "responses":
-                return ResponseNewAPI(
-                    model=config.model_id,
-                    api_key=config.api_key,
-                    base_url=config.api_base,
-                    reasoning=config.reasoning or None,
-                    max_output_tokens=config.max_output_tokens or self.max_tokens,
-                )
-            raise ValueError(
-                f"Unsupported model type {config.model_type} for New-API provider"
-            )
-        elif config.provider == "openrouter":
+        if config.provider == "openrouter":
             if config.model_type == "chat/completions":
                 return ChatOpenRouter(
                     model=config.model_id,
@@ -1098,21 +369,6 @@ class ModelContextManager:
             raise ValueError(
                 f"Unsupported model type {config.model_type} for Anthropic provider"
             )
-        elif config.provider == "aws_claude":
-            if config.model_type == "chat/completions":
-                return ChatAwsClaude(
-                    model=config.model_id,
-                    api_key=config.api_key,
-                    base_url=config.api_base,
-                    reasoning=config.reasoning if config.reasoning else None,
-                    temperature=config.temperature,
-                    max_completion_tokens=config.max_completion_tokens
-                    or self.max_tokens,
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported model type {config.model_type} for AWS Claude provider"
-                )
         elif config.provider == "google":
             if config.model_type == "chat/completions":
                 return ChatGoogle(
@@ -1175,7 +431,6 @@ class ModelContextManager:
             "openrouter",
             "anthropic",
             "google",
-            "newapi",
         ]:
             raise ValueError(f"Unsupported provider: {config.provider}")
         self.models[config.model_name] = config
@@ -1289,9 +544,7 @@ class ModelContextManager:
         self._current_caller = caller
         # tools + response_format may be used together: the tool schemas constrain
         # tool-call arguments; response_format constrains the final answer. A turn
-        # resolves to one or the other (provider serializers handle both). On the
-        # aws_claude backend, structured output is emulated as an optional "final
-        # answer" tool so real tools stay callable — see ChatAwsClaude._build_params.
+        # resolves to one or the other (provider serializers handle both).
 
         if name not in self.model_clients:
             return Response(
