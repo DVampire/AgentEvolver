@@ -1,0 +1,107 @@
+{
+  "dataset": "/Users/wentaozhang/workspace/RA/AgentEvolver/work_dir/meta_agent/workspace/qsar_egfr/data/egfr_dataset.csv",
+  "n_molecules": 14203,
+  "n_positive": 11539,
+  "n_negative": 2664,
+  "split": {
+    "type": "stratified",
+    "test_size": 0.2,
+    "random_state": 42,
+    "n_train": 11362,
+    "n_test": 2841
+  },
+  "metrics_reported": [
+    "ROC_AUC",
+    "PR_AUC",
+    "Balanced_Accuracy",
+    "F1",
+    "MCC"
+  ],
+  "rounds": [
+    {
+      "round": "Round 1",
+      "config": {
+        "features": "10 RDKit physicochemical descriptors",
+        "model": "LogisticRegression"
+      },
+      "metrics": {
+        "ROC_AUC": 0.7324,
+        "PR_AUC": 0.895,
+        "Balanced_Accuracy": 0.5512,
+        "F1": 0.9012,
+        "MCC": 0.2293
+      },
+      "change": "Baseline: 10 RDKit physicochemical descriptors + logistic regression"
+    },
+    {
+      "round": "Round 2",
+      "config": {
+        "features": "Morgan/ECFP4 2048-bit",
+        "model": "LogisticRegression"
+      },
+      "metrics": {
+        "ROC_AUC": 0.9456,
+        "PR_AUC": 0.9848,
+        "Balanced_Accuracy": 0.8495,
+        "F1": 0.9502,
+        "MCC": 0.724
+      },
+      "change": "Switched to Morgan/ECFP4 fingerprints (2048 bits) + logistic regression"
+    },
+    {
+      "round": "Round 3",
+      "config": {
+        "features": "Morgan/ECFP4 2048-bit",
+        "model": "RandomForest(300)"
+      },
+      "metrics": {
+        "ROC_AUC": 0.9692,
+        "PR_AUC": 0.9913,
+        "Balanced_Accuracy": 0.8521,
+        "F1": 0.9575,
+        "MCC": 0.7577
+      },
+      "change": "Random forest (300 trees) on Morgan fingerprints"
+    },
+    {
+      "round": "Round 4",
+      "config": {
+        "features": "Morgan/ECFP4 2048-bit",
+        "model": "HistGradientBoosting",
+        "tuned_params": {
+          "learning_rate": 0.05,
+          "max_iter": 400,
+          "max_leaf_nodes": 63
+        }
+      },
+      "metrics": {
+        "ROC_AUC": 0.9612,
+        "PR_AUC": 0.9896,
+        "Balanced_Accuracy": 0.8643,
+        "F1": 0.9556,
+        "MCC": 0.754
+      },
+      "change": "Gradient boosting (HistGB) + 3-fold CV tuning on train only. Best params: {'learning_rate': 0.05, 'max_iter': 400, 'max_leaf_nodes': 63}"
+    },
+    {
+      "round": "Round 5",
+      "config": {
+        "features": "Morgan FP + 10 descriptors",
+        "model": "RandomForest(500, class_weight=balanced)"
+      },
+      "metrics": {
+        "ROC_AUC": 0.9714,
+        "PR_AUC": 0.9927,
+        "Balanced_Accuracy": 0.8645,
+        "F1": 0.9581,
+        "MCC": 0.7652
+      },
+      "change": "Feature augmentation (fingerprints + descriptors) + RF(500) with class_weight='balanced'"
+    }
+  ],
+  "best_round": {
+    "round": "Round 5",
+    "ROC_AUC": 0.9714,
+    "margin_over_next_best_ROC_AUC": 0.0022
+  }
+}
