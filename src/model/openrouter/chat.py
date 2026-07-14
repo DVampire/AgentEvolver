@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage, build_response_from_stream
+from src.model.types import TokenUsage, BaseChatModel
 from src.message.types import Message
 from src.model.openrouter.serializer import OpenRouterChatSerializer
 from src.model.openrouter.rest import OpenRouterClient
@@ -37,16 +37,21 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.tool.types import Tool
 
-class ChatOpenRouter(BaseModel):
+class ChatOpenRouter(BaseChatModel):
     """
     A wrapper around AsyncOpenAI that provides a unified interface for OpenRouter chat completions.
-    
+
     OpenRouter uses OpenAI-compatible API, so we can use AsyncOpenAI client with OpenRouter's base URL.
-    This class accepts AsyncOpenAI parameters and provides methods for chat completions
-    with support for tools, response_format, and streaming.
+    Chat/stream orchestration lives in BaseChatModel; this class only supplies the
+    OpenRouter wire details (_build_params / _call_model / _open_stream / _parse_stream /
+    _format_response). Structured output is native response_format (mode "native").
     """
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # OpenAI-compatible chat/completions: true streaming + native response_format.
+    supports_true_streaming: bool = True
+    structured_output_mode: str = "native"
 
     # Model configuration
     model: Union[ChatModel, str]
@@ -276,29 +281,15 @@ class ChatOpenRouter(BaseModel):
             "params": params,
         }
 
-    async def _call_model(
-        self,
-        messages: List[Dict[str, Any]],
-        plugins: Optional[List[Dict[str, Any]]],
-        **params: Any,
-    ) -> ChatCompletion:
+    async def _call_model(self, built: Dict[str, Any]) -> ChatCompletion:
+        """Perform one non-streaming API call from a _build_params result.
+
+        Uses OpenRouterClient when plugins are present, else the AsyncOpenAI
+        client. Both share client.chat.completions.create().
         """
-        Call the model API (Step 2).
-        
-        Unified interface for calling the client.
-        Returns ChatCompletion object regardless of which client is used.
-        
-        Args:
-            messages: Serialized messages
-            plugins: Optional plugins list
-            **params: API parameters
-            
-        Returns:
-            ChatCompletion object (compatible format from both clients)
-        """
-        # If plugins are needed, use OpenRouterClient
-        # Otherwise, use AsyncOpenAI client
-        # Both use the same format: client.chat.completions.create()
+        messages = built["messages"]
+        plugins = built.get("plugins")
+        params = built["params"]
         import time as _t
         _start = _t.time()
 
@@ -322,7 +313,7 @@ class ChatOpenRouter(BaseModel):
             _elapsed = _t.time() - _start
             logger.error(f"| 🔴 OpenRouter SDK error ({_elapsed:.0f}s, model={self.model}): {type(e).__name__}: {e}")
             raise
-        
+
         return response
     
     async def _format_response(
@@ -485,23 +476,12 @@ class ChatOpenRouter(BaseModel):
                 data={"error": str(e)},
             )
 
-    async def stream(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
-        plugins: Optional[List[Dict[str, Any]]] = None,
-        **kwargs: Any,
-    ):
-        """Stream a completion, yielding canonical stream events (OpenAI-shaped).
+    async def _open_stream(self, built: Dict[str, Any]):
+        """Open OpenRouter's native SSE stream from a _build_params result.
 
-        Uses the AsyncOpenAI-compatible client (OpenRouter's OpenAI endpoint), which
-        streams natively. Plugins are passed via ``extra_body`` when present.
+        Uses the AsyncOpenAI-compatible client (OpenRouter's OpenAI endpoint);
+        plugins are passed via ``extra_body`` when present.
         """
-        built = await self._build_params(
-            messages=messages, tools=tools, response_format=response_format,
-            stream=False, plugins=plugins, **kwargs,
-        )
         params = dict(built["params"])
         params.pop("stream", None)
         params.setdefault("stream_options", {"include_usage": True})
@@ -510,11 +490,9 @@ class ChatOpenRouter(BaseModel):
             extra["plugins"] = built["plugins"]
             params["extra_body"] = extra
         client = self.get_openai_client()
-        raw = await client.chat.completions.create(
+        return await client.chat.completions.create(
             model=self.model, messages=built["messages"], stream=True, **params
         )
-        async for ev in self._parse_stream(raw):
-            yield ev
 
     async def _parse_stream(self, raw):
         """Translate OpenAI-shaped chunks → canonical stream events. Unit-testable."""
@@ -553,93 +531,3 @@ class ChatOpenRouter(BaseModel):
             if fr:
                 finish = fr
         yield StreamDone(stop_reason=normalize_stop_reason(finish), usage=usage)
-
-    async def __call__(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
-        stream: bool = False,
-        plugins: Optional[List[Dict[str, Any]]] = None,
-        **kwargs: Any,
-    ) -> Response:
-        """
-        Execute asynchronous completion call via OpenRouter API.
-
-        Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of Tool instances
-            response_format: Optional response format (Pydantic model or dict)
-            stream: Whether to stream the response
-            plugins: Optional list of plugins (e.g., for PDF parsing)
-            **kwargs: Additional parameters
-
-        Returns:
-            Response with formatted message
-        """
-        try:
-            if stream:
-                return await build_response_from_stream(
-                    self.stream(messages=messages, tools=tools, response_format=response_format,
-                                plugins=plugins, **kwargs),
-                    tools=tools, response_format=response_format,
-                )
-            # Step 1: Build parameters
-            params = await self._build_params(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                stream=stream,
-                plugins=plugins,
-                **kwargs,
-            )
-            
-            # Step 2: Call model API
-            response = await self._call_model(
-                messages=params["messages"],
-                plugins=params["plugins"],
-                **params["params"],
-            )
-            
-            # Step 3: Format response (now unified since both clients return ChatCompletion)
-            return await self._format_response(
-                response=response,
-                tools=tools,
-                response_format=response_format,
-            )
-
-        except RateLimitError as e:
-            logger.error(f"Rate limit error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Rate limit error: {e.message}",
-                data={"error": str(e), "model": self.name},
-            )
-        except APIConnectionError as e:
-            logger.error(f"API connection error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
-        except APIStatusError as e:
-            logger.error(f"API status error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API status error: {e.message}",
-                data={"error": str(e), "status_code": e.status_code, "model": self.name},
-            )
-        except httpx.TimeoutException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
-

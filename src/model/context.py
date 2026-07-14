@@ -151,118 +151,16 @@ class ModelContextManager:
     # ------------------------------------------------------------------
 
     async def _initialize_openai_models(self):
-        chat_models = [
-            {
-                "model_name": "openai/gpt-4o",
-                "model_id": "gpt-4o",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-4.1",
-            },
-            {
-                "model_name": "openai/gpt-4.1",
-                "model_id": "gpt-4.1",
-                "model_type": "chat/completions",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-4o",
-            },
-        ]
-        response_models = [
-            {
-                "model_name": "openai/gpt-5",
-                "model_id": "gpt-5",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
-            },
-            {
-                "model_name": "openai/gpt-5.1",
-                "model_id": "gpt-5.1",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5",
-            },
-            {
-                "model_name": "openai/o3",
-                "model_id": "o3",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5.1",
-            },
-            {
-                "model_name": "openai/o3-mini",
-                "model_id": "o3-mini",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5.1",
-            },
-            {
-                "model_name": "openai/gpt-5.2",
-                "model_id": "gpt-5.1",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5",
-            },
-            {
-                "model_name": "openai/gpt-5.3",
-                "model_id": "gpt-5.3",
-                "model_type": "responses",
-                "reasoning": self.default_reasoning,
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5",
-            },
-            {
-                "model_name": "openai/gpt-5.4",
-                "model_id": "gpt-5.4",
-                "model_type": "responses",
-                "reasoning": {"reasoning": {"effort": "high"}},
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5",
-            },
-            {
-                "model_name": "openai/gpt-5.4-pro",
-                "model_id": "gpt-5.4-pro",
-                "model_type": "responses",
-                "reasoning": {"reasoning": {"effort": "high"}},
-                "max_output_tokens": self.max_tokens,
-                "fallback_model": "openai/gpt-5.4",
-            },
-        ]
-        transcribe_models = [
-            {
-                "model_name": "openai/gpt-4o-transcribe",
-                "model_id": "gpt-4o-transcribe",
-                "model_type": "transcriptions",
-                "fallback_model": "openai/gpt-4o-transcribe",
-            },
-        ]
-        embedding_models = [
-            {
-                "model_name": "openai/text-embedding-3-small",
-                "model_id": "text-embedding-3-small",
-                "model_type": "embeddings",
-                "fallback_model": "openai/text-embedding-3-large",
-            },
-            {
-                "model_name": "openai/text-embedding-3-large",
-                "model_id": "text-embedding-3-large",
-                "model_type": "embeddings",
-                "fallback_model": "openai/text-embedding-3-large",
-            },
-            {
-                "model_name": "openai/text-embedding-ada-002",
-                "model_id": "text-embedding-ada-002",
-                "model_type": "embeddings",
-                "fallback_model": "openai/text-embedding-3-large",
-            },
-        ]
+        from src.model.config import openai_models
+        specs = openai_models(
+            max_tokens=self.max_tokens,
+            default_temperature=self.default_temperature,
+            default_reasoning=self.default_reasoning,
+        )
+        chat_models = specs["chat"]
+        response_models = specs["response"]
+        transcribe_models = specs["transcribe"]
+        embedding_models = specs["embedding"]
 
         api_base = await self._key_pool.get_base("openai")
         api_key = await self._key_pool.get_key("openai")
@@ -933,21 +831,6 @@ class ModelContextManager:
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "aws_claude/claude-opus-4.6",
             },
-            {
-                # Anthropic-native /v1/messages route: the gateway forwards
-                # `thinking`/`output_config` there (the /chat/completions
-                # route silently drops them), so adaptive thinking works.
-                "model_name": "aws_claude/claude-opus-4.8",
-                "model_id": "claude-opus-4-8",
-                "model_type": "messages",
-                "temperature": None,
-                "max_completion_tokens": self.max_tokens,
-                "reasoning": {
-                    "thinking": {"type": "adaptive"},
-                    "output_config": {"effort": "high"},
-                },
-                "fallback_model": "aws_claude/claude-opus-4.7",
-            },
         ]
 
         api_base = await self._key_pool.get_base("aws_claude")
@@ -1225,18 +1108,6 @@ class ModelContextManager:
                     temperature=config.temperature,
                     max_completion_tokens=config.max_completion_tokens
                     or self.max_tokens,
-                )
-            elif config.model_type == "messages":
-                # Anthropic-native route — required for thinking support.
-                # temperature is passed through as-is (None for Opus 4.7+,
-                # which rejects the parameter).
-                return ChatAwsClaudeNative(
-                    model=config.model_id,
-                    api_key=config.api_key,
-                    base_url=config.api_base,
-                    reasoning=config.reasoning if config.reasoning else None,
-                    temperature=config.temperature,
-                    max_tokens=config.max_completion_tokens or self.max_tokens,
                 )
             else:
                 raise ValueError(

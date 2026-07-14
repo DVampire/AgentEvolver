@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.message.types import Message
 from src.model.openai.serializer import OpenAIChatSerializer
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage, build_response_from_stream
+from src.model.types import TokenUsage, BaseChatModel
 from src.logger import logger
 from typing import TYPE_CHECKING
 
@@ -35,15 +35,18 @@ if TYPE_CHECKING:
     from src.tool.types import Tool
 
 
-class ChatOpenAI(BaseModel):
+class ChatOpenAI(BaseChatModel):
     """
     A wrapper around AsyncOpenAI that provides a unified interface for OpenAI chat completions.
-    
-    This class accepts AsyncOpenAI parameters and provides methods for chat completions
-    with support for tools, response_format, and streaming.
+
+    Chat/stream orchestration lives in BaseChatModel; this class supplies the OpenAI
+    wire details. Structured output is native response_format (mode "native").
     """
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    supports_true_streaming: bool = True
+    structured_output_mode: str = "native"
 
     # Model configuration
     model: Union[ChatModel, str]
@@ -253,59 +256,27 @@ class ChatOpenAI(BaseModel):
             "params": params,
         }
 
-    async def _call_model(
-        self,
-        messages: List[Dict[str, Any]],
-        **params: Any,
-    ) -> ChatCompletion:
-        """
-        Call the model API (Step 2).
-        
-        Unified interface for calling the client.
-        Returns ChatCompletion object.
-        
-        Args:
-            messages: Serialized messages
-            **params: API parameters
-            
-        Returns:
-            ChatCompletion object
-        """
+    async def _call_model(self, built: Dict[str, Any]) -> ChatCompletion:
+        """Perform one non-streaming API call from a _build_params result."""
         client = self.get_client()
         response = await client.chat.completions.create(
             model=self.model,
-            messages=messages,
-            **params,
+            messages=built["messages"],
+            **built["params"],
         )
-        
         return response
 
-    async def stream(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        **kwargs: Any,
-    ):
-        """Stream a completion, yielding canonical stream events (provider-agnostic).
-
-        Normalizes OpenAI chunk deltas (content, tool_calls[].function.arguments
-        fragments, reasoning) into the canonical event set.
-        """
+    async def _open_stream(self, built: Dict[str, Any]):
+        """Open OpenAI's native SSE stream from a _build_params result."""
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
-        built = await self._build_params(
-            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
-        )
         params = dict(built["params"])
         params.pop("stream", None)
         params.setdefault("stream_options", {"include_usage": True})
         client = self.get_client()
-        raw = await client.chat.completions.create(
+        return await client.chat.completions.create(
             model=self.model, messages=built["messages"], stream=True, **params
         )
-        async for ev in self._parse_stream(raw):
-            yield ev
 
     async def _parse_stream(self, raw):
         """Translate OpenAI chunks → canonical stream events. Unit-testable."""
@@ -344,90 +315,6 @@ class ChatOpenAI(BaseModel):
             if fr:
                 finish = fr
         yield StreamDone(stop_reason=normalize_stop_reason(finish), usage=usage)
-
-    async def __call__(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> Response:
-        """
-        Execute asynchronous completion call via OpenAI API.
-
-        Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of Tool instances
-            response_format: Optional response format (Pydantic model class, instance or dict)
-            stream: Whether to stream the response
-            **kwargs: Additional parameters
-
-        Returns:
-            Response with formatted message
-        """
-        if AsyncOpenAI is None:
-            raise ImportError("openai package is required. Install it with: pip install openai")
-
-        try:
-            if stream:
-                return await build_response_from_stream(
-                    self.stream(messages=messages, tools=tools, response_format=response_format, **kwargs),
-                    tools=tools, response_format=response_format,
-                )
-            params = await self._build_params(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                stream=stream,
-                **kwargs,
-            )
-            
-            response = await self._call_model(
-                messages=params["messages"],
-                **params["params"],
-            )
-            
-            return await self._format_response(
-                response=response,
-                tools=tools,
-                response_format=response_format,
-            )
-
-        except RateLimitError as e:
-            logger.error(f"Rate limit error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Rate limit error: {e.message}",
-                data={"error": str(e), "model": self.name},
-            )
-        except APIConnectionError as e:
-            logger.error(f"API connection error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
-        except APIStatusError as e:
-            logger.error(f"API status error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API status error: {e.message}",
-                data={"error": str(e), "status_code": e.status_code, "model": self.name},
-            )
-        except httpx.TimeoutException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
 
     async def _format_response(
         self,

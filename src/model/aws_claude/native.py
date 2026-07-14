@@ -55,6 +55,9 @@ class ChatAwsClaudeNative(ChatAnthropic):
       text content if the model answered without calling the tool.
     """
 
+    # Gateway strips output_format → structured output via a synthetic tool.
+    structured_output_mode: str = "synthetic_tool"
+
     @property
     def provider(self) -> str:
         return "aws_claude"

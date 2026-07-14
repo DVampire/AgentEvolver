@@ -1,9 +1,15 @@
 from __future__ import annotations
 import json as _json
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Type, Union, TYPE_CHECKING
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from src.session import BaseContext
+
+if TYPE_CHECKING:
+    from src.message.types import Message
+    from src.tool.types import Tool
 
 
 class ModelContext(BaseContext):
@@ -242,6 +248,7 @@ async def build_response_from_stream(
     *,
     tools: Any = None,
     response_format: Any = None,
+    structured_tool_name: Optional[str] = None,
 ) -> Any:
     """Fold a canonical event stream into a buffered ``Response`` — same shape as
     each provider's ``_format_response`` (functions / parsed_model / plain text).
@@ -256,12 +263,36 @@ async def build_response_from_stream(
 
     acc = await accumulate_stream(events)
     usage = TokenUsage.from_raw(acc.get("usage"))
+    stop_reason = acc.get("stop_reason")
     common: Dict[str, Any] = {
         "usage": acc.get("usage"),
-        "stop_reason": acc.get("stop_reason"),
+        "stop_reason": stop_reason,
         "text": acc.get("text", ""),
         "thinking": acc.get("thinking", ""),
     }
+
+    # 0) Structured output via a synthetic schema-tool. Providers whose
+    #    structured_output_mode == "synthetic_tool" represent structured output
+    #    as a tool call named `structured_tool_name`, not as message content —
+    #    validate THAT tool's input into parsed_model (takes priority over the
+    #    generic function-call branch below).
+    if (structured_tool_name and isinstance(response_format, type)
+            and issubclass(response_format, BaseModel)):
+        for c in acc["tool_calls"]:
+            if c.name == structured_tool_name:
+                try:
+                    parsed = response_format.model_validate(c.input)
+                except Exception as e:
+                    msg = (f"Structured output truncated at max_tokens: {e}"
+                           if stop_reason == "max_tokens"
+                           else f"Structured output failed schema validation: {e}")
+                    return Response(type=ResponseType.LLM, success=False, message=msg,
+                                    data={**common, "content": c.input})
+                model_name = response_format.__name__
+                field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
+                msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {l}" for l in field_lines) + "\n)"
+                return Response(type=ResponseType.LLM, success=True, message=msg,
+                                data=common, usage=usage, parsed_model=parsed)
 
     # 1) Tool calls (native tool calling)
     if tools and acc["tool_calls"]:
@@ -288,9 +319,11 @@ async def build_response_from_stream(
         try:
             parsed = response_format.model_validate(_json.loads(text))
         except Exception as e:
+            msg = (f"Structured output truncated at max_tokens: {e}"
+                   if stop_reason == "max_tokens"
+                   else f"Failed to parse structured output: {e}")
             return Response(type=ResponseType.LLM, success=False,
-                            message=f"Failed to parse structured output: {e}",
-                            data={**common, "content": text})
+                            message=msg, data={**common, "content": text})
         model_name = response_format.__name__
         field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
         msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {l}" for l in field_lines) + "\n)"
@@ -334,12 +367,149 @@ async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEve
     )
 
 
+# ---------------------------------------------------------------------------
+# BaseChatModel — the contract every provider chat client implements
+# ---------------------------------------------------------------------------
+
+
+class BaseChatModel(BaseModel, ABC):
+    """Common contract for every provider chat client — two unified call modes.
+
+    - ``chat``   — non-streaming; structured output via this provider's best
+      mechanism (native ``response_format``/schema, or a synthetic schema-tool).
+    - ``stream`` — streaming + function calling + structured output; yields the
+      canonical stream events above. True-streaming providers override
+      ``_open_stream`` / ``_parse_stream``; the rest set
+      ``supports_true_streaming = False`` and fall back to buffering ``chat`` and
+      replaying it through ``buffered_response_to_events``.
+
+    ``__call__`` is an alias of ``chat`` (with a legacy ``stream=True`` shortcut
+    that folds a stream into a buffered ``Response``) so existing callers keep
+    working unchanged.
+
+    A provider subclass implements only the wire details — ``_build_params``,
+    ``_call_model``, ``_format_response``, and (when truly streaming)
+    ``_open_stream`` / ``_parse_stream``. This base owns the orchestration so the
+    two modes stay consistent across every provider.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Capability flags — override per provider.
+    supports_true_streaming: bool = True
+    # "native"         → structured output lands in message content (JSON).
+    # "synthetic_tool" → structured output is a synthetic schema-tool the model
+    #                    calls; the result lands in a tool_call, not content.
+    structured_output_mode: str = "native"
+
+    # ---- identity ----
+    @property
+    def provider(self) -> str:
+        return "base"
+
+    @property
+    def name(self) -> str:
+        return str(getattr(self, "model", ""))
+
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
+
+    # ---- structured-output helpers ----
+    @staticmethod
+    def _schema_model(response_format) -> Optional[type]:
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            return response_format
+        if isinstance(response_format, BaseModel):
+            return type(response_format)
+        return None
+
+    def _structured_tool_name(self, response_format) -> Optional[str]:
+        """Name of the synthetic structured-output tool, for providers whose
+        ``structured_output_mode == "synthetic_tool"``. ``build_response_from_stream``
+        uses it to validate that tool-call's input into ``parsed_model``."""
+        if self.structured_output_mode != "synthetic_tool":
+            return None
+        m = self._schema_model(response_format)
+        return m.__name__ if m else None
+
+    # ---- provider wire details (subclasses implement) ----
+    @abstractmethod
+    async def _build_params(self, messages, tools=None, response_format=None,
+                            stream: bool = False, **kwargs) -> Dict[str, Any]:
+        """Serialize messages/tools/response_format into a provider-specific dict."""
+        ...
+
+    @abstractmethod
+    async def _call_model(self, built: Dict[str, Any]) -> Any:
+        """Perform ONE non-streaming API call from a ``_build_params`` result."""
+        ...
+
+    @abstractmethod
+    async def _format_response(self, response, tools=None, response_format=None):
+        """Fold a raw provider response into a ``Response``."""
+        ...
+
+    async def _open_stream(self, built: Dict[str, Any]) -> Any:
+        """Open the provider's native streaming response. Required only when
+        ``supports_true_streaming`` is True."""
+        raise NotImplementedError(f"{type(self).__name__}._open_stream not implemented")
+
+    def _parse_stream(self, raw) -> "AsyncIterator[Any]":
+        """Translate the provider's native stream into canonical events. Required
+        only when ``supports_true_streaming`` is True."""
+        raise NotImplementedError(f"{type(self).__name__}._parse_stream not implemented")
+
+    # ---- unified orchestration (shared by all providers) ----
+    async def chat(self, messages, tools=None, response_format=None, **kwargs):
+        """Non-streaming call; structured output uses this provider's mechanism."""
+        from src.logger import logger
+        from src.response.types import Response, ResponseType
+        try:
+            built = await self._build_params(
+                messages, tools=tools, response_format=response_format, stream=False, **kwargs)
+            raw = await self._call_model(built)
+            return await self._format_response(raw, tools=tools, response_format=response_format)
+        except httpx.TimeoutException:
+            raise  # the context layer owns retry / fallback on timeout
+        except Exception as e:
+            logger.error(f"| 🔴 {self.provider} chat error (model={self.name}): {type(e).__name__}: {e}")
+            return Response(type=ResponseType.LLM, success=False,
+                            message=f"{type(e).__name__}: {e}",
+                            data={"error": str(e), "model": self.name})
+
+    async def stream(self, messages, tools=None, response_format=None, **kwargs):
+        """Streaming + function calling + structured output; yields canonical events."""
+        if not self.supports_true_streaming:
+            # Graceful degradation: buffer one chat() call, replay it as events.
+            resp = await self.chat(messages, tools=tools, response_format=response_format, **kwargs)
+            async for ev in buffered_response_to_events(resp):
+                yield ev
+            return
+        built = await self._build_params(
+            messages, tools=tools, response_format=response_format, stream=True, **kwargs)
+        raw = await self._open_stream(built)
+        async for ev in self._parse_stream(raw):
+            yield ev
+
+    async def __call__(self, messages, tools=None, response_format=None,
+                       stream: bool = False, **kwargs):
+        """Alias of ``chat``. ``stream=True`` folds the stream into a buffered
+        ``Response`` (kept for backward compatibility with existing callers)."""
+        if stream:
+            return await build_response_from_stream(
+                self.stream(messages, tools=tools, response_format=response_format, **kwargs),
+                tools=tools, response_format=response_format,
+                structured_tool_name=self._structured_tool_name(response_format),
+            )
+        return await self.chat(messages, tools=tools, response_format=response_format, **kwargs)
+
+
 __all__ = [
     "ModelContext", "ModelConfig", "TokenUsage",
     "ToolCall", "ToolResult",
     "TextDelta", "ThinkingDelta", "ToolCallStart", "ToolCallArgsDelta",
     "ToolCallComplete", "StreamDone", "StreamEvent",
     "normalize_stop_reason", "accumulate_stream", "build_response_from_stream",
-    "buffered_response_to_events",
+    "buffered_response_to_events", "BaseChatModel",
 ]
 

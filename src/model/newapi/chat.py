@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage
+from src.model.types import TokenUsage, BaseChatModel
 from src.message.types import Message
 from src.model.newapi.serializer import NewAPIChatSerializer
 from src.model.newapi.rest import NewAPIClient
@@ -24,15 +24,20 @@ if TYPE_CHECKING:
     from src.tool.types import Tool
 
 
-class ChatNewAPI(BaseModel):
+class ChatNewAPI(BaseChatModel):
     """
     A wrapper around NewAPIClient that provides a unified interface for New-API chat completions.
 
-    New-API is an OpenAI-compatible API, so this class accepts standard OpenAI-like parameters
-    and provides methods for chat completions with support for tools, response_format, and streaming.
+    New-API is an OpenAI-compatible single-POST REST client with no token-level
+    streaming, so ``stream()`` degrades to buffering ``chat()`` (handled by
+    BaseChatModel). Structured output is native response_format (mode "native").
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Single-POST REST client: no true streaming (base buffers chat() → events).
+    supports_true_streaming: bool = False
+    structured_output_mode: str = "native"
 
     # Model configuration
     model: Union[ChatModel, str]
@@ -160,36 +165,13 @@ class ChatNewAPI(BaseModel):
             "params": params,
         }
 
-    async def stream(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        **kwargs: Any,
-    ):
-        """Canonical stream via graceful degradation (single-POST REST client).
-
-        Buffers a normal call and re-emits the final Response as canonical events,
-        so callers get a uniform ``stream()`` interface.
-        """
-        from src.model.types import buffered_response_to_events
-        resp = await self.__call__(
-            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
-        )
-        async for ev in buffered_response_to_events(resp):
-            yield ev
-
-    async def _call_model(
-        self,
-        messages: List[Dict[str, Any]],
-        **params: Any,
-    ) -> ChatCompletion:
-        """Call the New-API model."""
+    async def _call_model(self, built: Dict[str, Any]) -> ChatCompletion:
+        """Perform one non-streaming API call from a _build_params result."""
         client = self.get_client()
         return await client.chat.completions.create(
             model=self.model,
-            messages=messages,
-            **params,
+            messages=built["messages"],
+            **built["params"],
         )
 
     async def _format_response(
@@ -325,56 +307,4 @@ class ChatNewAPI(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 data={"error": str(e)},
-            )
-
-    async def __call__(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> Response:
-        """
-        Execute asynchronous completion call via New-API.
-
-        Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of Tool instances
-            response_format: Optional response format (Pydantic model or dict)
-            stream: Whether to stream the response
-            **kwargs: Additional parameters passed to the API
-
-        Returns:
-            Response with formatted message
-        """
-        try:
-            built = await self._build_params(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                stream=stream,
-                **kwargs,
-            )
-
-            response = await self._call_model(
-                messages=built["messages"],
-                **built["params"],
-            )
-
-            return await self._format_response(
-                response=response,
-                tools=tools,
-                response_format=response_format,
-            )
-
-        except httpx.TimeoutException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in ChatNewAPI: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name},
             )

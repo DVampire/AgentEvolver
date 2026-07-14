@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage
+from src.model.types import TokenUsage, BaseChatModel
 from src.message.types import Message
 from src.model.aws_claude.serializer import AwsClaudeChatSerializer
 from src.model.aws_claude.rest import AwsClaudeClient
@@ -23,16 +23,22 @@ if TYPE_CHECKING:
     from src.tool.types import Tool
 
 
-class ChatAwsClaude(BaseModel):
+class ChatAwsClaude(BaseChatModel):
     """
     A wrapper that provides a unified interface for AWS Claude chat completions.
 
     The AWS Claude gateway exposes an OpenAI-compatible `/chat/completions`
-    endpoint, so this class talks to it over plain HTTP (httpx) via
-    `AwsClaudeClient`, mirroring the OpenRouter integration.
+    endpoint over a single-POST REST client (no token-level streaming), so
+    ``stream()`` degrades to buffering ``chat()`` (handled by BaseChatModel).
+    The gateway has no native structured-output param, so structured output uses
+    a synthetic schema-tool (mode "synthetic_tool").
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Single-POST REST client: no true streaming; structured output via synthetic tool.
+    supports_true_streaming: bool = False
+    structured_output_mode: str = "synthetic_tool"
 
     # Model configuration
     model: str
@@ -175,56 +181,21 @@ class ChatAwsClaude(BaseModel):
             "params": params,
         }
 
-    async def stream(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        **kwargs: Any,
-    ):
-        """Canonical stream via graceful degradation.
-
-        The AWS Claude client is a single-POST REST client (no token-level
-        streaming), so this buffers a normal call and re-emits the final Response
-        as canonical events — giving callers a uniform ``stream()`` interface.
-        """
-        from src.model.types import buffered_response_to_events
-        resp = await self.__call__(
-            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
-        )
-        async for ev in buffered_response_to_events(resp):
-            yield ev
-
-    async def _call_model(
-        self,
-        messages: List[Dict[str, Any]],
-        **params: Any,
-    ) -> ChatCompletion:
-        """
-        Call the model API (Step 2).
-
-        Args:
-            messages: Serialized messages
-            **params: API parameters
-
-        Returns:
-            ChatCompletion object (compatible format)
-        """
+    async def _call_model(self, built: Dict[str, Any]) -> ChatCompletion:
+        """Perform one non-streaming API call from a _build_params result."""
         import time as _t
         _start = _t.time()
-
         try:
             client = self.get_client()
             response = await client.chat.completions.create(
                 model=self.model,
-                messages=messages,
-                **params,
+                messages=built["messages"],
+                **built["params"],
             )
         except Exception as e:
             _elapsed = _t.time() - _start
             logger.error(f"| 🔴 AWS Claude error ({_elapsed:.0f}s, model={self.model}): {type(e).__name__}: {e}")
             raise
-
         return response
 
     async def _format_response(
@@ -391,59 +362,4 @@ class ChatAwsClaude(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 data={"error": str(e)},
-            )
-
-    async def __call__(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> Response:
-        """
-        Execute asynchronous completion call via the AWS Claude API.
-
-        Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of Tool instances
-            response_format: Optional response format (Pydantic model or dict)
-            stream: Whether to stream the response
-            **kwargs: Additional parameters
-
-        Returns:
-            Response with formatted message
-        """
-        try:
-            # Step 1: Build parameters
-            params = await self._build_params(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                stream=stream,
-                **kwargs,
-            )
-
-            # Step 2: Call model API
-            response = await self._call_model(
-                messages=params["messages"],
-                **params["params"],
-            )
-
-            # Step 3: Format response
-            return await self._format_response(
-                response=response,
-                tools=tools,
-                response_format=response_format,
-            )
-
-        except httpx.TimeoutException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name},
             )

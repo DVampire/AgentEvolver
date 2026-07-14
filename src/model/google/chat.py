@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ConfigDict
 import json
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage, build_response_from_stream
+from src.model.types import TokenUsage, BaseChatModel
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.google.serializer import GoogleChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -24,7 +24,7 @@ from typing import Type, TYPE_CHECKING
 if TYPE_CHECKING:
     from src.tool.types import Tool
 
-class ChatGoogle(BaseModel):
+class ChatGoogle(BaseChatModel):
     """
     A wrapper that provides a unified interface for Google Gemini chat completions.
     
@@ -35,6 +35,9 @@ class ChatGoogle(BaseModel):
     """
     
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    supports_true_streaming: bool = True
+    structured_output_mode: str = "native"
 
     # Model configuration
     model: str
@@ -184,57 +187,20 @@ class ChatGoogle(BaseModel):
             "stream": stream,
         }
 
-    async def _call_model(
-        self,
-        contents: List[Dict[str, Any]],
-        system_instruction: Optional[str] = None,
-        generation_config: Optional[Dict[str, Any]] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> Any:
+    async def _call_model(self, built: Dict[str, Any]) -> Any:
+        """Perform one non-streaming API call from a _build_params result.
+
+        system_instruction goes to the model constructor, not generate_content.
         """
-        Call the model API (Step 2).
-        
-        Unified interface for calling the Google Gemini API.
-        
-        Args:
-            contents: List of message dicts
-            system_instruction: Optional system instruction string (passed to model constructor)
-            generation_config: Generation configuration dict
-            tools: Optional tools configuration
-            stream: Whether to stream the response
-            **kwargs: Additional parameters
-            
-        Returns:
-            Response object from Google Gemini API
-        """
-        # system_instruction must be passed when creating the model, not in generate_content
-        client = self.get_client(system_instruction=system_instruction)
-        
-        # Prepare parameters for generate_content
+        client = self.get_client(system_instruction=built.get("system_instruction"))
         call_kwargs: Dict[str, Any] = {}
-        
-        if contents:
-            call_kwargs['contents'] = contents
-        if generation_config:
-            call_kwargs['generation_config'] = generation_config
-        if tools:
-            call_kwargs['tools'] = tools
-        
-        # Handle streaming
-        if stream:
-            # For streaming, use generate_content with stream=True
-            # Note: Google Gemini streaming API might be different
-            logger.warning("Streaming is not yet fully implemented for Google Gemini API")
-            call_kwargs['stream'] = True
-        
-        # Call the API
-        # Google Gemini uses generate_content for single requests
-        # For chat, we can use start_chat() or generate_content() with contents
-        response = await self._async_generate_content(client, **call_kwargs)
-        
-        return response
+        if built.get("contents"):
+            call_kwargs['contents'] = built["contents"]
+        if built.get("generation_config"):
+            call_kwargs['generation_config'] = built["generation_config"]
+        if built.get("tools"):
+            call_kwargs['tools'] = built["tools"]
+        return await self._async_generate_content(client, **call_kwargs)
 
     async def _async_generate_content(self, client, **kwargs):
         """Async wrapper for Google Gemini generate_content."""
@@ -244,27 +210,18 @@ class ChatGoogle(BaseModel):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: client.generate_content(**kwargs))
 
-    async def stream(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        **kwargs: Any,
-    ):
-        """Stream a completion, yielding canonical stream events (provider-agnostic).
+    async def _open_stream(self, built: Dict[str, Any]):
+        """Open Gemini's stream from a _build_params result.
 
-        The google-generativeai SDK is synchronous, so the sync streaming generator
-        is bridged to async via a background thread → asyncio.Queue. Gemini delivers
-        each function_call as a whole part → emitted as ToolCallComplete.
+        The google-generativeai SDK is synchronous, so its streaming generator is
+        bridged to async via a background thread → asyncio.Queue, returned as an
+        async iterator of raw chunks for _parse_stream.
         """
         import asyncio
         import threading
 
         if genai is None:
             raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
-        built = await self._build_params(
-            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
-        )
         client = self.get_client(system_instruction=built.get("system_instruction"))
         call_kwargs: Dict[str, Any] = {}
         if built.get("contents"):
@@ -297,8 +254,7 @@ class ChatGoogle(BaseModel):
                     raise payload
                 yield payload
 
-        async for ev in self._parse_stream(_aiter()):
-            yield ev
+        return _aiter()
 
     async def _parse_stream(self, raw):
         """Translate Gemini chunks → canonical stream events. Unit-testable."""
@@ -336,76 +292,6 @@ class ChatGoogle(BaseModel):
                     tool_index += 1
         fr_name = getattr(finish, "name", None) or (str(finish) if finish is not None else None)
         yield StreamDone(stop_reason=normalize_stop_reason(fr_name), usage=usage)
-
-    async def __call__(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> Response:
-        """
-        Execute asynchronous completion call via Google Gemini API.
-
-        Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of Tool instances
-            response_format: Optional response format (Pydantic model class, instance or dict)
-            stream: Whether to stream the response (not implemented yet)
-            **kwargs: Additional parameters
-
-        Returns:
-            Response with formatted message
-        """
-        if genai is None:
-            raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
-
-        try:
-            if stream:
-                return await build_response_from_stream(
-                    self.stream(messages=messages, tools=tools, response_format=response_format, **kwargs),
-                    tools=tools, response_format=response_format,
-                )
-            params = await self._build_params(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                stream=stream,
-                **kwargs,
-            )
-            
-            response = await self._call_model(
-                contents=params["contents"],
-                system_instruction=params.get("system_instruction"),
-                generation_config=params.get("generation_config"),
-                tools=params.get("tools"),
-                stream=params.get("stream", False),
-            )
-            
-            return await self._format_response(
-                response=response,
-                tools=tools,
-                response_format=response_format,
-            )
-
-        except httpx.TimeoutException:
-            raise
-        except Exception as e:
-            error_msg = str(e)
-            status_code = None
-
-            # Try to extract status code from Google API exceptions
-            if google_exceptions and isinstance(e, google_exceptions.GoogleAPIError):
-                status_code = getattr(e, 'status_code', None)
-            
-            logger.error(f"API error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API error: {error_msg}",
-                data={"error": error_msg, "status_code": status_code, "model": self.name},
-            )
 
     async def _format_response(
         self,

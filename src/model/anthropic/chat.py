@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ConfigDict
 import json
 from src.logger import logger
 from src.response.types import Response, ResponseType
-from src.model.types import TokenUsage, build_response_from_stream
+from src.model.types import TokenUsage, BaseChatModel
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from typing import Type, TYPE_CHECKING
@@ -29,19 +29,24 @@ from typing import Type, TYPE_CHECKING
 if TYPE_CHECKING:
     from src.tool.types import Tool
 
-class ChatAnthropic(BaseModel):
+class ChatAnthropic(BaseChatModel):
     """
     A wrapper that provides a unified interface for Anthropic chat completions.
-    
-    This class handles Anthropic API-specific formatting and provides methods for chat completions
-    with support for tools and streaming.
-    
+
+    Chat/stream orchestration lives in BaseChatModel; this class supplies the
+    Anthropic /v1/messages wire details (true SSE streaming). Structured output is
+    native ``output_format`` (beta), supported only on the models listed in
+    ``OUTPUT_FORMAT_SUPPORTED_MODELS`` — hence mode "native".
+
     Note: Only certain models support output_format (structured outputs):
     - claude-sonnet-4-5-20250929 and newer models support output_format
     - Older models like claude-3-7-sonnet-20250219 and claude-sonnet-4-20250514 do not support it
     """
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    supports_true_streaming: bool = True
+    structured_output_mode: str = "native"
 
     # Models that support output_format (structured outputs)
     OUTPUT_FORMAT_SUPPORTED_MODELS: ClassVar[List[str]] = [
@@ -228,57 +233,27 @@ class ChatAnthropic(BaseModel):
             "use_beta_api": use_beta_api,
         }
 
-    async def _call_model(
-        self,
-        use_beta_api: bool = False,
-        **params: Any,
-    ) -> Any:
-        """
-        Call the model API (Step 2).
-        
-        Unified interface for calling the Anthropic API.
-        
-        Args:
-            use_beta_api: Whether to use beta API (for structured outputs)
-            **params: API parameters (should include model, messages, system, temperature, etc.)
-            
-        Returns:
-            Response object from Anthropic API
+    async def _call_model(self, built: Dict[str, Any]) -> Any:
+        """Perform one non-streaming API call from a _build_params result.
+
+        built["params"] already carries model/messages/system; the beta route is
+        used when output_format (structured output) was requested.
         """
         client = self.get_client()
-        # Use beta API if output_format is provided
-        if use_beta_api:
-            response = await client.beta.messages.create(**params)
-        else:
-            response = await client.messages.create(**params)
-        
-        return response
+        params = built["params"]
+        if built.get("use_beta_api"):
+            return await client.beta.messages.create(**params)
+        return await client.messages.create(**params)
 
-    async def stream(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        **kwargs: Any,
-    ):
-        """Stream a completion, yielding canonical stream events (provider-agnostic).
-
-        Opens the Anthropic SSE stream and normalizes its events
-        (content_block_start/delta/stop, message_delta) into the canonical event
-        set defined in ``src.model.types``.
-        """
+    async def _open_stream(self, built: Dict[str, Any]):
+        """Open Anthropic's native SSE stream from a _build_params result."""
         if AsyncAnthropic is None:
             raise ImportError("anthropic package is required. Install it with: pip install anthropic")
-        built = await self._build_params(
-            messages=messages, tools=tools, response_format=response_format, stream=False, **kwargs
-        )
         params = dict(built["params"])
         params.pop("stream", None)
         client = self.get_client()
         create = client.beta.messages.create if built.get("use_beta_api") else client.messages.create
-        raw = await create(stream=True, **params)
-        async for ev in self._parse_stream(raw):
-            yield ev
+        return await create(stream=True, **params)
 
     async def _parse_stream(self, raw):
         """Translate Anthropic SSE events → canonical stream events. Unit-testable."""
@@ -314,92 +289,6 @@ class ChatAnthropic(BaseModel):
                 if u is not None:
                     usage.update(u.model_dump() if hasattr(u, "model_dump") else dict(u))
         yield StreamDone(stop_reason=normalize_stop_reason(stop), usage=usage or None)
-
-    async def __call__(
-        self,
-        messages: List[Message],
-        tools: Optional[List["Tool"]] = None,
-        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> Response:
-        """
-        Execute asynchronous completion call via Anthropic API.
-
-        Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of Tool instances
-            response_format: Optional response format (Pydantic model class, instance or dict)
-            stream: Whether to stream the response (not implemented yet)
-            **kwargs: Additional parameters
-
-        Returns:
-            Response with formatted message
-        """
-        if AsyncAnthropic is None:
-            raise ImportError("anthropic package is required. Install it with: pip install anthropic")
-
-        try:
-            if stream:
-                # Buffered call over the streaming path: stream internally, fold into
-                # the same Response shape (functions / parsed_model / text).
-                return await build_response_from_stream(
-                    self.stream(messages=messages, tools=tools, response_format=response_format, **kwargs),
-                    tools=tools, response_format=response_format,
-                )
-            params = await self._build_params(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                stream=stream,
-                **kwargs,
-            )
-            
-            response = await self._call_model(
-                use_beta_api=params.get("use_beta_api", False),
-                **params["params"],
-            )
-            
-            return await self._format_response(
-                response=response,
-                tools=tools,
-                response_format=response_format,
-            )
-
-        except RateLimitError as e:
-            logger.error(f"Rate limit error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Rate limit error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
-        except APIConnectionError as e:
-            logger.error(f"API connection error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API connection error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
-        except APIError as e:
-            logger.error(f"API error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"API error: {str(e)}",
-                data={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name},
-            )
-        except httpx.TimeoutException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return Response(
-                type=ResponseType.LLM,
-                success=False,
-                message=f"Unexpected error: {str(e)}",
-                data={"error": str(e), "model": self.name},
-            )
 
     async def _format_response(
         self,
