@@ -13,7 +13,7 @@ work_dir = f"work_dir/{tag}"
 run_dir = f"work_dir/{tag}/run"
 log_path = "connector_evaluate_agent.log"
 
-model_name = "aws_claude/claude-opus-4.8"
+model_name = "openrouter/claude-opus-4.8"
 
 tool_names = [
     "bash_tool",

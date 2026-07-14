@@ -23,7 +23,7 @@ work_dir    = f"work_dir/{tag}"
 run_dir = f"work_dir/{tag}/run"
 log_path    = "monitor_agent.log"
 
-model_name      = "aws_claude/claude-opus-4.8"
+model_name      = "openrouter/claude-opus-4.8"
 
 agent_names  = ["monitor_agent"]
 tool_names   = []

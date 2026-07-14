@@ -1,8 +1,35 @@
 import os
+import sys
+import socket
+from urllib.parse import urlparse
+
 import hvac
 from dotenv import load_dotenv
 
 load_dotenv(verbose=True)
+
+# Short timeout (seconds) for probing / talking to Vault. Kept small so that a
+# down or unreachable Vault never blocks startup -- we fall back to .env fast.
+_VAULT_TIMEOUT = float(os.environ.get("VAULT_TIMEOUT", "1.5"))
+
+
+def _vault_running(url: str, timeout: float = _VAULT_TIMEOUT) -> bool:
+    """Cheaply check whether a Vault server is actually listening at ``url``.
+
+    Does a plain TCP connect to the host:port from ``VAULT_ADDR`` with a short
+    timeout. This avoids handing a dead address to hvac, whose underlying HTTP
+    request can otherwise hang and stall startup.
+    """
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+        if not host:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 class VaultClient:
@@ -22,10 +49,26 @@ class VaultClient:
         self._cache: dict | None = None
 
         if url and token and self._path:
+            # 1) Probe first: if no Vault process is listening, skip hvac
+            #    entirely and use .env -- never risk a hanging request.
+            if not _vault_running(url):
+                print(
+                    f"[VaultClient] Vault not reachable at {url}; "
+                    f"using secrets from .env / environment.",
+                    file=sys.stderr,
+                )
+                return
+            # 2) Vault is up -> authenticate (with a short timeout as a guard).
             try:
-                client = hvac.Client(url=url, token=token)
+                client = hvac.Client(url=url, token=token, timeout=_VAULT_TIMEOUT)
                 if client.is_authenticated():
                     self._client = client
+                else:
+                    print(
+                        "[VaultClient] Vault reachable but authentication failed; "
+                        "using secrets from .env / environment.",
+                        file=sys.stderr,
+                    )
             except Exception:
                 # Vault unreachable / misconfigured -> fall back to env.
                 self._client = None

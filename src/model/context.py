@@ -356,7 +356,7 @@ class ModelContextManager:
                 "model_type": "chat/completions",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-4.1",
@@ -364,7 +364,7 @@ class ModelContextManager:
                 "model_type": "chat/completions",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5",
@@ -373,7 +373,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5.1",
@@ -382,7 +382,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5.2",
@@ -391,7 +391,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5.3",
@@ -400,7 +400,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5.4",
@@ -409,7 +409,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5.4-pro",
@@ -418,7 +418,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/o3",
@@ -427,7 +427,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": 1.0,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/o3-mini",
@@ -436,7 +436,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": 1.0,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gpt-5.3-codex",
@@ -445,7 +445,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gpt-5.3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-sonnet-3.5",
@@ -454,7 +454,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-sonnet-3.7",
@@ -463,7 +463,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-sonnet-4",
@@ -472,7 +472,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-opus-4",
@@ -481,7 +481,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-sonnet-4.5",
@@ -490,7 +490,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-opus-4.5",
@@ -499,7 +499,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-sonnet-4.6",
@@ -508,7 +508,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/claude-opus-4.6",
@@ -517,7 +517,21 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
+            },
+            {
+                # reasoning is capped at 8k thinking tokens so long chains of
+                # thought can't consume the whole max_completion_tokens budget
+                # and truncate the structured-output JSON body (which produced
+                # "Unterminated string" parse failures). extra_body is passed
+                # straight through to OpenRouter as the top-level `reasoning`.
+                "model_name": "openrouter/claude-opus-4.8",
+                "model_id": "anthropic/claude-opus-4.8",
+                "model_type": "chat/completions",
+                "reasoning": {"reasoning": {"max_tokens": 8000}},
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-2.5-flash",
@@ -526,7 +540,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-2.5-pro",
@@ -535,7 +549,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3-pro-preview",
@@ -544,7 +558,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3.1-pro-preview",
@@ -553,7 +567,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "gemini/gemini-3.1-pro-preview",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3-flash-preview",
@@ -562,7 +576,19 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "gemini/gemini-3-flash-preview",
+                "fallback_model": "openrouter/gemini-3.5-flash",
+            },
+            {
+                # Fast, cheap flash used as the universal fallback for every
+                # openrouter model above. Its own fallback points elsewhere to
+                # avoid a self-loop.
+                "model_name": "openrouter/gemini-3.5-flash",
+                "model_id": "google/gemini-3.5-flash",
+                "model_type": "chat/completions",
+                "reasoning": {"reasoning": _r()},
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
             },
             {
                 "model_name": "openrouter/gemini-2.5-flash-plugins",
@@ -572,7 +598,7 @@ class ModelContextManager:
                 "plugins": self.default_plugins,
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview-plugins",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3-flash-preview-plugins",
@@ -582,7 +608,7 @@ class ModelContextManager:
                 "plugins": self.default_plugins,
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview-plugins",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3.1-flash-lite-preview",
@@ -591,7 +617,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview-plugins",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3.1-flash-lite-preview-plugins",
@@ -601,7 +627,7 @@ class ModelContextManager:
                 "plugins": self.default_plugins,
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview-plugins",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3.1-pro-preview-plugins",
@@ -611,7 +637,7 @@ class ModelContextManager:
                 "plugins": self.default_plugins,
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview-plugins",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/qwen3-coder",
@@ -620,7 +646,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/qwen3-max",
@@ -629,7 +655,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/deepseek-v3.2",
@@ -638,7 +664,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
             {
                 "model_name": "openrouter/grok-4.1-fast",
@@ -647,7 +673,7 @@ class ModelContextManager:
                 "reasoning": {"reasoning": _r()},
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openai/o3",
+                "fallback_model": "openrouter/gemini-3.5-flash",
             },
         ]
 

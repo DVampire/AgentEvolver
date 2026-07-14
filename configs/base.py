@@ -2,7 +2,7 @@
 tag = "base"
 work_dir = f"work_dir/{tag}"
 log_path = "base.log"
-model_name = "int_openrouter/gemini-3.1-pro-preview"
+model_name = "openrouter/claude-opus-4.8"
 
 # Named model roles — behavior×model orthogonality (borrowed from HarnessX ModelConfig).
 # Callers resolve a model by ROLE (`model_manager(role="judge", ...)`) instead of a
@@ -19,13 +19,15 @@ model_roles = dict(
 #---------------MEMORY CONFIG---------------
 memory_config = dict(
     type = "general_memory_system",
-    model_name = "gpt-4.1",
+    model_name = "openrouter/gemini-3.5-flash",
     max_summaries = 20,
     max_insights = 100
 )
 
 #---------------MAX TOKENS CONFIG---------------
-max_tokens = 16384
+# Large enough to hold opus-4.8's thinking tokens plus a full structured-output
+# JSON body on the same completion budget (16384 truncated the JSON mid-string).
+max_tokens = 32768
 
 #---------------Window Size Config---------------
 window_size = (1024, 768)

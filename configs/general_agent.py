@@ -12,7 +12,7 @@ run_dir = f"work_dir/{tag}/run"
 log_path = "agent.log"
 
 version = "0.1.0"
-model_name = "aws_claude/claude-opus-4.8"
+model_name = "openrouter/claude-opus-4.8"
 
 memory_names = [
     "file_system_memory",
