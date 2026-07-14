@@ -6,7 +6,7 @@ update, and execution.
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -198,6 +198,39 @@ class SkillManagerServer(BaseModel):
         for the MetaAgent). Cached per (allowlist, types) until the registry changes.
         """
         return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
+
+    async def function_callings(
+        self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None
+    ) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
+        """Native tool-calling schemas for the selected skills, each paired with its
+        dispatch route. A skill has no argument schema, so a permissive object is used;
+        the name is the skill's own registered name (already ``*_skill``, no prefixing).
+
+        ``types`` filters by frontmatter type (["worker"] for sub-agents, ["orchestrator"]
+        for the MetaAgent). Returns ``[(function_calling, ("skill", name)), ...]``.
+        """
+        names = allowlist if allowlist is not None else await self.list()
+        allowed = set(types) if types else None
+        out: List[Tuple[Dict[str, Any], Tuple[Any, ...]]] = []
+        for n in names:
+            info = await self.get_info(n)
+            if info is None:
+                continue
+            stype = getattr(info, "type", None)
+            if allowed and stype:
+                have = {stype} if isinstance(stype, str) else set(stype)
+                if not (have & allowed):
+                    continue
+            fc = {
+                "type": "function",
+                "function": {
+                    "name": n,
+                    "description": getattr(info, "description", "") or n,
+                    "parameters": {"type": "object", "additionalProperties": True},
+                },
+            }
+            out.append((fc, ("skill", n)))
+        return out
 
     # ------------------------------------------------------------------
     # Skill execution

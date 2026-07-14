@@ -76,6 +76,28 @@ class BrowserAgent(Agent):
     # Environment access
     # ------------------------------------------------------------------
 
+    async def _native_env_tools(self, ctx: Optional[AgentContext] = None):
+        """Project this env's actions into native tools for the run loop.
+
+        Returns ``[(ns, params, desc, route), ...]`` consumed by
+        ``assemble_native_tools``: each browser action becomes an ``env__<name>``
+        tool routed back through ``_handle_env_action``.
+        """
+        out = []
+        try:
+            env_info = await environment_manager.get_info(self.env_name)
+        except Exception:
+            env_info = None
+        if not env_info or not getattr(env_info, "actions", None):
+            return out
+        for action in env_info.actions.values():
+            name = action.name
+            fc = getattr(action, "function_calling", None) or {}
+            params = (fc.get("function", {}) or {}).get("parameters") or {"type": "object", "additionalProperties": True}
+            desc = getattr(action, "description", "") or name
+            out.append((f"env__{name}", params, desc, ("env", name)))
+        return out
+
     async def _handle_env_action(
         self,
         action_name: str,

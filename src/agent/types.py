@@ -179,46 +179,6 @@ class AgentConfig(BaseModel):
         return self.__str__()
 
 
-
-class ActionInputArgs(BaseModel):
-    type: str = Field(description='The type of this action: "tool", "skill", "env", "finish", or "text".')
-    name: str = Field(description='The name of the tool, skill, or environment action; "finish" to end the task; "text" for plain-text responses.')
-    args: str = Field(description='The arguments as a JSON string. Must be a valid JSON object string. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
-
-
-class AgentPlanStep(BaseModel):
-    """One step in the execution plan — a description plus the single action to run."""
-    description: str = Field(description="One-line summary of what this step does.")
-    action: ActionInputArgs = Field(description="The single action to execute for this step.")
-
-
-class AgentThinkOutput(BaseModel):
-    """Structured LLM output for plan-based agents.
-
-    The agent outputs only new steps to execute; history is maintained by
-    FileSystemMemory. The LLM never re-emits already-executed steps.
-    """
-    reasoning: str = Field(
-        description=(
-            "Structured reasoning in three parts — be concise but complete, "
-            "include all information necessary to understand the decision, omit padding: "
-            "past — previous goal, last-step outcome, and progress so far; "
-            "present — analysis of the current situation; "
-            "future — the immediate next goal and the plan to achieve it."
-        ),
-    )
-    plan: List[AgentPlanStep] = Field(
-        min_length=1,
-        description=(
-            "The next action(s) to execute, in order — the plan is NEVER empty. "
-            "Each step is exactly one action. Do not re-emit steps already executed "
-            "in earlier turns. When the task is complete, the plan MUST be exactly one "
-            "step that calls done_tool with the result — 'nothing left to do' means "
-            "'call done_tool now', never an empty plan."
-        ),
-    )
-
-
 class Agent(BaseModel):
     """Base class for all agents, mirroring the design of `Tool`."""
 
@@ -247,7 +207,6 @@ class Agent(BaseModel):
         review_steps: int = 5,
         enable_evolving: bool = False,
         use_memory: bool = True,
-        use_native_tools: bool = False,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -266,10 +225,6 @@ class Agent(BaseModel):
         self.prompt_name = prompt_name
         self.memory_name = memory_name
         self.use_memory = use_memory
-        # Native tool-calling mode: when True, the run loop passes the agent's
-        # capabilities as native tools and dispatches tool_calls (see
-        # _think_and_act_native) instead of parsing a structured AgentThinkOutput.
-        self.use_native_tools = use_native_tools
         self.model_name = model_name
 
         # Setup steps
@@ -478,64 +433,6 @@ class Agent(BaseModel):
         listing = "\n".join(f"- {f}" for f in existing)
         return f"{task}\n\n**Input files:**\n{listing}"
 
-    def _response_protocol_text(self) -> str:
-        """The 'how to respond' block injected as the ``{{ response_protocol }}`` module.
-
-        Structured mode → the AgentThinkOutput plan+reasoning format. Native mode →
-        native tool-calling guidance. Switching here (instead of per-template) is
-        what lets one agent template serve both run-loop modes.
-        """
-        if getattr(self, "use_native_tools", False):
-            return (
-                "<response-protocol>\n"
-                "You have tools available (provided to you directly). To act, CALL a tool — "
-                "do NOT describe the call in text and do NOT emit a JSON `plan`.\n"
-                "- Put brief reasoning in your normal response text before the tool call(s); "
-                "you may call several tools when they are independent.\n"
-                "- When the task is COMPLETE, call the `done` tool with the final `result` "
-                "(and optional `reasoning`). Completion is signaled ONLY by calling `done` — "
-                "never by a plain-text answer.\n"
-                "- If a task matches a skill, call the corresponding `skill__<name>` tool; "
-                "for a connector action call `connector__<name>__<action>`.\n"
-                "</response-protocol>"
-            )
-        # Structured (default) — the AgentThinkOutput plan + reasoning format.
-        # Faithfully reproduces the plan-rules / reasoning-rules / output-format /
-        # output-schema blocks that used to live inline in each agent template, so
-        # structured mode is unchanged when a template swaps them for {{ response_protocol }}.
-        return (
-            "<plan-rules>\n"
-            "Output `plan` — an ordered list of new steps to execute. Each step is exactly one action.\n"
-            "- Output only steps not yet executed; history is maintained by the agent.\n"
-            f"- Maximum {self.max_actions} steps per plan. `reasoning` does NOT count.\n"
-            "- Do NOT include an `output` field — actions are executed after planning.\n\n"
-            'Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:\n'
-            '- `action.type`: `"tool"`, `"skill"`, `"connector"`, `"env"`, `"finish"`, or `"text"`.\n'
-            "- `action.name`: exact name from Tool/Skill/Connector/Environment Context, or `\"text\"` for plain-text.\n"
-            '- `action.args`: arguments as a JSON string, e.g. `"{\\"path\\": \\"/abs/path\\"}"`.\n'
-            '- Connector actions: `"type": "connector"`, `"name"`: connector name, `args` a JSON string '
-            'of the form `{"action": "<action name>", "args": {<action arguments>}}`.\n'
-            "</plan-rules>\n\n"
-            "<reasoning-rules>\n"
-            "Write ALL reasoning in the single `reasoning` field, structured in three parts: "
-            "past — previous goal, last-step outcome, progress; present — current situation and remaining budget; "
-            "future — the immediate next goal and concrete next steps. Be concise but complete.\n"
-            "</reasoning-rules>\n\n"
-            "<output-format>\n"
-            "- `plan` must not be empty — always output at least one step.\n"
-            "- Respond with valid JSON only — no markdown fences, no extra text.\n"
-            "</output-format>\n\n"
-            "<output-schema>\n"
-            "{\n"
-            '    "reasoning": "Past: ... Present: ... Future: ...",\n'
-            '    "plan": [\n'
-            '        {"description": "Read the target file.", "action": {"type": "tool", "name": "read_file_tool", "args": "{\\"path\\": \\"/abs/path/file.py\\"}"}},\n'
-            '        {"description": "Complete the task.", "action": {"type": "tool", "name": "done_tool", "args": "{\\"result\\": \\"Summary.\\", \\"reasoning\\": \\"Why done.\\"}"}}\n'
-            "    ]\n"
-            "}\n"
-            "</output-schema>"
-        )
-
     async def _get_messages(self,
                             task: str,
                             ctx: AgentContext,
@@ -546,9 +443,6 @@ class Agent(BaseModel):
         project_root = get_project_root()
         system_modules = dict(
             max_actions=self.max_actions, work_dir=work_dir, project_root=project_root,
-            # response_protocol lives in the SYSTEM section of the agent templates
-            # (it replaced the inline <plan-rules> block there).
-            response_protocol=self._response_protocol_text(),
         )
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
 
@@ -640,8 +534,14 @@ class Agent(BaseModel):
         ctx: "AgentContext",
         **kwargs,
     ) -> Dict[str, Any]:
-        """One step of the think-and-act loop: run the LLM on ``messages`` and
-        execute the planned actions. Returns done/result/reasoning/action_errors.
+        """One step of the think-and-act loop (native tool use): the model sees the
+        agent's capabilities as native tools, emits tool_calls, and this dispatches
+        each back to its owning manager. Returns done/result/reasoning/action_errors.
+
+        Reasoning is the model's thinking/text; completion is an explicit ``done``
+        tool call (never inferred from plain text — a text-only turn is nudged to
+        act or call done). Tool args arrive as structured objects validated by each
+        tool's schema (no JSON-string double-encoding).
 
         The per-step resource-budget check is the CALLER's responsibility — every
         agent runs ``_constraint_check`` BEFORE building ``messages`` (so the prompt
@@ -666,175 +566,23 @@ class Agent(BaseModel):
                 if response["done"]:
                     break
         """
-        if getattr(self, "use_native_tools", False):
-            return await self._think_and_act_native(
-                messages, task_id, step_number, ctx=ctx, **kwargs
-            )
-
         from src.hook.server import hook_manager
-        from src.hook.types import HookDecision, HookEvent
-        from src.model import model_manager
-        from src.utils import parse_tool_args
+        from src.hook.types import HookEvent
 
-        done = False
-        result = None
-        reasoning = None
-        action_errors = []
-        step_tokens = 0
-        # The per-step constraint check runs in the caller's loop, BEFORE the
-        # message is built (see _constraint_check / the canonical loop above), so
-        # it is not repeated here. constraint_status is reported by the caller's
-        # check now; kept here only so the result contract stays stable.
-        constraint_statuses: List[Dict[str, Any]] = []
+        # THINK: one LLM turn → a batch of tool_calls (+ routing). Pure decision.
+        decision = await self._think(messages, task_id, step_number, ctx)
+        step_reasoning = decision["reasoning"]
+        step_tokens = decision["step_tokens"]
 
-        await hook_manager(
-            name="trace_hook",
-            input={"event": HookEvent.PRE_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id},
-            ctx=ctx,
-        )
+        # DISPATCH: run this turn's batch concurrently, each call routed to its manager.
+        outcome = await self._dispatch(decision, task_id, step_number, ctx)
+        done = outcome["done"]
+        result = outcome["result"]
+        reasoning = outcome["reasoning"]
+        action_errors = outcome["action_errors"]
+        step_plan = outcome["plan"]
 
-        step_reasoning = ""
-        step_plan: List[Dict[str, Any]] = []
-
-        try:
-            llm_response = await model_manager(
-                name=self.model_name,
-                input={"messages": messages, "response_format": AgentThinkOutput},
-                ctx=ctx,
-            )
-            if llm_response.usage:
-                step_tokens += llm_response.usage.total
-            think_output = llm_response.parsed_model
-
-            step_reasoning = think_output.reasoning
-            plan_steps = think_output.plan
-            step_plan = [
-                {"description": s.description, "type": s.action.type,
-                 "name": s.action.name, "args": s.action.args}
-                for s in plan_steps
-            ]
-
-            logger.info(f"| 💭 [{self.name}] Reasoning: {step_reasoning}")
-            logger.info(f"| 📋 [{self.name}] Plan steps: {len(plan_steps)}")
-
-            # An empty plan wastes a step and, left unaddressed, makes the agent
-            # spin until max_step. It usually means the model considers the work
-            # done but did not emit the terminal action. Nudge it (via action_errors,
-            # surfaced in the next prompt) to finish with done_tool now.
-            if not plan_steps:
-                action_errors.append(
-                    "Your previous plan was EMPTY, which is never valid. If the task is "
-                    "already complete, output a plan whose single step calls `done_tool` "
-                    "(with the result) NOW — 'nothing left to do' means 'call done_tool'. "
-                    "If it is not complete, output the next concrete action."
-                )
-                logger.warning(f"| ⚠️ [{self.name}] Empty plan — nudging to call done_tool.")
-
-            for i, step in enumerate(plan_steps):
-                action = step.action
-                action_type = action.type
-                action_name = action.name
-                action_args_str = action.args
-                action_args = parse_tool_args(action_args_str) if action_args_str else {}
-
-                logger.info(f"| 📝 [{self.name}] Step {i+1}/{len(plan_steps)}: {step.description}")
-                logger.info(f"| 📝 [{self.name}] [{action_type}] {action_name}: {action_args}")
-
-                action_dict = {
-                    "index": i,
-                    "description": step.description,
-                    "type": action_type,
-                    "name": action_name,
-                    "args": action_args_str,
-                    "args_parsed": action_args,
-                }
-
-                pre_result = await hook_manager(
-                    name="trace_hook",
-                    input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
-                    ctx=ctx,
-                )
-                if pre_result.decision == HookDecision.BLOCK:
-                    logger.warning(f"| 🚫 [{self.name}] Action blocked by hook: {pre_result.reason}")
-                    continue
-
-                action_result = None
-                error = None
-
-                try:
-                    if (self.permission_mode == "read_only"
-                            and action_type not in ("text", "finish")
-                            and action_name in _READ_ONLY_DENIED_TOOLS):
-                        raise PermissionError(
-                            f"read_only agent '{self.name}' may not invoke framework-mutating "
-                            f"tool '{action_name}'. Report findings instead of modifying anything."
-                        )
-
-                    if action_type == "text":
-                        action_result = action_args.get("content", "")
-                        logger.info(f"| 💬 [{self.name}] Text: {str(action_result)}")
-
-                    elif action_type == "skill":
-                        response = await skill_manager(name=action_name, input=action_args, ctx=ctx)
-                        action_result = response.message
-                        logger.info(f"| ✅ [{self.name}] Skill '{action_name}' completed (success={response.success})")
-
-                    elif action_type == "connector":
-                        response = await connector_manager(name=action_name, input=action_args, ctx=ctx)
-                        action_result = response.message
-                        logger.info(f"| ✅ [{self.name}] Connector '{action_name}' action '{action_args.get('action')}' completed (success={response.success})")
-
-                    elif action_type == "env":
-                        action_result = await self._handle_env_action(action_name, action_args, ctx)
-                        logger.info(f"| ✅ [{self.name}] Env action '{action_name}' completed")
-
-                    elif action_type == "finish":
-                        # Loop-native termination signal — consumed by the agent
-                        # itself, no manager involved (tool-free agents use this
-                        # instead of done_tool).
-                        done = True
-                        result = action_args.get("result", "")
-                        reasoning = action_args.get("reasoning")
-                        action_result = result
-                        logger.info(f"| 🏁 [{self.name}] Finish: {str(result)[:200]}")
-
-                    else:
-                        tool_response = await tool_manager(name=action_name, input=action_args, ctx=ctx)
-                        action_result = tool_response.message
-                        logger.info(f"| ✅ [{self.name}] Tool '{action_name}' completed")
-
-                        if action_name == "done_tool":
-                            done = True
-                            result = action_result
-                            reasoning = (tool_response.data or {}).get("reasoning") if hasattr(tool_response, "data") else None
-
-                except Exception as e:
-                    error = str(e)
-                    action_errors.append(f"Action '{action_name}' failed: {error}")
-                    logger.error(f"| ❌ [{self.name}] Action '{action_name}' failed: {e}")
-
-                await hook_manager(
-                    name="memory_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "use_memory": self.use_memory, "memory_name": self.memory_name},
-                    ctx=ctx,
-                )
-                await hook_manager(
-                    name="trace_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
-                    ctx=ctx,
-                )
-                await hook_manager(
-                    name="trajectory_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
-                    ctx=ctx,
-                )
-
-                if done:
-                    break
-
-        except Exception as e:
-            logger.error(f"| ❌ [{self.name}] Error in _think_and_act: {e}")
-
+        # --- per-step lifecycle: POST_STEP + snapshot + trajectory capture ---
         await hook_manager(
             name="memory_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
@@ -862,39 +610,45 @@ class Agent(BaseModel):
             ctx=ctx,
         )
 
-        # Carry this step's token usage into the next step's constraint check
+        # Carry this step's token usage into the next step's constraint check.
         self._pending_step_tokens[task_id] = step_tokens
-
-        # Clean up constraint session when task finishes
         if done and self.constraints:
             for c in self.constraints:
                 c._cleanup(task_id)
             self._pending_step_tokens.pop(task_id, None)
 
-        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": constraint_statuses, "stopped_by_constraint": False}
+        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": [], "stopped_by_constraint": False}
 
-    async def _think_and_act_native(self, messages, task_id, step_number, ctx=None, **kwargs):
-        """Native tool-calling step: pass capabilities as tools, dispatch tool_calls.
+    # ------------------------------------------------------------------
+    # The unified loop's two verbs: _think (decide) + _dispatch (act).
+    # Shared verbatim by every agent — leaf actors AND the MetaAgent. The only
+    # thing an orchestrator adds is a richer roster (include_agents / extra_tools)
+    # and a different batch executor; the decision + per-call dispatch are identical.
+    # ------------------------------------------------------------------
 
-        Mirrors ``_think_and_act``'s hook lifecycle (PRE_STEP / PRE_ACTION /
-        POST_ACTION / POST_STEP + snapshot + trajectory) so trace/memory/trajectory
-        capture is identical — but the model call streams native tool_calls instead
-        of a structured ``AgentThinkOutput``. Reasoning is the model's thinking/text
-        blocks; completion is an explicit ``done`` tool call (never inferred from
-        plain text — a text-only turn is nudged to act or call done).
+    async def _think(
+        self,
+        messages: List[Message],
+        task_id: str,
+        step_number: int,
+        ctx: "AgentContext",
+        *,
+        include_agents: bool = False,
+        extra_tools: Optional[List[Any]] = None,
+    ) -> Dict[str, Any]:
+        """One LLM turn (native tool use): project the agent's capabilities into a flat
+        tool list + routing table, stream, and accumulate into a batch of tool_calls.
+
+        Pure decision — no dispatch, no state mutation — so both the leaf-agent loop and
+        MetaAgent call this same method. ``include_agents`` / ``extra_tools`` let an
+        orchestrator widen the roster (agent__<name>, reply_to_agent). Returns
+        ``{tool_calls, routing, reasoning, step_tokens}``.
         """
-        import json as _json
         from src.hook.server import hook_manager
-        from src.hook.types import HookDecision, HookEvent
+        from src.hook.types import HookEvent
         from src.model import model_manager
         from src.model.types import accumulate_stream
         from src.agent.native_tools import assemble_native_tools
-
-        done = False
-        result = None
-        reasoning = None
-        action_errors: List[str] = []
-        step_tokens = 0
 
         await hook_manager(
             name="trace_hook",
@@ -902,10 +656,13 @@ class Agent(BaseModel):
             ctx=ctx,
         )
 
-        tools, routing = await assemble_native_tools(self, ctx)
-        step_plan: List[Dict[str, Any]] = []
-        step_reasoning = ""
+        tools, routing = await assemble_native_tools(self, ctx, include_agents=include_agents)
+        if extra_tools:
+            tools = tools + list(extra_tools)
 
+        reasoning = ""
+        tool_calls: List[Any] = []
+        step_tokens = 0
         try:
             acc = await accumulate_stream(
                 model_manager.stream(
@@ -914,130 +671,169 @@ class Agent(BaseModel):
                     ctx=ctx,
                 )
             )
-            step_tokens += int((acc.get("usage") or {}).get("output_tokens", 0) or 0)
-            step_reasoning = acc.get("thinking") or acc.get("text") or ""
-            reasoning = step_reasoning
+            step_tokens = int((acc.get("usage") or {}).get("output_tokens", 0) or 0)
+            reasoning = acc.get("thinking") or acc.get("text") or ""
             tool_calls = acc.get("tool_calls") or []
-
-            logger.info(f"| 💭 [{self.name}] Reasoning: {step_reasoning[:200]}")
-            logger.info(f"| 🔧 [{self.name}] Tool calls: {[c.name for c in tool_calls]}")
-
-            if not tool_calls:
-                # A text-only turn is NOT completion (see redesign §6.1). Nudge the
-                # model to take an action or, if finished, call `done` explicitly.
-                action_errors.append(
-                    "You produced text but called no tool. Take the next action by calling a tool, "
-                    "or if the task is COMPLETE call `done` with the result now. Do not answer in plain text."
-                )
-                logger.warning(f"| ⚠️ [{self.name}] No tool call — nudging to act or call done.")
-
-            for i, call in enumerate(tool_calls):
-                route = routing.get(call.name)
-                kind = route[0] if route else "tool"
-                args_str = _json.dumps(call.input, ensure_ascii=False)
-                action_dict = {
-                    "index": i, "description": "", "type": kind,
-                    "name": call.name, "args": args_str, "args_parsed": call.input,
-                }
-                step_plan.append({"description": "", "type": kind, "name": call.name, "args": args_str})
-
-                logger.info(f"| 📝 [{self.name}] [{kind}] {call.name}: {call.input}")
-
-                pre_result = await hook_manager(
-                    name="trace_hook",
-                    input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
-                    ctx=ctx,
-                )
-                if pre_result.decision == HookDecision.BLOCK:
-                    logger.warning(f"| 🚫 [{self.name}] Action blocked by hook: {pre_result.reason}")
-                    continue
-
-                action_result = None
-                error = None
-                try:
-                    if route is None:
-                        raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
-                    if kind == "finish":
-                        done = True
-                        result = call.input.get("result", "")
-                        reasoning = call.input.get("reasoning") or reasoning
-                        action_result = result
-                        logger.info(f"| 🏁 [{self.name}] done: {str(result)[:200]}")
-                    elif kind == "tool":
-                        tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx)
-                        action_result = tool_response.message
-                        if route[1] == "done_tool":
-                            done = True
-                            result = action_result
-                    elif kind == "skill":
-                        response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
-                        action_result = response.message
-                    elif kind == "connector":
-                        response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
-                        action_result = response.message
-                    elif kind == "env":
-                        action_result = await self._handle_env_action(route[1], call.input, ctx)
-                    else:
-                        raise ValueError(f"Unknown route kind {kind!r}")
-                except Exception as e:
-                    error = str(e)
-                    action_errors.append(f"Action '{call.name}' failed: {error}")
-                    logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
-
-                await hook_manager(
-                    name="memory_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "use_memory": self.use_memory, "memory_name": self.memory_name},
-                    ctx=ctx,
-                )
-                await hook_manager(
-                    name="trace_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
-                    ctx=ctx,
-                )
-                await hook_manager(
-                    name="trajectory_hook",
-                    input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
-                    ctx=ctx,
-                )
-
-                if done:
-                    break
-
         except Exception as e:
-            logger.error(f"| ❌ [{self.name}] Error in _think_and_act_native: {e}")
+            logger.error(f"| ❌ [{self.name}] Error in _think: {e}")
+
+        logger.info(f"| 💭 [{self.name}] Reasoning: {reasoning[:200]}")
+        logger.info(f"| 🔧 [{self.name}] Tool calls: {[c.name for c in tool_calls]}")
+
+        return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning, "step_tokens": step_tokens}
+
+    async def _dispatch(
+        self,
+        decision: Dict[str, Any],
+        task_id: str,
+        step_number: int,
+        ctx: "AgentContext",
+    ) -> Dict[str, Any]:
+        """Run this turn's batch of tool_calls CONCURRENTLY, each routed to its manager.
+
+        A single turn's batch is parallel-safe by the function-calling contract — the
+        model only puts independent calls in one batch; dependent work is emitted across
+        turns — so we gather the whole batch. Returns
+        ``{done, result, reasoning, action_errors, plan}``.
+        """
+        import json as _json
+
+        tool_calls = decision["tool_calls"]
+        routing = decision["routing"]
+        reasoning = decision["reasoning"]
+        action_errors: List[str] = []
+        step_plan = [
+            {"id": c.id, "description": "", "type": (routing.get(c.name) or ("tool",))[0],
+             "name": c.name, "args": _json.dumps(c.input, ensure_ascii=False)}
+            for c in tool_calls
+        ]
+
+        # A text-only turn is NOT completion — completion is an explicit `done` tool call,
+        # never inferred from plain text. Nudge the model to act or call `done`.
+        if not tool_calls:
+            action_errors.append(
+                "You produced text but called no tool. Take the next action by calling a tool, "
+                "or if the task is COMPLETE call `done` with the result now. Do not answer in plain text."
+            )
+            logger.warning(f"| ⚠️ [{self.name}] No tool call — nudging to act or call done.")
+            return {"done": False, "result": None, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
+
+        outcomes = await asyncio.gather(*[
+            self._run_one(call, i, routing, task_id, step_number, ctx)
+            for i, call in enumerate(tool_calls)
+        ])
+
+        done = False
+        result = None
+        for o in outcomes:
+            if o.get("error"):
+                action_errors.append(f"Action '{o['name']}' failed: {o['error']}")
+            if o.get("done"):
+                done = True
+                result = o.get("result")
+                if o.get("reasoning"):
+                    reasoning = o["reasoning"]
+        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
+
+    async def _run_one(
+        self,
+        call: Any,
+        index: int,
+        routing: Dict[str, Any],
+        task_id: str,
+        step_number: int,
+        ctx: "AgentContext",
+    ) -> Dict[str, Any]:
+        """Dispatch ONE tool_call, wrapped in its PRE_ACTION → invoke → POST_ACTION hooks.
+
+        This is the atomic unit of action; ``_dispatch`` runs one per tool_call,
+        concurrently. Keeping a call's hook pair inside one coroutine means the pairs
+        stay correct even when the batch runs in parallel. Returns
+        ``{name, done, result, reasoning, error}``.
+        """
+        import json as _json
+        from src.hook.server import hook_manager
+        from src.hook.types import HookDecision, HookEvent
+
+        route = routing.get(call.name)
+        kind = route[0] if route else "tool"
+        args_str = _json.dumps(call.input, ensure_ascii=False)
+        logger.info(f"| 📝 [{self.name}] [{kind}] {call.name}: {call.input}")
+
+        action_dict = {
+            "index": index, "id": call.id, "description": "", "type": kind,
+            "name": call.name, "args": args_str, "args_parsed": call.input,
+        }
+
+        done, result, reasoning, error, action_result = False, None, None, None, None
+
+        pre_result = await hook_manager(
+            name="trace_hook",
+            input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
+            ctx=ctx,
+        )
+        if pre_result.decision == HookDecision.BLOCK:
+            logger.warning(f"| 🚫 [{self.name}] Action blocked by hook: {pre_result.reason}")
+            return {"name": call.name, "done": False, "result": None, "reasoning": None, "error": None}
+
+        try:
+            if route is None:
+                raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
+            # read_only agents may not invoke framework-mutating tools.
+            if (self.permission_mode == "read_only" and kind == "tool"
+                    and route[1] in _READ_ONLY_DENIED_TOOLS):
+                raise PermissionError(
+                    f"read_only agent '{self.name}' may not invoke framework-mutating "
+                    f"tool '{route[1]}'. Report findings instead of modifying anything."
+                )
+            action_result, done, result, reasoning = await self._invoke_capability(route, call, ctx)
+        except Exception as e:
+            error = str(e)
+            logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
 
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
+            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "use_memory": self.use_memory, "memory_name": self.memory_name},
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning},
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="snapshot_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
-                   "task_id": task_id, "work_dir": getattr(ctx, "work_dir", None),
-                   "messages": messages, "reasoning": step_reasoning, "plan": step_plan},
+            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
             ctx=ctx,
         )
         await hook_manager(
             name="trajectory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
-                   "task_id": task_id, "messages": messages, "reasoning": step_reasoning,
-                   "plan": step_plan, "step_tokens": step_tokens},
+            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
             ctx=ctx,
         )
+        return {"name": call.name, "done": done, "result": result, "reasoning": reasoning, "error": error}
 
-        self._pending_step_tokens[task_id] = step_tokens
-        if done and self.constraints:
-            for c in self.constraints:
-                c._cleanup(task_id)
-            self._pending_step_tokens.pop(task_id, None)
-
-        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": [], "stopped_by_constraint": False}
+    async def _invoke_capability(self, route: Any, call: Any, ctx: "AgentContext"):
+        """Route ONE call to the manager that owns it — the single dispatch table that
+        knows how each capability kind executes. Returns
+        ``(action_result, done, result, reasoning)``.
+        """
+        kind = route[0]
+        if kind == "skill":
+            response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
+            logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
+            return response.message, False, None, None
+        if kind == "connector":
+            response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
+            logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
+            return response.message, False, None, None
+        if kind == "env":
+            action_result = await self._handle_env_action(route[1], call.input, ctx)
+            logger.info(f"| ✅ [{self.name}] Env action '{route[1]}' completed")
+            return action_result, False, None, None
+        if kind == "tool":
+            tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx)
+            logger.info(f"| ✅ [{self.name}] Tool '{route[1]}' completed")
+            if route[1] == "done_tool":
+                reasoning = (tool_response.data or {}).get("reasoning") if hasattr(tool_response, "data") else None
+                return tool_response.message, True, tool_response.message, reasoning
+            return tool_response.message, False, None, None
+        raise ValueError(f"Unknown route kind {kind!r}")
 
     # ------------------------------------------------------------------
     # Path 1: Direct call
@@ -1244,9 +1040,6 @@ class Agent(BaseModel):
 __all__ = [
     "InputArgs",
     "AgentConfig",
-    "ActionInputArgs",
-    "AgentPlanStep",
-    "AgentThinkOutput",
     "Agent",
     "AgentContext",
 ]

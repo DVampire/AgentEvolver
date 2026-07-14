@@ -105,18 +105,18 @@ After writing: `python -m py_compile /abs/path/environment.py`. When it compiles
 
 ## Evaluating an environment
 
-Call `inspect_environment` on the target for its registry facts (registered / enable_evolving / version / file paths). Score across:
+Call `inspect_environment_tool` on the target for its registry facts (registered / enable_evolving / version / file paths). Score across:
 1. **Interface Compliance** — `@ENVIRONMENT.register_module`, subclass `Environment`, actions declared with `@environment_manager.action`, `initialize`/`cleanup` present where resources are used.
 2. **Code Quality** — valid, clean, proper resource handling and error handling; per-session state correctly keyed by `ctx`.
 3. **Manifest Quality** — ENVIRONMENT.md has the required frontmatter and a body documenting State / (Vision) / every Action.
-4. **Integration** — `inspect_environment` shows it registered.
+4. **Integration** — `inspect_environment_tool` shows it registered.
 5. **Execution** — actions have a valid path; where feasible, exercise an action and check the result.
 
 ---
 
 ## Improving an environment
 
-The target is named in the task. Call `inspect_environment` FIRST for its file paths and `enable_evolving` — if `enable_evolving=False`, the environment is frozen; do NOT edit it, report and stop. Read `environment.py` (and ENVIRONMENT.md) before editing; make the smallest correct change; preserve `@ENVIRONMENT.register_module`, the class `name`, and existing action names/signatures unless the task requires changing them; keep the manifest's Actions section in sync with the code. Verify with `py_compile`, then re-register via the directory path in `done_tool` reasoning.
+The target is named in the task. Call `inspect_environment_tool` FIRST for its file paths and `enable_evolving` — if `enable_evolving=False`, the environment is frozen; do NOT edit it, report and stop. Read `environment.py` (and ENVIRONMENT.md) before editing; make the smallest correct change; preserve `@ENVIRONMENT.register_module`, the class `name`, and existing action names/signatures unless the task requires changing them; keep the manifest's Actions section in sync with the code. Verify with `py_compile`, then re-register via the directory path in `done_tool` reasoning.
 
 ---
 

@@ -271,11 +271,11 @@ async def build_response_from_stream(
         "thinking": acc.get("thinking", ""),
     }
 
-    # 0) Structured output via a synthetic schema-tool. Providers whose
-    #    structured_output_mode == "synthetic_tool" represent structured output
-    #    as a tool call named `structured_tool_name`, not as message content —
-    #    validate THAT tool's input into parsed_model (takes priority over the
-    #    generic function-call branch below).
+    # 0) Structured output via a synthetic schema-tool. When ``structured_tool_name``
+    #    is set (tools were present, so the schema rode along as a tool), structured
+    #    output is a tool call of that name, not message content — validate THAT
+    #    tool's input into parsed_model (takes priority over the generic function-
+    #    call branch below).
     if (structured_tool_name and isinstance(response_format, type)
             and issubclass(response_format, BaseModel)):
         for c in acc["tool_calls"]:
@@ -368,6 +368,50 @@ async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEve
 
 
 # ---------------------------------------------------------------------------
+# Synthetic structured-output tool
+# ---------------------------------------------------------------------------
+
+
+class _StructuredOutputTool:
+    """Duck-typed Tool shim carrying a ``function_calling`` dict.
+
+    ``synthetic_tool`` mode projects a ``response_format`` (a pydantic model)
+    into one of these and appends it to ``tools``; every provider's
+    ``serialize_tools`` reads ``.function_calling`` (falling back to
+    ``.name`` / ``.description``), so the shim serializes like any real tool
+    without importing ``src.tool.types``.
+    """
+
+    def __init__(self, name: str, description: str, parameters: Dict[str, Any]):
+        self.name = name
+        self.description = description
+        self.function_calling = {
+            "type": "function",
+            "function": {"name": name, "description": description, "parameters": parameters},
+        }
+
+
+def _pydantic_tool_parameters(model: type) -> Dict[str, Any]:
+    """Bare JSON-Schema object for a pydantic model, usable as a tool's
+    ``parameters`` — ``$defs`` are inlined so providers that reject ``$ref``
+    (e.g. Gemini) still work."""
+    schema = model.model_json_schema()
+    defs = schema.pop("$defs", {})
+
+    def inline(o: Any) -> Any:
+        if isinstance(o, dict):
+            ref = o.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                return inline(defs.get(ref.split("/")[-1], {"type": "object"}))
+            return {k: inline(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [inline(x) for x in o]
+        return o
+
+    return inline(schema)
+
+
+# ---------------------------------------------------------------------------
 # BaseChatModel — the contract every provider chat client implements
 # ---------------------------------------------------------------------------
 
@@ -375,8 +419,9 @@ async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEve
 class BaseChatModel(BaseModel, ABC):
     """Common contract for every provider chat client — two unified call modes.
 
-    - ``chat``   — non-streaming; structured output via this provider's best
-      mechanism (native ``response_format``/schema, or a synthetic schema-tool).
+    - ``chat``   — non-streaming; structured output is native ``response_format``
+      when no tools are passed, or a synthetic schema-tool when tools are (see
+      the structured-output helpers below).
     - ``stream`` — streaming + function calling + structured output; yields the
       canonical stream events above. True-streaming providers override
       ``_open_stream`` / ``_parse_stream``; the rest set
@@ -395,12 +440,9 @@ class BaseChatModel(BaseModel, ABC):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    # Capability flags — override per provider.
+    # Providers that truly stream override _open_stream / _parse_stream; the rest
+    # set this False and fall back to buffering chat() and replaying it as events.
     supports_true_streaming: bool = True
-    # "native"         → structured output lands in message content (JSON).
-    # "synthetic_tool" → structured output is a synthetic schema-tool the model
-    #                    calls; the result lands in a tool_call, not content.
-    structured_output_mode: str = "native"
 
     # ---- identity ----
     @property
@@ -414,23 +456,75 @@ class BaseChatModel(BaseModel, ABC):
     def set_api_key(self, api_key: str) -> None:
         self.api_key = api_key
 
-    # ---- structured-output helpers ----
+    # ---- structured output ----
+    # There is no mode flag: how structured output is done is DERIVED from whether
+    # the caller also passes tools. With tools present, native response_format and
+    # native tool calling can't coexist in one request, so the schema rides along
+    # as a synthetic tool; with no tools, native structured output is used.
     @staticmethod
     def _schema_model(response_format) -> Optional[type]:
+        """The pydantic model behind a ``response_format`` (class or instance), else None."""
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
             return response_format
         if isinstance(response_format, BaseModel):
             return type(response_format)
         return None
 
-    def _structured_tool_name(self, response_format) -> Optional[str]:
-        """Name of the synthetic structured-output tool, for providers whose
-        ``structured_output_mode == "synthetic_tool"``. ``build_response_from_stream``
-        uses it to validate that tool-call's input into ``parsed_model``."""
-        if self.structured_output_mode != "synthetic_tool":
-            return None
+    def _structured_tool_name(self, tools, response_format) -> Optional[str]:
+        """Name of the synthetic structured-output tool (the schema model's name),
+        or None when structured output is native. Non-None iff ``response_format``
+        is a pydantic model AND real ``tools`` are present."""
         m = self._schema_model(response_format)
-        return m.__name__ if m else None
+        return m.__name__ if (m and tools) else None
+
+    def _structured_output(self, tools, response_format):
+        """Derive the mechanism from whether tools are present: with tools, project
+        ``response_format`` into a synthetic tool and clear ``response_format``;
+        with no tools, leave it native. Returns ``(tools, response_format, tool_name)``
+        — ``tool_name`` is non-None only on the synthetic path."""
+        name = self._structured_tool_name(tools, response_format)
+        if not name:
+            return tools, response_format, None
+        model = self._schema_model(response_format)
+        synthetic = _StructuredOutputTool(
+            name=name,
+            description=(model.__doc__ or f"Return the result as {name}.").strip(),
+            parameters=_pydantic_tool_parameters(model),
+        )
+        return list(tools) + [synthetic], None, name
+
+    def _fold_structured_functions(self, response, response_format, tool_name):
+        """Fold the synthetic tool's call (in ``response.data['functions']``) into
+        ``parsed_model`` — the non-streaming counterpart of
+        ``build_response_from_stream``'s synthetic-tool branch. Shape-identical to
+        the native structured branch (drops the tool-call-only ``functions`` key)."""
+        from src.response.types import Response, ResponseType
+
+        model = self._schema_model(response_format)
+        if model is None or not getattr(response, "success", False):
+            return response
+        for fn in (getattr(response, "data", None) or {}).get("functions") or []:
+            if fn.get("name") != tool_name:
+                continue
+            args = fn.get("args", fn.get("arguments")) or {}
+            if isinstance(args, str):
+                try:
+                    args = _json.loads(args)
+                except Exception:
+                    args = {}
+            try:
+                parsed = model.model_validate(args)
+            except Exception as e:
+                return Response(type=ResponseType.LLM, success=False,
+                                message=f"Structured output failed schema validation: {e}",
+                                data={**(response.data or {}), "content": args})
+            field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
+            msg = (f"Response result:\n\n{model.__name__}(\n"
+                   + ",\n".join(f"    {l}" for l in field_lines) + "\n)")
+            data = {k: v for k, v in (response.data or {}).items() if k != "functions"}
+            return Response(type=ResponseType.LLM, success=True, message=msg,
+                            data=data, usage=response.usage, parsed_model=parsed)
+        return response  # model called a real tool instead — leave as function calls
 
     # ---- provider wire details (subclasses implement) ----
     @abstractmethod
@@ -461,14 +555,17 @@ class BaseChatModel(BaseModel, ABC):
 
     # ---- unified orchestration (shared by all providers) ----
     async def chat(self, messages, tools=None, response_format=None, **kwargs):
-        """Non-streaming call; structured output uses this provider's mechanism."""
+        """Non-streaming call. Structured output is native when no tools are passed,
+        or a synthetic schema-tool (folded into parsed_model) when tools are."""
         from src.logger import logger
         from src.response.types import Response, ResponseType
+        tools, effective_rf, tool_name = self._structured_output(tools, response_format)
         try:
             built = await self._build_params(
-                messages, tools=tools, response_format=response_format, stream=False, **kwargs)
+                messages, tools=tools, response_format=effective_rf, stream=False, **kwargs)
             raw = await self._call_model(built)
-            return await self._format_response(raw, tools=tools, response_format=response_format)
+            resp = await self._format_response(raw, tools=tools, response_format=effective_rf)
+            return self._fold_structured_functions(resp, response_format, tool_name) if tool_name else resp
         except httpx.TimeoutException:
             raise  # the context layer owns retry / fallback on timeout
         except Exception as e:
@@ -480,13 +577,17 @@ class BaseChatModel(BaseModel, ABC):
     async def stream(self, messages, tools=None, response_format=None, **kwargs):
         """Streaming + function calling + structured output; yields canonical events."""
         if not self.supports_true_streaming:
-            # Graceful degradation: buffer one chat() call, replay it as events.
+            # Graceful degradation: buffer one chat() call (which derives + folds
+            # structured output itself), replay it as events.
             resp = await self.chat(messages, tools=tools, response_format=response_format, **kwargs)
             async for ev in buffered_response_to_events(resp):
                 yield ev
             return
+        # With tools the schema becomes a tool call; the caller folds it into
+        # parsed_model via build_response_from_stream's synthetic branch.
+        tools, effective_rf, _ = self._structured_output(tools, response_format)
         built = await self._build_params(
-            messages, tools=tools, response_format=response_format, stream=True, **kwargs)
+            messages, tools=tools, response_format=effective_rf, stream=True, **kwargs)
         raw = await self._open_stream(built)
         async for ev in self._parse_stream(raw):
             yield ev
@@ -499,7 +600,7 @@ class BaseChatModel(BaseModel, ABC):
             return await build_response_from_stream(
                 self.stream(messages, tools=tools, response_format=response_format, **kwargs),
                 tools=tools, response_format=response_format,
-                structured_tool_name=self._structured_tool_name(response_format),
+                structured_tool_name=self._structured_tool_name(tools, response_format),
             )
         return await self.chat(messages, tools=tools, response_format=response_format, **kwargs)
 

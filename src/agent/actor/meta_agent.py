@@ -35,7 +35,6 @@ from src.hook.server import hook_manager
 from src.hook.types import HookEvent, HookContext, HookDecision
 from src.logger import logger
 from src.memory import memory_manager
-from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
 from src.runtime import runtime_manager, BaseMessage, AgentRef
@@ -78,30 +77,6 @@ class SubTaskSpec(BaseModel):
     kind: str = Field(default="agent", description="What to invoke: agent / tool / skill / connector.")
     name: str = Field(description="Name of the sub-agent / tool / skill / connector to invoke.")
     input: SubTaskInput
-
-
-class TaskSpec(BaseModel):
-    """LLM-facing task spec (no id/status — all LLM-output tasks are pending).
-
-    Like Claude Code, MetaAgent invokes four kinds of capability, chosen via ``kind``:
-    - ``agent``: dispatch a self-contained ``task`` to a registered sub-agent (default).
-    - ``tool``: call a registered tool directly with ``args``.
-    - ``skill``: invoke a skill by name (``args`` optional).
-    - ``connector``: call an MCP connector action; ``args`` = {"action": ..., "args": {...}}.
-    """
-
-    kind: str = Field(default="agent", description="One of: agent, tool, skill, connector.")
-    name: str = Field(description="Exact registered name of the sub-agent / tool / skill / connector.")
-    category: SubTaskCategory = SubTaskCategory.ACTOR
-    task: str = Field(default="", description="For kind=agent: the self-contained instruction. Ignored for tool/skill/connector.")
-    files: List[str] = Field(default_factory=list)
-    args: Dict[str, Any] = Field(default_factory=dict, description="For kind=tool/skill/connector: the call arguments.")
-    target_name: Optional[str] = Field(default=None, description="ONLY for evaluator/optimizer/generator tasks: the capability to evaluate/improve/create. null otherwise.")
-
-
-class PlanRound(BaseModel):
-    goal: str = Field(default="")
-    tasks: List[TaskSpec] = Field(default_factory=list)
 
 
 class SubTaskRecord(BaseModel):
@@ -181,23 +156,44 @@ class MonitorProgressMessage(_SubtaskMessage):
 
 
 # ---------------------------------------------------------------------------
-# Structured LLM outputs
+# MetaAgent's decision surface = native tool use
 # ---------------------------------------------------------------------------
+# MetaAgent decides by CALLING TOOLS, the same paradigm as sub-agents. Its tool
+# set is NOT hand-written: capabilities are projected by ``assemble_native_tools``
+# (each module's manager supplies its own schema) — ``agent__<name>`` /
+# ``tool__<name>`` / ``skill__<name>`` / ``connector__<name>__<action>`` / ``done``.
+# MetaAgent only adds ``reply_to_agent``, its one orchestration-control primitive
+# (no capability manager owns "answer an escalation").
+#
+# Every projected call is dispatched FIRE-AND-FORGET as a background sub-task; the
+# result arrives later as an inbox event. The batch of calls emitted in ONE turn
+# is one concurrent round; done finishes the run.
 
 
-class EscalationReply(BaseModel):
-    task_id: str = Field(description="Exact task_id from the ESCALATE event.")
-    reply: str = Field(
-        description="Concrete, actionable guidance for the blocked sub-agent."
-    )
+class _ReplyTool:
+    """Schema-only shim for MetaAgent's ``reply_to_agent`` control tool."""
+
+    name = "reply_to_agent"
+    description = "Reply to a sub-agent that ESCALATED (is blocked), unblocking it to continue."
+    function_calling = {
+        "type": "function",
+        "function": {
+            "name": "reply_to_agent",
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "Exact task_id from the ESCALATE event."},
+                    "reply": {"type": "string", "description": "Concrete, actionable guidance for the blocked sub-agent."},
+                },
+                "required": ["task_id", "reply"],
+                "additionalProperties": False,
+            },
+        },
+    }
 
 
-class MetaReactOutput(BaseModel):
-    reasoning: str
-    decision: Literal["continue", "stop"]
-    plan: List[PlanRound] = Field(default_factory=list)
-    escalation_replies: List[EscalationReply] = Field(default_factory=list)
-    final_answer: str = ""
+_REPLY_TOOL = _ReplyTool()
 
 
 # ---------------------------------------------------------------------------
@@ -648,25 +644,31 @@ class MetaAgent(Agent):
             constraint_statuses = constraint_result.constraint_status or []
 
         messages = await self._get_messages(state, events, constraint_status=constraint_statuses)
-        response = await model_manager(
-            name=self.model_name,
-            input={"messages": messages, "response_format": MetaReactOutput},
-            ctx=state._ctx,
-        )
-        if response.usage:
-            self._pending_step_tokens[state.session_id] = response.usage.total
-        if response.parsed_model:
-            react = response.parsed_model
-        else:
-            try:
-                react = MetaReactOutput.model_validate_json(response.message)
-            except Exception:
-                raise RuntimeError(f"LLM structured output failed: {response.message}")
-        logger.info(f"| 🤔 React decision: {react.decision}")
 
-        # Resolve pending escalations from LLM replies
+        # THINK — the SAME decision step every agent uses (base Agent._think). MetaAgent
+        # only widens the roster: include_agents adds agent__<name>, extra_tools adds its
+        # one control primitive reply_to_agent. The batch of dispatch calls emitted in ONE
+        # turn is one concurrent round; reply_to_agent unblocks an escalated sub-agent;
+        # done finishes the run. (Meta's DISPATCH differs — fire-and-forget + inbox — so it
+        # does not call base _dispatch; that is the one place orchestration diverges.)
+        decision = await self._think(
+            messages, state.session_id, state.step, state._ctx,
+            include_agents=True, extra_tools=[_REPLY_TOOL],
+        )
+        tool_calls = decision["tool_calls"]
+        routing = decision["routing"]
+        reasoning = (decision["reasoning"] or "").strip()
+        step_tokens = decision["step_tokens"]
+        if step_tokens:
+            self._pending_step_tokens[state.session_id] = step_tokens
+        logger.info(f"| 🤔 Meta tools: {[c.name for c in tool_calls]}")
+
+        # 1) Escalation replies — unblock any escalated sub-agent (always, even mid-round).
         _DEFAULT = "No specific guidance available. Use your best judgement or stop gracefully."
-        explicit = {er.task_id: er.reply for er in react.escalation_replies}
+        explicit = {
+            c.input.get("task_id"): c.input.get("reply", _DEFAULT)
+            for c in tool_calls if c.name == "reply_to_agent" and c.input.get("task_id")
+        }
         for tid in list(state._pending_escalations.keys()):
             e = state._pending_escalations.pop(tid)
             if not (e.reply_future and not e.reply_future.done()):
@@ -674,37 +676,38 @@ class MetaAgent(Agent):
             reply = explicit.get(tid, _DEFAULT)
             e.reply_future.set_result(reply)
             await self._record(
-                state.session_id,
-                state.step,
-                "escalation_reply",
+                state.session_id, state.step, "escalation_reply",
                 f"REPLY {tid}" if tid in explicit else f"REPLY {tid} (default)",
-                reply if tid in explicit else "no guidance",
-                "",
+                reply if tid in explicit else "no guidance", "",
                 {"task_id": tid, "reply": reply},
             )
 
-        if state.active_round() is not None:  # mid-round: defer re-planning
+        if state.active_round() is not None:  # mid-round: only escalation replies apply now
             state.touch()
             return
 
-        if react.decision == "stop":
-            review_round = self._stop_review_gate(state)
-            if review_round is not None:
+        # 2) done_tool → finish (gated by the reviewer stop-gate).
+        done_call = next((c for c in tool_calls if c.name == "done_tool"), None)
+        if done_call:
+            review_specs = self._stop_review_gate(state)
+            if review_specs is not None:
                 logger.info(
-                    f"| 🔎 Stop gated (cycle {state._review_cycles}): dispatching reviewer_agent "
-                    f"before finishing"
+                    f"| 🔎 Stop gated (cycle {state._review_cycles}): reviewer_agent before finishing"
                 )
-                await self._dispatch(state, [review_round])
+                await self._dispatch_round(state, review_specs, goal="Independent review before finishing")
                 state.touch()
                 return
-            state.final_answer = react.final_answer or self._join_results(state)
+            state.final_answer = done_call.input.get("result") or self._join_results(state)
             state.touch()
             return
 
-        await self._dispatch(state, react.plan)
+        # 3) dispatch calls → this turn's tool calls become one concurrent round.
+        specs = self._specs_from_calls(tool_calls, routing)
+        if specs:
+            await self._dispatch_round(state, specs, goal=reasoning[:80])
 
         if not state.has_pending_or_running() and not state.final_answer:
-            state.final_answer = react.final_answer or self._join_results(state)
+            state.final_answer = self._join_results(state)
         state.touch()
 
     # ------------------------------------------------------------------
@@ -776,83 +779,89 @@ class MetaAgent(Agent):
         self._state = None
 
     # ------------------------------------------------------------------
-    # Dispatch: reconcile plan + launch subtasks
+    # Dispatch: this turn's tool calls → one concurrent round
     # ------------------------------------------------------------------
 
-    async def _dispatch(self, state: MetaState, react_plan: List[PlanRound]) -> None:
-        if react_plan:
-            frozen = sum(
-                1
-                for r in state.plan
-                if r.status in (TaskStatus.RUNNING, TaskStatus.DONE)
-            )
-            for rec in state.plan[frozen:]:
-                for tid in rec.task_ids:
-                    state.subtask_records.pop(tid, None)
-            state.plan = state.plan[:frozen]
+    def _specs_from_calls(self, tool_calls, routing: Dict[str, tuple]) -> List[SubTaskSpec]:
+        """Turn this turn's dispatch tool calls into SubTaskSpecs via the routing table
+        (raw name → dispatch descriptor). done_tool and reply_to_agent are handled by the
+        caller; everything else becomes one concurrent round.
 
-            for round_spec in react_plan:
-                round_no = len(state.plan) + 1
-                rec = PlanRoundRecord(goal=round_spec.goal)
-                for task_spec in round_spec.tasks:
-                    spec = SubTaskSpec(
-                        kind=task_spec.kind,
-                        category=task_spec.category,
-                        name=task_spec.name,
-                        input=SubTaskInput(
-                            task=task_spec.task,
-                            files=task_spec.files,
-                            args=task_spec.args,
-                            target_name=task_spec.target_name,
-                        ),
-                    )
-                    state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
-                    rec.task_ids.append(spec.id)
-                    await self._record(
-                        state.session_id,
-                        state.step,
-                        "subtask_planned",
-                        f"PLANNED {spec.id}",
-                        f"{spec.input.task} → {spec.name}",
-                        "pending",
-                        {
-                            "subtask_id": spec.id,
-                            "agent_name": spec.name,
-                            "category": spec.category.value,
-                            "round": round_no,
-                            "task": spec.input.task,
-                            "round_label": round_spec.goal or f"Round {round_no}",
-                        },
-                    )
-                if not rec.task_ids:
-                    logger.warning(f"| ⚠️ Round {round_no} has no tasks — skipped.")
-                    continue
-                state.plan.append(rec)
+        Each capability's arguments come straight from its native tool call — the tool's
+        own input_schema already validated the shape, so no per-kind field plucking:
+          <name>_agent          → the whole call is the sub-agent brief (task/files/target_name)
+          <name>_tool           → the whole call is the tool's args
+          <name>_skill          → the whole call is the skill's args
+          <connector>__<action> → args wrapped under the action name
+        """
+        specs: List[SubTaskSpec] = []
+        for c in tool_calls:
+            if c.name == "done_tool":
+                continue  # finish signal — handled by the caller, not a sub-task
+            route = routing.get(c.name)
+            if not route:
+                continue  # reply_to_agent / unknown — handled elsewhere
+            kind = route[0]
+            inp = c.input or {}
+            if kind == "agent":
+                # Evolution-probe allowlists (if present) ride in args; _run_subtask pops
+                # them into the sub-agent's ctx. Absent for ordinary dispatches.
+                probe_args = {
+                    k: inp[k] for k in ("tool_allowlist", "skill_allowlist", "connector_allowlist")
+                    if inp.get(k) is not None
+                }
+                specs.append(SubTaskSpec(
+                    kind="agent", name=route[1],
+                    input=SubTaskInput(task=inp.get("task", ""),
+                                       files=inp.get("files") or [],
+                                       target_name=inp.get("target_name"),
+                                       args=probe_args),
+                ))
+            elif kind == "tool":
+                specs.append(SubTaskSpec(kind="tool", name=route[1],
+                                         input=SubTaskInput(task="", args=inp)))
+            elif kind == "skill":
+                specs.append(SubTaskSpec(kind="skill", name=route[1],
+                                         input=SubTaskInput(task="", args=inp)))
+            elif kind == "connector":
+                specs.append(SubTaskSpec(kind="connector", name=route[1],
+                                         input=SubTaskInput(task="", args={"action": route[2], "args": inp})))
+            # kind == "env": no sub-task (meta has no environment). done_tool is skipped above.
+        return specs
 
-        rnd = state.next_pending_round()
-        if rnd is None:
+    async def _dispatch_round(self, state: MetaState, specs: List[SubTaskSpec], goal: str = "") -> None:
+        """Register a batch of subtasks as one round and launch them concurrently."""
+        specs = [s for s in specs if s.name]
+        if not specs:
             return
+        round_no = len(state.plan) + 1
+        rec = PlanRoundRecord(goal=goal)
+        for spec in specs:
+            state.subtask_records[spec.id] = SubTaskRecord(spec=spec)
+            rec.task_ids.append(spec.id)
+            await self._record(
+                state.session_id, state.step, "subtask_planned",
+                f"PLANNED {spec.id}", f"{spec.input.task or spec.name} → {spec.name}", "pending",
+                {"subtask_id": spec.id, "agent_name": spec.name, "category": spec.category.value,
+                 "round": round_no, "task": spec.input.task, "round_label": goal or f"Round {round_no}"},
+            )
+        state.plan.append(rec)
 
-        rnd.status = TaskStatus.RUNNING
+        rec.status = TaskStatus.RUNNING
         parent_ref = state._parent_ref
-        for tid in rnd.task_ids:
+        for tid in rec.task_ids:
             record = state.subtask_records[tid]
             record.mark_running(f"{record.spec.name}-{make_id()}")
             state._running_tasks[tid] = asyncio.create_task(
-                self._run_subtask(record, state, parent_ref),
-                name=f"subtask-{tid}",
+                self._run_subtask(record, state, parent_ref), name=f"subtask-{tid}",
             )
             await self._record(
-                state.session_id,
-                state.step,
-                "subtask_dispatch",
-                f"DISPATCH {tid}",
-                f"{record.spec.name}: {record.spec.input.task}",
-                "running",
+                state.session_id, state.step, "subtask_dispatch",
+                f"DISPATCH {tid}", f"{record.spec.name}: {record.spec.input.task}", "running",
                 {"subtask_id": tid, "agent_name": record.spec.name},
             )
             logger.info(
-                f"| 🚀 Dispatched '{record.spec.input.task}' → {record.spec.name} [{tid}]"
+                f"| 🚀 Dispatched '{record.spec.input.task or record.spec.name}' → {record.spec.name} [{tid}]"
             )
 
     async def _run_subtask(
@@ -1130,10 +1139,10 @@ class MetaAgent(Agent):
         m = re.search(r"RECOMMENDATION[:\s\-]*\**\s*(stop|continue|evolve)", text, re.IGNORECASE)
         return m.group(1).lower() if m else ""
 
-    def _stop_review_gate(self, state: MetaState) -> Optional[PlanRound]:
-        """Decide whether a `stop` must first pass an independent review.
+    def _stop_review_gate(self, state: MetaState) -> Optional[List[SubTaskSpec]]:
+        """Decide whether a `done` must first pass an independent review.
 
-        Returns a reviewer PlanRound to run instead of stopping, or None to allow the
+        Returns reviewer subtask specs to run instead of finishing, or None to allow the
         stop. Bounded by ``MAX_STOP_REVIEWS`` so it can never loop forever; skipped for
         trivial runs (no sub-task actually completed) and once the reviewer has returned
         a `stop` verdict.
@@ -1160,12 +1169,9 @@ class MetaAgent(Agent):
             "helped, and END your report with a line 'RECOMMENDATION: stop | continue | evolve'.\n\n"
             f"USER TASK:\n{state.user_task}\n\nWHAT WAS PRODUCED / EXECUTED (summary):\n{summary}"
         )
-        return PlanRound(
-            goal="Independent review before finishing",
-            tasks=[TaskSpec(
-                kind="agent",
-                name="reviewer_agent",
-                category=SubTaskCategory.EVALUATOR,
-                task=task,
-            )],
-        )
+        return [SubTaskSpec(
+            kind="agent",
+            name="reviewer_agent",
+            category=SubTaskCategory.EVALUATOR,
+            input=SubTaskInput(task=task),
+        )]

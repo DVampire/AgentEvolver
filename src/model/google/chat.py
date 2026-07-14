@@ -37,7 +37,6 @@ class ChatGoogle(BaseChatModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     supports_true_streaming: bool = True
-    structured_output_mode: str = "native"
 
     # Model configuration
     model: str

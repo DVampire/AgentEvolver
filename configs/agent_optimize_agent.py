@@ -25,7 +25,7 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
-    "inspect_agent",
+    "inspect_agent_tool",
 ]
 agent_names = [
     "agent_optimize_agent",

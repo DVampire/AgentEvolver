@@ -15,14 +15,14 @@ Fetch an agent's live registry facts: whether it is registered and instantiated 
 
 ## Guidance
 - Use this before optimizing or evaluating an agent named in your task: it reports the target's real state in the live registry, which reading files alone cannot.
-- Optimization requires enable_evolving=True. If inspect_agent reports enable_evolving=False, the agent is frozen — do NOT optimize it; refuse and report why.
+- Optimization requires enable_evolving=True. If inspect_agent_tool reports enable_evolving=False, the agent is frozen — do NOT optimize it; refuse and report why.
 - The returned file paths tell you exactly which files to read/edit.
 
 ## Parameters
 - name (str): The exact name of the agent to inspect.
 
 ## Example
-{"name": "inspect_agent", "args": {"name": "my_generated_agent"}}
+{"name": "inspect_agent_tool", "args": {"name": "my_generated_agent"}}
 """
 
 
@@ -30,7 +30,7 @@ Fetch an agent's live registry facts: whether it is registered and instantiated 
 class InspectAgent(Tool):
     """Return another registered agent's live registry facts on demand."""
 
-    name: str = "inspect_agent"
+    name: str = "inspect_agent_tool"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")

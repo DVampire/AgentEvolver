@@ -79,7 +79,13 @@ Be specific: name files/URLs/commands and quote what you observed. Prefer a blun
 - Use `todo_tool` to track which claims/dimensions you have verified.
 </context-rules>
 
-{{ response_protocol }}
+<response-protocol>
+To act, CALL a tool. Your capabilities — tools, skills, connectors, and environment actions — are provided to you directly as native tools. Do NOT describe a call in prose and do NOT emit a JSON plan.
+- Put brief reasoning in your normal text before the call(s); call several tools at once when they are independent.
+- Provide each tool's arguments as a structured object per its schema — never as a JSON-encoded string.
+- Skills are called by their own name (e.g. `self_evolving_skill`), connector actions as `<connector>__<action>`, environment actions as `env__<name>` — use the exact names from the context above.
+- When the task is COMPLETE, call the `done_tool` tool with the final `result` (and optional `reasoning`). Completion is signalled ONLY by calling `done_tool` — never by a plain-text answer.
+</response-protocol>
 
 <decision-rules>
 - Gather evidence first (reach the URL / run the code / open the file), then judge.

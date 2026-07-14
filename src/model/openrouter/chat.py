@@ -51,7 +51,6 @@ class ChatOpenRouter(BaseChatModel):
 
     # OpenAI-compatible chat/completions: true streaming + native response_format.
     supports_true_streaming: bool = True
-    structured_output_mode: str = "native"
 
     # Model configuration
     model: Union[ChatModel, str]

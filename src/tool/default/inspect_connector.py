@@ -14,14 +14,14 @@ Fetch a connector's live registry facts: whether it is registered, its version, 
 
 ## Guidance
 - Use this before optimizing or evaluating a connector named in your task: it reports the target's real state in the registry, which reading files alone cannot.
-- Optimization requires enable_evolving=True. If inspect_connector reports enable_evolving=False, the connector is frozen — do NOT edit it; refuse and report why.
+- Optimization requires enable_evolving=True. If inspect_connector_tool reports enable_evolving=False, the connector is frozen — do NOT edit it; refuse and report why.
 - The returned connector_dir / CONNECTOR.md path tells you exactly which files to read/edit.
 
 ## Parameters
 - name (str): The exact name of the connector to inspect.
 
 ## Example
-{"name": "inspect_connector", "args": {"name": "pubmed_connector"}}
+{"name": "inspect_connector_tool", "args": {"name": "pubmed_connector"}}
 """
 
 
@@ -29,7 +29,7 @@ Fetch a connector's live registry facts: whether it is registered, its version, 
 class InspectConnector(Tool):
     """Return a registered connector's live registry facts on demand."""
 
-    name: str = "inspect_connector"
+    name: str = "inspect_connector_tool"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")

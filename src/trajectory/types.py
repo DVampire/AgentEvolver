@@ -85,39 +85,40 @@ class TrajectoryStep(BaseModel):
     # r_t — backfilled from the task-level reward at finalize.
     reward: float = 0.0
 
-    def _completion(self) -> str:
-        """The assistant's trainable target, in the model's real ``AgentThinkOutput`` schema.
+    def _assistant_message(self) -> Dict[str, Any]:
+        """The assistant's trainable target as a NATIVE tool-calling turn.
 
-        The run loop hands us a *flattened* action dict
-        (``{description, type, name, args}``), but the model actually emits nested
-        ``AgentPlanStep`` items (``{description, action: {type, name, args}}``).
-        Re-nest here so the SFT/RL completion is byte-faithful to what the model
-        produces at inference — training on the flattened shape would teach a
-        different output schema than the agent uses.
+        Native mode: the model emits reasoning (thinking/text) plus native
+        ``tool_calls``. We project that to the OpenAI-chat assistant shape —
+        ``content`` = reasoning, ``tool_calls`` = one function call per action
+        (``arguments`` kept as a JSON string, ``name`` the namespaced tool name
+        the model actually emitted) — so the SFT/RL target is byte-faithful to
+        what the model produces at inference. Training on any other shape would
+        teach a different output schema than the agent uses.
         """
-        plan = [
-            {
-                "description": a.get("description", ""),
-                "action": {
-                    "type": a.get("type", ""),
-                    "name": a.get("name", ""),
-                    "args": a.get("args", ""),
-                },
-            }
-            for a in self.actions
-        ]
-        # Compact separators match pydantic's model_dump_json() so the completion
-        # is byte-identical to a canonical AgentThinkOutput serialization.
-        return json.dumps(
-            {"reasoning": self.reasoning, "plan": plan},
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+        tool_calls: List[Dict[str, Any]] = []
+        for i, a in enumerate(self.actions):
+            args = a.get("args", "")
+            if not isinstance(args, str):
+                args = json.dumps(args, ensure_ascii=False, separators=(",", ":"))
+            tool_calls.append({
+                "id": a.get("id") or f"call_{i}",
+                "type": "function",
+                "function": {"name": a.get("name", ""), "arguments": args},
+            })
+        msg: Dict[str, Any] = {"role": "assistant", "content": self.reasoning}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        return msg
 
     def to_sft_record(self) -> Dict[str, Any]:
-        """One OpenAI-chat SFT record: prompt messages + assistant completion + reward."""
+        """One OpenAI-chat SFT record: prompt messages + assistant target + reward.
+
+        The assistant target is a native tool-calling turn (``content`` +
+        ``tool_calls``), matching what the agent emits at inference.
+        """
         messages = [_message_to_dict(m) for m in self.messages_sent]
-        messages.append({"role": "assistant", "content": self._completion()})
+        messages.append(self._assistant_message())
         return {"messages": messages, "reward": self.reward, "step": self.step_number}
 
     def to_dict(self) -> Dict[str, Any]:

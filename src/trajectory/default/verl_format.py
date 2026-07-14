@@ -25,7 +25,7 @@ class VerlFormat:
         for step in trajectory.steps:
             record = step.to_sft_record()
             prompt_messages = record["messages"][:-1]      # everything but the assistant target
-            response = record["messages"][-1]["content"]   # the assistant completion
+            response = record["messages"][-1]              # the assistant target (content + tool_calls)
             episodes.append({
                 "prompt": prompt_messages,
                 "response": response,

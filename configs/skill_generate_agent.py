@@ -25,7 +25,7 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
-    "inspect_skill",
+    "inspect_skill_tool",
 ]
 agent_names = [
     "skill_generate_agent",

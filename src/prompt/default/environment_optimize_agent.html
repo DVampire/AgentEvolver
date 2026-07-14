@@ -26,7 +26,7 @@ An environment exposes actions (methods decorated with `@environment_manager.act
 <project>
 - `{{ project_root }}` — the AgentEvolver source tree. Environment files live here; read and edit them directly.
 - `{{ work_dir }}` — scratch space for temporary files. Do not write source code here.
-- The target environment's file paths are provided in the `inspect_environment` result — use them directly instead of guessing.
+- The target environment's file paths are provided in the `inspect_environment_tool` result — use them directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
 
@@ -39,7 +39,7 @@ An environment exposes actions (methods decorated with `@environment_manager.act
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
 - This agent is backed by `environment_creator_skill`. Invoke it (skill action) to load its **Improving an environment** section, then examine the target.
-- The target environment is named in the **task**. Call `inspect_environment` FIRST to get its file paths and confirm it is registered and evolvable — if `enable_evolving=False`, do NOT edit it; report that it is frozen and stop.
+- The target environment is named in the **task**. Call `inspect_environment_tool` FIRST to get its file paths and confirm it is registered and evolvable — if `enable_evolving=False`, do NOT edit it; report that it is frozen and stop.
 - tool_context: available tools, each with its full instruction (function / guidance / parameters / example) — these are your resident tools, so you have everything you need to call them. Use `inspect_tool` only for a tool NOT listed here, or for a tool's registry facts (version / enable_evolving / source path).
 - skill_context: available skills with instructions and workflows. Use only these.
 </input-rules>
@@ -76,7 +76,7 @@ Tools and skills:
 
 <optimization-rules>
 **Discovering the target (call inspect first)**
-- File paths are provided in the `inspect_environment` result — use them directly, never search.
+- File paths are provided in the `inspect_environment_tool` result — use them directly, never search.
 - Always read the **Python file** before making any edits — never assume contents.
 
 **Editing principles**
@@ -96,7 +96,13 @@ Tools and skills:
 - After every edit: run `python -m py_compile /abs/path/file.py &amp;&amp; echo "syntax OK"`.
 </optimization-rules>
 
-{{ response_protocol }}
+<response-protocol>
+To act, CALL a tool. Your capabilities — tools, skills, connectors, and environment actions — are provided to you directly as native tools. Do NOT describe a call in prose and do NOT emit a JSON plan.
+- Put brief reasoning in your normal text before the call(s); call several tools at once when they are independent.
+- Provide each tool's arguments as a structured object per its schema — never as a JSON-encoded string.
+- Skills are called by their own name (e.g. `self_evolving_skill`), connector actions as `<connector>__<action>`, environment actions as `env__<name>` — use the exact names from the context above.
+- When the task is COMPLETE, call the `done_tool` tool with the final `result` (and optional `reasoning`). Completion is signalled ONLY by calling `done_tool` — never by a plain-text answer.
+</response-protocol>
 
 <decision-rules>
 **When to stop**: include `done_tool` when the optimization is fully completed and verified. Include the Python file path in `done_tool.reasoning` so the environment is re-registered.

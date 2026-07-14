@@ -287,85 +287,83 @@ async def test_pdf():
 
 
 async def test_response_format():
-    logger.info(f"| --------------------------------------------------")
-    logger.info(f"| Testing response format with different models")
-    models = [
-        # OpenAI models
-        # "openrouter/gpt-4o",
-        # "openrouter/gpt-4.1",
-        # "openrouter/gpt-5",
-        # "openrouter/gpt-5.1",
-        # "openrouter/gpt-5.2",
-        # "openrouter/o3",
-        # "openrouter/gpt-5.3-codex",
-        # "openai/gpt-4o",
-        # "openai/gpt-4.1",
-        # "openai/gpt-5",
-        # "openai/gpt-5.1",
-        # "openai/o3",
-        
-        # Anthropic models
-        # "openrouter/claude-sonnet-3.7",
-        # "openrouter/claude-sonnet-4",
-        # "openrouter/claude-opus-4",
-        # "openrouter/claude-sonnet-4.5",
-        # "openrouter/claude-opus-4.5",
-        # "anthropic/claude-sonnet-4.5",
+    """Structured output — the mechanism is DERIVED from whether tools are passed:
 
-        # Aws claude models
-        "aws_claude/claude-opus-4.6",
-        "aws_claude/claude-opus-4.7",
-        
-        # Gemini models
-        # "openrouter/gemini-2.5-flash",
-        # "openrouter/gemini-2.5-pro",
-        # "openrouter/gemini-3-pro-preview",
-        # "openrouter/gemini-3-flash-preview",
-        # "google/gemini-2.5-flash",
-        # "google/gemini-2.5-pro",
-        # "google/gemini-3-pro-preview",
+    - no tools  → native response_format / output_format / response_schema
+    - w/ tools  → the schema rides along as a synthetic tool (native structured
+                  output and native tool calling can't coexist), folded back into
+                  parsed_model
+
+    Every combination (× stream) must yield a validated ``parsed_model``, and the
+    structured Response shape must stay consistent (same data key set) whether or
+    not tools are present.
+    """
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing response format: native (no tools) vs synthetic (w/ tools)")
+    models = [
+        "openrouter/claude-opus-4.8",
+        "openrouter/gemini-3.5-flash",
     ]
-    
+
     class ToolInputArgs(BaseModel):
         name: str = Field(description="The name of the tool")
         args: Dict[str, Any] = Field(description="The arguments of the tool")
-    
+
     class ThinkOutput(BaseModel):
-        thinking: str = Field(description="The thinking process of the assistant")
-        previous_goal: str = Field(description="The previous goal of the assistant")
-        next_goal: str = Field(description="The next goal of the assistant")
-        tool: List[ToolInputArgs] = Field(description="The list of tools to call")
-    
-    prompt = """
-    <available_tools>
-    available_tools:
-    <done>
-    done: DoneTool
-     - result: The result of the task
-     - reasoning: The reasoning process of the task
-    </done>
-    <example>
-    Example: {"name": "done", "args": {"result": "The task has been completed.", "reasoning": "The task has been completed successfully."}}
-    </example>
-    
-    Please add the numbers 1 and 2, get the result and call the done tool with the result.
-    """
-    
+        """Structured reasoning plus the tools to call next."""
+        thinking: str = Field(description="The reasoning of the assistant")
+        next_goal: str = Field(description="The immediate next goal")
+        tool: List[ToolInputArgs] = Field(description="The tools to call next")
+
+    prompt = (
+        "Plan the task 'add 1 and 2 and report the result'. Return the structured "
+        "result only — reasoning in `thinking`, the immediate next goal in "
+        "`next_goal`, and the tool(s) you would call in `tool`. Do not run anything."
+    )
     messages = [
         SystemMessage(content="You are a helpful assistant."),
-        HumanMessage(content=[
-            ContentPartText(text=prompt),
-        ]),
+        HumanMessage(content=[ContentPartText(text=prompt)]),
     ]
-    
+    # Any tool present → triggers the synthetic path (schema rides along as a
+    # tool). This one is a real-shaped, irrelevant no-op (carries .function_calling
+    # like a real tool), so a well-behaved model calls the structured-output tool.
+    class _NoopTool:
+        name = "noop"
+        description = "Does nothing. Never call this."
+        function_calling = {
+            "type": "function",
+            "function": {
+                "name": "noop",
+                "description": "Does nothing. Never call this.",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        }
+    distractor = _NoopTool()
+
+    async def _run(model: str, with_tools: bool, stream: bool):
+        inp = {"messages": messages, "response_format": ThinkOutput, "stream": stream}
+        if with_tools:
+            inp["tools"] = [distractor]
+        response = await model_manager(name=model, input=inp)
+        kind = "synthetic(w/ tools)" if with_tools else "native(no tools)"
+        tag = f"{model} {kind} stream={stream}"
+        assert response.success, f"{tag} failed: {response.message}"
+        assert isinstance(response.parsed_model, ThinkOutput), f"{tag}: parsed_model not ThinkOutput"
+        print(f"[OK] {tag} -> {response.parsed_model}")
+        return response
+
     for model in models:
-    
-        response = await model_manager(name=model, input={"messages": messages, "response_format": ThinkOutput})
-        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
-        
-        parsed_response = response.extra.parsed_model
-        print(parsed_response)
-        
+        for stream in (False, True):
+            native = await _run(model, with_tools=False, stream=stream)
+            synthetic = await _run(model, with_tools=True, stream=stream)
+            n_keys = set((native.data or {}).keys())
+            s_keys = set((synthetic.data or {}).keys())
+            assert n_keys == s_keys, (
+                f"{model} stream={stream}: data keys differ — "
+                f"native={sorted(n_keys)} synthetic={sorted(s_keys)}"
+            )
+            print(f"[MATCH] {model} stream={stream}: native ≡ synthetic shape (data keys={sorted(n_keys)})")
+
     logger.info(f"| --------------------------------------------------")
 
 
@@ -476,92 +474,6 @@ async def test_music():
     logger.info(f"| --------------------------------------------------")
 
 
-async def test_stream_response_format():
-    """Streaming + structured output: consume canonical stream events, then fold
-    them into a buffered Response whose parsed_model is the validated schema."""
-    from src.model.types import build_response_from_stream
-
-    logger.info(f"| --------------------------------------------------")
-    logger.info(f"| Testing STREAMING structured output with different models")
-    models = [
-        "openrouter/claude-opus-4.8",
-        "openrouter/gemini-3.5-flash",
-        "openrouter/gpt-5.6-sol",
-    ]
-
-    class ToolInputArgs(BaseModel):
-        name: str = Field(description="The name of the tool")
-        args: Dict[str, Any] = Field(description="The arguments of the tool")
-
-    class ThinkOutput(BaseModel):
-        thinking: str = Field(description="The thinking process of the assistant")
-        previous_goal: str = Field(description="The previous goal of the assistant")
-        next_goal: str = Field(description="The next goal of the assistant")
-        tool: List[ToolInputArgs] = Field(description="The list of tools to call")
-
-    prompt = """
-    <available_tools>
-    available_tools:
-    <done>
-    done: DoneTool
-     - result: The result of the task
-     - reasoning: The reasoning process of the task
-    </done>
-    <example>
-    Example: {"name": "done", "args": {"result": "The task has been completed.", "reasoning": "The task has been completed successfully."}}
-    </example>
-
-    Please add the numbers 1 and 2, get the result and call the done tool with the result.
-    """
-
-    messages = [
-        SystemMessage(content="You are a helpful assistant."),
-        HumanMessage(content=[
-            ContentPartText(text=prompt),
-        ]),
-    ]
-
-    async def _replay(evs):
-        for e in evs:
-            yield e
-
-    for model in models:
-        logger.info(f"| --------------------------------------------------")
-        logger.info(f"| Testing {model} (streaming + response_format)")
-        try:
-            # 1) Consume the canonical stream; count deltas, log non-text events.
-            events = []
-            counts: Dict[str, int] = {}
-            text_acc: List[str] = []
-            async for ev in model_manager.stream(
-                name=model,
-                input={"messages": messages, "response_format": ThinkOutput},
-            ):
-                events.append(ev)
-                ev_name = type(ev).__name__
-                counts[ev_name] = counts.get(ev_name, 0) + 1
-                if ev_name in ("TextDelta", "ThinkingDelta"):
-                    text_acc.append(getattr(ev, "text", ""))
-                else:
-                    logger.info(f"|   event {ev_name}: {ev}")
-            logger.info(f"|   event counts: {counts}")
-            logger.info(f"|   streamed text ({len(''.join(text_acc))} chars): {''.join(text_acc)[:500]}")
-
-            # 2) Fold the stream into a buffered Response with parsed_model.
-            response = await build_response_from_stream(
-                _replay(events),
-                response_format=ThinkOutput,
-            )
-            logger.info(f"| {model} success={response.success}")
-            logger.info(f"| {model} message:\n{response.message}")
-            print(f"[{model}] parsed_model = {response.parsed_model!r}")
-            assert response.success, f"{model} streaming structured output failed: {response.message}"
-            assert isinstance(response.parsed_model, ThinkOutput), f"{model} did not yield a ThinkOutput"
-        except Exception as e:
-            logger.error(f"| {model} FAILED: {type(e).__name__}: {e}")
-    logger.info(f"| --------------------------------------------------")
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
     parser.add_argument("--config", default=os.path.join(root, "configs", "meta_agent.py"), help="config file path")
@@ -598,9 +510,8 @@ async def main():
     await tool_manager.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tool_manager.list()}")
 
-    await test_stream_response_format()
+    await test_response_format()
     # await test_chat()
-    # await test_response_format()
     # await test_tool_calling()
     # await test_audio()
     # await test_embedding()

@@ -4,7 +4,7 @@ Server implementation for the Agent Context Protocol with lazy loading support.
 """
 
 import os
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -100,11 +100,46 @@ class AgentManagerServer(BaseModel):
     
     async def list(self) -> List[str]:
         """List all registered agents
-            
+
         Returns:
             List[str]: List of agent names
         """
         return await self._ensure_context_manager().list()
+
+    async def function_callings(
+        self, allowlist: Optional[List[str]] = None, *, exclude: Optional[str] = None
+    ) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
+        """Native tool-calling schemas for dispatchable sub-agents, each paired with its
+        route. Used by orchestrators (MetaAgent) that project agents as callables. The
+        function name is the agent's own registered name (already ``*_agent``, no
+        prefixing); the schema is the uniform sub-agent brief.
+
+        ``exclude`` drops one name (the caller, so an orchestrator never dispatches
+        itself). Returns ``[(function_calling, ("agent", name)), ...]``.
+        """
+        names = allowlist if allowlist is not None else await self.list()
+        params = {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Precise, self-contained instruction — the sub-agent receives only this."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Existing file paths to pass as context; omit if none."},
+                "target_name": {"type": "string", "description": "ONLY for evaluator/optimizer/generator: the capability being evaluated/improved/created."},
+                "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
+                "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},
+                "connector_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these connectors."},
+            },
+            "required": ["task"],
+            "additionalProperties": False,
+        }
+        out: List[Tuple[Dict[str, Any], Tuple[Any, ...]]] = []
+        for n in names:
+            if n == exclude:
+                continue
+            info = await self.get_info(n)
+            desc = (getattr(info, "description", "") or n) if info else n
+            fc = {"type": "function", "function": {"name": n, "description": desc, "parameters": params}}
+            out.append((fc, ("agent", n)))
+        return out
     
     
     async def get(self, agent_name: str) -> Optional[Agent]:

@@ -15,7 +15,7 @@ class EnvironmentOptimizeAgent(Agent):
 
     Runs the base-class standard loop, then re-registers the edited environment inline in
     ``__call__``. The target environment is named in the task; the agent should call
-    ``inspect_environment`` first to confirm it is registered and evolvable
+    ``inspect_environment_tool`` first to confirm it is registered and evolvable
     (enable_evolving=True) and to obtain its file paths — a frozen environment must NOT be optimized."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

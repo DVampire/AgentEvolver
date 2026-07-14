@@ -15,14 +15,14 @@ Fetch an environment's live registry facts: whether it is registered, its versio
 
 ## Guidance
 - Use this before optimizing or evaluating an environment named in your task: it reports the target's real state in the registry, which reading files alone cannot.
-- Optimization requires enable_evolving=True. If inspect_environment reports enable_evolving=False, the environment is frozen — do NOT optimize it; refuse and report why.
+- Optimization requires enable_evolving=True. If inspect_environment_tool reports enable_evolving=False, the environment is frozen — do NOT optimize it; refuse and report why.
 - The returned paths tell you exactly which files to read/edit.
 
 ## Parameters
 - name (str): The exact name of the environment to inspect.
 
 ## Example
-{"name": "inspect_environment", "args": {"name": "my_environment"}}
+{"name": "inspect_environment_tool", "args": {"name": "my_environment"}}
 """
 
 
@@ -30,7 +30,7 @@ Fetch an environment's live registry facts: whether it is registered, its versio
 class InspectEnvironment(Tool):
     """Return a registered environment's live registry facts on demand."""
 
-    name: str = "inspect_environment"
+    name: str = "inspect_environment_tool"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")

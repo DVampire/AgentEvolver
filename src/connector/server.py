@@ -7,7 +7,7 @@ wraps a single MCP server.
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -213,6 +213,38 @@ class ConnectorManagerServer(BaseModel):
         until the registry changes.
         """
         return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
+
+    async def function_callings(
+        self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None
+    ) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
+        """Native tool-calling schemas for the selected connectors — ONE function per MCP
+        action, each paired with its dispatch route. The function name is
+        ``{connector}__{action}`` (genuine composition: a connector has many actions, so
+        the action must be named too — this is not a redundant type marker). Uses the
+        connector's per-action schema when available, else a permissive object.
+
+        Returns ``[(function_calling, ("connector", connector, action)), ...]``.
+        """
+        names = allowlist if allowlist is not None else await self.list()
+        out: List[Tuple[Dict[str, Any], Tuple[Any, ...]]] = []
+        for n in names:
+            info = await self.get_info(n)
+            if info is None:
+                continue
+            actions = getattr(info, "actions", None) or []
+            schemas = getattr(info, "action_schemas", None) or {}
+            cdesc = getattr(info, "description", "") or n
+            for act in actions:
+                fc = {
+                    "type": "function",
+                    "function": {
+                        "name": f"{n}__{act}",
+                        "description": f"{cdesc} — action '{act}'",
+                        "parameters": schemas.get(act) or {"type": "object", "additionalProperties": True},
+                    },
+                }
+                out.append((fc, ("connector", n, act)))
+        return out
 
     # ------------------------------------------------------------------
     # Connector execution

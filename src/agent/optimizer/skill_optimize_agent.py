@@ -15,7 +15,7 @@ class SkillOptimizeAgent(Agent):
 
     Runs the base-class standard loop, then re-registers the edited skill inline in
     ``__call__``. The target skill is named in the task; the agent should call
-    ``inspect_skill`` first to confirm it is registered and evolvable (enable_evolving=True)
+    ``inspect_skill_tool`` first to confirm it is registered and evolvable (enable_evolving=True)
     and to obtain its directory — a frozen skill must NOT be optimized."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

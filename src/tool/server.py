@@ -2,7 +2,7 @@
 
 Server implementation for tool management with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import os
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -62,7 +62,30 @@ class ToolManagerServer(BaseModel):
         """
         return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
 
-    async def register(self, 
+    async def function_callings(
+        self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None
+    ) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
+        """Native tool-calling schemas for the selected tools, each paired with its
+        dispatch route. Names are the tools' own registered names (already ``*_tool``,
+        so no prefixing) — ``done_tool`` is an ordinary tool and comes through here too.
+
+        ``allowlist``: None = all, [] = none, [names] = those. Returns
+        ``[(function_calling, ("tool", name)), ...]``.
+        """
+        names = allowlist if allowlist is not None else await self.list()
+        out: List[Tuple[Dict[str, Any], Tuple[Any, ...]]] = []
+        for n in names:
+            info = await self.get_info(n)
+            if info is None:
+                continue
+            if types and getattr(info, "type", None) and info.type not in types:
+                continue
+            fc = getattr(info, "function_calling", None)
+            if fc:
+                out.append((fc, ("tool", n)))
+        return out
+
+    async def register(self,
                        tool: Union[Tool, Type[Tool]],
                        config: Optional[Dict[str, Any]] = None,
                        override: bool = False,

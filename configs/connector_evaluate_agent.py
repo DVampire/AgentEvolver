@@ -23,7 +23,7 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
-    "inspect_connector",
+    "inspect_connector_tool",
 ]
 agent_names = [
     "connector_evaluate_agent",

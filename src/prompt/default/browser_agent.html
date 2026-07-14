@@ -68,89 +68,29 @@ The current budget appears in the `constraints` sub-module of agent_context, upd
 - **CRITICAL** (any budget over 85%): wrap up NOW — consolidate verified work and emit `finish` with the best available partial result.
 </constraint-rules>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps to execute. Each step is exactly **one** action.
-
-- Output only steps not yet executed. Do NOT re-emit steps from previous LLM calls — history is maintained by the agent.
-- Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
-- Do NOT include an `output` field — actions are executed after planning.
-
-Each step: `{ "description": "...", "action": { "type": "...", "name": "...", "args": "..." } }`:
-- `description`: one-line summary of what this step does.
-- `action.type`: `"env"` for browser environment actions, or `"finish"` to end the task.
-- `action.name`: exact action name from Environment Context, or `"finish"`.
-- `action.args`: arguments as a JSON string. Must be valid JSON.
-</plan-rules>
+<response-protocol>
+To act, CALL a browser environment tool directly — they are exposed as `env__<name>` (e.g. `env__type`, `env__keypress`, `env__click`, `env__command`, `env__search`). Do NOT describe actions in prose and do NOT emit a JSON plan; provide each tool's arguments as a structured object per its schema.
+- Use coordinates from the interactive elements list for click/move/scroll targets.
+- Use `env__command` (Playwright) as the reliable fallback and for data extraction; use `env__search` to find a URL, then navigate.
+- When the task is COMPLETE (or impossible to continue), call the `done_tool` tool with the extracted answer in `result` (and optional `reasoning`). Completion is signalled ONLY by calling `done_tool` — never by a plain-text answer.
+</response-protocol>
 
 <decision-rules>
-**When to stop**: include a `finish` step as the final plan step when the task is fully completed, when the result has been extracted, or when the task is impossible to continue. Its args are `{"result": "...", "reasoning": "..."}` — put the extracted answer in `result`.
+**When to stop**: call the `done_tool` tool when the task is fully completed, when the result has been extracted, or when the task is impossible to continue — put the extracted answer in `result` (with optional `reasoning`).
 
 **Action selection**:
-- Use environment actions (`"type": "env"`) for all browser operations.
+- Use the `env__*` tools for all browser operations.
 - Use coordinates from the interactive elements list for click/move/scroll targets.
-- Use `command` as the reliable fallback and for data extraction.
+- Use `env__command` as the reliable fallback and for data extraction.
 </decision-rules>
 
 <reasoning-rules>
-Write ALL reasoning in the single `reasoning` field, structured in three parts. Be concise but complete — include what is necessary to justify the decision, omit padding.
+Write your reasoning as brief text before the tool call(s), structured in three parts — concise but complete:
 1. **Past — review**: what the last action was and whether the new state confirms it worked (URL changed? element appeared? text typed?).
 2. **Present — analysis**: the current page state — where you are, what is visible, which element is the next target.
 3. **Future — plan**: the immediate next goal and the concrete actions to achieve it.
 </reasoning-rules>
 
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: the last click on [13] worked — the search box is now focused. Present: the page shows the search input focused, viewport at top. Future: type the query and submit.",
-    "plan": [
-        {
-            "description": "Type the search query into the focused input",
-            "action": {"type": "env", "name": "type", "args": "{\"text\": \"playwright python tutorial\"}"}
-        },
-        {
-            "description": "Press Enter to search",
-            "action": {"type": "env", "name": "keypress", "args": "{\"keys\": [\"Enter\"]}"}
-        }
-    ]
-}
-
-Example of the command fallback after repeated click failures:
-{
-    "reasoning": "Past: clicking (470, 690) twice did not open the login dialog — the button may be covered by an overlay. Present: element [7] has selector #login-btn. Future: click it via Playwright locator which auto-waits and scrolls.",
-    "plan": [
-        {
-            "description": "Click the login button via selector",
-            "action": {"type": "env", "name": "command", "args": "{\"code\": \"await page.locator('#login-btn').click()\\nreturn page.url\"}"}
-        }
-    ]
-}
-
-Example of searching the web, then opening the best result:
-{
-    "reasoning": "Past: the task asks for the official Pikachu page. Present: no page navigated yet; searching is the reliable way to find the URL. Future: search, then goto the top result.",
-    "plan": [
-        {
-            "description": "Search the web for the topic",
-            "action": {"type": "env", "name": "search", "args": "{\"query\": \"pikachu pokemon official\", \"num_results\": 5}"}
-        }
-    ]
-}
-
-Example of finishing the task once the answer is extracted:
-{
-    "reasoning": "Past: the page loaded and the required data is visible. Present: the title and first link are confirmed in the state. Future: report the result and end the task.",
-    "plan": [
-        {
-            "description": "Report the result",
-            "action": {"type": "finish", "name": "finish", "args": "{\"result\": \"Title: Example Domains. First link: RFC 2606.\", \"reasoning\": \"Both values were read from the browser state.\"}"}
-        }
-    ]
-}
-</output-schema>
 </div>
 
 <div class="user">

@@ -14,14 +14,14 @@ Fetch a skill's live registry facts: whether it is registered, its version and t
 
 ## Guidance
 - Use this before optimizing or evaluating a skill named in your task: it reports the target's real state in the registry, which reading files alone cannot.
-- Optimization requires enable_evolving=True. If inspect_skill reports enable_evolving=False, the skill is frozen — do NOT optimize it; refuse and report why.
+- Optimization requires enable_evolving=True. If inspect_skill_tool reports enable_evolving=False, the skill is frozen — do NOT optimize it; refuse and report why.
 - The returned skill_dir / SKILL.md path tells you exactly which files to read/edit.
 
 ## Parameters
 - name (str): The exact name of the skill to inspect.
 
 ## Example
-{"name": "inspect_skill", "args": {"name": "my_skill"}}
+{"name": "inspect_skill_tool", "args": {"name": "my_skill"}}
 """
 
 
@@ -29,7 +29,7 @@ Fetch a skill's live registry facts: whether it is registered, its version and t
 class InspectSkill(Tool):
     """Return a registered skill's live registry facts on demand."""
 
-    name: str = "inspect_skill"
+    name: str = "inspect_skill_tool"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")

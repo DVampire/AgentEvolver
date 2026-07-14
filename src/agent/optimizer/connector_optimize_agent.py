@@ -13,7 +13,7 @@ from src.registry import AGENT
 class ConnectorOptimizeAgent(Agent):
     """Evolves an existing connector (its CONNECTOR.md — connection config and per-action docs) to satisfy an
     evolution task. Runs the base-class standard loop, then re-registers the edited connector inline in
-    ``__call__``. The target connector is named in the task; the agent should call ``inspect_connector`` first
+    ``__call__``. The target connector is named in the task; the agent should call ``inspect_connector_tool`` first
     to confirm it is registered and evolvable (enable_evolving=True) and to obtain its directory — a frozen
     connector must NOT be optimized."""
 
