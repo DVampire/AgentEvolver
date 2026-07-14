@@ -300,7 +300,7 @@ def _bdb_field(d: dict, *names):
 
 
 @mcp.tool()
-def bindingdb_ligands_by_target(uniprot: str, cutoff_nm: int = 100, limit: int = 40) -> str:
+def bindingdb_ligands_by_target(uniprot: str, cutoff_nm: int = 100, limit: int = 40, out_file: str = "") -> str:
     """Get measured ligand binding affinities for a protein target from BindingDB.
 
     Args:
@@ -319,12 +319,23 @@ def bindingdb_ligands_by_target(uniprot: str, cutoff_nm: int = 100, limit: int =
     if not recs:
         return f"No BindingDB affinities for {uniprot} within {cutoff_nm} nM."
     recs.sort(key=lambda d: _bdb_num(_bdb_field(d, "affinity")))
-    rows = [f"# BindingDB ligands for {uniprot} (<= {cutoff_nm} nM)",
-            "monomerId\taffinity_type\taffinity(nM)\tsmiles"]
+    header = "monomerId\taffinity_type\taffinity(nM)\tsmiles"
+    if out_file:
+        import os
+        full = [header]
+        for d in recs[:max(1, limit)]:
+            mid = _bdb_field(d, "monomerid", "monomerId")
+            smi = _bdb_field(d, "smile", "smiles")
+            full.append(f"{mid}\t{_bdb_field(d,'affinity_type')}\t{_bdb_field(d,'affinity')}\t{smi}")
+        os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
+        with open(out_file, "w") as fh:
+            fh.write("\n".join(full))
+        return f"Wrote {len(full)-1} ligand rows for {uniprot} (<= {cutoff_nm} nM) to {out_file}"
+    rows = [f"# BindingDB ligands for {uniprot} (<= {cutoff_nm} nM)", header]
     for d in recs[:max(1, limit)]:
         mid = _bdb_field(d, "monomerid", "monomerId")
         smi = _bdb_field(d, "smile", "smiles")
-        rows.append(f"{mid}\t{_bdb_field(d,'affinity_type')}\t{_bdb_field(d,'affinity')}\t{smi[:60]}")
+        rows.append(f"{mid}\t{_bdb_field(d,'affinity_type')}\t{_bdb_field(d,'affinity')}\t{smi}")
     return _cap(rows, "ligands")
 
 

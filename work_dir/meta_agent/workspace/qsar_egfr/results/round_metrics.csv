@@ -1,6 +1,0 @@
-round,ROC_AUC,PR_AUC,Balanced_Accuracy,F1,MCC,change
-Round 1,0.7324,0.895,0.5512,0.9012,0.2293,Baseline: 10 RDKit physicochemical descriptors + logistic regression
-Round 2,0.9456,0.9848,0.8495,0.9502,0.724,Switched to Morgan/ECFP4 fingerprints (2048 bits) + logistic regression
-Round 3,0.9692,0.9913,0.8521,0.9575,0.7577,Random forest (300 trees) on Morgan fingerprints
-Round 4,0.9612,0.9896,0.8643,0.9556,0.754,"Gradient boosting (HistGB) + 3-fold CV tuning on train only. Best params: {'learning_rate': 0.05, 'max_iter': 400, 'max_leaf_nodes': 63}"
-Round 5,0.9714,0.9927,0.8645,0.9581,0.7652,Feature augmentation (fingerprints + descriptors) + RF(500) with class_weight='balanced'
