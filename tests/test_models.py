@@ -476,6 +476,92 @@ async def test_music():
     logger.info(f"| --------------------------------------------------")
 
 
+async def test_stream_response_format():
+    """Streaming + structured output: consume canonical stream events, then fold
+    them into a buffered Response whose parsed_model is the validated schema."""
+    from src.model.types import build_response_from_stream
+
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing STREAMING structured output with different models")
+    models = [
+        "openrouter/claude-opus-4.8",
+        "openrouter/gemini-3.5-flash",
+        "openrouter/gpt-5.6-sol",
+    ]
+
+    class ToolInputArgs(BaseModel):
+        name: str = Field(description="The name of the tool")
+        args: Dict[str, Any] = Field(description="The arguments of the tool")
+
+    class ThinkOutput(BaseModel):
+        thinking: str = Field(description="The thinking process of the assistant")
+        previous_goal: str = Field(description="The previous goal of the assistant")
+        next_goal: str = Field(description="The next goal of the assistant")
+        tool: List[ToolInputArgs] = Field(description="The list of tools to call")
+
+    prompt = """
+    <available_tools>
+    available_tools:
+    <done>
+    done: DoneTool
+     - result: The result of the task
+     - reasoning: The reasoning process of the task
+    </done>
+    <example>
+    Example: {"name": "done", "args": {"result": "The task has been completed.", "reasoning": "The task has been completed successfully."}}
+    </example>
+
+    Please add the numbers 1 and 2, get the result and call the done tool with the result.
+    """
+
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            ContentPartText(text=prompt),
+        ]),
+    ]
+
+    async def _replay(evs):
+        for e in evs:
+            yield e
+
+    for model in models:
+        logger.info(f"| --------------------------------------------------")
+        logger.info(f"| Testing {model} (streaming + response_format)")
+        try:
+            # 1) Consume the canonical stream; count deltas, log non-text events.
+            events = []
+            counts: Dict[str, int] = {}
+            text_acc: List[str] = []
+            async for ev in model_manager.stream(
+                name=model,
+                input={"messages": messages, "response_format": ThinkOutput},
+            ):
+                events.append(ev)
+                ev_name = type(ev).__name__
+                counts[ev_name] = counts.get(ev_name, 0) + 1
+                if ev_name in ("TextDelta", "ThinkingDelta"):
+                    text_acc.append(getattr(ev, "text", ""))
+                else:
+                    logger.info(f"|   event {ev_name}: {ev}")
+            logger.info(f"|   event counts: {counts}")
+            logger.info(f"|   streamed text ({len(''.join(text_acc))} chars): {''.join(text_acc)[:500]}")
+
+            # 2) Fold the stream into a buffered Response with parsed_model.
+            response = await build_response_from_stream(
+                _replay(events),
+                response_format=ThinkOutput,
+            )
+            logger.info(f"| {model} success={response.success}")
+            logger.info(f"| {model} message:\n{response.message}")
+            print(f"[{model}] parsed_model = {response.parsed_model!r}")
+            assert response.success, f"{model} streaming structured output failed: {response.message}"
+            assert isinstance(response.parsed_model, ThinkOutput), f"{model} did not yield a ThinkOutput"
+        except Exception as e:
+            logger.error(f"| {model} FAILED: {type(e).__name__}: {e}")
+    logger.info(f"| --------------------------------------------------")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
     parser.add_argument("--config", default=os.path.join(root, "configs", "meta_agent.py"), help="config file path")
@@ -512,7 +598,8 @@ async def main():
     await tool_manager.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tool_manager.list()}")
 
-    await test_chat()
+    await test_stream_response_format()
+    # await test_chat()
     # await test_response_format()
     # await test_tool_calling()
     # await test_audio()

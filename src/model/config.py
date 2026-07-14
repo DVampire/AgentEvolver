@@ -171,6 +171,15 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
     chat_models = [
         # ---- OpenAI (via OpenRouter) ----
         {
+            "model_name": "openrouter/gpt-5.6-sol",
+            "model_id": "openai/gpt-5.6-sol",
+            "model_type": "chat/completions",
+            "reasoning": {"reasoning": _r()},
+            "temperature": default_temperature,
+            "max_completion_tokens": max_tokens,
+            "fallback_model": "openrouter/gemini-3.5-flash",
+        },
+        {
             "model_name": "openrouter/gpt-4o",
             "model_id": "openai/gpt-4o",
             "model_type": "chat/completions",

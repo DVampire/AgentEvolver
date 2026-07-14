@@ -661,31 +661,81 @@ class ModelContextManager:
 
         Provider-agnostic: delegates to the provider client's ``stream()``, which
         normalizes its wire format into the canonical event set (see
-        ``src.model.types``). No retry/fallback on the streaming path (v1) — the
-        buffered ``__call__`` keeps those.
+        ``src.model.types``).
+
+        Retry/fallback are applied ONLY before the first event is emitted: if the
+        upstream fails while opening the stream (transient 5xx / timeout), we retry
+        the same model up to ``max_retries`` times and then fall back to
+        ``fallback_model``. Once any event has been yielded downstream we can no
+        longer restart safely (it would duplicate output), so a mid-stream failure
+        propagates to the caller.
         """
+        import httpx
+        from src.model.types import buffered_response_to_events
+
         ctx = ModelContext.from_context(ctx)
         messages = input.get("messages", [])
         tools = input.get("tools")
         response_format = input.get("response_format")
+        max_retries = input.get("max_retries", 3)
 
         if name not in self.model_clients:
             raise ValueError(f"Model {name} not found. Available: {list(self.models.keys())}")
-        client = await self._get_client(name)
-        if hasattr(client, "stream"):
-            async for ev in client.stream(
-                messages=messages, tools=tools, response_format=response_format, **kwargs
-            ):
-                yield ev
-        else:
-            # Graceful fallback for any provider without a stream(): buffer, then
-            # re-emit the final Response as canonical events (uniform interface).
-            from src.model.types import buffered_response_to_events
-            resp = await client(
-                messages=messages, tools=tools, response_format=response_format, **kwargs
-            )
-            async for ev in buffered_response_to_events(resp):
-                yield ev
+
+        async def _events(target: str):
+            """Canonical events for one model (true stream, or buffered→events)."""
+            client = await self._get_client(target)
+            if hasattr(client, "stream"):
+                async for ev in client.stream(
+                    messages=messages, tools=tools, response_format=response_format, **kwargs
+                ):
+                    yield ev
+            else:
+                # Providers without a stream(): buffer one call, re-emit as events.
+                resp = await client(
+                    messages=messages, tools=tools, response_format=response_format, **kwargs
+                )
+                async for ev in buffered_response_to_events(resp):
+                    yield ev
+
+        model_config = self.models.get(name)
+
+        # Ordered attempt plan: primary (retried max_retries×) then fallback (once).
+        plan: List[tuple] = [(name, max_retries)]
+        fb = model_config.fallback_model if model_config else None
+        if fb and fb != name and fb in self.model_clients:
+            plan.append((fb, 1))
+
+        last_exc: Optional[Exception] = None
+        for ci, (target, attempts) in enumerate(plan):
+            for attempt in range(attempts):
+                started = False
+                try:
+                    async for ev in _events(target):
+                        started = True
+                        yield ev
+                    return  # stream completed cleanly
+                except Exception as e:
+                    last_exc = e
+                    if started:
+                        # Already emitted output downstream — restarting would
+                        # duplicate it, so surface the error instead.
+                        logger.error(
+                            f"| ❌ Stream {target} failed mid-stream ({type(e).__name__}); "
+                            f"cannot retry: {e}"
+                        )
+                        raise
+                    logger.warning(
+                        f"| ⚠️ Stream {target} failed before first event "
+                        f"(attempt {attempt+1}/{attempts}, {type(e).__name__}): {e}"
+                    )
+            if ci < len(plan) - 1:
+                logger.warning(
+                    f"| Stream {target} exhausted retries, falling back to {plan[ci+1][0]}"
+                )
+
+        # Every candidate failed before emitting anything.
+        raise last_exc if last_exc else RuntimeError(f"Stream {name} failed to start")
 
 
 __all__ = ["ApiKeyPool", "ModelContextManager"]
