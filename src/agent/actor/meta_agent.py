@@ -20,7 +20,7 @@ suspends it on its task_id and posts an EscalationMessage here; ``reply_tool`` r
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import Field
 
@@ -28,43 +28,7 @@ from src.agent.types import Agent, AgentContext
 from src.response.types import Response
 from src.logger import logger
 from src.registry import AGENT
-from src.runtime import BaseMessage
-
-
-# ---------------------------------------------------------------------------
-# Inbox messages a sub-agent posts to MetaAgent's ref (via hooks / MonitorAgent)
-# ---------------------------------------------------------------------------
-
-
-class _SubtaskMessage(BaseMessage):
-    task_id: str
-    agent_name: str
-    session_id: str
-
-
-class EscalationMessage(_SubtaskMessage):
-    """A sub-agent is blocked and suspended on its task_id; the parent replies to unblock it."""
-
-    reason: str = ""
-    situation: str = ""
-    suggestion: str = ""
-
-    @property
-    def text(self) -> str:
-        body = f"Reason: {self.reason}\nSituation: {self.situation}"
-        if self.suggestion:
-            body += f"\nSuggestion: {self.suggestion}"
-        return body
-
-
-class MonitorProgressMessage(_SubtaskMessage):
-    """Periodic progress update from MonitorAgent while a subprocess is running."""
-
-    pid: int
-    status: Literal["running", "completed", "failed", "timeout"]
-    elapsed: float
-    recent_output: str = ""
-    exit_code: Optional[int] = None
+from src.protocol import protocol_manager, EscalationMessage
 
 
 # ---------------------------------------------------------------------------
@@ -94,14 +58,12 @@ class MetaAgent(Agent):
         return True
 
     async def _handle_extra_event(self, run, msg: Any) -> None:
-        """A blocked sub-agent escalated (its inbox message landed here). Reply to it with a
-        focused think turn — mid-round, so we do NOT dispatch new work; the round in flight
-        keeps running. The reply goes out through the ordinary ``reply_tool`` (which resumes
-        the suspended sub-agent via the runtime channel)."""
+        """A blocked sub-agent escalated (its EscalationMessage landed in our inbox). Reply
+        with a focused think turn — mid-round, so we do NOT dispatch new work; the round in
+        flight keeps running. The reply resumes the suspended sub-agent over the escalation
+        channel (``protocol_manager.reply`` → runtime.resume)."""
         if not isinstance(msg, EscalationMessage):
             return  # progress updates etc. — nothing to do
-
-        from src.tool.server import tool_manager
 
         note = (
             f"A sub-agent is BLOCKED and waiting for your reply (task_id={msg.task_id}, "
@@ -114,10 +76,10 @@ class MetaAgent(Agent):
             action_errors=[note], constraint_status=[], _run=run,
         )
         decision = await self._think(messages, run.task_id, run.step, run.ctx, include_agents=True)
-        reply = next(
+        guidance = next(
             (c.input.get("reply") for c in decision["tool_calls"]
              if c.name == "reply_tool" and (c.input or {}).get("task_id") == msg.task_id),
             None,
         ) or "No specific guidance available. Use your best judgement or stop gracefully."
-        await tool_manager(name="reply_tool", input={"task_id": msg.task_id, "reply": reply}, ctx=run.ctx)
+        protocol_manager.reply(msg.task_id, guidance)
         logger.info(f"| 💬 MetaAgent replied to escalation [{msg.task_id}]")

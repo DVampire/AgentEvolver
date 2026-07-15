@@ -10,7 +10,6 @@ from .server import hook_manager
 from .default import (
     CompactHook,
     TraceHook,
-    EscalationHook,
     SkillRegistrationHook,
     ToolRegistrationHook,
     AgentRegistrationHook,
@@ -27,7 +26,6 @@ __all__ = [
     "hook_manager",
     "CompactHook",
     "TraceHook",
-    "EscalationHook",
     "SkillRegistrationHook",
     "ToolRegistrationHook",
     "AgentRegistrationHook",

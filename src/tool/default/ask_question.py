@@ -18,8 +18,6 @@ from pydantic import Field
 
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
-from src.hook import hook_manager
-from src.hook.types import HookContext
 from src.logger import logger
 from src.registry import TOOL
 
@@ -106,26 +104,15 @@ class AskQuestionTool(Tool):
                 data={"answered_by": "none", "question": question},
             )
 
-        task_id = getattr(ctx, "subtask_id", None) or getattr(ctx, "id", "")
-        agent_name = getattr(ctx, "name", "") or ""
         header_txt = f"[{header}] " if header else ""
         try:
-            result = await hook_manager(
-                name="escalation_hook",
-                input={
-                    "parent_session_id": parent_session_id,
-                    "task_id": task_id,
-                    "agent_name": agent_name,
-                    "reason": f"{header_txt}{question}",
-                    "situation": situation,
-                    "suggestion": default,
-                },
-                ctx=HookContext(id=getattr(ctx, "id", "") or task_id, name="escalation_hook"),
+            from src.protocol import protocol_manager
+            answer = await protocol_manager.escalate(
+                ctx, reason=f"{header_txt}{question}", situation=situation, suggestion=default,
             )
-            answer = getattr(result, "additional_context", None)
             if not answer:
                 answer = default or "No answer returned; use your best judgement."
-            logger.info(f"| ❓ ask_question_tool: '{agent_name}' asked → answer received")
+            logger.info(f"| ❓ ask_question_tool: asked parent → answer received")
             return Response(
                 type=ResponseType.TOOL, success=True,
                 message=answer,

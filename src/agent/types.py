@@ -189,10 +189,11 @@ class AgentConfig(BaseModel):
 #
 # An orchestrator (MetaAgent) is not special: it just has ``agent`` capabilities in its
 # roster, so some of its dispatched actions are sub-agents. A sub-agent that blocks
-# escalates to its parent via the EscalationHook → the parent's inbox → on_event — which
+# escalates to its parent via the escalation channel → the parent's inbox → on_event — which
 # works precisely because every agent (parent included) runs this same event-driven loop.
 
 from src.runtime.types import BaseMessage as _BaseMessage
+from src.protocol.types import ControlMessage as _ControlMessage, QueryMessage as _QueryMessage
 
 
 class _ActionDone(_BaseMessage):
@@ -242,6 +243,7 @@ class _AgentRun:
         self.result: Optional[str] = None
         self.reasoning: Optional[str] = None
         self.stopped_by_constraint = False
+        self.paused = False   # control channel: when True, don't start the next turn
 
 
 class Agent(BaseModel):
@@ -890,27 +892,16 @@ class Agent(BaseModel):
         kind = route[0]
         if kind == "agent":
             from src.agent.server import agent_manager
-            from src.runtime import runtime_manager
-            from src.utils.name_utils import make_id
+            from src.protocol import protocol_manager
             child = await agent_manager.get(route[1])
             if child is None:
                 raise ValueError(f"No registered agent named {route[1]!r}")
             inp = call.input or {}
-            sub_task = inp.get("task", "")
-            target = inp.get("target_name")
-            if target:
-                sub_task = f"Target capability: {target}\n\n{sub_task}"
-            child_ctx = AgentContext(
-                id=f"{route[1]}-{make_id()}",
-                work_dir=getattr(ctx, "work_dir", None) or self.base_dir,
-                parent_session_id=(parent_ref.name if parent_ref is not None else getattr(ctx, "id", None)),
-            )
-            for al in ("tool_allowlist", "skill_allowlist", "connector_allowlist"):
-                if inp.get(al) is not None:
-                    child_ctx.extra[al] = inp[al]
-            files = [f for f in (inp.get("files") or []) if os.path.exists(f)]
-            resp = await runtime_manager.invoke(
-                child, task=sub_task, files=files or None, ctx=child_ctx, parent_ref=parent_ref
+            resp = await protocol_manager.delegate(
+                child, inp.get("task", ""),
+                files=inp.get("files"), target_name=inp.get("target_name"),
+                allowlists={k: inp.get(k) for k in ("tool_allowlist", "skill_allowlist", "connector_allowlist")},
+                parent_ref=parent_ref, work_dir=getattr(ctx, "work_dir", None) or self.base_dir,
             )
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             return resp.message, False, None, None
@@ -1017,8 +1008,38 @@ class Agent(BaseModel):
                     run.round_reasoning = msg.reasoning
             if not run.outstanding:
                 await self._on_round_complete(run)
+        elif isinstance(msg, _ControlMessage):
+            await self._handle_control(run, msg)
+        elif isinstance(msg, _QueryMessage):
+            if msg.reply_future is not None and not msg.reply_future.done():
+                msg.reply_future.set_result(self._snapshot(run))
         else:
             await self._handle_extra_event(run, msg)
+
+    async def _handle_control(self, run: "_AgentRun", msg: "_ControlMessage") -> None:
+        """Control channel: cancel concludes gracefully; pause/resume gate advancing."""
+        if msg.action == "cancel":
+            logger.info(f"| ✋ [{self.name}] cancel requested: {msg.reason or '(no reason)'}")
+            run.done = False
+            run.result = f"Cancelled: {msg.reason}" if msg.reason else "Cancelled by parent."
+            run.stopped_by_constraint = True  # treated as a non-success stop
+            await self._conclude(run)
+        elif msg.action == "pause":
+            run.paused = True
+            logger.info(f"| ⏸️ [{self.name}] paused")
+        elif msg.action == "resume":
+            run.paused = False
+            logger.info(f"| ▶️ [{self.name}] resumed")
+            if not run.outstanding and not run.done:
+                await self._advance(run)
+
+    def _snapshot(self, run: "_AgentRun") -> Dict[str, Any]:
+        """Query channel: a small live status snapshot of this run."""
+        return {
+            "agent": self.name, "task_id": run.task_id, "step": run.step,
+            "running_actions": len(run.outstanding), "paused": run.paused,
+            "done": run.done, "result": run.result,
+        }
 
     # ------------------------------------------------------------------
     # The event-driven loop body (shared by every agent)
@@ -1126,6 +1147,8 @@ class Agent(BaseModel):
                 run.reasoning = run.round_reasoning
             await self._conclude(run)
             return
+        if run.paused:
+            return  # control channel: hold here until a resume advances us
         await self._advance(run)
 
     async def _conclude(self, run: "_AgentRun") -> None:

@@ -36,7 +36,7 @@ from typing import Any, Deque, Dict, Optional, Set
 
 from pydantic import ConfigDict, Field, PrivateAttr
 
-from src.agent.actor.meta_agent import MonitorProgressMessage
+from src.protocol import protocol_manager, MonitorProgressMessage
 from src.agent.types import Agent, AgentContext
 from src.response.types import Response, ResponseType
 from src.logger import logger
@@ -351,7 +351,7 @@ class MonitorAgent(Agent):
         if parent_ref is None:
             return
         try:
-            await parent_ref._inbox.put(MonitorProgressMessage(
+            await protocol_manager.report(parent_ref, MonitorProgressMessage(
                 task_id=task_id, agent_name=self.name, session_id=session_id,
                 pid=pid, status=status, elapsed=elapsed,
                 recent_output=recent_output, exit_code=exit_code,

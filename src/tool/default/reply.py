@@ -1,10 +1,10 @@
 """reply tool — an orchestrator answers a sub-agent that ESCALATED.
 
-The *reply* side of the escalation protocol, the mirror of ``escalate_tool``: the
-sub-agent's ``escalate_tool`` fires ``escalation_hook`` (which suspends it); the parent's
-``reply_tool`` fires ``reply_hook`` (which resumes it) with concrete guidance. The
-pause/resume rendezvous is the runtime's suspend/resume channel, keyed by the sub-agent's
-task_id — see ``src/hook/default/escalation.py``.
+The *reply* side of the escalation channel, the mirror of ``escalate_tool``: the sub-agent's
+``escalate_tool`` calls ``protocol_manager.escalate`` (which suspends it); the parent's
+``reply_tool`` calls ``protocol_manager.reply`` (which resumes it) with concrete guidance.
+The pause/resume rendezvous is the runtime's suspend/resume channel, keyed by the
+sub-agent's task_id — see ``src/protocol/server.py``.
 """
 
 from typing import Any, Dict
@@ -13,8 +13,6 @@ from pydantic import Field
 
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
-from src.hook import hook_manager
-from src.hook.types import HookContext
 from src.logger import logger
 from src.registry import TOOL
 
@@ -52,17 +50,11 @@ class ReplyTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, task_id: str, reply: str, **kwargs) -> Response:
-        ctx = kwargs.get("ctx")
+        from src.protocol import protocol_manager
         try:
-            result = await hook_manager(
-                name="reply_hook",
-                input={"task_id": task_id, "reply": reply},
-                ctx=HookContext(id=getattr(ctx, "id", "") or task_id, name="reply_hook"),
-            )
-            delivered = getattr(result, "additional_context", "") == "delivered"
+            delivered = protocol_manager.reply(task_id, reply)
             msg = (f"Guidance delivered to sub-agent [{task_id}]." if delivered
                    else f"No sub-agent was waiting for [{task_id}] (already replied or timed out).")
-            logger.info(f"| 💬 reply_tool → {msg}")
             return Response(type=ResponseType.TOOL, success=True, message=msg)
         except Exception as e:
             logger.error(f"| ❌ reply_tool failed: {e}")

@@ -1,11 +1,10 @@
 """Escalate tool — a blocked sub-agent asks its parent MetaAgent for guidance.
 
-This is the *sending* side of the escalation protocol. The receiving side (MetaAgent
-handling EscalationMessage / escalation_replies) and the transport (`escalation_hook`
-→ runtime_manager.ask the parent) were already built; this tool is the trigger the
-sub-agent invokes when it is stuck, which fires the hook and returns MetaAgent's reply.
+This is the *send* side of the escalation channel: the tool calls
+``protocol_manager.escalate``, which posts to the parent's inbox and suspends this
+sub-agent until the parent replies (via ``reply_tool`` → ``protocol_manager.reply``).
 
-Only meaningful for a sub-agent dispatched by MetaAgent (it needs a parent to ask). Run
+Only meaningful for a sub-agent dispatched by a parent (it needs one to ask). Run
 standalone, it reports that there is no parent to escalate to.
 """
 
@@ -15,8 +14,6 @@ from pydantic import Field
 
 from src.tool.types import Tool
 from src.response.types import Response, ResponseType
-from src.hook import hook_manager
-from src.hook.types import HookContext
 from src.logger import logger
 from src.registry import TOOL
 
@@ -56,30 +53,10 @@ class EscalateTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, reason: str, situation: str = "", suggestion: str = "", **kwargs) -> Response:
+        from src.protocol import protocol_manager
         ctx = kwargs.get("ctx")
-        parent_session_id = getattr(ctx, "parent_session_id", None)
-        if not parent_session_id:
-            return Response(
-                type=ResponseType.TOOL, success=False,
-                message="No parent MetaAgent to escalate to (running standalone). Proceed on your own or stop gracefully.",
-            )
-        task_id = getattr(ctx, "subtask_id", None) or getattr(ctx, "id", "")
-        agent_name = getattr(ctx, "name", "") or ""
         try:
-            result = await hook_manager(
-                name="escalation_hook",
-                input={
-                    "parent_session_id": parent_session_id,
-                    "task_id": task_id,
-                    "agent_name": agent_name,
-                    "reason": reason,
-                    "situation": situation,
-                    "suggestion": suggestion,
-                },
-                ctx=HookContext(id=getattr(ctx, "id", "") or task_id, name="escalation_hook"),
-            )
-            guidance = getattr(result, "additional_context", None) or "No guidance returned; use your best judgement or stop gracefully."
-            logger.info(f"| 🆘 escalate_tool: '{agent_name}' escalated → guidance received")
+            guidance = await protocol_manager.escalate(ctx, reason=reason, situation=situation, suggestion=suggestion)
             return Response(type=ResponseType.TOOL, success=True, message=guidance)
         except Exception as e:
             logger.error(f"| ❌ escalate_tool failed: {e}")

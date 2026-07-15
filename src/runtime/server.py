@@ -4,15 +4,16 @@ The runtime manages **running** agent refs via a single registry:
     _refs: Dict[str, AgentRef]
 
 Every agent gets one inbox (AgentRef._inbox).  Messages to any running agent
-are routed by ref name.  MetaAgent looks up sub-agent callbacks this way;
-EscalationHook finds MetaAgent's ref by parent_session_id (= ref.name).
-No separate session registry is needed.
+are routed by ref name.  The protocol layer looks up a parent's ref by
+parent_session_id (= ref.name) — no separate session registry is needed.
+This module also provides the general transport verbs protocols build on:
+send / ask / suspend-resume (rendezvous) / publish-subscribe (fan-out).
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from src.logger import logger
 from src.utils import Singleton, make_id
@@ -38,6 +39,8 @@ class RuntimeManager(metaclass=Singleton):
         # Suspend/resume rendezvous channel: key → future. One coroutine suspends on a
         # key and blocks; another (elsewhere, e.g. a different agent) resumes it by key.
         self._pending: Dict[str, "asyncio.Future"] = {}
+        # Pub-sub: topic → set of subscriber ref names. Fan-out publish delivers to each.
+        self._topics: Dict[str, Set[str]] = {}
 
     # ------------------------------------------------------------------
     # Suspend / resume channel — a request-reply rendezvous across agents
@@ -66,6 +69,33 @@ class RuntimeManager(metaclass=Singleton):
             fut.set_result(value)
             return True
         return False
+
+    # ------------------------------------------------------------------
+    # Pub-sub — fan-out a message to every running subscriber of a topic
+    # ------------------------------------------------------------------
+
+    def subscribe(self, topic: str, ref: AgentRef) -> None:
+        self._topics.setdefault(topic, set()).add(ref.name)
+
+    def unsubscribe(self, topic: str, ref: AgentRef) -> None:
+        subs = self._topics.get(topic)
+        if subs:
+            subs.discard(ref.name)
+            if not subs:
+                self._topics.pop(topic, None)
+
+    async def publish(self, topic: str, msg: BaseMessage) -> int:
+        """Deliver ``msg`` to every RUNNING subscriber of ``topic``. Returns the count sent
+        (dropping any subscriber that is no longer running)."""
+        sent = 0
+        for name in list(self._topics.get(topic, set())):
+            ref = self._refs.get(name)
+            if ref is not None and ref.status == AgentStatus.RUNNING:
+                await ref._inbox.put(msg)
+                sent += 1
+            else:
+                self._topics[topic].discard(name)
+        return sent
 
     # ------------------------------------------------------------------
     # Spawn / stop lifecycle
