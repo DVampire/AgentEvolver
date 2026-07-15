@@ -39,7 +39,7 @@ run_dir = f"work_dir/{tag}/run"
 workspace_dir = f"work_dir/{tag}/workspace"
 log_path = "agent.log"
 
-model_name = "openrouter/claude-opus-4.8"
+model_name = "google/gemini-3.5-flash"
 
 memory_names = [
     "file_system_memory",

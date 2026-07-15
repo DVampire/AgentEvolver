@@ -467,5 +467,10 @@ class GoogleChatSerializer:
         if not isinstance(schema, dict):
             return schema
         _drop = {"additionalProperties", "title", "default", "$schema", "examples"}
-        return {k: GoogleChatSerializer._gemini_clean(v) for k, v in schema.items() if k not in _drop}
+        cleaned = {k: GoogleChatSerializer._gemini_clean(v) for k, v in schema.items() if k not in _drop}
+        # Gemini rejects an ``array`` schema that omits ``items`` ("missing field").
+        t = cleaned.get("type")
+        if isinstance(t, str) and t.lower() == "array" and "items" not in cleaned:
+            cleaned["items"] = {"type": "string"}
+        return cleaned
 

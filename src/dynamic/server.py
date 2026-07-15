@@ -131,6 +131,34 @@ class DynamicModuleManager:
         type_str = str(annotation).replace("typing.", "")
         return "string", type_str
 
+    def annotation_to_item_schema(self, annotation: Any) -> Dict[str, Any]:
+        """Return the JSON schema for the *element* type of an array annotation.
+
+        JSON Schema (and strict consumers like the Gemini API) require every
+        ``array`` to declare ``items``. Handles ``List[X]`` / ``list[X]`` and
+        ``Optional[List[X]]``; recurses for nested lists; defaults to
+        ``{"type": "string"}`` when the element type is unparametrized/unknown.
+        """
+        origin = getattr(annotation, "__origin__", None)
+        args = getattr(annotation, "__args__", ())
+
+        # Unwrap Optional[List[X]] / Union[List[X], None]
+        if origin is Union and len(args) == 2 and type(None) in args:
+            inner = args[0] if args[1] is type(None) else args[1]
+            return self.annotation_to_item_schema(inner)
+
+        if origin is list or (hasattr(annotation, "__origin__") and "List" in str(annotation)):
+            elem_args = getattr(annotation, "__args__", ())
+            if elem_args and elem_args[0] is not type(None):
+                elem = elem_args[0]
+                elem_json, _ = self.annotation_to_types(elem)
+                elem_schema: Dict[str, Any] = {"type": elem_json}
+                if elem_json == "array":
+                    elem_schema["items"] = self.annotation_to_item_schema(elem)
+                return elem_schema
+
+        return {"type": "string"}
+
 
     def parse_type_string(self, type_str: str) -> Type:
         """Parse a type string (e.g., 'str', 'Optional[str]', 'List[str]', 'Dict[str, Any]') to Python type.
@@ -877,6 +905,10 @@ class DynamicModuleManager:
                 "type": json_type,
                 "description": doc_descriptions.get(name, ""),
             }
+            # Arrays MUST declare their element type (`items`) — strict consumers
+            # like the Gemini API reject an array schema without it.
+            if json_type == "array":
+                schema["items"] = self.annotation_to_item_schema(annotation)
             schema[PYTHON_TYPE_FIELD] = python_type
             
             if not is_required:
