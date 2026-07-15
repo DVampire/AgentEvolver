@@ -107,10 +107,23 @@ class ChatGoogle(BaseChatModel):
     def name(self) -> str:
         return str(self.model)
 
+    @staticmethod
+    def _usage_dict(u) -> Optional[Dict[str, Any]]:
+        """Gemini's ``usage_metadata`` is a protobuf message (no ``model_dump`` / not
+        dict-iterable). Pull its token counts into a plain dict — ``TokenUsage.from_raw``
+        already understands these ``*_token_count`` keys."""
+        if u is None:
+            return None
+        return {
+            "prompt_token_count": getattr(u, "prompt_token_count", 0) or 0,
+            "candidates_token_count": getattr(u, "candidates_token_count", 0) or 0,
+            "total_token_count": getattr(u, "total_token_count", 0) or 0,
+        }
+
     def _get_usage(self, response) -> Optional[Dict[str, Any]]:
         """Extract usage information from Google Gemini response."""
         if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
-            return response.usage_metadata.model_dump()
+            return self._usage_dict(response.usage_metadata)
         else:
             return None
 
@@ -156,8 +169,15 @@ class ChatGoogle(BaseChatModel):
             generation_config['top_k'] = self.top_k
         if self.max_output_tokens is not None:
             generation_config['max_output_tokens'] = self.max_output_tokens
-        if self.reasoning is not None:
-            generation_config.update(self.reasoning)
+        # ``reasoning`` in the model spec is the OpenRouter-style toggle
+        # ({"reasoning": {"enabled": ...}}) — Gemini's GenerationConfig has no such field
+        # (thinking is on by default for 2.5+/3 and configured separately), so passing it
+        # raises "Unknown field for GenerationConfig: reasoning". Only forward its
+        # thinking_config if a caller supplied one in that shape.
+        if self.reasoning:
+            tc = self.reasoning.get("thinking_config")
+            if tc is not None:
+                generation_config["thinking_config"] = tc
         # Handle response_format (Google Gemini uses response_schema)
         if response_format:
             try:
@@ -265,7 +285,7 @@ class ChatGoogle(BaseChatModel):
         async for chunk in raw:
             u = getattr(chunk, "usage_metadata", None)
             if u is not None:
-                usage = u.model_dump() if hasattr(u, "model_dump") else dict(u)
+                usage = self._usage_dict(u)
             cands = getattr(chunk, "candidates", None) or []
             if not cands:
                 continue
@@ -280,8 +300,8 @@ class ChatGoogle(BaseChatModel):
                 if txt:
                     yield TextDelta(txt)
                 fc = getattr(part, "function_call", None)
-                if fc is not None:
-                    name = getattr(fc, "name", "") or ""
+                name = (getattr(fc, "name", "") or "") if fc is not None else ""
+                if name:  # a text part carries an empty function_call — skip it
                     args = getattr(fc, "args", {}) or {}
                     try:
                         args = dict(args)  # Gemini args may be a proto Map
@@ -336,26 +356,25 @@ class ChatGoogle(BaseChatModel):
                 parts = []
             
             for part in parts:
-                if hasattr(part, 'text'):
-                    # SDK response object
-                    text_parts.append(part.text)
-                elif hasattr(part, 'function_call'):
-                    # SDK response object - function call
-                    func_call = part.function_call
-                    function_calls.append({
-                        "name": func_call.name if hasattr(func_call, 'name') else "",
-                        "args": func_call.args if hasattr(func_call, 'args') else {},
-                    })
-                elif isinstance(part, dict):
-                    # Dict format
-                    if "text" in part:
-                        text_parts.append(part.get("text", ""))
-                    elif "function_call" in part:
-                        func_call = part["function_call"]
-                        function_calls.append({
-                            "name": func_call.get("name", ""),
-                            "args": func_call.get("args", {}),
-                        })
+                # A Gemini Part protobuf always carries BOTH ``text`` and ``function_call``
+                # attributes (empty when unused), so check each by VALUE, not hasattr — else
+                # a function-call part (empty text) is misread as text and the call is lost.
+                if isinstance(part, dict):
+                    txt = part.get("text")
+                    fc = part.get("function_call")
+                else:
+                    txt = getattr(part, "text", None)
+                    fc = getattr(part, "function_call", None)
+                if txt:
+                    text_parts.append(txt)
+                fc_name = (fc.get("name") if isinstance(fc, dict) else getattr(fc, "name", "")) if fc else ""
+                if fc_name:
+                    fc_args = (fc.get("args") if isinstance(fc, dict) else getattr(fc, "args", {})) or {}
+                    try:
+                        fc_args = dict(fc_args)  # Gemini args may be a proto Map
+                    except Exception:
+                        pass
+                    function_calls.append({"name": fc_name, "args": fc_args})
 
             message_text = "\n".join(text_parts) if text_parts else ""
 

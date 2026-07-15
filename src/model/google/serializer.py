@@ -313,7 +313,8 @@ class GoogleChatSerializer:
             function_declarations.append({
                 "name": function_def.get("name") or getattr(tool, "name", ""),
                 "description": function_def.get("description") or getattr(tool, "description", ""),
-                "parameters": function_def.get("parameters") or {"type": "object", "properties": {}},
+                "parameters": GoogleChatSerializer._gemini_clean(
+                    function_def.get("parameters") or {"type": "object", "properties": {}}),
             })
         
         # Google Gemini expects tools as a list with a single object containing function_declarations
@@ -452,7 +453,19 @@ class GoogleChatSerializer:
             return obj
 
         return {
-            'response_schema': transform(schema),
+            'response_schema': GoogleChatSerializer._gemini_clean(transform(schema)),
             'response_mime_type': 'application/json'
         }
+
+    @staticmethod
+    def _gemini_clean(schema: Any) -> Any:
+        """Strip JSON-Schema keys Gemini's Schema type rejects (it's an OpenAPI subset):
+        ``additionalProperties``, ``title``, ``default``, ``$schema``, ``examples``.
+        Applied recursively to tool parameters and response schemas."""
+        if isinstance(schema, list):
+            return [GoogleChatSerializer._gemini_clean(s) for s in schema]
+        if not isinstance(schema, dict):
+            return schema
+        _drop = {"additionalProperties", "title", "default", "$schema", "examples"}
+        return {k: GoogleChatSerializer._gemini_clean(v) for k, v in schema.items() if k not in _drop}
 

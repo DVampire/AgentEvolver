@@ -579,5 +579,14 @@ def google_models(*, max_tokens, default_temperature, default_timeout, default_p
             "max_completion_tokens": max_tokens,
             "fallback_model": "openrouter/gemini-3-flash-preview",
         },
+        {
+            "model_name": "google/gemini-3.5-flash",
+            "model_id": "gemini-3.5-flash",
+            "model_type": "chat/completions",
+            "reasoning": {"reasoning": _r()},
+            "temperature": default_temperature,
+            "max_completion_tokens": max_tokens,
+            "fallback_model": "openrouter/gemini-3.5-flash",
+        },
     ]
     return {"chat": chat_models}
