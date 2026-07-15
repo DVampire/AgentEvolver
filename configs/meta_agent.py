@@ -81,7 +81,6 @@ tool_names = [
     "evolution_tool",
     "escalate_tool",
     "reply_tool",
-    "ask_question_tool",
     # web retrieval — search the web, fetch a page, and download REAL images to bundle
     "web_searcher_tool",
     "web_fetcher_tool",

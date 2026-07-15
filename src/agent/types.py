@@ -708,8 +708,8 @@ class Agent(BaseModel):
         tool list + routing table, stream, and accumulate into a batch of tool_calls.
 
         Pure decision — no dispatch, no state mutation — so both the leaf-agent loop and
-        MetaAgent call this same method. ``include_agents`` / ``extra_tools`` let an
-        orchestrator widen the roster (agent__<name>, reply_to_agent). Returns
+        MetaAgent call this same method. ``include_agents`` projects registered sub-agents
+        into the roster; ``extra_tools`` appends any extra schema-only tools. Returns
         ``{tool_calls, routing, reasoning, step_tokens}``.
         """
         from src.hook.server import hook_manager
@@ -1197,8 +1197,8 @@ class Agent(BaseModel):
         return False
 
     def _extra_tools(self, run: "_AgentRun") -> Optional[List[Any]]:
-        """Control tools beyond the projected capabilities (e.g. MetaAgent's
-        reply_to_agent). Default: none."""
+        """Extra schema-only tools to append beyond the projected capabilities. Default:
+        none (orchestration control like reply is an ordinary registered tool now)."""
         return None
 
     async def _prepare_round(self, run: "_AgentRun", decision: Dict[str, Any]) -> Optional[List[Any]]:

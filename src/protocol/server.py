@@ -37,14 +37,17 @@ class ProtocolManager(metaclass=Singleton):
     async def escalate(self, ctx: Any, *, reason: str, situation: str = "", suggestion: str = "") -> str:
         """Send end: post the escalation to the parent and block until it replies. Returns
         the guidance (or a graceful-stop instruction if there is no parent / it times out)."""
-        parent_session_id = getattr(ctx, "parent_session_id", None)
+        # Lineage lives on the field for an AgentContext, or in ``extra`` once the context
+        # has been converted (e.g. into a tool's ToolContext) — check both.
+        extra = getattr(ctx, "extra", {}) or {}
+        parent_session_id = getattr(ctx, "parent_session_id", None) or extra.get("parent_session_id")
         if not parent_session_id:
             return "No parent to escalate to (running standalone). Proceed on your own or stop gracefully."
         parent_ref = runtime_manager.get(parent_session_id)
         if parent_ref is None:
             return "Parent is no longer running. Proceed on your own or stop gracefully."
 
-        task_id = getattr(ctx, "subtask_id", None) or getattr(ctx, "id", "")
+        task_id = getattr(ctx, "subtask_id", None) or extra.get("subtask_id") or getattr(ctx, "id", "")
         msg = EscalationMessage(
             task_id=task_id, agent_name=getattr(ctx, "name", "") or "", session_id=getattr(ctx, "id", "") or "",
             reason=reason, situation=situation, suggestion=suggestion,

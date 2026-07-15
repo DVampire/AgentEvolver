@@ -41,12 +41,21 @@ class BaseContext(BaseModel):
         name = getattr(ctx, "name", None)
         if name is None:
             name = cls.model_fields["name"].default
+        # Preserve lineage fields that subclasses add (AgentContext.parent_session_id /
+        # subtask_id) through the conversion, via ``extra`` — so a converted context
+        # (e.g. a tool's ToolContext) can still tell who dispatched it (needed by
+        # escalate_tool / the escalation channel to find the parent).
+        extra = dict(getattr(ctx, "extra", {}) or {})
+        for k in ("parent_session_id", "subtask_id"):
+            v = getattr(ctx, k, None)
+            if v is not None:
+                extra.setdefault(k, v)
         return cls(
             id=ctx.id,
             name=name,
             work_dir=getattr(ctx, "work_dir", None),
             input=getattr(ctx, "input", {}),
-            extra=getattr(ctx, "extra", {}),
+            extra=extra,
         )
 
 
