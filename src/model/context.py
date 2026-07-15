@@ -374,6 +374,7 @@ class ModelContextManager:
                 return ChatGoogle(
                     model=config.model_id,
                     api_key=config.api_key,
+                    base_url=config.api_base or None,
                     reasoning=config.reasoning or None,
                     temperature=config.temperature or self.default_temperature,
                     max_output_tokens=config.max_completion_tokens or self.max_tokens,

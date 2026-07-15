@@ -2,14 +2,11 @@ from typing import Any, Optional, Union, List, Dict, ClassVar
 import httpx
 
 try:
-    import google.generativeai as genai
-    from google.generativeai.types import HarmCategory, HarmBlockThreshold
-    from google.api_core import exceptions as google_exceptions
+    from google import genai
+    from google.genai import types as genai_types
 except ImportError:
     genai = None
-    HarmCategory = None
-    HarmBlockThreshold = None
-    google_exceptions = None
+    genai_types = None
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -50,6 +47,7 @@ class ChatGoogle(BaseChatModel):
     
     # Client initialization parameters
     api_key: Optional[str] = None
+    base_url: Optional[str] = None
     timeout: Optional[Union[float, httpx.Timeout]] = httpx.Timeout(600.0, connect=30.0)
     max_retries: int = 5
 
@@ -60,48 +58,17 @@ class ChatGoogle(BaseChatModel):
     def set_api_key(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def _get_client_params(self) -> Dict[str, Any]:
-        """Prepare client parameters dictionary."""
+    def _client(self):
+        """Return a cached async-capable Google GenAI client (the unified ``google-genai``
+        SDK; the legacy ``google-generativeai`` was deprecated 2025-11-30)."""
         if genai is None:
-            raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
-        
-        # Configure API key
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-        elif not genai.api_key:
-            # Try to get from environment
-            import os
-            api_key = os.getenv("GOOGLE_API_KEY")
-            if api_key:
-                genai.configure(api_key=api_key)
-            else:
-                raise ValueError("Google API key is required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
-        
-        return {}
-
-    def get_client(self, system_instruction: Optional[str] = None):
-        """
-        Returns a Google GenerativeModel instance.
-
-        Args:
-            system_instruction: Optional system instruction to configure the model
-        
-        Returns:
-            GenerativeModel: An instance of the GenerativeModel client.
-        """
-        if genai is None:
-            raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
-        
-        self._get_client_params()
-        
-        # system_instruction should be passed when creating the model, not in generate_content
-        if system_instruction:
-            return genai.GenerativeModel(
-                self.model,
-                system_instruction=system_instruction
-            )
-        else:
-            return genai.GenerativeModel(self.model)
+            raise ImportError("google-genai package is required. Install it with: pip install google-genai")
+        client = getattr(self, "_genai_client", None)
+        if client is None:
+            http_options = genai_types.HttpOptions(base_url=self.base_url) if self.base_url else None
+            client = genai.Client(api_key=self.api_key, http_options=http_options)
+            object.__setattr__(self, "_genai_client", client)
+        return client
 
     @property
     def name(self) -> str:
@@ -157,127 +124,69 @@ class ChatGoogle(BaseChatModel):
         """
         # Serialize messages to Google Gemini format
         system_instruction, gemini_contents = GoogleChatSerializer.serialize_messages(messages)
-        
-        # Build generation config
-        generation_config: Dict[str, Any] = {}
-        
+
+        # Build the GenerateContentConfig kwargs (the new SDK folds generation params,
+        # tools, and response schema into one ``config`` object).
+        cfg: Dict[str, Any] = {}
+        if system_instruction:
+            cfg["system_instruction"] = system_instruction
         if self.temperature is not None:
-            generation_config['temperature'] = self.temperature
+            cfg["temperature"] = self.temperature
         if self.top_p is not None:
-            generation_config['top_p'] = self.top_p
+            cfg["top_p"] = self.top_p
         if self.top_k is not None:
-            generation_config['top_k'] = self.top_k
+            cfg["top_k"] = self.top_k
         if self.max_output_tokens is not None:
-            generation_config['max_output_tokens'] = self.max_output_tokens
-        # ``reasoning`` in the model spec is the OpenRouter-style toggle
-        # ({"reasoning": {"enabled": ...}}) — Gemini's GenerationConfig has no such field
-        # (thinking is on by default for 2.5+/3 and configured separately), so passing it
-        # raises "Unknown field for GenerationConfig: reasoning". Only forward its
-        # thinking_config if a caller supplied one in that shape.
+            cfg["max_output_tokens"] = self.max_output_tokens
+        # ``reasoning`` is the OpenRouter-style toggle ({"reasoning": {"enabled": ...}}) —
+        # only forward a genuine ``thinking_config`` if one was supplied in that shape
+        # (google-genai natively supports thinking_config).
         if self.reasoning:
             tc = self.reasoning.get("thinking_config")
             if tc is not None:
-                generation_config["thinking_config"] = tc
-        # Handle response_format (Google Gemini uses response_schema)
+                cfg["thinking_config"] = tc
         if response_format:
             try:
-                response_format_config = GoogleChatSerializer.serialize_response_format(response_format)
-                generation_config.update(response_format_config)
+                cfg.update(GoogleChatSerializer.serialize_response_format(response_format))
             except ValueError as e:
                 logger.warning(f"Failed to serialize response_format: {e}")
-        
-        # Format tools using serializer
-        tools_config = None
         if tools:
             formatted_tools = GoogleChatSerializer.serialize_tools(tools)
             if formatted_tools:
-                tools_config = formatted_tools
-        
-        # Merge additional kwargs into generation_config
-        for key, value in kwargs.items():
-            if key not in ['contents', 'system_instruction', 'tools', 'generation_config']:
-                generation_config[key] = value
-        
+                cfg["tools"] = formatted_tools
+
         return {
-            "system_instruction": system_instruction,
+            "model": str(self.model),
             "contents": gemini_contents,
-            "generation_config": generation_config,
-            "tools": tools_config,
+            "config": cfg,
             "stream": stream,
         }
 
+    def _config_obj(self, cfg: Dict[str, Any]):
+        return genai_types.GenerateContentConfig(**cfg) if cfg else None
+
     async def _call_model(self, built: Dict[str, Any]) -> Any:
-        """Perform one non-streaming API call from a _build_params result.
-
-        system_instruction goes to the model constructor, not generate_content.
-        """
-        client = self.get_client(system_instruction=built.get("system_instruction"))
-        call_kwargs: Dict[str, Any] = {}
-        if built.get("contents"):
-            call_kwargs['contents'] = built["contents"]
-        if built.get("generation_config"):
-            call_kwargs['generation_config'] = built["generation_config"]
-        if built.get("tools"):
-            call_kwargs['tools'] = built["tools"]
-        return await self._async_generate_content(client, **call_kwargs)
-
-    async def _async_generate_content(self, client, **kwargs):
-        """Async wrapper for Google Gemini generate_content."""
-        import asyncio
-        
-        # Google Gemini SDK is synchronous, so we run it in a thread pool
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: client.generate_content(**kwargs))
+        """One non-streaming call via the async google-genai client."""
+        client = self._client()
+        return await client.aio.models.generate_content(
+            model=built["model"],
+            contents=built["contents"],
+            config=self._config_obj(built.get("config") or {}),
+        )
 
     async def _open_stream(self, built: Dict[str, Any]):
-        """Open Gemini's stream from a _build_params result.
-
-        The google-generativeai SDK is synchronous, so its streaming generator is
-        bridged to async via a background thread → asyncio.Queue, returned as an
-        async iterator of raw chunks for _parse_stream.
-        """
-        import asyncio
-        import threading
-
-        if genai is None:
-            raise ImportError("google-generativeai package is required. Install it with: pip install google-generativeai")
-        client = self.get_client(system_instruction=built.get("system_instruction"))
-        call_kwargs: Dict[str, Any] = {}
-        if built.get("contents"):
-            call_kwargs["contents"] = built["contents"]
-        if built.get("generation_config"):
-            call_kwargs["generation_config"] = built["generation_config"]
-        if built.get("tools"):
-            call_kwargs["tools"] = built["tools"]
-
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        def _produce():
-            try:
-                for chunk in client.generate_content(stream=True, **call_kwargs):
-                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
-            except Exception as exc:  # surface producer errors to the consumer
-                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
-
-        threading.Thread(target=_produce, daemon=True).start()
-
-        async def _aiter():
-            while True:
-                kind, payload = await queue.get()
-                if kind == "done":
-                    break
-                if kind == "error":
-                    raise payload
-                yield payload
-
-        return _aiter()
+        """Open Gemini's stream — google-genai is natively async, so this returns its
+        async iterator of chunks directly (no thread bridging needed)."""
+        client = self._client()
+        return await client.aio.models.generate_content_stream(
+            model=built["model"],
+            contents=built["contents"],
+            config=self._config_obj(built.get("config") or {}),
+        )
 
     async def _parse_stream(self, raw):
         """Translate Gemini chunks → canonical stream events. Unit-testable."""
-        from src.model.types import TextDelta, ToolCallComplete, StreamDone, normalize_stop_reason
+        from src.model.types import TextDelta, ThinkingDelta, ToolCallComplete, StreamDone, normalize_stop_reason
 
         usage = None
         finish = None
@@ -298,7 +207,12 @@ class ChatGoogle(BaseChatModel):
             for part in parts:
                 txt = getattr(part, "text", None)
                 if txt:
-                    yield TextDelta(txt)
+                    # A "thought" part (include_thoughts) is a reasoning summary — route it
+                    # to the thinking channel, not the answer text.
+                    if getattr(part, "thought", False):
+                        yield ThinkingDelta(txt)
+                    else:
+                        yield TextDelta(txt)
                 fc = getattr(part, "function_call", None)
                 name = (getattr(fc, "name", "") or "") if fc is not None else ""
                 if name:  # a text part carries an empty function_call — skip it
@@ -339,8 +253,9 @@ class ChatGoogle(BaseChatModel):
 
             # Extract content and function calls
             text_parts = []
+            thinking_parts = []
             function_calls = []
-            
+
             if hasattr(candidate, 'content'):
                 # SDK response object
                 content = candidate.content
@@ -362,11 +277,14 @@ class ChatGoogle(BaseChatModel):
                 if isinstance(part, dict):
                     txt = part.get("text")
                     fc = part.get("function_call")
+                    is_thought = bool(part.get("thought"))
                 else:
                     txt = getattr(part, "text", None)
                     fc = getattr(part, "function_call", None)
+                    is_thought = bool(getattr(part, "thought", False))
                 if txt:
-                    text_parts.append(txt)
+                    # thought parts (include_thoughts) → thinking channel, not the answer
+                    (thinking_parts if is_thought else text_parts).append(txt)
                 fc_name = (fc.get("name") if isinstance(fc, dict) else getattr(fc, "name", "")) if fc else ""
                 if fc_name:
                     fc_args = (fc.get("args") if isinstance(fc, dict) else getattr(fc, "args", {})) or {}
@@ -377,6 +295,7 @@ class ChatGoogle(BaseChatModel):
                     function_calls.append({"name": fc_name, "args": fc_args})
 
             message_text = "\n".join(text_parts) if text_parts else ""
+            thinking_text = "\n".join(thinking_parts) if thinking_parts else ""
 
             usage = self._get_usage(response)
             finish_reason = None
@@ -415,6 +334,7 @@ class ChatGoogle(BaseChatModel):
                     message=formatted_message,
                     data={
                         "raw_response": str(response),
+                        "thinking": thinking_text,
                         "functions": functions,
                         "usage": usage,
                         "finish_reason": finish_reason,
@@ -457,6 +377,7 @@ class ChatGoogle(BaseChatModel):
                         message=formatted_message,
                         data={
                             "raw_response": str(response),
+                            "thinking": thinking_text,
                             "usage": usage,
                             "finish_reason": finish_reason,
                         },
@@ -487,6 +408,7 @@ class ChatGoogle(BaseChatModel):
                     message=message_text,
                     data={
                         "raw_response": str(response),
+                        "thinking": thinking_text,
                         "usage": usage,
                         "finish_reason": finish_reason,
                     },
