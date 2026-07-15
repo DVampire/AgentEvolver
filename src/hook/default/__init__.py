@@ -1,6 +1,6 @@
 from .compact import CompactHook
 from .trace import TraceHook
-from .escalation import EscalationHook
+from .escalation import EscalationHook, ReplyHook
 from .memory import MemoryHook
 from .constraint import ConstraintHook
 from .skill_registration import SkillRegistrationHook
@@ -15,6 +15,7 @@ __all__ = [
     "CompactHook",
     "TraceHook",
     "EscalationHook",
+    "ReplyHook",
     "MemoryHook",
     "ConstraintHook",
     "SkillRegistrationHook",

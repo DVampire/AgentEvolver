@@ -1,12 +1,11 @@
-"""EscalationHook — routes ON_ESCALATE to the parent AgentRef via the runtime registry.
+"""Escalation hook — the send end of "a blocked sub-agent asks its parent".
 
-Design
-------
-- parent_session_id (= MetaAgent's ref.name) is passed in the hook input dict by
-  sub-agents that support escalation (e.g. GeneralAgent includes it from ctx.parent_session_id).
-- The hook looks up the parent AgentRef in runtime_manager._refs by that name, then
-  calls runtime_manager.ask(parent_ref, EscalationMessage) and blocks until MetaAgent
-  sets the reply_future — no separate session registry needed.
+``escalate_tool`` fires this hook, which posts an EscalationMessage to the parent's inbox
+and ``runtime.suspend``s on the sub-agent's task_id, blocking until the parent answers. The
+reply end is the mirror ``reply_hook`` (see ``reply.py``), fired by the parent's
+``reply_tool`` to ``runtime.resume`` this sub-agent. The pause/resume rendezvous is a
+general runtime primitive (``runtime_manager.suspend`` / ``resume``), not owned by this
+protocol — the hooks are just its two triggers.
 """
 
 from __future__ import annotations
@@ -23,10 +22,10 @@ _ESCALATION_TIMEOUT_S = 300.0
 
 @HOOK.register_module(force=True)
 class EscalationHook(Hook):
-    """Suspends a sub-agent on ON_ESCALATE and awaits a reply from MetaAgent."""
+    """Send end: post the escalation to the parent, then suspend until the parent replies."""
 
     name:        str = "escalation_hook"
-    description: str = "Suspends a sub-agent on ON_ESCALATE and awaits MetaAgent reply."
+    description: str = "Suspends a sub-agent on escalation and awaits the parent's reply."
     priority:    int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
@@ -43,8 +42,9 @@ class EscalationHook(Hook):
 
         from src.agent.actor.meta_agent import EscalationMessage  # local: break import cycle
 
+        task_id = inp.get("task_id") or ctx.id
         escalation = EscalationMessage(
-            task_id    = inp.get("task_id") or ctx.id,
+            task_id    = task_id,
             agent_name = inp.get("agent_name", ""),
             session_id = ctx.id,
             reason     = inp.get("reason") or "",
@@ -52,21 +52,16 @@ class EscalationHook(Hook):
             suggestion = inp.get("suggestion") or "",
         )
 
-        logger.info(
-            f"| 🆘 Escalation sent from {escalation.agent_name} [{ctx.id}] → ref {parent_session_id}"
-        )
-
+        logger.info(f"| 🆘 Escalation sent from {escalation.agent_name} [{task_id}] → ref {parent_session_id}")
         try:
-            reply: str = await runtime_manager.ask(
-                parent_ref, escalation, timeout=_ESCALATION_TIMEOUT_S,
-            )
+            await runtime_manager.send(parent_ref, escalation)
+            reply: str = await runtime_manager.suspend(task_id, timeout=_ESCALATION_TIMEOUT_S)
         except asyncio.TimeoutError:
             reply = "Meta Agent did not respond in time. Please stop the current subtask gracefully."
             logger.warning(f"| ⏰ Escalation timeout for session {ctx.id}")
+        except Exception as e:
+            logger.error(f"| ❌ EscalationHook failed to deliver: {e}")
+            return HookResult.allow()
 
         logger.info(f"| 💬 Escalation reply received for session {ctx.id}: {reply}")
-
-        return HookResult(
-            decision="allow",
-            additional_context=f"[Meta Agent Guidance]\n{reply}",
-        )
+        return HookResult(decision="allow", additional_context=f"[Meta Agent Guidance]\n{reply}")

@@ -207,6 +207,12 @@ class BrowserAgent(Agent):
     # Main entry point
     # ------------------------------------------------------------------
 
+    async def on_start(self, task, files, ctx, ref, **kwargs) -> Response:
+        """BrowserAgent keeps its own bespoke loop (browser-action turns), so it runs
+        via ``__call__`` rather than the base event-driven round loop. Returning the
+        Response here lets the runtime resolve the caller synchronously."""
+        return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
+
     async def __call__(
         self,
         task: str,

@@ -179,6 +179,71 @@ class AgentConfig(BaseModel):
         return self.__str__()
 
 
+# ---------------------------------------------------------------------------
+# Event-driven run: one unified loop for every agent (leaf actors AND orchestrators)
+# ---------------------------------------------------------------------------
+# The runtime pump drives every agent the same way: on_start kicks the first turn and
+# returns None; each turn (_advance) runs _think then dispatches the batch as background
+# tasks that post _ActionDone back to THIS agent's own inbox; on_event collects them and,
+# when the round drains, advances to the next turn or concludes. round == turn.
+#
+# An orchestrator (MetaAgent) is not special: it just has ``agent`` capabilities in its
+# roster, so some of its dispatched actions are sub-agents. A sub-agent that blocks
+# escalates to its parent via the EscalationHook → the parent's inbox → on_event — which
+# works precisely because every agent (parent included) runs this same event-driven loop.
+
+from src.runtime.types import BaseMessage as _BaseMessage
+
+
+class _ActionDone(_BaseMessage):
+    """One dispatched action finished — posted back to the agent's OWN inbox so the
+    event-driven round loop can collect it. The agent is both dispatcher and receiver;
+    its pump drains these exactly like any other message."""
+
+    call_id: str = ""
+    name: str = ""
+    output: Optional[str] = None   # the action's observable output (a sub-agent's message,
+                                   # a tool's message …) — what an orchestrator shows/inspects
+    result: Optional[str] = None   # the completion result (only meaningful when is_done)
+    error: Optional[str] = None
+    is_done: bool = False          # this call was done_tool (the completion signal)
+    reasoning: Optional[str] = None
+
+
+class _AgentRun:
+    """Mutable per-run state for the event-driven loop (one per active runtime ref)."""
+
+    def __init__(self, task, files, ctx, ref, task_id, extra_kwargs):
+        self.task = task
+        self.files = files
+        self.ctx = ctx
+        self.ref = ref
+        self.task_id = task_id
+        self.extra_kwargs = extra_kwargs or {}
+        self.step = 0
+        self.action_errors: List[str] = []
+        # the round currently in flight (this turn's batch)
+        self.round_step = 0
+        self.decision: Optional[Dict[str, Any]] = None
+        self.messages: Any = None
+        self.outstanding: set = set()
+        self.round_tasks: Dict[str, asyncio.Task] = {}
+        self.step_plan: List[Dict[str, Any]] = []
+        self.round_errors: List[str] = []
+        # Every finished action of the current round: {name, result, error, is_done}.
+        # Leaf agents ignore this (observations flow through memory); orchestrators read
+        # it to build their "what changed" prompt and to inspect sub-agent verdicts.
+        self.round_outcomes: List[Dict[str, Any]] = []
+        self.round_done = False
+        self.round_result: Optional[str] = None
+        self.round_reasoning: Optional[str] = None
+        # final outcome
+        self.done = False
+        self.result: Optional[str] = None
+        self.reasoning: Optional[str] = None
+        self.stopped_by_constraint = False
+
+
 class Agent(BaseModel):
     """Base class for all agents, mirroring the design of `Tool`."""
 
@@ -254,6 +319,8 @@ class Agent(BaseModel):
             self.constraints.append(WallTimeConstraint(max_second=timeout))
         # Tokens consumed by the previous step, fed into the next constraint check (keyed by task_id)
         self._pending_step_tokens: Dict[str, int] = {}
+        # Per-run event-driven state, keyed by runtime ref name (one entry per active run).
+        self._runs: Dict[str, "_AgentRun"] = {}
 
     @staticmethod
     def _build_constraints(raw: Optional[List]) -> List[Constraint]:
@@ -566,58 +633,57 @@ class Agent(BaseModel):
                 if response["done"]:
                     break
         """
-        from src.hook.server import hook_manager
-        from src.hook.types import HookEvent
-
         # THINK: one LLM turn → a batch of tool_calls (+ routing). Pure decision.
         decision = await self._think(messages, task_id, step_number, ctx)
-        step_reasoning = decision["reasoning"]
-        step_tokens = decision["step_tokens"]
 
         # DISPATCH: run this turn's batch concurrently, each call routed to its manager.
         outcome = await self._dispatch(decision, task_id, step_number, ctx)
-        done = outcome["done"]
-        result = outcome["result"]
-        reasoning = outcome["reasoning"]
-        action_errors = outcome["action_errors"]
-        step_plan = outcome["plan"]
 
-        # --- per-step lifecycle: POST_STEP + snapshot + trajectory capture ---
+        # Per-step lifecycle: POST_STEP + snapshot + trajectory capture.
+        await self._post_step(task_id, step_number, ctx, messages,
+                              reasoning=decision["reasoning"], plan=outcome["plan"],
+                              step_tokens=decision["step_tokens"], done=outcome["done"])
+
+        return {"done": outcome["done"], "result": outcome["result"], "reasoning": outcome["reasoning"],
+                "action_errors": outcome["action_errors"], "constraint_status": [], "stopped_by_constraint": False}
+
+    async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning, plan, step_tokens, done):
+        """Fire the per-step POST_STEP lifecycle (memory / trace / snapshot / trajectory)
+        and carry token usage forward. Shared by the blocking ``_think_and_act`` path
+        (BrowserAgent) and the event-driven round loop, so a step is recorded identically
+        however it was driven.
+        """
+        from src.hook.server import hook_manager
+        from src.hook.types import HookEvent
         await hook_manager(
             name="memory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
             ctx=ctx,
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": step_reasoning},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": reasoning},
             ctx=ctx,
         )
-        # Persist a per-step HTML snapshot of the rendered messages (see SnapshotHook).
         await hook_manager(
             name="snapshot_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
                    "task_id": task_id, "work_dir": getattr(ctx, "work_dir", None),
-                   "messages": messages, "reasoning": step_reasoning, "plan": step_plan},
+                   "messages": messages, "reasoning": reasoning, "plan": plan},
             ctx=ctx,
         )
-        # Trajectory capture: effective prompt + structured decision + tokens for this step.
         await hook_manager(
             name="trajectory_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
-                   "task_id": task_id, "messages": messages, "reasoning": step_reasoning,
-                   "plan": step_plan, "step_tokens": step_tokens},
+                   "task_id": task_id, "messages": messages, "reasoning": reasoning,
+                   "plan": plan, "step_tokens": step_tokens},
             ctx=ctx,
         )
-
-        # Carry this step's token usage into the next step's constraint check.
         self._pending_step_tokens[task_id] = step_tokens
         if done and self.constraints:
             for c in self.constraints:
                 c._cleanup(task_id)
             self._pending_step_tokens.pop(task_id, None)
-
-        return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "constraint_status": [], "stopped_by_constraint": False}
 
     # ------------------------------------------------------------------
     # The unified loop's two verbs: _think (decide) + _dispatch (act).
@@ -743,13 +809,15 @@ class Agent(BaseModel):
         task_id: str,
         step_number: int,
         ctx: "AgentContext",
+        parent_ref: Any = None,
     ) -> Dict[str, Any]:
         """Dispatch ONE tool_call, wrapped in its PRE_ACTION → invoke → POST_ACTION hooks.
 
-        This is the atomic unit of action; ``_dispatch`` runs one per tool_call,
+        This is the atomic unit of action; the batch executor runs one per tool_call,
         concurrently. Keeping a call's hook pair inside one coroutine means the pairs
-        stay correct even when the batch runs in parallel. Returns
-        ``{name, done, result, reasoning, error}``.
+        stay correct even when the batch runs in parallel. ``parent_ref`` is this agent's
+        own runtime ref, threaded through so an ``agent`` call can spawn its child with a
+        parent to escalate to. Returns ``{name, done, result, reasoning, error}``.
         """
         import json as _json
         from src.hook.server import hook_manager
@@ -786,7 +854,7 @@ class Agent(BaseModel):
                     f"read_only agent '{self.name}' may not invoke framework-mutating "
                     f"tool '{route[1]}'. Report findings instead of modifying anything."
                 )
-            action_result, done, result, reasoning = await self._invoke_capability(route, call, ctx)
+            action_result, done, result, reasoning = await self._invoke_capability(route, call, ctx, parent_ref)
         except Exception as e:
             error = str(e)
             logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
@@ -806,14 +874,46 @@ class Agent(BaseModel):
             input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
             ctx=ctx,
         )
-        return {"name": call.name, "done": done, "result": result, "reasoning": reasoning, "error": error}
+        return {"name": call.name, "done": done, "result": result, "reasoning": reasoning,
+                "error": error, "output": action_result}
 
-    async def _invoke_capability(self, route: Any, call: Any, ctx: "AgentContext"):
+    async def _invoke_capability(self, route: Any, call: Any, ctx: "AgentContext", parent_ref: Any = None):
         """Route ONE call to the manager that owns it — the single dispatch table that
         knows how each capability kind executes. Returns
         ``(action_result, done, result, reasoning)``.
+
+        ``agent`` is a capability like any other: dispatching one runs a sub-agent to
+        completion via the runtime, with this agent as its parent (so the child can
+        escalate back up). This is what lets an orchestrator use the very same loop as a
+        leaf actor — a sub-agent is just another tool it can call.
         """
         kind = route[0]
+        if kind == "agent":
+            from src.agent.server import agent_manager
+            from src.runtime import runtime_manager
+            from src.utils.name_utils import make_id
+            child = await agent_manager.get(route[1])
+            if child is None:
+                raise ValueError(f"No registered agent named {route[1]!r}")
+            inp = call.input or {}
+            sub_task = inp.get("task", "")
+            target = inp.get("target_name")
+            if target:
+                sub_task = f"Target capability: {target}\n\n{sub_task}"
+            child_ctx = AgentContext(
+                id=f"{route[1]}-{make_id()}",
+                work_dir=getattr(ctx, "work_dir", None) or self.base_dir,
+                parent_session_id=(parent_ref.name if parent_ref is not None else getattr(ctx, "id", None)),
+            )
+            for al in ("tool_allowlist", "skill_allowlist", "connector_allowlist"):
+                if inp.get(al) is not None:
+                    child_ctx.extra[al] = inp[al]
+            files = [f for f in (inp.get("files") or []) if os.path.exists(f)]
+            resp = await runtime_manager.invoke(
+                child, task=sub_task, files=files or None, ctx=child_ctx, parent_ref=parent_ref
+            )
+            logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
+            return resp.message, False, None, None
         if kind == "skill":
             response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
             logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
@@ -845,105 +945,16 @@ class Agent(BaseModel):
                        ctx: Optional[AgentContext] = None,
                        **kwargs: Any,
                        ) -> "Response":
-        """Standard synchronous think-and-act loop shared by all tool-calling agents.
+        """Synchronous entry point: run this agent to completion and return its Response.
 
-        Runs: ON_START hooks → [constraint check → build messages → think & act] until
-        done or max_step → ON_STOP hooks. Extra keyword arguments flow through to
-        ``_get_messages`` / ``_think_and_act`` / the context builder.
-
-        Every tool-calling subclass defines its own ``__call__`` as the explicit entry
-        point: simple actors (general, code, evaluate) just delegate to
-        ``super().__call__(...)``; agents that must register a produced artifact
-        (generate, optimize) call ``super().__call__(...)`` and then run their
-        registration inline on the returned Response.
-
-        Event-driven / orchestrator agents (MetaAgent, MonitorAgent) override
-        ``on_start`` / ``on_event`` instead; an agent with a bespoke loop
-        (BrowserAgent) replaces this loop entirely.
+        Delegates to the runtime — spawn a pump, deliver the task, await the result — so
+        the SAME event-driven loop (on_start → rounds → _conclude) runs whether the agent
+        is called directly here or dispatched as a sub-agent by an orchestrator. Post-run
+        work that used to live in a ``__call__`` override (generate/optimize registration)
+        now hangs off ``_finalize_run``, so it fires on every path.
         """
-        from src.hook.server import hook_manager
-        from src.hook.types import HookEvent
-        from src.utils.name_utils import make_id
-        from src.response import ResponseType
-
-        logger.info(f"| 🚀 Starting {self.name}: {task}")
-
-        if ctx is None:
-            ctx = AgentContext()
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
-        if files:
-            logger.info(f"| 📂 Attached files: {files}")
-
-        task_id = make_id()
-        logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
-
-        # Shared ON_START / ON_STOP hook payload (memory + trace).
-        lifecycle_input = {
-            "agent_name": self.name,
-            "task_id": task_id,
-            "memory_name": self.memory_name,
-            "use_memory": self.use_memory,
-            "parent_session_id": ctx.parent_session_id, 
-            "subtask_id": ctx.subtask_id,
-        }
-        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
-            await hook_manager(
-                name=hook_name,
-                input={"event": HookEvent.ON_START, "task": task, **lifecycle_input},
-                ctx=ctx,
-            )
-
-        step_number = 0
-        action_errors: List[str] = []
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
-
-        while step_number < self.max_step:
-            logger.info(f"| 🔄 [{self.name}] Step {step_number + 1}/{self.max_step}")
-            # Budget check BEFORE building messages so the prompt reflects the current
-            # budget. Runs exactly once per step (_think_and_act does not repeat it).
-            reason, constraint_status = await self._constraint_check(task_id, ctx)
-            if reason is not None:
-                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {"done": True, "result": reason, "reasoning": None,
-                            "action_errors": [], "stopped_by_constraint": True}
-                break
-            messages = await self._get_messages(
-                task, ctx=ctx, files=files, step_number=step_number,
-                action_errors=action_errors, constraint_status=constraint_status, **kwargs)
-            response = await self._think_and_act(
-                messages, task_id, step_number, ctx=ctx, **kwargs)
-            step_number += 1
-            action_errors = response.get("action_errors") or []
-            if response["done"]:
-                break
-
-        if step_number >= self.max_step and not response["done"]:
-            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
-            response = {"done": False, "result": "The task has not been completed.",
-                        "reasoning": "Reached the maximum number of steps."}
-
-        stop_success = response["done"] and not response.get("stopped_by_constraint", False)
-        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
-            await hook_manager(
-                name=hook_name,
-                input={"event": HookEvent.ON_STOP, "result": response.get("result"),
-                       "success": stop_success, **lifecycle_input},
-                ctx=ctx,
-            )
-
-        logger.info(f"| ✅ {self.name} completed after {step_number}/{self.max_step} steps")
-
-        # Surface the run's task_id so a caller (e.g. a benchmark/evaluator driver)
-        # can correlate this run with its captured trajectory and later call
-        # trajectory_manager.set_reward(task_id, reward).
-        response["task_id"] = task_id
-        return Response(
-            type=ResponseType.AGENT,
-            success=response["done"] and not response.get("stopped_by_constraint", False),
-            message=response.get("result") or "",
-            data=response,
-        )
+        from src.runtime import runtime_manager
+        return await runtime_manager.invoke(self, task=task, files=files, ctx=ctx, **kwargs)
 
     # ------------------------------------------------------------------
     # Path 2: Event-driven (runtime / mailbox)
@@ -956,40 +967,250 @@ class Agent(BaseModel):
                        ref: Any,
                        **kwargs: Any,
                        ) -> Optional["Response"]:
-        """Called by the runtime pump when a TaskMessage arrives.
+        """Runtime pump entry: initialise the run, emit ON_START lifecycle hooks, and
+        kick the first turn. Always returns ``None`` — the result is delivered later by
+        ``_conclude`` (which resolves the caller's reply). This is THE loop every agent
+        uses; orchestrators only widen the roster and override a couple of seams."""
+        from src.hook.server import hook_manager
+        from src.hook.types import HookEvent
+        from src.utils.name_utils import make_id
 
-        Default behaviour: delegate to ``__call__`` so that simple actor
-        agents only need to implement one method.
+        logger.info(f"| 🚀 Starting {self.name}: {task}")
+        if ctx is None:
+            ctx = AgentContext()
+        if not ctx.work_dir:
+            ctx.work_dir = self.base_dir
+        if files:
+            logger.info(f"| 📂 Attached files: {files}")
 
-        Override to customise event-driven startup (e.g. MetaAgent).
-        Return a ``Response`` to resolve the task immediately; return
-        ``None`` to signal that resolution will happen asynchronously via
-        a later ``on_event`` / ``on_stop`` call.
-        """
-        return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
+        task_id = make_id()
+        run = _AgentRun(task, files, ctx, ref, task_id, kwargs)
+        self._runs[ref.name] = run
 
-    async def on_event(self,
-                       msg: Any,
-                       ref: Any,
-                       ) -> None:
-        """Called by the runtime pump for every non-TaskMessage message.
+        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+            await hook_manager(
+                name=hook_name,
+                input={"event": HookEvent.ON_START, "task": task, **self._lifecycle_input(run)},
+                ctx=ctx,
+            )
 
-        Default behaviour: no-op.  Event-driven agents (e.g. MetaAgent)
-        override this to handle SubtaskDone, Escalation, etc.
-        """
+        await self._advance(run)
+        return None
 
-    async def on_stop(self,
-                      result: "Response",
-                      ctx: Optional[AgentContext],
-                      ) -> None:
-        """Called after the task resolves — cleanup / teardown hook.
+    async def on_event(self, msg: Any, ref: Any) -> None:
+        """Runtime pump: collect a finished action (round bookkeeping) and, when the
+        round drains, advance to the next turn or conclude. Non-action messages
+        (escalations, progress) go to ``_handle_extra_event`` for orchestrators."""
+        run = self._runs.get(ref.name)
+        if run is None:
+            return
+        if isinstance(msg, _ActionDone):
+            if msg.call_id in run.outstanding:
+                run.outstanding.discard(msg.call_id)
+                run.round_tasks.pop(msg.call_id, None)
+                run.round_outcomes.append({"name": msg.name, "output": msg.output, "result": msg.result, "error": msg.error, "is_done": msg.is_done})
+                if msg.error:
+                    run.round_errors.append(f"Action '{msg.name}' failed: {msg.error}")
+                if msg.is_done:
+                    run.round_done = True
+                    run.round_result = msg.result
+                    run.round_reasoning = msg.reasoning
+            if not run.outstanding:
+                await self._on_round_complete(run)
+        else:
+            await self._handle_extra_event(run, msg)
 
-        For sync agents this is called automatically by ``handle()`` once
-        ``on_start`` returns a result.  Async / event-driven agents should
-        call this themselves when they are done (e.g. inside ``_finish``).
+    # ------------------------------------------------------------------
+    # The event-driven loop body (shared by every agent)
+    # ------------------------------------------------------------------
 
-        Default behaviour: no-op.  Override to emit ON_STOP hooks, flush
-        memory, reset per-invocation state, etc.
+    def _lifecycle_input(self, run: "_AgentRun") -> Dict[str, Any]:
+        return {
+            "agent_name": self.name, "task_id": run.task_id,
+            "memory_name": self.memory_name, "use_memory": self.use_memory,
+            "parent_session_id": getattr(run.ctx, "parent_session_id", None),
+            "subtask_id": getattr(run.ctx, "subtask_id", None),
+        }
+
+    async def _advance(self, run: "_AgentRun") -> None:
+        """One turn: budget/step check → build messages → _think → dispatch the round.
+        Concludes directly on a limit, or loops on a text-only (no-tool) turn."""
+        if run.step >= self.max_step:
+            logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
+            run.done, run.result = False, "The task has not been completed."
+            run.reasoning = "Reached the maximum number of steps."
+            await self._conclude(run)
+            return
+
+        reason, cstatus = await self._constraint_check(run.task_id, run.ctx)
+        if reason is not None:
+            logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
+            run.done, run.result, run.stopped_by_constraint = True, reason, True
+            await self._conclude(run)
+            return
+
+        logger.info(f"| 🔄 [{self.name}] Step {run.step + 1}/{self.max_step}")
+        messages = await self._get_messages(
+            run.task, ctx=run.ctx, files=run.files, step_number=run.step,
+            action_errors=run.action_errors, constraint_status=cstatus, _run=run, **run.extra_kwargs)
+        decision = await self._think(
+            messages, run.task_id, run.step, run.ctx,
+            include_agents=self._include_agents(), extra_tools=self._extra_tools(run))
+        run.decision = decision
+        run.messages = messages
+
+        calls = await self._prepare_round(run, decision)
+        if calls is None:
+            return  # a seam (e.g. MetaAgent) fully handled this turn (concluded / deferred)
+        if not calls:
+            # text-only turn: record the empty step, nudge, and try again next turn
+            run.round_step = run.step
+            run.step_plan = []
+            await self._post_step(run.task_id, run.step, run.ctx, messages,
+                                  reasoning=decision["reasoning"], plan=[], step_tokens=decision["step_tokens"], done=False)
+            run.action_errors = [
+                "You produced text but called no tool. Take the next action by calling a tool, "
+                "or if the task is COMPLETE call `done_tool` with the result now."]
+            run.step += 1
+            await self._advance(run)
+            return
+        self._dispatch_round(run, calls, decision["routing"])
+
+    def _dispatch_round(self, run: "_AgentRun", calls: List[Any], routing: Dict[str, Any]) -> None:
+        """Launch this turn's batch as concurrent background tasks, each posting its
+        result to this agent's own inbox. This turn's batch == one round."""
+        import json as _json
+        run.round_step = run.step
+        run.outstanding = set()
+        run.round_tasks = {}
+        run.round_errors = []
+        run.round_done = False
+        run.round_result = None
+        run.round_reasoning = None
+        run.round_outcomes = []
+        run.step_plan = [
+            {"id": c.id, "description": "", "type": (routing.get(c.name) or ("tool",))[0],
+             "name": c.name, "args": _json.dumps(c.input, ensure_ascii=False)} for c in calls]
+        for i, call in enumerate(calls):
+            run.outstanding.add(call.id)
+            run.round_tasks[call.id] = asyncio.create_task(
+                self._run_one_bg(run, call, i, routing), name=f"action-{call.id}")
+
+    async def _run_one_bg(self, run: "_AgentRun", call: Any, index: int, routing: Dict[str, Any]) -> None:
+        """Run one action, then post an _ActionDone back to this agent's inbox."""
+        try:
+            outcome = await self._run_one(call, index, routing, run.task_id, run.round_step, run.ctx, parent_ref=run.ref)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:  # pragma: no cover - defensive
+            outcome = {"name": call.name, "done": False, "result": None, "reasoning": None, "error": str(e)}
+        try:
+            await run.ref._inbox.put(_ActionDone(
+                call_id=call.id, name=call.name, output=outcome.get("output"), result=outcome.get("result"),
+                error=outcome.get("error"), is_done=outcome.get("done", False), reasoning=outcome.get("reasoning")))
+        except Exception:
+            pass
+
+    async def _on_round_complete(self, run: "_AgentRun") -> None:
+        """A round's whole batch has drained: record the step, then advance or conclude."""
+        decision = run.decision
+        await self._post_step(run.task_id, run.round_step, run.ctx, run.messages,
+                              reasoning=decision["reasoning"], plan=getattr(run, "step_plan", []),
+                              step_tokens=decision["step_tokens"], done=run.round_done)
+        run.action_errors = list(run.round_errors)
+        run.step = run.round_step + 1
+        if run.round_done:
+            run.done = True
+            run.result = run.round_result
+            if run.round_reasoning:
+                run.reasoning = run.round_reasoning
+            await self._conclude(run)
+            return
+        await self._advance(run)
+
+    async def _conclude(self, run: "_AgentRun") -> None:
+        """Finish a run: cancel stragglers, emit ON_STOP hooks, build the Response, run
+        the post-run finalize hook, resolve the caller's reply, then on_end."""
+        from src.hook.server import hook_manager
+        from src.hook.types import HookEvent
+        from src.response import ResponseType
+
+        for t in list(run.round_tasks.values()):
+            if not t.done():
+                t.cancel()
+        if run.round_tasks:
+            await asyncio.gather(*run.round_tasks.values(), return_exceptions=True)
+        run.round_tasks.clear()
+        run.outstanding.clear()
+
+        success = run.done and not run.stopped_by_constraint
+        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+            await hook_manager(
+                name=hook_name,
+                input={"event": HookEvent.ON_STOP, "result": run.result, "success": success, **self._lifecycle_input(run)},
+                ctx=run.ctx,
+            )
+        logger.info(f"| ✅ {self.name} completed after {run.step}/{self.max_step} steps")
+
+        data = {"done": run.done, "result": run.result, "reasoning": run.reasoning,
+                "stopped_by_constraint": run.stopped_by_constraint, "task_id": run.task_id}
+        response = Response(type=ResponseType.AGENT, success=success, message=run.result or "", data=data)
+        response = await self._finalize_run(response, run.ctx)
+
+        ref = run.ref
+        if ref is not None and ref._pending_reply is not None and not ref._pending_reply.done():
+            ref._pending_reply.set_result(response)
+            ref._pending_reply = None
+        self._runs.pop(run.ref.name, None)
+        await self.on_end(response, run.ctx, run)
+
+    # ------------------------------------------------------------------
+    # Seams — leaf actors use the defaults; orchestrators (MetaAgent) override
+    # ------------------------------------------------------------------
+
+    def _include_agents(self) -> bool:
+        """Whether to project registered sub-agents into this agent's roster (agent__*).
+        False for leaf actors; MetaAgent overrides to True."""
+        return False
+
+    def _extra_tools(self, run: "_AgentRun") -> Optional[List[Any]]:
+        """Control tools beyond the projected capabilities (e.g. MetaAgent's
+        reply_to_agent). Default: none."""
+        return None
+
+    async def _prepare_round(self, run: "_AgentRun", decision: Dict[str, Any]) -> Optional[List[Any]]:
+        """Transform this turn's tool_calls before dispatch. Default: dispatch them all.
+        Return the calls to dispatch, or ``None`` to signal the turn was fully handled
+        (concluded / deferred) by an override — MetaAgent uses this for escalation
+        replies and the review gate."""
+        return decision["tool_calls"]
+
+    async def _handle_extra_event(self, run: "_AgentRun", msg: Any) -> None:
+        """Handle a non-action inbox message (escalation, progress). Leaf agents receive
+        none; orchestrators override. Default: ignore."""
+        return
+
+    async def _finalize_run(self, response: "Response", ctx: Optional[AgentContext]) -> "Response":
+        """Post-run hook, called by ``_conclude`` BEFORE the caller's reply is resolved so
+        it can still adjust the Response. Default: passthrough. generate/optimize agents
+        override to register the produced artifact (and fail the response on error)."""
+        return response
+
+    async def on_end(self,
+                     result: "Response",
+                     ctx: Optional[AgentContext],
+                     run: Optional["_AgentRun"] = None,
+                     ) -> None:
+        """Third of the lifecycle triad (``on_start`` / ``on_event`` / ``on_end``):
+        called once the run resolves — cleanup / teardown hook.
+
+        The framework's ``_conclude`` calls this (with the finished ``run``) after it
+        has resolved the caller's reply. ``run`` is ``None`` only on the synchronous
+        ``handle`` path (an agent whose ``on_start`` returned a Response directly, e.g.
+        BrowserAgent). Distinct from ``HookEvent.ON_STOP`` (a hook event fired around
+        completion) — this is the overridable Python method.
+
+        Default behaviour: no-op.  Override to emit extra teardown / trace / reset state.
         """
 
     # ------------------------------------------------------------------
@@ -1000,12 +1221,12 @@ class Agent(BaseModel):
         """Runtime pump dispatcher.
 
         Routes each inbox message to the appropriate lifecycle method:
-          * TaskMessage          → on_start → [on_stop if resolved]
+          * TaskMessage          → on_start → [on_end if resolved synchronously]
           * Everything else      → on_event
 
         This method is part of the framework layer.  Subclasses should
-        implement ``__call__``, ``on_start``, ``on_event``, and ``on_stop``
-        instead of overriding ``handle``.
+        implement ``on_start``, ``on_event``, and ``on_end`` instead of
+        overriding ``handle``.
         """
         from src.runtime.types import TaskMessage
         if isinstance(msg, TaskMessage):
@@ -1024,7 +1245,7 @@ class Agent(BaseModel):
                     if ref._pending_reply is not None and not ref._pending_reply.done():
                         ref._pending_reply.set_result(result)
                         ref._pending_reply = None
-                    await self.on_stop(result, ctx)
+                    await self.on_end(result, ctx)
             except asyncio.CancelledError:
                 if ref._pending_reply is not None and not ref._pending_reply.done():
                     ref._pending_reply.cancel()

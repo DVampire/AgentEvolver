@@ -35,6 +35,37 @@ class RuntimeManager(metaclass=Singleton):
 
     def __init__(self) -> None:
         self._refs: Dict[str, AgentRef] = {}
+        # Suspend/resume rendezvous channel: key → future. One coroutine suspends on a
+        # key and blocks; another (elsewhere, e.g. a different agent) resumes it by key.
+        self._pending: Dict[str, "asyncio.Future"] = {}
+
+    # ------------------------------------------------------------------
+    # Suspend / resume channel — a request-reply rendezvous across agents
+    # ------------------------------------------------------------------
+    # A general pause/resume primitive (think an HTTP request awaiting its response, or a
+    # process blocked until signalled). The escalation protocol is one user: a blocked
+    # sub-agent ``suspend``s on its task_id; its parent ``resume``s that key with guidance.
+
+    async def suspend(self, key: str, *, timeout: Optional[float] = None) -> Any:
+        """Block the caller until ``resume(key, value)`` is called (or timeout), and
+        return that value. Registers a one-shot future under ``key``."""
+        fut = asyncio.get_event_loop().create_future()
+        self._pending[key] = fut
+        try:
+            if timeout is not None:
+                return await asyncio.wait_for(fut, timeout=timeout)
+            return await fut
+        finally:
+            self._pending.pop(key, None)
+
+    def resume(self, key: str, value: Any) -> bool:
+        """Resume whoever is suspended on ``key`` with ``value``. Returns whether someone
+        was actually waiting (False = already resumed / timed out / never suspended)."""
+        fut = self._pending.get(key)
+        if fut is not None and not fut.done():
+            fut.set_result(value)
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Spawn / stop lifecycle

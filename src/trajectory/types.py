@@ -91,10 +91,11 @@ class TrajectoryStep(BaseModel):
         Native mode: the model emits reasoning (thinking/text) plus native
         ``tool_calls``. We project that to the OpenAI-chat assistant shape —
         ``content`` = reasoning, ``tool_calls`` = one function call per action
-        (``arguments`` kept as a JSON string, ``name`` the namespaced tool name
-        the model actually emitted) — so the SFT/RL target is byte-faithful to
-        what the model produces at inference. Training on any other shape would
-        teach a different output schema than the agent uses.
+        (``arguments`` kept as a JSON string, ``name`` the tool name the model
+        actually emitted — the entity's own registered name, e.g. ``bash_tool``)
+        — so the SFT/RL target is byte-faithful to what the model produces at
+        inference. Training on any other shape would teach a different output
+        schema than the agent uses.
         """
         tool_calls: List[Dict[str, Any]] = []
         for i, a in enumerate(self.actions):

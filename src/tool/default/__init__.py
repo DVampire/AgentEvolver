@@ -14,6 +14,7 @@ from .deploy import DeployTool
 from .evolution import EvolutionTool
 from .journal import JournalTool
 from .escalate import EscalateTool
+from .reply import ReplyTool
 from .ask_question import AskQuestionTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
@@ -39,6 +40,7 @@ __all__ = [
     "EvolutionTool",
     "JournalTool",
     "EscalateTool",
+    "ReplyTool",
     "AskQuestionTool",
     "GlobSearchTool",
     "GrepSearchTool",

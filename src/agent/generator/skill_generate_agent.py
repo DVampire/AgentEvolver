@@ -57,21 +57,11 @@ class SkillGenerateAgent(Agent):
             **kwargs,
         )
 
-    async def __call__(
-        self,
-        task: Optional[str] = None,
-        files: Optional[List[str]] = None,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Response:
+    async def _finalize_run(self, response, ctx):
         """Run the base loop, then register the freshly generated skill."""
         from src.hook.server import hook_manager
         from src.hook.types import HookDecision, HookEvent
         from src.utils import get_project_root
-
-        if ctx is None:
-            ctx = AgentContext()
-        response = await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
 
         if response.success:
             result = await hook_manager(
