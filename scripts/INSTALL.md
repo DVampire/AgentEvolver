@@ -88,11 +88,14 @@ abcabc...
 
 # 2. Set up the Python environment
 
-## Step 1:
+Pick **one** of the two options below (conda or uv). Python 3.12 is recommended (3.10+ required).
+
+## Step 1 — Option A: conda + pip
 ```bash
 conda create -n agent python=3.12
 conda activate agent
 pip install -r requirements.txt
+pip install -e .            # install the agentevolver package (adds the `agentevolver` CLI)
 
 # install playwright
 pip install playwright
@@ -102,6 +105,34 @@ playwright install
 pip install browser-use
 browser-use install
 ```
+
+## Step 1 — Option B: uv (faster)
+[uv](https://docs.astral.sh/uv/) is a fast drop-in replacement for pip/venv.
+```bash
+# install uv (once)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# create and activate a virtual environment
+uv venv --python 3.12
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+
+# install dependencies (requirements.txt is the source of truth for now) + the package
+uv pip install -r requirements.txt
+uv pip install -e . --no-deps        # install agentevolver itself (adds the `agentevolver` CLI)
+
+# install playwright
+uv pip install playwright
+playwright install
+
+# install browser-use
+uv pip install browser-use
+browser-use install
+```
+
+> Note: `pip install -e .` / `uv pip install -e .` installs this repo as the importable
+> `agentevolver` package, so other projects can `import agentevolver` and you get the
+> `agentevolver` console command. Run data goes to the current directory (or `$AGENTEVOLVER_HOME`),
+> never into the installed package.
 
 ## Step 2:
 

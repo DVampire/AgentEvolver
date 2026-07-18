@@ -88,11 +88,14 @@ abcabc...
 
 # 二、安装python环境
 
-## Step1: 
+以下两种方式**任选其一**(conda 或 uv)。推荐 Python 3.12(最低 3.10)。
+
+## Step1 — 方式 A：conda + pip
 ```bash
 conda create -n agent python=3.12
 conda activate agent
 pip install -r requirements.txt
+pip install -e .            # 安装 agentevolver 包（并注册 `agentevolver` 命令行）
 
 # 安装playwright
 pip install playwright
@@ -102,6 +105,33 @@ playwright install
 pip install browser-use
 browser-use install
 ```
+
+## Step1 — 方式 B：uv（更快）
+[uv](https://docs.astral.sh/uv/) 是 pip/venv 的高速直替。
+```bash
+# 安装 uv（一次即可）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 创建并激活虚拟环境
+uv venv --python 3.12
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+
+# 安装依赖（目前以 requirements.txt 为准）+ 本包
+uv pip install -r requirements.txt
+uv pip install -e . --no-deps        # 安装 agentevolver 本体（并注册 `agentevolver` 命令行）
+
+# 安装playwright
+uv pip install playwright
+playwright install
+
+# 安装browser use
+uv pip install browser-use
+browser-use install
+```
+
+> 说明：`pip install -e .` / `uv pip install -e .` 会把本仓库装成可导入的 `agentevolver` 包，
+> 其他项目就能 `import agentevolver`，同时得到 `agentevolver` 命令。运行产生的数据落在当前目录
+> （或 `$AGENTEVOLVER_HOME`），绝不会写进已安装的包里。
 
 ## Step2:
 
