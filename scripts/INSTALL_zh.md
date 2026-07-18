@@ -1,6 +1,6 @@
 # 前言
 
-本项目所有 API Key 主要依赖密钥管理软件 Vault 进行统一管理，而非完全写在 `.env` 中，这是防止 key 泄漏的必要措施。因此，本文档先介绍 API Key 管理软件（Vault）的安装与配置，再介绍 opencode 的安装，随后介绍 Python 环境的安装，最后提供一些其他配置供参考。
+本项目所有 API Key 主要依赖密钥管理软件 Vault 进行统一管理，而非完全写在 `.env` 中，这是防止 key 泄漏的必要措施。因此，本文档先介绍 API Key 管理软件（Vault）的安装与配置，随后介绍 Python 环境的安装，最后提供一些其他配置供参考。
 
 > 🌐 English version: [INSTALL.md](INSTALL.md)
 
@@ -86,116 +86,7 @@ vault kv get -field=OPENROUTER_API_KEY cubbyhole/env
 abcabc...
 ```
 
-# 二、安装opencode
-
-如果你已经安装过opencode了，只需要保证opencode.json文件内容正确即可
-
-vim /mnt/agent-framework/<yourt user path>/myapp/opencode/opencode.json
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "bash": "allow",
-    "edit": "allow",
-    "write": "allow"
-  },
-  "provider": {
-    "anthropic": {
-      "options": {
-        "baseURL": "公司内aws-claude路径base url（必填）",
-        "apiKey": "公司内aws-claude路径api key（必填）"
-      },
-      "models": {
-        "claude-opus-4-6": {
-          "options": {
-            "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "high" }
-          }
-        },
-        "claude-opus-4-8": {
-          "options": {
-            "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "high" }
-          }
-        }
-      }
-    }
-  },
-  "model": "anthropic/claude-opus-4-8"
-}
-```
-
-说明：
-- provider 名必须写 `anthropic`（不能写 `aws-claude`），这样 opencode 才会使用 `@ai-sdk/anthropic` 包，自动过滤消息中的空 text block，避免 Bedrock 400 报错；
-- `thinking.type = "adaptive"` + `output_config.effort = "high"` 是 AWS Bedrock Claude Opus 4.x 的 reasoning 格式（直连 Anthropic API 用 `"type": "enabled"` + `budgetTokens`，两者不同）；
-- 如果想使用 openrouter 路径可以配置如下：
-  ```json
-  {
-    "$schema": "https://opencode.ai/config.json",
-    "permission": {
-      "bash": "allow",
-      "edit": "allow",
-      "write": "allow"
-    },
-    "provider": {
-      "openrouter": {
-        "options": {
-          "baseURL": "官网或公司内openrouter的base url",
-          "apiKey": "官网或公司内openrouter的api key"
-        },
-        "models": {
-          "anthropic/claude-opus-4.6": {},
-          "anthropic/claude-opus-4.7": {}
-        }
-      },
-      "anthropic": {
-        "options": {
-          "baseURL": "公司内aws-claude路径base url（必填）",
-          "apiKey": "公司内aws-claude路径api key（必填）"
-        },
-        "models": {
-          "claude-opus-4-6": {
-            "options": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "high" }
-            }
-          },
-          "claude-opus-4-8": {
-            "options": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "high" }
-            }
-          }
-        }
-      }
-    },
-    "model": "openrouter/anthropic/claude-opus-4.6"
-  }
-  ```
-
-> 安全提示：opencode.json 里的 apiKey 是明文写在文件里的，请确保该文件权限不暴露给非可信用户（`chmod 600 opencode.json` 推荐）。
-
-## Step1: 
-
-```bash
-cd scripts
-chmod +x install_opencode.sh 
-./install_opencode.sh /mnt/agent-framework/<yourt user path>/myapp
-```
-
-## Step2: 最后验证是否配置成功
-```
-opencode run 'hello world'
-
-如果出现类似信息表示成功：
- 
-> build · claude-opus-4-6
-
-Hello! How can I help you today? If you need assistance with a software engineering task, feel free to describe what you're working on.
-```
-
-# 三、安装python环境
+# 二、安装python环境
 
 ## Step1: 
 ```bash
@@ -222,7 +113,7 @@ UNSEAL_TOKEN='<unseal token key1>'
 SECRET_ENGINE_PATH='cubbyhole/env'
 ```
 
-# 四、其他
+# 三、其他
 
 ```bash
 1. 测试模型调用

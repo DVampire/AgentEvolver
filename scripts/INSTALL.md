@@ -1,6 +1,6 @@
 # Preface
 
-All API keys in this project are managed centrally via the secret manager **Vault**, rather than being written entirely into `.env` — this is a necessary measure to prevent key leakage. Accordingly, this document first covers installing and configuring the secret manager (Vault), then installing opencode, then setting up the Python environment, and finally provides some additional configuration for reference.
+All API keys in this project are managed centrally via the secret manager **Vault**, rather than being written entirely into `.env` — this is a necessary measure to prevent key leakage. Accordingly, this document first covers installing and configuring the secret manager (Vault), then setting up the Python environment, and finally provides some additional configuration for reference.
 
 > 🌐 中文版请见 [INSTALL_zh.md](INSTALL_zh.md)
 
@@ -86,116 +86,7 @@ The output is the content of your OPENROUTER_API_KEY:
 abcabc...
 ```
 
-# 2. Install opencode
-
-If you have already installed opencode, you only need to make sure `opencode.json` is correct.
-
-vim /mnt/agent-framework/<your user path>/myapp/opencode/opencode.json
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "bash": "allow",
-    "edit": "allow",
-    "write": "allow"
-  },
-  "provider": {
-    "anthropic": {
-      "options": {
-        "baseURL": "internal aws-claude base url (required)",
-        "apiKey": "internal aws-claude api key (required)"
-      },
-      "models": {
-        "claude-opus-4-6": {
-          "options": {
-            "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "high" }
-          }
-        },
-        "claude-opus-4-8": {
-          "options": {
-            "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "high" }
-          }
-        }
-      }
-    }
-  },
-  "model": "anthropic/claude-opus-4-8"
-}
-```
-
-Notes:
-- The provider name **must** be `anthropic` (not `aws-claude`). This tells opencode to use the `@ai-sdk/anthropic` package, which automatically filters empty text blocks and prevents Bedrock 400 errors;
-- `thinking.type = "adaptive"` + `output_config.effort = "high"` is the reasoning format for AWS Bedrock Claude Opus 4.x (direct Anthropic API uses `"type": "enabled"` + `budgetTokens` — they differ);
-- If you want to use the openrouter route, configure it like this:
-  ```json
-  {
-    "$schema": "https://opencode.ai/config.json",
-    "permission": {
-      "bash": "allow",
-      "edit": "allow",
-      "write": "allow"
-    },
-    "provider": {
-      "openrouter": {
-        "options": {
-          "baseURL": "official or internal openrouter base url",
-          "apiKey": "official or internal openrouter api key"
-        },
-        "models": {
-          "anthropic/claude-opus-4.6": {},
-          "anthropic/claude-opus-4.7": {}
-        }
-      },
-      "anthropic": {
-        "options": {
-          "baseURL": "internal aws-claude base url (required)",
-          "apiKey": "internal aws-claude api key (required)"
-        },
-        "models": {
-          "claude-opus-4-6": {
-            "options": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "high" }
-            }
-          },
-          "claude-opus-4-8": {
-            "options": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "high" }
-            }
-          }
-        }
-      }
-    },
-    "model": "openrouter/anthropic/claude-opus-4.6"
-  }
-  ```
-
-> Security note: the apiKey in `opencode.json` is stored in plaintext. Make sure the file is not exposed to untrusted users (`chmod 600 opencode.json` recommended).
-
-## Step 1:
-
-```bash
-cd scripts
-chmod +x install_opencode.sh
-./install_opencode.sh /mnt/agent-framework/<your user path>/myapp
-```
-
-## Step 2: Verify the configuration works
-```
-opencode run 'hello world'
-
-If you see output like the following, it works:
-
-> build · claude-opus-4-6
-
-Hello! How can I help you today? If you need assistance with a software engineering task, feel free to describe what you're working on.
-```
-
-# 3. Set up the Python environment
+# 2. Set up the Python environment
 
 ## Step 1:
 ```bash
@@ -222,7 +113,7 @@ UNSEAL_TOKEN='<unseal token key1>'
 SECRET_ENGINE_PATH='cubbyhole/env'
 ```
 
-# 4. Misc
+# 3. Misc
 
 ```bash
 1. Test a model call
