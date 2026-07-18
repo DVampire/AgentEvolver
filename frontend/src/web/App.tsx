@@ -10,12 +10,15 @@ type ActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 type Theme = 'dark' | 'light';
 
 interface CapabilityCatalog { agents: string[]; tools: string[]; skills: string[]; connectors: string[]; environments: string[]; commands: string[]; }
+interface ModelSummary { name: string; id: string; type: string; streaming: boolean; functions: boolean; vision: boolean; }
+interface ProviderSummary { name: string; models: ModelSummary[]; }
+interface ModelEditorState { originalName?: string; configuration: Record<string, unknown>; hasApiKey: boolean; }
 interface Message { id: string; kind: MessageKind; title: string; content?: string; detail?: string; timestamp: string; }
 interface ActivityStep { id: string; title: string; content?: string; detail?: string; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
 interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
 interface SessionSummary { session_id: string; name: string; workspace: string; task_ids: string[]; }
-interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; document: string; document_path?: string; language: 'markdown' | 'schema'; }
+interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; document_path?: string; language: 'markdown' | 'schema'; }
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
 const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], commands: [] };
@@ -52,6 +55,10 @@ export function App() {
   const [details, setDetails] = useState<ActivityStep>();
   const [capabilityDetail, setCapabilityDetail] = useState<CapabilityDetail>();
   const [capabilityDetailLoading, setCapabilityDetailLoading] = useState(false);
+  const [editingCapability, setEditingCapability] = useState<CapabilityDetail>();
+  const [providers, setProviders] = useState<ProviderSummary[]>([]);
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [editingModel, setEditingModel] = useState<ModelEditorState>();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const socketRef = useRef<GatewaySocket | undefined>(undefined);
@@ -83,6 +90,12 @@ export function App() {
     setSessions(response.result.sessions.filter(isSessionSummary));
   }, []);
 
+  const loadModels = useCallback(async (socket: GatewaySocket) => {
+    const response = await socket.request('model.list');
+    if (!response.ok || !Array.isArray(response.result.providers)) throw new Error('Could not load model providers');
+    setProviders(response.result.providers.filter(isProviderSummary));
+  }, []);
+
   const startSession = useCallback(async (socket: GatewaySocket) => {
     try {
       const hello = await socket.request('hello');
@@ -93,7 +106,7 @@ export function App() {
           && Array.isArray(sessions.result.sessions)
           && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
         if (stillAvailable) {
-          await refreshSessions(socket);
+          await Promise.all([refreshSessions(socket), loadModels(socket)]);
           return;
         }
         socket.forgetSession(sessionRef.current);
@@ -111,13 +124,12 @@ export function App() {
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
       setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
-      await hydrateCapabilities(socket, response.result.session_id);
-      await refreshSessions(socket);
+      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
       setStatus('error');
     }
-  }, [hydrateCapabilities, refreshSessions]);
+  }, [hydrateCapabilities, loadModels, refreshSessions]);
 
   const updateAgent = useCallback((name: string, nextStatus: AgentState['status']) => {
     setAgents((current) => {
@@ -160,6 +172,15 @@ export function App() {
           ? `${name} was removed from ${kind}.`
           : `${name} was updated.`;
       setNotice(message);
+      return;
+    }
+    if (event.type === 'capability.configured') {
+      setNotice(`${humanize(String(event.payload.name ?? 'Capability'))} configuration was updated.`);
+      return;
+    }
+    if (event.type === 'models.changed') {
+      if (socketRef.current) void loadModels(socketRef.current);
+      setNotice(`${humanize(String(event.payload.model && typeof event.payload.model === 'object' ? (event.payload.model as { name?: unknown }).name ?? 'Model' : 'Model'))} configuration was updated.`);
       return;
     }
     if (event.type === 'task.submitted') {
@@ -207,7 +228,7 @@ export function App() {
       finishActivity(event.task_id, 'cancelled');
       setMessages((items) => [...items, finalMessage(event, 'system')]);
     }
-  }, [appendActivityStep, finishActivity, updateAgent]);
+  }, [appendActivityStep, finishActivity, loadModels, updateAgent]);
 
   const connect = useCallback(() => {
     socketRef.current?.close();
@@ -357,6 +378,71 @@ export function App() {
     }
   };
 
+  const configureCapability = async (detail: CapabilityDetail, configuration: Record<string, unknown>) => {
+    try {
+      const response = await socketRef.current?.request('capability.configure', { kind: detail.kind, name: detail.name, configuration });
+      if (!response?.ok) throw new Error(response?.error?.message ?? 'Could not update capability configuration');
+      const updated = asCapabilityDetail(response.result);
+      setCapabilityDetail(updated);
+      setEditingCapability(undefined);
+      setNotice(`${humanize(updated.name)} configuration saved as version ${updated.version}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  };
+
+  const openModels = async () => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    try {
+      await loadModels(socket);
+      setModelsOpen(true);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openModelEditor = async (name?: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    if (!name) {
+      setEditingModel({
+        configuration: {
+          model_name: 'openai/my-model', model_id: 'my-model', model_type: 'chat/completions', provider: 'openai',
+          supports_streaming: true, supports_functions: true, supports_vision: false,
+        },
+        hasApiKey: false,
+      });
+      return;
+    }
+    try {
+      const response = await socket.request('model.get', { name });
+      if (!response.ok || !isRecord(response.result.configuration)) throw new Error(response.error?.message ?? 'Could not load model configuration');
+      setEditingModel({ originalName: name, configuration: response.result.configuration, hasApiKey: Boolean(response.result.has_api_key) });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const configureModel = async (editor: ModelEditorState, configuration: Record<string, unknown>, apiKey: string, clearApiKey: boolean) => {
+    try {
+      const params: Record<string, unknown> = { configuration };
+      if (editor.originalName) params.original_name = editor.originalName;
+      if (apiKey.trim()) params.api_key = apiKey.trim();
+      if (clearApiKey) params.clear_api_key = true;
+      const response = await socketRef.current?.request('model.configure', params);
+      if (!response?.ok) throw new Error(response?.error?.message ?? 'Could not save model configuration');
+      await loadModels(socketRef.current as GatewaySocket);
+      setEditingModel(undefined);
+      const savedModel = isRecord(response.result.model) ? response.result.model : {};
+      setNotice(`${humanize(String(savedModel.name ?? 'Model'))} configuration saved.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  };
+
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -389,6 +475,7 @@ export function App() {
           <p className="eyebrow">Capabilities</p>
           {CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }}><span>{CAPABILITY_META[kind].icon}</span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}
         </nav>
+        <div className="sidebar-section model-nav"><p className="eyebrow">Models</p><button onClick={() => void openModels()}><span>◌</span><strong>Providers</strong><em>{providers.reduce((count, provider) => count + provider.models.length, 0)}</em></button></div>
         <div className="sidebar-section agents-section">
           <p className="eyebrow">Active agents</p>
           {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
@@ -427,7 +514,10 @@ export function App() {
 
       {capabilitiesOpen ? <CapabilityDialog activeKind={activeCapability} catalog={catalog} selection={selection} items={capabilityItems} search={capabilitySearch} onSearch={setCapabilitySearch} onSelectKind={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); }} onToggle={toggleCapability} onToggleAll={toggleAllCapabilities} onInspect={openCapabilityDetail} onClose={() => setCapabilitiesOpen(false)} /> : null}
       {capabilityDetailLoading ? <CapabilityDetailDialog loading onClose={() => setCapabilityDetailLoading(false)} /> : null}
-      {capabilityDetail ? <CapabilityDetailDialog detail={capabilityDetail} onClose={() => setCapabilityDetail(undefined)} /> : null}
+      {capabilityDetail ? <CapabilityDetailDialog detail={capabilityDetail} onEdit={() => setEditingCapability(capabilityDetail)} onClose={() => setCapabilityDetail(undefined)} /> : null}
+      {editingCapability ? <CapabilityConfigDialog detail={editingCapability} onSave={configureCapability} onClose={() => setEditingCapability(undefined)} /> : null}
+      {modelsOpen ? <ModelsDialog providers={providers} onAdd={() => void openModelEditor()} onEdit={(name) => void openModelEditor(name)} onClose={() => setModelsOpen(false)} /> : null}
+      {editingModel ? <ModelConfigDialog editor={editingModel} onSave={configureModel} onClose={() => setEditingModel(undefined)} /> : null}
       {settingsOpen ? <ConnectionDialog endpoint={endpoint} token={token} onEndpoint={setEndpoint} onToken={setToken} onClose={() => setSettingsOpen(false)} onConnect={() => { setSettingsOpen(false); connect(); }} /> : null}
       {mobileNavOpen ? <MobileNavigation projects={projects} sessionId={sessionId} selection={selection} agents={agents} status={status} theme={theme} onClose={() => setMobileNavOpen(false)} onCreateSession={createNewSession} onSelectSession={selectSession} onOpenCapabilities={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} onOpenConnection={() => setSettingsOpen(true)} /> : null}
     </main>
@@ -460,14 +550,62 @@ function MobileNavigation({ projects, sessionId, selection, agents, status, them
 function CapabilityDialog({ activeKind, catalog, selection, items, search, onSearch, onSelectKind, onToggle, onToggleAll, onInspect, onClose }: { activeKind: CapabilityKind; catalog: CapabilityCatalog; selection: CapabilityCatalog; items: string[]; search: string; onSearch: (value: string) => void; onSelectKind: (kind: CapabilityKind) => void; onToggle: (kind: CapabilityKind, name: string) => void; onToggleAll: (kind: CapabilityKind) => void; onInspect: (kind: CapabilityKind, name: string) => void; onClose: () => void }) {
   const meta = CAPABILITY_META[activeKind];
   const allEnabled = catalog[activeKind].length > 0 && selection[activeKind].length === catalog[activeKind].length;
-  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2><button onClick={onClose}>×</button></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span>{CAPABILITY_META[kind].icon}</span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2>{meta.icon} {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((name) => <div className="capability-item" key={name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, name)}><strong>{humanize(name)}</strong><small>{capabilityDescription(activeKind, name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, name)} aria-pressed={selection[activeKind].includes(name)} aria-label={`Toggle ${name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
+  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span>{CAPABILITY_META[kind].icon}</span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2>{meta.icon} {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((name) => <div className="capability-item" key={name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, name)}><strong>{humanize(name)}</strong><small>{capabilityDescription(activeKind, name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, name)} aria-pressed={selection[activeKind].includes(name)} aria-label={`Toggle ${name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
 }
 
-function CapabilityDetailDialog({ detail, loading, onClose }: { detail?: CapabilityDetail; loading?: boolean; onClose: () => void }) {
+function CapabilityDetailDialog({ detail, loading, onEdit, onClose }: { detail?: CapabilityDetail; loading?: boolean; onEdit?: () => void; onClose: () => void }) {
   if (loading) return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog loading-detail" onClick={(event) => event.stopPropagation()}><span className="pulse" /> Loading capability details…</section></div>;
   if (!detail) return null;
   const meta = CAPABILITY_META[detail.kind];
-  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2>{meta.icon} {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
+  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2>{meta.icon} {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><div className="detail-header-actions">{detail.editable ? <button className="edit-configuration" onClick={onEdit}>Edit configuration</button> : null}<button className="close-dialog" onClick={onClose}>×</button></div></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
+}
+
+function CapabilityConfigDialog({ detail, onSave, onClose }: { detail: CapabilityDetail; onSave: (detail: CapabilityDetail, configuration: Record<string, unknown>) => Promise<void>; onClose: () => void }) {
+  const [draft, setDraft] = useState(() => JSON.stringify(detail.configuration, null, 2));
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    try {
+      const parsed = JSON.parse(draft) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Configuration must be a JSON object.');
+      setSaving(true);
+      setError('');
+      await onSave(detail, parsed as Record<string, unknown>);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="modal-backdrop config-backdrop" onClick={onClose}><section className="config-dialog" onClick={(event) => event.stopPropagation()}><header><div><p className="eyebrow">Runtime configuration</p><h2>Edit {humanize(detail.name)}</h2><p>Saving creates a new runtime version. Use valid JSON only.</p></div><button className="close-dialog" onClick={onClose}>×</button></header><textarea value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} aria-label="Capability configuration JSON" />{error ? <p className="config-error">{error}</p> : null}<footer><button className="secondary" onClick={onClose} disabled={saving}>Cancel</button><button onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save configuration'}</button></footer></section></div>;
+}
+
+function ModelsDialog({ providers, onAdd, onEdit, onClose }: { providers: ProviderSummary[]; onAdd: () => void; onEdit: (name: string) => void; onClose: () => void }) {
+  const total = providers.reduce((count, provider) => count + provider.models.length, 0);
+  return <div className="modal-backdrop models-backdrop" onClick={onClose}><section className="models-dialog" onClick={(event) => event.stopPropagation()}><header><div><p className="eyebrow">Model catalog</p><h2>Providers & models</h2><p>{total} registered models across {providers.length} providers.</p></div><div className="detail-header-actions"><button className="edit-configuration" onClick={onAdd}>Add model</button><button className="close-dialog" onClick={onClose}>×</button></div></header><div className="provider-list">{providers.map((provider) => <section className="provider-group" key={provider.name}><h3>{humanize(provider.name)} <span>{provider.models.length}</span></h3><div>{provider.models.map((model) => <article className="model-row" key={model.name}><div><strong>{model.name}</strong><small>{model.id} · {model.type}</small></div><div className="model-row-actions"><div className="model-badges">{model.functions ? <span>Tools</span> : null}{model.vision ? <span>Vision</span> : null}{model.streaming ? <span>Stream</span> : null}</div><button className="edit-model" onClick={() => onEdit(model.name)}>Edit</button></div></article>)}</div></section>)}{!providers.length ? <p className="empty">No models are registered by the Gateway.</p> : null}</div></section></div>;
+}
+
+function ModelConfigDialog({ editor, onSave, onClose }: { editor: ModelEditorState; onSave: (editor: ModelEditorState, configuration: Record<string, unknown>, apiKey: string, clearApiKey: boolean) => Promise<void>; onClose: () => void }) {
+  const [draft, setDraft] = useState(() => JSON.stringify(editor.configuration, null, 2));
+  const [apiKey, setApiKey] = useState('');
+  const [clearApiKey, setClearApiKey] = useState(false);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    try {
+      const parsed = JSON.parse(draft) as unknown;
+      if (!isRecord(parsed)) throw new Error('Configuration must be a JSON object.');
+      setSaving(true);
+      setError('');
+      await onSave(editor, parsed, apiKey, clearApiKey);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const title = editor.originalName ? `Edit ${humanize(editor.originalName)}` : 'Add model';
+  return <div className="modal-backdrop config-backdrop model-config-backdrop" onClick={onClose}><section className="config-dialog model-config-dialog" onClick={(event) => event.stopPropagation()}><header><div><p className="eyebrow">Provider connection</p><h2>{title}</h2><p>Set the provider, model capabilities, and connection options. Changes apply immediately to this Gateway; API keys are write-only and never returned to the browser.</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="model-credential"><label>API key <span>{editor.hasApiKey ? '(configured; leave blank to keep it)' : '(optional)'}</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setClearApiKey(false); }} placeholder={editor.hasApiKey ? 'Configured' : 'Provider key'} autoComplete="new-password" /></label>{editor.hasApiKey ? <label className="clear-key"><input type="checkbox" checked={clearApiKey} onChange={(event) => setClearApiKey(event.target.checked)} /> Clear the saved API key</label> : null}</div><textarea value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} aria-label="Model configuration JSON" />{error ? <p className="config-error">{error}</p> : null}<footer><button className="secondary" onClick={onClose} disabled={saving}>Cancel</button><button onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save model'}</button></footer></section></div>;
 }
 
 function MarkdownDocument({ content }: { content: string }) {
@@ -488,6 +626,10 @@ function asCapabilities(value: unknown): CapabilityCatalog {
   return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), commands: namesFor('commands') };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function asCapabilityDetail(value: Record<string, unknown>): CapabilityDetail {
   const kind = CAPABILITY_KINDS.includes(value.kind as CapabilityKind) ? value.kind as CapabilityKind : 'skills';
   return {
@@ -501,10 +643,19 @@ function asCapabilityDetail(value: Record<string, unknown>): CapabilityDetail {
     actions: Array.isArray(value.actions) ? value.actions.filter((item): item is string => typeof item === 'string') : [],
     parameter_schema: value.parameter_schema && typeof value.parameter_schema === 'object' && !Array.isArray(value.parameter_schema) ? value.parameter_schema as Record<string, unknown> : undefined,
     usage: typeof value.usage === 'string' ? value.usage : undefined,
+    configuration: value.configuration && typeof value.configuration === 'object' && !Array.isArray(value.configuration) ? value.configuration as Record<string, unknown> : {},
+    editable: Boolean(value.editable),
     document: String(value.document ?? ''),
     document_path: typeof value.document_path === 'string' ? value.document_path : undefined,
     language: value.language === 'schema' ? 'schema' : 'markdown',
   };
+}
+
+function isProviderSummary(value: unknown): value is ProviderSummary {
+  return Boolean(value)
+    && typeof value === 'object'
+    && typeof (value as { name?: unknown }).name === 'string'
+    && Array.isArray((value as { models?: unknown }).models);
 }
 
 function isSessionSummary(value: unknown): value is SessionSummary {

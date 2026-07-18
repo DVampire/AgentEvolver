@@ -438,6 +438,15 @@ class ModelContextManager:
         await self._create_client(config)
         logger.info(f"Registered model: {config.model_name}")
 
+    async def unregister_model(self, model_name: str) -> bool:
+        """Remove a runtime model registration and its cached client."""
+        existed = model_name in self.models
+        self.models.pop(model_name, None)
+        self.model_clients.pop(model_name, None)
+        if existed:
+            logger.info(f"Unregistered model: {model_name}")
+        return existed
+
     # ------------------------------------------------------------------
     # Query
     # ------------------------------------------------------------------

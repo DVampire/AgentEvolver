@@ -32,6 +32,10 @@ class ModelManagerServer(BaseModel):
         """Register a custom model configuration at runtime."""
         await self.model_context_manager.register_model(config)
 
+    async def unregister_model(self, model_name: str) -> bool:
+        """Remove a custom runtime model configuration."""
+        return await self.model_context_manager.unregister_model(model_name)
+
     # ------------------------------------------------------------------
     # Query
     # ------------------------------------------------------------------

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from agentevolver.gateway.protocol import GatewayCommand, PROTOCOL_VERSION
 from agentevolver.gateway.service import AgentGateway
+from agentevolver.model import model_manager
+from agentevolver.model.types import ModelConfig
 
 
 async def _test_event_ordering_and_replay() -> None:
@@ -198,3 +202,97 @@ def test_commands_are_exposed_and_execute_in_a_gateway_session() -> None:
         assert "[control]" in executed.result["message"]
 
     asyncio.run(run())
+
+
+def test_model_catalog_groups_models_without_credentials() -> None:
+    async def run() -> None:
+        models = model_manager.model_context_manager.models
+        previous_models = dict(models)
+        try:
+            models.clear()
+            models["openai/demo"] = ModelConfig(
+                model_name="openai/demo",
+                model_id="demo-1",
+                model_type="chat/completions",
+                provider="openai",
+                api_key="must-not-be-exposed",
+                supports_functions=True,
+            )
+            response = await AgentGateway().handle(GatewayCommand(id="models", method="model.list"))
+            assert response.ok
+            assert response.result["providers"] == [{
+                "name": "openai",
+                "models": [{
+                    "name": "openai/demo",
+                    "id": "demo-1",
+                    "type": "chat/completions",
+                    "streaming": True,
+                    "functions": True,
+                    "vision": False,
+                }],
+            }]
+        finally:
+            models.clear()
+            models.update(previous_models)
+
+    asyncio.run(run())
+
+
+def test_model_configuration_is_editable_without_exposing_api_keys() -> None:
+    async def run() -> None:
+        models = model_manager.model_context_manager.models
+        previous_models = dict(models)
+        registered: list[ModelConfig] = []
+
+        async def register_model(_, config: ModelConfig) -> None:
+            registered.append(config)
+
+        try:
+            models.clear()
+            models["openai/demo"] = ModelConfig(
+                model_name="openai/demo",
+                model_id="demo-1",
+                model_type="chat/completions",
+                provider="openai",
+                api_key="must-not-be-exposed",
+            )
+            gateway = AgentGateway()
+            detail = await gateway.handle(
+                GatewayCommand(id="model-detail", method="model.get", params={"name": "openai/demo"})
+            )
+            assert detail.ok
+            assert detail.result["has_api_key"] is True
+            assert "api_key" not in detail.result["configuration"]
+
+            with patch.object(type(model_manager), "register_model", register_model):
+                updated = await gateway.handle(
+                    GatewayCommand(
+                        id="model-configure",
+                        method="model.configure",
+                        params={
+                            "original_name": "openai/demo",
+                            "configuration": {"temperature": 0.2},
+                        },
+                    )
+                )
+            assert updated.ok
+            assert registered[0].api_key == "must-not-be-exposed"
+            assert registered[0].temperature == 0.2
+            assert "api_key" not in updated.result["configuration"]
+        finally:
+            models.clear()
+            models.update(previous_models)
+
+    asyncio.run(run())
+
+
+def test_tool_and_agent_details_are_human_readable_guides() -> None:
+    guide = AgentGateway._capability_usage_document(
+        "tools",
+        "example_tool",
+        SimpleNamespace(description="Perform an example action.", instruction="Run this only when needed."),
+    )
+    assert "## What it does" in guide
+    assert "## How to use it" in guide
+    assert "Run this only when needed." in guide
+    assert '"properties"' not in guide

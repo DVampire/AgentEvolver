@@ -32,6 +32,7 @@ from agentevolver.hook import hook_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
 from agentevolver.model import model_manager
+from agentevolver.model.types import ModelConfig
 from agentevolver.prompt import prompt_manager
 from agentevolver.session.types import SessionContext
 from agentevolver.skill import skill_manager
@@ -238,6 +239,9 @@ class AgentGateway:
     async def _command_capability_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
         kind = str(params.get("kind") or "")
         name = str(params.get("name") or "")
+        return await self._capability_detail(kind, name)
+
+    async def _capability_detail(self, kind: str, name: str) -> Dict[str, Any]:
         managers = {
             "skills": skill_manager,
             "tools": tool_manager,
@@ -264,6 +268,8 @@ class AgentGateway:
                     "required": [],
                 },
                 "usage": command.usage or f"/{command.name}",
+                "configuration": {},
+                "editable": False,
                 "document": self._command_document(command),
                 "document_path": None,
                 "language": "markdown",
@@ -281,7 +287,7 @@ class AgentGateway:
             raise ValueError(f"Capability details are unavailable: {name}")
 
         if kind in {"tools", "agents"}:
-            document, document_path, language = "", None, "schema"
+            document, document_path, language = self._capability_usage_document(kind, name, info), None, "markdown"
         else:
             document, document_path, language = self._capability_document(kind, name, info)
         return {
@@ -295,10 +301,157 @@ class AgentGateway:
             "actions": list(getattr(info, "actions", []) or []),
             "parameter_schema": self._parameter_schema(info),
             "usage": None,
+            "configuration": self._capability_configuration(kind, info),
+            "editable": kind in {"tools", "skills", "agents"},
             "document": document,
             "document_path": document_path,
             "language": language,
         }
+
+    async def _command_capability_configure(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        kind = str(params.get("kind") or "")
+        name = str(params.get("name") or "")
+        configuration = params.get("configuration")
+        if kind not in {"tools", "skills", "agents"}:
+            raise ValueError("Only tools, skills, and agents have editable configuration")
+        if not name:
+            raise ValueError("Capability name is required")
+        if not isinstance(configuration, dict):
+            raise ValueError("configuration must be an object")
+
+        if kind == "tools":
+            info = await tool_manager.get_info(name)
+            if info is None:
+                raise ValueError(f"Unknown tools: {name}")
+            tool_class = getattr(info, "cls", None) or type(getattr(info, "instance", None))
+            if tool_class is type(None):
+                raise ValueError(f"Tool configuration is unavailable: {name}")
+            await tool_manager.update(name, tool=tool_class, config=configuration)
+        elif kind == "agents":
+            info = await agent_manager.get_info(name)
+            if info is None or getattr(info, "cls", None) is None:
+                raise ValueError(f"Agent configuration is unavailable: {name}")
+            await agent_manager.update(agent_cls=info.cls, agent_config_dict=configuration)
+        else:
+            info = await skill_manager.get_info(name)
+            if info is None:
+                raise ValueError(f"Unknown skills: {name}")
+            allowed = {"description", "metadata", "content"}
+            unknown = set(configuration) - allowed
+            if unknown:
+                raise ValueError(f"Unsupported skill configuration fields: {', '.join(sorted(unknown))}")
+            if "metadata" in configuration and not isinstance(configuration["metadata"], dict):
+                raise ValueError("configuration.metadata must be an object")
+            if "description" in configuration and not isinstance(configuration["description"], str):
+                raise ValueError("configuration.description must be a string")
+            if "content" in configuration and not isinstance(configuration["content"], str):
+                raise ValueError("configuration.content must be a string")
+            await skill_manager.update(name, **configuration)
+
+        detail = await self._capability_detail(kind, name)
+        await self._publish(
+            "capability.configured",
+            {"kind": kind, "name": name, "version": detail["version"]},
+        )
+        return detail
+
+    async def _command_model_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        providers: Dict[str, list[Dict[str, Any]]] = {}
+        for model_name in model_manager.list():
+            model = model_manager.get_model_config(model_name)
+            if model is None:
+                continue
+            providers.setdefault(model.provider, []).append(self._model_summary(model))
+        return {
+            "providers": [
+                {"name": provider, "models": sorted(models, key=lambda model: model["name"])}
+                for provider, models in sorted(providers.items())
+            ]
+        }
+
+    async def _command_model_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(params.get("name") or "")
+        if not name:
+            raise ValueError("Model name is required")
+        model = model_manager.get_model_config(name)
+        if model is None:
+            raise ValueError(f"Unknown model: {name}")
+        return {
+            "model": self._model_summary(model),
+            "configuration": self._safe_model_configuration(model),
+            "has_api_key": bool(model.api_key),
+        }
+
+    async def _command_model_configure(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        original_name = str(params.get("original_name") or "").strip()
+        configuration = params.get("configuration")
+        if not isinstance(configuration, dict):
+            raise ValueError("configuration must be an object")
+
+        allowed_fields = {
+            "model_name", "model_type", "model_id", "provider", "api_base",
+            "temperature", "reasoning", "plugins", "max_completion_tokens",
+            "max_output_tokens", "supports_streaming", "supports_functions",
+            "supports_vision", "output_version", "timeout", "key_pool_name",
+            "fallback_model",
+        }
+        unknown = set(configuration) - allowed_fields
+        if unknown:
+            raise ValueError(f"Unsupported model configuration fields: {', '.join(sorted(unknown))}")
+
+        existing = model_manager.get_model_config(original_name) if original_name else None
+        if original_name and existing is None:
+            raise ValueError(f"Unknown model: {original_name}")
+
+        merged = existing.model_dump() if existing is not None else {}
+        merged.update(configuration)
+        try:
+            model = ModelConfig.model_validate(merged)
+        except Exception as exc:  # pydantic exposes useful validation details
+            raise ValueError(f"Invalid model configuration: {exc}") from exc
+
+        if not model.model_name.strip() or not model.model_id.strip():
+            raise ValueError("model_name and model_id must not be empty")
+        if model.provider not in {"openai", "openrouter", "anthropic", "google"}:
+            raise ValueError(f"Unsupported provider: {model.provider}")
+        conflicting = model_manager.get_model_config(model.model_name)
+        if conflicting is not None and model.model_name != original_name:
+            raise ValueError(f"A model named {model.model_name} is already registered")
+
+        supplied_key = params.get("api_key")
+        if supplied_key is not None and not isinstance(supplied_key, str):
+            raise ValueError("api_key must be a string")
+        if bool(params.get("clear_api_key")):
+            model.api_key = None
+        elif isinstance(supplied_key, str) and supplied_key.strip():
+            model.api_key = supplied_key.strip()
+
+        await model_manager.register_model(model)
+        if original_name and original_name != model.model_name:
+            await model_manager.unregister_model(original_name)
+
+        action = "updated" if existing is not None else "created"
+        await self._publish("models.changed", {"action": action, "model": self._model_summary(model)})
+        return {
+            "model": self._model_summary(model),
+            "configuration": self._safe_model_configuration(model),
+            "has_api_key": bool(model.api_key),
+        }
+
+    @staticmethod
+    def _model_summary(model: ModelConfig) -> Dict[str, Any]:
+        return {
+            "name": model.model_name,
+            "id": model.model_id,
+            "type": model.model_type,
+            "streaming": model.supports_streaming,
+            "functions": model.supports_functions,
+            "vision": model.supports_vision,
+        }
+
+    @staticmethod
+    def _safe_model_configuration(model: ModelConfig) -> Dict[str, Any]:
+        return model.model_dump(exclude={"api_key"})
 
     async def _command_session_capabilities_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session = self._sessions[self._require_session_id(params)]
@@ -533,6 +686,31 @@ class AgentGateway:
         return self._fallback_document(kind, name, info), None, "markdown"
 
     @staticmethod
+    def _capability_usage_document(kind: str, name: str, info: Any) -> str:
+        """Create a readable guide for callable capabilities, never a raw schema dump."""
+        description = str(getattr(info, "description", "") or "No description is available.")
+        instruction = str(getattr(info, "instruction", "") or "").strip()
+        label = "tool" if kind == "tools" else "agent"
+        lines = [
+            "## What it does",
+            description,
+            "",
+            "## How to use it",
+        ]
+        if instruction:
+            lines.append(instruction)
+        elif kind == "tools":
+            lines.append(f"Enable **{name}** for the session. AgentEvolver calls it when the task requires this action.")
+        else:
+            lines.append(f"Enable **{name}** for the session. AgentEvolver can delegate suitable work to this specialist agent.")
+        lines.extend([
+            "",
+            "## Session availability",
+            f"Use the toggle in the {label} list to allow or disallow it for this session.",
+        ])
+        return "\n".join(lines)
+
+    @staticmethod
     def _sync_session_capabilities(session: GatewaySession) -> None:
         session.context.extra["capabilities"] = session.capabilities
         for kind, context_key in {
@@ -543,6 +721,20 @@ class AgentGateway:
             "environments": "environment_allowlist",
         }.items():
             session.context.extra[context_key] = list(session.capabilities.get(kind, []))
+
+    @staticmethod
+    def _capability_configuration(kind: str, info: Any) -> Dict[str, Any]:
+        if kind in {"tools", "agents"}:
+            configuration = getattr(info, "config", None)
+            return dict(configuration) if isinstance(configuration, dict) else {}
+        if kind == "skills":
+            metadata = getattr(info, "metadata", None)
+            return {
+                "description": str(getattr(info, "description", "")),
+                "metadata": dict(metadata) if isinstance(metadata, dict) else {},
+                "content": str(getattr(info, "content", "")),
+            }
+        return {}
 
     @staticmethod
     def _command_document(command: Any) -> str:
