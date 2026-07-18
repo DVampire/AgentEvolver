@@ -2,9 +2,9 @@
 import datetime
 from typing import Any, Dict, Optional
 from pydantic import Field
-from src.tool.types import Tool
-from src.response.types import Response, ResponseType
-from src.registry import TOOL
+from agentevolver.tool.types import Tool
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.registry import TOOL
 
 
 @TOOL.register_module(force=True)

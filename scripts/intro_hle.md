@@ -258,7 +258,7 @@ This updates the `correct` field of the resume file **in place** and back-fills 
 | --- | --- |
 | examples/run_hle.py | Evaluation entry |
 | configs/hle.py | HLE default config (models, agents, etc.) |
-| src/benchmark/hle.py | HLE dataset loading & judging logic |
+| agentevolver/benchmark/hle.py | HLE dataset loading & judging logic |
 | `datasets/hle/` | Raw HLE data (obtained via git clone) |
 | `workdir/hle/results/hle/benchmark_hle_*.json` | Results files (evaluation artifacts) |
 | `workdir/hle/hle.log` | Full text log |

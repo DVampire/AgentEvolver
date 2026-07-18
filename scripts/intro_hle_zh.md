@@ -260,7 +260,7 @@ python examples/run_hle.py \
 | --- | --- |
 | examples/run_hle.py | 评测入口 |
 | configs/hle.py | HLE 默认配置（模型、agent 等） |
-| src/benchmark/hle.py | HLE 数据集加载与判分逻辑 |
+| agentevolver/benchmark/hle.py | HLE 数据集加载与判分逻辑 |
 | `datasets/hle/` | HLE 原始数据（git clone 后得到） |
 | `workdir/hle/results/hle/benchmark_hle_*.json` | 结果文件（评测产物） |
 | `workdir/hle/hle.log` | 完整文本日志 |

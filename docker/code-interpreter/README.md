@@ -1,7 +1,7 @@
 # code-interpreter image
 
 Adds a plain R runtime (`r-base-core`) on top of `opensandbox/code-interpreter:v1.1.0`,
-so the existing `code_interpreter` sandbox (`src/sandbox/default/code_interpreter.py`)
+so the existing `code_interpreter` sandbox (`agentevolver/sandbox/default/code_interpreter.py`)
 can also run `language="r"`.
 
 No registry/CI pipeline for this image yet — build it locally:

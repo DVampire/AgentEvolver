@@ -19,8 +19,8 @@ USE_SANDBOX = os.getenv("USE_SANDBOX", "0") == "1"
 
 
 async def main():
-    from src.config import config
-    from src.environment.server import environment_manager
+    from agentevolver.config import config
+    from agentevolver.environment.server import environment_manager
 
     # Inject browser environment config before initialize()
     if USE_SANDBOX:

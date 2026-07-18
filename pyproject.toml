@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentevolver"
+version = "0.1.0"
+description = "A self-evolving multi-agent framework."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "AgentEvolver" }]
+
+# Core runtime dependencies. These are imported at package-import time or by the default
+# capability set, so they are not optional. Heavier/rarely-used integrations live in
+# [project.optional-dependencies] below. Versions are intentionally loose; pin them for a
+# reproducible release.
+dependencies = [
+    "pydantic>=2",
+    "mmengine",
+    "PyYAML",
+    "python-dotenv",
+    "rich",
+    "inflection",
+    "asyncio-atexit",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "tenacity",
+    "validators",
+    "defusedxml",
+    "lxml",
+    "pandas",
+    "pypdf",
+    "markitdown",
+    "json-repair",
+    "mcp",
+    "crawl4ai",
+]
+
+[project.optional-dependencies]
+browser = ["playwright"]        # browser automation environment
+chem = ["rdkit"]                # chemistry skills (rdkit)
+sandbox = ["e2b", "docker"]     # remote / container sandboxes
+vault = ["hvac"]                # secret management
+all = ["playwright", "rdkit", "e2b", "docker", "hvac"]
+
+[project.scripts]
+agentevolver = "agentevolver.cli:main"
+
+[tool.hatch.build.targets.wheel]
+# Ship the whole package, including non-Python resources (prompts .html, visual .css/.js,
+# bundled skills SKILL.md + scripts). Hatchling includes package data files by default.
+packages = ["agentevolver"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Bundle the repo-root default configs into the installed package so they resolve when
+# there is no source checkout. In an editable/source install they are still found at the
+# repo root first (see agentevolver/paths.py resource search order).
+"configs" = "agentevolver/configs"
+
+[tool.hatch.build.targets.sdist]
+include = ["agentevolver", "configs", "README.md"]

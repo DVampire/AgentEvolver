@@ -14,10 +14,10 @@ from typing import List, Dict, Any
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
-from src.config import config
-from src.logger import logger
-from src.model import model_manager
-from src.message import (
+from agentevolver.config import config
+from agentevolver.logger import logger
+from agentevolver.model import model_manager
+from agentevolver.message import (
     HumanMessage,
     SystemMessage,
     ContentPartText,
@@ -31,9 +31,9 @@ from src.message import (
     PdfURL,
 )
 
-from src.tool import tool_manager
-from src.version import version_manager
-from src.utils import assemble_project_path, make_file_url
+from agentevolver.tool import tool_manager
+from agentevolver.version import version_manager
+from agentevolver.utils import assemble_project_path, make_file_url
 
 
 async def test_chat():

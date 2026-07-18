@@ -1,9 +1,9 @@
 '''Performs the four basic arithmetic operations (+, -, *, /) on two numbers.'''
 from typing import Any, Dict
 from pydantic import Field
-from src.tool.types import Tool
-from src.response.types import Response, ResponseType
-from src.registry import TOOL
+from agentevolver.tool.types import Tool
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Performs the four basic arithmetic operations (+, -, *, /) on two numbers."
 

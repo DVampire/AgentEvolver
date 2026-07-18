@@ -1,4 +1,4 @@
-"""Integration tests for src.runtime.
+"""Integration tests for agentevolver.runtime.
 
 Covers the public surface of runtime_manager and the contextvar / parent_ref
 plumbing that MetaAgent + EscalationHook rely on. Uses inline mock agents so
@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.runtime import (
+from agentevolver.runtime import (
     AgentDeadError,
     AgentStatus,
     BaseMessage,

@@ -33,21 +33,21 @@ from mmengine import DictAction
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
-from src.config import config
-from src.logger import logger
-from src.model import model_manager
-from src.version import version_manager
-from src.prompt import prompt_manager
-from src.memory import memory_manager
-from src.tool import tool_manager
-from src.skill import skill_manager
-from src.connector import connector_manager
-from src.agent import agent_manager
-from src.hook import hook_manager
-from src.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
-from src.trace import trace_manager
-from src.session.types import SessionContext
-from src.utils import make_id
+from agentevolver.config import config
+from agentevolver.logger import logger
+from agentevolver.model import model_manager
+from agentevolver.version import version_manager
+from agentevolver.prompt import prompt_manager
+from agentevolver.memory import memory_manager
+from agentevolver.tool import tool_manager
+from agentevolver.skill import skill_manager
+from agentevolver.connector import connector_manager
+from agentevolver.agent import agent_manager
+from agentevolver.hook import hook_manager
+from agentevolver.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus
+from agentevolver.trace import trace_manager
+from agentevolver.session.types import SessionContext
+from agentevolver.utils import make_id
 
 
 _DEFAULT_COMMAND = (

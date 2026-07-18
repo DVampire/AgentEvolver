@@ -61,13 +61,13 @@ AgentEvolver/
 
 - **`{{ project_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
 - **`{{ work_dir }}`**: Per-run scratch directory for temporary files. Do not write source code here.
-- **Built-ins vs extensions**: Hand-written built-ins live in each module's `default/` folder inside `src/` (e.g. `src/tool/default/`). Generated/evolved components live OUTSIDE `src/`, in the external `extension/` tree, and are loaded at runtime by the **ExtensionManager**. `src/` stays immutable; `extension/` is mutable evolved content.
+- **Built-ins vs extensions**: Hand-written built-ins live in each module's `default/` folder inside `agentevolver/` (e.g. `agentevolver/tool/default/`). Generated/evolved components live OUTSIDE `agentevolver/`, in the external `extension/` tree, and are loaded at runtime by the **ExtensionManager**. `agentevolver/` stays immutable; `extension/` is mutable evolved content.
 - **Hot-plug / ExtensionManager** (`src/extension/`): On startup, after the component managers load their built-ins, `extension_manager.initialize()` layers the active extension set on top. Authoring writes a flat active file (`extension/<module>/<name>.py`); `extension_manager.add_component(...)` registers it via the owning `*_manager`, archives the version under `extension/.versions/`, and records the active version in `extension/manifest.json`. Multiple versions of a component coexist in `.versions/`; `extension_manager.rollback(module, name, version)` restores any of them. There is **no `__init__.py` to edit** for extensions — loading is by directory scan + dynamic import.
 - **Registries**: Components self-register with an mmengine `Registry` (in `src/registry.py`) via a class decorator, e.g. `@TOOL.register_module()`. Built-ins register at import time; extensions are registered at runtime by the ExtensionManager (which loads the class via `dynamic_manager` and calls `<module>_manager.register`).
 
 ### Agent loop & interaction
 
-`src/runtime/` is *how messages move*; `src/protocol/` is *the shape of each conversation*.
+`agentevolver/runtime/` is *how messages move*; `agentevolver/protocol/` is *the shape of each conversation*.
 
 - **One loop for every agent** (leaf or orchestrator): `on_start → _advance → _think → _dispatch_round → _run_one → _conclude`, repeating rounds (a round = one turn's concurrent batch of tool calls) until a terminal tool (`done`) or a constraint stops it. `MetaAgent` is a plain `Agent` that just flips `_include_agents=True`, so sub-agents become callable tools — orchestration is normal tool dispatch, not a special path.
 - **Runtime verbs** (`runtime_manager`): `spawn`, `send` (fire-and-forget), `ask`/`invoke` (run + await `Response`), `suspend`+`resume` (park on a key), `publish`+`subscribe` (topic fan-out).
@@ -92,7 +92,7 @@ Per-session, pluggable (`MEMORY_SYSTEM` registry), itself evolvable. The default
 
 Follow these rules when adding or generating code so the framework can discover and evolve it.
 
-1. **Generated/evolved components go in the external `extension/` tree — never in `src/`.** Write the flat active file: `extension/tool/<name>.py`, `extension/agent/<name>.py` (+ `extension/prompt/<name>.html`), `extension/skill/<name>/SKILL.md`, `extension/connector/<name>/CONNECTOR.md`, `extension/environment/<name>.py`. The ExtensionManager registers it and archives the version automatically. **Do NOT edit any `__init__.py`** for extensions. Hand-written built-ins (shipped with the framework) go in the module's `src/<module>/default/` folder (skills/connectors are grouped in category subfolders instead).
+1. **Generated/evolved components go in the external `extension/` tree — never in `agentevolver/`.** Write the flat active file: `extension/tool/<name>.py`, `extension/agent/<name>.py` (+ `extension/prompt/<name>.html`), `extension/skill/<name>/SKILL.md`, `extension/connector/<name>/CONNECTOR.md`, `extension/environment/<name>.py`. The ExtensionManager registers it and archives the version automatically. **Do NOT edit any `__init__.py`** for extensions. Hand-written built-ins (shipped with the framework) go in the module's `src/<module>/default/` folder (skills/connectors are grouped in category subfolders instead).
 
 2. **Built-ins are exported from `default/__init__.py`; extensions are not.** A new hand-written built-in must be imported in its module's `default/__init__.py` (import + `__all__`) so it registers at import time. Extension components are discovered by directory scan, so they need no `__init__.py` entry.
 
@@ -100,25 +100,25 @@ Follow these rules when adding or generating code so the framework can discover 
 
 4. **Keep the module's `types.py` / `server.py` contract.** Subclass the base class in `types.py` and implement its abstract methods; do not bypass the module's `*_manager` singleton in `server.py`.
 
-5. **Benchmarks read data from `datasets/` first, then download from HuggingFace.** Every benchmark stores its data under `datasets/<name>/`. A benchmark declares an `hf_repo_id` field and, in `initialize()`, calls `ensure_dataset(<name>, self.hf_repo_id)` (in `src/benchmark/utils.py`) before loading: if `datasets/<name>/` is missing/empty it is snapshot-downloaded from HuggingFace, otherwise the local copy is used. Set the `HF_ENDPOINT` env var to use a mirror. Both `hf_repo_id` and `path` are config-overridable.
+5. **Benchmarks read data from `datasets/` first, then download from HuggingFace.** Every benchmark stores its data under `datasets/<name>/`. A benchmark declares an `hf_repo_id` field and, in `initialize()`, calls `ensure_dataset(<name>, self.hf_repo_id)` (in `agentevolver/benchmark/utils.py`) before loading: if `datasets/<name>/` is missing/empty it is snapshot-downloaded from HuggingFace, otherwise the local copy is used. Set the `HF_ENDPOINT` env var to use a mirror. Both `hf_repo_id` and `path` are config-overridable.
 
 ### Registries (`src/registry.py`)
 
 | Registry          | Locations         | Decorator                              |
 | ----------------- | ----------------- | -------------------------------------- |
-| `TOOL`            | `src.tool`        | `@TOOL.register_module()`              |
-| `AGENT`           | `src.agent`       | `@AGENT.register_module()`             |
-| `PROMPT`          | `src.prompt`      | `@PROMPT.register_module()`            |
-| `DATASET`         | `src.data`        | `@DATASET.register_module()`           |
-| `BENCHMARK`       | `src.benchmark`   | `@BENCHMARK.register_module()`         |
-| `SKILL`           | `src.skill`       | `@SKILL.register_module()`             |
-| `HOOK`            | `src.hook`        | `@HOOK.register_module()`              |
-| `CONSTRAINT`      | `src.constraint`  | `@CONSTRAINT.register_module()`        |
-| `ENVIRONMENT`     | `src.environment` | `@ENVIRONMENT.register_module()`       |
-| `MEMORY_SYSTEM`   | `src.memory`      | `@MEMORY_SYSTEM.register_module()`     |
-| `SANDBOX`         | `src.sandbox`     | `@SANDBOX.register_module()`           |
-| `DEPLOYER`        | `src.deploy`      | `@DEPLOYER.register_module()`          |
-| `E2B`             | `src.e2b`         | `@E2B.register_module()`               |
-| `DOCKER`          | `src.docker`      | `@DOCKER.register_module()`            |
+| `TOOL`            | `agentevolver.tool`        | `@TOOL.register_module()`              |
+| `AGENT`           | `agentevolver.agent`       | `@AGENT.register_module()`             |
+| `PROMPT`          | `agentevolver.prompt`      | `@PROMPT.register_module()`            |
+| `DATASET`         | `agentevolver.data`        | `@DATASET.register_module()`           |
+| `BENCHMARK`       | `agentevolver.benchmark`   | `@BENCHMARK.register_module()`         |
+| `SKILL`           | `agentevolver.skill`       | `@SKILL.register_module()`             |
+| `HOOK`            | `agentevolver.hook`        | `@HOOK.register_module()`              |
+| `CONSTRAINT`      | `agentevolver.constraint`  | `@CONSTRAINT.register_module()`        |
+| `ENVIRONMENT`     | `agentevolver.environment` | `@ENVIRONMENT.register_module()`       |
+| `MEMORY_SYSTEM`   | `agentevolver.memory`      | `@MEMORY_SYSTEM.register_module()`     |
+| `SANDBOX`         | `agentevolver.sandbox`     | `@SANDBOX.register_module()`           |
+| `DEPLOYER`        | `agentevolver.deploy`      | `@DEPLOYER.register_module()`          |
+| `E2B`             | `agentevolver.e2b`         | `@E2B.register_module()`               |
+| `DOCKER`          | `agentevolver.docker`      | `@DOCKER.register_module()`            |
 
 > **Not registry-based:** `connector` (MCP servers), `protocol`, and `trajectory` are managed by their `*_manager` singletons directly — connectors are discovered by scanning `CONNECTOR.md` directories (like skills scan `SKILL.md`), not by a class decorator.

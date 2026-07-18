@@ -20,8 +20,8 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 
 async def main():
-    from src.sandbox import sandbox_manager
-    from src.tool.default.code_interpreter import CodeInterpreterTool
+    from agentevolver.sandbox import sandbox_manager
+    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
 
     # 1. Directly through the sandbox handle.
     print("--- sandbox_manager.acquire('code_interpreter') + run_code(language='r') ---")

@@ -8,11 +8,11 @@ load_dotenv(verbose=True)
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
-from src.config import config
-from src.logger import logger
-from src.version import version_manager
-from src.prompt import prompt_manager
-from src.utils import count_tokens
+from agentevolver.config import config
+from agentevolver.logger import logger
+from agentevolver.version import version_manager
+from agentevolver.prompt import prompt_manager
+from agentevolver.utils import count_tokens
 
 
 async def test_get_messages():

@@ -142,7 +142,7 @@ skill_names = [
     "frontend_ui_engineering_skill",
     "deprecation_and_migration_skill",
     "observability_and_instrumentation_skill",
-    # science / domain skills (src/skill/science) — biomodels & bioinformatics workers.
+    # science / domain skills (agentevolver/skill/science) — biomodels & bioinformatics workers.
     # GPU-backed structure/sequence models and CPU analysis/design skills; available to
     # sub-agents for drug-discovery, protein, genomics, and single-cell tasks.
     "alphafold2_skill",

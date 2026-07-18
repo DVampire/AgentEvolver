@@ -1,0 +1,17 @@
+from mmengine.registry import Registry
+
+MEMORY_SYSTEM = Registry("memory_system", locations=["agentevolver.memory"])
+TOOL = Registry("tool", locations=["agentevolver.tool"])
+AGENT = Registry("agent", locations=["agentevolver.agent"])
+PROMPT = Registry("prompt", locations=["agentevolver.prompt"])
+DATASET = Registry("dataset", locations=["agentevolver.data"])
+BENCHMARK = Registry("benchmark", locations=["agentevolver.benchmark"])
+SKILL = Registry("skill", locations=["agentevolver.skill"])
+COMMAND = Registry("command", locations=["agentevolver.command"])
+HOOK = Registry("hook", locations=["agentevolver.hook"])
+CONSTRAINT = Registry("constraint", locations=["agentevolver.constraint"])
+ENVIRONMENT = Registry("environment", locations=["agentevolver.environment"])
+SANDBOX = Registry("sandbox", locations=["agentevolver.sandbox"])
+DEPLOYER = Registry("deployer", locations=["agentevolver.deploy"])
+E2B = Registry("e2b", locations=["agentevolver.e2b"])
+DOCKER = Registry("docker", locations=["agentevolver.docker"])
