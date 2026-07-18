@@ -19,7 +19,7 @@ In short:
    ```bash
    conda create -n agent python=3.12
    conda activate agent
-   pip install -r scripts/requirements.txt
+   pip install -e .
 
    # Browser automation
    pip install playwright && playwright install

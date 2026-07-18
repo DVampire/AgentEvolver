@@ -7,43 +7,63 @@ name = "agentevolver"
 version = "0.1.0"
 description = "A self-evolving multi-agent framework."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "AgentEvolver" }]
 
-# Core runtime dependencies. These are imported at package-import time or by the default
-# capability set, so they are not optional. Heavier/rarely-used integrations live in
-# [project.optional-dependencies] below. Versions are intentionally loose; pin them for a
-# reproducible release.
+# Core runtime dependencies — the single source of truth (formerly scripts/requirements.txt).
+# Imported at package-import time or by the default capability set, so not optional.
+# Heavier/rarely-used integrations live in [project.optional-dependencies] below.
 dependencies = [
-    "pydantic>=2",
-    "mmengine",
+    # core framework
+    "mmengine>=0.10.7",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
     "PyYAML",
-    "python-dotenv",
+    "inflection>=0.5.1",
+    "asyncio-atexit>=1.0.1",
+    "tenacity>=9.1.4",
     "rich",
-    "inflection",
-    "asyncio-atexit",
-    "requests",
-    "httpx",
-    "aiohttp",
-    "tenacity",
-    "validators",
-    "defusedxml",
-    "lxml",
-    "pandas",
-    "pypdf",
-    "markitdown",
+    "diskcache>=5.6.3",
+    "dirtyjson>=1.0.8",
     "json-repair",
+    "sympy>=1.12.1",
+    # http / networking / protocol
+    "httpx>=0.28.1",
+    "aiohttp>=3.13.3",
+    "requests",
+    "validators",
     "mcp",
-    "crawl4ai",
+    "crawl4ai>=0.8.6",
+    # llm providers
+    "openai>=1.0.0",
+    "anthropic>=0.116.0",
+    "google-genai>=2.11.0",
+    "google-cloud-vision>=3.13.0",
+    "tiktoken>=0.12.0",
+    # data / science
+    "pandas>=2.0.0",
+    "datasets>=2.0.0",
+    "scikit-learn>=1.4.0",
+    "seaborn>=0.13.2",
+    "ipython>=8.0.0",
+    # documents / parsing
+    "markitdown>=0.1.5",
+    "pypdf",
+    "pdfminer.six>=20260107",
+    "camelot-py>=1.0.9",
+    "xlrd>=2.0.2",
+    "lxml",
+    "defusedxml",
+    # secrets
+    "hvac>=2.4.0",
 ]
 
 [project.optional-dependencies]
-browser = ["playwright"]        # browser automation environment
-chem = ["rdkit"]                # chemistry skills (rdkit)
-sandbox = ["e2b", "docker"]     # remote / container sandboxes
-vault = ["hvac"]                # secret management
-all = ["playwright", "rdkit", "e2b", "docker", "hvac"]
+browser = ["playwright", "browser-use"]   # browser automation environment
+chem = ["rdkit"]                           # chemistry skills (rdkit)
+sandbox = ["e2b", "docker"]                # remote / container sandboxes
+all = ["playwright", "browser-use", "rdkit", "e2b", "docker"]
 
 [project.scripts]
 agentevolver = "agentevolver.cli:main"

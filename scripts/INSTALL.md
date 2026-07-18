@@ -88,44 +88,39 @@ abcabc...
 
 # 2. Set up the Python environment
 
-Pick **one** of the two options below (conda or uv). Python 3.12 is recommended (3.10+ required).
+Pick **one** of the two options below (conda or uv). Python 3.12 is recommended (3.11+ required).
+All dependencies are declared in `pyproject.toml` (there is no `requirements.txt`).
 
 ## Step 1 — Option A: conda + pip
 ```bash
 conda create -n agent python=3.12
 conda activate agent
-pip install -r requirements.txt
-pip install -e .            # install the agentevolver package (adds the `agentevolver` CLI)
+pip install -e .              # core deps + the agentevolver package (adds the `agentevolver` CLI)
 
-# install playwright
-pip install playwright
+# optional extras (browser automation / chemistry / sandboxes):
+pip install -e ".[browser]"   # or ".[chem]", ".[sandbox]", ".[all]"
+
+# playwright + browser-use need a one-time browser download:
 playwright install
-
-# install browser-use
-pip install browser-use
 browser-use install
 ```
 
-## Step 1 — Option B: uv (faster)
-[uv](https://docs.astral.sh/uv/) is a fast drop-in replacement for pip/venv.
+## Step 1 — Option B: uv (faster, reproducible)
+[uv](https://docs.astral.sh/uv/) is a fast pip/venv replacement; `uv sync` installs from
+`pyproject.toml` + the committed `uv.lock` for a reproducible environment.
 ```bash
 # install uv (once)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# create and activate a virtual environment
-uv venv --python 3.12
+# create .venv and install core deps + the package (uses uv.lock)
+uv sync
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
-# install dependencies (requirements.txt is the source of truth for now) + the package
-uv pip install -r requirements.txt
-uv pip install -e . --no-deps        # install agentevolver itself (adds the `agentevolver` CLI)
+# optional extras:
+uv sync --extra browser              # or --extra chem / sandbox / all
 
-# install playwright
-uv pip install playwright
+# playwright + browser-use need a one-time browser download:
 playwright install
-
-# install browser-use
-uv pip install browser-use
 browser-use install
 ```
 

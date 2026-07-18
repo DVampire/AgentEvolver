@@ -380,7 +380,7 @@
 <pre><span class="c"># 1 · create the Python environment</span>
 conda create -n agent python=<span class="v">3.12</span>
 conda activate agent
-pip install -r scripts/requirements.txt
+pip install -e .
 
 <span class="c"># 2 · browser automation</span>
 pip install playwright <span class="k">&amp;&amp;</span> playwright install

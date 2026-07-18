@@ -88,44 +88,39 @@ abcabc...
 
 # 二、安装python环境
 
-以下两种方式**任选其一**(conda 或 uv)。推荐 Python 3.12(最低 3.10)。
+以下两种方式**任选其一**(conda 或 uv)。推荐 Python 3.12(最低 3.11)。
+所有依赖都声明在 `pyproject.toml` 里(不再有 `requirements.txt`)。
 
 ## Step1 — 方式 A：conda + pip
 ```bash
 conda create -n agent python=3.12
 conda activate agent
-pip install -r requirements.txt
-pip install -e .            # 安装 agentevolver 包（并注册 `agentevolver` 命令行）
+pip install -e .              # 核心依赖 + agentevolver 包（并注册 `agentevolver` 命令行）
 
-# 安装playwright
-pip install playwright
+# 可选 extras（浏览器自动化 / 化学 / 沙箱）：
+pip install -e ".[browser]"   # 或 ".[chem]" ".[sandbox]" ".[all]"
+
+# playwright / browser-use 需要一次性下载浏览器：
 playwright install
-
-# 安装browser use
-pip install browser-use
 browser-use install
 ```
 
-## Step1 — 方式 B：uv（更快）
-[uv](https://docs.astral.sh/uv/) 是 pip/venv 的高速直替。
+## Step1 — 方式 B：uv（更快、可复现）
+[uv](https://docs.astral.sh/uv/) 是 pip/venv 的高速替代；`uv sync` 会依据 `pyproject.toml`
++ 已提交的 `uv.lock` 安装,环境可复现。
 ```bash
 # 安装 uv（一次即可）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 创建并激活虚拟环境
-uv venv --python 3.12
+# 创建 .venv 并安装核心依赖 + 本包（使用 uv.lock）
+uv sync
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
-# 安装依赖（目前以 requirements.txt 为准）+ 本包
-uv pip install -r requirements.txt
-uv pip install -e . --no-deps        # 安装 agentevolver 本体（并注册 `agentevolver` 命令行）
+# 可选 extras：
+uv sync --extra browser              # 或 --extra chem / sandbox / all
 
-# 安装playwright
-uv pip install playwright
+# playwright / browser-use 需要一次性下载浏览器：
 playwright install
-
-# 安装browser use
-uv pip install browser-use
 browser-use install
 ```
 
