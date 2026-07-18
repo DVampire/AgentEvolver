@@ -5,7 +5,6 @@ Prompts are loaded from .html files; each file defines one agent prompt (system 
 """
 import os
 import re
-import html as html_module
 from html.parser import HTMLParser
 from typing import Any, Dict, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
@@ -171,28 +170,6 @@ def parse_prompt_file(path: str) -> "PromptConfig":
     cfg.system_template = expand_modules(cfg.system_template, base_dir)
     cfg.user_template = expand_modules(cfg.user_template, base_dir)
     return cfg
-
-
-def reconstruct_prompt_text(prompt: "Prompt") -> str:
-    """Rebuild the canonical HTML file text from a Prompt instance's stored fields."""
-    req_grad = "true" if prompt.enable_evolving else "false"
-    desc = html_module.escape(prompt.description, quote=True)
-    return (
-        f'<!DOCTYPE html>\n'
-        f'<html lang="en">\n'
-        f'<head>\n'
-        f'  <meta charset="UTF-8">\n'
-        f'  <meta name="name" content="{prompt.name}">\n'
-        f'  <meta name="description" content="{desc}">\n'
-        f'  <meta name="version" content="{prompt.version}">\n'
-        f'  <meta name="enable_evolving" content="{req_grad}">\n'
-        f'</head>\n'
-        f'<body>\n\n'
-        f'<div class="system">\n{prompt.system_template}\n</div>\n\n'
-        f'<div class="user">\n{prompt.user_template}\n</div>\n\n'
-        f'</body>\n'
-        f'</html>\n'
-    )
 
 
 class Prompt(BaseModel):

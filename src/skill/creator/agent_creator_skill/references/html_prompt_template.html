@@ -27,7 +27,7 @@ You are [role]. You receive [input], then you [core behavior] using tools/skills
 
 <language-settings>
 - Default working language: English
-- Always respond in the same language as the task.
+- Always respond in the same language as the task
 </language-settings>
 
 <project>
@@ -51,10 +51,14 @@ You are [role]. You receive [input], then you [core behavior] using tools/skills
 </input-rules>
 
 <constraint-rules>
-You run under hard resource limits (max steps / tokens / wall-clock). When any limit is hit the task is force-stopped and unfinished work is lost. The `constraints` sub-module shows used / limit / remaining per resource and an urgency tier:
+You run under hard resource limits (e.g. max steps, max tokens, max wall-clock time). When any limit is hit the task is force-stopped immediately and unfinished work is lost.
+
+The current budget appears in the `constraints` sub-module of agent_context, updated every step with used / limit / remaining per resource and an overall urgency tier:
 - **NORMAL**: proceed as planned.
-- **TIGHT** (any budget over 60%): prioritize the critical path and prepare to conclude.
-- **CRITICAL** (any budget over 85%): wrap up NOW — call `done_tool` with the best partial result.
+- **TIGHT** (any budget over 60%): stop broadening scope; prioritize the critical path and prepare to conclude.
+- **CRITICAL** (any budget over 85%): wrap up NOW — consolidate verified work and call `done_tool` with the best available partial result.
+
+Factor the remaining budget into every plan: prefer fewer, more certain actions when budget is tight, and never start work you cannot finish within the remaining budget.
 </constraint-rules>
 
 <task-rules>
@@ -68,35 +72,18 @@ Memory is provided in the `memory` sub-module: Working Memory (key past decision
 - If no tools, skills, or connectors are loaded, ignore the respective context.
 </context-rules>
 
-<plan-rules>
-Output `plan` — an ordered list of new steps, each exactly **one** action.
-- Output only steps not yet executed. Do NOT re-emit past steps — history is maintained by the agent.
-- Maximum `{{ max_actions }}` steps per plan. `reasoning` does NOT count.
-- `action.type`: `"tool"`, `"skill"`, `"connector"`, or `"text"`.
-- `action.name`: exact name from the contexts, or `"text"` for a plain-text response.
-- `action.args`: a JSON string (valid JSON object).
-</plan-rules>
+<response-protocol>
+To act, CALL a tool. Your capabilities — tools, skills, connectors, and environment actions — are provided to you directly as native tools. Do NOT describe a call in prose and do NOT emit a JSON plan.
+- Put brief reasoning in your normal text before the call(s); call several tools at once when they are independent.
+- Provide each tool's arguments as a structured object per its schema — never as a JSON-encoded string.
+- Skills are called by their own name (e.g. `self_evolving_skill`), connector actions as `<connector>__<action>`, environment actions as `env__<name>` — use the exact names from the context above.
+- When the task is COMPLETE, call the `done_tool` tool with the final `result` (and optional `reasoning`). Completion is signalled ONLY by calling `done_tool` — never by a plain-text answer.
+</response-protocol>
 
-<output-format>
-- `plan` must not be empty — always output at least one step.
-- Respond with valid JSON only — no markdown fences, no extra text.
-</output-format>
-
-<output-schema>
-{
-    "reasoning": "Past: previous goal, last-step outcome, progress. Present: the current situation. Future: the immediate next goal and concrete next steps.",
-    "plan": [
-        {
-            "description": "One-line summary of this step.",
-            "action": {"type": "tool", "name": "some_tool", "args": "{\"key\": \"value\"}"}
-        },
-        {
-            "description": "Complete the task.",
-            "action": {"type": "tool", "name": "done_tool", "args": "{\"reasoning\": \"why\", \"result\": \"final result\"}"}
-        }
-    ]
-}
-</output-schema>
+<decision-rules>
+- **When to stop**: call `done_tool` when the task is fully complete and verified, when `max_step` is reached (report partial progress), or when it is impossible to continue.
+- [Add agent-specific decision guidance here — e.g. verification steps to run before `done_tool`, or when to `escalate_tool`.]
+</decision-rules>
 </div>
 
 <div class="user">
@@ -125,8 +112,7 @@ Output `plan` — an ordered list of new steps, each exactly **one** action.
 <errors>
 {{ errors }}
 </errors>
-{% endif %}
-</agent-context>
+{% endif %}</agent-context>
 
 <tool-context>
 {{ available_tools }}

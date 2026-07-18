@@ -73,13 +73,26 @@ Steps:
 Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta name="name">` to the agent's name, and fill each block. The prompt is the agent's brain — treat it with the same care as a skill.
 
 **Structure (do not break it):**
-- **system**: `profile`, `language-settings`, `project`, `input-rules`, `constraint-rules`, `task-rules`, `context-rules`, `plan-rules`, `output-format`, `output-schema`.
+- **system**: `profile`, `language-settings`, `project`, `input-rules`, `constraint-rules`, `task-rules`, `context-rules`, `response-protocol`.
 - **user**: an `<agent-context>` **container** holding `task` / `constraints` / `step-info` / `memory` / (`todo`) / `workspace` / (`errors`), with `<tool-context>`, `<skill-context>`, `<connector-context>` as **siblings** of `<agent-context>` (NOT nested). The CSS/renderer depends on this container-vs-sibling layout.
 
-**Template-variable contract** — use only the variables the base context builder provides, spelled exactly:
-`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ todo }}`, `{{ available_tools }}`, `{{ available_skills }}`, `{{ available_connectors }}`, plus the system-side `{{ project_root }}`, `{{ work_dir }}`, `{{ max_actions }}`. Inventing a variable leaves an empty slot; misspelling one silently drops that context.
+**What each block is for** (fill the agent-specific ones; keep the shared ones roughly as the template has them):
+- `profile` *(agent-specific)* — who the agent is and its core behavior; explain the WHY, not just rules.
+- `language-settings` *(shared)* — working language and "reply in the request's language".
+- `project` *(agent-specific)* — the paths this agent may read/write and its permission posture (read-only vs edit). This is a real guardrail — say exactly where it may write.
+- `input-rules` *(agent-specific)* — what each context sub-module means and which `inspect_*` tool this agent uses.
+- `constraint-rules` *(shared)* — the resource-budget / urgency-tier contract (NORMAL / TIGHT / CRITICAL).
+- `task-rules` *(agent-specific)* — the agent's objective and when to call `done_tool`.
+- `context-rules` *(shared)* — how memory is presented, and that it must use only the listed tools/skills/connectors (ignoring any not loaded).
+- `response-protocol` *(shared)* — that it acts by **calling tools natively** (not by emitting a JSON plan), and signals completion only via `done_tool`.
+- `agent-context` + `tool/skill/connector-context` *(shared frame)* — the live-state and capability slots; only the template variables below go here.
 
-**The `output-schema` must match what the loop parses**: an object with a `reasoning` string and a `plan` array of `{description, action:{type,name,args}}`, where `args` is a JSON *string*. Keep this exact shape — the loop deserializes it every step.
+> **Shared blocks & modules.** The built-in default agents in `src/prompt/default/` factor the shared blocks (`language-settings`, `constraint-rules`, `context-rules`, `response-protocol`, `agent-context`) into `src/prompt/module/*.html`, referenced with `<module src="../module/NAME.html"></module>` (the server inlines them into the message; `prompt.js` inlines them for browser viewing). **Generated agents keep these blocks inline** — do NOT use `<module src>` in an `extension/prompt/` file: module `src` is resolved relative to the prompt file, so `../module/...` only exists under `src/prompt/default/` and would fail to load from `extension/prompt/`.
+
+**Template-variable contract** — use only the variables the base context builder provides, spelled exactly:
+`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ todo }}`, `{{ available_tools }}`, `{{ available_skills }}`, `{{ available_connectors }}`, plus the system-side `{{ project_root }}`, `{{ work_dir }}`. Inventing a variable leaves an empty slot; misspelling one silently drops that context.
+
+**Response contract — native tool calls (NOT a JSON plan)**: the base loop turns the agent's capabilities into native tools and reads the model's `tool_calls` each step; it does NOT parse a JSON `plan`/`output-schema` from the text. So `response-protocol` must tell the agent to **act by calling tools** and to finish only by calling `done_tool`. (Older prompts used a `plan`/`output-schema` JSON contract — that is obsolete; do not reintroduce it.)
 
 **Writing principles (borrowed from good skill authoring):**
 - Prefer the imperative. Define concrete rules, not vague directives.
@@ -96,7 +109,7 @@ Call `inspect_agent_tool` on the target for its registry facts (registered / ins
 
 1. **Interface Compliance** — `@AGENT.register_module`, inherits `Agent`, has `name`/`description`/`metadata`/`enable_evolving`; **cleanly inherits the base loop** (does NOT re-implement `__call__`/`_get_agent_context`/`_think_and_act` without reason — a generator overriding only `__call__` to register is fine; a workflow agent legitimately overrides `__call__`).
 2. **Code Quality** — clean, valid, no dead code; lifecycle hooks come from the inherited loop, not re-implemented.
-3. **Prompt Quality** — HTML present (tool-calling) with the required sections, the container-vs-sibling `agent-context` layout, correct template variables, and an `output-schema` matching the loop. Auto-pass for workflow agents (no prompt).
+3. **Prompt Quality** — HTML present (tool-calling) with the required sections, the container-vs-sibling `agent-context` layout, correct template variables, and a `response-protocol` that drives **native tool calls** (no obsolete JSON `plan`/`output-schema`). Auto-pass for workflow agents (no prompt).
 4. **Integration** — `inspect_agent_tool` shows Registered + Instantiated.
 5. **Task Execution** — a valid execution path: a tool-calling agent with a valid `prompt_name` inheriting the loop, or a coherent bespoke `__call__` for a workflow agent.
 
@@ -106,10 +119,11 @@ For an empirical check, MetaAgent can dispatch the agent on a sample task and in
 
 ## Improving an agent
 
-Most agent improvement is **prompt improvement**. The target is named in the task. Call `inspect_agent_tool` FIRST for its file paths and `enable_evolving` — if `enable_evolving=False`, the agent is frozen; do NOT edit it, report and stop.
+Most agent improvement is **prompt improvement**. The target is named in the task. Call `inspect_agent_tool` FIRST for its file paths and `enable_evolving` — if `enable_evolving=False`, the agent is frozen; do NOT edit it, report and stop. (The built-in default agents are all frozen; the optimizer edits generated agents under `extension/`, which keep every block inline.)
 
 - Read the Python and HTML before editing. Decide whether the fix is in the **prompt** (behavior, rules, reasoning — most common) or the **class** (a real code bug).
-- Make the smallest correct change. Preserve `@AGENT.register_module`, `name`, and the prompt's `agent-context` structure / template variables / output-schema.
+- Make the smallest correct change. Preserve `@AGENT.register_module`, `name`, and the prompt's `agent-context` structure and template variables.
+- If you ever edit a `src/prompt/default/` agent and see a `<module src="../module/NAME.html">` tag, that block is a **shared module** used by many agents — editing the module file changes all of them; to change one agent only, inline the block into that file first.
 - Keep the class thin — prefer fixing the prompt over adding loop overrides. If you see an unnecessary override of `_get_agent_context`/`_think_and_act`, that's a candidate to remove.
 - Apply the prompt writing principles above: explain the why, cut dead instructions, sharpen the rules the agent kept getting wrong.
 - Verify with `py_compile` (and that the HTML still has valid template variables), then re-register by putting the edited file path in `done_tool` reasoning.
