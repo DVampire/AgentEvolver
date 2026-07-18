@@ -1,0 +1,540 @@
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+import { type ConnectionStatus, type GatewayEvent, GatewaySocket } from './gateway';
+
+type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'commands';
+type MessageKind = 'user' | 'assistant' | 'system' | 'error';
+type ActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+type Theme = 'dark' | 'light';
+
+interface CapabilityCatalog { agents: string[]; tools: string[]; skills: string[]; connectors: string[]; environments: string[]; commands: string[]; }
+interface Message { id: string; kind: MessageKind; title: string; content?: string; detail?: string; timestamp: string; }
+interface ActivityStep { id: string; title: string; content?: string; detail?: string; timestamp: string; running?: boolean; }
+interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
+interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
+interface SessionSummary { session_id: string; name: string; workspace: string; task_ids: string[]; }
+interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; document: string; document_path?: string; language: 'markdown' | 'schema'; }
+
+const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
+const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], commands: [] };
+const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: string; description: string }> = {
+  skills: { label: 'Skills', icon: '▧', description: 'Reusable specialist workflows and domain knowledge.' },
+  tools: { label: 'Tools', icon: '⌘', description: 'Actions the agent can call while it works.' },
+  agents: { label: 'Agents', icon: '✦', description: 'Specialist agents available for delegation.' },
+  connectors: { label: 'Connectors', icon: '⌁', description: 'Connected data sources and external services.' },
+  environments: { label: 'Environments', icon: '◫', description: 'Session environments and their available actions.' },
+  commands: { label: 'Commands', icon: '›_', description: 'Session control commands; run an enabled command from the composer.' },
+};
+const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
+
+export function App() {
+  const [endpoint, setEndpoint] = useState(() => localStorage.getItem('agentevolver.gateway.endpoint') ?? DEFAULT_ENDPOINT);
+  const [token, setToken] = useState(() => localStorage.getItem('agentevolver.gateway.token') ?? '');
+  const [activeEndpoint, setActiveEndpoint] = useState(endpoint);
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
+  const [sessionId, setSessionId] = useState<string>();
+  const [activeTaskId, setActiveTaskId] = useState<string>();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [activities, setActivities] = useState<ActivityGroup[]>([]);
+  const [expandedActivities, setExpandedActivities] = useState<Set<string>>(new Set());
+  const [agents, setAgents] = useState<AgentState[]>([]);
+  const [catalog, setCatalog] = useState<CapabilityCatalog>(EMPTY_CAPABILITIES);
+  const [selection, setSelection] = useState<CapabilityCatalog>(EMPTY_CAPABILITIES);
+  const [draft, setDraft] = useState('');
+  const [notice, setNotice] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('agentevolver.theme') === 'light' ? 'light' : 'dark');
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  const [activeCapability, setActiveCapability] = useState<CapabilityKind>('skills');
+  const [capabilitySearch, setCapabilitySearch] = useState('');
+  const [details, setDetails] = useState<ActivityStep>();
+  const [capabilityDetail, setCapabilityDetail] = useState<CapabilityDetail>();
+  const [capabilityDetailLoading, setCapabilityDetailLoading] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const socketRef = useRef<GatewaySocket | undefined>(undefined);
+  const sessionRef = useRef<string | undefined>(undefined);
+  const messageEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, activities]);
+
+  useEffect(() => {
+    localStorage.setItem('agentevolver.theme', theme);
+  }, [theme]);
+
+  const hydrateCapabilities = useCallback(async (socket: GatewaySocket, currentSessionId: string) => {
+    const [catalogResponse, selectionResponse] = await Promise.all([
+      socket.request('capability.list'),
+      socket.request('session.capabilities.get', { session_id: currentSessionId }),
+    ]);
+    if (!catalogResponse.ok || !selectionResponse.ok) throw new Error('Could not load capability configuration');
+    const available = asCapabilities(catalogResponse.result);
+    setCatalog(available);
+    setSelection(asCapabilities(selectionResponse.result.capabilities));
+  }, []);
+
+  const refreshSessions = useCallback(async (socket: GatewaySocket) => {
+    const response = await socket.request('session.list');
+    if (!response.ok || !Array.isArray(response.result.sessions)) throw new Error('Could not load sessions');
+    setSessions(response.result.sessions.filter(isSessionSummary));
+  }, []);
+
+  const startSession = useCallback(async (socket: GatewaySocket) => {
+    try {
+      const hello = await socket.request('hello');
+      if (!hello.ok) throw new Error(hello.error?.message ?? 'Gateway handshake failed');
+      if (sessionRef.current) {
+        const sessions = await socket.request('session.list');
+        const stillAvailable = sessions.ok
+          && Array.isArray(sessions.result.sessions)
+          && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
+        if (stillAvailable) {
+          await refreshSessions(socket);
+          return;
+        }
+        socket.forgetSession(sessionRef.current);
+        sessionRef.current = undefined;
+        setSessionId(undefined);
+        setMessages([]);
+        setActivities([]);
+        setAgents([]);
+        setActiveTaskId(undefined);
+      }
+      const response = await socket.request('session.create', { name: 'web' });
+      if (!response.ok || typeof response.result.session_id !== 'string') {
+        throw new Error(response.error?.message ?? 'Could not create a session');
+      }
+      sessionRef.current = response.result.session_id;
+      setSessionId(response.result.session_id);
+      setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
+      await hydrateCapabilities(socket, response.result.session_id);
+      await refreshSessions(socket);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+      setStatus('error');
+    }
+  }, [hydrateCapabilities, refreshSessions]);
+
+  const updateAgent = useCallback((name: string, nextStatus: AgentState['status']) => {
+    setAgents((current) => {
+      const existing = current.find((agent) => agent.name === name);
+      return existing
+        ? current.map((agent) => agent.name === name ? { ...agent, status: nextStatus } : agent)
+        : [...current, { name, status: nextStatus }];
+    });
+  }, []);
+
+  const appendActivityStep = useCallback((event: GatewayEvent, step: ActivityStep, statusUpdate?: ActivityStatus) => {
+    const taskId = event.task_id ?? 'session';
+    setActivities((current) => {
+      const index = current.findIndex((activity) => activity.taskId === taskId);
+      const existing = index >= 0 ? current[index] : { id: taskId, taskId: event.task_id, title: event.type === 'task.submitted' ? 'Working on your request' : 'Agent activity', timestamp: event.timestamp, status: 'running' as const, steps: [] };
+      const next = { ...existing, status: statusUpdate ?? existing.status, steps: [...existing.steps, step].slice(-250) };
+      const updated = index >= 0 ? current.map((activity, position) => position === index ? next : activity) : [...current, next];
+      return updated.slice(-30);
+    });
+  }, []);
+
+  const finishActivity = useCallback((taskId: string | undefined, nextStatus: ActivityStatus) => {
+    if (!taskId) return;
+    setActivities((current) => current.map((activity) => activity.taskId === taskId ? { ...activity, status: nextStatus } : activity));
+  }, []);
+
+  const handleGatewayEvent = useCallback((event: GatewayEvent) => {
+    if (event.type === 'session.capabilities.updated') {
+      if (event.session_id === sessionRef.current) setSelection(asCapabilities(event.payload.capabilities));
+      return;
+    }
+    if (event.type === 'capabilities.changed') {
+      setCatalog(asCapabilities(event.payload.capabilities));
+      const name = typeof event.payload.name === 'string' ? humanize(event.payload.name) : 'Capabilities';
+      const action = String(event.payload.action ?? 'updated');
+      const kind = typeof event.payload.kind === 'string' ? event.payload.kind : 'capabilities';
+      const message = action === 'registered'
+        ? `${name} was added to ${kind} and enabled for this session.`
+        : action === 'unregistered'
+          ? `${name} was removed from ${kind}.`
+          : `${name} was updated.`;
+      setNotice(message);
+      return;
+    }
+    if (event.type === 'task.submitted') {
+      setMessages((items) => [...items, { id: `${event.task_id}:user`, kind: 'user', title: 'You', content: String(event.payload.content ?? ''), timestamp: event.timestamp }]);
+      appendActivityStep(event, activityStep(event), 'running');
+      return;
+    }
+    if (event.type === 'command.executed') {
+      if (event.session_id === sessionRef.current) {
+        setMessages((items) => [...items, {
+          id: `command:${event.seq_no}`,
+          kind: event.payload.success === false ? 'error' : 'system',
+          title: String(event.payload.raw ?? 'Command'),
+          content: String(event.payload.message ?? ''),
+          detail: event.payload.data ? JSON.stringify(event.payload.data, null, 2) : undefined,
+          timestamp: event.timestamp,
+        }]);
+      }
+      return;
+    }
+    if (event.type === 'task.started' || event.type === 'trace.event') {
+      const step = activityStep(event);
+      if (step) appendActivityStep(event, step);
+    }
+    if (event.type === 'task.started') setActiveTaskId(event.task_id);
+    if (event.type === 'trace.event') {
+      const trace = event.payload;
+      const name = String(trace.agent_name ?? 'agent');
+      const traceType = String(trace.event_type ?? '');
+      if (traceType === 'agent_start') updateAgent(name, 'running');
+      if (traceType === 'agent_end') updateAgent(name, trace.success === false ? 'failed' : 'completed');
+    }
+    if (event.type === 'task.completed') {
+      setActiveTaskId(undefined);
+      finishActivity(event.task_id, 'completed');
+      setMessages((items) => [...items, finalMessage(event, 'assistant')]);
+    }
+    if (event.type === 'task.failed') {
+      setActiveTaskId(undefined);
+      finishActivity(event.task_id, 'failed');
+      setMessages((items) => [...items, finalMessage(event, 'error')]);
+    }
+    if (event.type === 'task.cancelled') {
+      setActiveTaskId(undefined);
+      finishActivity(event.task_id, 'cancelled');
+      setMessages((items) => [...items, finalMessage(event, 'system')]);
+    }
+  }, [appendActivityStep, finishActivity, updateAgent]);
+
+  const connect = useCallback(() => {
+    socketRef.current?.close();
+    sessionRef.current = undefined;
+    setSessionId(undefined);
+    setMessages([]);
+    setActivities([]);
+    setAgents([]);
+    setActiveTaskId(undefined);
+    setNotice('');
+    localStorage.setItem('agentevolver.gateway.endpoint', endpoint);
+    localStorage.setItem('agentevolver.gateway.token', token);
+    setActiveEndpoint(endpoint);
+
+    const socket = new GatewaySocket(endpoint, token || undefined);
+    socketRef.current = socket;
+    socket.onStatus((nextStatus) => {
+      setStatus(nextStatus);
+      if (nextStatus === 'connected') void startSession(socket);
+    });
+    socket.onEvent(handleGatewayEvent);
+    socket.connect();
+  }, [endpoint, token, startSession, handleGatewayEvent]);
+
+  useEffect(() => {
+    connect();
+    return () => socketRef.current?.close();
+  }, [connect]);
+
+  const createNewSession = async () => {
+    const socket = socketRef.current;
+    if (!socket || status !== 'connected') return;
+    try {
+      sessionRef.current = undefined;
+      setSessionId(undefined);
+      setMessages([]);
+      setActivities([]);
+      setAgents([]);
+      setActiveTaskId(undefined);
+      const response = await socket.request('session.create', { name: `Web session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` });
+      if (!response.ok || typeof response.result.session_id !== 'string') throw new Error(response.error?.message ?? 'Could not create a session');
+      sessionRef.current = response.result.session_id;
+      setSessionId(response.result.session_id);
+      setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
+      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket)]);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const selectSession = async (nextSession: SessionSummary) => {
+    const socket = socketRef.current;
+    if (!socket || nextSession.session_id === sessionRef.current) return;
+    if (activeTaskId) {
+      setNotice('Finish or stop the active task before switching sessions.');
+      return;
+    }
+    try {
+      const replay = await socket.request('session.events', { session_id: nextSession.session_id, after_seq: 0 });
+      if (!replay.ok || !Array.isArray(replay.result.events)) throw new Error(replay.error?.message ?? 'Could not load the session');
+      sessionRef.current = nextSession.session_id;
+      setSessionId(nextSession.session_id);
+      setMessages([]);
+      setActivities([]);
+      setAgents([]);
+      setDetails(undefined);
+      setExpandedActivities(new Set());
+      await hydrateCapabilities(socket, nextSession.session_id);
+      for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const submit = async (event?: FormEvent) => {
+    event?.preventDefault();
+    const content = draft.trim();
+    if (!content || !sessionRef.current || activeTaskId) return;
+    setDraft('');
+    try {
+      const socket = socketRef.current;
+      if (!socket) throw new Error('Gateway is not connected');
+      if (content.startsWith('/')) {
+        const response = await socket.request('command.execute', { session_id: sessionRef.current, raw: content });
+        if (!response.ok) throw new Error(response.error?.message ?? 'Command failed');
+        return;
+      }
+      const currentSession = sessions.find((session) => session.session_id === sessionRef.current);
+      if (currentSession && isGenericSessionName(currentSession.name)) {
+        const name = makeSessionTitle(content);
+        const renamed = await socket.request('session.rename', { session_id: sessionRef.current, name });
+        if (!renamed.ok) throw new Error(renamed.error?.message ?? 'Could not rename the session');
+        setSessions((current) => current.map((session) => session.session_id === sessionRef.current ? { ...session, name } : session));
+      }
+      const response = await socket.request('task.submit', { session_id: sessionRef.current, content });
+      if (!response?.ok || typeof response.result.task_id !== 'string') throw new Error(response?.error?.message ?? 'Task submission failed');
+      setActiveTaskId(response.result.task_id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const cancelTask = async () => {
+    if (!activeTaskId) return;
+    await socketRef.current?.request('task.cancel', { task_id: activeTaskId });
+  };
+
+  const toggleCapability = async (kind: CapabilityKind, name: string) => {
+    if (!sessionRef.current) return;
+    const next = { ...selection, [kind]: selection[kind].includes(name) ? selection[kind].filter((item) => item !== name) : [...selection[kind], name] };
+    setSelection(next);
+    try {
+      const response = await socketRef.current?.request('session.capabilities.set', { session_id: sessionRef.current, capabilities: next });
+      if (!response?.ok) throw new Error(response?.error?.message ?? 'Could not update capabilities');
+      setSelection(asCapabilities(response.result.capabilities));
+    } catch (error) {
+      setSelection(selection);
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const toggleAllCapabilities = async (kind: CapabilityKind) => {
+    if (!sessionRef.current) return;
+    const next = { ...selection, [kind]: selection[kind].length === catalog[kind].length ? [] : catalog[kind] };
+    setSelection(next);
+    try {
+      const response = await socketRef.current?.request('session.capabilities.set', { session_id: sessionRef.current, capabilities: next });
+      if (!response?.ok) throw new Error(response?.error?.message ?? 'Could not update capabilities');
+    } catch (error) {
+      setSelection(selection);
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openCapabilityDetail = async (kind: CapabilityKind, name: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    setCapabilityDetailLoading(true);
+    try {
+      const response = await socket.request('capability.get', { kind, name });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Could not load capability details');
+      setCapabilityDetail(asCapabilityDetail(response.result));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCapabilityDetailLoading(false);
+    }
+  };
+
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void submit();
+    }
+  };
+
+  const statusText = useMemo(() => status === 'connected' ? 'Connected' : status[0].toUpperCase() + status.slice(1), [status]);
+  const capabilityItems = catalog[activeCapability].filter((name) => name.toLowerCase().includes(capabilitySearch.trim().toLowerCase()));
+  const projects = useMemo(() => Object.entries(sessions.reduce<Record<string, SessionSummary[]>>((groups, session) => {
+    (groups[session.workspace] ??= []).push(session);
+    return groups;
+  }, {})), [sessions]);
+  const timeline = useMemo(() => [
+    ...messages.map((message) => ({ id: message.id, timestamp: message.timestamp, type: 'message' as const, value: message })),
+    ...activities.map((activity) => ({ id: activity.id, timestamp: activity.timestamp, type: 'activity' as const, value: activity })),
+  ].sort((left, right) => left.timestamp.localeCompare(right.timestamp)), [messages, activities]);
+
+  return (
+    <main className="app-shell" data-theme={theme}>
+      <aside className="sidebar">
+        <div className="brand"><span className="brand-mark">✦</span><span>AgentEvolver</span></div>
+        <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}>＋ New session</button>
+        <div className="sidebar-section projects-section">
+          <p className="eyebrow">Projects</p>
+          {projects.map(([workspace, projectSessions]) => <div className="project-group" key={workspace}><div className="project-name" title={workspace}>⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{projectSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Session ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>)}
+          {!projects.length ? <p className="empty">Connecting to projects…</p> : null}
+        </div>
+        <nav className="sidebar-section capability-nav" aria-label="Capabilities">
+          <p className="eyebrow">Capabilities</p>
+          {CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }}><span>{CAPABILITY_META[kind].icon}</span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}
+        </nav>
+        <div className="sidebar-section agents-section">
+          <p className="eyebrow">Active agents</p>
+          {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
+        </div>
+        <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Light theme' : '◐ Dark theme'}</button><button className="text-button" onClick={() => setSettingsOpen(true)}>⚙ Connection</button></div>
+      </aside>
+
+      <section className="conversation">
+        <header className="topbar">
+          <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Workspace agent</p><h1>New task</h1></div></div>
+          <div className="connection"><span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
+        </header>
+        <div className="message-list">
+          {timeline.length <= 1 ? <QuickStart onSelect={setDraft} /> : null}
+          {timeline.map((item) => item.type === 'message'
+            ? <MessageCard key={item.id} message={item.value} />
+            : <ActivityCard key={item.id} activity={item.value} expanded={expandedActivities.has(item.id)} onToggle={() => setExpandedActivities((current) => { const next = new Set(current); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })} onSelect={setDetails} />)}
+          <div ref={messageEndRef} />
+        </div>
+        <div className="composer-wrap">
+          {notice ? <p className="notice">{notice}</p> : null}
+          <form className="composer" onSubmit={submit}>
+            <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder="Ask AgentEvolver to investigate, implement, or review…" disabled={status !== 'connected' || Boolean(activeTaskId)} rows={3} />
+            <div className="composer-actions"><span>Enter to send · Shift+Enter for a new line</span>{activeTaskId ? <button type="button" className="stop" onClick={cancelTask}>■ Stop task</button> : <button type="submit" disabled={!draft.trim() || status !== 'connected'}>Send <span>↵</span></button>}</div>
+          </form>
+        </div>
+      </section>
+
+      <aside className="inspector">
+        <p className="eyebrow">Activity</p>
+        {activeTaskId ? <div className="activity-running"><span className="pulse" /> Task running</div> : <div className="activity-idle">Waiting for a task</div>}
+        <p className="eyebrow inspector-heading">Gateway</p><code>{activeEndpoint}</code>
+        <p className="eyebrow inspector-heading">Selected step</p>
+        {details ? <div className="detail-card"><strong>{details.title}</strong><pre>{details.detail ?? details.content ?? 'No details'}</pre></div> : <p className="empty">Expand an activity and select a step to inspect it.</p>}
+      </aside>
+
+      {capabilitiesOpen ? <CapabilityDialog activeKind={activeCapability} catalog={catalog} selection={selection} items={capabilityItems} search={capabilitySearch} onSearch={setCapabilitySearch} onSelectKind={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); }} onToggle={toggleCapability} onToggleAll={toggleAllCapabilities} onInspect={openCapabilityDetail} onClose={() => setCapabilitiesOpen(false)} /> : null}
+      {capabilityDetailLoading ? <CapabilityDetailDialog loading onClose={() => setCapabilityDetailLoading(false)} /> : null}
+      {capabilityDetail ? <CapabilityDetailDialog detail={capabilityDetail} onClose={() => setCapabilityDetail(undefined)} /> : null}
+      {settingsOpen ? <ConnectionDialog endpoint={endpoint} token={token} onEndpoint={setEndpoint} onToken={setToken} onClose={() => setSettingsOpen(false)} onConnect={() => { setSettingsOpen(false); connect(); }} /> : null}
+      {mobileNavOpen ? <MobileNavigation projects={projects} sessionId={sessionId} selection={selection} agents={agents} status={status} theme={theme} onClose={() => setMobileNavOpen(false)} onCreateSession={createNewSession} onSelectSession={selectSession} onOpenCapabilities={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} onOpenConnection={() => setSettingsOpen(true)} /> : null}
+    </main>
+  );
+}
+
+function MessageCard({ message }: { message: Message }) {
+  return <article className={`message-card ${message.kind}`}><div className="message-avatar">{message.kind === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? <p>{message.content}</p> : null}</div></article>;
+}
+
+function ActivityCard({ activity, expanded, onToggle, onSelect }: { activity: ActivityGroup; expanded: boolean; onToggle: () => void; onSelect: (step: ActivityStep) => void }) {
+  const label = activity.status === 'running' ? 'Working' : activity.status === 'completed' ? 'Completed' : activity.status === 'cancelled' ? 'Cancelled' : 'Failed';
+  return <section className={`activity-card ${activity.status}`}><button className="activity-summary" onClick={onToggle} aria-expanded={expanded}><span className="activity-icon">{activity.status === 'running' ? '◌' : '✓'}</span><span className="activity-copy"><strong>{activity.title}</strong><small>{activity.steps.length} execution step{activity.steps.length === 1 ? '' : 's'} · {label}</small></span><span className="activity-chevron">{expanded ? '⌃' : '⌄'}</span></button>{expanded ? <div className="activity-steps">{activity.steps.map((step) => <button className="activity-step" key={step.id} onClick={() => onSelect(step)}><span className="step-dot" /><span><strong>{step.title}</strong>{step.content ? <small>{step.content}</small> : null}</span><time>{formatTime(step.timestamp)}</time></button>)}</div> : null}</section>;
+}
+
+function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
+  const prompts = [
+    ['Review this project', 'Find the highest-impact issues and suggest fixes.'],
+    ['Plan a feature', 'Turn a requirement into an implementation plan.'],
+    ['Explain the architecture', 'Trace the main modules and their responsibilities.'],
+    ['Investigate a problem', 'Gather evidence, form hypotheses, and recommend next steps.'],
+  ];
+  return <section className="quick-start"><p className="eyebrow">Get started</p><h2>What would you like to work on?</h2><p>Choose a starting point or describe a task in your own words.</p><div className="quick-prompts">{prompts.map(([title, prompt]) => <button key={title} onClick={() => onSelect(prompt)}><strong>{title}</strong><span>{prompt}</span></button>)}</div></section>;
+}
+
+function MobileNavigation({ projects, sessionId, selection, agents, status, theme, onClose, onCreateSession, onSelectSession, onOpenCapabilities, onToggleTheme, onOpenConnection }: { projects: [string, SessionSummary[]][]; sessionId?: string; selection: CapabilityCatalog; agents: AgentState[]; status: ConnectionStatus; theme: Theme; onClose: () => void; onCreateSession: () => Promise<void>; onSelectSession: (session: SessionSummary) => Promise<void>; onOpenCapabilities: (kind: CapabilityKind) => void; onToggleTheme: () => void; onOpenConnection: () => void }) {
+  return <div className="mobile-nav-backdrop" onClick={onClose}><aside className="mobile-nav" onClick={(event) => event.stopPropagation()}><div className="brand"><span className="brand-mark">✦</span><span>AgentEvolver</span><button className="mobile-close" onClick={onClose} aria-label="Close navigation">×</button></div><button className="new-chat" disabled={status !== 'connected'} onClick={() => { void onCreateSession(); onClose(); }}>＋ New session</button><div className="sidebar-section projects-section"><p className="eyebrow">Projects</p>{projects.map(([workspace, sessions]) => <div className="project-group" key={workspace}><div className="project-name">⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{sessions.map((session) => <button className={`project-session ${session.session_id === sessionId ? 'selected' : ''}`} key={session.session_id} onClick={() => { void onSelectSession(session); onClose(); }}><span className="session-dot" /><span>{session.name}</span><em>{session.task_ids.length}</em></button>)}</div>)}</div><nav className="sidebar-section capability-nav"><p className="eyebrow">Capabilities</p>{CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { onOpenCapabilities(kind); onClose(); }}><span>{CAPABILITY_META[kind].icon}</span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}</nav><div className="sidebar-section agents-section"><p className="eyebrow">Active agents</p>{agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}</div><div className="sidebar-footer"><button className="text-button" onClick={onToggleTheme}>{theme === 'dark' ? '☀ Light theme' : '◐ Dark theme'}</button><button className="text-button" onClick={() => { onOpenConnection(); onClose(); }}>⚙ Connection</button></div></aside></div>;
+}
+
+function CapabilityDialog({ activeKind, catalog, selection, items, search, onSearch, onSelectKind, onToggle, onToggleAll, onInspect, onClose }: { activeKind: CapabilityKind; catalog: CapabilityCatalog; selection: CapabilityCatalog; items: string[]; search: string; onSearch: (value: string) => void; onSelectKind: (kind: CapabilityKind) => void; onToggle: (kind: CapabilityKind, name: string) => void; onToggleAll: (kind: CapabilityKind) => void; onInspect: (kind: CapabilityKind, name: string) => void; onClose: () => void }) {
+  const meta = CAPABILITY_META[activeKind];
+  const allEnabled = catalog[activeKind].length > 0 && selection[activeKind].length === catalog[activeKind].length;
+  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2><button onClick={onClose}>×</button></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span>{CAPABILITY_META[kind].icon}</span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2>{meta.icon} {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((name) => <div className="capability-item" key={name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, name)}><strong>{humanize(name)}</strong><small>{capabilityDescription(activeKind, name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, name)} aria-pressed={selection[activeKind].includes(name)} aria-label={`Toggle ${name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
+}
+
+function CapabilityDetailDialog({ detail, loading, onClose }: { detail?: CapabilityDetail; loading?: boolean; onClose: () => void }) {
+  if (loading) return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog loading-detail" onClick={(event) => event.stopPropagation()}><span className="pulse" /> Loading capability details…</section></div>;
+  if (!detail) return null;
+  const meta = CAPABILITY_META[detail.kind];
+  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2>{meta.icon} {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
+}
+
+function MarkdownDocument({ content }: { content: string }) {
+  return <div className="markdown-document"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content.replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '')}</ReactMarkdown></div>;
+}
+
+function SchemaPanel({ schema }: { schema?: Record<string, unknown> }) {
+  return <div className="schema-panel"><div className="document-toolbar"><span>Parameters</span>{schema ? <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(schema, null, 2))}>Copy schema</button> : null}</div>{schema ? <pre className="source-document"><code>{JSON.stringify(schema, null, 2)}</code></pre> : <div className="schema-empty"><strong>No parameters required</strong><p>This capability does not expose a structured input schema.</p></div>}</div>;
+}
+
+function ConnectionDialog({ endpoint, token, onEndpoint, onToken, onClose, onConnect }: { endpoint: string; token: string; onEndpoint: (value: string) => void; onToken: (value: string) => void; onClose: () => void; onConnect: () => void }) {
+  return <div className="modal-backdrop"><section className="modal"><div className="modal-title"><h2>Gateway connection</h2><button onClick={onClose}>×</button></div><label>WebSocket endpoint<input value={endpoint} onChange={(event) => onEndpoint(event.target.value)} placeholder={DEFAULT_ENDPOINT} /></label><label>Token <span>(optional)</span><input value={token} onChange={(event) => onToken(event.target.value)} type="password" /></label><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button onClick={onConnect}>Connect</button></div></section></div>;
+}
+
+function asCapabilities(value: unknown): CapabilityCatalog {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const namesFor = (kind: CapabilityKind) => Array.isArray(source[kind]) ? source[kind].filter((item): item is string => typeof item === 'string') : [];
+  return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), commands: namesFor('commands') };
+}
+
+function asCapabilityDetail(value: Record<string, unknown>): CapabilityDetail {
+  const kind = CAPABILITY_KINDS.includes(value.kind as CapabilityKind) ? value.kind as CapabilityKind : 'skills';
+  return {
+    kind,
+    name: String(value.name ?? ''),
+    description: String(value.description ?? ''),
+    version: String(value.version ?? '1.0.0'),
+    permission_mode: String(value.permission_mode ?? 'workspace_write'),
+    type: typeof value.type === 'string' || Array.isArray(value.type) ? value.type as string | string[] : undefined,
+    enable_evolving: Boolean(value.enable_evolving),
+    actions: Array.isArray(value.actions) ? value.actions.filter((item): item is string => typeof item === 'string') : [],
+    parameter_schema: value.parameter_schema && typeof value.parameter_schema === 'object' && !Array.isArray(value.parameter_schema) ? value.parameter_schema as Record<string, unknown> : undefined,
+    usage: typeof value.usage === 'string' ? value.usage : undefined,
+    document: String(value.document ?? ''),
+    document_path: typeof value.document_path === 'string' ? value.document_path : undefined,
+    language: value.language === 'schema' ? 'schema' : 'markdown',
+  };
+}
+
+function isSessionSummary(value: unknown): value is SessionSummary {
+  return Boolean(value)
+    && typeof value === 'object'
+    && typeof (value as { session_id?: unknown }).session_id === 'string'
+    && typeof (value as { workspace?: unknown }).workspace === 'string'
+    && typeof (value as { name?: unknown }).name === 'string'
+    && Array.isArray((value as { task_ids?: unknown }).task_ids);
+}
+
+function isGenericSessionName(name: string): boolean { return name === 'web' || name === 'interactive' || name.startsWith('Web session '); }
+function makeSessionTitle(content: string): string { return content.replace(/\s+/g, ' ').trim().slice(0, 72); }
+
+function activityStep(event: GatewayEvent): ActivityStep {
+  if (event.type === 'task.submitted') return { id: `${event.seq_no}:queued`, title: 'Task queued', content: String(event.payload.content ?? ''), timestamp: event.timestamp };
+  if (event.type === 'task.started') return { id: `${event.seq_no}:started`, title: 'Meta agent started', content: 'Preparing the task and selecting capabilities.', timestamp: event.timestamp, running: true };
+  const trace = event.payload;
+  const type = String(trace.event_type ?? 'event').replaceAll('_', ' ');
+  const actor = String(trace.action_name ?? trace.agent_name ?? trace.label ?? 'Agent');
+  const content = trace.message ?? trace.error ?? trace.label;
+  return { id: `${event.seq_no}:${type}`, title: `${actor} · ${type}`, content: content ? String(content) : undefined, detail: JSON.stringify(trace, null, 2), timestamp: event.timestamp, running: type.endsWith('start') };
+}
+
+function finalMessage(event: GatewayEvent, kind: Extract<MessageKind, 'assistant' | 'error' | 'system'>): Message {
+  if (kind === 'assistant') return { id: `${event.task_id}:final`, kind, title: 'AgentEvolver', content: String(event.payload.message ?? event.payload.result ?? 'Task completed'), detail: JSON.stringify(event.payload, null, 2), timestamp: event.timestamp };
+  if (kind === 'error') return { id: `${event.task_id}:error`, kind, title: 'Task failed', content: String(event.payload.error ?? 'Unknown error'), detail: JSON.stringify(event.payload, null, 2), timestamp: event.timestamp };
+  return { id: `${event.task_id}:cancelled`, kind, title: 'Task cancelled', timestamp: event.timestamp };
+}
+
+function formatTime(timestamp: string): string { return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function humanize(name: string): string { return name.replace(/_skill$|_tool$|_agent$|_connector$/, '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function capabilityDescription(kind: CapabilityKind, name: string): string { return kind === 'commands' ? `Run /${name} from the composer when this command is enabled.` : `${humanize(name)} ${kind.slice(0, -1)} is ${kind === 'agents' ? 'available for delegation' : 'available to this session'}.`; }

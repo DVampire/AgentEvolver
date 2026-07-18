@@ -24,9 +24,10 @@ each `*_manager`, and per-component version numbering to `version_manager`.
 
 import os
 import shutil
-from typing import Dict, List, Optional
+from inspect import isawaitable
+from typing import Awaitable, Callable, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from agentevolver.logger import logger
 from agentevolver.utils import assemble_project_path
@@ -47,16 +48,43 @@ _CLASS_ENTRY = {"environment": "environment.py"}
 
 _ARCHIVE = ".versions"
 
+ExtensionChangeListener = Callable[[Dict[str, str]], Awaitable[None] | None]
+
 
 class ExtensionManagerServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     base_dir: str = Field(default="", description="Root directory of the extension tree")
+    _change_listeners: set[ExtensionChangeListener] = PrivateAttr(default_factory=set)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
         self.base_dir = assemble_project_path(base_dir or "extension")
         os.makedirs(self.base_dir, exist_ok=True)
+
+    def subscribe(self, listener: ExtensionChangeListener) -> None:
+        """Receive hot-extension lifecycle changes after a component is live."""
+        self._change_listeners.add(listener)
+
+    def unsubscribe(self, listener: ExtensionChangeListener) -> None:
+        self._change_listeners.discard(listener)
+
+    async def _notify_change(
+        self, action: str, module: str, name: str, *, version: Optional[str] = None
+    ) -> None:
+        change = {"action": action, "module": module, "name": name}
+        if version:
+            change["version"] = version
+        for listener in tuple(self._change_listeners):
+            try:
+                result = listener(change)
+                if isawaitable(result):
+                    await result
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    f"| ❌ ExtensionManager: change listener failed for {module}:{name}: {exc}",
+                    exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Paths
@@ -203,6 +231,12 @@ class ExtensionManagerServer(BaseModel):
         if self._smoke_enabled(run_smoke):
             await self._smoke_gate_or_revert(module, name, prev_version)
 
+        await self._notify_change(
+            "registered" if prev_version is None else "evolved",
+            module,
+            name,
+            version=comp.version,
+        )
         return name
 
     def _smoke_enabled(self, run_smoke: Optional[bool]) -> bool:
@@ -242,14 +276,20 @@ class ExtensionManagerServer(BaseModel):
             manifest = self.read_manifest()
             manifest.remove(module, name)
             self._write_manifest(manifest)
+        if ok:
+            await self._notify_change("unregistered", module, name)
         return ok
 
     async def deactivate_all(self) -> None:
+        deactivated: List[ManifestComponent] = []
         async with file_lock(self._manifest_path()):
             manifest = self.read_manifest()
             for comp in list(manifest.components):
-                await self._unload_component(comp.module, comp.name)
+                if await self._unload_component(comp.module, comp.name):
+                    deactivated.append(comp)
             self._write_manifest(Manifest())
+        for comp in deactivated:
+            await self._notify_change("unregistered", comp.module, comp.name)
         logger.info("| 🧹 ExtensionManager: deactivated all extensions.")
 
     async def reload(self) -> Manifest:
@@ -260,6 +300,7 @@ class ExtensionManagerServer(BaseModel):
             if os.path.exists(abspath):
                 try:
                     await self._load_component(comp.module, abspath, comp.name, version=comp.version, config=None)
+                    await self._notify_change("reloaded", comp.module, comp.name, version=comp.version)
                 except Exception as e:
                     logger.error(f"| ❌ ExtensionManager: reload failed for {comp.module}:{comp.name}: {e}")
         return manifest
@@ -369,6 +410,7 @@ class ExtensionManagerServer(BaseModel):
             self._record(module, loaded, dest, manifest, version=version)
             self._write_manifest(manifest)
         logger.info(f"| ⏪ ExtensionManager: rolled back {module}:{name} to v{version}")
+        await self._notify_change("rolled_back", module, loaded, version=version)
         return loaded
 
     # ------------------------------------------------------------------

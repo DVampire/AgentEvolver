@@ -35,6 +35,8 @@ dependencies = [
     "validators",
     "mcp",
     "crawl4ai>=0.8.6",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
     # llm providers
     "openai>=1.0.0",
     "anthropic>=0.116.0",
@@ -60,10 +62,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-browser = ["playwright", "browser-use"]   # browser automation environment
+browser = ["playwright", "browser-use[cli]"]   # browser automation environment
 chem = ["rdkit"]                           # chemistry skills (rdkit)
 sandbox = ["e2b", "docker"]                # remote / container sandboxes
-all = ["playwright", "browser-use", "rdkit", "e2b", "docker"]
+all = ["playwright", "browser-use[cli]", "rdkit", "e2b", "docker"]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 agentevolver = "agentevolver.cli:main"

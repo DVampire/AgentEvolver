@@ -1,6 +1,7 @@
 import contextvars
 import logging
 import os
+import sys
 import threading
 from enum import IntEnum
 from typing import Any, Optional
@@ -116,7 +117,12 @@ class Logger(logging.Logger, metaclass=Singleton):
         except Exception:
             pass  # Logging failure should not affect main program
 
-    def initialize(self, config, level: int = LogLevel.INFO):
+    def initialize(
+        self,
+        config,
+        level: int = LogLevel.INFO,
+        console_stream=None,
+    ):
         """
         Initialize the logger with a file path and optional main process check.
 
@@ -136,7 +142,8 @@ class Logger(logging.Logger, metaclass=Singleton):
             width=None,
             markup=True,
             color_system="truecolor",
-            force_terminal=True
+            force_terminal=True,
+            file=console_stream or sys.stdout,
         )
         rich_handler = RichHandler(
             console=self.console,

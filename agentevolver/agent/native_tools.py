@@ -26,7 +26,7 @@ from agentevolver.tool.types import Tool
 
 # Routing table value: a tuple describing how to dispatch a tool_call by name:
 #   ("tool", name) | ("skill", name) | ("connector", name, action)
-#   | ("env", action) | ("agent", name)
+#   | ("environment", name, action) | ("env", action) | ("agent", name)
 Route = Tuple[Any, ...]
 
 
@@ -64,6 +64,7 @@ async def assemble_native_tools(
     from agentevolver.tool.server import tool_manager
     from agentevolver.skill.server import skill_manager
     from agentevolver.connector.server import connector_manager
+    from agentevolver.environment.server import environment_manager
 
     extra = getattr(ctx, "extra", None) or {}
     pairs: List[Tuple[Dict[str, Any], Route]] = []
@@ -77,6 +78,9 @@ async def assemble_native_tools(
 
     # connector actions
     pairs += await connector_manager.function_callings(extra.get("connector_allowlist"))
+
+    # selected environment actions; names are namespace-qualified to avoid collisions.
+    pairs += await environment_manager.function_callings(extra.get("environment_allowlist"))
 
     # environment actions — hook, default none (env-bound agents override)
     if hasattr(agent, "_native_env_tools"):

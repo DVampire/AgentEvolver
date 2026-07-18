@@ -101,8 +101,7 @@ pip install -e .              # 核心依赖 + agentevolver 包（并注册 `age
 pip install -e ".[browser]"   # 或 ".[chem]" ".[sandbox]" ".[all]"
 
 # playwright / browser-use 需要一次性下载浏览器：
-playwright install
-browser-use install
+python -m playwright install chromium
 ```
 
 ## Step1 — 方式 B：uv（更快、可复现）
@@ -120,8 +119,7 @@ source .venv/bin/activate            # Windows: .venv\Scripts\activate
 uv sync --extra browser              # 或 --extra chem / sandbox / all
 
 # playwright / browser-use 需要一次性下载浏览器：
-playwright install
-browser-use install
+python -m playwright install chromium
 ```
 
 > 说明：`pip install -e .` / `uv pip install -e .` 会把本仓库装成可导入的 `agentevolver` 包，

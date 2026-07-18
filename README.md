@@ -20,7 +20,7 @@ In short:
    pip install -e .                      # or with uv: uv sync
 
    # optional browser automation:
-   pip install -e ".[browser]" && playwright install && browser-use install
+   pip install -e ".[browser]" && python -m playwright install chromium
    ```
 
 3. **Configure `.env`** at the project root so the framework can reach Vault:
@@ -65,3 +65,22 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 - On completion the log prints the final result and, if produced, the path to a memory HTML report.
 
 Ready-made task documents live in [`examples/tasks/`](examples/tasks/) — browse them for examples of how tasks are specified.
+
+## Interactive web frontend
+
+`frontend/` contains a React/Vite browser UI for interactive AgentEvolver sessions. It talks to AgentEvolver through the versioned Gateway protocol; the Python runtime remains the backend.
+
+```bash
+# Terminal 1: start the Python backend
+conda activate agentos
+agentevolver serve --transport websocket --host 127.0.0.1 --port 9876
+
+# Terminal 2: start the browser UI
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173` (or the URL Vite prints). The Web UI connects to `ws://127.0.0.1:9876/ws` by default and lets you change the endpoint or enter a token from its **Connection** panel.
+
+Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted local network. The WebSocket client reconnects automatically and asks the server to replay missed session events. See [`frontend/README.md`](frontend/README.md) for the full startup guide.

@@ -20,7 +20,7 @@
    pip install -e .                      # 或用 uv：uv sync
 
    # 可选：浏览器自动化
-   pip install -e ".[browser]" && playwright install && browser-use install
+   pip install -e ".[browser]" && python -m playwright install chromium
    ```
 
 3. **配置项目根目录的 `.env`**，让框架能连上 Vault：
@@ -65,3 +65,22 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 - 任务结束时，日志会打印最终结果；若生成了记忆报告，还会打印其 HTML 路径。
 
 现成的任务文档在 [`examples/tasks/`](examples/tasks/) 下，可参考它们了解任务的写法。
+
+## 交互式网页前端
+
+[`frontend/`](frontend/) 是基于 React/Vite 的浏览器界面；AgentEvolver 的 Python 运行时继续作为后端。页面通过版本化 Gateway 协议连接 WebSocket，提供任务输入、实时 Agent 活动、取消任务和事件详情查看。
+
+```bash
+# 终端 1：启动 Python 后端
+conda activate agentos
+agentevolver serve --transport websocket --host 127.0.0.1 --port 9876
+
+# 终端 2：启动浏览器前端
+cd frontend
+npm install
+npm run dev
+```
+
+打开 `http://127.0.0.1:5173`（或 Vite 输出的地址）。页面默认连接 `ws://127.0.0.1:9876/ws`，可通过侧栏的 **Connection** 修改地址或填写 token。
+
+若服务不在受信任的本地网络，请先设置 `AGENTEVOLVER_GATEWAY_TOKEN`。WebSocket 客户端会自动重连，并请求服务端回放断开期间遗漏的会话事件。完整说明见 [`frontend/README.md`](frontend/README.md)。

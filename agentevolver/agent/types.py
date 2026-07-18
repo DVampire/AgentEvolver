@@ -913,6 +913,11 @@ class Agent(BaseModel):
             response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
             logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
             return response.message, False, None, None
+        if kind == "environment":
+            from agentevolver.environment.server import environment_manager
+            action_result = await environment_manager(name=route[1], action=route[2], input=call.input, ctx=ctx)
+            logger.info(f"| ✅ [{self.name}] Environment '{route[1]}' action '{route[2]}' completed")
+            return action_result, False, None, None
         if kind == "env":
             action_result = await self._handle_env_action(route[1], call.input, ctx)
             logger.info(f"| ✅ [{self.name}] Env action '{route[1]}' completed")

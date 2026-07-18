@@ -2,7 +2,7 @@
 
 Server implementation for the Environment Context Protocol with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Type, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, Callable
 
 import os
 from pydantic import BaseModel, ConfigDict, Field
@@ -102,7 +102,42 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             List[str]: List of environment names
         """
+        if not hasattr(self, "environment_context_manager"):
+            return []
         return await self.environment_context_manager.list()
+
+    async def function_callings(
+        self, allowlist: Optional[List[str]] = None
+    ) -> List[Tuple[Dict[str, Any], Tuple[str, str, str]]]:
+        """Expose selected environment actions as native tool-calling schemas."""
+        names = allowlist if allowlist is not None else await self.list()
+        out: List[Tuple[Dict[str, Any], Tuple[str, str, str]]] = []
+        for env_name in names:
+            info = await self.get_info(env_name)
+            if info is None:
+                continue
+            for action_name, action in (getattr(info, "actions", {}) or {}).items():
+                function_calling = getattr(action, "function_calling", None) or {}
+                function = function_calling.get("function", {}) if isinstance(function_calling, dict) else {}
+                parameters = function.get("parameters") if isinstance(function, dict) else None
+                if not isinstance(parameters, dict):
+                    args_schema = getattr(action, "args_schema", None)
+                    if args_schema is not None and hasattr(args_schema, "model_json_schema"):
+                        parameters = args_schema.model_json_schema()
+                if not isinstance(parameters, dict):
+                    parameters = {"type": "object", "properties": {}, "additionalProperties": True}
+                out.append((
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": f"{env_name}__{action_name}",
+                            "description": getattr(action, "description", "") or f"{env_name}: {action_name}",
+                            "parameters": parameters,
+                        },
+                    },
+                    ("environment", env_name, action_name),
+                ))
+        return out
     
     
     async def get(self, env_name: str) -> Optional[Environment]:

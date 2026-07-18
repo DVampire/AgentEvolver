@@ -15,6 +15,7 @@ The FastAPI server runs in a background asyncio task on port 8765.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 from typing import Optional
 
@@ -38,6 +39,7 @@ class TraceManager(metaclass=Singleton):
         self._ws_manager = None   # set after build_app
         self._initialized: bool = False
         self._running: bool = False
+        self._subscribers = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -61,23 +63,23 @@ class TraceManager(metaclass=Singleton):
         self._initialized = True
         logger.info(f"| 🔍 TraceManager initialised (work_dir={work_dir})")
 
-    async def start(self) -> None:
-        """Start the writer consumer loop and the FastAPI web server."""
+    async def start(self, *, start_server: bool = True) -> None:
+        """Start the writer consumer loop and, optionally, the Trace web server."""
         if not self._initialized:
             raise RuntimeError("TraceManager.initialize() must be called first")
         if self._running:
             return
 
-        await self._ensure_ui_built()
-
         self._writer.start()
         self._uvicorn_server = None
-
-        self._server_task = asyncio.create_task(
-            self._run_web_server(), name="trace-web-server"
-        )
+        if start_server:
+            await self._ensure_ui_built()
+            self._server_task = asyncio.create_task(
+                self._run_web_server(), name="trace-web-server"
+            )
         self._running = True
-        logger.info(f"| 🌐 Trace web UI: http://localhost:{WEB_PORT}")
+        if start_server:
+            logger.info(f"| 🌐 Trace web UI: http://localhost:{WEB_PORT}")
 
     async def stop(self) -> None:
         """Drain queue, flush writer, stop web server gracefully."""
@@ -116,6 +118,20 @@ class TraceManager(metaclass=Singleton):
         # Push to WebSocket clients if the server is up
         if self._ws_manager is not None:
             asyncio.ensure_future(self._ws_manager.broadcast(event))
+        for subscriber in tuple(self._subscribers):
+            try:
+                result = subscriber(event)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"| ⚠️  Trace subscriber failed: {exc}")
+
+    def subscribe(self, callback) -> None:
+        """Receive every emitted event without coupling callers to a transport."""
+        self._subscribers.add(callback)
+
+    def unsubscribe(self, callback) -> None:
+        self._subscribers.discard(callback)
 
     @property
     def writer(self) -> Optional[TraceWriter]:

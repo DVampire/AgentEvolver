@@ -72,13 +72,17 @@ async def _run(raw: str, config_path: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="agentevolver", description="AgentEvolver control commands")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="the command line, e.g. /registry")
-    parser.add_argument("--config", default="configs/base.py",
+    parser.add_argument("--config",
                         help="config file (determines which capabilities are registered).")
     args = parser.parse_args()
     if not args.command:
         print("usage: agentevolver /<command> [args]   (try: agentevolver /help)")
         return 0
-    return asyncio.run(_run(" ".join(args.command), args.config))
+    if args.command[0] == "serve":
+        from agentevolver.gateway.cli import main as gateway_main
+        prefix = ["--config", args.config] if args.config else []
+        return gateway_main([*prefix, *args.command[1:]])
+    return asyncio.run(_run(" ".join(args.command), args.config or "configs/base.py"))
 
 
 if __name__ == "__main__":

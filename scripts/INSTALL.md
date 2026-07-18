@@ -101,8 +101,7 @@ pip install -e .              # core deps + the agentevolver package (adds the `
 pip install -e ".[browser]"   # or ".[chem]", ".[sandbox]", ".[all]"
 
 # playwright + browser-use need a one-time browser download:
-playwright install
-browser-use install
+python -m playwright install chromium
 ```
 
 ## Step 1 — Option B: uv (faster, reproducible)
@@ -120,8 +119,7 @@ source .venv/bin/activate            # Windows: .venv\Scripts\activate
 uv sync --extra browser              # or --extra chem / sandbox / all
 
 # playwright + browser-use need a one-time browser download:
-playwright install
-browser-use install
+python -m playwright install chromium
 ```
 
 > Note: `pip install -e .` / `uv pip install -e .` installs this repo as the importable

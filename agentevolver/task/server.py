@@ -357,6 +357,14 @@ class TaskManager(metaclass=Singleton):
                 await self._save_unlocked()
             logger.info(f"| ✅ Task done: {task_id}")
 
+        except asyncio.CancelledError:
+            async with self._lock:
+                record.task.mark_cancelled()
+                record.finished_at = datetime.now(timezone.utc)
+                self._clear_evolver_slot(record)
+                await self._save_unlocked()
+            logger.info(f"| ⏹️  Task cancelled while running: {task_id}")
+
         except Exception as e:
             async with self._lock:
                 if record.retry_count < record.max_retries:

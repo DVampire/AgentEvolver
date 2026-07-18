@@ -216,5 +216,8 @@ work_dir/
 # Frontend
 src/trace/ui/node_modules/
 !src/trace/ui/dist/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 
 datasets/
