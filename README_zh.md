@@ -6,27 +6,24 @@
 
 ## 安装
 
-完整的安装步骤（Vault 密钥管理器、opencode、Python 环境）详见：
+完整的安装步骤（Vault 密钥管理器、Python 环境）详见：
 
 **➡️ [scripts/INSTALL_zh.md](scripts/INSTALL_zh.md)**
 
 简要流程：
 
 1. **安装并配置密钥管理器 Vault** —— 本项目的 API Key 统一由 Vault 集中管理，而非明文写入 `.env`。见安装文档第 1 节。
-2. **安装 opencode** —— 见第 2 节。
-3. **配置 Python 环境**：
+2. **配置 Python 环境**（conda + pip 或 uv，详见安装文档；需要 Python 3.11+）：
 
    ```bash
-   conda create -n agent python=3.12
-   conda activate agent
-   pip install -e .
+   conda create -n agent python=3.12 && conda activate agent
+   pip install -e .                      # 或用 uv：uv sync
 
-   # 浏览器自动化
-   pip install playwright && playwright install
-   pip install browser-use && browser-use install
+   # 可选：浏览器自动化
+   pip install -e ".[browser]" && playwright install && browser-use install
    ```
 
-4. **配置项目根目录的 `.env`**，让框架能连上 Vault：
+3. **配置项目根目录的 `.env`**，让框架能连上 Vault：
 
    ```bash
    VAULT_ADDR='http://127.0.0.1:8200'

@@ -6,27 +6,24 @@ A self-evolving multi-agent framework. A **MetaAgent** orchestrates sub-agents t
 
 ## Installation
 
-All setup steps (Vault secret manager, opencode, and the Python environment) are documented in detail here:
+All setup steps (Vault secret manager and the Python environment) are documented in detail here:
 
 **➡️ [scripts/INSTALL.md](scripts/INSTALL.md)**
 
 In short:
 
 1. **Install & configure the secret manager (Vault)** — API keys are managed centrally in Vault instead of plaintext `.env`. See section 1 of the install guide.
-2. **Install opencode** — see section 2.
-3. **Set up the Python environment**:
+2. **Set up the Python environment** (conda + pip, or uv — see the guide; requires Python 3.11+):
 
    ```bash
-   conda create -n agent python=3.12
-   conda activate agent
-   pip install -e .
+   conda create -n agent python=3.12 && conda activate agent
+   pip install -e .                      # or with uv: uv sync
 
-   # Browser automation
-   pip install playwright && playwright install
-   pip install browser-use && browser-use install
+   # optional browser automation:
+   pip install -e ".[browser]" && playwright install && browser-use install
    ```
 
-4. **Configure `.env`** at the project root so the framework can reach Vault:
+3. **Configure `.env`** at the project root so the framework can reach Vault:
 
    ```bash
    VAULT_ADDR='http://127.0.0.1:8200'
