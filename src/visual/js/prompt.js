@@ -131,7 +131,35 @@ function _renderBudgetRings(el) {
   el.prepend(wrap);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+/**
+ * Resolve every pluggable <module src="..."> slot by fetching the module file and
+ * injecting its <body> content inline, in place of the slot. The injected nodes become
+ * real children of div.system / div.user, so prompt.css counters and _renderLeaf style
+ * them exactly like a native block (unlike an <iframe>, which is a separate document).
+ * Runs before the styling pass. Modules may nest; we loop until none remain.
+ */
+async function _inlineModules(root) {
+  for (let guard = 0; guard < 10; guard++) {
+    const slots = Array.from(root.querySelectorAll('module[src]'));
+    if (!slots.length) return;
+    await Promise.all(slots.map(async slot => {
+      try {
+        const res = await fetch(slot.getAttribute('src'));
+        const text = await res.text();
+        const body = new DOMParser().parseFromString(text, 'text/html').body;
+        const frag = document.createDocumentFragment();
+        while (body.firstChild) frag.appendChild(body.firstChild);
+        slot.replaceWith(frag);
+      } catch (e) {
+        console.error('module load failed:', slot.getAttribute('src'), e);
+        slot.remove();
+      }
+    }));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await _inlineModules(document);
   document.querySelectorAll('div.system > *, div.user > *').forEach(el => {
     const tag = el.tagName.toLowerCase();
     if (_CODE_TAGS.has(tag)) return;

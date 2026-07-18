@@ -130,8 +130,8 @@ div.user > div > div::before {
    per section type below.
    ===================================================== */
 
-div.system > :not(div):not(style),
-div.user > :not(div):not(style) {
+div.system > :not(div):not(style):not(module),
+div.user > :not(div):not(style):not(module) {
   display: block;
   background: var(--surface-2);
   border-radius: 2px;
@@ -142,6 +142,11 @@ div.user > :not(div):not(style) {
   line-height: 1.65;
   color: var(--text);
 }
+
+/* Pluggable <module src> slots are inlined by prompt.js before styling; keep them
+   invisible (and out of the section counter) during the brief pre-inline window. */
+div.system > module,
+div.user > module { display: none; }
 
 /* Specificity 0,0,1,1 — all specific tag rules (0,0,1,2) override this */
 div.system > *::before,

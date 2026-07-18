@@ -3,6 +3,7 @@
 Core type definitions for the Prompt Context Protocol.
 Prompts are loaded from .html files; each file defines one agent prompt (system + user).
 """
+import os
 import re
 import html as html_module
 from html.parser import HTMLParser
@@ -89,6 +90,50 @@ class _PromptHTMLParser(HTMLParser):
             self._buf.append(f"&#{name};")
 
 
+# Matches a full <module ... src="..."></module> pluggable-slot element (any attribute order).
+_MODULE_RE = re.compile(
+    r'<module\b[^>]*?\bsrc\s*=\s*["\']([^"\']+)["\'][^>]*>\s*</module>',
+    re.IGNORECASE | re.DOTALL,
+)
+# Captures the inner content of a module file's <body>...</body>.
+_BODY_RE = re.compile(r'<body[^>]*>(.*)</body>', re.IGNORECASE | re.DOTALL)
+
+
+def _module_body(path: str) -> str:
+    """Read a pluggable module file and return the inner HTML of its <body> (stripped).
+
+    The module's <head> (its own CSS/JS <link>/<script>, used only for browser preview)
+    is intentionally dropped so it never leaks into the rendered message.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    m = _BODY_RE.search(text)
+    return (m.group(1) if m else text).strip()
+
+
+def expand_modules(section_html: str, base_dir: str, _depth: int = 0) -> str:
+    """Inline every ``<module src="...">`` slot with the referenced module's <body> content.
+
+    This is the server-side half of the pluggable-module mechanism. In the browser
+    ``visual/js/prompt.js`` fetches the same ``<module>`` slot and injects the module's body
+    inline so prompt.css/js styles it as a native block; here we splice the body text in
+    place of the slot so the model never sees a literal tag.
+
+    ``src`` is resolved relative to ``base_dir`` (the prompt file's directory). A module may
+    itself contain module slots; those resolve relative to the module's own directory.
+    """
+    if _depth > 10:
+        raise ValueError("module expansion exceeded max depth (possible cycle)")
+
+    def _replace(match: "re.Match") -> str:
+        src = match.group(1)
+        module_path = os.path.normpath(os.path.join(base_dir, src))
+        body = _module_body(module_path)
+        return expand_modules(body, os.path.dirname(module_path), _depth + 1)
+
+    return _MODULE_RE.sub(_replace, section_html)
+
+
 def parse_prompt_text(text: str) -> "PromptConfig":
     """Parse a full HTML file text into a PromptConfig."""
     parser = _PromptHTMLParser()
@@ -118,9 +163,14 @@ def parse_prompt_file(path: str) -> "PromptConfig":
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     try:
-        return parse_prompt_text(text)
+        cfg = parse_prompt_text(text)
     except Exception as e:
         raise ValueError(f"Failed to parse html file {path}: {e}") from e
+    # Inline any pluggable <module> slots, resolved relative to this file's directory.
+    base_dir = os.path.dirname(os.path.abspath(path))
+    cfg.system_template = expand_modules(cfg.system_template, base_dir)
+    cfg.user_template = expand_modules(cfg.user_template, base_dir)
+    return cfg
 
 
 def reconstruct_prompt_text(prompt: "Prompt") -> str:

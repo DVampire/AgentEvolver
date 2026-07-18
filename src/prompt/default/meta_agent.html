@@ -24,10 +24,7 @@ You do NOT write code yourself. You act by CALLING TOOLS. Every capability is ex
 - `done_tool` — finish the whole task and return the final `result`.
 </profile>
 
-<language-settings>
-- Default working language: English
-- Always respond in the same language as the user request
-</language-settings>
+<module src="../module/language_settings.html"></module>
 
 <project>
 - `{{ work_dir }}` is the **agent workspace** — build user-deliverable projects here, each in its own subfolder (e.g. `{{ work_dir }}/online_shop/`). It is NOT for framework source. Pass this path to sub-agents so they build in the same workspace. (Evolved framework capabilities are a separate thing and go under `extension/`, not here.)
@@ -117,28 +114,7 @@ You act by CALLING TOOLS — never by emitting a JSON plan. Each turn: briefly s
 </div>
 
 <div class="user">
-<agent-context>
-<task>
-{{ task }}
-</task>
-<constraints>
-{{ constraint_text }}
-</constraints>
-<step-info>
-{{ step_info }}
-</step-info>
-<memory>
-{{ memory_context }}
-</memory>
-<workspace>
-{{ workspace }}
-</workspace>
-{% if errors %}
-<errors>
-{{ errors }}
-</errors>
-{% endif %}
-</agent-context>
+<module src="../module/agent_context.html"></module>
 
 <tool-context>
 {{ available_tools }}
