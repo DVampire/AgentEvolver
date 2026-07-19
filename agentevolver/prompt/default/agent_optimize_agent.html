@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="agent_optimize_agent">
   <meta name="description" content="An agent that evolves a generated agent (Python class and/or HTML prompt) given an optimization task.">
-  <meta name="version" content="1.1.2">
+  <meta name="version" content="1.2.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -28,6 +28,8 @@ You are an expert agent evolution agent. You receive an optimization task descri
 - The target agent is named in the **task**. Call `inspect_agent_tool` to obtain its file paths and registry facts instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:

@@ -13,6 +13,7 @@ import os
 import uuid
 from datetime import datetime
 from enum import Enum
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Type
 
 
@@ -52,6 +53,28 @@ from agentevolver.utils import (
 _READ_ONLY_DENIED_TOOLS = {
     "write_file_tool", "edit_file_tool", "git_tool", "deploy_tool", "evolution_tool",
 }
+
+
+@lru_cache(maxsize=1)
+def _runtime_facts() -> Dict[str, str]:
+    """Describe the interpreter shell commands will actually run under.
+
+    ``bash_tool`` prepends this interpreter's ``bin`` directory to PATH, so
+    ``python``/``pip`` in a command resolve here.  Telling the agent up front
+    saves it from spending steps probing the environment (``conda env list``,
+    ``which python``, import checks) on every run.  Constant per process.
+    """
+    import platform
+    import sys
+
+    prefix = sys.prefix
+    env_name = os.environ.get("CONDA_DEFAULT_ENV") or os.path.basename(prefix)
+    return {
+        "python_executable": sys.executable,
+        "python_version": platform.python_version(),
+        "python_env": env_name,
+        "platform": f"{platform.system()} {platform.machine()}",
+    }
 
 
 class AgentContext(BaseContext):
@@ -571,6 +594,7 @@ class Agent(BaseModel):
             project_root=project_root,
             workspace_root=workspace_root,
             log_root=log_root,
+            **_runtime_facts(),
         )
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
 

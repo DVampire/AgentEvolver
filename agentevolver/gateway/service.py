@@ -111,6 +111,10 @@ class AgentGateway:
     _MAX_UPLOAD_SIZE = 100 * 1024 * 1024
     _MAX_UPLOAD_CHUNK_SIZE = 1024 * 1024
     _MAX_WORKSPACE_FILE_SIZE = 2 * 1024 * 1024
+    # Media is returned base64 (≈33% larger on the wire), so keep the cap modest.
+    _MAX_WORKSPACE_MEDIA_SIZE = 25 * 1024 * 1024
+    _MEDIA_MIME_PREFIXES = ("image/", "audio/", "video/")
+    _MEDIA_MIME_TYPES = frozenset({"application/pdf"})
     _MAX_WORKSPACE_ENTRIES = 500
 
     async def start(self, config_path: str, *, stdio: bool = False) -> None:
@@ -420,31 +424,52 @@ class AgentGateway:
         }
 
     async def _command_workspace_file_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Read a bounded UTF-8 text file from the current session workspace."""
+        """Read a bounded workspace file: UTF-8 text, or base64 for media.
+
+        Images, audio, video and PDFs are returned base64-encoded (``encoding``
+        says which) so the client can render them directly from a data URL,
+        rather than being rejected as "binary".
+        """
         session = self._sessions[self._require_session_id(params)]
         path, relative = self._workspace_path(session, params.get("path"))
         if not relative or not path.exists() or not path.is_file():
             raise ValueError(f"Workspace file was not found: {relative or '.'}")
+        mime_type = mimetypes.guess_type(path.name)[0] or ""
+        is_media = mime_type.startswith(self._MEDIA_MIME_PREFIXES) or mime_type in self._MEDIA_MIME_TYPES
+
         size = path.stat().st_size
-        if size > self._MAX_WORKSPACE_FILE_SIZE:
-            raise ValueError("Workspace file is larger than the 2 MB preview limit")
+        limit = self._MAX_WORKSPACE_MEDIA_SIZE if is_media else self._MAX_WORKSPACE_FILE_SIZE
+        if size > limit:
+            raise ValueError(
+                f"Workspace file is larger than the {limit // (1024 * 1024)} MB preview limit"
+            )
         raw = path.read_bytes()
-        if b"\x00" in raw[:8192]:
-            raise ValueError("Binary files cannot be opened in the text preview")
-        try:
-            content = raw.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError("File is not valid UTF-8 text") from exc
-        mime_type = mimetypes.guess_type(path.name)[0] or "text/plain"
+
+        if is_media:
+            content = base64.b64encode(raw).decode("ascii")
+            encoding = "base64"
+            language = "plaintext"
+        else:
+            if b"\x00" in raw[:8192]:
+                raise ValueError("Binary files cannot be opened in the text preview")
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("File is not valid UTF-8 text") from exc
+            encoding = "utf-8"
+            mime_type = mime_type or "text/plain"
+            language = self._workspace_language(path.suffix.lower())
+
         return {
             "path": relative,
             "name": path.name,
             "content": content,
+            "encoding": encoding,
             "size": size,
             "modified_at": path.stat().st_mtime,
             "etag": hashlib.sha256(raw).hexdigest(),
             "mime_type": mime_type,
-            "language": self._workspace_language(path.suffix.lower()),
+            "language": language,
         }
 
     @staticmethod

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="skill_optimize_agent">
   <meta name="description" content="An agent that evolves a skill's SKILL.md given an optimization task from MetaAgent.">
-  <meta name="version" content="1.1.2">
+  <meta name="version" content="1.2.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -27,6 +27,8 @@ You are an expert skill optimization agent. You receive an optimization task fro
 - The target skill's directory and SKILL.md path are provided in the `inspect_skill_tool` result — use them directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <skill-directory-structure>
 A well-formed skill directory looks like:

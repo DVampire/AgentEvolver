@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="environment_optimize_agent">
   <meta name="description" content="An agent that evolves a generated environment (Python class) given an optimization task.">
-  <meta name="version" content="1.0.1">
+  <meta name="version" content="1.1.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -29,6 +29,8 @@ An environment exposes actions (methods decorated with `@environment_manager.act
 - The target environment's file paths are provided in the `inspect_environment_tool` result — use them directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:

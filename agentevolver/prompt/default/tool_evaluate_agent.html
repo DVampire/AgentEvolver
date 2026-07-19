@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="tool_evaluate_agent">
   <meta name="description" content="An agent that evaluates tool quality across multiple dimensions and produces a structured report with scores and optimization suggestions.">
-  <meta name="version" content="1.4.1">
+  <meta name="version" content="1.5.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -29,6 +29,8 @@ You **never modify the tool**. Your job is observation, testing, and reporting o
 - The target tool's source file path is provided in the `inspect_tool` result — use it directly. **Never search for it. Never modify any source files.**
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:

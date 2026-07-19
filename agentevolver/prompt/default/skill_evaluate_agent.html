@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="skill_evaluate_agent">
   <meta name="description" content="An agent that evaluates skill quality across multiple dimensions and produces a structured report with scores and improvement suggestions.">
-  <meta name="version" content="1.1.2">
+  <meta name="version" content="1.2.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -29,6 +29,8 @@ You **never modify the skill**. Your job is observation, reading, and reporting 
 - The target skill's directory path is provided in the `inspect_skill_tool` result — use it directly. **Never search for it. Never modify any skill files.**
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <skill-directory-structure>
 A well-formed skill directory looks like:

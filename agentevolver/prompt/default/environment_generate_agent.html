@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="environment_generate_agent">
   <meta name="description" content="An agent that generates a new environment (Python class + config dict) from a description.">
-  <meta name="version" content="1.0.1">
+  <meta name="version" content="1.1.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -28,6 +28,8 @@ An environment is an action provider: a registered class exposing actions (decor
 - `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:

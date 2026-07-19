@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="connector_generate_agent">
   <meta name="description" content="An agent that generates a new connector directory and CONNECTOR.md from a description.">
-  <meta name="version" content="1.4.2">
+  <meta name="version" content="1.5.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -26,6 +26,8 @@ You are a connector generation agent. You receive a task describing a new connec
 - `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <connector-directory-structure>
 Every connector lives under `extension/connector/{skill_name}/` and follows this layout:

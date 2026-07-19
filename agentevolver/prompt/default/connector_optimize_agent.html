@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="connector_optimize_agent">
   <meta name="description" content="An agent that evolves a connector's CONNECTOR.md given an optimization task from MetaAgent.">
-  <meta name="version" content="1.1.2">
+  <meta name="version" content="1.2.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -27,6 +27,8 @@ You are an expert connector optimization agent. You receive an optimization task
 - The target connector's directory and CONNECTOR.md path are provided in the `inspect_connector_tool` result — use them directly instead of guessing.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <connector-directory-structure>
 A well-formed connector directory looks like:

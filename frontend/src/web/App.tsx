@@ -31,7 +31,7 @@ interface SessionSummary { session_id: string; name: string; workspace: string; 
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
 interface WorkspaceEntry { name: string; path: string; kind: 'directory' | 'file'; size?: number | null; modified_at: number; }
-interface WorkspaceFile { name: string; path: string; content: string; size: number; modified_at: number; etag: string; mime_type: string; language: string; }
+interface WorkspaceFile { name: string; path: string; content: string; encoding?: 'utf-8' | 'base64'; size: number; modified_at: number; etag: string; mime_type: string; language: string; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
 const WorkspaceEditor = lazy(() => import('./WorkspaceEditor'));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
@@ -746,7 +746,9 @@ function WorkspaceWorkbench({ tab, onTab, entries, expanded, selectedFile, loadi
   onRefresh: () => void;
   onPreview: (preview: boolean) => void;
 }) {
-  const canPreview = selectedFile?.language === 'markdown' || selectedFile?.language === 'html';
+  const isMedia = selectedFile?.encoding === 'base64';
+  // Media renders itself; source/preview toggling and copying base64 make no sense.
+  const canPreview = !isMedia && (selectedFile?.language === 'markdown' || selectedFile?.language === 'html');
   return <aside className="inspector workspace-workbench">
     <nav className="workbench-tabs" aria-label="Workspace panel">
       {(['files', 'activity', 'inspector'] as InspectorTab[]).map((item) => <button className={tab === item ? 'active' : ''} key={item} onClick={() => onTab(item)}>{humanize(item)}</button>)}
@@ -758,12 +760,14 @@ function WorkspaceWorkbench({ tab, onTab, entries, expanded, selectedFile, loadi
       </div>
       <section className="workspace-viewer">
         {selectedFile ? <>
-          <header className="file-toolbar"><div title={selectedFile.path}><strong>{selectedFile.name}</strong><small>{selectedFile.path} · {formatFileSize(selectedFile.size)}</small></div><div>{canPreview ? <button className={preview ? 'active' : ''} onClick={() => onPreview(!preview)}>{preview ? 'Source' : 'Preview'}</button> : null}<button onClick={() => navigator.clipboard?.writeText(selectedFile.content)}>Copy</button></div></header>
-          <div className="file-editor">{preview && selectedFile.language === 'markdown'
-            ? <MarkdownDocument content={selectedFile.content} />
-            : preview && selectedFile.language === 'html'
-              ? <iframe title={`${selectedFile.name} preview`} sandbox="" srcDoc={selectedFile.content} />
-              : <Suspense fallback={<div className="workspace-placeholder">Loading editor…</div>}><WorkspaceEditor filePath={selectedFile.path} language={selectedFile.language} content={selectedFile.content} theme={theme} /></Suspense>}
+          <header className="file-toolbar"><div title={selectedFile.path}><strong>{selectedFile.name}</strong><small>{selectedFile.path} · {formatFileSize(selectedFile.size)}</small></div><div>{canPreview ? <button className={preview ? 'active' : ''} onClick={() => onPreview(!preview)}>{preview ? 'Source' : 'Preview'}</button> : null}{isMedia ? null : <button onClick={() => navigator.clipboard?.writeText(selectedFile.content)}>Copy</button>}</div></header>
+          <div className="file-editor">{mediaSource(selectedFile)
+            ? <MediaDocument file={selectedFile} src={mediaSource(selectedFile)!} />
+            : preview && selectedFile.language === 'markdown'
+              ? <MarkdownDocument content={selectedFile.content} />
+              : preview && selectedFile.language === 'html'
+                ? <iframe title={`${selectedFile.name} preview`} sandbox="" srcDoc={selectedFile.content} />
+                : <Suspense fallback={<div className="workspace-placeholder">Loading editor…</div>}><WorkspaceEditor filePath={selectedFile.path} language={selectedFile.language} content={selectedFile.content} theme={theme} /></Suspense>}
           </div>
         </> : <div className="workspace-placeholder">{loading ? 'Opening file…' : 'Select a file to inspect its contents.'}</div>}
       </section>
@@ -935,6 +939,21 @@ function ModelConfigDialog({ editor, onSave, onClose }: { editor: ModelEditorSta
   return <div className="modal-backdrop config-backdrop model-config-backdrop" onClick={onClose}><section className="config-dialog model-config-dialog" onClick={(event) => event.stopPropagation()}><header><div><p className="eyebrow">Provider connection</p><h2>{title}</h2><p>Set the provider, model capabilities, and connection options. Changes apply immediately to this Gateway; API keys are write-only and never returned to the browser.</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="model-credential"><label>API key <span>{editor.hasApiKey ? '(configured; leave blank to keep it)' : '(optional)'}</span><input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setClearApiKey(false); }} placeholder={editor.hasApiKey ? 'Configured' : 'Provider key'} autoComplete="new-password" /></label>{editor.hasApiKey ? <label className="clear-key"><input type="checkbox" checked={clearApiKey} onChange={(event) => setClearApiKey(event.target.checked)} /> Clear the saved API key</label> : null}</div><textarea value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} aria-label="Model configuration JSON" />{error ? <p className="config-error">{error}</p> : null}<footer><button className="secondary" onClick={onClose} disabled={saving}>Cancel</button><button onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save model'}</button></footer></section></div>;
 }
 
+/** Render an image / audio / video / PDF workspace file from its data URL. */
+function MediaDocument({ file, src }: { file: WorkspaceFile; src: string }) {
+  const mime = file.mime_type;
+  if (mime.startsWith('image/')) {
+    return <div className="media-document"><img src={src} alt={file.name} /></div>;
+  }
+  if (mime.startsWith('video/')) {
+    return <div className="media-document"><video src={src} controls preload="metadata" /></div>;
+  }
+  if (mime.startsWith('audio/')) {
+    return <div className="media-document"><audio src={src} controls preload="metadata" /></div>;
+  }
+  return <div className="media-document media-document-embed"><iframe title={file.name} src={src} /></div>;
+}
+
 function MarkdownDocument({ content }: { content: string }) {
   return <div className="markdown-document"><ReactMarkdown
     remarkPlugins={[remarkGfm]}
@@ -1038,7 +1057,15 @@ function asWorkspaceFile(value: unknown): WorkspaceFile | undefined {
     || typeof value.etag !== 'string'
     || typeof value.mime_type !== 'string'
     || typeof value.language !== 'string') return undefined;
+  // `encoding` is optional for compatibility with older gateways (text-only).
+  if (value.encoding !== undefined && typeof value.encoding !== 'string') return undefined;
   return value as unknown as WorkspaceFile;
+}
+
+/** Media files arrive base64-encoded; render them straight from a data URL. */
+function mediaSource(file: WorkspaceFile): string | undefined {
+  if (file.encoding !== 'base64') return undefined;
+  return `data:${file.mime_type};base64,${file.content}`;
 }
 
 function isGenericSessionName(name: string): boolean { return name === 'web' || name === 'interactive' || name.startsWith('Web session '); }

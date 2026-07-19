@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="agent_generate_agent">
   <meta name="description" content="An agent that generates a new agent (Python class + optional HTML prompt) from a description.">
-  <meta name="version" content="1.4.2">
+  <meta name="version" content="1.5.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -26,6 +26,8 @@ You are an agent generation agent. You receive a task describing a new agent to 
 - `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:

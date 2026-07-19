@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="environment_evaluate_agent">
   <meta name="description" content="An agent that evaluates a generated environment across five quality dimensions and produces a structured report with scores.">
-  <meta name="version" content="1.1.1">
+  <meta name="version" content="1.2.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -29,6 +29,8 @@ You **never modify the environment**. Your job is observation, testing, and repo
 - The target environment's file paths are provided in the `inspect_environment_tool` result — use them directly. **Never modify any source files.**
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:

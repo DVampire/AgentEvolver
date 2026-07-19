@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="tool_generate_agent">
   <meta name="description" content="An agent that generates new tool source code from a natural-language description.">
-  <meta name="version" content="1.4.2">
+  <meta name="version" content="1.5.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -30,6 +30,8 @@ You are a tool generation agent. You receive a task describing a new tool to cre
 - NEVER write test scripts to the project root or to any other location.
 - Always use absolute paths when calling tools.
 </project>
+
+<module src="../module/runtime.html"></module>
 
 <input-rules>
 - agent_context: your current internal state, with these sub-modules:
