@@ -6,7 +6,7 @@ singleton. A run builds up in memory keyed by ``task_id`` (fed by
 ``finalize``, and can be reward-backfilled afterwards via ``set_reward``
 (rewards typically arrive after the agent returns — e.g. from a benchmark judge).
 
-Persistence: ``<run_dir>/trajectory/<task_id>.jsonl`` — line 1 is the trajectory
+Persistence: ``<log_root>/trajectory/<task_id>.jsonl`` — line 1 is the trajectory
 header (metadata), the remaining lines are one serialized step each.
 """
 
@@ -36,14 +36,14 @@ class TrajectoryManagerServer:
 
     async def initialize(self) -> None:
         from agentevolver.config import config
-        from agentevolver.utils import assemble_project_path
+        from agentevolver.utils import assemble_workspace_path
 
         try:
-            run_dir = config.run_dir
+            log_root = config.log_root
         except (AttributeError, KeyError):
-            # config not initialized (e.g. isolated tests) — fall back to work_dir.
-            run_dir = "work_dir"
-        self.base_dir = assemble_project_path(os.path.join(run_dir, "trajectory"))
+            # config not initialized (e.g. isolated tests) — fall back to workspace_root.
+            log_root = "workspace_root"
+        self.base_dir = assemble_workspace_path(os.path.join(log_root, "trajectory"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Trajectory manager base directory: {self.base_dir}")
 

@@ -32,7 +32,7 @@ class CustomDeployer(Deployer):
         return DeploymentSpec(
             runtime=self.name,
             image=ov.get("image", self.default_image),
-            workdir=ov.get("workdir", "/app"),
+            workspace_root=ov.get("workspace_root", "/app"),
             build=list(ov.get("build", [])),
             start=start,
             port=port,

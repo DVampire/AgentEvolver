@@ -72,8 +72,8 @@ class MyWorkflowAgent(Agent):
         logger.info(f"| 🚀 Starting {self.name}: {task}")
         if ctx is None:
             ctx = AgentContext()
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
+        if not ctx.workspace_root:
+            ctx.workspace_root = self.base_dir
         try:
             # Call tools directly via tool_manager, e.g.:
             #   from agentevolver.tool.server import tool_manager

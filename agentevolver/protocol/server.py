@@ -75,7 +75,7 @@ class ProtocolManager(metaclass=Singleton):
     async def delegate(
         self, child: Any, task: str, *,
         files: Optional[List[str]] = None, target_name: Optional[str] = None,
-        allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None, work_dir: Optional[str] = None,
+        allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None, workspace_root: Optional[str] = None,
     ) -> Response:
         """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
         ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
@@ -87,7 +87,7 @@ class ProtocolManager(metaclass=Singleton):
             task = f"Target capability: {target_name}\n\n{task}"
         ctx = AgentContext(
             id=f"{getattr(child, 'name', 'agent')}-{make_id()}",
-            work_dir=work_dir,
+            workspace_root=workspace_root,
             parent_session_id=(parent_ref.name if parent_ref is not None else None),
         )
         for key, val in (allowlists or {}).items():

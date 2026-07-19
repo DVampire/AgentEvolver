@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.version import version_manager
-from agentevolver.utils import (assemble_project_path,
+from agentevolver.utils import (assemble_workspace_path,
                        gather_with_concurrency,
                        file_lock
                        )
@@ -39,9 +39,9 @@ class MemoryContextManager(BaseModel):
         super().__init__(**kwargs)
         
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "memory"))
+            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "memory"))
         logger.info(f"| 📁 Memory context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Memory context manager.")

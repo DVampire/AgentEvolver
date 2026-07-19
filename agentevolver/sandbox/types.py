@@ -101,7 +101,7 @@ class Sandbox:
         self,
         command: str,
         *,
-        work_dir: Optional[str] = None,
+        workspace_root: Optional[str] = None,
         timeout: Optional[Union[int, timedelta]] = None,
         env: Optional[Dict[str, str]] = None,
     ) -> ExecResult:

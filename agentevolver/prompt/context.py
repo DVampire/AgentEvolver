@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.version import version_manager
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.prompt.types import Prompt, PromptConfig, PromptContext, parse_prompt_file
 from agentevolver.message.types import Message
@@ -37,9 +37,9 @@ class PromptContextManager(BaseModel):
         super().__init__(**kwargs)
 
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "prompt"))
+            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "prompt"))
         os.makedirs(self.base_dir, exist_ok=True)
 
 
@@ -47,7 +47,7 @@ class PromptContextManager(BaseModel):
         # Built-in prompts live in the default/ dir; extension prompts are managed
         # externally (loaded by ExtensionManager into the active version).
         self.default_prompt_dir = default_prompt_dir or str(_src_dir / "default")
-        self.extension_prompt_dir = extension_prompt_dir or assemble_project_path(os.path.join("extension", "prompt"))
+        self.extension_prompt_dir = extension_prompt_dir or assemble_workspace_path(os.path.join("extension", "prompt"))
 
         logger.info(f"| 📁 Prompt context manager base_dir={self.base_dir}")
 

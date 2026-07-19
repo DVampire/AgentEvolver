@@ -78,8 +78,8 @@ async def main():
     logger.info(f"| ✅ Versions: {await version_manager.list()}")
 
     # --- Trace ---
-    trace_work_dir = os.path.join(config.run_dir, "trace")
-    await trace_manager.initialize(work_dir=trace_work_dir)
+    trace_log_root = os.path.join(config.log_root, "trace")
+    await trace_manager.initialize(log_root=trace_log_root)
     await trace_manager.start()
     logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
@@ -123,13 +123,13 @@ async def main():
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
-    task_work_dir = os.path.join(config.run_dir, "tasks")
-    await task_manager.initialize(work_dir=task_work_dir, handler=run_agent)
+    task_log_root = os.path.join(config.log_root, "tasks")
+    await task_manager.initialize(log_root=task_log_root, handler=run_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task (inline --task or --task-file document) ---
     task_text, task_files, task_metadata = resolve_task(
-        args, task_work_dir,
+        args, task_log_root,
         default_text=(
             "Search the web for 'pikachu' and report the title and URL of the first three results. "
             "Then download the image of the first result and save it as 'result1.jpg'."

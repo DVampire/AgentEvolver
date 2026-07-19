@@ -54,13 +54,13 @@ AgentEvolver/
 ├── extension/              # Hot-pluggable evolved content, OUTSIDE src/ (loaded by ExtensionManager):
 │   │                       #   flat active files + .versions/ archive + manifest.json (see Conventions)
 ├── examples/run_meta_agent.py   # Main entry point — MetaAgent orchestrates everything
-└── tests/ · scripts/ · others/ · work_dir/   # Tests · install · scratch notes · per-run output (git-ignored)
+└── tests/ · scripts/ · others/ · workspace_root/   # Tests · install · scratch notes · per-run output (git-ignored)
 ```
 
 ## Key Concepts
 
-- **`{{ project_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
-- **`{{ work_dir }}`**: Per-run scratch directory for temporary files. Do not write source code here.
+- **`{{ extension_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
+- **`{{ workspace_root }}`**: Per-run scratch directory for temporary files. Do not write source code here.
 - **Built-ins vs extensions**: Hand-written built-ins live in each module's `default/` folder inside `agentevolver/` (e.g. `agentevolver/tool/default/`). Generated/evolved components live OUTSIDE `agentevolver/`, in the external `extension/` tree, and are loaded at runtime by the **ExtensionManager**. `agentevolver/` stays immutable; `extension/` is mutable evolved content.
 - **Hot-plug / ExtensionManager** (`src/extension/`): On startup, after the component managers load their built-ins, `extension_manager.initialize()` layers the active extension set on top. Authoring writes a flat active file (`extension/<module>/<name>.py`); `extension_manager.add_component(...)` registers it via the owning `*_manager`, archives the version under `extension/.versions/`, and records the active version in `extension/manifest.json`. Multiple versions of a component coexist in `.versions/`; `extension_manager.rollback(module, name, version)` restores any of them. There is **no `__init__.py` to edit** for extensions — loading is by directory scan + dynamic import.
 - **Registries**: Components self-register with an mmengine `Registry` (in `src/registry.py`) via a class decorator, e.g. `@TOOL.register_module()`. Built-ins register at import time; extensions are registered at runtime by the ExtensionManager (which loads the class via `dynamic_manager` and calls `<module>_manager.register`).

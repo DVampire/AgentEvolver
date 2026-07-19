@@ -105,7 +105,7 @@ Then call the `wait_for_notification` brain-tool. When the
 save_artifacts(payload["featured_files"])   # paths under hpc/<job_id>/
 ```
 
-For the full result dict (`output_files`, `remote_workdir`, …), re-enter the
+For the full result dict (`output_files`, `remote_workspace_root`, …), re-enter the
 kernel and bind the compute handle separately — `.close()` lives on the
 handle, not on the job object:
 

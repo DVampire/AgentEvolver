@@ -17,7 +17,7 @@ from agentevolver.config import config
 from agentevolver.connector.types import ConnectorConfig, ConnectorContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
-from agentevolver.utils import assemble_project_path, file_lock, render_capability_card
+from agentevolver.utils import assemble_workspace_path, file_lock, render_capability_card
 from agentevolver.version import version_manager
 from agentevolver.permission import permission_manager, PermissionMode
 
@@ -50,9 +50,9 @@ class ConnectorContextManager(BaseModel):
         super().__init__(**kwargs)
 
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "connector"))
+            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "connector"))
         os.makedirs(self.base_dir, exist_ok=True)
 
 
@@ -61,7 +61,7 @@ class ConnectorContextManager(BaseModel):
         # Built-in connectors live in the default/ dir; extension connectors are
         # managed externally (loaded by ExtensionManager into the active version).
         self.default_connectors_dir = default_connectors_dir or str(_src_dir / "default")
-        self.extension_connectors_dir = extension_connectors_dir or assemble_project_path(os.path.join("extension", "connector"))
+        self.extension_connectors_dir = extension_connectors_dir or assemble_workspace_path(os.path.join("extension", "connector"))
 
         self._connector_configs: Dict[str, ConnectorConfig] = {}
         self._connector_history_versions: Dict[str, Dict[str, ConnectorConfig]] = {}

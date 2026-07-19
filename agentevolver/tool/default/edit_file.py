@@ -8,6 +8,7 @@ from pydantic import Field
 
 from agentevolver.permission import Operation, PermissionRequest, is_binary_file, permission_manager
 from agentevolver.registry import TOOL
+from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 
@@ -59,6 +60,9 @@ class EditFileTool(Tool):
             new_string: Replacement text.
         """
         try:
+            sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
+            if sandbox_denial:
+                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
             if not os.path.exists(path):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
             if not os.path.isfile(path):

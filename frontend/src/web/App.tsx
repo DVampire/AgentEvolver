@@ -13,14 +13,17 @@ interface CapabilityCatalog { agents: string[]; tools: string[]; skills: string[
 interface ModelSummary { name: string; id: string; type: string; streaming: boolean; functions: boolean; vision: boolean; }
 interface ProviderSummary { name: string; models: ModelSummary[]; }
 interface ModelEditorState { originalName?: string; configuration: Record<string, unknown>; hasApiKey: boolean; }
-interface Message { id: string; kind: MessageKind; title: string; content?: string; detail?: string; timestamp: string; }
+interface Message { id: string; kind: MessageKind; title: string; content?: string; detail?: string; attachments?: string[]; timestamp: string; }
 interface ActivityStep { id: string; title: string; content?: string; detail?: string; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
 interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
 interface SessionSummary { session_id: string; name: string; workspace: string; task_ids: string[]; }
+interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
+interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; document_path?: string; language: 'markdown' | 'schema'; }
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
+const FILE_CHUNK_SIZE = 512 * 1024;
 const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], commands: [] };
 const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: string; description: string }> = {
   skills: { label: 'Skills', icon: '▧', description: 'Reusable specialist workflows and domain knowledge.' },
@@ -60,8 +63,11 @@ export function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<ModelEditorState>();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
+  const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const socketRef = useRef<GatewaySocket | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionRef = useRef<string | undefined>(undefined);
   const messageEndRef = useRef<HTMLDivElement>(null);
 
@@ -96,6 +102,19 @@ export function App() {
     setProviders(response.result.providers.filter(isProviderSummary));
   }, []);
 
+  const loadAttachments = useCallback(async (socket: GatewaySocket, currentSessionId: string) => {
+    const response = await socket.request('file.list', { session_id: currentSessionId });
+    if (!response.ok || !Array.isArray(response.result.files)) throw new Error('Could not load uploaded files');
+    setAttachments(response.result.files.map(asUploadedAttachment).filter((file): file is UploadedAttachment => file !== undefined));
+  }, []);
+
+  const loadExtensionStage = useCallback(async (socket: GatewaySocket, currentSessionId: string) => {
+    const response = await socket.request('extension.stage.get', { session_id: currentSessionId });
+    if (!response.ok || !isRecord(response.result.staging)) throw new Error(response.error?.message ?? 'Could not inspect staged extensions');
+    const staging = response.result.staging;
+    setExtensionStage({ valid: staging.valid !== false, components: Array.isArray(staging.components) ? staging.components : [], error: typeof staging.error === 'string' ? staging.error : undefined });
+  }, []);
+
   const startSession = useCallback(async (socket: GatewaySocket) => {
     try {
       const hello = await socket.request('hello');
@@ -106,7 +125,7 @@ export function App() {
           && Array.isArray(sessions.result.sessions)
           && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
         if (stillAvailable) {
-          await Promise.all([refreshSessions(socket), loadModels(socket)]);
+          await Promise.all([refreshSessions(socket), loadModels(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
           return;
         }
         socket.forgetSession(sessionRef.current);
@@ -124,12 +143,12 @@ export function App() {
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
       setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
-      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket)]);
+      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
       setStatus('error');
     }
-  }, [hydrateCapabilities, loadModels, refreshSessions]);
+  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, refreshSessions]);
 
   const updateAgent = useCallback((name: string, nextStatus: AgentState['status']) => {
     setAgents((current) => {
@@ -184,7 +203,8 @@ export function App() {
       return;
     }
     if (event.type === 'task.submitted') {
-      setMessages((items) => [...items, { id: `${event.task_id}:user`, kind: 'user', title: 'You', content: String(event.payload.content ?? ''), timestamp: event.timestamp }]);
+        const files = Array.isArray(event.payload.files) ? event.payload.files.filter((file): file is string => typeof file === 'string').map(fileName) : [];
+        setMessages((items) => [...items, { id: `${event.task_id}:user`, kind: 'user', title: 'You', content: String(event.payload.content ?? ''), attachments: files, timestamp: event.timestamp }]);
       appendActivityStep(event, activityStep(event), 'running');
       return;
     }
@@ -238,6 +258,7 @@ export function App() {
     setActivities([]);
     setAgents([]);
     setActiveTaskId(undefined);
+    setAttachments([]);
     setNotice('');
     localStorage.setItem('agentevolver.gateway.endpoint', endpoint);
     localStorage.setItem('agentevolver.gateway.token', token);
@@ -261,6 +282,10 @@ export function App() {
   const createNewSession = async () => {
     const socket = socketRef.current;
     if (!socket || status !== 'connected') return;
+    if (attachments.some((attachment) => attachment.status === 'uploading')) {
+      setNotice('Wait for file uploads to finish before creating a new session.');
+      return;
+    }
     try {
       sessionRef.current = undefined;
       setSessionId(undefined);
@@ -268,12 +293,13 @@ export function App() {
       setActivities([]);
       setAgents([]);
       setActiveTaskId(undefined);
+      setAttachments([]);
       const response = await socket.request('session.create', { name: `Web session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` });
       if (!response.ok || typeof response.result.session_id !== 'string') throw new Error(response.error?.message ?? 'Could not create a session');
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
       setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
-      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket)]);
+      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     }
@@ -286,6 +312,10 @@ export function App() {
       setNotice('Finish or stop the active task before switching sessions.');
       return;
     }
+    if (attachments.some((attachment) => attachment.status === 'uploading')) {
+      setNotice('Wait for file uploads to finish before switching sessions.');
+      return;
+    }
     try {
       const replay = await socket.request('session.events', { session_id: nextSession.session_id, after_seq: 0 });
       if (!replay.ok || !Array.isArray(replay.result.events)) throw new Error(replay.error?.message ?? 'Could not load the session');
@@ -296,7 +326,7 @@ export function App() {
       setAgents([]);
       setDetails(undefined);
       setExpandedActivities(new Set());
-      await hydrateCapabilities(socket, nextSession.session_id);
+      await Promise.all([hydrateCapabilities(socket, nextSession.session_id), loadAttachments(socket, nextSession.session_id), loadExtensionStage(socket, nextSession.session_id)]);
       for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
@@ -305,8 +335,9 @@ export function App() {
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    const content = draft.trim();
-    if (!content || !sessionRef.current || activeTaskId) return;
+    const readyAttachments = attachments.filter((attachment) => attachment.status === 'ready' && attachment.path);
+    const content = draft.trim() || (readyAttachments.length ? 'Review the attached file(s) and determine the next best action.' : '');
+    if (!content || !sessionRef.current || activeTaskId || attachments.some((attachment) => attachment.status === 'uploading')) return;
     setDraft('');
     try {
       const socket = socketRef.current;
@@ -323,9 +354,10 @@ export function App() {
         if (!renamed.ok) throw new Error(renamed.error?.message ?? 'Could not rename the session');
         setSessions((current) => current.map((session) => session.session_id === sessionRef.current ? { ...session, name } : session));
       }
-      const response = await socket.request('task.submit', { session_id: sessionRef.current, content });
+      const response = await socket.request('task.submit', { session_id: sessionRef.current, content, files: readyAttachments.map((attachment) => attachment.path) });
       if (!response?.ok || typeof response.result.task_id !== 'string') throw new Error(response?.error?.message ?? 'Task submission failed');
       setActiveTaskId(response.result.task_id);
+      setAttachments([]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     }
@@ -334,6 +366,53 @@ export function App() {
   const cancelTask = async () => {
     if (!activeTaskId) return;
     await socketRef.current?.request('task.cancel', { task_id: activeTaskId });
+  };
+
+  const uploadFiles = async (files: FileList | null) => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId || !files?.length) return;
+    for (const file of Array.from(files)) {
+      const temporaryId = `local-${crypto.randomUUID()}`;
+      let uploadId: string | undefined;
+      setAttachments((current) => [...current, { id: temporaryId, name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream', status: 'uploading', progress: 0 }]);
+      try {
+        const begun = await socket.request('file.upload.begin', { session_id: currentSessionId, name: file.name, size: file.size, mime_type: file.type || 'application/octet-stream' });
+        if (!begun.ok || !isRecord(begun.result.file) || typeof begun.result.file.id !== 'string') throw new Error(begun.error?.message ?? 'Could not start file upload');
+        uploadId = begun.result.file.id;
+        setAttachments((current) => current.map((attachment) => attachment.id === temporaryId ? { ...attachment, id: uploadId as string } : attachment));
+        for (let offset = 0; offset < file.size; offset += FILE_CHUNK_SIZE) {
+          const chunk = await file.slice(offset, offset + FILE_CHUNK_SIZE).arrayBuffer();
+          const uploaded = await socket.request('file.upload.chunk', { session_id: currentSessionId, file_id: uploadId, data: base64FromBuffer(chunk) });
+          if (!uploaded.ok) throw new Error(uploaded.error?.message ?? 'File upload failed');
+          const received = typeof uploaded.result.received === 'number' ? uploaded.result.received : offset + chunk.byteLength;
+          setAttachments((current) => current.map((attachment) => attachment.id === uploadId ? { ...attachment, progress: received } : attachment));
+        }
+        const completed = await socket.request('file.upload.complete', { session_id: currentSessionId, file_id: uploadId });
+        if (!completed.ok || !isRecord(completed.result.file)) throw new Error(completed.error?.message ?? 'Could not complete file upload');
+        const uploadedFile = asUploadedAttachment(completed.result.file);
+        if (!uploadedFile) throw new Error('Gateway returned an invalid uploaded file');
+        setAttachments((current) => current.map((attachment) => attachment.id === uploadId ? uploadedFile : attachment));
+      } catch (error) {
+        if (uploadId) void socket.request('file.remove', { session_id: currentSessionId, file_id: uploadId });
+        const message = error instanceof Error ? error.message : String(error);
+        setAttachments((current) => current.map((attachment) => attachment.id === (uploadId ?? temporaryId) ? { ...attachment, status: 'error', error: message } : attachment));
+        setNotice(message);
+      }
+    }
+  };
+
+  const removeAttachment = async (attachment: UploadedAttachment) => {
+    if (attachment.status === 'uploading') return;
+    try {
+      if (attachment.status === 'ready' && sessionRef.current) {
+        const response = await socketRef.current?.request('file.remove', { session_id: sessionRef.current, file_id: attachment.id });
+        if (!response?.ok) throw new Error(response?.error?.message ?? 'Could not remove file');
+      }
+      setAttachments((current) => current.filter((item) => item.id !== attachment.id));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const toggleCapability = async (kind: CapabilityKind, name: string) => {
@@ -443,6 +522,26 @@ export function App() {
     }
   };
 
+  const promoteStagedExtension = async () => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId || !extensionStage.components.length) return;
+    if (!extensionStage.valid) {
+      setNotice(extensionStage.error ?? 'Fix staged extension validation errors before promotion.');
+      return;
+    }
+    if (!window.confirm(`Promote ${extensionStage.components.length} staged extension component(s) to the shared extension root? Existing files will not be overwritten.`)) return;
+    try {
+      const response = await socket.request('extension.promote', { session_id: currentSessionId });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Extension promotion failed');
+      const registered = Array.isArray(response.result.registered) ? response.result.registered.length : 0;
+      setNotice(`Promoted ${registered} extension component${registered === 1 ? '' : 's'} to the shared extension root.`);
+      await Promise.all([loadExtensionStage(socket, currentSessionId), refreshSessions(socket)]);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -486,7 +585,7 @@ export function App() {
       <section className="conversation">
         <header className="topbar">
           <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Workspace agent</p><h1>New task</h1></div></div>
-          <div className="connection"><span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
+          <div className="connection"><button className={`stage-action ${extensionStage.valid ? '' : 'invalid'}`} disabled={!sessionId || !extensionStage.components.length} onClick={() => void promoteStagedExtension()} title={extensionStage.error ?? 'Promote validated staged extensions'}>⇧ Extensions {extensionStage.components.length || ''}</button><span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
         </header>
         <div className="message-list">
           {timeline.length <= 1 ? <QuickStart onSelect={setDraft} /> : null}
@@ -498,8 +597,10 @@ export function App() {
         <div className="composer-wrap">
           {notice ? <p className="notice">{notice}</p> : null}
           <form className="composer" onSubmit={submit}>
+            <input ref={fileInputRef} className="file-input" type="file" multiple onChange={(event) => { void uploadFiles(event.target.files); event.target.value = ''; }} />
+            {attachments.length ? <div className="attachment-list">{attachments.map((attachment) => <div className={`attachment-chip ${attachment.status}`} key={attachment.id}><span className="attachment-icon">{attachment.status === 'uploading' ? '◌' : attachment.status === 'error' ? '!' : '⌕'}</span><span className="attachment-copy"><strong>{attachment.name}</strong><small>{attachment.status === 'uploading' ? `Uploading ${formatFileSize(attachment.progress)} of ${formatFileSize(attachment.size)}` : attachment.status === 'error' ? attachment.error ?? 'Upload failed' : formatFileSize(attachment.size)}</small></span><button type="button" onClick={() => void removeAttachment(attachment)} disabled={attachment.status === 'uploading'} aria-label={`Remove ${attachment.name}`}>×</button></div>)}</div> : null}
             <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder="Ask AgentEvolver to investigate, implement, or review…" disabled={status !== 'connected' || Boolean(activeTaskId)} rows={3} />
-            <div className="composer-actions"><span>Enter to send · Shift+Enter for a new line</span>{activeTaskId ? <button type="button" className="stop" onClick={cancelTask}>■ Stop task</button> : <button type="submit" disabled={!draft.trim() || status !== 'connected'}>Send <span>↵</span></button>}</div>
+            <div className="composer-actions"><button className="attach-file" type="button" onClick={() => fileInputRef.current?.click()} disabled={status !== 'connected' || Boolean(activeTaskId)}>⌕ Attach files</button><span>Enter to send · Shift+Enter for a new line</span>{activeTaskId ? <button type="button" className="stop" onClick={cancelTask}>■ Stop task</button> : <button type="submit" disabled={(!draft.trim() && !attachments.some((attachment) => attachment.status === 'ready')) || attachments.some((attachment) => attachment.status === 'uploading') || status !== 'connected'}>Send <span>↵</span></button>}</div>
           </form>
         </div>
       </section>
@@ -525,7 +626,7 @@ export function App() {
 }
 
 function MessageCard({ message }: { message: Message }) {
-  return <article className={`message-card ${message.kind}`}><div className="message-avatar">{message.kind === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? <p>{message.content}</p> : null}</div></article>;
+  return <article className={`message-card ${message.kind}`}><div className="message-avatar">{message.kind === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? <p>{message.content}</p> : null}{message.attachments?.length ? <div className="message-files">{message.attachments.map((attachment) => <span key={attachment}>⌕ {attachment}</span>)}</div> : null}</div></article>;
 }
 
 function ActivityCard({ activity, expanded, onToggle, onSelect }: { activity: ActivityGroup; expanded: boolean; onToggle: () => void; onSelect: (step: ActivityStep) => void }) {
@@ -658,6 +759,19 @@ function isProviderSummary(value: unknown): value is ProviderSummary {
     && Array.isArray((value as { models?: unknown }).models);
 }
 
+function asUploadedAttachment(value: unknown): UploadedAttachment | undefined {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.path !== 'string' || typeof value.size !== 'number') return undefined;
+  return {
+    id: value.id,
+    name: value.name,
+    path: value.path,
+    size: value.size,
+    mimeType: typeof value.mime_type === 'string' ? value.mime_type : 'application/octet-stream',
+    status: 'ready',
+    progress: value.size,
+  };
+}
+
 function isSessionSummary(value: unknown): value is SessionSummary {
   return Boolean(value)
     && typeof value === 'object'
@@ -687,5 +801,8 @@ function finalMessage(event: GatewayEvent, kind: Extract<MessageKind, 'assistant
 }
 
 function formatTime(timestamp: string): string { return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function formatFileSize(size: number): string { if (size < 1024) return `${size} B`; if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`; if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`; return `${(size / 1024 ** 3).toFixed(2)} GB`; }
+function fileName(path: string): string { return path.split(/[\\/]/).at(-1) || path; }
+function base64FromBuffer(buffer: ArrayBuffer): string { const bytes = new Uint8Array(buffer); let binary = ''; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); }
 function humanize(name: string): string { return name.replace(/_skill$|_tool$|_agent$|_connector$/, '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function capabilityDescription(kind: CapabilityKind, name: string): string { return kind === 'commands' ? `Run /${name} from the composer when this command is enabled.` : `${humanize(name)} ${kind.slice(0, -1)} is ${kind === 'agents' ? 'available for delegation' : 'available to this session'}.`; }

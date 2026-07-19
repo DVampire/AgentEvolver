@@ -19,8 +19,9 @@ with read_base():
     from .agents.monitor_agent import monitor_agent
 
 tag         = "monitor_agent"
-work_dir    = f"work_dir/{tag}"
-run_dir = f"work_dir/{tag}/run"
+project_root = f"output/{tag}"
+log_root = f"{project_root}/log"
+workspace_root = f"{project_root}/workspace"
 log_path    = "monitor_agent.log"
 
 model_name      = "openrouter/claude-opus-4.8"
@@ -32,6 +33,6 @@ connector_names = []
 memory_names = []
 
 monitor_agent.update(
-    base_dir = work_dir,
+    base_dir = workspace_root,
     enable_evolving = False,
 )

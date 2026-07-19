@@ -2,7 +2,7 @@ import json
 import os
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 @DATASET.register_module(force=True)
@@ -25,7 +25,7 @@ class DeepWebDataset:
         self.name = name
         self.split = split
 
-        local_dir = assemble_project_path(path)
+        local_dir = assemble_workspace_path(path)
         cases_path = os.path.join(local_dir, "data", "cases.jsonl")
 
         records = []

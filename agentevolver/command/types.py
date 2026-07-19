@@ -37,7 +37,7 @@ class CommandContext(BaseContext):
     id: str = Field(default="", description="Unique identifier for this command invocation.")
     name: str = Field(default="", description="Name of the command being invoked.")
     raw: str = Field(default="", description="The full raw input line, e.g. '/rollback tool foo 1.2'.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the command.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the command.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this context.")
 
 

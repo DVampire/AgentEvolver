@@ -19,9 +19,9 @@ class CheckpointsCommand(Command):
 
     async def __call__(self, args: List[str], ctx: Optional[CommandContext] = None) -> Response:
         from agentevolver.config import config
-        from agentevolver.utils import assemble_project_path
+        from agentevolver.utils import assemble_workspace_path
 
-        ckpt_dir = assemble_project_path(os.path.join(config.run_dir, "command", "checkpoints"))
+        ckpt_dir = assemble_workspace_path(os.path.join(config.log_root, "command", "checkpoints"))
         files = sorted(glob.glob(os.path.join(ckpt_dir, "*.json")))
         if not files:
             return self.ok("No checkpoints saved yet.")

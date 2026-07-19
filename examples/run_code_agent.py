@@ -57,7 +57,7 @@ async def run_agent(record: TaskRecord):
         input={
             "task": record.task.content,
             "files": record.task.files,
-            "work_dir": config.work_dir,
+            "workspace_root": config.workspace_root,
         },
         ctx=ctx,
     )
@@ -117,13 +117,13 @@ async def main():
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
-    task_work_dir = os.path.join(config.run_dir, "tasks")
-    await task_manager.initialize(work_dir=task_work_dir, handler=run_agent)
+    task_log_root = os.path.join(config.log_root, "tasks")
+    await task_manager.initialize(log_root=task_log_root, handler=run_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task (inline --task or --task-file document) ---
     task_text, task_files, task_metadata = resolve_task(
-        args, task_work_dir,
+        args, task_log_root,
         default_text="Generate a Fibonacci sequence generator in Python and calculate the 15th term.",
     )
     logger.info(f"| 📋 Submitting task: {task_text}")

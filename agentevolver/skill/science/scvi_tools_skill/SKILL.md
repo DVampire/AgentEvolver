@@ -142,7 +142,7 @@ separately — `.close()` lives on the handle, not on the job:
 
 ```python
 h = host.compute.create('byoc:modal')
-res = h.attach_job(job_id).result()   # output_files, remote_workdir, ...
+res = h.attach_job(job_id).result()   # output_files, remote_workspace_root, ...
 h.close()
 ```
 

@@ -97,7 +97,7 @@ accessed date closes the entry.]
 
 **Step 2: Write `waypoints/indication_dossier_report.md`**
 
-CRITICAL: Write to `<workdir>/waypoints/indication_dossier_report.md` (inside waypoints/).
+CRITICAL: Write to `<workspace_root>/waypoints/indication_dossier_report.md` (inside waypoints/).
 
 Follow the output_structure above. Key guidance:
 

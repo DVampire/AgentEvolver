@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
 
-from agentevolver.utils import assemble_project_path, encode_file_base64
+from agentevolver.utils import assemble_workspace_path, encode_file_base64
 
 
 def _strict_incompatible(o: Any) -> bool:
@@ -129,7 +129,7 @@ class OpenRouterChatSerializer:
             # File path - read and encode to base64
             file_path = audio_url[7:]
             if not os.path.isabs(file_path):
-                file_path = assemble_project_path(file_path)
+                file_path = assemble_workspace_path(file_path)
             if os.path.exists(file_path):
                 # Read file and encode to base64
                 with open(file_path, "rb") as f:
@@ -154,9 +154,9 @@ class OpenRouterChatSerializer:
                     "format": audio_format,
                 }
             }
-        elif os.path.exists(assemble_project_path(audio_url)):
+        elif os.path.exists(assemble_workspace_path(audio_url)):
             # Relative file path
-            file_path = assemble_project_path(audio_url)
+            file_path = assemble_workspace_path(audio_url)
             with open(file_path, "rb") as f:
                 audio_data = f.read()
             base64_data = base64.b64encode(audio_data).decode("utf-8")
@@ -219,7 +219,7 @@ class OpenRouterChatSerializer:
             # File path - read and encode to base64
             file_path = pdf_url[7:]
             if not os.path.isabs(file_path):
-                file_path = assemble_project_path(file_path)
+                file_path = assemble_workspace_path(file_path)
             if os.path.exists(file_path):
                 # Read file and encode to base64
                 with open(file_path, "rb") as f:
@@ -248,9 +248,9 @@ class OpenRouterChatSerializer:
                     "file_data": data_url,
                 }
             }
-        elif os.path.exists(assemble_project_path(pdf_url)):
+        elif os.path.exists(assemble_workspace_path(pdf_url)):
             # Relative file path
-            file_path = assemble_project_path(pdf_url)
+            file_path = assemble_workspace_path(pdf_url)
             with open(file_path, "rb") as f:
                 pdf_data = f.read()
             base64_data = base64.b64encode(pdf_data).decode("utf-8")

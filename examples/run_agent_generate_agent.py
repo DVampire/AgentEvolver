@@ -60,7 +60,7 @@ async def run_generate_agent(record: TaskRecord):
         name="agent_generate_agent",
         input={"task": record.task.content, "target_name": target_name},
         ctx=ctx,
-        work_dir=config.work_dir,
+        workspace_root=config.workspace_root,
     )
     return response
 
@@ -116,12 +116,12 @@ async def main():
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
     # --- TaskManager ---
-    task_work_dir = os.path.join(config.run_dir, "tasks")
-    await task_manager.initialize(work_dir=task_work_dir, handler=run_generate_agent)
+    task_log_root = os.path.join(config.log_root, "tasks")
+    await task_manager.initialize(log_root=task_log_root, handler=run_generate_agent)
     await task_manager.start(num_workers=1)
 
     # --- Submit task ---
-    task_text, task_files, task_doc_meta = resolve_task(args, task_work_dir)
+    task_text, task_files, task_doc_meta = resolve_task(args, task_log_root)
     target_name = args.agent_name
 
     logger.info(f"| 📋 Submitting agent generation task: target={target_name}")

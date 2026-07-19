@@ -23,7 +23,7 @@ The sub-agents are headless: each runs one phase autonomously and returns a resu
 
 ## Framework conventions (read once)
 
-An environment is a directory: `{project_root}/extension/environment/{name}/`
+An environment is a directory: `{extension_root}/environment/{name}/`
 ```
 {name}/
 ├── environment.py    # REQUIRED — the Python class (registered) with @action methods

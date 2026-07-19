@@ -13,7 +13,7 @@ from agentevolver.environment.server import environment_manager
 from agentevolver.environment.types import Environment, ScreenshotInfo
 from agentevolver.logger import logger
 from agentevolver.registry import ENVIRONMENT
-from agentevolver.utils import ScreenshotService, assemble_project_path
+from agentevolver.utils import ScreenshotService, assemble_workspace_path
 from agentevolver.utils import encode_file_base64
 
 
@@ -48,7 +48,7 @@ class BrowserEnvironment(Environment):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.base_dir = assemble_project_path(base_dir) if base_dir else assemble_project_path("browser")
+        self.base_dir = assemble_workspace_path(base_dir) if base_dir else assemble_workspace_path("browser")
         self.headless = headless
         self.viewport = viewport or {"width": 1024, "height": 768}
         # State options: use_som draws numbered boxes on the state screenshot matching

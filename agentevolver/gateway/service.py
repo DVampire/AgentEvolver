@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
+import re
 import sys
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -35,6 +37,7 @@ from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
 from agentevolver.prompt import prompt_manager
 from agentevolver.session.types import SessionContext
+from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.skill import skill_manager
 from agentevolver.task import TaskCategory, TaskPriority, TaskRecord, task_manager
 from agentevolver.trace import trace_manager
@@ -48,8 +51,31 @@ from agentevolver.tool import tool_manager
 class GatewaySession:
     context: SessionContext
     created_at: str
+    sandbox: ProjectSandbox
     task_ids: list[str] = field(default_factory=list)
     capabilities: Dict[str, list[str]] = field(default_factory=dict)
+    uploads: Dict[str, "GatewayUpload"] = field(default_factory=dict)
+
+
+@dataclass
+class GatewayUpload:
+    id: str
+    name: str
+    path: str
+    size: int
+    mime_type: str = "application/octet-stream"
+    received: int = 0
+    completed: bool = False
+
+    def public(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "path": self.path,
+            "size": self.size,
+            "mime_type": self.mime_type,
+            "completed": self.completed,
+        }
 
 
 class AgentGateway:
@@ -65,6 +91,9 @@ class AgentGateway:
         self._active_agent_tasks: Dict[str, asyncio.Task] = {}
         self._initialized = False
         self._stopping = False
+
+    _MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024
+    _MAX_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
     async def start(self, config_path: str, *, stdio: bool = False) -> None:
         """Initialize the configured runtime once for all Gateway sessions."""
@@ -95,8 +124,8 @@ class AgentGateway:
         await extension_manager.initialize()
         extension_manager.subscribe(self._on_extension_change)
 
-        task_dir = os.path.join(config.run_dir, "gateway", "tasks")
-        await task_manager.initialize(work_dir=task_dir, handler=self._run_task)
+        task_dir = os.path.join(config.log_root, "gateway", "tasks")
+        await task_manager.initialize(log_root=task_dir, handler=self._run_task)
         await task_manager.start(num_workers=1)
         self._initialized = True
         await self._publish("gateway.ready", {"protocol_version": PROTOCOL_VERSION})
@@ -155,22 +184,39 @@ class AgentGateway:
         session_id = params.get("session_id") or make_id()
         if session_id in self._sessions:
             raise ValueError(f"Session already exists: {session_id}")
-        workspace = params.get("workspace") or getattr(config, "workspace_dir", config.work_dir)
+        configured_project_root = getattr(config, "project_root", None)
+        default_project_root = Path(configured_project_root) if configured_project_root else Path.cwd() / "output"
+        project_root = params.get("project_root") or default_project_root / "sessions" / session_id
+        sandbox = ProjectSandbox.create(project_root)
+        requested_workspace = params.get("workspace")
+        if requested_workspace:
+            requested_path = Path(requested_workspace).expanduser().resolve()
+            if requested_path != sandbox.workspace_root:
+                raise ValueError(
+                    "workspace must be the session sandbox workspace. "
+                    "Create/import files under the returned workspace path instead."
+                )
         context = SessionContext(
             id=session_id,
             name=params.get("name") or "interactive",
-            work_dir=str(Path(workspace).expanduser().resolve()),
-            extra={"workspace": str(Path(workspace).expanduser().resolve())},
+            workspace_root=str(sandbox.workspace_root),
+            extra={
+                "workspace": str(sandbox.workspace_root),
+                **sandbox.describe(),
+                "sandbox_mounts": sandbox.mounts(),
+            },
         )
         session = GatewaySession(
             context=context,
             created_at=datetime.now(timezone.utc).isoformat(),
+            sandbox=sandbox,
             capabilities=await self._available_capabilities(),
         )
         self._sync_session_capabilities(session)
         self._sessions[session_id] = session
-        await self._publish("session.created", {"workspace": context.work_dir, "name": context.name}, session_id=session_id)
-        return {"session_id": session_id, "workspace": context.work_dir}
+        payload = {"workspace": context.workspace_root, "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name}
+        await self._publish("session.created", payload, session_id=session_id)
+        return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
 
     async def _command_session_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -178,12 +224,38 @@ class AgentGateway:
                 {
                     "session_id": session_id,
                     "name": session.context.name,
-                    "workspace": session.context.work_dir,
+                    "workspace": session.context.workspace_root,
+                    "project_root": str(session.sandbox.project_root),
+                    "extension_root": str(session.sandbox.extension_root),
                     "task_ids": session.task_ids,
                 }
                 for session_id, session in self._sessions.items()
             ]
         }
+
+    async def _command_extension_stage_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        sandbox = self._sessions[session_id].sandbox
+        try:
+            validation = sandbox.validate()
+            validation["valid"] = True
+        except ValueError as exc:
+            validation = {"valid": False, "error": str(exc), "components": sandbox.staged_components()}
+        return {"sandbox": sandbox.describe(), "mounts": sandbox.mounts(), "staging": validation}
+
+    async def _command_extension_promote(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        sandbox = self._sessions[session_id].sandbox
+        report = sandbox.promote(overwrite=bool(params.get("overwrite", False)))
+        registered: list[Dict[str, str]] = []
+        for component in report["promoted"]:
+            module = component["module"]
+            config_data = {"enable_evolving": True} if module != "prompt" else None
+            name = await extension_manager.add_component(module, component["destination"], config=config_data)
+            registered.append({"module": module, "name": name, "path": component["destination"]})
+        payload = {**report, "registered": registered}
+        await self._publish("extension.promoted", payload, session_id=session_id)
+        return payload
 
     async def _command_session_rename(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
@@ -221,6 +293,81 @@ class AgentGateway:
         self._sessions[session_id].task_ids.append(task_id)
         await self._publish("task.submitted", {"content": content, "files": files}, session_id=session_id, task_id=task_id)
         return {"task_id": task_id}
+
+    async def _command_file_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        return {"files": [upload.public() for upload in session.uploads.values() if upload.completed]}
+
+    async def _command_file_upload_begin(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        name = self._safe_upload_name(params.get("name"))
+        size = params.get("size")
+        if not isinstance(size, int) or size < 0:
+            raise ValueError("size must be a non-negative integer")
+        if size > self._MAX_UPLOAD_SIZE:
+            raise ValueError("File exceeds the 2 GB upload limit")
+        mime_type = str(params.get("mime_type") or "application/octet-stream")[:255]
+        upload_id = make_id()
+        upload_dir = Path(session.context.workspace_root) / ".agentevolver" / "uploads" / session.context.id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        path = upload_dir / f"{upload_id}_{name}"
+        path.touch(exist_ok=False)
+        upload = GatewayUpload(id=upload_id, name=name, path=str(path), size=size, mime_type=mime_type)
+        session.uploads[upload_id] = upload
+        return {"file": upload.public()}
+
+    async def _command_file_upload_chunk(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        upload = self._require_upload(session, params)
+        if upload.completed:
+            raise ValueError("Upload is already complete")
+        encoded = params.get("data")
+        if not isinstance(encoded, str):
+            raise ValueError("data must be base64 text")
+        try:
+            chunk = base64.b64decode(encoded, validate=True)
+        except ValueError as exc:
+            raise ValueError("data must be valid base64 text") from exc
+        if len(chunk) > self._MAX_UPLOAD_CHUNK_SIZE:
+            raise ValueError("Upload chunk exceeds the 1 MB limit")
+        if upload.received + len(chunk) > upload.size:
+            raise ValueError("Upload contains more data than the declared file size")
+        with Path(upload.path).open("ab") as file:
+            file.write(chunk)
+        upload.received += len(chunk)
+        return {"file_id": upload.id, "received": upload.received, "size": upload.size}
+
+    async def _command_file_upload_complete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        upload = self._require_upload(session, params)
+        if upload.received != upload.size:
+            raise ValueError(f"Upload is incomplete ({upload.received} of {upload.size} bytes received)")
+        upload.completed = True
+        await self._publish("file.uploaded", {"file": upload.public()}, session_id=session.context.id)
+        return {"file": upload.public()}
+
+    async def _command_file_remove(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        upload = self._require_upload(session, params)
+        Path(upload.path).unlink(missing_ok=True)
+        session.uploads.pop(upload.id, None)
+        return {"file_id": upload.id, "removed": True}
+
+    @staticmethod
+    def _safe_upload_name(value: Any) -> str:
+        name = Path(str(value or "")).name
+        name = re.sub(r"[^A-Za-z0-9._()\- ]", "_", name).strip(" .")
+        if not name:
+            raise ValueError("A valid file name is required")
+        return name[:180]
+
+    @staticmethod
+    def _require_upload(session: GatewaySession, params: Dict[str, Any]) -> GatewayUpload:
+        upload_id = str(params.get("file_id") or "")
+        upload = session.uploads.get(upload_id)
+        if upload is None:
+            raise ValueError("Unknown uploaded file")
+        return upload
 
     async def _command_task_cancel(self, params: Dict[str, Any]) -> Dict[str, Any]:
         task_id = str(params.get("task_id") or "")
@@ -495,7 +642,7 @@ class AgentGateway:
                 id=session_id,
                 name=command_name,
                 raw=raw,
-                work_dir=session.context.work_dir,
+                workspace_root=session.context.workspace_root,
                 extra={"session_id": session_id, "capabilities": session.capabilities},
             ),
         )

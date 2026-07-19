@@ -28,7 +28,7 @@ The three sub-agents are headless: each runs one phase autonomously and returns 
 
 ## Framework conventions (read once)
 
-- Connectors live in `{project_root}/extension/connector/{connector_name}/` (generated) or `agentevolver/connector/default/{connector_name}/` (defaults).
+- Connectors live in `{extension_root}/connector/{connector_name}/` (generated) or `agentevolver/connector/default/{connector_name}/` (defaults).
 - A connector directory:
   ```
   {connector_name}/

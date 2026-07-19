@@ -17,7 +17,7 @@ from agentevolver.skill.types import SkillConfig
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
 from agentevolver.skill.types import SkillContext
-from agentevolver.utils import assemble_project_path, file_lock, render_capability_card
+from agentevolver.utils import assemble_workspace_path, file_lock, render_capability_card
 from agentevolver.version import version_manager
 from agentevolver.permission import permission_manager, PermissionMode
 
@@ -43,9 +43,9 @@ class SkillContextManager(BaseModel):
         super().__init__(**kwargs)
 
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "skill"))
+            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
 
 
@@ -56,7 +56,7 @@ class SkillContextManager(BaseModel):
         # domain science/ folder) and discovered recursively. Extension skills
         # (generated/user) are managed externally under extension/skill.
         self.builtin_skills_dir = builtin_skills_dir or str(_src_dir)
-        self.extension_skills_dir = extension_skills_dir or assemble_project_path(os.path.join("extension", "skill"))
+        self.extension_skills_dir = extension_skills_dir or assemble_workspace_path(os.path.join("extension", "skill"))
 
         self._skill_configs: Dict[str, SkillConfig] = {}
         self._skill_history_versions: Dict[str, Dict[str, SkillConfig]] = {}

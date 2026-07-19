@@ -12,7 +12,7 @@ from agentevolver.config import config
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolConfig, ToolContext
 from agentevolver.response.types import Response
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 class ToolManagerServer(BaseModel):
     """tool manager Server for managing tool registration and execution with lazy loading."""
@@ -41,7 +41,7 @@ class ToolManagerServer(BaseModel):
             tool_names: List of tool names to initialize. If None, initialize all registered tools.
         """
         
-        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "tool"))
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "tool"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 tool manager Server base directory: {self.base_dir}")
         

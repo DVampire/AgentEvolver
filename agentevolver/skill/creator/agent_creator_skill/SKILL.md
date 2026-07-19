@@ -35,9 +35,9 @@ Read the relevant template(s) first, copy, then adapt. They already encode the c
 ## Framework conventions (read once)
 
 An agent has up to three files:
-- `{project_root}/extension/agent/{name}.py` — the Python class (REQUIRED).
-- `{project_root}/extension/prompt/{name}.html` — the HTML prompt (REQUIRED for tool-calling agents; workflow agents omit it).
-- `{project_root}/configs/agents/{name}.py` — the config dict.
+- `{extension_root}/agent/{name}.py` — the Python class (REQUIRED).
+- `{extension_root}/prompt/{name}.html` — the HTML prompt (REQUIRED for tool-calling agents; workflow agents omit it).
+- `{extension_root}/configs/agents/{name}.py` — the config dict.
 
 **Registration is automatic via a hook**: after writing the files, include the Python file path in your `done_tool` reasoning — the `agent_registration_hook` locates and registers it. The class name in `done_tool` reasoning helps it resolve.
 
@@ -90,7 +90,7 @@ Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta n
 > **Shared blocks & modules.** The built-in default agents in `agentevolver/prompt/default/` factor the shared blocks (`language-settings`, `constraint-rules`, `context-rules`, `response-protocol`, `agent-context`) into `agentevolver/prompt/module/*.html`, referenced with `<module src="../module/NAME.html"></module>` (the server inlines them into the message; `prompt.js` inlines them for browser viewing). **Generated agents keep these blocks inline** — do NOT use `<module src>` in an `extension/prompt/` file: module `src` is resolved relative to the prompt file, so `../module/...` only exists under `agentevolver/prompt/default/` and would fail to load from `extension/prompt/`.
 
 **Template-variable contract** — use only the variables the base context builder provides, spelled exactly:
-`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ todo }}`, `{{ available_tools }}`, `{{ available_skills }}`, `{{ available_connectors }}`, plus the system-side `{{ project_root }}`, `{{ work_dir }}`. Inventing a variable leaves an empty slot; misspelling one silently drops that context.
+`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ todo }}`, `{{ available_tools }}`, `{{ available_skills }}`, `{{ available_connectors }}`, plus the system-side `{{ extension_root }}`, `{{ workspace_root }}`. Inventing a variable leaves an empty slot; misspelling one silently drops that context.
 
 **Response contract — native tool calls (NOT a JSON plan)**: the base loop turns the agent's capabilities into native tools and reads the model's `tool_calls` each step; it does NOT parse a JSON `plan`/`output-schema` from the text. So `response-protocol` must tell the agent to **act by calling tools** and to finish only by calling `done_tool`. (Older prompts used a `plan`/`output-schema` JSON contract — that is obsolete; do not reintroduce it.)
 

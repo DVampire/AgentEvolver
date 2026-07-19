@@ -8,7 +8,7 @@ i.e. it renders identically to the live prompt, no re-styling.
 
 On every POST_STEP the step's messages are written to:
 
-    <run_dir>/messages/<agent_name>/<NNNN>.html   (0001.html, 0002.html, ...)
+    <log_root>/messages/<agent_name>/<NNNN>.html   (0001.html, 0002.html, ...)
 """
 import os
 from html import escape as _he
@@ -51,7 +51,7 @@ class SnapshotHook(Hook):
 
         try:
             from agentevolver.config import config
-            base_dir = str(getattr(config, "run_dir", None) or inp.get("work_dir") or ".")
+            base_dir = str(getattr(config, "log_root", None) or inp.get("workspace_root") or ".")
             out_dir = os.path.join(base_dir, "messages", agent_name)
             os.makedirs(out_dir, exist_ok=True)
             file_path = os.path.join(out_dir, f"{step_number + 1:04d}.html")

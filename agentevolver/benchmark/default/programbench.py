@@ -128,8 +128,8 @@ class ProgramBenchmark(Benchmark):
             logger.warning(f"[{self.name}] submission path does not exist for task {task_id}: {src_path!r}")
             return None
 
-        run_dir = os.path.join(self.base_dir, "eval_runs", task_id)
-        inst_dir = os.path.join(run_dir, task_id)
+        log_root = os.path.join(self.base_dir, "eval_runs", task_id)
+        inst_dir = os.path.join(log_root, task_id)
         os.makedirs(inst_dir, exist_ok=True)
         submission = os.path.join(inst_dir, "submission.tar.gz")
 
@@ -146,7 +146,7 @@ class ProgramBenchmark(Benchmark):
             logger.warning(f"[{self.name}] unsupported submission for task {task_id}: {src_path!r}")
             return None
 
-        return run_dir
+        return log_root
 
     def _programbench_cli(self) -> Optional[str]:
         exe = os.path.join(os.path.dirname(sys.executable), "programbench")
@@ -164,8 +164,8 @@ class ProgramBenchmark(Benchmark):
             self._tasks.append(task)
             return task
 
-        run_dir = self._prepare_submission(task_id, task.result)
-        if run_dir is None:
+        log_root = self._prepare_submission(task_id, task.result)
+        if log_root is None:
             self._tasks.append(task)
             return task
 
@@ -176,7 +176,7 @@ class ProgramBenchmark(Benchmark):
             return task
 
         cmd = [
-            cli, "eval", run_dir,
+            cli, "eval", log_root,
             "--filter", f"^{task_id}$",
             "--branch-workers", str(self.branch_workers),
             "--docker-cpus", str(self.docker_cpus),
@@ -200,7 +200,7 @@ class ProgramBenchmark(Benchmark):
         # Score the produced eval.json with the same ignore-aware logic as `programbench info`.
         import pathlib
         from programbench.submission import score_instance, test_results_map
-        eval_json = pathlib.Path(run_dir) / task_id / f"{task_id}.eval.json"
+        eval_json = pathlib.Path(log_root) / task_id / f"{task_id}.eval.json"
         if not eval_json.exists():
             logger.warning(f"[{self.name}] no eval.json produced for {task_id}.")
             self._tasks.append(task)

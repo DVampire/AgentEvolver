@@ -16,7 +16,7 @@ from agentevolver.skill.context import SkillContextManager
 from agentevolver.skill.types import SkillConfig, SkillContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 class SkillManagerServer(BaseModel):
@@ -45,7 +45,7 @@ class SkillManagerServer(BaseModel):
         Args:
             skill_names: If provided, only these skills are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "skill"))
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "skill"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(
             f"| 📁 skill manager Server base directory: {self.base_dir} "

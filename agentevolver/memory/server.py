@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Union, Type
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.config import config
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 from agentevolver.logger import logger
 from agentevolver.memory.types import MemoryConfig, Memory
 from agentevolver.session import SessionContext
@@ -31,7 +31,7 @@ class MemoryManagerServer(BaseModel):
         Args:
             memory_names: List of memory system names to initialize. If None, initialize all discovered memory systems.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "memory"))
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "memory"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Memory Manager base directory: {self.base_dir}")
         

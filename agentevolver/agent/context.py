@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.utils import (
-    assemble_project_path,
+    assemble_workspace_path,
     gather_with_concurrency,
     file_lock
 )
@@ -45,9 +45,9 @@ class AgentContextManager(BaseModel):
         super().__init__(**kwargs)
 
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.run_dir, "agent"))
+            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Agent context manager base directory: {self.base_dir}.")
         logger.info(f"| 📁 Agent context manager.")
@@ -726,4 +726,3 @@ class AgentContextManager(BaseModel):
 
         from agentevolver.runtime.server import runtime_manager
         return await runtime_manager.invoke(agent_instance, **input, **agent_args)
-

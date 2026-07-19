@@ -1,7 +1,7 @@
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 @DATASET.register_module(force=True)
@@ -24,7 +24,7 @@ class AIME24Dataset:
         self.name = name
         self.split = split
 
-        local_dir = assemble_project_path(path)
+        local_dir = assemble_workspace_path(path)
         ds = load_dataset(local_dir)
 
         # AIME_2024 ships a single split ("train"); use the requested split if present.

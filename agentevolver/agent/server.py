@@ -12,7 +12,7 @@ from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.agent.types import AgentConfig, Agent, AgentContext
 from agentevolver.agent.context import AgentContextManager
-from agentevolver.utils import assemble_project_path, make_id
+from agentevolver.utils import assemble_workspace_path, make_id
 
 class AgentManagerServer(BaseModel):
     """Agent Manager Server for managing agent registration and execution with lazy loading."""
@@ -42,7 +42,7 @@ class AgentManagerServer(BaseModel):
             agent_names: List of agent names to initialize. If None, initialize all registered agents.
         """
         
-        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "agent"))
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 agent manager Server base directory: {self.base_dir}")
         

@@ -22,7 +22,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from agentevolver.logger import logger
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import get_extension_root
 
 _JOURNAL = ".journal"
 _LEVERS = ("configuration", "control", "action", "instruction")
@@ -58,7 +58,7 @@ class Journal:
 
     def __init__(self, base_dir: Optional[str] = None) -> None:
         # Default to the same extension tree the ExtensionManager uses.
-        self.base_dir = assemble_project_path(base_dir or "extension")
+        self.base_dir = os.path.abspath(base_dir) if base_dir else get_extension_root()
 
     def _path(self, module: str, name: str) -> str:
         d = os.path.join(self.base_dir, _JOURNAL, module)

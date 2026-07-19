@@ -1,7 +1,7 @@
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 @DATASET.register_module(force=True)
@@ -25,7 +25,7 @@ class GSM8kDataset:
         self.name = name
         self.split = split
 
-        local_dir = assemble_project_path(path)
+        local_dir = assemble_workspace_path(path)
         all_subsets = ["main", "socratic"]
         if name == "all":
             target_subsets = all_subsets

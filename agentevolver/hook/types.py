@@ -43,7 +43,7 @@ class HookContext(BaseContext):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     id: str = Field(description="Unique identifier for this hook invocation.")
     name: str = Field(description="Name of the hook that fired.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to hook handlers.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to hook handlers.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this hook context.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Event payload dict passed by the caller.")
 

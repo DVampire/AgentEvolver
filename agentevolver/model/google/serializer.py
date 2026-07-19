@@ -19,7 +19,7 @@ from agentevolver.message.types import (
 if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
 
-from agentevolver.utils import assemble_project_path, decode_file_base64
+from agentevolver.utils import assemble_workspace_path, decode_file_base64
 
 
 class GoogleChatSerializer:
@@ -65,7 +65,7 @@ class GoogleChatSerializer:
             # File path - read and encode to base64
             file_path = image_url[7:]
             if not os.path.isabs(file_path):
-                file_path = assemble_project_path(file_path)
+                file_path = assemble_workspace_path(file_path)
             if os.path.exists(file_path):
                 # Read file and encode to base64
                 with open(file_path, "rb") as f:
@@ -101,9 +101,9 @@ class GoogleChatSerializer:
                     "data": base64_data,
                 }
             }
-        elif os.path.exists(assemble_project_path(image_url)):
+        elif os.path.exists(assemble_workspace_path(image_url)):
             # Relative file path
-            file_path = assemble_project_path(image_url)
+            file_path = assemble_workspace_path(image_url)
             with open(file_path, "rb") as f:
                 image_data = f.read()
             base64_data = base64.b64encode(image_data).decode("utf-8")
@@ -473,4 +473,3 @@ class GoogleChatSerializer:
         if isinstance(t, str) and t.lower() == "array" and "items" not in cleaned:
             cleaned["items"] = {"type": "string"}
         return cleaned
-

@@ -24,7 +24,7 @@ async def test_get_messages():
     prompt_name = "reason_act_agent"
     system_modules = {
         "max_actions": 5,
-        "workdir": "/tmp/workdir",
+        "workspace_root": "/tmp/workspace_root",
     }
     agent_modules = {
         "agent_context": "agent examples",

@@ -1,5 +1,5 @@
 reviewer_agent = dict(
-    base_dir = "work_dir/reviewer_agent",
+    base_dir = "workspace_root/reviewer_agent",
     name = "reviewer_agent",
     type = "Agent",
     description = "An independent critic that reviews, at the task/loop level, whether the user task was actually accomplished, what defects remain, whether self-evolution helped, and whether the loop should continue, evolve more, or stop — verifying the real deliverable hands-on, not just reading claims.",

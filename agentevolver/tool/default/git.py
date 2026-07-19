@@ -1,4 +1,4 @@
-"""GitTool — git operations scoped to a workdir."""
+"""GitTool — git operations scoped to a workspace_root."""
 
 import asyncio
 import os
@@ -9,11 +9,11 @@ from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
 
-_DESCRIPTION = "Run git operations inside the project workdir."
+_DESCRIPTION = "Run git operations inside the project workspace_root."
 
 _INSTRUCTION = """
 ## Function
-Run git operations inside the project workdir.
+Run git operations inside the project workspace_root.
 
 ## Guidance
 Available actions:
@@ -43,7 +43,7 @@ Available actions:
 
 @TOOL.register_module(force=True)
 class GitTool(Tool):
-    """Git operations scoped to the session workdir."""
+    """Git operations scoped to the session workspace_root."""
 
     name: str = "git_tool"
     description: str = _DESCRIPTION
@@ -79,9 +79,9 @@ class GitTool(Tool):
             stderr.decode("utf-8", errors="replace").strip(),
         )
 
-    def _get_workdir(self, ctx) -> Optional[str]:
-        if ctx and hasattr(ctx, "work_dir") and ctx.work_dir:
-            return ctx.work_dir
+    def _get_workspace_root(self, ctx) -> Optional[str]:
+        if ctx and hasattr(ctx, "workspace_root") and ctx.workspace_root:
+            return ctx.workspace_root
         return None
 
     async def __call__(
@@ -101,57 +101,57 @@ class GitTool(Tool):
             count: Number of log entries (for log action).
         """
         ctx = kwargs.get("ctx")
-        work_dir = self._get_workdir(ctx)
-        if not work_dir:
-            return Response(type=ResponseType.TOOL, success=False, message="Error: No work_dir set in context.")
-        if not os.path.isdir(work_dir):
-            return Response(type=ResponseType.TOOL, success=False, message=f"Error: work_dir not found: {work_dir}")
+        workspace_root = self._get_workspace_root(ctx)
+        if not workspace_root:
+            return Response(type=ResponseType.TOOL, success=False, message="Error: No workspace_root set in context.")
+        if not os.path.isdir(workspace_root):
+            return Response(type=ResponseType.TOOL, success=False, message=f"Error: workspace_root not found: {workspace_root}")
 
         try:
             if action == "status":
-                rc, out, err = await self._run(["status"], work_dir)
+                rc, out, err = await self._run(["status"], workspace_root)
                 return self._respond(rc, out, err, "status")
 
             elif action == "diff":
                 git_args = ["diff"]
                 if path:
                     git_args.append(path)
-                rc, out, err = await self._run(git_args, work_dir)
+                rc, out, err = await self._run(git_args, workspace_root)
                 return self._respond(rc, out or "(no unstaged changes)", err, "diff")
 
             elif action == "diff_staged":
                 git_args = ["diff", "--cached"]
                 if path:
                     git_args.append(path)
-                rc, out, err = await self._run(git_args, work_dir)
+                rc, out, err = await self._run(git_args, workspace_root)
                 return self._respond(rc, out or "(no staged changes)", err, "diff --cached")
 
             elif action == "log":
                 rc, out, err = await self._run(
-                    ["log", f"--max-count={count}", "--oneline", "--decorate"], work_dir
+                    ["log", f"--max-count={count}", "--oneline", "--decorate"], workspace_root
                 )
                 return self._respond(rc, out or "(no commits)", err, "log")
 
             elif action == "add":
                 target = path or "."
-                rc, out, err = await self._run(["add", target], work_dir)
+                rc, out, err = await self._run(["add", target], workspace_root)
                 msg = f"Staged: {target}" if rc == 0 else err
                 return self._respond(rc, msg, err, "add")
 
             elif action == "commit":
                 if not message:
                     return Response(type=ResponseType.TOOL, success=False, message="Error: commit requires a message parameter.")
-                rc, out, err = await self._run(["commit", "-m", message], work_dir)
+                rc, out, err = await self._run(["commit", "-m", message], workspace_root)
                 return self._respond(rc, out or err, err, "commit")
 
             elif action == "checkout":
                 if not path:
                     return Response(type=ResponseType.TOOL, success=False, message="Error: checkout requires a target (branch or file path).")
-                rc, out, err = await self._run(["checkout", path], work_dir)
+                rc, out, err = await self._run(["checkout", path], workspace_root)
                 return self._respond(rc, out or err or f"Checked out: {path}", err, "checkout")
 
             elif action == "branch":
-                rc, out, err = await self._run(["branch", "-a"], work_dir)
+                rc, out, err = await self._run(["branch", "-a"], workspace_root)
                 return self._respond(rc, out or "(no branches)", err, "branch")
 
             else:

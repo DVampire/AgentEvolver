@@ -36,7 +36,7 @@ class TrajectoryHook(Hook):
             id=ctx.id,
             task_id=inp.get("task_id") or ctx.id,
             agent_name=inp.get("agent_name") or "",
-            work_dir=ctx.work_dir,
+            workspace_root=ctx.workspace_root,
             input=inp,
         )
 

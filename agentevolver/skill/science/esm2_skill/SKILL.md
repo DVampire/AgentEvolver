@@ -120,7 +120,7 @@ Then call the `wait_for_notification` brain-tool. When the
 save_artifacts(payload["featured_files"])   # paths under hpc/<job_id>/
 ```
 
-For the full result dict (`output_files`, `remote_workdir`, …), re-enter the
+For the full result dict (`output_files`, `remote_workspace_root`, …), re-enter the
 kernel: `c.attach_job(job_id).result()` then `c.close()`. See the
 `remote-compute-ssh` / `remote-compute-modal` skill for the orchestration
 details.

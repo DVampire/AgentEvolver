@@ -11,7 +11,7 @@ from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.environment.context import EnvironmentContextManager
 from agentevolver.environment.types import Environment, EnvironmentConfig, EnvironmentContext
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 class EnvironmentManagerServer(BaseModel):
     """ECP Server for managing environment registration and execution with lazy loading."""
@@ -32,8 +32,8 @@ class EnvironmentManagerServer(BaseModel):
             env_names: List of environment names to initialize. If None, initialize all registered environments.
         """
 
-        base_root = config.run_dir if hasattr(config, "run_dir") and config.get("run_dir") else config.work_dir
-        self.base_dir = assemble_project_path(os.path.join(base_root, "environment"))
+        base_root = config.log_root if hasattr(config, "log_root") and config.get("log_root") else config.workspace_root
+        self.base_dir = assemble_workspace_path(os.path.join(base_root, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 ECP Server base directory: {self.base_dir}")
 
@@ -273,7 +273,7 @@ class EnvironmentManagerServer(BaseModel):
         if ctx is None:
             ctx = EnvironmentContext(name=name, action=action, input=input)
         elif not isinstance(ctx, EnvironmentContext):
-            # Accept a caller's context (e.g. AgentContext) — carry over its id/work_dir
+            # Accept a caller's context (e.g. AgentContext) — carry over its id/workspace_root
             ctx = EnvironmentContext.from_context(ctx)
         return await self.environment_context_manager(name, action, input, ctx, **kwargs)
 

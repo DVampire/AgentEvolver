@@ -1,6 +1,8 @@
 #---------------GENERAL CONFIG-------------
 tag = "base"
-work_dir = f"work_dir/{tag}"
+project_root = f"output/{tag}"
+log_root = f"{project_root}/log"
+workspace_root = f"{project_root}/workspace"
 log_path = "base.log"
 model_name = "openrouter/claude-opus-4.8"
 

@@ -21,7 +21,7 @@ class StaticDeployer(Deployer):
         return DeploymentSpec(
             runtime=self.name,
             image=self.default_image,
-            workdir="/app",
+            workspace_root="/app",
             build=[],
             start=f"python -m http.server {port} --bind 0.0.0.0",
             port=port,

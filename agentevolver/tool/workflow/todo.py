@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 from agentevolver.utils import file_lock
 from agentevolver.registry import TOOL
 from agentevolver.logger import logger
@@ -377,7 +377,7 @@ class TodoTool(Tool):
     
     # Configuration parameters
     base_dir: str = Field(
-        default="work_dir/todo_tool",
+        default="workspace_root/todo_tool",
         description="The base directory for saving todo files."
     )
     
@@ -391,9 +391,9 @@ class TodoTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
         
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(self.base_dir)
+            self.base_dir = assemble_workspace_path(self.base_dir)
             
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)

@@ -8,6 +8,7 @@ from pydantic import Field
 
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
+from agentevolver.sandbox.types import get_current_sandbox
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 
@@ -50,10 +51,21 @@ class BashTool(Tool):
 
         Args:
             command:   The shell command to run.
-            work_dir:  Working directory — used for workspace-boundary checks.
+            workspace_root:  Working directory — used for workspace-boundary checks.
         """
         if not command.strip():
             return Response(type=ResponseType.TOOL, success=False, message="Error: Empty command provided")
+
+        ctx = kwargs.get("ctx")
+        if getattr(ctx, "extra", {}).get("project_root") and get_current_sandbox() is None:
+            return Response(
+                type=ResponseType.TOOL,
+                success=False,
+                message=(
+                    "Sandbox blocked host Bash execution. Configure an isolated container backend "
+                    "before running shell commands in a Gateway session."
+                ),
+            )
 
         # Permission check
         req = PermissionRequest(op=Operation.BASH, target=command)

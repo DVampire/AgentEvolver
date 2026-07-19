@@ -60,7 +60,7 @@ def parse_args():
                    help="Print the summary of a results JSON and exit (optionally pass the path).")
     p.add_argument("--resume", default=None, help="Resume from a results JSON (skip answered tasks).")
     p.add_argument("--eval-only", action="store_true", help="Re-judge answers in --resume without re-answering.")
-    p.add_argument("--out", default=None, help="Results output directory (default: <run_dir>/results/hle).")
+    p.add_argument("--out", default=None, help="Results output directory (default: <log_root>/results/hle).")
     p.add_argument("--cfg-options", nargs="+", action=DictAction, help="Override config options.")
     return p.parse_args()
 
@@ -96,7 +96,7 @@ async def _bootstrap(args):
 
 
 def _results_path(args) -> str:
-    out_dir = args.out or os.path.join(config.run_dir, "results", "hle")
+    out_dir = args.out or os.path.join(config.log_root, "results", "hle")
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     return os.path.join(out_dir, f"benchmark_hle_{ts}.json")

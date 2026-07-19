@@ -17,7 +17,7 @@ from asyncio_atexit import register as async_atexit_register
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.version import version_manager
-from agentevolver.utils import assemble_project_path, gather_with_concurrency
+from agentevolver.utils import assemble_workspace_path, gather_with_concurrency
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.environment.types import Environment, EnvironmentConfig, ActionConfig, EnvironmentContext
 from agentevolver.sandbox import SandboxServerManager
@@ -42,10 +42,10 @@ class EnvironmentContextManager(BaseModel):
         
         # Set up paths
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            base_root = config.run_dir if hasattr(config, "run_dir") and config.get("run_dir") else config.work_dir
-            self.base_dir = assemble_project_path(os.path.join(base_root, "environment"))
+            base_root = config.log_root if hasattr(config, "log_root") and config.get("log_root") else config.workspace_root
+            self.base_dir = assemble_workspace_path(os.path.join(base_root, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Environment context manager base directory: {self.base_dir}.")    
         logger.info(f"| 📁 Environment context manager.")

@@ -534,7 +534,7 @@ class ModelContextManager:
             name:  Registered model name (e.g. "openrouter/gemini-3-flash-preview").
             input: Call payload — keys: messages (required), tools, response_format,
                    stream, plugins, max_retries, caller.
-            ctx:   Optional ModelContext (carries id, name, work_dir, timeout, extra).
+            ctx:   Optional ModelContext (carries id, name, workspace_root, timeout, extra).
         """
         import time as _t
         import httpx

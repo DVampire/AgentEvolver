@@ -6,7 +6,7 @@ import inflection
 from agentevolver.logger import logger
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.config import config
-from agentevolver.utils import assemble_project_path, dedent, is_same
+from agentevolver.utils import assemble_workspace_path, dedent, is_same
 
 
 class JudgeResult(BaseModel):
@@ -74,10 +74,10 @@ class Benchmark(BaseModel):
             self.description = self.__class__.__doc__.strip().split('\n')[0]
         # Set base_dir
         if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
+            self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(
-                os.path.join(config.run_dir, "benchmark", self.name)
+            self.base_dir = assemble_workspace_path(
+                os.path.join(config.log_root, "benchmark", self.name)
             )
 
     def _apply_slice(self, records: list) -> list:

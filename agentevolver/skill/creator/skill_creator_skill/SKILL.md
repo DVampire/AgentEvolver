@@ -35,7 +35,7 @@ The three sub-agents are headless: they run one phase autonomously and return a 
 
 ## Framework conventions (read once)
 
-- Skills live in `{project_root}/extension/skill/{skill_name}/` (generated skills) or `agentevolver/skill/default/{skill_name}/` (defaults). Use `snake_case` names ending in `_skill`.
+- Skills live in `{extension_root}/skill/{skill_name}/` (generated skills) or `agentevolver/skill/default/{skill_name}/` (defaults). Use `snake_case` names ending in `_skill`.
 - A skill directory:
   ```
   {skill_name}/

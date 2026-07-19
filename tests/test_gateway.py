@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -17,7 +19,7 @@ async def _test_event_ordering_and_replay() -> None:
     queue = await gateway.subscribe()
 
     created = await gateway.handle(
-        GatewayCommand(id="create", method="session.create", params={"workspace": "."})
+        GatewayCommand(id="create", method="session.create", params={})
     )
     assert created.ok
     session_id = created.result["session_id"]
@@ -69,7 +71,7 @@ def test_session_capability_selection_is_persisted() -> None:
     async def run() -> None:
         gateway = AgentGateway()
         created = await gateway.handle(
-            GatewayCommand(id="create", method="session.create", params={"workspace": "."})
+            GatewayCommand(id="create", method="session.create", params={})
         )
         assert created.ok
         session_id = created.result["session_id"]
@@ -112,7 +114,7 @@ def test_session_can_be_renamed() -> None:
     async def run() -> None:
         gateway = AgentGateway()
         created = await gateway.handle(
-            GatewayCommand(id="create", method="session.create", params={"workspace": ".", "name": "web"})
+            GatewayCommand(id="create", method="session.create", params={"name": "web"})
         )
         assert created.ok
         session_id = created.result["session_id"]
@@ -145,7 +147,7 @@ def test_extension_capability_changes_update_live_sessions() -> None:
         gateway._available_capabilities = available_capabilities  # type: ignore[method-assign]
         queue = await gateway.subscribe()
         created = await gateway.handle(
-            GatewayCommand(id="create", method="session.create", params={"workspace": "."})
+            GatewayCommand(id="create", method="session.create", params={})
         )
         assert created.ok
         session_id = created.result["session_id"]
@@ -187,7 +189,7 @@ def test_commands_are_exposed_and_execute_in_a_gateway_session() -> None:
         assert "`/inspect tool bash_tool`" in detail.result["document"]
 
         created = await gateway.handle(
-            GatewayCommand(id="create", method="session.create", params={"workspace": "."})
+            GatewayCommand(id="create", method="session.create", params={})
         )
         assert created.ok
         executed = await gateway.handle(
@@ -282,6 +284,94 @@ def test_model_configuration_is_editable_without_exposing_api_keys() -> None:
         finally:
             models.clear()
             models.update(previous_models)
+
+    asyncio.run(run())
+
+
+def test_session_files_upload_in_chunks_and_can_be_removed(tmp_path) -> None:
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(
+            GatewayCommand(id="create", method="session.create", params={"project_root": str(tmp_path / "project")})
+        )
+        assert created.ok
+        session_id = created.result["session_id"]
+
+        content = b"<html><body>Agent task</body></html>"
+        begun = await gateway.handle(
+            GatewayCommand(
+                id="begin",
+                method="file.upload.begin",
+                params={"session_id": session_id, "name": "task.html", "size": len(content), "mime_type": "text/html"},
+            )
+        )
+        assert begun.ok
+        file_id = begun.result["file"]["id"]
+        chunk = await gateway.handle(
+            GatewayCommand(
+                id="chunk",
+                method="file.upload.chunk",
+                params={"session_id": session_id, "file_id": file_id, "data": base64.b64encode(content).decode()},
+            )
+        )
+        assert chunk.ok
+        completed = await gateway.handle(
+            GatewayCommand(id="complete", method="file.upload.complete", params={"session_id": session_id, "file_id": file_id})
+        )
+        assert completed.ok
+        path = completed.result["file"]["path"]
+        assert open(path, "rb").read() == content
+
+        listed = await gateway.handle(GatewayCommand(id="list", method="file.list", params={"session_id": session_id}))
+        assert listed.ok
+        assert [item["name"] for item in listed.result["files"]] == ["task.html"]
+
+        removed = await gateway.handle(
+            GatewayCommand(id="remove", method="file.remove", params={"session_id": session_id, "file_id": file_id})
+        )
+        assert removed.ok
+        assert not Path(path).exists()
+
+    asyncio.run(run())
+
+
+def test_session_rejects_workspace_outside_project_sandbox(tmp_path) -> None:
+    async def run() -> None:
+        gateway = AgentGateway()
+        response = await gateway.handle(
+            GatewayCommand(
+                id="create",
+                method="session.create",
+                params={"project_root": str(tmp_path / "project"), "workspace": str(tmp_path / "outside")},
+            )
+        )
+        assert not response.ok
+        assert response.error is not None
+        assert response.error.code == "invalid_request"
+
+    asyncio.run(run())
+
+
+def test_session_exposes_staged_extension_sandbox(tmp_path) -> None:
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(
+            GatewayCommand(id="create", method="session.create", params={"project_root": str(tmp_path / "project")})
+        )
+        assert created.ok
+        assert created.result["extension_root"] == str(tmp_path / "project" / "extension")
+
+        stage = await gateway.handle(
+            GatewayCommand(
+                id="stage",
+                method="extension.stage.get",
+                params={"session_id": created.result["session_id"]},
+            )
+        )
+        assert stage.ok
+        assert stage.result["staging"]["valid"] is True
+        assert stage.result["staging"]["components"] == []
+        assert stage.result["mounts"][0]["target"] == "/project"
 
     asyncio.run(run())
 

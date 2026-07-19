@@ -2,7 +2,7 @@ import os
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 @DATASET.register_module(force=True)
@@ -20,7 +20,7 @@ class HLEDataset:
         self.name = name
         self.split = split
 
-        path = assemble_project_path(path)
+        path = assemble_workspace_path(path)
 
         parquet_dir = os.path.join(path, "data")
         parquet_files = [

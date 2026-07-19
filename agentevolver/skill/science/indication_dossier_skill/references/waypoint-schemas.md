@@ -1,6 +1,6 @@
 # Waypoint file schemas
 
-These define the structure of each `<workdir>/waypoints/*.json` file. The
+These define the structure of each `<workspace_root>/waypoints/*.json` file. The
 phase reference files point here for output formats.
 
 ## progress.json — Loop control

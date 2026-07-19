@@ -118,7 +118,7 @@ class OpenSandbox(Sandbox):
         self,
         command: str,
         *,
-        work_dir: Optional[str] = None,
+        workspace_root: Optional[str] = None,
         timeout: Optional[Union[int, timedelta]] = None,
         env: Optional[Dict[str, str]] = None,
     ) -> ExecResult:
@@ -126,7 +126,7 @@ class OpenSandbox(Sandbox):
 
         sb = self._require()
         to = timedelta(seconds=timeout) if isinstance(timeout, int) else timeout
-        opts = RunCommandOpts(working_directory=work_dir, timeout=to, envs=env or None)
+        opts = RunCommandOpts(working_directory=workspace_root, timeout=to, envs=env or None)
         try:
             execution = await sb.commands.run(command, opts=opts)
             return execution_to_result(execution)

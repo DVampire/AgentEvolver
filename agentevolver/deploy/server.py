@@ -65,7 +65,7 @@ class DeploymentManagerServer(BaseModel):
         self._initialized = False
 
     # --------------------------------------------------------------- lifecycle
-    async def initialize(self, work_dir: Optional[str] = None) -> None:
+    async def initialize(self, workspace_root: Optional[str] = None) -> None:
         """Load the persisted site registry and register built-in profiles. Idempotent."""
         if self._initialized:
             return
@@ -73,8 +73,8 @@ class DeploymentManagerServer(BaseModel):
 
         # Prefer the framework's per-run default dir; fall back to a local path so the
         # subsystem still works if it is exercised before config.initialize() has run.
-        run_dir = getattr(config, "run_dir", None) or os.path.join("work_dir", "run")
-        base = work_dir or os.path.join(run_dir, "deploy")
+        log_root = getattr(config, "log_root", None) or os.path.join("workspace_root", "run")
+        base = workspace_root or os.path.join(log_root, "deploy")
         os.makedirs(base, exist_ok=True)
         self._registry_path = os.path.join(base, "sites.json")
         self._load()
@@ -129,7 +129,7 @@ class DeploymentManagerServer(BaseModel):
         return "opensandbox" if self._container_runtime_available() else "host"
 
     def _host_site_dir(self, site_id: str) -> str:
-        base = os.path.dirname(self._registry_path) if self._registry_path else os.path.join("work_dir", "run", "deploy")
+        base = os.path.dirname(self._registry_path) if self._registry_path else os.path.join("workspace_root", "run", "deploy")
         return os.path.join(base, "sites", site_id, "app")
 
     @staticmethod
@@ -177,7 +177,7 @@ class DeploymentManagerServer(BaseModel):
         """Profile → base spec, then overlay request.port / request.env / request.overrides."""
         spec = self._profile(request.runtime).make_spec(request)
         ov = dict(request.overrides or {})
-        for field in ("image", "workdir", "build", "start", "timeout_minutes"):
+        for field in ("image", "workspace_root", "build", "start", "timeout_minutes"):
             if field in ov and ov[field] is not None:
                 setattr(spec, field, ov[field])
         if "health" in ov and ov["health"]:
@@ -198,8 +198,8 @@ class DeploymentManagerServer(BaseModel):
         # The host backend has no container filesystem, so run in a real host directory
         # and write the server log beside it (containers keep a per-container /tmp log).
         if backend == "host":
-            spec.workdir = self._host_site_dir(request.site_id)
-            log_path = os.path.join(os.path.dirname(spec.workdir), "server.log")
+            spec.workspace_root = self._host_site_dir(request.site_id)
+            log_path = os.path.join(os.path.dirname(spec.workspace_root), "server.log")
             # Host sites share the machine's ports: if the requested one is taken, move to
             # a free port and reflect it in the start command (literal port) and PORT env.
             free = self._free_port(spec.port)
@@ -234,7 +234,7 @@ class DeploymentManagerServer(BaseModel):
             if backend == "host":
                 sandbox = await sandbox_manager.acquire(
                     "host", reuse_key=request.site_id, env=spec.env,
-                    host_base=os.path.dirname(os.path.dirname(spec.workdir)),
+                    host_base=os.path.dirname(os.path.dirname(spec.workspace_root)),
                 )
                 logger.info(f"| 🖥️  '{request.site_id}': no container runtime → deploying on HOST (no isolation)")
             else:
@@ -249,23 +249,23 @@ class DeploymentManagerServer(BaseModel):
 
             # --- upload source ---------------------------------------------------
             if request.git_url:
-                res = await sandbox.run_command(f"git clone {shlex.quote(request.git_url)} {shlex.quote(spec.workdir)}")
+                res = await sandbox.run_command(f"git clone {shlex.quote(request.git_url)} {shlex.quote(spec.workspace_root)}")
                 if not res.success:
                     raise RuntimeError(f"git clone failed: {res.as_message()}")
             else:
-                await sandbox.run_command(f"mkdir -p {shlex.quote(spec.workdir)}")
+                await sandbox.run_command(f"mkdir -p {shlex.quote(spec.workspace_root)}")
                 if request.source_dir:
-                    await self._upload_dir(sandbox, request.source_dir, spec.workdir)
+                    await self._upload_dir(sandbox, request.source_dir, spec.workspace_root)
 
             # --- build (fail-fast) -----------------------------------------------
             for cmd in spec.build:
-                res = await sandbox.run_command(cmd, work_dir=spec.workdir, timeout=1800)
+                res = await sandbox.run_command(cmd, workspace_root=spec.workspace_root, timeout=1800)
                 if not res.success:
                     raise RuntimeError(f"build step failed ({cmd!r}): {res.as_message()}")
 
             # --- start server in the background ----------------------------------
             start_cmd = f"nohup sh -c {shlex.quote(spec.start)} > {shlex.quote(rec.log_path)} 2>&1 &"
-            res = await sandbox.run_command(start_cmd, work_dir=spec.workdir)
+            res = await sandbox.run_command(start_cmd, workspace_root=spec.workspace_root)
             if not res.success:
                 raise RuntimeError(f"failed to launch start command: {res.as_message()}")
 
@@ -291,7 +291,7 @@ class DeploymentManagerServer(BaseModel):
             logger.error(f"| ❌ Deploy '{request.site_id}' failed: {e}")
             return rec
 
-    async def _upload_dir(self, sandbox, source_dir: str, workdir: str) -> None:
+    async def _upload_dir(self, sandbox, source_dir: str, workspace_root: str) -> None:
         src_root = os.path.abspath(source_dir)
         if not os.path.isdir(src_root):
             raise RuntimeError(f"source_dir not found: {source_dir}")
@@ -300,7 +300,7 @@ class DeploymentManagerServer(BaseModel):
             for fname in files:
                 host_path = os.path.join(root, fname)
                 rel = os.path.relpath(host_path, src_root)
-                dest = f"{workdir}/{rel}".replace(os.sep, "/")
+                dest = f"{workspace_root}/{rel}".replace(os.sep, "/")
                 try:
                     with open(host_path, "rb") as fh:
                         await sandbox.write_file(dest, fh.read())
@@ -325,7 +325,7 @@ class DeploymentManagerServer(BaseModel):
                 return False
             try:
                 if hc.type == "command" and hc.command:
-                    res = await sandbox.run_command(hc.command, work_dir=spec.workdir, timeout=15)
+                    res = await sandbox.run_command(hc.command, workspace_root=spec.workspace_root, timeout=15)
                     if res.success:
                         return True
                 else:  # http

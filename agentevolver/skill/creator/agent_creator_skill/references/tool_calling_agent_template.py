@@ -83,7 +83,7 @@ class MyAgent(Agent):
 
             from agentevolver.hook.server import hook_manager
             from agentevolver.hook.types import HookDecision, HookEvent
-            from agentevolver.utils import get_project_root
+            from agentevolver.utils import get_extension_root
             if ctx is None:
                 ctx = AgentContext()
             response = await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
@@ -91,7 +91,7 @@ class MyAgent(Agent):
                 result = await hook_manager(name="<x>_registration_hook", input={
                     "event": HookEvent.ON_STOP,
                     "reasoning": (response.data or {}).get("reasoning") or "",
-                    "project_root": get_project_root(), "model_name": self.model_name}, ctx=ctx)
+                    "extension_root": get_extension_root(), "model_name": self.model_name}, ctx=ctx)
                 if result.decision == HookDecision.BLOCK:
                     response.success = False
                     response.message = result.reason or "Registration failed."

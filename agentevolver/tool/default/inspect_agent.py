@@ -5,7 +5,7 @@ from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
-from agentevolver.utils import get_project_root
+from agentevolver.utils import get_extension_root
 
 _DESCRIPTION = "Fetch a registered agent's live registry facts (registration/instantiation status, version, evolvability/enable_evolving, file paths) by name."
 
@@ -50,9 +50,9 @@ class InspectAgent(Tool):
         info = await agent_manager.get_info(name)
         instance = await agent_manager.get(name) if info is not None else None
 
-        project_root = get_project_root()
-        py_path = os.path.join(project_root, "extension", "agent", f"{name}.py")
-        html_path = os.path.join(project_root, "extension", "prompt", f"{name}.html")
+        extension_root = get_extension_root()
+        py_path = os.path.join(extension_root, "agent", f"{name}.py")
+        html_path = os.path.join(extension_root, "prompt", f"{name}.html")
         html_exists = os.path.exists(html_path)
 
         lines = [f"- **Agent Name**: `{name}`"]

@@ -2,7 +2,7 @@ import random
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 @DATASET.register_module(force=True)
@@ -26,7 +26,7 @@ class GPQADataset:
         self.name = name
         self.split = split
 
-        local_dir = assemble_project_path(path)
+        local_dir = assemble_workspace_path(path)
         try:
             all_configs = get_dataset_config_names(local_dir)
         except Exception:

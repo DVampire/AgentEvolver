@@ -61,7 +61,7 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 ### What you get
 
 - **Trace UI** — while running, the log prints `🌐 Trace UI: http://localhost:<port>`; open it to watch the agents step through the task in real time.
-- **Outputs** — run artifacts, task views, and logs are written under `work_dir/meta_agent/` (`run/` for run state, `workspace/` for the agent's working files).
+- **Outputs** — run artifacts, task views, and logs are written under `workspace_root/meta_agent/` (`run/` for run state, `workspace/` for the agent's working files).
 - On completion the log prints the final result and, if produced, the path to a memory HTML report.
 
 Ready-made task documents live in [`examples/tasks/`](examples/tasks/) — browse them for examples of how tasks are specified.

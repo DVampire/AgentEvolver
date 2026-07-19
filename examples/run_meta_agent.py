@@ -157,12 +157,12 @@ async def main():
     )
 
     # --- TaskManager ---
-    task_work_dir = os.path.join(config.run_dir, "tasks")
-    await task_manager.initialize(work_dir=task_work_dir, handler=lambda record: run_agent(record, ctx))
+    task_log_root = os.path.join(config.log_root, "tasks")
+    await task_manager.initialize(log_root=task_log_root, handler=lambda record: run_agent(record, ctx))
     await task_manager.start(num_workers=1)
 
     # --- Build the task (inline --task string or --task-file document) ---
-    task_text, task_files, task_metadata = resolve_task(args, task_work_dir)
+    task_text, task_files, task_metadata = resolve_task(args, task_log_root)
     logger.info(f"| 📋 Submitting task:\n{task_text}")
     task_id = await task_manager.submit(
         content=task_text,

@@ -1,5 +1,5 @@
 browser_agent = dict(
-    base_dir = "work_dir/browser_agent",
+    base_dir = "workspace_root/browser_agent",
     name = "browser_agent",
     type = "Agent",
     description = "A browser agent that navigates and operates web pages through the browser environment: clicking, typing, scrolling, and running Playwright commands as a fallback.",

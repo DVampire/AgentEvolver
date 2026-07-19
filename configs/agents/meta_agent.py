@@ -1,5 +1,5 @@
 meta_agent = dict(
-    base_dir = "work_dir/meta_agent",
+    base_dir = "workspace_root/meta_agent",
     name = "meta_agent",
     type = "Agent",
     description = "Orchestrator that decomposes tasks, dispatches sub-agents concurrently, reacts to results, and triggers self-evolution (generate/optimize/evaluate + reviewer) when a capability is missing or a sub-agent underperforms.",

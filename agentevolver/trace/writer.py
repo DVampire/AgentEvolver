@@ -1,10 +1,10 @@
 """TraceWriter — async consumer that persists TraceEvents to JSON files.
 
-One file per session: <workdir>/<session_id>.jsonl
+One file per session: <log_root>/<session_id>.jsonl
 Events are appended as newline-delimited JSON (JSONL) for streaming reads
 without loading the entire file into memory.
 
-A separate index file <workdir>/index.json maps session_id → file path
+A separate index file <log_root>/index.json maps session_id → file path
 and summary metadata for the UI's session list endpoint.
 """
 
@@ -24,8 +24,8 @@ from agentevolver.trace.types import TraceEvent
 class TraceWriter:
     """Drains an AsyncQueue[TraceEvent] and writes events to JSONL files, one per session."""
 
-    def __init__(self, work_dir: str, queue: AsyncQueue[TraceEvent]) -> None:
-        self._workdir = work_dir
+    def __init__(self, log_root: str, queue: AsyncQueue[TraceEvent]) -> None:
+        self._log_root = log_root
         self._queue = queue
 
         # session_id → open file handle for fast append
@@ -33,7 +33,7 @@ class TraceWriter:
         # session_id → summary dict for the index
         self._session_meta: Dict[str, Dict] = {}
 
-        self._index_path = os.path.join(work_dir, "index.json")
+        self._index_path = os.path.join(log_root, "index.json")
         self._task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------
@@ -58,7 +58,7 @@ class TraceWriter:
     # ------------------------------------------------------------------
 
     async def _run(self) -> None:
-        os.makedirs(self._workdir, exist_ok=True)
+        os.makedirs(self._log_root, exist_ok=True)
         await self._load_index()
 
         while True:
@@ -107,7 +107,7 @@ class TraceWriter:
 
     def _session_path(self, session_id: str) -> str:
         safe = session_id.replace("/", "_").replace("\\", "_")
-        return os.path.join(self._workdir, f"{safe}.jsonl")
+        return os.path.join(self._log_root, f"{safe}.jsonl")
 
     def _get_handle(self, session_id: str):
         if session_id not in self._handles:

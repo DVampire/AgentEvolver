@@ -20,19 +20,26 @@ class AgentRegistrationHook(Hook):
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
-        project_root: str = extra.get("project_root") or ""
+        extension_root: str = extra.get("extension_root") or ""
         model_name: str = extra.get("model_name") or ""
 
-        py_path = self._resolve_agent_path(target_name, reasoning, project_root)
+        py_path = self._resolve_agent_path(target_name, reasoning, extension_root)
         if not py_path:
             msg = f"Could not locate generated agent file for '{target_name}' in reasoning."
             logger.warning(f"| ⚠️  AgentRegistrationHook: {msg}")
             return HookResult.block(f"[registration failed] {msg}\nInclude the file path in done_tool reasoning and call done_tool again.")
 
+        from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
+        if is_staged_extension_root(extension_root):
+            validate_staged_extension(extension_root)
+            logger.info(f"| 📦 AgentRegistrationHook: staged '{target_name or os.path.basename(py_path)}' for promotion")
+            return HookResult.allow()
+
         try:
             from agentevolver.extension import extension_manager
+            from agentevolver.config import config
             agent_config = {
-                "base_dir": os.path.join(project_root, "work_dir", target_name or "agent"),
+                "base_dir": config.workspace_root,
                 "model_name": model_name,
                 "enable_evolving": True,
             }
@@ -54,12 +61,12 @@ class AgentRegistrationHook(Hook):
 
         return HookResult.allow()
 
-    def _resolve_agent_path(self, target_name: Optional[str], reasoning: str, project_root: str) -> Optional[str]:
+    def _resolve_agent_path(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             token = token.strip(".,;:()")
             if "extension/" in token and "/agent/" in token and token.endswith(".py"):
-                candidate = token if token.startswith("/") else os.path.join(project_root, token)
+                candidate = token if token.startswith("/") else os.path.join(extension_root, token.removeprefix("extension/"))
                 if os.path.exists(candidate):
                     return candidate
         if target_name:

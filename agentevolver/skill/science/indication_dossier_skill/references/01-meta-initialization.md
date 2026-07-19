@@ -11,7 +11,7 @@ This is the foundation for all subsequent phases.
 
 **Step 1: Setup**
 ```bash
-mkdir -p "<workdir>/waypoints"
+mkdir -p "<workspace_root>/waypoints"
 ```
 
 **Step 2: Resolve indication identity**

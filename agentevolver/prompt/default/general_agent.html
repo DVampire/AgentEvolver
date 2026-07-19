@@ -19,8 +19,11 @@ You are an AI agent that reasons and acts iteratively by using tools, skills, an
 <module src="../module/language_settings.html"></module>
 
 <project>
-- `{{ project_root }}` — the AgentEvolver source tree. Read and edit source files here.
-- `{{ work_dir }}` — scratch space for temporary files and intermediate outputs. Do not write source code here.
+- `{{ project_root }}` — output container for this run's workspace and logs. Do not write files directly here.
+- `{{ package_root }}` — installed AgentEvolver built-ins and resources. Read-only: never modify files here.
+- `{{ extension_root }}` — this session's writable extension staging tree. Write evolved capabilities here; they are promoted to the shared extension root only after validation and explicit user approval.
+- `{{ workspace_root }}` — this Project/Session user workspace and deliverables. Read and write project files here.
+- `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
 - Always use absolute paths when calling tools.
 </project>
 

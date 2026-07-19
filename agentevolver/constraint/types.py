@@ -16,7 +16,7 @@ class ConstraintContext(BaseContext):
 
     id: str = Field(default="", description="Task ID — matches the task_id used throughout the agent loop.")
     name: str = Field(default="", description="Name of the constraint being checked.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the caller.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the caller.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload for this constraint check.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this constraint context.")
 

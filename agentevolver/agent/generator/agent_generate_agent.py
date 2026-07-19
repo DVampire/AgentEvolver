@@ -69,7 +69,7 @@ class AgentGenerateAgent(Agent):
         """
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookDecision, HookEvent
-        from agentevolver.utils import get_project_root
+        from agentevolver.sandbox.project import staged_extension_root
 
         # Register the generated agent (and prompt) now that the loop has finished.
         if response.success:
@@ -78,7 +78,7 @@ class AgentGenerateAgent(Agent):
                 input={
                     "event": HookEvent.ON_STOP,
                     "reasoning": (response.data or {}).get("reasoning") or "",
-                    "project_root": get_project_root(),
+                    "extension_root": staged_extension_root(ctx),
                     "model_name": self.model_name,
                 },
                 ctx=ctx,

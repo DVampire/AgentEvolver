@@ -61,7 +61,7 @@ class ToolGenerateAgent(Agent):
         """Run the base loop, then register the freshly generated tool."""
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookDecision, HookEvent
-        from agentevolver.utils import get_project_root
+        from agentevolver.sandbox.project import staged_extension_root
 
         if response.success:
             result = await hook_manager(
@@ -69,7 +69,7 @@ class ToolGenerateAgent(Agent):
                 input={
                     "event": HookEvent.ON_STOP,
                     "reasoning": (response.data or {}).get("reasoning") or "",
-                    "project_root": get_project_root(),
+                    "extension_root": staged_extension_root(ctx),
                     "model_name": self.model_name,
                 },
                 ctx=ctx,

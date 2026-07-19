@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 @DATASET.register_module(force=True)
@@ -25,7 +25,7 @@ class LeetCodeDataset:
         self.lang = lang
 
         # 1. Path normalization
-        path = assemble_project_path(path)
+        path = assemble_workspace_path(path)
         
         # 2. Load metadata file
         # Expected path structure: /data/leetcode/test/metadata.jsonl

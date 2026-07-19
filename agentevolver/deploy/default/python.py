@@ -25,7 +25,7 @@ class PythonDeployer(Deployer):
         return DeploymentSpec(
             runtime=self.name,
             image=self.default_image,
-            workdir="/app",
+            workspace_root="/app",
             build=[
                 "if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi",
                 "pip install --no-cache-dir 'uvicorn[standard]'",

@@ -61,7 +61,7 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 ### 运行产物
 
 - **Trace UI** —— 运行时日志会打印 `🌐 Trace UI: http://localhost:<端口>`，打开即可实时观察各智能体的执行过程。
-- **输出目录** —— 运行产物、任务视图和日志都写到 `work_dir/meta_agent/` 下（`run/` 存运行状态，`workspace/` 存智能体的工作文件）。
+- **输出目录** —— 运行产物、任务视图和日志都写到 `workspace_root/meta_agent/` 下（`run/` 存运行状态，`workspace/` 存智能体的工作文件）。
 - 任务结束时，日志会打印最终结果；若生成了记忆报告，还会打印其 HTML 路径。
 
 现成的任务文档在 [`examples/tasks/`](examples/tasks/) 下，可参考它们了解任务的写法。

@@ -19,11 +19,15 @@ You are a tool generation agent. You receive a task describing a new tool to cre
 <module src="../module/language_settings.html"></module>
 
 <project>
-- `{{ project_root }}` — the AgentEvolver repo root. Use it to construct all file paths.
+- `{{ project_root }}` — output container for this run's workspace and logs. Do not write files directly here.
+- `{{ package_root }}` — installed AgentEvolver built-ins and resources. Read-only: never modify files here.
+- `{{ extension_root }}` — this session's writable extension staging tree. Generate the tool at `{{ extension_root }}/tool/<tool_name>.py`; it is promoted to the shared extension root only after validation and explicit user approval.
+- `{{ workspace_root }}` — Project/Session user workspace. Read and write user-deliverable files here.
+- `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
 - The **only** two things you may write are:
-  1. the tool file itself → `{{ project_root }}/extension/tool/<tool_name>.py`, and
-  2. a temporary verification/test script → **exactly** `{{ verify_script_path }}` (copy this absolute path verbatim; do NOT modify, append to, or build your own path from `{{ work_dir }}`).
-- NEVER write test scripts to the repo root, to `src/`, or to any other location.
+  1. the tool file itself → `{{ extension_root }}/tool/<tool_name>.py`, and
+  2. a temporary verification/test script → **exactly** `{{ verify_script_path }}` (copy this absolute path verbatim; do NOT modify, append to, or build your own path from `{{ workspace_root }}`).
+- NEVER write test scripts to the project root or to any other location.
 - Always use absolute paths when calling tools.
 </project>
 

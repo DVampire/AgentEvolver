@@ -17,7 +17,7 @@ from agentevolver.connector.context import ConnectorContextManager
 from agentevolver.connector.types import ConnectorConfig, ConnectorContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 class ConnectorManagerServer(BaseModel):
@@ -46,7 +46,7 @@ class ConnectorManagerServer(BaseModel):
         Args:
             connector_names: If provided, only these connectors are loaded.
         """
-        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "connector"))
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "connector"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(
             f"| 📁 connector manager Server base directory: {self.base_dir} "

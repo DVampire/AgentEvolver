@@ -30,7 +30,7 @@ Deploy a web service into an isolated sandbox container and bind it to a reachab
   - `git_url` (str, optional): repo cloned inside the container instead of uploading.
   - `port` (int, optional): override the profile's default port.
   - `env` (dict, optional): environment variables.
-  - `overrides` (dict, optional): field-level spec overrides — `image`, `build` (list of shell cmds), `start` (server cmd, MUST bind 0.0.0.0:$PORT), `workdir`, `health` ({type: http|command|none, path, command, timeout_s}). `custom` runtime REQUIRES `overrides.start`.
+  - `overrides` (dict, optional): field-level spec overrides — `image`, `build` (list of shell cmds), `start` (server cmd, MUST bind 0.0.0.0:$PORT), `workspace_root`, `health` ({type: http|command|none, path, command, timeout_s}). `custom` runtime REQUIRES `overrides.start`.
 - `list`: list all sites with status + URL. No args.
 - `get`: one site's full record. Args: `site_id`.
 - `stop`: stop a site's container. Args: `site_id`.

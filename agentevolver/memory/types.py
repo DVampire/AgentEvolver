@@ -15,7 +15,7 @@ class MemoryContext(BaseContext):
 
     id: str = Field(default="", description="Unique identifier for this memory operation.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this memory operation.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the memory system.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the memory system.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload for this memory operation.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this memory context.")
     agent_name: Optional[str] = Field(default=None, description="Name of the agent using this memory context.")

@@ -23,7 +23,7 @@ The sub-agents are headless: each runs one phase autonomously and returns a resu
 
 ## Framework conventions (read once)
 
-- A tool is a single Python file: `{project_root}/extension/tool/{name}.py`.
+- A tool is a single Python file: `{extension_root}/tool/{name}.py`.
 - **Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `tool_registration_hook` registers it.
 
 **Start from the template**: read `references/tool_template.py`, copy it, and adapt — it already encodes the convention below.

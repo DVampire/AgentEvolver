@@ -21,8 +21,11 @@ You **never modify the environment**. Your job is observation, testing, and repo
 <module src="../module/language_settings.html"></module>
 
 <project>
-- `{{ project_root }}` — the AgentEvolver source tree. Environment source files live here; read them for evaluation.
-- `{{ work_dir }}` — scratch space for temporary test files.
+- `{{ project_root }}` — output container for this run's workspace and logs. Do not write files directly here.
+- `{{ package_root }}` — installed AgentEvolver built-ins and resources. Read-only: never modify files here.
+- `{{ extension_root }}` — this session's writable extension staging tree. Write evolved capabilities here; they are promoted to the shared extension root only after validation and explicit user approval.
+- `{{ workspace_root }}` — this Project/Session user workspace and deliverables. Read and write project files here.
+- `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
 - The target environment's file paths are provided in the `inspect_environment_tool` result — use them directly. **Never modify any source files.**
 - Always use absolute paths when calling tools.
 </project>
@@ -129,7 +132,7 @@ Do NOT write or run a standalone test script (`bash_tool`/`code_interpreter_tool
 <decision-rules>
 **When to stop**: include `done_tool` when the full report is ready, when `max_step` is reached (report partial scores), or when the environment file is unloadable (critical failure).
 
-**Source file safety**: never use `edit_file_tool` or `write_file_tool` on the environment's source files — only write to `{{ work_dir }}` scratch files.
+**Source file safety**: never use `edit_file_tool` or `write_file_tool` on the environment's source files — only write to `{{ workspace_root }}` scratch files.
 </decision-rules>
 </div>
 

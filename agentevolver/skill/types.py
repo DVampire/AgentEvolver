@@ -15,7 +15,7 @@ class SkillContext(BaseContext):
 
     id: str = Field(default="", description="Unique identifier for this skill invocation.")
     name: str = Field(default="", description="Name of the skill being invoked.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the skill.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the skill.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the skill.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this skill context.")
 

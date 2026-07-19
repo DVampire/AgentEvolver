@@ -2,7 +2,7 @@
 
 Lifecycle::
 
-    await trace_manager.initialize(work_dir="work_dir/trace")
+    await trace_manager.initialize(log_root="output/example/log/trace")
     await trace_manager.start()          # starts writer + FastAPI server
     ...
     await trace_manager.emit(event)      # non-blocking async emit
@@ -32,7 +32,7 @@ class TraceManager(metaclass=Singleton):
     """Singleton that owns the event queue, writer, and web server."""
 
     def __init__(self) -> None:
-        self._work_dir: Optional[str] = None
+        self._log_root: Optional[str] = None
         self._queue: Optional[AsyncQueue[TraceEvent]] = None
         self._writer: Optional[TraceWriter] = None
         self._server_task: Optional[asyncio.Task] = None
@@ -45,23 +45,23 @@ class TraceManager(metaclass=Singleton):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def initialize(self, work_dir: Optional[str] = None) -> None:
-        """Set work_dir and create queue / writer.  Idempotent.
+    async def initialize(self, log_root: Optional[str] = None) -> None:
+        """Set log_root and create queue / writer.  Idempotent.
 
-        If work_dir is omitted, defaults to ``{config.work_dir}/trace``.
+        If log_root is omitted, defaults to ``{config.log_root}/trace``.
         """
         if self._initialized:
             return
-        if work_dir is None:
+        if log_root is None:
             from agentevolver.config import config
-            work_dir = os.path.join(config.run_dir, "trace")
-        self._work_dir = work_dir
-        os.makedirs(work_dir, exist_ok=True)
+            log_root = os.path.join(config.log_root, "trace")
+        self._log_root = log_root
+        os.makedirs(log_root, exist_ok=True)
 
         self._queue = AsyncQueue[TraceEvent](maxsize=20_000)
-        self._writer = TraceWriter(work_dir=work_dir, queue=self._queue)
+        self._writer = TraceWriter(log_root=log_root, queue=self._queue)
         self._initialized = True
-        logger.info(f"| 🔍 TraceManager initialised (work_dir={work_dir})")
+        logger.info(f"| 🔍 TraceManager initialised (log_root={log_root})")
 
     async def start(self, *, start_server: bool = True) -> None:
         """Start the writer consumer loop and, optionally, the Trace web server."""

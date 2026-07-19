@@ -33,7 +33,7 @@ from agentevolver.message import (
 
 from agentevolver.tool import tool_manager
 from agentevolver.version import version_manager
-from agentevolver.utils import assemble_project_path, make_file_url
+from agentevolver.utils import assemble_workspace_path, make_file_url
 
 
 async def test_chat():
@@ -108,7 +108,7 @@ async def test_chat():
     
     logger.info(f"| Testing Local Image.")
     logger.info(f"| --------------------------------------------------")
-    image_url = make_file_url(file_path=assemble_project_path("tests/files/pokemon.jpg"))
+    image_url = make_file_url(file_path=assemble_workspace_path("tests/files/pokemon.jpg"))
     
     messages = [
         SystemMessage(content="You are a helpful assistant."),
@@ -158,7 +158,7 @@ async def test_audio():
     logger.info(f"| Testing Local Audio.")
     logger.info(f"| --------------------------------------------------")
 
-    audio_url = make_file_url(file_path=assemble_project_path("tests/files/audio.mp3"))
+    audio_url = make_file_url(file_path=assemble_workspace_path("tests/files/audio.mp3"))
 
     messages = [
         SystemMessage(content="You are a helpful assistant."),
@@ -250,7 +250,7 @@ async def test_pdf():
     logger.info(f"| Testing Local PDF.")
     logger.info(f"| --------------------------------------------------")
 
-    pdf_url = make_file_url(file_path=assemble_project_path("tests/files/pdf.pdf"))
+    pdf_url = make_file_url(file_path=assemble_workspace_path("tests/files/pdf.pdf"))
 
     messages = [
         SystemMessage(content="You are a helpful assistant."),
@@ -454,7 +454,7 @@ async def test_music():
     
     logger.info(f"| Testing Local Image.")
     logger.info(f"| --------------------------------------------------")
-    image_url = make_file_url(file_path=assemble_project_path("tests/files/0075.png"))
+    image_url = make_file_url(file_path=assemble_workspace_path("tests/files/0075.png"))
     
     messages = [
         SystemMessage(content="You are a helpful assistant."),

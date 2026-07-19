@@ -33,7 +33,7 @@ class NodeDeployer(Deployer):
         return DeploymentSpec(
             runtime=self.name,
             image=self.default_image,
-            workdir="/app",
+            workspace_root="/app",
             build=["npm ci || npm install", "npm run build"],
             start=serve,
             port=port,

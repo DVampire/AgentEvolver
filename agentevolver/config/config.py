@@ -3,25 +3,31 @@ from mmengine import Config as MMConfig
 from argparse import Namespace
 from typing import Union
 
-from agentevolver.utils import assemble_project_path, assemble_resource_path, Singleton
+from agentevolver.utils import assemble_resource_path, assemble_workspace_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
-    """Process general configuration and ensure paths are strings"""
-    work_dir = str(assemble_project_path(config.work_dir))
-    config.work_dir = work_dir
+    """Resolve and validate the per-run output directory hierarchy."""
+    required_roots = ("project_root", "workspace_root", "log_root")
+    missing_roots = [root for root in required_roots if root not in config]
+    if missing_roots:
+        missing = ", ".join(missing_roots)
+        raise ValueError(f"Configuration is missing required output root(s): {missing}")
 
-    if "run_dir" in config:
-        run_dir = str(assemble_project_path(config.run_dir))
-        config.run_dir = run_dir
-    else:
-        run_dir = work_dir
-        config.run_dir = run_dir  # always expose run_dir (defaults to work_dir) so managers can read it
+    project_root = str(assemble_workspace_path(config.project_root))
+    workspace_root = str(assemble_workspace_path(config.workspace_root))
+    log_root = str(assemble_workspace_path(config.log_root))
 
-    if "workspace_dir" in config:
-        workspace_dir = str(assemble_project_path(config.workspace_dir))
-        config.workspace_dir = workspace_dir
+    for root_name, root_path in (("workspace_root", workspace_root), ("log_root", log_root)):
+        if os.path.commonpath((project_root, root_path)) != project_root:
+            raise ValueError(f"{root_name} must be located under project_root: {root_path}")
 
-    log_path = os.path.join(run_dir, config.log_path)
+    config.project_root = project_root
+    config.workspace_root = workspace_root
+    config.log_root = log_root
+    for root_path in (project_root, workspace_root, log_root):
+        os.makedirs(root_path, exist_ok=True)
+
+    log_path = os.path.join(log_root, config.log_path)
     config.log_path = log_path
 
     return config
@@ -32,9 +38,8 @@ def process_tools(config: MMConfig) -> MMConfig:
         # but they are agents — handled by process_agent, not as tools.
         if "tool" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
-                # base_dir in config is already a relative path from project root
-                # (e.g., "defaultdir/tool_calling_agent/browser"), so just assemble it
-                base_dir = str(assemble_project_path(os.path.join(config.run_dir, config[key]["base_dir"])))
+                # Tool state belongs to the run's log root.
+                base_dir = str(assemble_workspace_path(os.path.join(config.log_root, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -46,7 +51,7 @@ def process_environments(config: MMConfig) -> MMConfig:
         # "environment" but they are agents — handled by process_agent.
         if "environment" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
-                base_dir = str(assemble_project_path(os.path.join(config.run_dir, config[key]["base_dir"])))
+                base_dir = str(assemble_workspace_path(os.path.join(config.log_root, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -56,7 +61,7 @@ def process_memory(config: MMConfig)->MMConfig:
     for key in config:
         if "memory" in key:
             if "base_dir" in config[key]:
-                base_dir = str(assemble_project_path(os.path.join(config.run_dir, config[key]["base_dir"])))
+                base_dir = str(assemble_workspace_path(os.path.join(config.log_root, config[key]["base_dir"])))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -76,12 +81,10 @@ def process_agent(config: MMConfig) -> MMConfig:
         entry = config[key]
         if not hasattr(entry, "get"):   # not a config dict (e.g. agent_names list)
             continue
-        # An agent's base_dir is relative to the project root (e.g.
-        # "work_dir/<tag>/extension"), so assemble it directly. Do NOT join
-        # run_dir — that double-prefixed the path (work_dir/.../default/work_dir/...).
+        # An agent's base_dir is its explicit workspace location. Do not join log_root.
         if entry.get("base_dir") is not None:
             config[key].update(dict(
-                base_dir = str(assemble_project_path(entry["base_dir"]))
+                base_dir = str(assemble_workspace_path(entry["base_dir"]))
             ))
         if entry.get("model_name") is not None:
             config[key].update(dict(

@@ -225,8 +225,8 @@ class BrowserAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
+        if not ctx.workspace_root:
+            ctx.workspace_root = self.base_dir
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")

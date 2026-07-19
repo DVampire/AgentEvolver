@@ -71,9 +71,9 @@ class DeploymentSpec(BaseModel):
 
     runtime: str = Field(description="Profile that produced this spec (static/node/python/custom/…).")
     image: str = Field(description="Container image to run in.")
-    workdir: str = Field(default="/app", description="Working directory inside the container (source is uploaded here).")
+    workspace_root: str = Field(default="/app", description="Working directory inside the container (source is uploaded here).")
     build: List[str] = Field(
-        default_factory=list, description="Shell commands run in workdir before start (fail-fast, in order)."
+        default_factory=list, description="Shell commands run in workspace_root before start (fail-fast, in order)."
     )
     start: str = Field(
         description="Server start command. MUST bind 0.0.0.0:<port> (not 127.0.0.1) to be reachable via expose_port."
@@ -98,7 +98,7 @@ class DeployRequest(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict, description="Extra env vars merged into the spec.")
     overrides: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Field-level overrides merged onto the resolved DeploymentSpec (image/build/start/health/workdir/…).",
+        description="Field-level overrides merged onto the resolved DeploymentSpec (image/build/start/health/workspace_root/…).",
     )
 
 

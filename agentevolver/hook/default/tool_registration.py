@@ -20,13 +20,19 @@ class ToolRegistrationHook(Hook):
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
-        project_root: str = extra.get("project_root") or ""
+        extension_root: str = extra.get("extension_root") or ""
 
-        tool_path = self._resolve_tool_path(target_name, reasoning, project_root)
+        tool_path = self._resolve_tool_path(target_name, reasoning, extension_root)
         if not tool_path:
             msg = f"Could not locate generated tool file for '{target_name}' in reasoning."
             logger.warning(f"| ⚠️  ToolRegistrationHook: {msg}")
             return HookResult.block(f"[registration failed] {msg}\nInclude the file path in done_tool reasoning and call done_tool again.")
+
+        from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
+        if is_staged_extension_root(extension_root):
+            validate_staged_extension(extension_root)
+            logger.info(f"| 📦 ToolRegistrationHook: staged '{target_name or os.path.basename(tool_path)}' for promotion")
+            return HookResult.allow()
 
         try:
             from agentevolver.extension import extension_manager
@@ -39,12 +45,12 @@ class ToolRegistrationHook(Hook):
             logger.warning(f"| ⚠️  ToolRegistrationHook: {e}")
             return HookResult.block(f"[registration failed] {e}\nPlease fix the code and call done_tool again.")
 
-    def _resolve_tool_path(self, target_name: Optional[str], reasoning: str, project_root: str) -> Optional[str]:
+    def _resolve_tool_path(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             token = token.strip(".,;:()")
             if "extension/" in token and "/tool/" in token and token.endswith(".py"):
-                candidate = token if token.startswith("/") else os.path.join(project_root, token)
+                candidate = token if token.startswith("/") else os.path.join(extension_root, token.removeprefix("extension/"))
                 if os.path.exists(candidate):
                     return candidate
         if target_name:

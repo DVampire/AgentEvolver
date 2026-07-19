@@ -12,7 +12,7 @@ from agentevolver.config import config
 from agentevolver.constraint.context import ConstraintContextManager
 from agentevolver.constraint.types import Constraint, ConstraintConfig, ConstraintContext
 from agentevolver.response.types import Response
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 class ConstraintManagerServer(BaseModel):
@@ -42,7 +42,7 @@ class ConstraintManagerServer(BaseModel):
             constraint_names: List of constraint names to initialize. If None, initialize all registered constraints.
         """
 
-        self.base_dir = assemble_project_path(os.path.join(config.run_dir, "constraint"))
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "constraint"))
         os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 constraint manager Server base directory: {self.base_dir}")
 

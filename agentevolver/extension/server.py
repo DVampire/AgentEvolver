@@ -30,7 +30,7 @@ from typing import Awaitable, Callable, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from agentevolver.logger import logger
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import get_extension_root
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.extension.types import Manifest, ManifestComponent
 
@@ -59,7 +59,7 @@ class ExtensionManagerServer(BaseModel):
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
-        self.base_dir = assemble_project_path(base_dir or "extension")
+        self.base_dir = os.path.abspath(base_dir) if base_dir else get_extension_root()
         os.makedirs(self.base_dir, exist_ok=True)
 
     def subscribe(self, listener: ExtensionChangeListener) -> None:

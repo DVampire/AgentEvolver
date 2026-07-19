@@ -2,7 +2,7 @@
 
 The evolve loop's undo anchor: record where everything is *before* an evolution round,
 so a regression can be rolled back to a known-good set. Writes a JSON snapshot under
-``<run_dir>/command/checkpoints/`` so it survives the process and MetaAgent can read it.
+``<log_root>/command/checkpoints/`` so it survives the process and MetaAgent can read it.
 """
 import os
 import json
@@ -25,7 +25,7 @@ class CheckpointCommand(Command):
     async def __call__(self, args: List[str], ctx: Optional[CommandContext] = None) -> Response:
         from agentevolver.version import version_manager
         from agentevolver.config import config
-        from agentevolver.utils import assemble_project_path
+        from agentevolver.utils import assemble_workspace_path
 
         label = args[0] if args else datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -35,7 +35,7 @@ class CheckpointCommand(Command):
             for n in names:
                 snapshot[f"{ctype}/{n}"] = await version_manager.get_current_version(ctype, n)
 
-        ckpt_dir = assemble_project_path(os.path.join(config.run_dir, "command", "checkpoints"))
+        ckpt_dir = assemble_workspace_path(os.path.join(config.log_root, "command", "checkpoints"))
         os.makedirs(ckpt_dir, exist_ok=True)
         path = os.path.join(ckpt_dir, f"{label}.json")
         payload = {

@@ -29,10 +29,10 @@ from agentevolver.utils.name_utils import make_id
 # Plan path helper
 # ---------------------------------------------------------------------------
 
-def make_plan_path(work_dir: str, session_id: str, suffix: str = "plan") -> str:
-    """Generate a unique plan file path: {work_dir}/{session_id}_{timestamp}_{random}.{suffix}.md"""
+def make_plan_path(workspace_root: str, session_id: str, suffix: str = "plan") -> str:
+    """Generate a unique plan file path: {workspace_root}/{session_id}_{timestamp}_{random}.{suffix}.md"""
     unique_id = make_id()
-    return os.path.join(work_dir, f"{session_id}_{unique_id}.{suffix}.md")
+    return os.path.join(workspace_root, f"{session_id}_{unique_id}.{suffix}.md")
 
 # ---------------------------------------------------------------------------
 # Timestamp helper

@@ -108,12 +108,12 @@ def load_run_results(benchmark_dir: Path) -> dict:
             if config not in results:
                 results[config] = []
 
-            for run_dir in sorted(config_dir.glob("run-*")):
-                run_number = int(run_dir.name.split("-")[1])
-                grading_file = run_dir / "grading.json"
+            for log_root in sorted(config_dir.glob("run-*")):
+                run_number = int(log_root.name.split("-")[1])
+                grading_file = log_root / "grading.json"
 
                 if not grading_file.exists():
-                    print(f"Warning: grading.json not found in {run_dir}")
+                    print(f"Warning: grading.json not found in {log_root}")
                     continue
 
                 try:
@@ -136,7 +136,7 @@ def load_run_results(benchmark_dir: Path) -> dict:
                 # Extract timing — check grading.json first, then sibling timing.json
                 timing = grading.get("timing", {})
                 result["time_seconds"] = timing.get("total_duration_seconds", 0.0)
-                timing_file = run_dir / "timing.json"
+                timing_file = log_root / "timing.json"
                 if result["time_seconds"] == 0.0 and timing_file.exists():
                     try:
                         with open(timing_file) as tf:

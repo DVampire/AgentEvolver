@@ -14,8 +14,9 @@ with read_base():
     from .benchmarks.hle import hle_benchmark
 
 tag = "hle"
-work_dir = f"work_dir/{tag}"
-run_dir = f"work_dir/{tag}/run"
+project_root = f"output/{tag}"
+log_root = f"{project_root}/log"
+workspace_root = f"{project_root}/workspace"
 log_path = "hle.log"
 
 version = "0.1.0"
@@ -46,7 +47,7 @@ file_system_memory.update(
 
 # -------- answering agent --------
 general_agent.update(
-    base_dir=work_dir,
+    base_dir=workspace_root,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

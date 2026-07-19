@@ -22,7 +22,7 @@ from agentevolver.message.types import Message, HumanMessage, ContentPartAudio
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.model.types import TokenUsage
 from agentevolver.logger import logger
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 class TranscribeOpenAI(BaseModel):
@@ -158,16 +158,16 @@ class TranscribeOpenAI(BaseModel):
                                 file_path = audio_url[7:]
                                 # Handle absolute paths
                                 if not os.path.isabs(file_path):
-                                    file_path = assemble_project_path(file_path)
+                                    file_path = assemble_workspace_path(file_path)
                                 audio_file = file_path
                                 filename = os.path.basename(file_path)
                             elif os.path.exists(audio_url):
                                 # Direct file path
                                 audio_file = audio_url
                                 filename = os.path.basename(audio_url)
-                            elif os.path.exists(assemble_project_path(audio_url)):
+                            elif os.path.exists(assemble_workspace_path(audio_url)):
                                 # Relative file path
-                                audio_file = assemble_project_path(audio_url)
+                                audio_file = assemble_workspace_path(audio_url)
                                 filename = os.path.basename(audio_file)
                             else:
                                 # Try to download from URL (http/https)
@@ -296,7 +296,7 @@ class TranscribeOpenAI(BaseModel):
                 # Remove file:// prefix
                 file_path = audio_file[7:]
                 if not os.path.isabs(file_path):
-                    file_path = assemble_project_path(file_path)
+                    file_path = assemble_workspace_path(file_path)
                 if not os.path.exists(file_path):
                     raise ValueError(f"Audio file not found: {file_path}")
                 file_obj = open(file_path, "rb")
@@ -304,7 +304,7 @@ class TranscribeOpenAI(BaseModel):
                 # Regular file path
                 if not os.path.exists(audio_file):
                     # Try relative path
-                    file_path = assemble_project_path(audio_file)
+                    file_path = assemble_workspace_path(audio_file)
                     if not os.path.exists(file_path):
                         raise ValueError(f"Audio file not found: {audio_file}")
                     audio_file = file_path
@@ -513,4 +513,3 @@ class TranscribeOpenAI(BaseModel):
                 message=f"Unexpected error: {str(e)}",
                 extra={"error": str(e), "model": self.name}
             )
-

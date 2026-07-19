@@ -1,7 +1,7 @@
 import os
 
 from agentevolver.logger import logger
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 
 def clean_text(text: str) -> str:
@@ -43,7 +43,7 @@ def ensure_dataset(name: str, hf_repo_id: str, repo_type: str = "dataset", revis
     Returns:
         Absolute path to the local dataset directory.
     """
-    local_dir = assemble_project_path(os.path.join("datasets", name))
+    local_dir = assemble_workspace_path(os.path.join("datasets", name))
 
     if _dir_has_content(local_dir):
         return local_dir
@@ -55,7 +55,7 @@ def ensure_dataset(name: str, hf_repo_id: str, repo_type: str = "dataset", revis
 
     # Load .env so HF_TOKEN (e.g. for gated datasets like GPQA) is available.
     from dotenv import load_dotenv
-    load_dotenv(assemble_project_path(".env"))
+    load_dotenv(assemble_workspace_path(".env"))
     hf_token = os.environ.get("HF_TOKEN") or None
 
     logger.info(f"| 📥 Dataset '{name}' not found locally; downloading '{hf_repo_id}' from HuggingFace into {local_dir} ...")

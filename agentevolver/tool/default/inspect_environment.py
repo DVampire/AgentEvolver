@@ -5,7 +5,7 @@ from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
-from agentevolver.utils import get_project_root
+from agentevolver.utils import get_extension_root
 
 _DESCRIPTION = "Fetch a registered environment's live registry facts (registration status, version, evolvability/enable_evolving, source file / ENVIRONMENT.md path) by name."
 
@@ -49,10 +49,10 @@ class InspectEnvironment(Tool):
 
         info = await environment_manager.get_info(name)
 
-        root = get_project_root()
+        root = get_extension_root()
         # Two possible layouts: a single-file module or a directory with environment.py + ENVIRONMENT.md.
-        py_flat = os.path.join(root, "extension", "environment", f"{name}.py")
-        env_dir = os.path.join(root, "extension", "environment", name)
+        py_flat = os.path.join(root, "environment", f"{name}.py")
+        env_dir = os.path.join(root, "environment", name)
         py_dir = os.path.join(env_dir, "environment.py")
         md_path = os.path.join(env_dir, "ENVIRONMENT.md")
 

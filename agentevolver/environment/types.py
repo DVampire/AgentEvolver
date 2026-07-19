@@ -20,7 +20,7 @@ class EnvironmentContext(BaseContext):
     id: str = Field(default="", description="Unique identifier for this environment call.")
     name: str = Field(default="", description="Name of the environment being called.")
     action: str = Field(default="", description="Name of the action being invoked.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory for environment operations.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory for environment operations.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the action.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this environment context.")
 

@@ -9,7 +9,7 @@ class BaseContext(BaseModel):
     """Base class for all module-level contexts."""
     id: str = Field(description="Unique execution identifier.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this context.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the caller.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the caller.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload for this context.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this context.")
 
@@ -17,14 +17,14 @@ class BaseContext(BaseModel):
     def create(
         cls,
         name: Optional[str] = None,
-        work_dir: Optional[str] = None,
+        workspace_root: Optional[str] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> "BaseContext":
         """Factory: creates a context with a unique ID."""
         return cls(
             id=make_id(),
             name=name,
-            work_dir=work_dir,
+            workspace_root=workspace_root,
             extra=extra if extra is not None else {}
         )
 
@@ -33,7 +33,7 @@ class BaseContext(BaseModel):
         if ctx is None:
             return cls(id=make_id(),
                        name=None,
-                       work_dir=None,
+                       workspace_root=None,
                        input={},
                        extra={})
         # Fall back to the target class's field default when the source value is
@@ -53,7 +53,7 @@ class BaseContext(BaseModel):
         return cls(
             id=ctx.id,
             name=name,
-            work_dir=getattr(ctx, "work_dir", None),
+            workspace_root=getattr(ctx, "workspace_root", None),
             input=getattr(ctx, "input", {}),
             extra=extra,
         )
@@ -65,5 +65,5 @@ class SessionContext(BaseContext):
 
     id: str = Field(description="Unique session identifier.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this session.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory for this session.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory for this session.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this session.")

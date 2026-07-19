@@ -40,7 +40,7 @@ class HostSandbox(Sandbox):
     async def start(self) -> None:
         if self._started:
             return
-        base = getattr(self.config, "host_base", None) or os.path.join("work_dir", "deploy_host")
+        base = getattr(self.config, "host_base", None) or os.path.join("workspace_root", "deploy_host")
         self._root = os.path.abspath(base)
         os.makedirs(self._root, exist_ok=True)
         self._started = True
@@ -63,11 +63,11 @@ class HostSandbox(Sandbox):
         self,
         command: str,
         *,
-        work_dir: Optional[str] = None,
+        workspace_root: Optional[str] = None,
         timeout: Optional[Union[int, timedelta]] = None,
         env: Optional[Dict[str, str]] = None,
     ) -> ExecResult:
-        cwd = work_dir or self._root
+        cwd = workspace_root or self._root
         try:
             os.makedirs(cwd, exist_ok=True)
         except Exception:

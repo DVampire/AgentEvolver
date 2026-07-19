@@ -35,8 +35,9 @@ from agentevolver.constraint import Constraint
 from agentevolver.registry import CONSTRAINT
 from agentevolver.response import Response
 from agentevolver.utils import (
-    assemble_project_path,
-    get_project_root,
+    assemble_workspace_path,
+    get_extension_root,
+    get_package_root,
 )
 
 # Tools that mutate the framework / deliverables. A read_only agent (e.g. an evaluator)
@@ -55,7 +56,7 @@ class AgentContext(BaseContext):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this agent invocation.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this agent invocation.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the agent.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this agent context.")
     parent_session_id: Optional[str] = Field(default=None, description="Name of the parent MetaAgent, used by trace and escalation hooks.")
@@ -462,13 +463,13 @@ class Agent(BaseModel):
         connector_context = f"### Available Connectors\n{available_connectors}"
         return {"connector_context": connector_context, "available_connectors": available_connectors}
 
-    async def _resolve_work_dir(self, ctx: AgentContext, **kwargs) -> str:
-        """Resolve the work_dir surfaced in the prompt's `{{ work_dir }}` slot.
+    async def _resolve_workspace_root(self, ctx: AgentContext, **kwargs) -> str:
+        """Resolve the workspace_root surfaced in the prompt's `{{ workspace_root }}` slot.
 
-        Prefers ctx.work_dir (injected by MetaAgent for sub-agents) over
+        Prefers ctx.workspace_root (injected by MetaAgent for sub-agents) over
         self.base_dir so all agents in a MetaAgent run share the same directory.
         """
-        return assemble_project_path(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+        return assemble_workspace_path(ctx.workspace_root if ctx and ctx.workspace_root else self.base_dir)
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
         """A live listing of the working directory's files, refreshed each step.
@@ -477,17 +478,17 @@ class Agent(BaseModel):
         spending a tool call. Opt-in: agents that do file work expose this as a
         `workspace` sub-module from their `_get_agent_context` override.
         """
-        work_dir = os.path.abspath(ctx.work_dir if ctx and ctx.work_dir else self.base_dir)
+        workspace_root = os.path.abspath(ctx.workspace_root if ctx and ctx.workspace_root else self.base_dir)
         try:
-            entries = sorted(os.listdir(work_dir))
+            entries = sorted(os.listdir(workspace_root))
             lines = [
-                f"  {name}{'/' if os.path.isdir(os.path.join(work_dir, name)) else ''}"
+                f"  {name}{'/' if os.path.isdir(os.path.join(workspace_root, name)) else ''}"
                 for name in entries
             ]
             snapshot = "\n".join(lines) if lines else "  (empty)"
         except Exception:
             snapshot = "  (unavailable)"
-        return f"{work_dir}\n{snapshot}"
+        return f"{workspace_root}\n{snapshot}"
 
     def _task_with_input_files(self, task: str, **kwargs) -> str:
         """Append the input files the user attached to the task body.
@@ -508,10 +509,19 @@ class Agent(BaseModel):
                             **kwargs) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
-        work_dir = await self._resolve_work_dir(ctx=ctx, **kwargs)
-        project_root = get_project_root()
+        workspace_root = await self._resolve_workspace_root(ctx=ctx, **kwargs)
+        roots = getattr(ctx, "extra", {}) or {}
+        extension_root = str(roots.get("extension_root") or get_extension_root())
+        package_root = str(roots.get("package_root") or get_package_root())
+        project_root = str(roots.get("project_root") or getattr(config, "project_root", ""))
+        log_root = str(roots.get("log_root") or getattr(config, "log_root", ""))
         system_modules = dict(
-            max_actions=self.max_actions, work_dir=work_dir, project_root=project_root,
+            max_actions=self.max_actions,
+            extension_root=extension_root,
+            package_root=package_root,
+            project_root=project_root,
+            workspace_root=workspace_root,
+            log_root=log_root,
         )
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
 
@@ -670,7 +680,7 @@ class Agent(BaseModel):
         await hook_manager(
             name="snapshot_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
-                   "task_id": task_id, "work_dir": getattr(ctx, "work_dir", None),
+                   "task_id": task_id, "workspace_root": getattr(ctx, "workspace_root", None),
                    "messages": messages, "reasoning": reasoning, "plan": plan},
             ctx=ctx,
         )
@@ -901,7 +911,7 @@ class Agent(BaseModel):
                 child, inp.get("task", ""),
                 files=inp.get("files"), target_name=inp.get("target_name"),
                 allowlists={k: inp.get(k) for k in ("tool_allowlist", "skill_allowlist", "connector_allowlist")},
-                parent_ref=parent_ref, work_dir=getattr(ctx, "work_dir", None) or self.base_dir,
+                parent_ref=parent_ref, workspace_root=getattr(ctx, "workspace_root", None) or self.base_dir,
             )
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             return resp.message, False, None, None
@@ -974,8 +984,8 @@ class Agent(BaseModel):
         logger.info(f"| 🚀 Starting {self.name}: {task}")
         if ctx is None:
             ctx = AgentContext()
-        if not ctx.work_dir:
-            ctx.work_dir = self.base_dir
+        if not ctx.workspace_root:
+            ctx.workspace_root = self.base_dir
         if files:
             logger.info(f"| 📂 Attached files: {files}")
 

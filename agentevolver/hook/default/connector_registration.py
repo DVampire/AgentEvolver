@@ -20,13 +20,19 @@ class ConnectorRegistrationHook(Hook):
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
-        project_root: str = extra.get("project_root") or ""
+        extension_root: str = extra.get("extension_root") or ""
 
-        connector_dir = self._resolve_connector_dir(target_name, reasoning, project_root)
+        connector_dir = self._resolve_connector_dir(target_name, reasoning, extension_root)
         if not connector_dir:
             msg = f"Could not locate generated connector directory for '{target_name}' in reasoning."
             logger.warning(f"| ⚠️  ConnectorRegistrationHook: {msg}")
             return HookResult.block(f"[registration failed] {msg}\nInclude the connector directory path in done_tool reasoning and call done_tool again.")
+
+        from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
+        if is_staged_extension_root(extension_root):
+            validate_staged_extension(extension_root)
+            logger.info(f"| 📦 ConnectorRegistrationHook: staged '{target_name or os.path.basename(connector_dir)}' for promotion")
+            return HookResult.allow()
 
         try:
             from agentevolver.extension import extension_manager
@@ -39,13 +45,13 @@ class ConnectorRegistrationHook(Hook):
             logger.warning(f"| ⚠️  ConnectorRegistrationHook: {e}")
             return HookResult.block(f"[registration failed] {e}\nPlease fix the issue and call done_tool again.")
 
-    def _resolve_connector_dir(self, target_name: Optional[str], reasoning: str, project_root: str) -> Optional[str]:
+    def _resolve_connector_dir(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             if "extension/" in token and "/connector/" in token:
                 candidate = token.strip(".,;:()")
                 if not candidate.startswith("/"):
-                    candidate = os.path.join(project_root, candidate)
+                    candidate = os.path.join(extension_root, candidate.removeprefix("extension/"))
                 if os.path.isdir(candidate.rstrip("/")):
                     return candidate.rstrip("/")
         if target_name:

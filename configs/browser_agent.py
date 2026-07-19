@@ -5,8 +5,9 @@ with read_base():
     from .memory.file_system_memory import file_system_memory
 
 tag = "browser_agent"
-work_dir = f"work_dir/{tag}"
-run_dir = f"work_dir/{tag}/run"
+project_root = f"output/{tag}"
+log_root = f"{project_root}/log"
+workspace_root = f"{project_root}/workspace"
 log_path = "agent.log"
 
 version = "0.1.0"
@@ -27,7 +28,7 @@ env_names = [
 ]
 
 #-----------------BROWSER ENVIRONMENT CONFIG-----------------
-# base_dir is joined onto run_dir by config.process_environments
+# base_dir is joined onto log_root by config.process_environments
 # → default/environment/browser; screenshots go to screenshots/<session_id>/
 browser_environment = dict(
     base_dir="environment/browser",
@@ -49,7 +50,7 @@ file_system_memory.update(
 
 #-----------------BROWSER AGENT CONFIG-----------------
 browser_agent.update(
-    base_dir=work_dir,
+    base_dir=workspace_root,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

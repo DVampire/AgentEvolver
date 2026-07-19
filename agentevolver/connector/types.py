@@ -15,7 +15,7 @@ class ConnectorContext(BaseContext):
 
     id: str = Field(default="", description="Unique identifier for this connector invocation.")
     name: str = Field(default="", description="Name of the connector (MCP server) being invoked.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the connector.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the connector.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the connector.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this connector context.")
 

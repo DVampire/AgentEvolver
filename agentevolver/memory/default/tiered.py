@@ -40,7 +40,7 @@ from agentevolver.memory.types import Memory
 from agentevolver.message.types import HumanMessage, SystemMessage
 from agentevolver.model import model_manager
 from agentevolver.trace.types import TraceEvent, TraceEventType
-from agentevolver.utils import assemble_project_path
+from agentevolver.utils import assemble_workspace_path
 
 _FLOW_LABEL_MAX = 80
 
@@ -179,7 +179,7 @@ class TieredMemory(Memory):
 
     def __init__(self, base_dir: str = "", **kwargs: Any) -> None:
         super().__init__(
-            base_dir=str(assemble_project_path(base_dir)) if base_dir else "",
+            base_dir=str(assemble_workspace_path(base_dir)) if base_dir else "",
             **kwargs,
         )
         # A fetch window must always be fully backed by raw records.

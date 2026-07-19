@@ -279,7 +279,7 @@ class PromptContext(BaseContext):
 
     id: str = Field(default="", description="Unique identifier for this prompt render.")
     name: str = Field(default="", description="Name of the prompt being rendered.")
-    work_dir: Optional[str] = Field(default=None, description="Working directory available to the caller.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the caller.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the prompt.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this prompt context.")
 

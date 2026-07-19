@@ -40,7 +40,7 @@ regulatory path and trial design.
   "idiopathic pulmonary fibrosis").
 - **`additional_context`** (optional) — areas to focus on, parent
   indication, or other framing.
-- **`workdir`** (optional) — where to write waypoints and the final report.
+- **`workspace_root`** (optional) — where to write waypoints and the final report.
   Defaults to `./do_not_commit/indication-dossier-<slug>/`.
 
 ## Tools this skill expects
@@ -59,7 +59,7 @@ the underlying public source (clinicaltrials.gov, pubmed.ncbi.nlm.nih.gov).
 ## Output layout
 
 ```
-<workdir>/
+<workspace_root>/
 └── waypoints/
     ├── progress.json                 # loop control
     ├── meta.json                     # phase 1
@@ -72,13 +72,13 @@ the underlying public source (clinicaltrials.gov, pubmed.ncbi.nlm.nih.gov).
 ```
 
 Schemas for every waypoint file are in `references/waypoint-schemas.md`.
-Waypoints are the resumable state. If the workdir already has waypoints, read
+Waypoints are the resumable state. If the workspace_root already has waypoints, read
 them, summarize what's done, and ask which phase to resume from.
 
 ## Before starting
 
 Read `references/00-research-standards.md`. It governs sourcing and the
-anti-fabrication rules for every phase. Then create `<workdir>/waypoints/`.
+anti-fabrication rules for every phase. Then create `<workspace_root>/waypoints/`.
 
 ## Workflow
 
@@ -134,7 +134,7 @@ gap rather than filling it.
 
 ## Resuming
 
-If invoked with a `workdir` that already contains waypoints: list which phases
+If invoked with a `workspace_root` that already contains waypoints: list which phases
 are complete (waypoint file exists and is non-empty), show the meta summary,
 and ask the user which phase to run next. Never overwrite an existing waypoint
 without confirmation.

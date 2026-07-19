@@ -1,16 +1,24 @@
 """Path resolution for AgentEvolver — the single place that knows where things live.
 
-Two distinct roots, kept separate so the package works both from the repo and when
+Four distinct roots, kept separate so the package works both from the repo and when
 pip-installed into an arbitrary environment:
 
 - **package root** — the installed ``agentevolver/`` directory. Shipped, read-only
   resources live here (default prompts, visual assets, bundled skills, default configs
   once bundled). Located via ``__file__`` so it is correct wherever the package installs.
 
-- **home dir** — a user-writable base for run data: ``work_dir``, ``run_dir``,
-  generated capabilities under ``extension/``, logs, checkpoints. Chosen by the
+- **home dir** — an internal user-writable base for the other roots. Chosen by the
   ``AGENTEVOLVER_HOME`` environment variable, else the current working directory. This is
   never inside site-packages, so an installed package never writes into itself.
+
+- **extension root** — ``<home>/extension``. Self-evolved tools, agents, skills,
+  connectors, and environments are created here.
+
+- **workspace root** — configured per session. User projects and task deliverables live
+  here.
+
+- **log root** — configured per run. Logs, checkpoints, trajectories, and task state live
+  here.
 
 Resources the user may override (configs) are looked up in home → repo → package order.
 """
@@ -27,7 +35,7 @@ def package_root() -> Path:
 
 
 def home_dir() -> Path:
-    """User-writable base for run data. ``AGENTEVOLVER_HOME`` if set, else the cwd."""
+    """Internal base for user-writable AgentEvolver roots."""
     env = os.environ.get("AGENTEVOLVER_HOME")
     if env:
         p = Path(env).expanduser()
@@ -43,6 +51,13 @@ def data_path(rel: str = "") -> str:
     if os.path.isabs(rel):
         return os.path.abspath(rel)
     return str(home_dir() / rel)
+
+
+def extension_root() -> Path:
+    """Writable root for self-evolved extension components."""
+    root = home_dir() / "extension"
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
 
 
 def resource_path(rel: str) -> str:
