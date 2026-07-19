@@ -74,6 +74,7 @@ class EditFileTool(Tool):
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=new_string),
+                workspace=getattr(kwargs.get("ctx"), "workspace_root", ""),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

@@ -242,12 +242,45 @@ class ProjectSandbox:
         manifest.setdefault("promotions", []).append({
             "id": promotion_id,
             "at": datetime.now(timezone.utc).isoformat(),
+            "status": "copied",
             "overwrite": overwrite,
             "backup_root": str(backup_root) if backup_root.exists() else None,
             "components": promoted,
         })
         self._write_manifest(manifest)
-        return {**report, "promoted": promoted, "backup_root": str(backup_root) if backup_root.exists() else None}
+        return {
+            **report, "promotion_id": promotion_id, "promoted": promoted,
+            "backup_root": str(backup_root) if backup_root.exists() else None,
+        }
+
+    def mark_promotion(self, report: Dict[str, Any], status: str) -> None:
+        """Record the final registration outcome in the promotion audit log."""
+        promotion_id = report.get("promotion_id")
+        if not promotion_id:
+            return
+        manifest = self._load_manifest()
+        for promotion in reversed(manifest.get("promotions", [])):
+            if promotion.get("id") == promotion_id:
+                promotion["status"] = status
+                promotion["finished_at"] = datetime.now(timezone.utc).isoformat()
+                self._write_manifest(manifest)
+                return
+
+    def rollback_promotion(self, report: Dict[str, Any]) -> None:
+        """Restore filesystem state for a promotion whose registration failed."""
+        backup_value = report.get("backup_root")
+        backup_root = Path(backup_value).resolve() if backup_value else None
+        for component in reversed(report.get("promoted", [])):
+            destination = Path(component["destination"]).resolve()
+            if not _inside(destination, self.shared_extension_root):
+                raise ValueError(f"Rollback target escapes shared extension root: {destination}")
+            _remove_entry(destination)
+            if backup_root is not None:
+                backup = backup_root / destination.relative_to(self.shared_extension_root)
+                if backup.exists() or backup.is_symlink():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(backup), str(destination))
+        self.mark_promotion(report, "rolled_back")
 
 
 def staged_extension_root(ctx: Any) -> str:

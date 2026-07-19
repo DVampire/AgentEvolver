@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from pydantic import Field
 
-from agentevolver.permission import Operation, PermissionRequest, permission_manager
+from agentevolver.permission import Operation, PermissionMode, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
 from agentevolver.sandbox.types import get_current_sandbox
 from agentevolver.tool.types import Tool
@@ -58,25 +58,43 @@ class BashTool(Tool):
             return Response(type=ResponseType.TOOL, success=False, message="Error: Empty command provided")
 
         ctx = kwargs.get("ctx")
-        if getattr(ctx, "extra", {}).get("gateway_session") and get_current_sandbox() is None:
+        sandbox = get_current_sandbox()
+        mode = PermissionMode(self.permission_mode)
+        gateway_session = bool(getattr(ctx, "extra", {}).get("gateway_session"))
+        if sandbox is None and (gateway_session or mode != PermissionMode.DANGER_FULL_ACCESS):
             return Response(
                 type=ResponseType.TOOL,
                 success=False,
                 message=(
-                    "Sandbox blocked host Bash execution. Configure an isolated container backend "
-                    "before running shell commands in a Gateway session."
+                    "Sandbox blocked host Bash execution for a restricted tool. Configure an "
+                    "isolated backend, or explicitly mark the tool danger_full_access for a "
+                    "trusted local-only run."
                 ),
             )
 
         # Permission check
         req = PermissionRequest(op=Operation.BASH, target=command)
-        result = permission_manager.check(self.name, req)
+        result = permission_manager.check(
+            self.name, req, workspace=getattr(ctx, "workspace_root", "")
+        )
         if not result.allowed:
             return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
         warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
         try:
+            if sandbox is not None:
+                execution = await asyncio.wait_for(
+                    sandbox.run_command(command), timeout=self.timeout
+                )
+                message = warning_prefix + execution.as_message()
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=execution.success,
+                    message=message,
+                    data={"exit_code": execution.exit_code, "command": command, "sandboxed": True},
+                )
+
             # Keep commands such as ``python3`` and ``pip`` in the same runtime
             # environment that launched AgentEvolver (for example conda's agentos).
             runtime_bin = os.path.dirname(sys.executable)

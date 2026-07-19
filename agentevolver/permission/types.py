@@ -145,6 +145,7 @@ _GIT_WRITE_SUBCOMMANDS = frozenset({
 
 _SED_INPLACE_RE = re.compile(r"\bsed\b.*-[a-zA-Z]*i")
 _REDIRECT_WRITE_RE = re.compile(r"(?<![<>])>(?!>)")
+_SHELL_COMPOSITION_RE = re.compile(r"(?:&&|\|\||[;|`]|\$\(|\n)")
 
 
 def _classify_intent(command: str) -> CommandIntent:
@@ -165,6 +166,12 @@ def _classify_intent(command: str) -> CommandIntent:
         return CommandIntent.PACKAGE_MANAGEMENT
     if prog == "git" and len(tokens) > 1:
         return CommandIntent.WRITE if tokens[1] in _GIT_WRITE_SUBCOMMANDS else CommandIntent.READ_ONLY
+    # General-purpose interpreters, network clients and build tools are not
+    # read-only merely because their executable name looks familiar. They can
+    # write arbitrary files or run arbitrary child commands.
+    if prog in {"python", "python3", "node", "ruby", "perl", "lua", "curl", "wget",
+                "cargo", "go", "make", "cmake", "tee"}:
+        return CommandIntent.UNKNOWN
     if prog in _READ_ONLY_COMMANDS:
         return CommandIntent.READ_ONLY
     return CommandIntent.UNKNOWN
@@ -178,13 +185,18 @@ def _validate_mode(command: str, mode: PermissionMode) -> Optional[ValidationRes
 
     if mode == PermissionMode.READ_ONLY:
         if intent in (CommandIntent.DESTRUCTIVE, CommandIntent.WRITE,
-                      CommandIntent.SYSTEM_ADMIN, CommandIntent.PACKAGE_MANAGEMENT):
+                      CommandIntent.SYSTEM_ADMIN, CommandIntent.PACKAGE_MANAGEMENT,
+                      CommandIntent.UNKNOWN):
             return ValidationResult.block(
                 f"Command blocked in read_only mode (classified as {intent.value}): {command!r}"
             )
         if _REDIRECT_WRITE_RE.search(command):
             return ValidationResult.block(
                 f"Output redirect blocked in read_only mode: {command!r}"
+            )
+        if _SHELL_COMPOSITION_RE.search(command):
+            return ValidationResult.block(
+                f"Composed shell command blocked in read_only mode: {command!r}"
             )
 
     if mode == PermissionMode.WORKSPACE_WRITE:
@@ -303,7 +315,11 @@ def check_file_write(path: str, content: str, mode: PermissionMode, workspace: s
         try:
             resolved = os.path.realpath(path)
             norm_ws = os.path.realpath(workspace)
-            if not resolved.startswith(norm_ws) and not resolved.startswith("/tmp"):
+            try:
+                inside_workspace = os.path.commonpath((resolved, norm_ws)) == norm_ws
+            except ValueError:
+                inside_workspace = False
+            if not inside_workspace:
                 return ValidationResult.block(
                     f"Path {path!r} is outside the workspace {workspace!r}."
                 )
@@ -426,8 +442,9 @@ class PermissionEnforcer:
 
     def check(self, input: PermissionRequest, **kwargs) -> ValidationResult:
         """Unified check — dispatches on input.op."""
+        workspace = str(kwargs.get("workspace") or self.workspace)
         if input.op == Operation.BASH:
-            result = validate_command(input.target, self.mode, self.workspace)
+            result = validate_command(input.target, self.mode, workspace)
             if not result.allowed:
                 return result
             policy_result = self.policy.authorize(self.entity_name, input.target)
@@ -436,10 +453,10 @@ class PermissionEnforcer:
             return result  # may carry a warning
 
         if input.op == Operation.READ:
-            return check_file_read(input.target, self.mode, self.workspace)
+            return check_file_read(input.target, self.mode, workspace)
 
         if input.op == Operation.WRITE:
-            result = check_file_write(input.target, input.content, self.mode, self.workspace)
+            result = check_file_write(input.target, input.content, self.mode, workspace)
             if not result.allowed:
                 return result
             policy_result = self.policy.authorize(self.entity_name, input.target)

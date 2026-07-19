@@ -92,7 +92,7 @@ class AgentGateway:
         self._initialized = False
         self._stopping = False
 
-    _MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024
+    _MAX_UPLOAD_SIZE = 100 * 1024 * 1024
     _MAX_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
     async def start(self, config_path: str, *, stdio: bool = False) -> None:
@@ -250,13 +250,40 @@ class AgentGateway:
     async def _command_extension_promote(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
         sandbox = self._sessions[session_id].sandbox
-        report = sandbox.promote(overwrite=bool(params.get("overwrite", False)))
+        before = extension_manager.read_manifest()
+        report = sandbox.promote(
+            overwrite=bool(params.get("overwrite", False)),
+            relative_paths=params.get("relative_paths"),
+        )
         registered: list[Dict[str, str]] = []
-        for component in report["promoted"]:
-            module = component["module"]
-            config_data = {"enable_evolving": True} if module != "prompt" else None
-            name = await extension_manager.add_component(module, component["destination"], config=config_data)
-            registered.append({"module": module, "name": name, "path": component["destination"]})
+        try:
+            for component in report["promoted"]:
+                module = component["module"]
+                config_data = {"enable_evolving": True} if module != "prompt" else None
+                name = await extension_manager.add_component(
+                    module, component["destination"], config=config_data,
+                    run_smoke=params.get("run_smoke"),
+                )
+                registered.append({"module": module, "name": name, "path": component["destination"]})
+        except Exception:
+            for item in reversed(registered):
+                try:
+                    await extension_manager.unload(item["module"], item["name"])
+                except Exception as rollback_error:  # continue restoring the batch
+                    logger.error(
+                        f"| ❌ Failed to unload partial promotion "
+                        f"{item['module']}:{item['name']}: {rollback_error}",
+                        exc_info=True,
+                    )
+            try:
+                sandbox.rollback_promotion(report)
+            finally:
+                # add_component may have unloaded the failing live component before
+                # raising. Restore the exact pre-transaction active set even when
+                # filesystem cleanup itself reports an error.
+                await extension_manager.restore_manifest(before)
+            raise
+        sandbox.mark_promotion(report, "committed")
         payload = {**report, "registered": registered}
         await self._publish("extension.promoted", payload, session_id=session_id)
         return payload

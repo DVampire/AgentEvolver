@@ -8,6 +8,7 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
+import pytest
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 
@@ -34,6 +35,8 @@ from agentevolver.message import (
 from agentevolver.tool import tool_manager
 from agentevolver.version import version_manager
 from agentevolver.utils import assemble_workspace_path, make_file_url
+
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 async def test_chat():

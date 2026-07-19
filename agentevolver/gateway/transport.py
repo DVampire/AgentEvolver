@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import sys
 from contextlib import suppress
@@ -47,7 +48,10 @@ async def serve_stdio(gateway: AgentGateway) -> None:
         gateway.unsubscribe(event_queue)
 
 
-def create_websocket_app(gateway: AgentGateway, *, token: Optional[str] = None):
+def create_websocket_app(
+    gateway: AgentGateway, *, token: Optional[str] = None,
+    allowed_origins: Optional[set[str]] = None,
+):
     """Create the optional FastAPI transport without importing it for stdio mode."""
     from fastapi.responses import JSONResponse
 
@@ -60,17 +64,28 @@ def create_websocket_app(gateway: AgentGateway, *, token: Optional[str] = None):
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         supplied_token = websocket.query_params.get("token") or websocket.headers.get("authorization", "").removeprefix("Bearer ")
-        if token and supplied_token != token:
+        supplied_token = supplied_token or ""
+        if token and not hmac.compare_digest(supplied_token, token):
             await websocket.close(code=1008, reason="Invalid gateway token")
+            return
+        origin = websocket.headers.get("origin")
+        if allowed_origins is not None and origin not in allowed_origins:
+            await websocket.close(code=1008, reason="Origin is not allowed")
             return
         await websocket.accept()
         event_queue = await gateway.subscribe()
+        outbound: asyncio.Queue[str] = asyncio.Queue(maxsize=2_000)
 
-        async def write_events() -> None:
+        async def forward_events() -> None:
             while True:
-                await websocket.send_text(_encode(await event_queue.get()))
+                await outbound.put(_encode(await event_queue.get()))
 
-        writer = asyncio.create_task(write_events(), name="gateway-websocket-events")
+        async def write_messages() -> None:
+            while True:
+                await websocket.send_text(await outbound.get())
+
+        forwarder = asyncio.create_task(forward_events(), name="gateway-websocket-events")
+        writer = asyncio.create_task(write_messages(), name="gateway-websocket-writer")
         try:
             while True:
                 try:
@@ -78,13 +93,13 @@ def create_websocket_app(gateway: AgentGateway, *, token: Optional[str] = None):
                     response = await gateway.handle(command)
                 except ValidationError as exc:
                     response = error_response("unknown", "invalid_command", str(exc))
-                await websocket.send_text(_encode(response))
+                await outbound.put(_encode(response))
         except WebSocketDisconnect:
             pass
         finally:
+            forwarder.cancel()
             writer.cancel()
-            with suppress(asyncio.CancelledError):
-                await writer
+            await asyncio.gather(forwarder, writer, return_exceptions=True)
             gateway.unsubscribe(event_queue)
 
     return app

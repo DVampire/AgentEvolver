@@ -24,6 +24,7 @@ each `*_manager`, and per-component version numbering to `version_manager`.
 
 import os
 import shutil
+import tempfile
 from inspect import isawaitable
 from typing import Awaitable, Callable, Dict, List, Optional
 
@@ -120,8 +121,25 @@ class ExtensionManagerServer(BaseModel):
         return Manifest()
 
     def _write_manifest(self, manifest: Manifest) -> None:
-        with open(self._manifest_path(), "w", encoding="utf-8") as f:
-            f.write(manifest.model_dump_json(indent=2))
+        """Durably replace the manifest; readers never observe partial JSON."""
+        path = self._manifest_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".manifest-", suffix=".tmp", dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(manifest.model_dump_json(indent=2))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    async def restore_manifest(self, manifest: Manifest) -> None:
+        """Atomically restore and reload a previously captured active set."""
+        async with file_lock(self._manifest_path()):
+            self._write_manifest(manifest)
+        await self.reload()
 
     # ------------------------------------------------------------------
     # Cold start
@@ -194,12 +212,12 @@ class ExtensionManagerServer(BaseModel):
         Returns the registered component name. The version is assigned by the owning
         manager (via version_manager), so re-adding an existing component evolves it.
 
-        ``run_smoke`` opt-in gates the newly registered component behind a replay
-        smoke run (see ``src/extension/smoke_gate.py``). On failure the component is
+        ``run_smoke`` controls the replay gate for the newly registered component
+        smoke run (see ``agentevolver/extension/smoke_gate.py``). On failure the component is
         rolled back to its previous version (or unloaded if brand-new) and
         ``EvolutionRejected`` is raised. Default (``None``) reads ``config.extension``
-        ``smoke_gate`` and otherwise stays off — zero behavior change to callers that
-        don't opt in.
+        ``smoke_gate`` and otherwise defaults on. Callers must explicitly pass
+        ``run_smoke=False`` only for an already-validated administrative restore.
         """
         # add_component is the evolution-write entry point, so it enforces the
         # enable_evolving gate: overwriting an already-registered *frozen* entity is
@@ -245,15 +263,15 @@ class ExtensionManagerServer(BaseModel):
         return name
 
     def _smoke_enabled(self, run_smoke: Optional[bool]) -> bool:
-        """Resolve the smoke-gate flag: explicit arg wins, else config.extension.smoke_gate, else off."""
+        """Resolve the smoke gate; new/evolved code is verified by default."""
         if run_smoke is not None:
             return bool(run_smoke)
         try:
             from agentevolver.config import config
             ext_cfg = getattr(config, "extension", {}) or {}
-            return bool(ext_cfg.get("smoke_gate", False)) if isinstance(ext_cfg, dict) else False
+            return bool(ext_cfg.get("smoke_gate", True)) if isinstance(ext_cfg, dict) else True
         except Exception:
-            return False
+            return True
 
     async def _smoke_gate_or_revert(self, module: str, name: str, prev_version: Optional[str]) -> None:
         """Run the replay smoke gate; on failure revert (rollback or unload) and raise."""

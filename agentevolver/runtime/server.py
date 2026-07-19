@@ -52,11 +52,14 @@ class RuntimeManager(metaclass=Singleton):
     async def suspend(self, key: str, *, timeout: Optional[float] = None) -> Any:
         """Block the caller until ``resume(key, value)`` is called (or timeout), and
         return that value. Registers a one-shot future under ``key``."""
-        fut = asyncio.get_event_loop().create_future()
+        existing = self._pending.get(key)
+        if existing is not None and not existing.done():
+            raise ValueError(f"Suspend key collision: {key!r} already has a waiter")
+        fut = asyncio.get_running_loop().create_future()
         self._pending[key] = fut
         try:
             if timeout is not None:
-                return await asyncio.wait_for(fut, timeout=timeout)
+                return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
             return await fut
         finally:
             self._pending.pop(key, None)
@@ -182,10 +185,14 @@ class RuntimeManager(metaclass=Singleton):
     ) -> Any:
         """Send into a ref's inbox and await the reply."""
         if msg.reply_future is None:
-            msg.reply_future = asyncio.get_event_loop().create_future()
+            msg.reply_future = asyncio.get_running_loop().create_future()
         await self.send(ref, msg)
         if timeout is not None:
-            return await asyncio.wait_for(msg.reply_future, timeout=timeout)
+            # A caller timeout must not cancel the future owned by the agent. The
+            # in-flight handler may still finish and set its result; cancelling the
+            # shared future here would otherwise turn that normal completion into an
+            # InvalidStateError and kill the long-lived pump.
+            return await asyncio.wait_for(asyncio.shield(msg.reply_future), timeout=timeout)
         return await msg.reply_future
 
     async def invoke(

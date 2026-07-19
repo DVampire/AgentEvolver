@@ -62,6 +62,24 @@ def test_promote_can_select_only_the_approved_component(tmp_path: Path) -> None:
     assert not (shared_extension / "tool" / "unapproved.py").exists()
 
 
+def test_promotion_can_be_rolled_back_after_registration_failure(tmp_path: Path) -> None:
+    shared_extension = tmp_path / "extension"
+    target = shared_extension / "tool" / "sample.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("OLD = True\n", encoding="utf-8")
+    sandbox = ProjectSandbox.create(tmp_path / "session", shared_extension_root=shared_extension)
+    staged = sandbox.extension_root / "tool" / "sample.py"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("NEW = True\n", encoding="utf-8")
+
+    report = sandbox.promote(overwrite=True)
+    assert target.read_text(encoding="utf-8") == "NEW = True\n"
+    sandbox.rollback_promotion(report)
+    assert target.read_text(encoding="utf-8") == "OLD = True\n"
+    audit = sandbox._load_manifest()["promotions"][-1]
+    assert audit["status"] == "rolled_back"
+
+
 def test_direct_context_receives_a_session_sandbox(tmp_path: Path) -> None:
     context = SessionContext(id="direct-run", name="example")
 

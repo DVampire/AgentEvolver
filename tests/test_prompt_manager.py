@@ -1,5 +1,6 @@
 import sys
 import asyncio
+import pytest
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -13,6 +14,8 @@ from agentevolver.logger import logger
 from agentevolver.version import version_manager
 from agentevolver.prompt import prompt_manager
 from agentevolver.utils import count_tokens
+
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 async def test_get_messages():

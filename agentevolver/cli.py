@@ -20,6 +20,7 @@ Examples:
 import asyncio
 import argparse
 import os
+import ipaddress
 import sys
 import uuid
 from argparse import Namespace
@@ -174,9 +175,19 @@ def gateway_main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9876)
     parser.add_argument("--token", default=os.getenv("AGENTEVOLVER_GATEWAY_TOKEN"))
+    parser.add_argument(
+        "--allow-origin", action="append", default=None,
+        help="Allowed WebSocket Origin; repeat for multiple browser origins",
+    )
     args = parser.parse_args(argv)
     if args.transport == "stdio":
         return asyncio.run(_run_gateway_stdio(args.config))
+    try:
+        is_loopback = ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        is_loopback = args.host == "localhost"
+    if not is_loopback and not args.token:
+        parser.error("--token (or AGENTEVOLVER_GATEWAY_TOKEN) is required for non-loopback hosts")
 
     from agentevolver.gateway.service import AgentGateway
     from agentevolver.gateway.transport import create_websocket_app
@@ -192,7 +203,10 @@ def gateway_main(argv: Optional[Sequence[str]] = None) -> int:
         finally:
             await gateway.stop()
 
-    app = create_websocket_app(gateway, token=args.token)
+    app = create_websocket_app(
+        gateway, token=args.token,
+        allowed_origins=set(args.allow_origin) if args.allow_origin else None,
+    )
     app.router.lifespan_context = lifespan
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0

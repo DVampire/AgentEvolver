@@ -7,7 +7,7 @@ A self-evolving multi-agent framework. A MetaAgent orchestrates sub-agents to co
 
 ```
 AgentEvolver/
-├── src/                    # Core framework. Most component modules share one shape:
+├── agentevolver/           # Core framework. Most component modules share one shape:
 │   │                       #   default/ (built-ins) + types.py (base class + context) +
 │   │                       #   server.py (the *_manager singleton). Only notable extras are listed.
 │   ├── agent/              # Agents (built-ins; evolved ones → extension/)
@@ -51,7 +51,7 @@ AgentEvolver/
 │   └── registry.py         # mmengine Registry instances (see Registries below)
 ├── configs/                # mmengine config files (base.py, meta_agent.py, agents/, tools/, memory/)
 ├── datasets/               # Vendored benchmark datasets
-├── extension/              # Hot-pluggable evolved content, OUTSIDE src/ (loaded by ExtensionManager):
+├── extension/              # Hot-pluggable evolved content, OUTSIDE the package (loaded by ExtensionManager):
 │   │                       #   flat active files + .versions/ archive + manifest.json (see Conventions)
 ├── examples/run_meta_agent.py   # Main entry point — MetaAgent orchestrates everything
 └── tests/ · scripts/ · others/ · workspace_root/   # Tests · install · scratch notes · per-run output (git-ignored)
@@ -62,8 +62,8 @@ AgentEvolver/
 - **`{{ extension_root }}`**: Absolute path to the repo root. Always use it to construct source file paths; never use relative paths.
 - **`{{ workspace_root }}`**: Per-run scratch directory for temporary files. Do not write source code here.
 - **Built-ins vs extensions**: Hand-written built-ins live in each module's `default/` folder inside `agentevolver/` (e.g. `agentevolver/tool/default/`). Generated/evolved components live OUTSIDE `agentevolver/`, in the external `extension/` tree, and are loaded at runtime by the **ExtensionManager**. `agentevolver/` stays immutable; `extension/` is mutable evolved content.
-- **Hot-plug / ExtensionManager** (`src/extension/`): On startup, after the component managers load their built-ins, `extension_manager.initialize()` layers the active extension set on top. Authoring writes a flat active file (`extension/<module>/<name>.py`); `extension_manager.add_component(...)` registers it via the owning `*_manager`, archives the version under `extension/.versions/`, and records the active version in `extension/manifest.json`. Multiple versions of a component coexist in `.versions/`; `extension_manager.rollback(module, name, version)` restores any of them. There is **no `__init__.py` to edit** for extensions — loading is by directory scan + dynamic import.
-- **Registries**: Components self-register with an mmengine `Registry` (in `src/registry.py`) via a class decorator, e.g. `@TOOL.register_module()`. Built-ins register at import time; extensions are registered at runtime by the ExtensionManager (which loads the class via `dynamic_manager` and calls `<module>_manager.register`).
+- **Hot-plug / ExtensionManager** (`agentevolver/extension/`): On startup, after the component managers load their built-ins, `extension_manager.initialize()` layers the active extension set on top. Authoring writes a flat active file (`extension/<module>/<name>.py`); `extension_manager.add_component(...)` registers it via the owning `*_manager`, archives the version under `extension/.versions/`, and records the active version in `extension/manifest.json`. Multiple versions of a component coexist in `.versions/`; `extension_manager.rollback(module, name, version)` restores any of them. There is **no `__init__.py` to edit** for extensions — loading is by directory scan + dynamic import.
+- **Registries**: Components self-register with an mmengine `Registry` (in `agentevolver/registry.py`) via a class decorator, e.g. `@TOOL.register_module()`. Built-ins register at import time; extensions are registered at runtime by the ExtensionManager (which loads the class via `dynamic_manager` and calls `<module>_manager.register`).
 
 ### Agent loop & interaction
 
@@ -92,7 +92,7 @@ Per-session, pluggable (`MEMORY_SYSTEM` registry), itself evolvable. The default
 
 Follow these rules when adding or generating code so the framework can discover and evolve it.
 
-1. **Generated/evolved components go in the external `extension/` tree — never in `agentevolver/`.** Write the flat active file: `extension/tool/<name>.py`, `extension/agent/<name>.py` (+ `extension/prompt/<name>.html`), `extension/skill/<name>/SKILL.md`, `extension/connector/<name>/CONNECTOR.md`, `extension/environment/<name>.py`. The ExtensionManager registers it and archives the version automatically. **Do NOT edit any `__init__.py`** for extensions. Hand-written built-ins (shipped with the framework) go in the module's `src/<module>/default/` folder (skills/connectors are grouped in category subfolders instead).
+1. **Generated/evolved components go in the external `extension/` tree — never in `agentevolver/`.** Write the flat active file: `extension/tool/<name>.py`, `extension/agent/<name>.py` (+ `extension/prompt/<name>.html`), `extension/skill/<name>/SKILL.md`, `extension/connector/<name>/CONNECTOR.md`, `extension/environment/<name>.py`. The ExtensionManager registers it and archives the version automatically. **Do NOT edit any `__init__.py`** for extensions. Hand-written built-ins (shipped with the framework) go in the module's `agentevolver/<module>/default/` folder (skills/connectors are grouped in category subfolders instead).
 
 2. **Built-ins are exported from `default/__init__.py`; extensions are not.** A new hand-written built-in must be imported in its module's `default/__init__.py` (import + `__all__`) so it registers at import time. Extension components are discovered by directory scan, so they need no `__init__.py` entry.
 
@@ -102,7 +102,7 @@ Follow these rules when adding or generating code so the framework can discover 
 
 5. **Benchmarks read data from `datasets/` first, then download from HuggingFace.** Every benchmark stores its data under `datasets/<name>/`. A benchmark declares an `hf_repo_id` field and, in `initialize()`, calls `ensure_dataset(<name>, self.hf_repo_id)` (in `agentevolver/benchmark/utils.py`) before loading: if `datasets/<name>/` is missing/empty it is snapshot-downloaded from HuggingFace, otherwise the local copy is used. Set the `HF_ENDPOINT` env var to use a mirror. Both `hf_repo_id` and `path` are config-overridable.
 
-### Registries (`src/registry.py`)
+### Registries (`agentevolver/registry.py`)
 
 | Registry          | Locations         | Decorator                              |
 | ----------------- | ----------------- | -------------------------------------- |

@@ -17,9 +17,8 @@ Design:
   existing ``rollback`` / ``unload``. This module only *decides*; it does not
   mutate the manifest itself.
 
-It is opt-in: ``extension_manager.add_component(..., run_smoke=True)`` (or the
-``extension.smoke_gate`` config flag) turns it on. Default off = zero behavior
-change to the existing evolution path.
+It is enabled by default. Administrative restore/import paths may explicitly pass
+``run_smoke=False`` after validating the exact archived artifact.
 """
 
 from __future__ import annotations
