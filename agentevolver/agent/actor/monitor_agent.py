@@ -1,4 +1,4 @@
-"""MonitorAgent — workflow agent that launches a bash subprocess and polls it periodically.
+"""MonitorAgent — procedural agent that launches a bash subprocess and polls it periodically.
 
 Design
 ------
@@ -37,7 +37,7 @@ from typing import Any, Deque, Dict, Optional, Set
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from agentevolver.protocol import protocol_manager, MonitorProgressMessage
-from agentevolver.agent.types import Agent, AgentContext
+from agentevolver.agent.types import AgentContext, AgentType, ProceduralAgent
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.logger import logger
 from agentevolver.registry import AGENT
@@ -45,7 +45,7 @@ from agentevolver.utils.name_utils import make_id
 
 
 @AGENT.register_module(force=True)
-class MonitorAgent(Agent):
+class MonitorAgent(ProceduralAgent):
     """Launches a bash command and monitors it, sending periodic progress reports to the parent agent."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -59,6 +59,7 @@ class MonitorAgent(Agent):
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
     enable_evolving: bool = Field(default=False)
+    agent_type: AgentType = Field(default=AgentType.PROCEDURAL)
 
     poll_interval: int = Field(default=30, description="Seconds between progress reports.")
     max_wait: int = Field(default=3600, description="Maximum seconds to wait before killing the process.")

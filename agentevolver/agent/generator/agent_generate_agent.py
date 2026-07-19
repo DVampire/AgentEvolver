@@ -14,7 +14,7 @@ class AgentGenerateAgent(Agent):
     """Generates a new agent (Python class + optional HTML prompt) from a natural-language description.
 
     Tool-calling agents → Python class + HTML prompt + config dict (3 files).
-    Workflow agents → Python class + config dict (2 files, no prompt).
+    Procedural agents → ProceduralAgent subclass + config dict (2 files, no prompt).
 
     Runs the base-class standard loop, then registers the generated agent inline in
     ``__call__`` once the loop finishes. The requested agent name comes from the task

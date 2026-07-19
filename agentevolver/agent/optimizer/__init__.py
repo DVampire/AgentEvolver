@@ -3,6 +3,7 @@ from .skill_optimize_agent import SkillOptimizeAgent
 from .agent_optimize_agent import AgentOptimizeAgent
 from .environment_optimize_agent import EnvironmentOptimizeAgent
 from .connector_optimize_agent import ConnectorOptimizeAgent
+from .workflow_optimize_agent import WorkflowOptimizeAgent
 
 __all__ = [
-    "ConnectorOptimizeAgent","ToolOptimizeAgent", "SkillOptimizeAgent", "AgentOptimizeAgent", "EnvironmentOptimizeAgent"]
+    "ConnectorOptimizeAgent", "WorkflowOptimizeAgent", "ToolOptimizeAgent", "SkillOptimizeAgent", "AgentOptimizeAgent", "EnvironmentOptimizeAgent"]

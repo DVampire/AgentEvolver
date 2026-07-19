@@ -7,9 +7,11 @@ abstractions, aligned with the design of `agentevolver.tool.types`.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional, Type
 
 
@@ -67,6 +69,20 @@ class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
     files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
 
+class AgentType(str, Enum):
+    """Execution contract used by an agent."""
+
+    TOOL_CALLING = "tool_calling"
+    PROCEDURAL = "procedural"
+
+    @classmethod
+    def _missing_(cls, value):
+        # Backward compatibility for configs created under the old informal name.
+        if value == "workflow":
+            return cls.PROCEDURAL
+        return None
+
+
 class AgentConfig(BaseModel):
     """Agent configuration for registration, similar to `ToolConfig`."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -77,6 +93,7 @@ class AgentConfig(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     enable_evolving: bool = Field(default=False, description="Whether the agent may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+    agent_type: AgentType = Field(default=AgentType.TOOL_CALLING, description="Agent execution contract")
 
     cls: Optional[Any] = None
     config: Optional[Dict[str, Any]] = Field(default_factory=dict,description="The initialization configuration of the agent",)
@@ -105,6 +122,7 @@ class AgentConfig(BaseModel):
             "enable_evolving": self.enable_evolving,
             
             "permission_mode": self.permission_mode,
+            "agent_type": self.agent_type.value,
 
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
@@ -127,6 +145,7 @@ class AgentConfig(BaseModel):
         version = data.get("version")
         enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
+        agent_type = AgentType(data.get("agent_type", AgentType.TOOL_CALLING))
 
         cls_ = None
         code = data.get("code")
@@ -162,6 +181,7 @@ class AgentConfig(BaseModel):
             version=version,
             enable_evolving=enable_evolving,
             permission_mode=permission_mode,
+            agent_type=agent_type,
             cls=cls_,
             config=config,
             instance=instance,
@@ -259,6 +279,7 @@ class Agent(BaseModel):
     version: str = Field(default="1.0.0", description="Version of the agent")
     enable_evolving: bool = Field(default=False, description="Whether the agent may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+    agent_type: AgentType = Field(default=AgentType.TOOL_CALLING, description="Agent execution contract")
 
     def __init__(
         self,
@@ -464,6 +485,10 @@ class Agent(BaseModel):
         connector_context = f"### Available Connectors\n{available_connectors}"
         return {"connector_context": connector_context, "available_connectors": available_connectors}
 
+    async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Workflow discovery is opt-in; worker agents do not orchestrate workflows."""
+        return {"workflow_context": "", "available_workflows": ""}
+
     async def _resolve_workspace_root(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workspace_root surfaced in the prompt's `{{ workspace_root }}` slot.
 
@@ -530,6 +555,7 @@ class Agent(BaseModel):
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         agent_message_modules.update(await self._get_connector_context(ctx=ctx))
+        agent_message_modules.update(await self._get_workflow_context(ctx=ctx))
         
         response = await prompt_manager(
             name=self.prompt_name,
@@ -916,6 +942,13 @@ class Agent(BaseModel):
             )
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             return resp.message, False, None, None
+        if kind == "workflow":
+            from agentevolver.workflow import workflow_manager
+            workflow_run = await workflow_manager.run(route[1], input=call.input or {}, ctx=ctx)
+            if not workflow_run.successful:
+                raise RuntimeError(workflow_run.error or f"Workflow {route[1]!r} failed")
+            logger.info(f"| ✅ [{self.name}] Workflow '{route[1]}' completed")
+            return json.dumps(workflow_run.output, ensure_ascii=False, default=str), False, None, None
         if kind == "skill":
             response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
             logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
@@ -1297,9 +1330,96 @@ class Agent(BaseModel):
             await self.on_event(msg, ref)
 
 
+class ProceduralAgent(Agent):
+    """Deterministic Agent subtype driven by code instead of the LLM loop.
+
+    Subclasses implement :meth:`run_procedure`. The inherited ``__call__`` remains
+    the only public entry point, so direct calls and delegated runtime calls follow
+    the same mailbox lifecycle.
+    """
+
+    agent_type: AgentType = Field(default=AgentType.PROCEDURAL)
+
+    def __init__(self, *args: Any, use_memory: bool = False, **kwargs: Any) -> None:
+        super().__init__(*args, use_memory=use_memory, **kwargs)
+
+    async def run_procedure(
+        self,
+        task: str,
+        files: Optional[List[str]],
+        ctx: AgentContext,
+        **kwargs: Any,
+    ) -> "Response":
+        raise NotImplementedError(f"{type(self).__name__}.run_procedure is not implemented")
+
+    async def on_start(
+        self,
+        task: str,
+        files: Optional[List[str]],
+        ctx: Optional[AgentContext],
+        ref: Any,
+        **kwargs: Any,
+    ) -> Optional["Response"]:
+        """Execute the deterministic workflow once and resolve synchronously."""
+        from agentevolver.hook.server import hook_manager
+        from agentevolver.hook.types import HookEvent
+        from agentevolver.response import ResponseType
+
+        ctx = ctx or AgentContext()
+        if not ctx.workspace_root:
+            ctx.workspace_root = self.base_dir
+        task_id = str(uuid.uuid4())
+        lifecycle = {
+            "task_id": task_id,
+            "agent_name": self.name,
+            "agent_type": self.agent_type.value,
+            "memory_name": self.memory_name,
+            "use_memory": self.use_memory,
+            "parent_session_id": ctx.parent_session_id,
+            "subtask_id": ctx.subtask_id,
+        }
+        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+            await hook_manager(
+                name=hook_name,
+                input={"event": HookEvent.ON_START, "task": task, **lifecycle},
+                ctx=ctx,
+            )
+
+        try:
+            response = await self.run_procedure(task, files, ctx, **kwargs)
+            if not isinstance(response, Response):
+                response = Response(
+                    type=ResponseType.AGENT,
+                    success=True,
+                    message=str(response),
+                    data={"result": response},
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(f"| ❌ [{self.name}] Workflow failed: {exc}", exc_info=True)
+            response = Response(type=ResponseType.AGENT, success=False, message=str(exc))
+
+        response = await self._finalize_run(response, ctx)
+        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+            await hook_manager(
+                name=hook_name,
+                input={
+                    "event": HookEvent.ON_STOP,
+                    "result": response.message,
+                    "success": response.success,
+                    **lifecycle,
+                },
+                ctx=ctx,
+            )
+        return response
+
+
 __all__ = [
     "InputArgs",
     "AgentConfig",
+    "AgentType",
     "Agent",
+    "ProceduralAgent",
     "AgentContext",
 ]

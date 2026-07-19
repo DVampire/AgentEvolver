@@ -3,6 +3,7 @@ from .skill_evaluate_agent import SkillEvaluateAgent
 from .agent_evaluate_agent import AgentEvaluateAgent
 from .environment_evaluate_agent import EnvironmentEvaluateAgent
 from .connector_evaluate_agent import ConnectorEvaluateAgent
+from .workflow_evaluate_agent import WorkflowEvaluateAgent
 
 __all__ = [
-    "ConnectorEvaluateAgent","ToolEvaluateAgent", "SkillEvaluateAgent", "AgentEvaluateAgent", "EnvironmentEvaluateAgent"]
+    "ConnectorEvaluateAgent", "WorkflowEvaluateAgent", "ToolEvaluateAgent", "SkillEvaluateAgent", "AgentEvaluateAgent", "EnvironmentEvaluateAgent"]

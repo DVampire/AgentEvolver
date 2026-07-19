@@ -69,7 +69,8 @@ AgentEvolver/
 
 `agentevolver/runtime/` is *how messages move*; `agentevolver/protocol/` is *the shape of each conversation*.
 
-- **One loop for every agent** (leaf or orchestrator): `on_start → _advance → _think → _dispatch_round → _run_one → _conclude`, repeating rounds (a round = one turn's concurrent batch of tool calls) until a terminal tool (`done`) or a constraint stops it. `MetaAgent` is a plain `Agent` that just flips `_include_agents=True`, so sub-agents become callable tools — orchestration is normal tool dispatch, not a special path.
+- **One runtime lifecycle for every agent**: tool-calling agents share `on_start → _advance → _think → _dispatch_round → _run_one → _conclude`; deterministic `ProceduralAgent` implementations use the same runtime entry and hooks but implement `run_procedure`. `MetaAgent` remains a normal tool-calling `Agent` with agents and registered workflows projected as capabilities.
+- **Dynamic workflows are executable HTML, not an Agent subtype**: MetaAgent can discover an active workflow or generate an ephemeral one; `WorkflowCompiler` validates its restricted control language and `WorkflowRuntime` executes dynamic map/parallel/branch/loop/verify/reduce programs with budgets, cancellation, and checkpoint caching. Side effects still delegate to existing Agent/Tool/Skill/Connector managers.
 - **Runtime verbs** (`runtime_manager`): `spawn`, `send` (fire-and-forget), `ask`/`invoke` (run + await `Response`), `suspend`+`resume` (park on a key), `publish`+`subscribe` (topic fan-out).
 - **Protocol channels** (`protocol_manager`) are typed conversations over those verbs: **escalation** (gate — a blocked sub-agent asks its parent and suspends until it replies), **delegation**/**query** (ask), **progress**/**control** (tell — cancel/pause/resume), **pubsub** (fan-out).
 

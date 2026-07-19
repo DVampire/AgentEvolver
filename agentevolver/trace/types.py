@@ -29,6 +29,14 @@ class TraceEventType(str, Enum):
     SKILL_CALL  = "skill_call"    # skill result received
     SKILL_END   = "skill_end"
 
+    # Deterministic orchestration lifecycle
+    WORKFLOW_START = "workflow_start"
+    WORKFLOW_NODE_START = "workflow_node_start"
+    WORKFLOW_NODE_END = "workflow_node_end"
+    WORKFLOW_FRAME_START = "workflow_frame_start"
+    WORKFLOW_FRAME_END = "workflow_frame_end"
+    WORKFLOW_END = "workflow_end"
+
     # Misc
     ERROR       = "error"
     CUSTOM      = "custom"

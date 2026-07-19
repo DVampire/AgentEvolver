@@ -55,6 +55,7 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
     from agentevolver.prompt import prompt_manager
     from agentevolver.skill import skill_manager
     from agentevolver.tool import tool_manager
+    from agentevolver.workflow import workflow_manager
     from agentevolver.version import version_manager
     from agentevolver.sandbox.project import ProjectSandbox
 
@@ -75,6 +76,7 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
     await _try("connector", connector_manager.initialize(connector_names=getattr(config, "connector_names", None)), timeout)
     await _try("environment", environment_manager.initialize(env_names=getattr(config, "environment_names", None)), timeout)
     await _try("agent", agent_manager.initialize(agent_names=getattr(config, "agent_names", None)), timeout)
+    await _try("workflow", workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None)), timeout)
     await command_manager.initialize()
     return sandbox
 

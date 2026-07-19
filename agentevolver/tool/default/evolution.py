@@ -25,7 +25,7 @@ _DESCRIPTION = "Manage evolved (extension) components: list active, list version
 
 _INSTRUCTION = """
 ## Function
-Manage the version lifecycle of evolved components (tools/agents/prompts/skills/environments/connectors created or optimized under `extension/`). Use it to UNDO a bad evolution a reviewer flagged — roll back to the previous good version, or unload a newly generated component that made things worse.
+Manage the version lifecycle of evolved components (tools/agents/prompts/skills/environments/connectors/workflows created or optimized under `extension/`). Use it to UNDO a bad evolution a reviewer flagged — roll back to the previous good version, or unload a newly generated component that made things worse.
 
 ## Actions (pass `action`)
 - `list_active`: list all active evolved components (module, name, version). No args.
@@ -33,8 +33,9 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `diff`: show the source diff between two versions (see what an optimization actually changed). Args: `module`, `name`, `version_a`, `version_b` (optional; defaults to the live version).
 - `rollback`: restore a component to a previous version (becomes live immediately). Args: `module`, `name`, `version`.
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
+- `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `token_cost`, `elapsed_ms`, `notes`.
 
-`module` is one of: tool | agent | prompt | skill | environment | connector.
+`module` is one of: tool | agent | prompt | skill | environment | connector | workflow.
 
 ## Guidance
 - Pair with `reviewer_agent`: if the reviewer's verdict is that an evolution regressed the outcome, `rollback` to the prior version (use `list_versions` first to see what to roll back to), or `unload` a brand-new component that has no prior good version.
@@ -105,8 +106,23 @@ class EvolutionTool(Tool):
                                 message=(f"Unloaded {module}:{name}." if ok else f"{module}:{name} was not active."),
                                 data={"module": module, "name": name, "unloaded": bool(ok)})
 
+            if action == "record_workflow_evaluation":
+                from agentevolver.workflow import WorkflowEvaluation, workflow_manager
+                evaluation = WorkflowEvaluation(
+                    workflow_name=kwargs["name"], workflow_version=kwargs["version"],
+                    run_id=kwargs.get("run_id"), success=bool(kwargs["success"]),
+                    quality_score=float(kwargs["quality_score"]),
+                    token_cost=int(kwargs.get("token_cost", 0)),
+                    elapsed_ms=float(kwargs.get("elapsed_ms", 0.0)), notes=kwargs.get("notes", ""),
+                )
+                workflow_manager.record_evaluation(evaluation)
+                summary = workflow_manager.evaluation_summary(evaluation.workflow_name)
+                return Response(type=ResponseType.TOOL, success=True,
+                                message=f"Recorded evaluation for workflow:{evaluation.workflow_name}. Summary: {summary}",
+                                data={"evaluation": evaluation.model_dump(), "summary": summary})
+
             return Response(type=ResponseType.TOOL, success=False,
-                            message=f"Unknown action {action!r}. Use list_active | list_versions | diff | rollback | unload.")
+                            message=f"Unknown action {action!r}. Use list_active | list_versions | diff | rollback | unload | record_workflow_evaluation.")
         except KeyError as e:
             return Response(type=ResponseType.TOOL, success=False, message=f"Missing required arg: {e}")
         except Exception as e:

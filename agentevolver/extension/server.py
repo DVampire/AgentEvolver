@@ -11,6 +11,7 @@ Framework code lives in `src/` (immutable). Evolved/generated components live ou
     ├── skill/<name>/SKILL.md
     ├── environment/<name>/{environment.py + ENVIRONMENT.md}
     ├── connector/<name>/CONNECTOR.md
+    ├── workflow/<name>.html
     └── .versions/<module>/<name>/<version>.<ext>   # archive: every version coexists
 
 Authoring writes the flat active file; ExtensionManager archives each registered
@@ -38,9 +39,9 @@ from agentevolver.extension.types import Manifest, ManifestComponent
 # Modules whose components are class-based (loaded via dynamic_manager).
 _CLASS_MODULES = {"tool", "agent", "environment"}
 # All modules the extension tree may carry.
-_MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector"]
+_MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector", "workflow"]
 # Active-file extension per module ("" => the component is a directory).
-_EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": ""}
+_EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": "", "workflow": ".html"}
 # Directory-type modules: the active component is a directory holding a manifest file.
 _DIR_MODULES = {"skill", "environment", "connector"}
 _MANIFEST_FILE = {"skill": "SKILL.md", "environment": "ENVIRONMENT.md", "connector": "CONNECTOR.md"}
@@ -518,6 +519,10 @@ class ExtensionManagerServer(BaseModel):
             from agentevolver.connector.server import connector_manager
             info = await connector_manager.get_info(name)
             return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "workflow":
+            from agentevolver.workflow import workflow_manager
+            definition = workflow_manager.get(name)
+            return getattr(definition, "enable_evolving", None) if definition is not None else None
         return None
 
     @staticmethod
@@ -544,6 +549,8 @@ class ExtensionManagerServer(BaseModel):
             return await self._load_skill(abspath, version, return_version, enforce_evolvable, config)
         if module == "connector":
             return await self._load_connector(abspath, version, return_version, enforce_evolvable, config)
+        if module == "workflow":
+            return await self._load_workflow(abspath, version, return_version, enforce_evolvable)
         raise ValueError(f"Unknown extension module: {module}")
 
     async def _load_class_component(self, module: str, abspath: str, version: Optional[str],
@@ -618,10 +625,33 @@ class ExtensionManagerServer(BaseModel):
         name = getattr(cfg, "name", os.path.basename(abspath))
         return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
 
+    async def _load_workflow(self, abspath: str, version: Optional[str], return_version: bool,
+                             enforce_evolvable: bool = False):
+        from agentevolver.version import version_manager
+        from agentevolver.workflow import workflow_compiler, workflow_manager
+        definition = workflow_compiler.compile_file(abspath)
+        if enforce_evolvable:
+            await self._assert_evolvable("workflow", definition.name)
+        if version is None:
+            current = await version_manager.get_current_version("workflow", definition.name)
+            version = (
+                await version_manager.generate_next_version("workflow", definition.name)
+                if current else definition.version
+            )
+        definition = definition.model_copy(update={"version": version})
+        workflow_manager.register(definition, override=True)
+        await version_manager.register_version(
+            "workflow", definition.name, definition.version,
+            description=definition.description,
+            metadata={"status": definition.status.value},
+        )
+        return (definition.name, definition.version) if return_version else definition.name
+
     async def _unload_component(self, module: str, name: str) -> bool:
         try:
             manager = self._manager(module)
-            ok = await manager.unregister(name)
+            result = manager.unregister(name)
+            ok = await result if isawaitable(result) else result
             logger.info(f"| 🧹 ExtensionManager: unregistered {module}:{name}")
             return bool(ok)
         except Exception as e:
@@ -664,6 +694,9 @@ class ExtensionManagerServer(BaseModel):
         if module == "connector":
             from agentevolver.connector.server import connector_manager
             return connector_manager
+        if module == "workflow":
+            from agentevolver.workflow import workflow_manager
+            return workflow_manager
         raise ValueError(f"Unknown extension module: {module}")
 
 

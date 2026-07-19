@@ -13,6 +13,7 @@ from .default import (
     SkillRegistrationHook,
     ToolRegistrationHook,
     AgentRegistrationHook,
+    WorkflowRegistrationHook,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "SkillRegistrationHook",
     "ToolRegistrationHook",
     "AgentRegistrationHook",
+    "WorkflowRegistrationHook",
 ]

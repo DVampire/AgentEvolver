@@ -12,13 +12,12 @@ loop or override the context methods unless the agent truly needs bespoke behavi
 (that is a red flag reviewers look for). Supply identity + prompt; inherit the rest.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
 from agentevolver.registry import AGENT
-from agentevolver.agent.types import Agent, AgentContext
-from agentevolver.response.types import Response
+from agentevolver.agent.types import Agent
 
 
 @AGENT.register_module(force=True)
@@ -64,37 +63,3 @@ class MyAgent(Agent):
             enable_evolving=enable_evolving,
             **kwargs,
         )
-
-    async def __call__(
-        self,
-        task: Optional[str] = None,
-        files: Optional[List[str]] = None,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Response:
-        """Entry point — runs the base-class standard think-and-act loop unchanged.
-
-        The base loop already handles: ON_START hooks → [constraint check → build
-        messages → think & act] until done/max_step → ON_STOP hooks. Just delegate.
-
-        ── Variant: register a produced artifact ──────────────────────────────
-        If this agent PRODUCES something that must be registered (like the
-        generator agents), run the loop and then fire the registration hook inline:
-
-            from agentevolver.hook.server import hook_manager
-            from agentevolver.hook.types import HookDecision, HookEvent
-            from agentevolver.utils import get_extension_root
-            if ctx is None:
-                ctx = AgentContext()
-            response = await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
-            if response.success:
-                result = await hook_manager(name="<x>_registration_hook", input={
-                    "event": HookEvent.ON_STOP,
-                    "reasoning": (response.data or {}).get("reasoning") or "",
-                    "extension_root": get_extension_root(), "model_name": self.model_name}, ctx=ctx)
-                if result.decision == HookDecision.BLOCK:
-                    response.success = False
-                    response.message = result.reason or "Registration failed."
-            return response
-        """
-        return await super().__call__(task=task, files=files, ctx=ctx, **kwargs)

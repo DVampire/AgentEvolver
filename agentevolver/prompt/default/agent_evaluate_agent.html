@@ -95,12 +95,12 @@ Use `✓` for confirmed facts, `✗` for pending or failed. Include score for ea
 - Lifecycle hooks (ON_START / POST_STEP / ON_STOP) are fired by the inherited base loop — a well-formed agent does NOT re-implement them itself. Their presence in a subclass is only expected when it overrides the loop for a genuine reason.
 - Score guide: 20 = clean; deduct per identified issue.
 
-**Prompt Quality (20 pts)** — Is the HTML prompt well-structured? (auto-pass 20 if workflow agent)
+**Prompt Quality (20 pts)** — Is the HTML prompt well-structured? (auto-pass 20 if procedural agent)
 - For tool-calling only: HTML file exists and has `&lt;div class="system"&gt;` and `&lt;div class="user"&gt;` sections.
 - system section has: `&lt;profile&gt;`, `&lt;task-rules&gt;`, `&lt;plan-rules&gt;`, `&lt;output-schema&gt;`.
 - user section nests sub-modules inside `&lt;agent-context&gt;` (`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, plus `{{ workspace }}` / `{{ errors }}` where relevant), with `&lt;tool-context&gt;` (`{{ available_tools }}`) and `&lt;skill-context&gt;` (`{{ available_skills }}`) as siblings.
 - Instructions are clear, not contradictory, no placeholder text left unfilled.
-- Score guide: 20 = complete and clear; −4 per missing required section; workflow agents get 20 automatically.
+- Score guide: 20 = complete and clear; −4 per missing required section; procedural agents get 20 automatically because they intentionally have no prompt.
 
 **Integration (20 pts)** — Can the agent be loaded and instantiated without errors?
 - Read this **directly from the `inspect_agent_tool` result** (`Registered`, `Instantiated`). The agent is already loaded in this process — if it is registered with a live instance, it loaded and instantiated cleanly. No script needed.

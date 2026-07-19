@@ -1,10 +1,10 @@
-"""TEMPLATE — a workflow agent (deterministic, code-driven; NO LLM loop).
+"""TEMPLATE — a procedural agent (deterministic, code-driven; NO LLM loop).
 
 Copy to `extension/agent/{name}.py`, rename the class, and implement the steps.
-A workflow agent has NO HTML prompt — it does not reason step by step. Use it when
+A procedural agent has NO HTML prompt — it does not reason step by step. Use it when
 the task is a fixed pipeline (e.g. read → process → report) that you can express in
-code and that calls tools directly. This is the ONE legitimate reason to fully
-override `__call__` (a tool-calling agent must NOT).
+code and that calls tools directly. Implement ``run_procedure``; never override
+``__call__``, because direct and delegated calls share the mailbox runtime.
 
 If the task needs step-by-step reasoning / dynamic tool choice, use
 `tool_calling_agent_template.py` instead.
@@ -15,19 +15,19 @@ from typing import Any, Dict, List, Optional
 from pydantic import ConfigDict, Field
 
 from agentevolver.registry import AGENT
-from agentevolver.agent.types import Agent, AgentContext
+from agentevolver.agent.types import AgentContext, ProceduralAgent
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.logger import logger
 
 
 @AGENT.register_module(force=True)
-class MyWorkflowAgent(Agent):
-    """A deterministic, code-driven agent. Overrides __call__ with a fixed pipeline."""
+class MyProceduralAgent(ProceduralAgent):
+    """A deterministic, code-driven agent with a fixed pipeline."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="my_workflow_agent")
-    description: str = Field(default="What this workflow does and when to use it.")
+    name: str = Field(default="my_procedural_agent")
+    description: str = Field(default="What this procedure does and when to use it.")
     metadata: Dict[str, Any] = Field(default_factory=dict)
     enable_evolving: bool = Field(default=True)
 
@@ -52,7 +52,7 @@ class MyWorkflowAgent(Agent):
             description=description,
             metadata=metadata,
             model_name=model_name,
-            prompt_name=prompt_name,  # a workflow agent has no HTML prompt
+            prompt_name=prompt_name,  # a procedural agent has no HTML prompt
             memory_name=memory_name,
             max_actions=max_actions,
             max_step=max_step,
@@ -61,19 +61,15 @@ class MyWorkflowAgent(Agent):
             **kwargs,
         )
 
-    async def __call__(
+    async def run_procedure(
         self,
-        task: Optional[str] = None,
+        task: str,
         files: Optional[List[str]] = None,
-        ctx: Optional[AgentContext] = None,
+        ctx: AgentContext = None,
         **kwargs,
     ) -> Response:
-        """Deterministic pipeline — no LLM planning loop."""
+        """Deterministic pipeline executed by ProceduralAgent.on_start."""
         logger.info(f"| 🚀 Starting {self.name}: {task}")
-        if ctx is None:
-            ctx = AgentContext()
-        if not ctx.workspace_root:
-            ctx.workspace_root = self.base_dir
         try:
             # Call tools directly via tool_manager, e.g.:
             #   from agentevolver.tool.server import tool_manager

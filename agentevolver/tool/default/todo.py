@@ -1,4 +1,4 @@
-"""Todo tool for managing todo.md file with task decomposition and step tracking.
+"""Todo tool for managing todo.md files with task decomposition and step tracking.
 
 This is a coroutine-safe version that uses per-id caching and locking.
 """

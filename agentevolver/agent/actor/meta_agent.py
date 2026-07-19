@@ -57,6 +57,18 @@ class MetaAgent(Agent):
     def _include_agents(self) -> bool:
         return True
 
+    async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Expose only active workflow summaries; inspect supplies full HTML on demand."""
+        from agentevolver.workflow import workflow_manager
+
+        allowlist = (getattr(ctx, "extra", None) or {}).get("workflow_allowlist")
+        content = workflow_manager.get_instruction(allowlist=allowlist)
+        available = content or "[No workflows loaded.]"
+        return {
+            "workflow_context": f"### Available Workflows\n{available}",
+            "available_workflows": available,
+        }
+
     async def _handle_extra_event(self, run, msg: Any) -> None:
         """A blocked sub-agent escalated (its EscalationMessage landed in our inbox). Reply
         with a focused think turn — mid-round, so we do NOT dispatch new work; the round in

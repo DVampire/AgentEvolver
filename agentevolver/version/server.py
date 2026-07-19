@@ -35,6 +35,7 @@ class VersionManagerServer(BaseModel):
             "environment": {},
             "action": {},
             "constraint": {},
+            "workflow": {},
         }
 
     async def initialize(self):

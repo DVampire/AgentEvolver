@@ -164,6 +164,7 @@ class AgentContextManager(BaseModel):
                 agent_name = agent_cls.model_fields['name'].default
                 agent_description = agent_cls.model_fields['description'].default
                 agent_metadata = agent_cls.model_fields['metadata'].default
+                agent_type = agent_cls.model_fields['agent_type'].default
                 
                 # Get or generate version from version_manager
                 agent_version = await version_manager.get_version("agent", agent_name)
@@ -189,6 +190,7 @@ class AgentContextManager(BaseModel):
                     text=agent_text,
                     args_schema=agent_args_schema,
                     metadata=agent_metadata,
+                    agent_type=agent_type,
                     code=agent_code,
                 )
                 
@@ -334,6 +336,7 @@ class AgentContextManager(BaseModel):
                 metadata=agent_metadata,
                 version=agent_version,
                 enable_evolving=agent_enable_evolving,
+                agent_type=agent_instance.agent_type,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
@@ -469,6 +472,7 @@ class AgentContextManager(BaseModel):
                 metadata=agent_metadata,
                 version=new_version,
                 enable_evolving=agent_enable_evolving,
+                agent_type=agent_instance.agent_type,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
@@ -582,6 +586,7 @@ class AgentContextManager(BaseModel):
                 metadata=agent_metadata,
                 version=new_version,
                 enable_evolving=agent_enable_evolving,
+                agent_type=agent_instance.agent_type,
                 cls=original_config.cls,
                 config=agent_config_dict,
                 instance=agent_instance,

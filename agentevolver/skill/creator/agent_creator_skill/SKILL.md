@@ -27,7 +27,7 @@ The sub-agents are headless: each runs one phase autonomously and returns a resu
 
 Start from the bundled templates instead of writing from scratch:
 - `references/tool_calling_agent_template.py` — a thin tool-calling agent class (the common case).
-- `references/workflow_agent_template.py` — a deterministic, code-driven agent (no LLM loop, no prompt).
+- `references/procedural_agent_template.py` — a deterministic, code-driven agent (no LLM loop, no prompt).
 - `references/html_prompt_template.html` — the HTML prompt skeleton for a tool-calling agent.
 
 Read the relevant template(s) first, copy, then adapt. They already encode the current architecture and the template-variable contract.
@@ -36,7 +36,7 @@ Read the relevant template(s) first, copy, then adapt. They already encode the c
 
 An agent has up to three files:
 - `{extension_root}/agent/{name}.py` — the Python class (REQUIRED).
-- `{extension_root}/prompt/{name}.html` — the HTML prompt (REQUIRED for tool-calling agents; workflow agents omit it).
+- `{extension_root}/prompt/{name}.html` — the HTML prompt (REQUIRED for tool-calling agents; procedural agents omit it).
 - `{extension_root}/configs/agents/{name}.py` — the config dict.
 
 **Registration is automatic via a hook**: after writing the files, include the Python file path in your `done_tool` reasoning — the `agent_registration_hook` locates and registers it. The class name in `done_tool` reasoning helps it resolve.
@@ -46,7 +46,7 @@ An agent has up to three files:
 ## Choosing the agent type
 
 - **Tool-calling agent** (default): reasons and acts step by step, choosing tools/skills dynamically each step. Use it for open-ended or multi-step tasks. It has a Python class + an HTML prompt, and it **inherits** the base loop. → `tool_calling_agent_template.py` + `html_prompt_template.html`.
-- **Workflow agent**: a fixed, deterministic pipeline (read → process → report) expressed in code with direct tool calls — no step-by-step LLM planning, no prompt. Use it when the steps are known and don't need reasoning. → `workflow_agent_template.py`.
+- **Procedural agent**: a fixed, deterministic pipeline (read → process → report) expressed in code with direct tool calls — no step-by-step LLM planning, no prompt. It subclasses `ProceduralAgent` and implements `run_procedure`; it never overrides `__call__`. → `procedural_agent_template.py`.
 
 When unsure, prefer a tool-calling agent — it's the more general, more capable form.
 
@@ -107,11 +107,11 @@ Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta n
 
 Call `inspect_agent_tool` on the target for its registry facts (registered / instantiated / version / file paths). Score across five dimensions (0–20 each):
 
-1. **Interface Compliance** — `@AGENT.register_module`, inherits `Agent`, has `name`/`description`/`metadata`/`enable_evolving`; **cleanly inherits the base loop** (does NOT re-implement `__call__`/`_get_agent_context`/`_think_and_act` without reason — a generator overriding only `__call__` to register is fine; a workflow agent legitimately overrides `__call__`).
+1. **Interface Compliance** — `@AGENT.register_module`, inherits `Agent`, has `name`/`description`/`metadata`/`enable_evolving`; **cleanly inherits the base loop**. Tool-calling agents must not override `__call__`; procedural agents subclass `ProceduralAgent` and implement `run_procedure`.
 2. **Code Quality** — clean, valid, no dead code; lifecycle hooks come from the inherited loop, not re-implemented.
-3. **Prompt Quality** — HTML present (tool-calling) with the required sections, the container-vs-sibling `agent-context` layout, correct template variables, and a `response-protocol` that drives **native tool calls** (no obsolete JSON `plan`/`output-schema`). Auto-pass for workflow agents (no prompt).
+3. **Prompt Quality** — HTML present (tool-calling) with the required sections, the container-vs-sibling `agent-context` layout, correct template variables, and a `response-protocol` that drives **native tool calls** (no obsolete JSON `plan`/`output-schema`). Auto-pass for procedural agents (no prompt).
 4. **Integration** — `inspect_agent_tool` shows Registered + Instantiated.
-5. **Task Execution** — a valid execution path: a tool-calling agent with a valid `prompt_name` inheriting the loop, or a coherent bespoke `__call__` for a workflow agent.
+5. **Task Execution** — a valid execution path: a tool-calling agent with a valid `prompt_name` inheriting the loop, or a `ProceduralAgent` implementing `run_procedure`.
 
 For an empirical check, MetaAgent can dispatch the agent on a sample task and inspect the result.
 
@@ -142,5 +142,5 @@ Most agent improvement is **prompt improvement**. The target is named in the tas
 ## Reference files
 
 - `references/tool_calling_agent_template.py` — thin tool-calling agent class.
-- `references/workflow_agent_template.py` — deterministic workflow agent.
+- `references/procedural_agent_template.py` — deterministic procedural agent.
 - `references/html_prompt_template.html` — HTML prompt skeleton (structure + template-variable contract).

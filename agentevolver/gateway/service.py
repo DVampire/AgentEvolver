@@ -45,6 +45,7 @@ from agentevolver.trajectory import trajectory_manager
 from agentevolver.utils import make_id
 from agentevolver.version import version_manager
 from agentevolver.tool import tool_manager
+from agentevolver.workflow import workflow_manager
 
 
 @dataclass
@@ -121,6 +122,7 @@ class AgentGateway:
         if env_names:
             await environment_manager.initialize(env_names=env_names)
         await agent_manager.initialize(agent_names=getattr(config, "agent_names", None))
+        await workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None))
         await command_manager.initialize()
         await extension_manager.initialize()
         extension_manager.subscribe(self._on_extension_change)
@@ -420,6 +422,46 @@ class AgentGateway:
     async def _command_capability_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         return await self._available_capabilities()
 
+    async def _command_workflow_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Launch a registered workflow without blocking the interactive Gateway."""
+        session_id = self._require_session_id(params)
+        name = str(params.get("name") or "")
+        if not name:
+            raise ValueError("name is required")
+        run_id = workflow_manager.start(
+            name, input=params.get("input") or {}, ctx=self._sessions[session_id].context,
+        )
+        return {"run_id": run_id, "state": "created"}
+
+    async def _command_workflow_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = str(params.get("run_id") or "")
+        run = workflow_manager.get_run(run_id)
+        if run is None:
+            raise ValueError(f"Unknown workflow run: {run_id}")
+        return run.model_dump(mode="json")
+
+    async def _command_workflow_pause(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = str(params.get("run_id") or "")
+        return {"run_id": run_id, "accepted": workflow_manager.pause(run_id)}
+
+    async def _command_workflow_continue(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = str(params.get("run_id") or "")
+        return {"run_id": run_id, "accepted": workflow_manager.continue_run(run_id)}
+
+    async def _command_workflow_cancel(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = str(params.get("run_id") or "")
+        return {"run_id": run_id, "accepted": workflow_manager.cancel(run_id)}
+
+    async def _command_workflow_restore(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        name, checkpoint = str(params.get("name") or ""), str(params.get("checkpoint") or "")
+        if not name or not checkpoint:
+            raise ValueError("name and checkpoint are required")
+        run = await workflow_manager.resume(
+            name, checkpoint, ctx=self._sessions[session_id].context,
+        )
+        return run.model_dump(mode="json")
+
     async def _command_capability_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
         kind = str(params.get("kind") or "")
         name = str(params.get("name") or "")
@@ -433,6 +475,28 @@ class AgentGateway:
             "connectors": connector_manager,
             "environments": environment_manager,
         }
+        if kind == "workflows":
+            if not name or name not in workflow_manager.list():
+                raise ValueError(f"Unknown workflows: {name}")
+            spec = workflow_manager.get(name)
+            assert spec is not None
+            return {
+                "kind": kind,
+                "name": name,
+                "description": spec.description,
+                "version": spec.version,
+                "permission_mode": "workspace_write",
+                "type": "dynamic_html",
+                "enable_evolving": spec.enable_evolving,
+                "actions": [],
+                "parameter_schema": {"type": "object", "additionalProperties": True},
+                "usage": f"Run workflow {name} with an input object.",
+                "configuration": {},
+                "editable": False,
+                "document": spec.model_dump_json(indent=2),
+                "document_path": None,
+                "language": "json",
+            }
         if kind == "commands":
             command = await command_manager.get(name)
             if command is None:
@@ -460,7 +524,7 @@ class AgentGateway:
             }
         manager = managers.get(kind)
         if manager is None:
-            raise ValueError("kind must be one of: skills, tools, agents, connectors, environments, commands")
+            raise ValueError("kind must be one of: skills, tools, agents, connectors, environments, workflows, commands")
         if not name:
             raise ValueError("Capability name is required")
         if name not in await manager.list():
@@ -826,6 +890,7 @@ class AgentGateway:
             "skills": await skill_manager.list(),
             "connectors": await connector_manager.list(),
             "environments": await environment_manager.list(),
+            "workflows": workflow_manager.list(),
             "commands": await command_manager.list(),
         }
 
@@ -907,6 +972,7 @@ class AgentGateway:
             "agents": "agent_allowlist",
             "connectors": "connector_allowlist",
             "environments": "environment_allowlist",
+            "workflows": "workflow_allowlist",
         }.items():
             session.context.extra[context_key] = list(session.capabilities.get(kind, []))
 

@@ -27,6 +27,7 @@ from agentevolver.tool.types import Tool
 # Routing table value: a tuple describing how to dispatch a tool_call by name:
 #   ("tool", name) | ("skill", name) | ("connector", name, action)
 #   | ("environment", name, action) | ("env", action) | ("agent", name)
+#   | ("workflow", name)
 Route = Tuple[Any, ...]
 
 
@@ -93,9 +94,11 @@ async def assemble_native_tools(
     # sub-agents — orchestrators only (MetaAgent). Never project the caller itself.
     if include_agents:
         from agentevolver.agent.server import agent_manager
+        from agentevolver.workflow import workflow_manager
         pairs += await agent_manager.function_callings(
             extra.get("agent_allowlist"), exclude=getattr(agent, "name", None)
         )
+        pairs += await workflow_manager.function_callings(extra.get("workflow_allowlist"))
 
     tools = [_shim(fc) for fc, _ in pairs]
     routing = {fc["function"]["name"]: route for fc, route in pairs}

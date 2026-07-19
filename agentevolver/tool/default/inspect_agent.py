@@ -66,7 +66,9 @@ class InspectAgent(Tool):
         lines.append(f"- **Instantiated (live instance available)**: {instance is not None}")
         lines.append(f"- **Python File**: `{py_path}` (exists: {os.path.exists(py_path)})")
         lines.append(f"- **HTML Prompt File**: `{html_path}` (exists: {html_exists})")
-        lines.append(f"- **Agent Type**: {'tool_calling' if html_exists else 'workflow'}")
+        agent_type = getattr(info, "agent_type", None)
+        agent_type_value = getattr(agent_type, "value", agent_type) or "tool_calling"
+        lines.append(f"- **Agent Type**: {agent_type_value}")
 
         if info is None:
             available = await agent_manager.list()
@@ -81,5 +83,6 @@ class InspectAgent(Tool):
                 "registered": info is not None,
                 "enable_evolving": bool(getattr(info, "enable_evolving", False)) if info else False,
                 "instantiated": instance is not None,
+                "agent_type": agent_type_value,
             },
         )

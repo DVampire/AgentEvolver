@@ -74,7 +74,7 @@ Tools, skills, and connectors:
 - Use the returned file paths directly — never search/guess.
 - Always read the **Python file** before making any edits — never assume contents.
 - For tool-calling agents: if the task touches prompt behavior, also read the **HTML prompt file**.
-- **Agent Type** in the inspect result tells you if HTML exists: `tool_calling` → both files; `workflow` → Python only.
+- **Agent Type** is an explicit runtime contract: `tool_calling` → Python + HTML prompt; `procedural` → Python only, subclass `ProceduralAgent`, implement `run_procedure`, never override `__call__`.
 
 **Editing principles**
 - Make the smallest correct change that satisfies the optimization task — do not refactor unrelated code.
