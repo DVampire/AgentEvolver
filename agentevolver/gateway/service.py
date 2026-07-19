@@ -40,6 +40,7 @@ from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
 from agentevolver.prompt import prompt_manager
 from agentevolver.session.types import SessionContext
+from agentevolver.session.project import bind_session_roots
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.skill import skill_manager
 from agentevolver.task import TaskCategory, TaskPriority, TaskRecord, task_manager
@@ -98,6 +99,9 @@ class AgentGateway:
         )
         self._sequence: Dict[str, int] = defaultdict(int)
         self._active_agent_tasks: Dict[str, asyncio.Task] = {}
+        # Session whose roots the shared runtime is currently bound to (see
+        # _bind_runtime_to_session); None until the first task runs.
+        self._bound_session_id: Optional[str] = None
         self._initialized = False
         self._stopping = False
         self._workspace_source = (
@@ -117,7 +121,9 @@ class AgentGateway:
         load_dotenv()
         config.initialize(config_path=config_path, args=Namespace(cfg_options=None), verbose=False)
         extension_manager.set_base_dir(config.extension_root)
-        logger.initialize(config=config, console_stream=sys.stderr if stdio else None)
+        # No session exists yet, so do not open a tag-level log file — the file sink
+        # is attached to the session's own log root by _bind_runtime_to_session.
+        logger.initialize(config=config, console_stream=sys.stderr if stdio else None, file_logging=False)
 
         await version_manager.initialize()
         await trace_manager.initialize()
@@ -206,7 +212,12 @@ class AgentGateway:
         configured_project_root = getattr(config, "project_root", None)
         default_project_root = Path(configured_project_root) if configured_project_root else Path.cwd() / "output"
         project_root = default_project_root / session_id
-        sandbox = ProjectSandbox.create(project_root, shared_extension_root=Path(config.extension_root))
+        # Clients open a session as soon as they connect; most never run anything.
+        # Only describe the sandbox here — it is created on first real use so idle
+        # sessions leave no empty directory behind.
+        sandbox = ProjectSandbox.create(
+            project_root, shared_extension_root=Path(config.extension_root), materialize=False,
+        )
         requested_workspace = params.get("workspace")
         requested_source = Path(requested_workspace).expanduser().resolve() if requested_workspace else None
         if requested_source and (
@@ -336,6 +347,8 @@ class AgentGateway:
                 Path(path).expanduser().resolve().relative_to(workspace)
             except ValueError as exc:
                 raise ValueError("Task files must be located inside the session workspace") from exc
+        # Bind before submitting so the queue persists this task under the session.
+        self._bind_runtime_to_session(self._sessions[session_id])
         task_id = await task_manager.submit(
             content=content,
             category=TaskCategory.USER,
@@ -373,6 +386,10 @@ class AgentGateway:
         """List one workspace directory; clients expand the tree lazily."""
         session = self._sessions[self._require_session_id(params)]
         directory, relative = self._workspace_path(session, params.get("path"))
+        if not directory.exists() and not relative:
+            # Session opened but nothing has run yet, so its workspace does not exist
+            # on disk. Report it as empty rather than an error.
+            return {"path": relative, "entries": [], "truncated": False}
         if not directory.exists() or not directory.is_dir():
             raise ValueError(f"Workspace directory was not found: {relative or '.'}")
         show_hidden = bool(params.get("show_hidden", False))
@@ -451,6 +468,8 @@ class AgentGateway:
             raise ValueError("File exceeds the 2 GB upload limit")
         mime_type = str(params.get("mime_type") or "application/octet-stream")[:255]
         upload_id = make_id()
+        # An upload is real work in this session — create its roots before writing.
+        session.sandbox.materialize()
         upload_dir = Path(session.context.workspace_root) / "uploads" / session.context.id
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{upload_id}_{name}"
@@ -923,11 +942,41 @@ class AgentGateway:
         await self._publish("approval.responded", dict(params), session_id=params.get("session_id"))
         return {"approval_id": approval_id, "accepted": True}
 
+    def _bind_runtime_to_session(self, session: GatewaySession) -> None:
+        """Point the shared runtime at ``session``'s own project roots.
+
+        Direct entry points (``examples/run_*``, the CLI) bind their session before
+        any manager initializes, so every manager derives session-scoped paths from
+        config.  The Gateway cannot: it initializes one shared runtime at startup,
+        before any session exists.  Binding here — on the single, serialized task
+        path (the task queue runs one worker) — gives the same result: config roots
+        and the managers that persist run output all move under
+        ``output/<tag>/<session-id>/`` for the duration of this task.
+        """
+        if self._bound_session_id == session.context.id:
+            return
+        # Work is about to happen in this session — create its roots now.
+        session.sandbox.materialize()
+        bind_session_roots(config, session.sandbox)
+        # Managers cached their base_dir at initialize(); re-point the ones that
+        # persist per-run output. Writers that read config at write time (the
+        # snapshot hook) follow the rebound config automatically.
+        trace_manager.rebind(config.log_root)
+        memory_manager.rebind(config.log_root)
+        trajectory_manager.rebind(config.log_root)
+        task_manager.rebind(os.path.join(config.log_root, "tasks"))
+        # Boot ran without a file sink (no session existed yet); attach it now so the
+        # run log lands in this session too.
+        logger.rebind(config.log_path)
+        self._bound_session_id = session.context.id
+        logger.info(f"| 📁 Runtime bound to session {session.context.id}: {config.log_root}")
+
     async def _run_task(self, record: TaskRecord) -> Any:
         session_id = record.task.session_id
         if not session_id or session_id not in self._sessions:
             raise RuntimeError(f"Gateway session is unavailable for task {record.task.id}")
         session = self._sessions[session_id]
+        self._bind_runtime_to_session(session)
         self._sync_session_capabilities(session)
         await self._publish("task.started", {"content": record.task.content}, session_id=session_id, task_id=record.task.id)
         agent_task = asyncio.create_task(

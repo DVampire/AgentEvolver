@@ -76,13 +76,10 @@ class ProtocolManager(metaclass=Singleton):
         self, child: Any, task: str, *,
         files: Optional[List[str]] = None, target_name: Optional[str] = None,
         allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None, workspace_root: Optional[str] = None,
-        log_root: Optional[str] = None,
     ) -> Response:
         """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
         ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
-        restricts its capabilities; ``target_name`` anchors an evolution target;
-        ``log_root`` is the parent session's log root, inherited so the sub-agent's
-        logs land under the same session directory."""
+        restricts its capabilities; ``target_name`` anchors an evolution target."""
         import os
         from agentevolver.agent.types import AgentContext  # local: agent → protocol.server would cycle at import time
 
@@ -93,8 +90,6 @@ class ProtocolManager(metaclass=Singleton):
             workspace_root=workspace_root,
             parent_session_id=(parent_ref.name if parent_ref is not None else None),
         )
-        if log_root:
-            ctx.extra["log_root"] = log_root
         if target_name:
             ctx.extra["target_name"] = target_name
         effective_allowlists = dict(allowlists or {})

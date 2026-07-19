@@ -43,7 +43,6 @@ class MemoryContextManager(BaseModel):
         else:
             self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "memory"))
         logger.info(f"| 📁 Memory context manager base directory: {self.base_dir}.")    
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Memory context manager.")
 
         self._memory_configs: Dict[str, MemoryConfig] = {}  # Current active configs (latest version)

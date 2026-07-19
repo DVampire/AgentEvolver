@@ -48,7 +48,6 @@ class AgentContextManager(BaseModel):
             self.base_dir = assemble_workspace_path(base_dir)
         else:
             self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "agent"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Agent context manager base directory: {self.base_dir}.")
         logger.info(f"| 📁 Agent context manager.")
 

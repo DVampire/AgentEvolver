@@ -150,12 +150,6 @@ class TraceHook(Hook):
             )
 
         if event is not None:
-            # Route this event's file into the caller session's own log root
-            # (from the sandbox) when present; the writer falls back to the
-            # global trace root otherwise.
-            session_log_root = (ctx.extra or {}).get("log_root")
-            if session_log_root:
-                event.log_root = str(session_log_root)
             await trace_manager.emit(event)
 
         return HookResult.allow()

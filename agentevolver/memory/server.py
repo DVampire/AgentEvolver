@@ -32,7 +32,6 @@ class MemoryManagerServer(BaseModel):
             memory_names: List of memory system names to initialize. If None, initialize all discovered memory systems.
         """
         self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "memory"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Memory Manager base directory: {self.base_dir}")
         
         # Initialize memory context manager
@@ -40,8 +39,26 @@ class MemoryManagerServer(BaseModel):
             base_dir=self.base_dir,
         )
         await self.memory_context_manager.initialize(memory_names=memory_names)
-        
+
         logger.info("| ✅ Memory systems initialization completed")
+
+    def rebind(self, log_root: str) -> None:
+        """Re-point this manager and its live memory systems at ``<log_root>/memory``.
+
+        Long-lived hosts (the Gateway) initialize memory once, before any session
+        exists; binding a session re-points it so each session's memory files land
+        under that session's own log root.
+        """
+        base_dir = assemble_workspace_path(os.path.join(log_root, "memory"))
+        self.base_dir = base_dir
+        ctx_manager = getattr(self, "memory_context_manager", None)
+        if ctx_manager is None:
+            return
+        ctx_manager.base_dir = base_dir
+        for memory_config in getattr(ctx_manager, "_memory_configs", {}).values():
+            instance = getattr(memory_config, "instance", None)
+            if instance is not None and hasattr(instance, "base_dir"):
+                instance.base_dir = base_dir
     
     async def register(self, memory: Union[Memory, Type[Memory]], *, override: bool = False, **kwargs: Any) -> MemoryConfig:
         """Register a memory system or memory class asynchronously.

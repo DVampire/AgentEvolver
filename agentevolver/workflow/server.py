@@ -39,7 +39,6 @@ class WorkflowManagerServer(BaseModel):
     async def initialize(self, workflow_names: Optional[List[str]] = None) -> None:
         """Create the registry context and load built-in workflows (optionally filtered)."""
         self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "workflow"))
-        os.makedirs(self.base_dir, exist_ok=True)
         self.workflow_context_manager = WorkflowContextManager(base_dir=self.base_dir)
         await self._ensure_context_manager().initialize(workflow_names=workflow_names)
         logger.info("| ✅ Workflow manager Server initialized")

@@ -92,11 +92,6 @@ class TraceEvent(BaseModel):
     provenance:  EventProvenance  = Field(default=EventProvenance.LIVE)
     confidence:  EventConfidence  = Field(default=EventConfidence.HIGH)
 
-    # Per-session log root the writer routes this event's file into (from the
-    # caller's sandbox). Excluded from the persisted record — it is write-time
-    # routing metadata, not observability data.
-    log_root: Optional[str] = Field(default=None, exclude=True)
-
     def to_dict(self) -> Dict[str, Any]:
         d = self.model_dump()
         d["timestamp"] = self.timestamp.isoformat()

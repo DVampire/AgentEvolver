@@ -53,7 +53,6 @@ class ConnectorContextManager(BaseModel):
             self.base_dir = assemble_workspace_path(base_dir)
         else:
             self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "connector"))
-        os.makedirs(self.base_dir, exist_ok=True)
 
 
 

@@ -48,7 +48,6 @@ class ConstraintContextManager(BaseModel):
         else:
             self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "constraint"))
         logger.info(f"| 📁 Constraint context manager base directory: {self.base_dir}.")
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Constraint context manager.")
 
         self._constraint_configs: Dict[str, ConstraintConfig] = {}  # Current active configs (latest version)

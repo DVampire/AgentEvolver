@@ -51,8 +51,6 @@ class TrajectoryHook(Hook):
             task_id=inp.get("task_id") or ctx.id,
             agent_name=inp.get("agent_name") or "",
             workspace_root=ctx.workspace_root,
-            # Route persistence into the caller session's own log root when present.
-            log_root=(ctx.extra or {}).get("log_root"),
             input=inp,
         )
 

@@ -968,8 +968,6 @@ class Agent(BaseModel):
                     )
                 },
                 parent_ref=parent_ref, workspace_root=getattr(ctx, "workspace_root", None) or self.base_dir,
-                # Sub-agent inherits the session log root so its logs stay in the same session dir.
-                log_root=(getattr(ctx, "extra", {}) or {}).get("log_root"),
             )
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")

@@ -44,8 +44,18 @@ class TrajectoryManagerServer:
             # config not initialized (e.g. isolated tests) — fall back to workspace_root.
             log_root = "workspace_root"
         self.base_dir = assemble_workspace_path(os.path.join(log_root, "trajectory"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Trajectory manager base directory: {self.base_dir}")
+
+    def rebind(self, log_root: str) -> None:
+        """Re-point persistence at ``<log_root>/trajectory`` for a newly bound session.
+
+        Long-lived hosts (the Gateway) initialize this manager once, before any
+        session exists; binding a session re-points it so trajectories land under
+        that session's own log root.
+        """
+        from agentevolver.utils import assemble_workspace_path
+
+        self.base_dir = assemble_workspace_path(os.path.join(log_root, "trajectory"))
 
     # ------------------------------------------------------------------
     # Build — driven by TrajectoryHook
@@ -58,7 +68,6 @@ class TrajectoryManagerServer:
             session_id=ctx.session_id,
             task_id=ctx.task_id,
             agent_name=ctx.agent_name,
-            log_root=getattr(ctx, "log_root", None),
             task_description=inp.get("task") or "",
             metadata={
                 k: inp.get(k)
@@ -177,12 +186,7 @@ class TrajectoryManagerServer:
     # ------------------------------------------------------------------
 
     def _path(self, traj: Trajectory) -> str:
-        # Prefer the run's own session log root (<log_root>/trajectory/), matching
-        # the global layout; fall back to the manager's global base_dir.
-        if traj.log_root:
-            base = os.path.join(str(traj.log_root), "trajectory")
-        else:
-            base = self.base_dir or "."
+        base = self.base_dir or "."
         safe = traj.task_id.replace("/", "_").replace("\\", "_")
         return os.path.join(base, f"{safe}.jsonl")
 

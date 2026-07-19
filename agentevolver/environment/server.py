@@ -35,7 +35,6 @@ class EnvironmentManagerServer(BaseModel):
 
         base_root = config.log_root if hasattr(config, "log_root") and config.get("log_root") else config.workspace_root
         self.base_dir = assemble_workspace_path(os.path.join(base_root, "environment"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 ECP Server base directory: {self.base_dir}")
 
         # Initialize environment context manager

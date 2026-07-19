@@ -64,6 +64,8 @@ class Logger(logging.Logger, metaclass=Singleton):
         self._log_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._log_path: Optional[str] = None
+        self._file_handler = None          # Rich handler for the current file sink
+        self._level: int = LogLevel.INFO
         self._initialized = False
 
     def _log_writer_thread(self, log_path: str):
@@ -122,6 +124,7 @@ class Logger(logging.Logger, metaclass=Singleton):
         config,
         level: int = LogLevel.INFO,
         console_stream=None,
+        file_logging: bool = True,
     ):
         """
         Initialize the logger with a file path and optional main process check.
@@ -129,12 +132,14 @@ class Logger(logging.Logger, metaclass=Singleton):
         Args:
             config: Config object with log_path attribute.
             level (int, optional): The logging level. Defaults to logging.INFO.
+            file_logging: Write to ``config.log_path`` immediately. Long-lived hosts
+                (the Gateway) pass ``False`` so no tag-level log file is created
+                before a session exists, then call :meth:`rebind` once bound.
         """
 
         log_path = config.log_path
         self._log_path = log_path
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-
+        self._level = level
         self.handlers.clear()
 
         # Console output (synchronous, but fast)
@@ -158,10 +163,20 @@ class Logger(logging.Logger, metaclass=Singleton):
         rich_handler.setFormatter(self.formatter)
         self.addHandler(rich_handler)
 
+        if file_logging:
+            self._attach_file_sink(log_path, level)
+
+        self.propagate = False
+        self._initialized = True
+
+    def _attach_file_sink(self, log_path: str, level: int) -> None:
+        """Start the async writer thread and Rich file handler for ``log_path``."""
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
         # File output - use queue for async writing
         self._log_queue = Queue(maxsize=1000)  # Limit queue size to avoid memory overflow
         self._stop_event.clear()
-        
+
         # Start background log writing thread
         self._log_thread = threading.Thread(
             target=self._log_writer_thread,
@@ -170,7 +185,7 @@ class Logger(logging.Logger, metaclass=Singleton):
             name="Logger-Writer"
         )
         self._log_thread.start()
-        
+
         # File console for Rich objects (still needs file handle for Rich)
         self.file_console = Console(
             width=None,
@@ -191,9 +206,36 @@ class Logger(logging.Logger, metaclass=Singleton):
         rich_file_handler.setLevel(level)
         rich_file_handler.setFormatter(self.formatter)
         self.addHandler(rich_file_handler)
+        self._file_handler = rich_file_handler
+        self._log_path = log_path
 
-        self.propagate = False
-        self._initialized = True
+    def rebind(self, log_path: str) -> None:
+        """Redirect file logging to ``log_path`` (called when a session is bound).
+
+        Long-lived hosts initialize the logger before any session exists; binding a
+        session moves the log file under that session's own log root. The console
+        sink is untouched, so nothing is lost while switching.
+        """
+        if log_path == self._log_path and getattr(self, "_file_handler", None) is not None:
+            return
+
+        # Stop the current writer thread and detach the old file sink.
+        self._stop_event.set()
+        if self._log_thread is not None:
+            self._log_thread.join(timeout=2.0)
+            self._log_thread = None
+        old_handler = getattr(self, "_file_handler", None)
+        if old_handler is not None:
+            self.removeHandler(old_handler)
+            self._file_handler = None
+        old_console = getattr(self, "file_console", None)
+        if old_console is not None:
+            try:
+                old_console.file.close()
+            except Exception:
+                pass
+
+        self._attach_file_sink(log_path, getattr(self, "_level", LogLevel.INFO))
 
     def _prefix_msg(self, msg):
         """Add [session_id] prefix if available."""

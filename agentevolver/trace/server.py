@@ -56,12 +56,23 @@ class TraceManager(metaclass=Singleton):
             from agentevolver.config import config
             log_root = os.path.join(config.log_root, "trace")
         self._log_root = log_root
-        os.makedirs(log_root, exist_ok=True)
 
         self._queue = AsyncQueue[TraceEvent](maxsize=20_000)
         self._writer = TraceWriter(log_root=log_root, queue=self._queue)
         self._initialized = True
         logger.info(f"| 🔍 TraceManager initialised (log_root={log_root})")
+
+    def rebind(self, log_root: str) -> None:
+        """Re-point the trace root at ``<log_root>/trace`` for a newly bound session.
+
+        Long-lived hosts (the Gateway) initialize this manager once, before any
+        session exists; binding a session re-points it (and its writer) so each
+        session's event files and index live under its own log root.
+        """
+        trace_root = os.path.join(log_root, "trace")
+        self._log_root = trace_root
+        if self._writer is not None:
+            self._writer.rebind(trace_root)
 
     async def start(self, *, start_server: bool = True) -> None:
         """Start the writer consumer loop and, optionally, the Trace web server."""

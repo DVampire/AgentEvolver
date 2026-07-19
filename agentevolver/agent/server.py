@@ -44,7 +44,6 @@ class AgentManagerServer(BaseModel):
         """
         
         self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "agent"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 agent manager Server base directory: {self.base_dir}")
         
         # Initialize agent context manager

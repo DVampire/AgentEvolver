@@ -39,7 +39,6 @@ class BenchmarkContextManager(BaseModel):
         else:
             self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "benchmark"))
         logger.info(f"| 📁 Benchmark context manager base directory: {self.base_dir}.")    
-        os.makedirs(self.base_dir, exist_ok=True)
         
         
 

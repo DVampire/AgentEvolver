@@ -43,7 +43,6 @@ class ToolManagerServer(BaseModel):
         """
         
         self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "tool"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 tool manager Server base directory: {self.base_dir}")
         
         # Initialize tool context manager

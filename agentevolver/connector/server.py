@@ -48,7 +48,6 @@ class ConnectorManagerServer(BaseModel):
             connector_names: If provided, only these connectors are loaded.
         """
         self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "connector"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(
             f"| 📁 connector manager Server base directory: {self.base_dir} "
         )

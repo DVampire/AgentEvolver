@@ -43,10 +43,11 @@ def process_general(config: MMConfig) -> MMConfig:
     # Make the project extension root available to components initialized after
     # configuration, without conflating it with user-level AgentEvolver state.
     os.environ["AGENTEVOLVER_EXTENSION_ROOT"] = extension_root
-    # ``workspace_root`` and ``log_root`` are templates until a session is bound.
-    # Creating them here would leave empty tag-level directories beside sessions.
-    for root_path in (project_root, extension_root):
-        os.makedirs(root_path, exist_ok=True)
+    # ``project_root``, ``workspace_root`` and ``log_root`` are templates until a
+    # session is bound — creating them here would leave empty tag-level directories
+    # beside the real per-session ones (``ProjectSandbox`` creates the whole path it
+    # needs). Only the durable extension root is materialized eagerly.
+    os.makedirs(extension_root, exist_ok=True)
 
     log_path = os.path.join(log_root, config.log_path)
     config.log_path = log_path

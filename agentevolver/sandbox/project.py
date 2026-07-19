@@ -73,15 +73,24 @@ class ProjectSandbox:
         workspace_root: str | Path | None = None,
         package_root: str | Path | None = None,
         shared_extension_root: str | Path | None = None,
+        materialize: bool = True,
     ) -> "ProjectSandbox":
+        """Describe (and by default create) a session's sandbox roots.
+
+        Pass ``materialize=False`` to only compute the paths.  A Gateway session is
+        opened as soon as a client connects, but most never run anything; deferring
+        creation until :meth:`materialize` (called when work actually starts) keeps
+        empty session directories off disk.
+        """
         project = Path(project_root).expanduser().resolve()
         workspace = Path(workspace_root).expanduser().resolve() if workspace_root else project / "workspace"
         log = project / "log"
         extension = project / "extension"
         if not _inside(workspace, project):
             raise ValueError("workspace_root must be located under project_root")
-        for root in (project, workspace, log, extension):
-            root.mkdir(parents=True, exist_ok=True)
+        if materialize:
+            for root in (project, workspace, log, extension):
+                root.mkdir(parents=True, exist_ok=True)
         return cls(
             project_root=project,
             workspace_root=workspace,
@@ -90,6 +99,12 @@ class ProjectSandbox:
             package_root=Path(package_root or get_package_root()).expanduser().resolve(),
             shared_extension_root=Path(shared_extension_root or get_extension_root()).expanduser().resolve(),
         )
+
+    def materialize(self) -> "ProjectSandbox":
+        """Create this sandbox's roots on disk. Idempotent; safe to call repeatedly."""
+        for root in (self.project_root, self.workspace_root, self.log_root, self.extension_root):
+            root.mkdir(parents=True, exist_ok=True)
+        return self
 
     @property
     def manifest_path(self) -> Path:

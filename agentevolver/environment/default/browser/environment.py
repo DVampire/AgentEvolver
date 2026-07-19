@@ -58,7 +58,9 @@ class BrowserEnvironment(Environment):
         self.max_state_elements = max_state_elements
         self.command_timeout = command_timeout
 
-        os.makedirs(self.base_dir, exist_ok=True)
+        # Created lazily when a screenshot is actually saved — constructing the
+        # environment (which happens at manager init, before any session is bound)
+        # must not leave an empty directory behind.
 
         self._service = BrowserService(
             headless=headless,

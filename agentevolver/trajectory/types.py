@@ -36,11 +36,6 @@ class TrajectoryContext(BaseContext):
 
     task_id: str = Field(description="Run identifier this trajectory belongs to.")
     agent_name: str = Field(default="", description="Name of the agent being recorded.")
-    log_root: Optional[str] = Field(
-        default=None,
-        description="Per-session log root (from the sandbox); persistence falls back "
-        "to the global config log root when unset.",
-    )
 
     @property
     def session_id(self) -> str:
@@ -148,8 +143,6 @@ class Trajectory(BaseModel):
     task_id: str
     agent_name: str = ""
     task_description: str = ""
-    # Per-session log root this run persists under; None → global config log root.
-    log_root: Optional[str] = None
     steps: List[TrajectoryStep] = Field(default_factory=list)
     success: bool = False
     final_result: Optional[str] = None

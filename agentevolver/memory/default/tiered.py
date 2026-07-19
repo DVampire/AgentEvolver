@@ -186,8 +186,6 @@ class TieredMemory(Memory):
         assert self.compact_chunk <= self.recent_max, "compact_chunk must be <= recent_max"
         assert self.recent_fetch <= self.recent_max - self.compact_chunk, \
             "recent_fetch must be <= recent_max - compact_chunk"
-        if self.base_dir:
-            os.makedirs(self.base_dir, exist_ok=True)
         self._sessions: Dict[str, _SessionState] = {}
         self._registry_lock = asyncio.Lock()
 
@@ -195,17 +193,9 @@ class TieredMemory(Memory):
     # Public API
     # ------------------------------------------------------------------
 
-    async def emit(self, event: TraceEvent, session_id: str, base_dir: Optional[str] = None) -> None:
-        """Ingest a TraceEvent and sync it into todos / flow / recent / result.
-
-        Args:
-            event: The lifecycle event to fold into this session's memory.
-            session_id: Session the event belongs to.
-            base_dir: Per-session memory directory (from the caller's sandbox);
-                when omitted the manager's global ``base_dir`` is used. Only the
-                first call for a session fixes its file path.
-        """
-        state = await self._get_or_create(session_id, event, base_dir)
+    async def emit(self, event: TraceEvent, session_id: str) -> None:
+        """Ingest a TraceEvent and sync it into todos / flow / recent / result."""
+        state = await self._get_or_create(session_id, event)
         ev = event.event_type
         changed = True
 
@@ -481,7 +471,7 @@ class TieredMemory(Memory):
     # Internal
     # ------------------------------------------------------------------
 
-    async def _get_or_create(self, session_id: str, event: TraceEvent, base_dir: Optional[str] = None) -> _SessionState:
+    async def _get_or_create(self, session_id: str, event: TraceEvent) -> _SessionState:
         victims: List[_SessionState] = []
         async with self._registry_lock:
             if session_id not in self._sessions:
@@ -498,9 +488,7 @@ class TieredMemory(Memory):
                     stem = f"{agent_name}_{session_id}"
                 else:
                     stem = session_id
-                # Prefer the caller session's own memory dir; fall back to global.
-                effective_base = base_dir or self.base_dir
-                file_path = os.path.join(effective_base, f"{stem}.{self.file_ext}") if effective_base else ""
+                file_path = os.path.join(self.base_dir, f"{stem}.{self.file_ext}") if self.base_dir else ""
                 self._sessions[session_id] = _SessionState(
                     session_id=session_id, task=task, file_path=file_path,
                     working_max=self.working_max)

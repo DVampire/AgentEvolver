@@ -8,7 +8,6 @@ typed contract regardless of which agent fired it.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -101,16 +100,11 @@ class MemoryHook(Hook):
         if event is None:
             return HookResult.allow()
 
-        # Route persistence into the caller session's own memory dir when the
-        # sandbox log root is carried on ctx.extra; else instances use their global base.
-        session_log_root = (ctx.extra or {}).get("log_root")
-        mem_base = os.path.join(str(session_log_root), "memory") if session_log_root else None
-
         # Primary memory
         try:
             info = await memory_manager.get_info(inp.memory_name)
             if info and info.instance is not None:
-                await info.instance.emit(event, session_id=ctx.id, base_dir=mem_base)
+                await info.instance.emit(event, session_id=ctx.id)
         except Exception as e:
             logger.warning(f"| ⚠️ MemoryHook (primary) error on {inp.event}: {e}")
 
@@ -119,7 +113,7 @@ class MemoryHook(Hook):
             try:
                 fs = await memory_manager.get_info("file_system_memory")
                 if fs and fs.instance is not None:
-                    await fs.instance.emit(event, session_id=ctx.id, base_dir=mem_base)
+                    await fs.instance.emit(event, session_id=ctx.id)
             except Exception as e:
                 logger.warning(f"| ⚠️ MemoryHook (file_system) error on {inp.event}: {e}")
 

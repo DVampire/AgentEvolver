@@ -42,7 +42,6 @@ class PromptManagerServer(BaseModel):
                           If None, all md files are loaded.
         """
         self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "prompt"))
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Prompt Manager base_dir={self.base_dir}")
 
         self.prompt_context_manager = PromptContextManager(

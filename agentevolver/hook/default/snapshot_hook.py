@@ -65,11 +65,7 @@ class SnapshotHook(Hook):
 
         try:
             from agentevolver.config import config
-            # Prefer the caller session's own log root (set by the sandbox and
-            # carried on ctx.extra); fall back to the global config for direct,
-            # single-session runs.
-            session_log_root = (ctx.extra or {}).get("log_root")
-            base_dir = str(session_log_root or getattr(config, "log_root", None) or inp.get("workspace_root") or ".")
+            base_dir = str(getattr(config, "log_root", None) or inp.get("workspace_root") or ".")
             out_dir = os.path.join(base_dir, "messages", agent_name)
             os.makedirs(out_dir, exist_ok=True)
             file_path = os.path.join(out_dir, f"{step_number + 1:04d}.html")

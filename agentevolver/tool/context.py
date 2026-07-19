@@ -51,7 +51,6 @@ class ToolContextManager(BaseModel):
         else:
             self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "tool"))
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
-        os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| 📁 Tool context manager.")
 
         self._tool_configs: Dict[str, ToolConfig] = {}  # Current active configs (latest version)

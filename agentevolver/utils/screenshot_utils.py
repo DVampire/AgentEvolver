@@ -19,8 +19,9 @@ class ScreenshotService:
 
     def __init__(self, base_dir: Union[str, Path]):
         self.base_dir = Path(base_dir)
+        # Created lazily by store_screenshot — constructing the service (which happens
+        # when the browser environment initializes) must not leave an empty directory.
         self.screenshots_dir = self.base_dir / "screenshots"
-        self.screenshots_dir.mkdir(parents=True, exist_ok=True)
 
     async def store_screenshot(
         self,

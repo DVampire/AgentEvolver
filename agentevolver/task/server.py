@@ -131,16 +131,29 @@ class TaskManager(metaclass=Singleton):
         """Set log_root, attach handler, and load persisted pending tasks."""
         self._log_root = log_root
         self._handler = handler
-        os.makedirs(log_root, exist_ok=True)
-
+        # Directory is created on first save, so a host that binds a session later
+        # (the Gateway) leaves no empty tag-level task directory behind.
         self._persist_path = os.path.join(log_root, "tasks.json")
         self._archive_path = os.path.join(log_root, "tasks_archive.json")
 
         await self._load()
+
         logger.info(
             f"| 📋 TaskManager initialised — {len(self._records)} task(s) loaded "
             f"(log_root={log_root})"
         )
+
+    def rebind(self, log_root: str) -> None:
+        """Re-point task persistence at a newly bound session's task directory.
+
+        Long-lived hosts (the Gateway) initialize the queue once, before any session
+        exists; binding a session moves ``tasks.json`` under that session's log root.
+        """
+        if log_root == self._log_root:
+            return
+        self._log_root = log_root
+        self._persist_path = os.path.join(log_root, "tasks.json")
+        self._archive_path = os.path.join(log_root, "tasks_archive.json")
 
     async def start(self, num_workers: int = 4) -> None:
         """Start the worker pool.  Safe to call multiple times."""
@@ -440,6 +453,7 @@ class TaskManager(metaclass=Singleton):
                 "saved_at": datetime.now(timezone.utc).isoformat(),
                 "active": active,
             }
+            os.makedirs(os.path.dirname(self._persist_path), exist_ok=True)
             async with file_lock(self._persist_path):
                 with open(self._persist_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False, default=str)

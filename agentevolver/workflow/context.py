@@ -47,7 +47,6 @@ class WorkflowContextManager(BaseModel):
     ) -> None:
         super().__init__(**kwargs)
         self.base_dir = assemble_workspace_path(base_dir or os.path.join(config.log_root, "workflow"))
-        os.makedirs(self.base_dir, exist_ok=True)
         selected_builtin_dir = builtin_workflows_dir or builtin_dir or (Path(__file__).parent / "default")
         self.builtin_workflows_dir = str(Path(selected_builtin_dir).resolve())
         self.evaluation_path = str(Path(evaluation_path or os.path.join(self.base_dir, "evaluations.json")))
