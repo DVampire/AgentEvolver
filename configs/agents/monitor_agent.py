@@ -1,7 +1,6 @@
 monitor_agent = dict(
     type          = "MonitorAgent",
     name          = "monitor_agent",
-    base_dir      = "workspace_root/monitor_agent",
     description   = (
         "Starts a long-running bash process and monitors it, "
         "reporting progress to the parent agent at regular intervals."

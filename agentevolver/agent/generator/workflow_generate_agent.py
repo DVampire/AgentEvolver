@@ -21,10 +21,19 @@ class WorkflowGenerateAgent(Agent):
         super().__init__(base_dir=base_dir, prompt_name=prompt_name or "workflow_generate_agent", **kwargs)
 
     async def _finalize_run(self, response, ctx):
+        """Register the authored Workflow before the caller's reply is resolved."""
         return await _register_workflow(response, ctx, self.model_name)
 
 
 async def _register_workflow(response, ctx, model_name):
+    """Register the produced HTML Workflow artifact via the registration hook.
+
+    Shared by the generate and optimize agents' ``_finalize_run``. On a successful run
+    it stages the artifact (resolving ``target_name``/``artifact_path``/``reasoning``
+    from the context and response) and, if the hook blocks registration, flips the
+    response to failed with the hook's reason. A response that already failed is passed
+    through unchanged.
+    """
     if not response.success:
         return response
     from agentevolver.hook.server import hook_manager

@@ -17,6 +17,20 @@ class SkillRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Locate the generated skill directory, promote it if staged, and register it.
+
+        Fired after a skill-generating run calls ``done_tool``. Resolves the
+        skill directory, validates and promotes it out of any staged extension
+        root, then registers it as an evolvable component with ``extension_manager``.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``target_name``,
+                ``reasoning`` and ``extension_root``.
+
+        Returns:
+            ``HookResult.allow()`` on success, or ``HookResult.block(reason)``
+            when the directory cannot be located or registration fails.
+        """
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
@@ -46,6 +60,14 @@ class SkillRegistrationHook(Hook):
             return HookResult.block(f"[registration failed] {e}\nPlease fix the issue and call done_tool again.")
 
     def _resolve_skill_dir(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
+        """Find the generated skill directory referenced by the run.
+
+        Prefers an ``extension/.../skill/...`` path mentioned in the agent's
+        reasoning; falls back to the staged directory from ``target_name``.
+
+        Returns:
+            The existing skill directory path, or ``None`` if none resolves.
+        """
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             if "extension/" in token and "/skill/" in token:

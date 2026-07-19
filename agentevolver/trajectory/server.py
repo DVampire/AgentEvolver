@@ -58,6 +58,7 @@ class TrajectoryManagerServer:
             session_id=ctx.session_id,
             task_id=ctx.task_id,
             agent_name=ctx.agent_name,
+            log_root=getattr(ctx, "log_root", None),
             task_description=inp.get("task") or "",
             metadata={
                 k: inp.get(k)
@@ -176,7 +177,12 @@ class TrajectoryManagerServer:
     # ------------------------------------------------------------------
 
     def _path(self, traj: Trajectory) -> str:
-        base = self.base_dir or "."
+        # Prefer the run's own session log root (<log_root>/trajectory/), matching
+        # the global layout; fall back to the manager's global base_dir.
+        if traj.log_root:
+            base = os.path.join(str(traj.log_root), "trajectory")
+        else:
+            base = self.base_dir or "."
         safe = traj.task_id.replace("/", "_").replace("\\", "_")
         return os.path.join(base, f"{safe}.jsonl")
 

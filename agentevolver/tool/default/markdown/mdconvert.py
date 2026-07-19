@@ -27,6 +27,17 @@ from agentevolver.logger import logger
 
 
 def read_tables_from_stream(file_stream):
+    """Extract tables from a PDF byte stream using Camelot.
+
+    Camelot only reads from a path, so the stream is spooled to a temporary
+    ".pdf" file and parsed with the "lattice" flavor.
+
+    Args:
+        file_stream: A readable binary stream containing PDF bytes.
+
+    Returns:
+        A Camelot ``TableList`` of detected tables.
+    """
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as temp_pdf:
         temp_pdf.write(file_stream.read())
         temp_pdf.flush()
@@ -59,6 +70,11 @@ def transcribe_audio(file_stream, audio_format):
         exception = None
         
         def run_in_thread():
+            """Run the async transcription in a fresh event loop on this thread.
+
+            Used when a loop is already running so ``asyncio.run`` can be called
+            safely; stores the outcome in the enclosing ``result``/``exception``.
+            """
             nonlocal result, exception
             try:
                 result = asyncio.run(_transcribe_async())
@@ -84,6 +100,21 @@ class AudioWhisperConverter(AudioConverter):
             stream_info: StreamInfo,
             **kwargs: Any,  # Options to pass to the converter
     ) -> DocumentConverterResult:
+        """Convert an audio stream to markdown with metadata and an LLM transcript.
+
+        Overrides MarkItDown's default audio converter to transcribe via
+        ``transcribe_audio`` (model-backed) instead of a local ASR engine. Emits any
+        available ExifTool metadata followed by an "Audio Transcript" section. WAV,
+        MP3, and MP4/M4A are supported; other formats yield metadata only.
+
+        Args:
+            file_stream: Binary audio stream.
+            stream_info: Detected extension/mimetype used to pick the audio format.
+            **kwargs: Passthrough options (e.g. ``exiftool_path``).
+
+        Returns:
+            A ``DocumentConverterResult`` holding the assembled markdown.
+        """
         md_content = ""
 
         # Add metadata
@@ -142,6 +173,23 @@ class PdfWithTableConverter(PdfConverter):
         stream_info: StreamInfo,
         **kwargs: Any,  # Options to pass to the converter
     ) -> DocumentConverterResult:
+        """Convert a PDF to markdown, appending any detected tables.
+
+        Extends MarkItDown's ``PdfConverter`` by combining pdfminer text extraction
+        with Camelot table detection: extracted tables are rendered as markdown and
+        appended after the body text. Falls back to plain text when no tables are found.
+
+        Args:
+            file_stream: Binary PDF stream.
+            stream_info: Stream metadata (unused here but part of the converter contract).
+            **kwargs: Passthrough converter options.
+
+        Returns:
+            A ``DocumentConverterResult`` with the markdown body plus any tables.
+
+        Raises:
+            MissingDependencyException: If the PDF dependencies are unavailable.
+        """
         # Check the dependencies
         if _dependency_exc_info is not None:
             raise MissingDependencyException(
@@ -198,6 +246,16 @@ class MarkitdownConverter():
         self.client.register_converter(AudioWhisperConverter())
 
     def convert(self, source: str, **kwargs: Any):
+        """Convert a source (path or URL) to markdown via the configured MarkItDown client.
+
+        Args:
+            source: File path or URL to convert.
+            **kwargs: Options forwarded to ``MarkItDown.convert``.
+
+        Returns:
+            The MarkItDown conversion result, or ``None`` if conversion raises (the
+            error is logged rather than propagated).
+        """
         try:
             result = self.client.convert(
                 source,

@@ -25,7 +25,7 @@ fragment compilation remains available only for ephemeral `run_html()` and unit 
 | `compiler.py` | Parse the restricted HTML language and reject unsafe/unbounded programs |
 | `context.py` | Discovery, registry state, compact prompt roster, native schemas, caches, and evaluation evidence |
 | `runtime.py` | Interpret control flow, enforce budgets, invoke capabilities, checkpoint, pause, and resume |
-| `server.py` | Thin registry facade plus Runtime run/list/pause/resume/cancel/discard control |
+| `server.py` | Thin registry facade plus Runtime start/run/list/pause/resume/cancel/discard control |
 | `default/` | Versioned built-in Workflow HTML documents |
 
 ## Capability model
@@ -118,4 +118,4 @@ files; the Workflow's own `version` tracks behavior changes. Patch-compatible 1.
 may be compiled by the 1.x compiler. A runtime must reject a future incompatible major
 checkpoint version rather than guessing how to restore it.
 
-See [`docs/workflows.md`](../../../docs/workflows.md) for authoring examples.
+See [`docs/workflows.md`](../../docs/workflows.md) for authoring examples.

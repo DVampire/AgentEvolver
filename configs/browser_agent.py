@@ -6,8 +6,6 @@ with read_base():
 
 tag = "browser_agent"
 project_root = f"output/{tag}"
-log_root = f"{project_root}/log"
-workspace_root = f"{project_root}/workspace"
 log_path = "agent.log"
 
 version = "0.1.0"
@@ -50,7 +48,6 @@ file_system_memory.update(
 
 #-----------------BROWSER AGENT CONFIG-----------------
 browser_agent.update(
-    base_dir=workspace_root,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

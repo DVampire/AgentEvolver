@@ -24,12 +24,22 @@ class WorkflowEvaluateAgent(Agent):
         return True
 
     def _allow_read_only_tool_call(self, name: str, input: Dict[str, Any]) -> bool:
+        """Permit the one mutating call this read-only evaluator needs: recording its
+        own evaluation verdict via ``evolution_tool``. Everything else stays blocked."""
         return name == "evolution_tool" and input.get("action") == "record_workflow_evaluation"
 
     def _target_capability_allowlists(self, target_name: Optional[str]) -> Dict[str, Any]:
+        """Scope this run to the single Workflow under evaluation, so the agent can only
+        see and invoke that target."""
         return {"workflow_allowlist": [target_name]} if target_name else {}
 
     async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Render the allowlisted Workflow's instruction into the prompt context.
+
+        Reads the ``workflow_allowlist`` from ``ctx.extra`` and asks the workflow manager
+        for its instruction text, so the evaluator prompt describes exactly the Workflow
+        being assessed.
+        """
         from agentevolver.workflow import workflow_manager
 
         allowlist = (getattr(ctx, "extra", None) or {}).get("workflow_allowlist")

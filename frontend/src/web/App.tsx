@@ -1,4 +1,4 @@
-import { isValidElement, type FormEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isValidElement, lazy, Suspense, type FormEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import bashLanguage from 'highlight.js/lib/languages/bash';
 import cssLanguage from 'highlight.js/lib/languages/css';
 import javascriptLanguage from 'highlight.js/lib/languages/javascript';
@@ -30,6 +30,10 @@ interface AgentState { name: string; status: 'running' | 'completed' | 'failed';
 interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; task_ids: string[]; }
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
+interface WorkspaceEntry { name: string; path: string; kind: 'directory' | 'file'; size?: number | null; modified_at: number; }
+interface WorkspaceFile { name: string; path: string; content: string; size: number; modified_at: number; etag: string; mime_type: string; language: string; }
+type InspectorTab = 'files' | 'activity' | 'inspector';
+const WorkspaceEditor = lazy(() => import('./WorkspaceEditor'));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
@@ -98,6 +102,12 @@ export function App() {
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('files');
+  const [workspaceEntries, setWorkspaceEntries] = useState<Record<string, WorkspaceEntry[]>>({});
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
+  const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFile>();
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [filePreview, setFilePreview] = useState(false);
   const socketRef = useRef<GatewaySocket | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionRef = useRef<string | undefined>(undefined);
@@ -146,6 +156,56 @@ export function App() {
     const staging = response.result.staging;
     setExtensionStage({ valid: staging.valid !== false, components: Array.isArray(staging.components) ? staging.components : [], error: typeof staging.error === 'string' ? staging.error : undefined });
   }, []);
+
+  const loadWorkspaceDirectory = useCallback(async (path = '') => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId) return;
+    const response = await socket.request('workspace.tree', { session_id: currentSessionId, path });
+    if (!response.ok || !Array.isArray(response.result.entries)) throw new Error(response.error?.message ?? 'Could not load workspace');
+    const entries = response.result.entries.filter(isWorkspaceEntry);
+    setWorkspaceEntries((current) => ({ ...current, [path]: entries }));
+  }, []);
+
+  const openWorkspaceFile = useCallback(async (path: string) => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId) return;
+    setWorkspaceLoading(true);
+    setFilePreview(false);
+    try {
+      const response = await socket.request('workspace.file.read', { session_id: currentSessionId, path });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Could not open file');
+      const file = asWorkspaceFile(response.result);
+      if (!file) throw new Error('Gateway returned an invalid file response');
+      setWorkspaceFile(file);
+      setInspectorTab('files');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, []);
+
+  const toggleWorkspaceDirectory = useCallback(async (path: string) => {
+    if (expandedDirectories.has(path)) {
+      setExpandedDirectories((current) => { const next = new Set(current); next.delete(path); return next; });
+      return;
+    }
+    try {
+      if (!workspaceEntries[path]) await loadWorkspaceDirectory(path);
+      setExpandedDirectories((current) => new Set(current).add(path));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  }, [expandedDirectories, loadWorkspaceDirectory, workspaceEntries]);
+
+  useEffect(() => {
+    setWorkspaceEntries({});
+    setExpandedDirectories(new Set());
+    setWorkspaceFile(undefined);
+    if (sessionId) void loadWorkspaceDirectory().catch((error) => setNotice(error instanceof Error ? error.message : String(error)));
+  }, [sessionId, loadWorkspaceDirectory]);
 
   const startSession = useCallback(async (socket: GatewaySocket) => {
     try {
@@ -269,6 +329,7 @@ export function App() {
       setActiveTaskId(undefined);
       finishActivity(event.task_id, 'completed');
       setMessages((items) => [...items, finalMessage(event, 'assistant')]);
+      void loadWorkspaceDirectory().catch(() => undefined);
     }
     if (event.type === 'task.failed') {
       setActiveTaskId(undefined);
@@ -280,7 +341,7 @@ export function App() {
       finishActivity(event.task_id, 'cancelled');
       setMessages((items) => [...items, finalMessage(event, 'system')]);
     }
-  }, [appendActivityStep, finishActivity, loadModels, updateAgent]);
+  }, [appendActivityStep, finishActivity, loadModels, loadWorkspaceDirectory, updateAgent]);
 
   const connect = useCallback(() => {
     socketRef.current?.close();
@@ -624,7 +685,7 @@ export function App() {
           {timeline.length <= 1 ? <QuickStart onSelect={setDraft} /> : null}
           {timeline.map((item) => item.type === 'message'
             ? <MessageCard key={item.id} message={item.value} />
-            : <ActivityCard key={item.id} activity={item.value} expanded={expandedActivities.has(item.id)} onToggle={() => setExpandedActivities((current) => { const next = new Set(current); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })} onSelect={setDetails} />)}
+            : <ActivityCard key={item.id} activity={item.value} expanded={expandedActivities.has(item.id)} onToggle={() => setExpandedActivities((current) => { const next = new Set(current); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })} onSelect={(step) => { setDetails(step); setInspectorTab('inspector'); }} />)}
           <div ref={messageEndRef} />
         </div>
         <div className="composer-wrap">
@@ -638,13 +699,23 @@ export function App() {
         </div>
       </section>
 
-      <aside className="inspector">
-        <p className="eyebrow">Activity</p>
-        {activeTaskId ? <div className="activity-running"><span className="pulse" /> Task running</div> : <div className="activity-idle">Waiting for a task</div>}
-        <p className="eyebrow inspector-heading">Gateway</p><code>{activeEndpoint}</code>
-        <p className="eyebrow inspector-heading">Selected step</p>
-        {details ? <div className="detail-card"><strong>{details.title}</strong>{details.trace ? <StructuredTrace trace={details.trace} compact /> : <pre>{details.detail ?? details.content ?? 'No details'}</pre>}</div> : <p className="empty">Expand an activity and select a step to inspect it.</p>}
-      </aside>
+      <WorkspaceWorkbench
+        tab={inspectorTab}
+        onTab={setInspectorTab}
+        entries={workspaceEntries}
+        expanded={expandedDirectories}
+        selectedFile={workspaceFile}
+        loading={workspaceLoading}
+        preview={filePreview}
+        theme={theme}
+        activeTaskId={activeTaskId}
+        endpoint={activeEndpoint}
+        details={details}
+        onToggleDirectory={(path) => void toggleWorkspaceDirectory(path)}
+        onOpenFile={(path) => void openWorkspaceFile(path)}
+        onRefresh={() => { void loadWorkspaceDirectory(); if (workspaceFile) void openWorkspaceFile(workspaceFile.path); }}
+        onPreview={setFilePreview}
+      />
 
       {capabilitiesOpen ? <CapabilityDialog activeKind={activeCapability} catalog={catalog} selection={selection} items={capabilityItems} search={capabilitySearch} onSearch={setCapabilitySearch} onSelectKind={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); }} onToggle={toggleCapability} onToggleAll={toggleAllCapabilities} onInspect={openCapabilityDetail} onClose={() => setCapabilitiesOpen(false)} /> : null}
       {capabilityDetailLoading ? <CapabilityDetailDialog loading onClose={() => setCapabilityDetailLoading(false)} /> : null}
@@ -656,6 +727,67 @@ export function App() {
       {mobileNavOpen ? <MobileNavigation projects={projects} sessionId={sessionId} selection={selection} agents={agents} status={status} theme={theme} onClose={() => setMobileNavOpen(false)} onCreateSession={createNewSession} onSelectSession={selectSession} onOpenCapabilities={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} onOpenConnection={() => setSettingsOpen(true)} /> : null}
     </main>
   );
+}
+
+function WorkspaceWorkbench({ tab, onTab, entries, expanded, selectedFile, loading, preview, theme, activeTaskId, endpoint, details, onToggleDirectory, onOpenFile, onRefresh, onPreview }: {
+  tab: InspectorTab;
+  onTab: (tab: InspectorTab) => void;
+  entries: Record<string, WorkspaceEntry[]>;
+  expanded: Set<string>;
+  selectedFile?: WorkspaceFile;
+  loading: boolean;
+  preview: boolean;
+  theme: Theme;
+  activeTaskId?: string;
+  endpoint: string;
+  details?: ActivityStep;
+  onToggleDirectory: (path: string) => void;
+  onOpenFile: (path: string) => void;
+  onRefresh: () => void;
+  onPreview: (preview: boolean) => void;
+}) {
+  const canPreview = selectedFile?.language === 'markdown' || selectedFile?.language === 'html';
+  return <aside className="inspector workspace-workbench">
+    <nav className="workbench-tabs" aria-label="Workspace panel">
+      {(['files', 'activity', 'inspector'] as InspectorTab[]).map((item) => <button className={tab === item ? 'active' : ''} key={item} onClick={() => onTab(item)}>{humanize(item)}</button>)}
+    </nav>
+    {tab === 'files' ? <div className="workspace-panel">
+      <header className="workspace-toolbar"><div><strong>Workspace</strong><small>Current session</small></div><button onClick={onRefresh} title="Refresh workspace">↻</button></header>
+      <div className="workspace-tree" role="tree">
+        <WorkspaceTree path="" entries={entries} expanded={expanded} selectedPath={selectedFile?.path} onToggle={onToggleDirectory} onOpen={onOpenFile} />
+      </div>
+      <section className="workspace-viewer">
+        {selectedFile ? <>
+          <header className="file-toolbar"><div title={selectedFile.path}><strong>{selectedFile.name}</strong><small>{selectedFile.path} · {formatFileSize(selectedFile.size)}</small></div><div>{canPreview ? <button className={preview ? 'active' : ''} onClick={() => onPreview(!preview)}>{preview ? 'Source' : 'Preview'}</button> : null}<button onClick={() => navigator.clipboard?.writeText(selectedFile.content)}>Copy</button></div></header>
+          <div className="file-editor">{preview && selectedFile.language === 'markdown'
+            ? <MarkdownDocument content={selectedFile.content} />
+            : preview && selectedFile.language === 'html'
+              ? <iframe title={`${selectedFile.name} preview`} sandbox="" srcDoc={selectedFile.content} />
+              : <Suspense fallback={<div className="workspace-placeholder">Loading editor…</div>}><WorkspaceEditor filePath={selectedFile.path} language={selectedFile.language} content={selectedFile.content} theme={theme} /></Suspense>}
+          </div>
+        </> : <div className="workspace-placeholder">{loading ? 'Opening file…' : 'Select a file to inspect its contents.'}</div>}
+      </section>
+    </div> : tab === 'activity' ? <div className="workbench-section"><p className="eyebrow">Activity</p>{activeTaskId ? <div className="activity-running"><span className="pulse" /> Task running</div> : <div className="activity-idle">Waiting for a task</div>}<p className="eyebrow inspector-heading">Gateway</p><code>{endpoint}</code></div> : <div className="workbench-section"><p className="eyebrow">Selected step</p>{details ? <div className="detail-card"><strong>{details.title}</strong>{details.trace ? <StructuredTrace trace={details.trace} compact /> : <pre>{details.detail ?? details.content ?? 'No details'}</pre>}</div> : <p className="empty">Expand an activity and select a step to inspect it.</p>}</div>}
+  </aside>;
+}
+
+function WorkspaceTree({ path, entries, expanded, selectedPath, onToggle, onOpen, depth = 0 }: { path: string; entries: Record<string, WorkspaceEntry[]>; expanded: Set<string>; selectedPath?: string; onToggle: (path: string) => void; onOpen: (path: string) => void; depth?: number }) {
+  const children = entries[path] ?? [];
+  if (!children.length && depth === 0) return <p className="workspace-empty">Workspace is empty.</p>;
+  return <>{children.map((entry) => entry.kind === 'directory' ? <div key={entry.path} role="treeitem" aria-expanded={expanded.has(entry.path)}>
+    <button className="tree-row directory" style={{ paddingLeft: 10 + depth * 14 }} onClick={() => onToggle(entry.path)}><span>{expanded.has(entry.path) ? '⌄' : '›'}</span><i>▱</i><strong>{entry.name}</strong></button>
+    {expanded.has(entry.path) ? <WorkspaceTree path={entry.path} entries={entries} expanded={expanded} selectedPath={selectedPath} onToggle={onToggle} onOpen={onOpen} depth={depth + 1} /> : null}
+  </div> : <button key={entry.path} role="treeitem" className={`tree-row file ${selectedPath === entry.path ? 'selected' : ''}`} style={{ paddingLeft: 10 + depth * 14 }} onClick={() => onOpen(entry.path)}><span /><i>{fileIcon(entry.name)}</i><strong>{entry.name}</strong></button>)}</>;
+}
+
+function fileIcon(name: string): string {
+  const extension = name.split('.').pop()?.toLowerCase();
+  if (extension === 'md') return 'M↓';
+  if (extension === 'py') return 'Py';
+  if (['js', 'jsx', 'ts', 'tsx'].includes(extension ?? '')) return 'JS';
+  if (['html', 'htm'].includes(extension ?? '')) return '<>';
+  if (['json', 'yaml', 'yml', 'toml'].includes(extension ?? '')) return '{}';
+  return '·';
 }
 
 function MessageCard({ message }: { message: Message }) {
@@ -886,6 +1018,27 @@ function isSessionSummary(value: unknown): value is SessionSummary {
       || typeof (value as { source_workspace?: unknown }).source_workspace === 'string')
     && typeof (value as { name?: unknown }).name === 'string'
     && Array.isArray((value as { task_ids?: unknown }).task_ids);
+}
+
+function isWorkspaceEntry(value: unknown): value is WorkspaceEntry {
+  return isRecord(value)
+    && typeof value.name === 'string'
+    && typeof value.path === 'string'
+    && (value.kind === 'directory' || value.kind === 'file')
+    && typeof value.modified_at === 'number';
+}
+
+function asWorkspaceFile(value: unknown): WorkspaceFile | undefined {
+  if (!isRecord(value)
+    || typeof value.name !== 'string'
+    || typeof value.path !== 'string'
+    || typeof value.content !== 'string'
+    || typeof value.size !== 'number'
+    || typeof value.modified_at !== 'number'
+    || typeof value.etag !== 'string'
+    || typeof value.mime_type !== 'string'
+    || typeof value.language !== 'string') return undefined;
+  return value as unknown as WorkspaceFile;
 }
 
 function isGenericSessionName(name: string): boolean { return name === 'web' || name === 'interactive' || name.startsWith('Web session '); }

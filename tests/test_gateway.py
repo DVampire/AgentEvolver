@@ -352,7 +352,7 @@ def test_session_rejects_client_selected_project_root() -> None:
     asyncio.run(run())
 
 
-def test_gateway_imports_server_workspace_into_session_sandbox(tmp_path: Path) -> None:
+def test_gateway_keeps_session_workspace_empty_and_separate_from_source(tmp_path: Path) -> None:
     async def run() -> None:
         source = tmp_path / "source"
         source.mkdir()
@@ -368,15 +368,12 @@ def test_gateway_imports_server_workspace_into_session_sandbox(tmp_path: Path) -
         assert created.ok
         workspace = Path(created.result["workspace"])
         assert workspace != source
-        assert (workspace / "project.txt").read_text(encoding="utf-8") == "original"
-        assert created.result["workspace_import"]["mode"] == "copy_on_write"
+        assert list(workspace.iterdir()) == []
+        assert created.result["source_workspace"] == str(source)
 
         listed = await gateway.handle(GatewayCommand(id="list", method="session.list"))
         assert listed.ok
         assert listed.result["sessions"][0]["source_workspace"] == str(source)
-
-        (workspace / "project.txt").write_text("changed", encoding="utf-8")
-        assert (source / "project.txt").read_text(encoding="utf-8") == "original"
 
     asyncio.run(run())
 
@@ -396,6 +393,49 @@ def test_gateway_rejects_arbitrary_client_workspace(tmp_path: Path) -> None:
         assert not created.ok
         assert created.error is not None
         assert created.error.code == "invalid_request"
+
+    asyncio.run(run())
+
+
+def test_workspace_browser_is_session_scoped_and_reads_text(tmp_path: Path) -> None:
+    async def run() -> None:
+        source = tmp_path / "source"
+        source.mkdir()
+        gateway = AgentGateway(workspace_source=source)
+        created = await gateway.handle(GatewayCommand(id="create", method="session.create", params={}))
+        session_id = created.result["session_id"]
+        workspace = Path(created.result["workspace"])
+        (workspace / "src").mkdir()
+        (workspace / "src" / "app.py").write_text("print('sandbox')\n", encoding="utf-8")
+        (workspace / ".secret").write_text("hidden", encoding="utf-8")
+
+        tree = await gateway.handle(GatewayCommand(
+            id="tree", method="workspace.tree", params={"session_id": session_id, "path": ""},
+        ))
+        assert tree.ok
+        assert [entry["name"] for entry in tree.result["entries"]] == ["src"]
+
+        nested = await gateway.handle(GatewayCommand(
+            id="nested", method="workspace.tree", params={"session_id": session_id, "path": "src"},
+        ))
+        assert nested.result["entries"][0]["path"] == "src/app.py"
+
+        opened = await gateway.handle(GatewayCommand(
+            id="read", method="workspace.file.read",
+            params={"session_id": session_id, "path": "src/app.py"},
+        ))
+        assert opened.ok
+        assert opened.result["content"] == "print('sandbox')\n"
+        assert opened.result["language"] == "python"
+        assert len(opened.result["etag"]) == 64
+
+        escaped = await gateway.handle(GatewayCommand(
+            id="escape", method="workspace.file.read",
+            params={"session_id": session_id, "path": "../source/.secret"},
+        ))
+        assert not escaped.ok
+        assert escaped.error is not None
+        assert escaped.error.code == "invalid_request"
 
     asyncio.run(run())
 

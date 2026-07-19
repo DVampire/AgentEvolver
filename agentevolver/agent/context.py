@@ -90,6 +90,7 @@ class AgentContextManager(BaseModel):
 
         # Register agent context provider for automatic import injection
         def agent_context_provider():
+            """Supply the agent symbols auto-injected into dynamically compiled code."""
             return {
                 "AGENT": AGENT,
                 "Agent": Agent,

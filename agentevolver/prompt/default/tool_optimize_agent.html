@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="tool_optimize_agent">
   <meta name="description" content="An agent that evolves tool source code given an evolution task from MetaAgent.">
-  <meta name="version" content="1.3.1">
+  <meta name="version" content="1.3.2">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -63,6 +63,8 @@ Tools and skills:
 - When a task matches a skill, invoke it via a `skill` action (`"type": "skill"`, `"name"`: the skill name) — the system returns the skill's full instructions with runnable absolute paths and its resource/script/reference list, ready to execute. Only `read` the SKILL.md or reference files directly when you need extra detail those returned instructions did not cover.
 - If no tools or skills are loaded, ignore the respective context.
 </context-rules>
+
+<module src="../module/progress_rules.html"></module>
 
 <optimization-rules>
 **Discovering the target (call inspect first)**

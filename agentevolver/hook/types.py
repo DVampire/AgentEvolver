@@ -78,14 +78,17 @@ class HookResult(BaseModel):
 
     @classmethod
     def allow(cls) -> "HookResult":
+        """Build a result that lets the lifecycle event proceed unchanged."""
         return cls(decision=HookDecision.ALLOW)
 
     @classmethod
     def block(cls, reason: str = "") -> "HookResult":
+        """Build a result that stops the current action/step, with an optional reason."""
         return cls(decision=HookDecision.BLOCK, reason=reason)
 
     @classmethod
     def modify_messages(cls, messages: List[Message], additional_context: str = "") -> "HookResult":
+        """Build a MODIFY result that replaces the prompt messages (and optionally injects extra context)."""
         return cls(
             decision=HookDecision.MODIFY,
             modified_messages=messages,
@@ -94,6 +97,7 @@ class HookResult(BaseModel):
 
     @classmethod
     def modify_action(cls, action: Dict[str, Any]) -> "HookResult":
+        """Build a MODIFY result that replaces the pending action with ``action``."""
         return cls(decision=HookDecision.MODIFY, modified_action=action)
 
 

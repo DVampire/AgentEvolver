@@ -7,6 +7,7 @@ abstractions, aligned with the design of `agentevolver.tool.types`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import uuid
@@ -77,6 +78,12 @@ class AgentType(str, Enum):
 
     @classmethod
     def _missing_(cls, value):
+        """Map legacy agent-type strings to a valid member (Enum lookup fallback).
+
+        Preserves backward compatibility for configs written under the old informal
+        ``"workflow"`` name, now folded into ``PROCEDURAL``. Returns ``None`` for any
+        other unknown value so the Enum raises the usual ``ValueError``.
+        """
         # Backward compatibility for configs created under the old informal name.
         if value == "workflow":
             return cls.PROCEDURAL
@@ -270,6 +277,10 @@ class _AgentRun:
         # the run (not the Agent singleton) so concurrent sessions never share state.
         self.previous_action_signature: Optional[str] = None
         self.repeated_action_rounds = 0
+        # Successful action evidence used by the shared no-progress guard.  State is
+        # run-local so parallel agents/sessions never suppress one another.
+        self.action_evidence: Dict[str, Dict[str, Any]] = {}
+        self.no_progress_rounds = 0
 
 
 class Agent(BaseModel):
@@ -353,6 +364,14 @@ class Agent(BaseModel):
 
     @staticmethod
     def _build_constraints(raw: Optional[List]) -> List[Constraint]:
+        """Normalize a mixed constraint spec into concrete ``Constraint`` instances.
+
+        Accepts already-built ``Constraint`` objects (kept as-is) and dict specs (built
+        via the ``CONSTRAINT`` registry), so an agent can be configured with either form.
+
+        Raises:
+            TypeError: If an item is neither a ``Constraint`` nor a dict.
+        """
         if not raw:
             return []
         result = []
@@ -949,6 +968,8 @@ class Agent(BaseModel):
                     )
                 },
                 parent_ref=parent_ref, workspace_root=getattr(ctx, "workspace_root", None) or self.base_dir,
+                # Sub-agent inherits the session log root so its logs stay in the same session dir.
+                log_root=(getattr(ctx, "extra", {}) or {}).get("log_root"),
             )
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
@@ -1068,7 +1089,7 @@ class Agent(BaseModel):
             if msg.call_id in run.outstanding:
                 run.outstanding.discard(msg.call_id)
                 run.round_tasks.pop(msg.call_id, None)
-                run.round_outcomes.append({"name": msg.name, "output": msg.output, "result": msg.result, "error": msg.error, "is_done": msg.is_done})
+                run.round_outcomes.append({"id": msg.call_id, "name": msg.name, "output": msg.output, "result": msg.result, "error": msg.error, "is_done": msg.is_done})
                 if msg.error:
                     run.round_errors.append(f"Action '{msg.name}' failed: {msg.error}")
                 if msg.is_done:
@@ -1115,6 +1136,12 @@ class Agent(BaseModel):
     # ------------------------------------------------------------------
 
     def _lifecycle_input(self, run: "_AgentRun") -> Dict[str, Any]:
+        """Assemble the common identity payload shared by ON_START/ON_STOP hook calls.
+
+        Bundles the agent name, task id, memory settings, and the parent-session /
+        subtask ids from the run context, so memory, trace, and trajectory hooks all
+        receive a consistent lifecycle envelope.
+        """
         return {
             "agent_name": self.name, "task_id": run.task_id,
             "memory_name": self.memory_name, "use_memory": self.use_memory,
@@ -1204,6 +1231,7 @@ class Agent(BaseModel):
     async def _on_round_complete(self, run: "_AgentRun") -> None:
         """A round's whole batch has drained: record the step, then advance or conclude."""
         decision = run.decision
+        self._record_action_evidence(run)
         await self._post_step(run.task_id, run.round_step, run.ctx, run.messages,
                               reasoning=decision["reasoning"], plan=getattr(run, "step_plan", []),
                               step_tokens=decision["step_tokens"], done=run.round_done)
@@ -1283,11 +1311,162 @@ class Agent(BaseModel):
         return None
 
     async def _prepare_round(self, run: "_AgentRun", decision: Dict[str, Any]) -> Optional[List[Any]]:
-        """Transform this turn's tool_calls before dispatch. Default: dispatch them all.
-        Return the calls to dispatch, or ``None`` to signal the turn was fully handled
-        (concluded / deferred) by an override — MetaAgent uses this for escalation
-        replies and the review gate."""
-        return decision["tool_calls"]
+        """Apply the shared no-progress guard before dispatching a round.
+
+        Defined on the base ``Agent`` and called on the single round path every agent's
+        loop flows through, so the guard applies to all agents uniformly; subclasses that
+        override this (only ``MetaAgent``) must chain to ``super()`` to keep it.
+
+        Detection is delegated to a stateless hook (``no_progress_hook``); evidence and
+        escalation counters stay on the run.  The first two blocked proposals are returned
+        to the model as corrective context.  A third unchanged proposal terminates honestly
+        instead of consuming the entire step budget.
+        """
+        calls = decision["tool_calls"]
+        if not calls:
+            return calls
+
+        from agentevolver.hook.server import hook_manager
+        from agentevolver.hook.types import HookDecision, HookEvent
+
+        routing = decision.get("routing") or {}
+        actions = []
+        for call in calls:
+            route = routing.get(call.name) or ("tool", call.name)
+            signature = self._action_signature(route[0], call.name, call.input or {})
+            actions.append({
+                "name": call.name,
+                "kind": route[0],
+                "signature": signature,
+                "policy": await self._progress_policy(route),
+            })
+        guard = await hook_manager(
+            name="no_progress_hook",
+            input={
+                "event": HookEvent.PRE_ACTION,
+                "agent_name": self.name,
+                "task_id": run.task_id,
+                "actions": actions,
+                "evidence": run.action_evidence,
+                "workspace_fingerprint": self._workspace_fingerprint(run.ctx),
+            },
+            ctx=run.ctx,
+        )
+        if guard.decision != HookDecision.BLOCK:
+            run.no_progress_rounds = 0
+            return calls
+
+        run.no_progress_rounds += 1
+        reason = guard.reason or "No-progress guard blocked an unchanged successful action."
+        if run.no_progress_rounds >= 3:
+            run.done = False
+            run.result = (
+                "Stopped after three no-progress action proposals. Existing successful "
+                "evidence is preserved in Memory, but the agent did not finish or choose "
+                "a materially different action."
+            )
+            run.reasoning = reason
+            await self._conclude(run)
+            return None
+
+        run.round_step = run.step
+        await self._post_step(
+            run.task_id, run.step, run.ctx, run.messages,
+            reasoning=decision["reasoning"], plan=[],
+            step_tokens=decision["step_tokens"], done=False,
+        )
+        suffix = (
+            " This is the second blocked proposal; call done_tool or escalate unless a "
+            "materially different action advances an unmet condition."
+            if run.no_progress_rounds == 2 else ""
+        )
+        run.action_errors = [reason + suffix]
+        run.step += 1
+        await self._advance(run)
+        return None
+
+    @staticmethod
+    def _action_signature(kind: str, name: str, args: Dict[str, Any]) -> str:
+        """Return a deterministic signature for one capability invocation."""
+        payload = {"kind": kind, "name": name, "args": args}
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+    @staticmethod
+    async def _progress_policy(route: Any) -> Optional[str]:
+        """Read an explicit Tool policy; other capability kinds use hook defaults."""
+        if not route or route[0] != "tool":
+            return None
+        info = await tool_manager.get_info(route[1])
+        if info is None:
+            return None
+        instance = getattr(info, "instance", None)
+        return getattr(instance, "progress_policy", None) or getattr(info, "progress_policy", None)
+
+    @staticmethod
+    def _workspace_fingerprint(ctx: Optional["AgentContext"]) -> str:
+        """Fingerprint observable workspace state without reading file contents.
+
+        Paths, sizes, and nanosecond mtimes detect ordinary edits cheaply. Large cache
+        trees are skipped and traversal is bounded to keep the guard lightweight.
+        """
+        root_value = getattr(ctx, "workspace_root", None)
+        if not root_value:
+            return ""
+        root = os.path.abspath(root_value)
+        digest = hashlib.sha256()
+        seen = 0
+        skipped = {".git", "__pycache__", "node_modules", ".venv"}
+        try:
+            for current, dirs, files in os.walk(root):
+                dirs[:] = sorted(d for d in dirs if d not in skipped)
+                # Directory mtimes catch creation/removal of empty directories, which
+                # matters for list/inspection actions even when no file exists yet.
+                for name in dirs:
+                    directory = os.path.join(current, name)
+                    try:
+                        stat = os.stat(directory, follow_symlinks=False)
+                    except OSError:
+                        continue
+                    relative = os.path.relpath(directory, root)
+                    digest.update(f"{relative}/\0{stat.st_mtime_ns}\n".encode())
+                for name in sorted(files):
+                    path = os.path.join(current, name)
+                    try:
+                        stat = os.stat(path, follow_symlinks=False)
+                    except OSError:
+                        continue
+                    relative = os.path.relpath(path, root)
+                    digest.update(f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+                    seen += 1
+                    if seen >= 4096:
+                        digest.update(b"<truncated>")
+                        return digest.hexdigest()
+        except OSError:
+            return ""
+        return digest.hexdigest()
+
+    def _record_action_evidence(self, run: "_AgentRun") -> None:
+        """Remember successful results from the drained round at its final workspace state."""
+        plans = {item.get("id"): item for item in run.step_plan}
+        fingerprint = self._workspace_fingerprint(run.ctx)
+        for outcome in run.round_outcomes:
+            if outcome.get("error") or outcome.get("is_done"):
+                continue
+            plan = plans.get(outcome.get("id"))
+            if not plan:
+                continue
+            try:
+                args = json.loads(plan.get("args") or "{}")
+            except (TypeError, ValueError):
+                args = {}
+            signature = self._action_signature(
+                str(plan.get("type") or "tool"), str(plan.get("name") or ""), args,
+            )
+            run.action_evidence[signature] = {
+                "success": True,
+                "workspace_fingerprint": fingerprint,
+                "output": outcome.get("output"),
+            }
 
     async def _handle_extra_event(self, run: "_AgentRun", msg: Any) -> None:
         """Handle a non-action inbox message (escalation, progress). Leaf agents receive
@@ -1382,6 +1561,15 @@ class ProceduralAgent(Agent):
         ctx: AgentContext,
         **kwargs: Any,
     ) -> "Response":
+        """Run this procedural agent's deterministic logic once and return its Response.
+
+        The single extension point for ``ProceduralAgent`` subclasses: ``on_start`` wraps
+        it in the standard lifecycle hooks and reply resolution, so subclasses implement
+        only the procedure itself.
+
+        Raises:
+            NotImplementedError: If a subclass does not override this method.
+        """
         raise NotImplementedError(f"{type(self).__name__}.run_procedure is not implemented")
 
     async def on_start(

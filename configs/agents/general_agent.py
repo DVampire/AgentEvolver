@@ -1,5 +1,4 @@
 general_agent = dict(
-    base_dir = "workspace_root/general_agent",
     name = "general_agent",
     type = "Agent",
     description = "An iterative agent that reasons and acts by using tools, skills, and direct responses to accomplish tasks accurately, safely, and efficiently.",

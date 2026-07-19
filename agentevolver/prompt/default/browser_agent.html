@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="browser_agent">
   <meta name="description" content="A browser agent that operates web pages through the browser environment in an observe-act loop.">
-  <meta name="version" content="1.0.0">
+  <meta name="version" content="1.0.1">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -55,6 +55,8 @@ Workflow per step: OBSERVE the state → plan 1-{{ max_actions }} actions → AC
 - Detect stuck patterns from the `memory` sub-module: if the same action keeps producing no state change, change strategy — scroll, use `command`, or navigate directly via `command` with `await page.goto(url)`.
 - **CAPTCHA / anti-bot pages**: never try to solve a CAPTCHA. If a page shows a CAPTCHA or challenge, do not fight it — use the `search` action to find an alternative source, or report the blocker via `finish`.
 </action-rules>
+
+<module src="../module/progress_rules.html"></module>
 
 <constraint-rules>
 You run under hard resource limits (e.g. max steps, max tokens, max wall-clock time). When any limit is hit the task is force-stopped immediately and unfinished work is lost.

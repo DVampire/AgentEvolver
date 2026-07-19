@@ -132,6 +132,11 @@ class GoogleLensSearch(Tool):
 
 
 async def _save_screenshot(page, screenshot_dir: Optional[Path], name: str):
+    """Save a debug screenshot of the page as ``<name>.png``, if enabled.
+
+    No-op when `screenshot_dir` is None; otherwise creates the directory and
+    decodes the browser's base64 screenshot to disk. Used to trace the Lens flow.
+    """
     if screenshot_dir is None:
         return
     screenshot_dir.mkdir(parents=True, exist_ok=True)
@@ -141,6 +146,24 @@ async def _save_screenshot(page, screenshot_dir: Optional[Path], name: str):
 
 
 async def _run_lens_search(image_path: Path, text: str, chromium_path: str, screenshot_dir: Optional[str] = None) -> str:
+    """Drive a headless browser through Google Lens and return the results as markdown.
+
+    Launches a Chromium session, uploads `image_path` to lens.google.com, optionally
+    refines the search with `text`, waits for the results page, then strips the page to
+    its main content and converts it to cleaned markdown (nav/boilerplate/images removed).
+
+    Args:
+        image_path: Local image file to search with.
+        text: Optional text query to add to the visual search; skipped if empty.
+        chromium_path: Path to the Chromium executable to run.
+        screenshot_dir: Optional directory for step-by-step debug screenshots.
+
+    Returns:
+        The Lens results page rendered as cleaned markdown text.
+
+    Raises:
+        RuntimeError: If a CAPTCHA is triggered or the results page never loads.
+    """
     from browser_use.browser.session import BrowserSession
     from markitdown import MarkItDown
 
@@ -283,10 +306,23 @@ async def _run_lens_search(image_path: Path, text: str, chromium_path: str, scre
 
 
 async def _wait_ms(page, ms: int):
+    """Pause `ms` milliseconds in the page's own timeline via an in-page setTimeout."""
     await page.evaluate(f"() => new Promise(r => setTimeout(r, {ms}))")
 
 
 async def _upload_file(page, file_path: str):
+    """Upload a local image to the Google Lens page via the CDP DOM protocol.
+
+    Clicks the "upload a file" control, locates the hidden file input, and injects
+    `file_path` with ``DOM.setFileInputFiles`` (avoids a native file picker).
+
+    Args:
+        page: The active browser page.
+        file_path: Absolute path to the image to upload.
+
+    Raises:
+        RuntimeError: If the upload trigger or file input element cannot be found.
+    """
     session_id = await page._ensure_session()
     client = page._client
 
@@ -324,6 +360,12 @@ async def _upload_file(page, file_path: str):
 
 
 async def _enter_search_text(page, text: str):
+    """Type a refinement query into the Lens results search box and submit it.
+
+    Tries a series of candidate selectors for the search field, fills the first
+    match, and prefers clicking the Search button (to preserve image context),
+    falling back to submitting the form. Returns without action if no field matches.
+    """
     selectors = [
         "textarea[aria-label='Add to your search']",
         "input[aria-label='Add to your search']",

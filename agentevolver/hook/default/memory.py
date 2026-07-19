@@ -8,6 +8,7 @@ typed contract regardless of which agent fired it.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -69,6 +70,21 @@ class MemoryHook(Hook):
     priority: int = 5
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Validate the lifecycle payload and emit the resulting TraceEvent into memory.
+
+        Coerces the raw ``ctx.input`` into a typed :class:`MemoryHookInput`,
+        builds the corresponding :class:`TraceEvent`, and emits it into the
+        session's primary memory system plus the ``file_system_memory`` sink.
+        All failures are logged and swallowed so memory is best-effort and never
+        blocks the agent.
+
+        Args:
+            ctx: Hook context whose ``id`` is the session id and whose ``input``
+                is the memory-hook envelope plus per-event payload.
+
+        Returns:
+            Always ``HookResult.allow()`` (this hook only observes).
+        """
         from agentevolver.memory import memory_manager
         from agentevolver.logger import logger
 
@@ -85,11 +101,16 @@ class MemoryHook(Hook):
         if event is None:
             return HookResult.allow()
 
+        # Route persistence into the caller session's own memory dir when the
+        # sandbox log root is carried on ctx.extra; else instances use their global base.
+        session_log_root = (ctx.extra or {}).get("log_root")
+        mem_base = os.path.join(str(session_log_root), "memory") if session_log_root else None
+
         # Primary memory
         try:
             info = await memory_manager.get_info(inp.memory_name)
             if info and info.instance is not None:
-                await info.instance.emit(event, session_id=ctx.id)
+                await info.instance.emit(event, session_id=ctx.id, base_dir=mem_base)
         except Exception as e:
             logger.warning(f"| ⚠️ MemoryHook (primary) error on {inp.event}: {e}")
 
@@ -98,13 +119,23 @@ class MemoryHook(Hook):
             try:
                 fs = await memory_manager.get_info("file_system_memory")
                 if fs and fs.instance is not None:
-                    await fs.instance.emit(event, session_id=ctx.id)
+                    await fs.instance.emit(event, session_id=ctx.id, base_dir=mem_base)
             except Exception as e:
                 logger.warning(f"| ⚠️ MemoryHook (file_system) error on {inp.event}: {e}")
 
         return HookResult.allow()
 
     def _build_event(self, inp: MemoryHookInput, session_id: str) -> TraceEvent | None:
+        """Translate a validated lifecycle input into the matching TraceEvent.
+
+        Maps ON_START/ON_STOP/POST_STEP/POST_ACTION to their event factories and
+        packs MetaAgent ON_CALL orchestration payloads (note/subtask/result) into
+        AGENT_CALL metadata.
+
+        Returns:
+            The built :class:`TraceEvent`, or ``None`` for events that carry no
+            memory-relevant content.
+        """
         task_id = inp.task_id or session_id
 
         if inp.event == HookEvent.ON_START:

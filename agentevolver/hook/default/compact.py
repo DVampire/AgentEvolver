@@ -44,6 +44,20 @@ class CompactHook(Hook):
     model_name: str = ""
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Summarise the supplied ``items`` into a single short text via the LLM.
+
+        Builds a prompt from the records (optionally appending any prior summary
+        and a custom instruction) and asks the model for a concise consolidation.
+        Model errors are swallowed so the caller always gets a well-formed result.
+
+        Args:
+            ctx: Hook context whose ``input`` may carry ``items`` (records to
+                compress), ``existing_summary``, ``instruction`` and ``model_name``.
+
+        Returns:
+            ``HookResult`` whose ``output`` holds the summary text, or ``None``
+            when there is nothing to summarise or the model call fails.
+        """
         inp = ctx.input or {}
         items = inp.get("items") or []
         if not items:

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="environment_optimize_agent">
   <meta name="description" content="An agent that evolves a generated environment (Python class) given an optimization task.">
-  <meta name="version" content="1.0.0">
+  <meta name="version" content="1.0.1">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -64,6 +64,8 @@ Tools and skills:
 - Use only tools listed in Tool Context and skills listed in Skill Context. Do not invent names.
 - If no tools or skills are loaded, ignore the respective context.
 </context-rules>
+
+<module src="../module/progress_rules.html"></module>
 
 <optimization-rules>
 **Discovering the target (call inspect first)**

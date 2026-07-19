@@ -41,6 +41,11 @@ class HookManagerServer:
         logger.info("| ✅ Hook manager server initialized")
 
     def _require_manager(self) -> HookContextManager:
+        """Return the underlying manager, raising if the server was never initialized.
+
+        Raises:
+            RuntimeError: If ``initialize()`` has not been called yet.
+        """
         if self.hook_context_manager is None:
             raise RuntimeError(
                 "HookManagerServer has not been initialized. "

@@ -108,6 +108,19 @@ class MonitorAgent(ProceduralAgent):
         ref: Any,
         **kwargs: Any,
     ) -> Optional[Response]:
+        """Spawn the bash subprocess and start the background monitor loop.
+
+        Overrides the base lifecycle to resolve asynchronously: it emits a trace start
+        event, launches the command, kicks off ``_monitor_loop`` (held by a strong
+        reference and wired to cancel if the caller's reply future is cancelled), and
+        returns ``None`` so the loop later resolves ``ref._pending_reply``. Per-invocation
+        ``command``/``poll_interval``/``max_wait``/``tail_lines`` in ``kwargs`` fall back
+        to the instance defaults.
+
+        Returns:
+            A failure Response if the process could not be spawned; otherwise ``None``
+            (the result is delivered later via the pending reply future).
+        """
         command = kwargs.get("command") or task
         parent_ref = kwargs.get("parent_ref")
 
@@ -195,6 +208,17 @@ class MonitorAgent(ProceduralAgent):
         max_wait: int,
         tail_lines: int,
     ) -> None:
+        """Poll the running process, report progress, and resolve the reply on exit.
+
+        The single owned background task: drains stdout into a rolling buffer, waits on
+        one long-lived ``process.wait()``, and on each poll-interval timeout posts a
+        progress report to the parent. On normal exit it flushes the drain (so trailing
+        output is kept) and resolves the reply with the captured output; on ``max_wait``
+        it kills the process and fails the reply with a ``TimeoutError``; on cancellation
+        or unexpected error it kills the process and cancels/fails the reply. Trace end
+        events are emitted on every terminal path, and the drain/wait tasks are always
+        torn down in ``finally``.
+        """
         loop = asyncio.get_running_loop()
         start = loop.time()
 
@@ -349,6 +373,11 @@ class MonitorAgent(ProceduralAgent):
         recent_output: str = "",
         exit_code: Optional[int] = None,
     ) -> None:
+        """Post a ``MonitorProgressMessage`` to the parent agent's inbox.
+
+        No-op when there is no ``parent_ref``. Failures to deliver are swallowed and
+        logged so a broken progress channel never disrupts the monitored process.
+        """
         if parent_ref is None:
             return
         try:
@@ -361,6 +390,8 @@ class MonitorAgent(ProceduralAgent):
             logger.warning(f"| ⚠️ MonitorAgent [{task_id}]: failed to post progress: {exc}")
 
     async def _emit_start(self, session_id: str, task_id: str, command: str) -> None:
+        """Emit an agent-start trace event for this run; tracing errors are swallowed so
+        they can never break monitoring."""
         try:
             from agentevolver.trace.server import trace_manager
             from agentevolver.trace.types import agent_start_event
@@ -380,6 +411,8 @@ class MonitorAgent(ProceduralAgent):
         duration_ms: float,
         error: Optional[str] = None,
     ) -> None:
+        """Emit an agent-end trace event (success, result, duration, optional error) for
+        this run; tracing errors are swallowed so they can never break monitoring."""
         try:
             from agentevolver.trace.server import trace_manager
             from agentevolver.trace.types import agent_end_event
@@ -396,18 +429,23 @@ class MonitorAgent(ProceduralAgent):
 # ------------------------------------------------------------------
 
 def _safe_set_result(ref: Any, result: Any) -> None:
+    """Resolve the ref's pending reply future with ``result``, ignoring it if the
+    future is missing or already settled (so the resolver is safe to call once)."""
     future = getattr(ref, "_pending_reply", None)
     if future is not None and not future.done():
         future.set_result(result)
 
 
 def _safe_set_exception(ref: Any, exc: BaseException) -> None:
+    """Fail the ref's pending reply future with ``exc``, ignoring it if the future is
+    missing or already settled."""
     future = getattr(ref, "_pending_reply", None)
     if future is not None and not future.done():
         future.set_exception(exc)
 
 
 def _safe_cancel(ref: Any) -> None:
+    """Cancel the ref's pending reply future if present and not yet settled."""
     future = getattr(ref, "_pending_reply", None)
     if future is not None and not future.done():
         future.cancel()

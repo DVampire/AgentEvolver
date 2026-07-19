@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="agent_optimize_agent">
   <meta name="description" content="An agent that evolves a generated agent (Python class and/or HTML prompt) given an optimization task.">
-  <meta name="version" content="1.1.1">
+  <meta name="version" content="1.1.2">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -65,6 +65,8 @@ Tools, skills, and connectors:
 - When a task matches a skill, invoke it via a `skill` action (`"type": "skill"`, `"name"`: the skill name) — the system returns the skill's full instructions with runnable absolute paths, ready to execute.
 - If no tools, skills, or connectors are loaded, ignore the respective context.
 </context-rules>
+
+<module src="../module/progress_rules.html"></module>
 
 <optimization-rules>
 **Discovering the target (do this first)**

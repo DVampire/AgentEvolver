@@ -250,10 +250,16 @@ class HookContextManager:
         if event is None:
             raise ValueError("'event' is required in input")
         session_id = ctx.id if ctx is not None else ""
+        # Carry the caller's session roots through to hook handlers.  ``extra``
+        # holds the per-session sandbox paths (``extra["log_root"]`` etc.), so
+        # writers driven by hooks (trace/memory/trajectory/snapshot) can route
+        # output into the session's own log root instead of the global one.
         hook_ctx = HookContext(
             id=session_id,
             name=name,
             input=input,
+            workspace_root=getattr(ctx, "workspace_root", None),
+            extra=dict(getattr(ctx, "extra", {}) or {}),
         )
 
         hook_config = self._hook_configs.get(name)

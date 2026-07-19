@@ -61,7 +61,7 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 ### 运行产物
 
 - **Trace UI** —— 运行时日志会打印 `🌐 Trace UI: http://localhost:<端口>`，打开即可实时观察各智能体的执行过程。
-- **输出目录** —— 运行产物、任务视图和日志都写到 `workspace_root/meta_agent/` 下（`run/` 存运行状态，`workspace/` 存智能体的工作文件）。
+- **输出目录** —— 每次运行都是独立 session：运行产物、日志和任务视图都写到 `output/<tag>/<session-id>/` 下（`workspace/` 存智能体的工作文件，`log/` 存日志和渲染后的任务视图）。
 - 任务结束时，日志会打印最终结果；若生成了记忆报告，还会打印其 HTML 路径。
 
 现成的任务文档在 [`examples/tasks/`](examples/tasks/) 下，可参考它们了解任务的写法。
@@ -97,7 +97,7 @@ sandbox 中执行；可信的本地调试若确实需要直接执行主机命令
 Gateway（`agentevolver serve ...`）。
 
 生成的运行产物默认存放在当前项目的
-`./output/<tag>/sessions/<session-id>/`。可持久化的项目扩展位于与 `output/` 平级的
+`./output/<tag>/<session-id>/`。可持久化的项目扩展位于与 `output/` 平级的
 `./extension/`；会话先在自己的输出目录内暂存扩展，只有显式提升才会写入此目录。用户级覆盖和缓存等状态存放在
 `~/.agentevolver`。可通过
 `AGENTEVOLVER_HOME` 指定其他位置。每个 Gateway、CLI 和 TUI session 都有独立的

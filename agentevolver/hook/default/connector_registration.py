@@ -17,6 +17,21 @@ class ConnectorRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Locate the generated connector directory, promote it if staged, and register it.
+
+        Fired after a connector-generating run calls ``done_tool``. Resolves the
+        connector directory (containing ``CONNECTOR.md``), validates and promotes
+        it out of any staged extension root, then registers it as an evolvable
+        component with ``extension_manager``.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``target_name``,
+                ``reasoning`` and ``extension_root``.
+
+        Returns:
+            ``HookResult.allow()`` on success, or ``HookResult.block(reason)``
+            when the directory cannot be located or registration fails.
+        """
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
@@ -46,6 +61,14 @@ class ConnectorRegistrationHook(Hook):
             return HookResult.block(f"[registration failed] {e}\nPlease fix the issue and call done_tool again.")
 
     def _resolve_connector_dir(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
+        """Find the generated connector directory referenced by the run.
+
+        Prefers an ``extension/.../connector/...`` path mentioned in the agent's
+        reasoning; falls back to the staged directory derived from ``target_name``.
+
+        Returns:
+            The existing connector directory path, or ``None`` if none resolves.
+        """
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             if "extension/" in token and "/connector/" in token:

@@ -78,7 +78,10 @@ class TraceWriter:
 
     async def _write_event(self, event: TraceEvent) -> None:
         session_id = event.session_id or "no_session"
-        fh = self._get_handle(session_id)
+        # A session's events always carry the same log_root, so the handle keyed
+        # by session_id is stable; per-session routing sends the file into the
+        # caller's own <log_root>/trace/ when set (else the global trace root).
+        fh = self._get_handle(session_id, event.log_root)
 
         line = json.dumps(event.to_dict(), ensure_ascii=False) + "\n"
         fh.write(line)  # type: ignore[attr-defined]
@@ -87,7 +90,7 @@ class TraceWriter:
         # Update session metadata
         meta = self._session_meta.setdefault(session_id, {
             "session_id": session_id,
-            "file": self._session_path(session_id),
+            "file": self._session_path(session_id, event.log_root),
             "event_count": 0,
             "first_event_at": event.timestamp.isoformat(),
             "last_event_at": event.timestamp.isoformat(),
@@ -105,13 +108,16 @@ class TraceWriter:
         if meta["event_count"] % 50 == 0:
             await self._flush_index()
 
-    def _session_path(self, session_id: str) -> str:
+    def _session_path(self, session_id: str, log_root: Optional[str] = None) -> str:
         safe = session_id.replace("/", "_").replace("\\", "_")
-        return os.path.join(self._log_root, f"{safe}.jsonl")
+        # Per-session runs land in <log_root>/trace/ (mirroring the global layout);
+        # otherwise fall back to the global trace root.
+        base = os.path.join(str(log_root), "trace") if log_root else self._log_root
+        return os.path.join(base, f"{safe}.jsonl")
 
-    def _get_handle(self, session_id: str):
+    def _get_handle(self, session_id: str, log_root: Optional[str] = None):
         if session_id not in self._handles:
-            path = self._session_path(session_id)
+            path = self._session_path(session_id, log_root)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             self._handles[session_id] = open(path, "a", encoding="utf-8", buffering=1)
         return self._handles[session_id]
@@ -161,7 +167,10 @@ class TraceWriter:
 
     def read_session(self, session_id: str) -> list:
         """Return all events for a session as a list of dicts."""
-        path = self._session_path(session_id)
+        # Prefer the actual file path recorded in the index (it captures the
+        # session's own log root); fall back to the global-root path.
+        meta = self._session_meta.get(session_id)
+        path = (meta or {}).get("file") or self._session_path(session_id)
         if not os.path.exists(path):
             return []
         events = []

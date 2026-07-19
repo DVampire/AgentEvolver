@@ -38,6 +38,20 @@ class SnapshotHook(Hook):
     priority: int = 90  # run late; it only observes
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """On POST_STEP, write the step's rendered messages to a numbered HTML file.
+
+        Ignores non-POST_STEP events and empty message lists. Otherwise renders
+        the messages verbatim (they are already filled-in prompt HTML) into
+        ``<log_root>/messages/<agent_name>/<NNNN>.html``. Purely observational —
+        any I/O error is logged and swallowed.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``event``, ``messages``,
+                ``agent_name`` and ``step_number``.
+
+        Returns:
+            Always ``HookResult.allow()``.
+        """
         inp = ctx.input or {}
         if inp.get("event") != HookEvent.POST_STEP:
             return HookResult.allow()
@@ -51,7 +65,11 @@ class SnapshotHook(Hook):
 
         try:
             from agentevolver.config import config
-            base_dir = str(getattr(config, "log_root", None) or inp.get("workspace_root") or ".")
+            # Prefer the caller session's own log root (set by the sandbox and
+            # carried on ctx.extra); fall back to the global config for direct,
+            # single-session runs.
+            session_log_root = (ctx.extra or {}).get("log_root")
+            base_dir = str(session_log_root or getattr(config, "log_root", None) or inp.get("workspace_root") or ".")
             out_dir = os.path.join(base_dir, "messages", agent_name)
             os.makedirs(out_dir, exist_ok=True)
             file_path = os.path.join(out_dir, f"{step_number + 1:04d}.html")
@@ -66,6 +84,16 @@ class SnapshotHook(Hook):
         return HookResult.allow()
 
     def _render(self, file_path, agent_name, step_number, messages) -> str:
+        """Build the standalone HTML snapshot for one step's messages.
+
+        Links the same ``prompt.css``/``prompt.js`` assets (via paths relative to
+        ``file_path``) that the prompt templates use, then re-emits each message's
+        content inside ``div.system``/``div.user`` wrappers so the snapshot renders
+        identically to the live prompt.
+
+        Returns:
+            The complete HTML document as a string.
+        """
         # Link the SAME assets the prompt templates use, so the filled prompt
         # renders exactly like the live prompt.
         d = os.path.dirname(file_path)

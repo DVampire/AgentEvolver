@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from agentevolver.utils import get_extension_root, get_package_root
 from agentevolver.utils.path_utils import home_dir
@@ -65,11 +65,6 @@ class ProjectSandbox:
     package_root: Path
     shared_extension_root: Path
 
-    _DEFAULT_IMPORT_EXCLUDES: ClassVar[set[str]] = {
-        "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache",
-        ".mypy_cache", ".ruff_cache", ".DS_Store",
-    }
-
     @classmethod
     def create(
         cls,
@@ -95,54 +90,6 @@ class ProjectSandbox:
             package_root=Path(package_root or get_package_root()).expanduser().resolve(),
             shared_extension_root=Path(shared_extension_root or get_extension_root()).expanduser().resolve(),
         )
-
-    def import_workspace(self, source_root: str | Path) -> Dict[str, Any]:
-        """Seed the isolated workspace from a host project without sharing writes.
-
-        CLI and Gateway entry points both use this copy-on-write import.  The source is
-        never exposed as an agent-writable root; all subsequent reads and writes target
-        ``workspace_root``.  Runtime/build caches are omitted, while ``.git`` is retained
-        so repository-aware tools behave the same in terminal and browser sessions.
-        """
-        source = Path(source_root).expanduser().resolve()
-        if not source.is_dir():
-            raise ValueError(f"Workspace source is not a directory: {source}")
-        if _inside(source, self.project_root) or source == self.workspace_root:
-            raise ValueError("Workspace source must be outside the destination project sandbox")
-
-        # A configured output root commonly lives inside the source checkout.  Exclude
-        # its first path component to prevent recursively copying this session into itself.
-        excluded = set(self._DEFAULT_IMPORT_EXCLUDES)
-        try:
-            excluded.add(self.project_root.relative_to(source).parts[0])
-        except ValueError:
-            pass
-
-        copied_files = 0
-        copied_bytes = 0
-
-        def ignore(directory: str, names: List[str]) -> set[str]:
-            return {name for name in names if name in excluded}
-
-        shutil.copytree(
-            source,
-            self.workspace_root,
-            dirs_exist_ok=True,
-            symlinks=True,
-            ignore=ignore,
-        )
-        for path in self.workspace_root.rglob("*"):
-            if path.is_file() and not path.is_symlink():
-                copied_files += 1
-                copied_bytes += path.stat().st_size
-        return {
-            "source_root": str(source),
-            "workspace_root": str(self.workspace_root),
-            "mode": "copy_on_write",
-            "excluded": sorted(excluded),
-            "file_count": copied_files,
-            "total_bytes": copied_bytes,
-        }
 
     @property
     def manifest_path(self) -> Path:

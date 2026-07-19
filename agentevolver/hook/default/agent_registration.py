@@ -17,6 +17,22 @@ class AgentRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Locate the generated agent ``.py`` file, promote it if staged, and register it.
+
+        Fired after an agent-generating run calls ``done_tool``. Resolves the
+        target agent file from the payload, validates and promotes it out of any
+        staged extension root, then registers it (and a sibling HTML prompt, if
+        present) with ``extension_manager``. Registration failures are surfaced
+        as a BLOCK so the calling agent can fix the files and retry.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``target_name``,
+                ``reasoning``, ``extension_root`` and ``model_name``.
+
+        Returns:
+            ``HookResult.allow()`` on success, or ``HookResult.block(reason)``
+            when the file cannot be located or registration fails.
+        """
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
@@ -62,6 +78,14 @@ class AgentRegistrationHook(Hook):
         return HookResult.allow()
 
     def _resolve_agent_path(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
+        """Find the generated agent ``.py`` file referenced by the run.
+
+        Prefers an ``extension/.../agent/*.py`` path mentioned in the agent's
+        reasoning; falls back to the staged path derived from ``target_name``.
+
+        Returns:
+            The existing agent file path, or ``None`` if nothing resolvable exists.
+        """
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             token = token.strip(".,;:()")

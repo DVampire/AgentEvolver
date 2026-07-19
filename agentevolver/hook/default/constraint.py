@@ -42,6 +42,21 @@ class ConstraintHook(Hook):
     priority: int = 1
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Check every declared resource budget on PRE_STEP and gate the step.
+
+        Ignores non-PRE_STEP events. For each constraint the agent declared, runs
+        it against ``check_input``; the first exhausted budget blocks the step,
+        otherwise the collected per-constraint status snapshots are returned for
+        the agent to render into its next prompt.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``event``, ``task_id``,
+                ``constraint_names`` and ``check_input``.
+
+        Returns:
+            ``HookResult.block(reason)`` on the first exhausted budget, otherwise
+            ``HookResult(constraint_status=[...])`` (ALLOW for irrelevant events).
+        """
         inp = ctx.input or {}
         if inp.get("event") != HookEvent.PRE_STEP:
             return HookResult.allow()

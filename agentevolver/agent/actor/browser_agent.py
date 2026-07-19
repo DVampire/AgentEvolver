@@ -104,6 +104,18 @@ class BrowserAgent(Agent):
         action_args: Dict[str, Any],
         ctx: "AgentContext",
     ) -> Any:
+        """Dispatch one ``env__*`` tool_call back to the browser environment action.
+
+        Routing target for the tools produced by ``_native_env_tools``. ``ctx`` flows
+        through so the environment resolves the per-session browser tab (env
+        ``session_id`` == ``ctx.id`` == this agent's session id).
+
+        Returns:
+            The action's ``message`` on success (or the raw result when not a dict).
+
+        Raises:
+            RuntimeError: If the environment reports the action failed.
+        """
         # ctx flows to the environment so it resolves the per-session browser tab
         # (env session_id == ctx.id == this agent's session id).
         result = await environment_manager(name=self.env_name, action=action_name, input=action_args, ctx=ctx)
@@ -132,6 +144,12 @@ class BrowserAgent(Agent):
         ctx: Optional[AgentContext] = None,
         **kwargs,
     ) -> Dict[str, Any]:
+        """Extend the base prompt context with browser-specific fields.
+
+        Adds the observed ``browser_state``, a ``workspace`` snapshot, any
+        ``errors`` from the previous step's actions, and the rendered environment
+        actions, so the template can ground the next batch of env actions.
+        """
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
         browser_state = kwargs.get("browser_state")
@@ -146,10 +164,13 @@ class BrowserAgent(Agent):
         return base
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Return an empty tool context: this is a pure environment agent with no tools
+        (the task ends via the environment's ``finish`` action)."""
         # Pure environment agent — no tools; the task ends via the `finish` action.
         return {"tool_context": ""}
 
     async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Return an empty skill context: this agent exposes no skills."""
         return {"skill_context": ""}
 
     async def _get_environment_context(self) -> Dict[str, Any]:
@@ -172,6 +193,12 @@ class BrowserAgent(Agent):
         ctx: AgentContext,
         **kwargs,
     ) -> List[Message]:
+        """Build the prompt messages and attach the most recent screenshots.
+
+        Beyond the base text messages, appends up to ``max_screenshots`` deduplicated
+        images (previous annotated action + current state) as image content parts on
+        the final user message, so vision models can ground their actions.
+        """
         messages = await super()._get_messages(task, ctx=ctx, **kwargs)
 
         # Attach the latest screenshots (previous annotated action + current state)

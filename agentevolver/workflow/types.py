@@ -200,6 +200,7 @@ class WorkflowRun(BaseModel):
 
     @property
     def successful(self) -> bool:
+        """Whether the run reached the terminal SUCCEEDED state."""
         return self.state == WorkflowState.SUCCEEDED
 
 

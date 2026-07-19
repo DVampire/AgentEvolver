@@ -33,6 +33,21 @@ class WorkflowCompiler:
 
     SCHEMA_VERSION = "1.1.0"
     def compile_file(self, path: str | Path) -> WorkflowDefinition:
+        """Compile a persisted Workflow HTML file into a WorkflowDefinition.
+
+        Persisted artifacts must be complete ``<!DOCTYPE html>`` documents rooted at
+        ``<html>`` (unlike ephemeral fragments accepted by :meth:`compile`).
+
+        Args:
+            path: Filesystem path to the Workflow HTML document.
+
+        Returns:
+            The compiled definition, with ``source_path`` set to the resolved path.
+
+        Raises:
+            WorkflowCompileError: If the file is not a complete HTML document or fails
+                compilation.
+        """
         path = Path(path).resolve()
         source = path.read_text(encoding="utf-8")
         if not re.match(r"^\s*<!DOCTYPE\s+html", source, re.IGNORECASE):
@@ -43,6 +58,23 @@ class WorkflowCompiler:
         return definition.model_copy(update={"source_path": str(path)})
 
     def compile(self, source: str) -> WorkflowDefinition:
+        """Parse and validate a Workflow HTML source string into a WorkflowDefinition.
+
+        Enforces the restricted HTML language: exactly one ``<workflow>`` root with a
+        ``<flow>`` section, valid identifiers, semantic versions, a compatible schema
+        major version, outputs that reference only inputs or guaranteed top-level steps,
+        and bounded budget attributes. A stable ``program_hash`` is computed over the
+        executable contract so later registrations and checkpoints can detect drift.
+
+        Args:
+            source: The Workflow HTML source (document or fragment).
+
+        Returns:
+            The compiled definition with its executable ``program_hash`` populated.
+
+        Raises:
+            WorkflowCompileError: On any malformed, unsafe, or unbounded program.
+        """
         try:
             root = html.fromstring(source)
         except Exception as exc:
@@ -170,12 +202,20 @@ class WorkflowCompiler:
         return result
 
     def _steps_from_direct_children(self, element, seen, counter):
+        """Compile a step's nested instructions, skipping ``<arg>``/``<task>`` wrappers."""
         wrappers = {"arg", "task"}
         candidates = [child for child in element if isinstance(child.tag, str) and child.tag.lower() not in wrappers]
         return self._steps(candidates, seen, counter, parent_tag=element.tag) if candidates else []
 
     @staticmethod
     def _validate_step(step: WorkflowStep) -> None:
+        """Enforce per-step structural requirements (targets, items, bounds, actions).
+
+        Raises:
+            WorkflowCompileError: If a step is missing a mandatory attribute for its
+                type, e.g. a callable without a target, a loop without ``max-rounds``,
+                a branch without ``test``, or a connector/environment without an action.
+        """
         callable_types = {
             StepType.AGENT, StepType.TOOL, StepType.SKILL, StepType.CONNECTOR,
             StepType.ENVIRONMENT, StepType.WORKFLOW, StepType.REDUCE, StepType.VERIFY,
@@ -195,6 +235,23 @@ class WorkflowCompiler:
 
     @staticmethod
     def _inputs(node) -> Dict[str, WorkflowInput]:
+        """Compile the ``<inputs>`` section into a name-keyed WorkflowInput map.
+
+        Simple inputs use HTML attributes; complex array/object contracts attach an
+        inert sibling ``<schema for="name">`` carrying Draft 2020-12 JSON Schema. Each
+        schema is validated, matched to exactly one input, and reconciled against the
+        input's declared type.
+
+        Args:
+            node: The ``<inputs>`` element, or None if the workflow declares no inputs.
+
+        Returns:
+            Mapping of input name to its compiled contract.
+
+        Raises:
+            WorkflowCompileError: On invalid/duplicate names, malformed schemas,
+                type conflicts, or a schema targeting an unknown input.
+        """
         if node is None:
             return {}
         result = {}
@@ -256,6 +313,11 @@ class WorkflowCompiler:
 
     @staticmethod
     def _parse_default(raw, schema):
+        """Parse an input ``default`` attribute, decoding JSON for non-string types.
+
+        Raises:
+            WorkflowCompileError: If a non-string default is not valid JSON.
+        """
         if raw is None or schema.get("type") == "string":
             return raw
         try:
@@ -289,6 +351,17 @@ class WorkflowCompiler:
 
     @staticmethod
     def _outputs(node) -> Dict[str, str]:
+        """Compile the ``<outputs>`` section into a name-to-value-expression map.
+
+        Args:
+            node: The ``<outputs>`` element, or None if the workflow declares no outputs.
+
+        Returns:
+            Mapping of output name to its raw ``${...}`` value expression.
+
+        Raises:
+            WorkflowCompileError: On invalid/duplicate output names or a missing value.
+        """
         if node is None:
             return {}
         result: Dict[str, str] = {}
@@ -305,11 +378,13 @@ class WorkflowCompiler:
 
     @staticmethod
     def _child_text(element, name: str) -> str:
+        """Return the collapsed text of a named child element, or "" if absent."""
         child = element.find(name)
         return " ".join(child.itertext()).strip() if child is not None else ""
 
     @staticmethod
     def _integer(element, name, default, minimum, maximum):
+        """Read an integer attribute, applying a default and enforcing an inclusive range."""
         try:
             value = int(element.get(name, default))
         except (TypeError, ValueError) as exc:
@@ -319,10 +394,16 @@ class WorkflowCompiler:
         return value
 
     def _optional_integer(self, element, name, minimum, maximum):
+        """Read a range-checked integer attribute, or None when the attribute is absent."""
         return None if element.get(name) is None else self._integer(element, name, 0, minimum, maximum)
 
     @staticmethod
     def _number(value):
+        """Parse an optional positive float (e.g. a timeout); None passes through.
+
+        Raises:
+            WorkflowCompileError: If the value is non-numeric or not strictly positive.
+        """
         if value is None:
             return None
         try:
@@ -335,6 +416,11 @@ class WorkflowCompiler:
 
     @staticmethod
     def _nonnegative_number(value, default=0.0):
+        """Parse an optional non-negative float (e.g. retry delay), falling back to default.
+
+        Raises:
+            WorkflowCompileError: If the value is negative.
+        """
         if value is None:
             return default
         result = float(value)

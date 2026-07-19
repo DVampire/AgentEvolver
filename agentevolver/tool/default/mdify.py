@@ -67,6 +67,11 @@ class MdifyTool(Tool):
         logger.info(f"| Mdify tool base directory: {self.base_dir}")
 
     def model_post_init(self, __context: Any) -> None:
+        """Lazily construct the MarkitdownConverter after pydantic model init.
+
+        Runs once the tool's fields are populated so the converter can honor the
+        configured ``timeout``; skipped if a converter was already supplied.
+        """
         if self.converter is None:
             self.converter = MarkitdownConverter(timeout=self.timeout)
 

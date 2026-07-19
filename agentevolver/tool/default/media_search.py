@@ -54,11 +54,22 @@ _UA = "AgentEvolver-media-search/1.0 (+https://example.local)"
 
 
 def _slugify(text: str) -> str:
+    """Turn arbitrary text into a filesystem-safe, hyphenated slug.
+
+    Non-alphanumeric runs collapse to single hyphens; empty results fall back to
+    "image" so downloaded files always get a usable name.
+    """
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
     return slug or "image"
 
 
 def _ext_for(url: str, content_type: str) -> str:
+    """Pick a safe image file extension for a downloaded asset.
+
+    Prefers a known image extension from the URL path, then one guessed from the
+    Content-Type header, and defaults to ".jpg" when neither is a recognized
+    image type.
+    """
     ext = os.path.splitext(urllib.parse.urlparse(url).path)[1].lower()
     if ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         return ext
@@ -78,6 +89,11 @@ def _search_openverse(query: str, count: int) -> List[Dict[str, Any]]:
 
 
 def _download(url: str, dest: str) -> None:
+    """Download the bytes at `url` and write them to the local path `dest`.
+
+    Sends the module User-Agent and reads the whole response into memory before
+    writing (suitable for images, not large files).
+    """
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     with urllib.request.urlopen(req, timeout=25) as resp:
         data = resp.read()

@@ -22,6 +22,20 @@ class TrajectoryHook(Hook):
     priority: int = 2
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Drive ``trajectory_manager`` through the current agent lifecycle event.
+
+        Wraps the payload in a :class:`TrajectoryContext` and routes each event to
+        the manager: ON_START begins a trajectory, POST_ACTION records an
+        observation, POST_STEP closes the step, and ON_STOP finalizes it. Other
+        events are ignored.
+
+        Args:
+            ctx: Hook context whose ``id`` is the session id and whose ``input``
+                carries ``event``, ``task_id`` and ``agent_name``.
+
+        Returns:
+            Always ``HookResult.allow()`` (this hook only observes).
+        """
         from agentevolver.trajectory.server import trajectory_manager
         from agentevolver.trajectory.types import TrajectoryContext
 
@@ -37,6 +51,8 @@ class TrajectoryHook(Hook):
             task_id=inp.get("task_id") or ctx.id,
             agent_name=inp.get("agent_name") or "",
             workspace_root=ctx.workspace_root,
+            # Route persistence into the caller session's own log root when present.
+            log_root=(ctx.extra or {}).get("log_root"),
             input=inp,
         )
 

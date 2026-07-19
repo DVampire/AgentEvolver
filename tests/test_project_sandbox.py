@@ -106,24 +106,3 @@ def test_external_task_file_is_staged_inside_workspace(tmp_path: Path) -> None:
     staged = Path(prepared["files"][0])
     assert staged.is_relative_to(Path(context.workspace_root))
     assert staged.read_text(encoding="utf-8") == "<h1>task</h1>"
-def test_workspace_import_is_copy_on_write_and_avoids_recursive_output(tmp_path: Path) -> None:
-    source = tmp_path / "source"
-    source.mkdir()
-    (source / "tracked.txt").write_text("host", encoding="utf-8")
-    (source / ".git").mkdir()
-    (source / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
-    (source / "node_modules").mkdir()
-    (source / "node_modules" / "large.js").write_text("cache", encoding="utf-8")
-    project = source / "output" / "session"
-    sandbox = ProjectSandbox.create(project)
-
-    report = sandbox.import_workspace(source)
-    imported = sandbox.workspace_root / "tracked.txt"
-    assert report["mode"] == "copy_on_write"
-    assert imported.read_text(encoding="utf-8") == "host"
-    assert (sandbox.workspace_root / ".git" / "HEAD").is_file()
-    assert not (sandbox.workspace_root / "node_modules").exists()
-    assert not (sandbox.workspace_root / "output").exists()
-
-    imported.write_text("sandbox", encoding="utf-8")
-    assert (source / "tracked.txt").read_text(encoding="utf-8") == "host"

@@ -525,6 +525,12 @@ class WebSearcherTool(Tool):
             reraise=True
         )
         async def _do_search():
+            """Invoke the search tool once and return its parsed items.
+
+            Wrapped by tenacity to retry up to 3 times with exponential backoff.
+            Validates that the tool returns a successful ``Response`` carrying data,
+            raising ``ValueError`` otherwise so a retry (or final failure) is triggered.
+            """
             result = await tool(
                 query=query,
                 num_results=num_results,

@@ -56,6 +56,8 @@ class MetaAgent(Agent):
 
     # The one thing that makes this agent an orchestrator: sub-agents in its roster.
     def _include_agents(self) -> bool:
+        """Project registered sub-agents into this agent's roster so they can be called
+        as capabilities. Returning True is what turns this plain Agent into an orchestrator."""
         return True
 
     async def _prepare_round(self, run, decision):
@@ -66,7 +68,9 @@ class MetaAgent(Agent):
         second time concludes with an explicit partial result instead of burning the
         remaining step budget indefinitely.
         """
-        calls = decision["tool_calls"]
+        calls = await super()._prepare_round(run, decision)
+        if calls is None or not calls:
+            return calls
         signature = json.dumps(
             [{"name": call.name, "input": call.input or {}} for call in calls],
             ensure_ascii=False,

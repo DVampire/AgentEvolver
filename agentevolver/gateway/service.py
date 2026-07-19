@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import mimetypes
 import os
 import re
 import sys
@@ -104,6 +106,8 @@ class AgentGateway:
 
     _MAX_UPLOAD_SIZE = 100 * 1024 * 1024
     _MAX_UPLOAD_CHUNK_SIZE = 1024 * 1024
+    _MAX_WORKSPACE_FILE_SIZE = 2 * 1024 * 1024
+    _MAX_WORKSPACE_ENTRIES = 500
 
     async def start(self, config_path: str, *, stdio: bool = False) -> None:
         """Initialize the configured runtime once for all Gateway sessions."""
@@ -209,8 +213,7 @@ class AgentGateway:
             self._workspace_source is None or requested_source != self._workspace_source
         ):
             raise ValueError("workspace must match the server-controlled workspace source")
-        source = self._workspace_source
-        workspace_import = sandbox.import_workspace(source) if source else None
+        source_workspace = str(self._workspace_source) if self._workspace_source else None
         context = SessionContext(
             id=session_id,
             name=params.get("name") or "interactive",
@@ -220,7 +223,7 @@ class AgentGateway:
                 **sandbox.describe(),
                 "gateway_session": True,
                 "sandbox_mounts": sandbox.mounts(),
-                "workspace_import": workspace_import,
+                "source_workspace": source_workspace,
             },
         )
         session = GatewaySession(
@@ -231,7 +234,7 @@ class AgentGateway:
         )
         self._sync_session_capabilities(session)
         self._sessions[session_id] = session
-        payload = {"workspace": context.workspace_root, "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "workspace_import": workspace_import}
+        payload = {"workspace": context.workspace_root, "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "source_workspace": source_workspace}
         await self._publish("session.created", payload, session_id=session_id)
         return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
 
@@ -242,9 +245,7 @@ class AgentGateway:
                     "session_id": session_id,
                     "name": session.context.name,
                     "workspace": session.context.workspace_root,
-                    "source_workspace": (
-                        (session.context.extra.get("workspace_import") or {}).get("source_root")
-                    ),
+                    "source_workspace": session.context.extra.get("source_workspace"),
                     "project_root": str(session.sandbox.project_root),
                     "extension_root": str(session.sandbox.extension_root),
                     "task_ids": session.task_ids,
@@ -350,6 +351,95 @@ class AgentGateway:
     async def _command_file_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session = self._sessions[self._require_session_id(params)]
         return {"files": [upload.public() for upload in session.uploads.values() if upload.completed]}
+
+    def _workspace_path(self, session: GatewaySession, value: Any) -> tuple[Path, str]:
+        """Resolve a client relative path without permitting cross-session access."""
+        raw = str(value or "").replace("\\", "/")
+        if raw.startswith("/"):
+            raise ValueError("Workspace paths must be relative")
+        relative = raw.strip("/")
+        parts = Path(relative).parts
+        if ".." in parts:
+            raise ValueError("Workspace paths must be relative and may not contain '..'")
+        root = session.sandbox.workspace_root.resolve()
+        candidate = (root / relative).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Workspace path escapes the current session") from exc
+        return candidate, relative
+
+    async def _command_workspace_tree(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List one workspace directory; clients expand the tree lazily."""
+        session = self._sessions[self._require_session_id(params)]
+        directory, relative = self._workspace_path(session, params.get("path"))
+        if not directory.exists() or not directory.is_dir():
+            raise ValueError(f"Workspace directory was not found: {relative or '.'}")
+        show_hidden = bool(params.get("show_hidden", False))
+        entries = []
+        for child in sorted(directory.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+            if not show_hidden and child.name.startswith("."):
+                continue
+            # Do not expose symlinks that resolve beyond this session workspace.
+            try:
+                child.resolve().relative_to(session.sandbox.workspace_root.resolve())
+            except ValueError:
+                continue
+            stat = child.stat()
+            child_relative = child.relative_to(session.sandbox.workspace_root).as_posix()
+            entries.append({
+                "name": child.name,
+                "path": child_relative,
+                "kind": "directory" if child.is_dir() else "file",
+                "size": stat.st_size if child.is_file() else None,
+                "modified_at": stat.st_mtime,
+            })
+            if len(entries) >= self._MAX_WORKSPACE_ENTRIES:
+                break
+        return {
+            "path": relative,
+            "entries": entries,
+            "truncated": len(entries) >= self._MAX_WORKSPACE_ENTRIES,
+        }
+
+    async def _command_workspace_file_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Read a bounded UTF-8 text file from the current session workspace."""
+        session = self._sessions[self._require_session_id(params)]
+        path, relative = self._workspace_path(session, params.get("path"))
+        if not relative or not path.exists() or not path.is_file():
+            raise ValueError(f"Workspace file was not found: {relative or '.'}")
+        size = path.stat().st_size
+        if size > self._MAX_WORKSPACE_FILE_SIZE:
+            raise ValueError("Workspace file is larger than the 2 MB preview limit")
+        raw = path.read_bytes()
+        if b"\x00" in raw[:8192]:
+            raise ValueError("Binary files cannot be opened in the text preview")
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("File is not valid UTF-8 text") from exc
+        mime_type = mimetypes.guess_type(path.name)[0] or "text/plain"
+        return {
+            "path": relative,
+            "name": path.name,
+            "content": content,
+            "size": size,
+            "modified_at": path.stat().st_mtime,
+            "etag": hashlib.sha256(raw).hexdigest(),
+            "mime_type": mime_type,
+            "language": self._workspace_language(path.suffix.lower()),
+        }
+
+    @staticmethod
+    def _workspace_language(suffix: str) -> str:
+        return {
+            ".py": "python", ".pyi": "python", ".js": "javascript", ".jsx": "javascript",
+            ".ts": "typescript", ".tsx": "typescript", ".html": "html", ".htm": "html",
+            ".css": "css", ".scss": "scss", ".json": "json", ".yaml": "yaml",
+            ".yml": "yaml", ".md": "markdown", ".mdx": "markdown", ".sh": "shell",
+            ".bash": "shell", ".zsh": "shell", ".toml": "ini", ".ini": "ini",
+            ".xml": "xml", ".sql": "sql", ".dockerfile": "dockerfile",
+        }.get(suffix, "plaintext")
 
     async def _command_file_upload_begin(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session = self._sessions[self._require_session_id(params)]

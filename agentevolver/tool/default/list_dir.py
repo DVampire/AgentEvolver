@@ -50,6 +50,11 @@ class ListDirTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     def _should_ignore(self, name: str, ignore: set) -> bool:
+        """Return True if an entry name should be excluded from the tree.
+
+        Matches either an exact name in `ignore` or a simple `*suffix` glob
+        pattern (e.g. "*.pyc").
+        """
         if name in ignore:
             return True
         for pattern in ignore:
@@ -67,6 +72,21 @@ class ListDirTool(Tool):
         lines: List[str],
         file_count: List[int],
     ) -> None:
+        """Recursively render a directory into an ASCII tree, in place.
+
+        Walks `path` up to `depth` levels, appending formatted lines (with box-drawing
+        connectors) to `lines` and incrementing the file tally. Directories are listed
+        before files and symlinked directories are not followed.
+
+        Args:
+            path: Directory to scan at this level.
+            ignore: Names/patterns to skip (see `_should_ignore`).
+            depth: Maximum recursion depth allowed.
+            current_depth: Depth of the current call (recursion stops beyond `depth`).
+            prefix: Accumulated indentation prefix for this level.
+            lines: Output accumulator, mutated in place.
+            file_count: Single-element list used as a mutable file counter.
+        """
         if current_depth > depth:
             return
 

@@ -67,7 +67,6 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
         Path(config.project_root) / session_id,
         shared_extension_root=Path(config.extension_root),
     )
-    sandbox.import_workspace(Path.cwd())
     _apply_session_roots(config, sandbox)
     logger.initialize(config=config)
     await _try("version", version_manager.initialize(), timeout)

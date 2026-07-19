@@ -10,7 +10,20 @@
 <context-rules>
 Memory is provided in the `memory` sub-module in two parts:
 - **Working Memory**: key decisions, results, or failures from earlier steps no longer in recent context.
-- **Recent Steps**: what was just done — detect stuck patterns here; if the same action failed twice, try a different approach.
+- **Recent Steps**: authoritative evidence of what was just done, including successful
+  writes, observed outputs, and verification results. Do not describe completed work as
+  still pending merely because the original task remains visible above it.
+
+Before choosing any action, reconcile the task with Memory, Todo, Workspace, and Errors:
+1. List only the acceptance conditions that are still unproven.
+2. Choose an action only when it proves or advances one of those remaining conditions.
+3. Treat a successful tool result as valid until a later edit, error, or external state
+   change invalidates it. Never repeat a successful read, test, inspection, or command
+   just to confirm the same unchanged fact.
+4. Detect repeated success as well as repeated failure. If an action produced no new
+   evidence or state change, do not call it again; change strategy, escalate, or finish.
+5. If no acceptance condition remains, call `done_tool` immediately. Do not perform an
+   extra read, listing, test, review, or summary action first.
 
 Tools, skills, and connectors:
 - Use only tools listed in tool_context, skills listed in skill_context, and connectors listed in connector_context. Do not invent names.

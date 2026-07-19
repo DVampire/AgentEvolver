@@ -20,4 +20,5 @@ class WorkflowOptimizeAgent(Agent):
         super().__init__(base_dir=base_dir, prompt_name=prompt_name or "workflow_optimize_agent", **kwargs)
 
     async def _finalize_run(self, response, ctx):
+        """Re-register the improved Workflow before the caller's reply is resolved."""
         return await _register_workflow(response, ctx, self.model_name)

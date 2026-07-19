@@ -20,6 +20,23 @@ class WorkflowRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Locate the generated Workflow HTML, activate and compile it, then register it.
+
+        Fired after a workflow-generating run calls ``done_tool``. Resolves the
+        staged ``.html`` artifact, verifies it is a complete ``<html>`` document
+        containing a ``<workflow>`` element, marks that element ``active`` and
+        ``enable-evolving``, and compiles it to validate before atomically
+        rewriting the file. The (possibly promoted) artifact is then registered
+        as a live workflow extension.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``target_name``,
+                ``artifact_path``, ``reasoning`` and ``extension_root``.
+
+        Returns:
+            ``HookResult.allow()`` on success, or ``HookResult.block(reason)``
+            when the HTML cannot be located, is malformed, or fails to compile.
+        """
         extra = ctx.input or {}
         path = self._resolve(
             extra.get("target_name"), extra.get("artifact_path"),
@@ -84,6 +101,16 @@ class WorkflowRegistrationHook(Hook):
         target_name: Optional[str], artifact_path: Optional[str], reasoning: str,
         extension_root: str,
     ) -> Optional[str]:
+        """Find the generated Workflow ``.html`` file referenced by the run.
+
+        Considers an explicit ``artifact_path`` first, then any ``*.html`` path
+        (quoted or bare) mentioned in the reasoning, keeping only candidates whose
+        path contains ``workflow``; relative paths are resolved against
+        ``extension_root``. Falls back to the staged path from ``target_name``.
+
+        Returns:
+            The existing Workflow HTML path, or ``None`` if none resolves.
+        """
         candidates = [artifact_path] if artifact_path else []
         for match in re.finditer(
             r"(?P<quote>[`'\"])(?P<path>.+?\.html)(?P=quote)|(?P<bare>\S+\.html)",

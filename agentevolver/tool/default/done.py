@@ -32,6 +32,7 @@ class DoneTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
+    progress_policy: str = "always"
     
     def __init__(self, enable_evolving: bool = False, **kwargs):
         """A tool for indicating that the task has been completed."""

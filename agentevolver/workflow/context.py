@@ -104,6 +104,11 @@ class WorkflowContextManager(BaseModel):
         return definition
 
     def unregister(self, name: str) -> bool:
+        """Remove the active definition for a name and invalidate derived context.
+
+        Returns:
+            True if a definition was present and removed, False otherwise.
+        """
         removed = self._definitions.pop(name, None) is not None
         if removed:
             self._invalidate_instruction()
@@ -121,15 +126,28 @@ class WorkflowContextManager(BaseModel):
         return self._definitions[name]
 
     def get(self, name: str) -> Optional[WorkflowDefinition]:
+        """Return the active definition for a name, or None if not registered."""
         return self._definitions.get(name)
 
     def get_info(self, name: str) -> Optional[WorkflowDefinition]:
+        """Alias of :meth:`get` matching the shared capability-manager interface."""
         return self.get(name)
 
     def list(self) -> List[str]:
+        """Return the sorted names of all registered workflows."""
         return sorted(self._definitions)
 
     def search(self, query: str) -> List[WorkflowDefinition]:
+        """Rank active workflows by how many query terms match their metadata.
+
+        Args:
+            query: Whitespace-separated search terms; empty query returns all active
+                definitions.
+
+        Returns:
+            Active definitions whose name/description/applicability/tags match at least
+            one term, ordered by descending match count.
+        """
         terms = {term.lower() for term in query.split() if term}
         definitions = [
             self._definitions[name] for name in self.list()
@@ -139,6 +157,7 @@ class WorkflowContextManager(BaseModel):
             return definitions
 
         def score(item: WorkflowDefinition) -> int:
+            """Count how many query terms appear in the definition's searchable text."""
             haystack = " ".join([item.name, item.description, item.applicability, *item.tags]).lower()
             return sum(term in haystack for term in terms)
 
@@ -181,6 +200,19 @@ class WorkflowContextManager(BaseModel):
         return output
 
     async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        """Build the native callable schema (``workflow__<name>``) from input contracts.
+
+        Assembles a JSON Schema object from the workflow's declared inputs, marking the
+        result non-strict when any input fell back to a legacy inferred schema.
+
+        Args:
+            name: Registered workflow name.
+            action: Unused; accepted for interface parity with other capability managers.
+            format: Output format understood by :class:`CapabilitySchema` (``json`` or ``md``).
+
+        Returns:
+            The rendered schema, or None if the workflow is unknown or not active.
+        """
         definition = self.get(name)
         if definition is None or definition.status != WorkflowStatus.ACTIVE:
             return None
@@ -205,6 +237,24 @@ class WorkflowContextManager(BaseModel):
         ).render(format)
 
     def record_evaluation(self, evaluation: WorkflowEvaluation) -> WorkflowEvaluation:
+        """Validate and persist one version-scoped evaluation record.
+
+        Successful evaluations must reference a real, terminal run whose identity and
+        program hash match the registered contract; elapsed/token metrics are taken
+        from that run rather than trusted from the caller. Static failure records need
+        a ``case_id`` instead of a run. Duplicate run evidence is rejected.
+
+        Args:
+            evaluation: The evaluation to record; ``run_id``, metrics, and ``recorded_at``
+                may be normalized before storage.
+
+        Returns:
+            The stored (possibly updated) evaluation record.
+
+        Raises:
+            ValueError: On version mismatch, missing/invalid run, non-terminal run,
+                success/state disagreement, missing case_id, or duplicate evidence.
+        """
         definition = self.require(evaluation.workflow_name)
         if evaluation.workflow_version != definition.version:
             raise ValueError("Evaluation version does not match the registered workflow")
@@ -251,6 +301,7 @@ class WorkflowContextManager(BaseModel):
         return evaluation
 
     def evaluations(self, name: str) -> List[WorkflowEvaluation]:
+        """Return recorded evaluations for the workflow's currently registered version."""
         definition = self.get(name)
         if definition is None:
             return []
@@ -260,6 +311,12 @@ class WorkflowContextManager(BaseModel):
         ]
 
     def evaluation_summary(self, name: str) -> Dict[str, Any]:
+        """Aggregate current-version evaluations into a keep/optimize/rollback signal.
+
+        Returns:
+            A dict with ``runs``, ``distinct_cases``, ``success_rate``, ``average_quality``,
+            and a ``healthy`` flag (>=3 distinct cases, >=0.8 success, >=0.7 quality).
+        """
         evaluations = self.evaluations(name)
         successes = [item for item in evaluations if item.success]
         distinct_cases = {item.case_id or item.run_id for item in evaluations if item.case_id or item.run_id}
@@ -274,15 +331,22 @@ class WorkflowContextManager(BaseModel):
         }
 
     def require(self, name: str) -> WorkflowDefinition:
+        """Return the active definition for a name, raising if it is not registered.
+
+        Raises:
+            ValueError: If no workflow is registered under the given name.
+        """
         definition = self.get(name)
         if definition is None:
             raise ValueError(f"Unknown workflow: {name}")
         return definition
 
     def _invalidate_instruction(self) -> None:
+        """Drop the cached prompt roster after any registry mutation."""
         self._instruction_cache.clear()
 
     def _load_evaluations(self) -> None:
+        """Load persisted evaluation evidence, tolerating a missing or corrupt file."""
         path = Path(self.evaluation_path)
         if not path.exists():
             return
@@ -297,6 +361,7 @@ class WorkflowContextManager(BaseModel):
             self._evaluations = {}
 
     def _save_evaluations(self) -> None:
+        """Atomically write all evaluation evidence to disk via a temp-file replace."""
         path = Path(self.evaluation_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {name: [item.model_dump() for item in items] for name, items in self._evaluations.items()}

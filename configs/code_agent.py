@@ -15,8 +15,6 @@ with read_base():
 
 tag = "code_agent"
 project_root = f"output/{tag}"
-log_root = f"{project_root}/log"
-workspace_root = f"{project_root}/workspace"
 log_path = "agent.log"
 
 model_name = "openrouter/claude-opus-4.8"
@@ -66,7 +64,6 @@ file_system_memory.update(
 
 #-----------------CODE AGENT CONFIG-----------------
 code_agent.update(
-    base_dir=workspace_root,
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

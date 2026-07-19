@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from agentevolver.dynamic import dynamic_manager
@@ -29,6 +29,10 @@ class Tool(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+    progress_policy: Optional[Literal["workspace", "external", "polling", "always"]] = Field(
+        default=None,
+        description="No-progress policy: workspace / external / polling / always",
+    )
 
     async def __call__(self, **kwargs) -> Response:
         """Call the tool with the given arguments."""
@@ -44,6 +48,9 @@ class ToolConfig(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
+    progress_policy: Optional[Literal["workspace", "external", "polling", "always"]] = Field(
+        default=None, description="No-progress guard policy"
+    )
     version: str = Field(default="1.0.0", description="Version of the tool")
 
     cls: Optional[Type[Tool]] = Field(default=None, description="The class of the tool")
@@ -83,6 +90,7 @@ class ToolConfig(BaseModel):
             "metadata": self.metadata,
             "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
+            "progress_policy": self.progress_policy,
             "version": self.version,
 
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
@@ -107,6 +115,7 @@ class ToolConfig(BaseModel):
         metadata = data.get("metadata")
         enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
+        progress_policy = data.get("progress_policy")
         version = data.get("version")
         
         cls_ = None
@@ -141,6 +150,7 @@ class ToolConfig(BaseModel):
             metadata=metadata,
             enable_evolving=enable_evolving,
             permission_mode=permission_mode,
+            progress_policy=progress_policy,
             version=version,
             cls=cls_,
             config=config,

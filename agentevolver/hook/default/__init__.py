@@ -10,6 +10,7 @@ from .connector_registration import ConnectorRegistrationHook
 from .workflow_registration import WorkflowRegistrationHook
 from .snapshot_hook import SnapshotHook
 from .trajectory_hook import TrajectoryHook
+from .no_progress import NoProgressHook
 
 __all__ = [
     "CompactHook",
@@ -24,4 +25,5 @@ __all__ = [
     "WorkflowRegistrationHook",
     "SnapshotHook",
     "TrajectoryHook",
+    "NoProgressHook",
 ]

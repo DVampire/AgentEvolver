@@ -44,6 +44,8 @@ def _fc(name: str, description: str, parameters: Dict[str, Any]) -> Dict[str, An
 
 
 def _shim(fc: Dict[str, Any]) -> _SchemaTool:
+    """Wrap one function-calling dict in a schema-only ``_SchemaTool`` so serialization
+    can read ``tool.function_calling`` uniformly; the shim itself is never executed."""
     fn = fc.get("function", {})
     return _SchemaTool(name=fn.get("name", ""), description=fn.get("description", ""), function_calling=fc)
 

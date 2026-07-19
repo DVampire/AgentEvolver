@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="agent_evaluate_agent">
   <meta name="description" content="An agent that evaluates a generated agent across five quality dimensions and produces a structured report with scores.">
-  <meta name="version" content="1.2.0">
+  <meta name="version" content="1.2.1">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -69,6 +69,8 @@ Memory is provided in the `memory` sub-module. Always write your `memory` field 
 
 Use `✓` for confirmed facts, `✗` for pending or failed. Include score for each completed dimension.
 </context-rules>
+
+<module src="../module/progress_rules.html"></module>
 
 <evaluation-rules>
 **Discovering the target (do this first)**

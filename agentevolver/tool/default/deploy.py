@@ -62,6 +62,10 @@ class DeployTool(Tool):
 
     @staticmethod
     def _site_line(rec) -> str:
+        """Format one deployment record as a tab-separated line for the `list` view.
+
+        Columns: site id, runtime, status, and URL (or "-" when not yet assigned).
+        """
         return f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
 
     async def __call__(self, action: str = "list", **kwargs) -> Response:

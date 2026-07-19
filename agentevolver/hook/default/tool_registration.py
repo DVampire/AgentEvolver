@@ -17,6 +17,20 @@ class ToolRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Locate the generated tool ``.py`` file, promote it if staged, and register it.
+
+        Fired after a tool-generating run calls ``done_tool``. Resolves the tool
+        file, validates and promotes it out of any staged extension root, then
+        registers it as an evolvable component with ``extension_manager``.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``target_name``,
+                ``reasoning`` and ``extension_root``.
+
+        Returns:
+            ``HookResult.allow()`` on success, or ``HookResult.block(reason)``
+            when the file cannot be located or registration fails.
+        """
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
@@ -46,6 +60,14 @@ class ToolRegistrationHook(Hook):
             return HookResult.block(f"[registration failed] {e}\nPlease fix the code and call done_tool again.")
 
     def _resolve_tool_path(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
+        """Find the generated tool ``.py`` file referenced by the run.
+
+        Prefers an ``extension/.../tool/*.py`` path mentioned in the agent's
+        reasoning; falls back to the staged path from ``target_name``.
+
+        Returns:
+            The existing tool file path, or ``None`` if none resolves.
+        """
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             token = token.strip(".,;:()")

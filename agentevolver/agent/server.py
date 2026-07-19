@@ -130,6 +130,12 @@ class AgentManagerServer(BaseModel):
 
     @staticmethod
     def _dispatch_parameters() -> Dict[str, Any]:
+        """JSON schema for the uniform sub-agent delegation contract.
+
+        Defines the parameters an orchestrator passes when dispatching any sub-agent as
+        a callable (``task`` plus optional files, evolution target, and per-capability
+        allowlists), so every agent is projected with the same strict function schema.
+        """
         return {
             "type": "object",
             "properties": {

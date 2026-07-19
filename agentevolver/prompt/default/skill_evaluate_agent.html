@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="skill_evaluate_agent">
   <meta name="description" content="An agent that evaluates skill quality across multiple dimensions and produces a structured report with scores and improvement suggestions.">
-  <meta name="version" content="1.1.1">
+  <meta name="version" content="1.1.2">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -92,6 +92,8 @@ Tools and skills:
 - Use only tools listed in Tool Context and skills listed in Skill Context. Do not invent names.
 - If no tools or skills are loaded, ignore the respective context.
 </context-rules>
+
+<module src="../module/progress_rules.html"></module>
 
 <evaluation-rules>
 **Discovering the target (call inspect first)**

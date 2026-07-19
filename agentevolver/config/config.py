@@ -6,12 +6,22 @@ from typing import Union
 from agentevolver.utils import assemble_resource_path, assemble_workspace_path, project_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
-    """Resolve and validate the per-run output directory hierarchy."""
-    required_roots = ("project_root", "workspace_root", "log_root")
-    missing_roots = [root for root in required_roots if root not in config]
-    if missing_roots:
-        missing = ", ".join(missing_roots)
-        raise ValueError(f"Configuration is missing required output root(s): {missing}")
+    """Resolve and validate the per-run output directory hierarchy.
+
+    Only ``project_root`` need be declared by a config; the ``log_root`` and
+    ``workspace_root`` sub-roots default to ``<project_root>/log`` and
+    ``<project_root>/workspace`` when a config does not set them.  These are just
+    templates — a session rebinds them to ``<project_root>/<session-id>/…`` at
+    runtime (direct scripts via ``bind_session_roots``; Gateway/CLI via a
+    per-session ``ProjectSandbox`` plus ctx-driven log routing).
+    """
+    if "project_root" not in config:
+        raise ValueError("Configuration is missing required output root: project_root")
+    # Derive the sub-roots from project_root when a config omits them.
+    if "log_root" not in config:
+        config.log_root = f"{config.project_root}/log"
+    if "workspace_root" not in config:
+        config.workspace_root = f"{config.project_root}/workspace"
 
     # Runtime output is project-owned.  Do not resolve these through the
     # user-level ``~/.agentevolver`` directory.
@@ -92,11 +102,13 @@ def process_agent(config: MMConfig) -> MMConfig:
         entry = config[key]
         if not hasattr(entry, "get"):   # not a config dict (e.g. agent_names list)
             continue
-        # An agent's base_dir is its explicit workspace location. Do not join log_root.
-        if entry.get("base_dir") is not None:
-            config[key].update(dict(
-                base_dir = str(assemble_workspace_path(entry["base_dir"]))
-            ))
+        # An agent's base_dir is its workspace location (never joined onto log_root).
+        # Default to the run's workspace root when a config doesn't set one, so configs
+        # only declare project_root and the workspace is derived / session-rebound.
+        base_dir = entry.get("base_dir") or config.workspace_root
+        config[key].update(dict(
+            base_dir = str(assemble_workspace_path(base_dir))
+        ))
         if entry.get("model_name") is not None:
             config[key].update(dict(
                 model_name = config.model_name

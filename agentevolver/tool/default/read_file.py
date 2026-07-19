@@ -41,6 +41,7 @@ class ReadFileTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={})
     enable_evolving: bool = Field(default=False)
+    progress_policy: str = "workspace"
 
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)

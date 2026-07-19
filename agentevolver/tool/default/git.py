@@ -80,6 +80,10 @@ class GitTool(Tool):
         )
 
     def _get_workspace_root(self, ctx) -> Optional[str]:
+        """Return the workspace root from the call context, or None if unavailable.
+
+        Used to scope git operations to the session's workspace directory.
+        """
         if ctx and hasattr(ctx, "workspace_root") and ctx.workspace_root:
             return ctx.workspace_root
         return None
@@ -165,6 +169,18 @@ class GitTool(Tool):
 
     @staticmethod
     def _respond(rc: int, stdout: str, stderr: str, action: str) -> Response:
+        """Wrap a git subprocess result into a tool Response.
+
+        A zero return code yields a success Response carrying stdout; otherwise a
+        failure Response is built from stderr (falling back to stdout or a
+        generic exit-code message).
+
+        Args:
+            rc: Process exit code (0 means success).
+            stdout: Captured standard output.
+            stderr: Captured standard error.
+            action: Git action name, echoed back in the success payload.
+        """
         success = rc == 0
         if success:
             return Response(type=ResponseType.TOOL, success=True, message=stdout, data={"action": action})

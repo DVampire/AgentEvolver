@@ -61,7 +61,7 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 ### What you get
 
 - **Trace UI** — while running, the log prints `🌐 Trace UI: http://localhost:<port>`; open it to watch the agents step through the task in real time.
-- **Outputs** — run artifacts, task views, and logs are written under `workspace_root/meta_agent/` (`run/` for run state, `workspace/` for the agent's working files).
+- **Outputs** — each run is its own session: run artifacts, logs, and task views are written under `output/<tag>/<session-id>/` (`workspace/` for the agent's working files, `log/` for logs and rendered task views).
 - On completion the log prints the final result and, if produced, the path to a memory HTML report.
 
 Ready-made task documents live in [`examples/tasks/`](examples/tasks/) — browse them for examples of how tasks are specified.
@@ -86,8 +86,8 @@ Open `http://127.0.0.1:5173` (or the URL Vite prints). The Web UI connects to `w
 Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted local network. The WebSocket client reconnects automatically and asks the server to replay missed session events. See [`frontend/README.md`](frontend/README.md) for the full startup guide.
 
 Local commands, the terminal client, and Web sessions share one project-sandbox model:
-the launch directory is imported into a per-session copy-on-write workspace. Agent writes
-stay inside that workspace rather than modifying the host checkout directly.
+each Session gets an initially empty isolated workspace for staged inputs and generated
+artifacts. Agent writes stay there rather than modifying the host checkout directly.
 
 The Gateway requires a token when bound to a non-loopback address. Browser origins can
 also be restricted with repeated `--allow-origin https://your-ui.example` options.
@@ -101,7 +101,7 @@ example, `agentevolver /registry`), use the terminal command loop
 (`agentevolver tui`), or start the Gateway (`agentevolver serve ...`).
 
 Generated run output is stored in the current project by default, under
-`./output/<tag>/sessions/<session-id>/`. Durable project extensions live in
+`./output/<tag>/<session-id>/`. Durable project extensions live in
 `./extension/`; a session stages extension changes under its own output directory
 and promotes them explicitly. User-level overrides and caches use `~/.agentevolver`.
 Set `AGENTEVOLVER_HOME` to place it elsewhere. Each Gateway, CLI, and TUI session

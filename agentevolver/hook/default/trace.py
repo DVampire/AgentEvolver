@@ -34,6 +34,21 @@ class TraceHook(Hook):
     _timers: Dict[str, float] = PrivateAttr(default_factory=dict)
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Translate the incoming agent lifecycle event into a TraceEvent and emit it.
+
+        Dispatches on ``ctx.input["event"]``: ON_START/ON_STOP bracket the agent
+        run, PRE_STEP/POST_STEP the step, PRE_ACTION/POST_ACTION each tool or skill
+        action. Start events stash a monotonic timer keyed by session/step/action;
+        the matching end event pops it to compute ``duration_ms``. Any resulting
+        event is emitted through ``trace_manager``.
+
+        Args:
+            ctx: Hook context whose ``id`` is the session id and whose ``input``
+                carries the event type and its payload (agent_name, step, action).
+
+        Returns:
+            Always ``HookResult.allow()`` (this hook only observes).
+        """
         from agentevolver.trace.server import trace_manager
 
         inp = ctx.input
@@ -135,20 +150,29 @@ class TraceHook(Hook):
             )
 
         if event is not None:
+            # Route this event's file into the caller session's own log root
+            # (from the sandbox) when present; the writer falls back to the
+            # global trace root otherwise.
+            session_log_root = (ctx.extra or {}).get("log_root")
+            if session_log_root:
+                event.log_root = str(session_log_root)
             await trace_manager.emit(event)
 
         return HookResult.allow()
 
     def _task_id(self, ctx: HookContext) -> str:
+        """Return the payload's ``task_id``, falling back to the session id."""
         if not ctx.input:
             return ctx.id
         return ctx.input.get("task_id") or ctx.id
 
     def _task_content(self, ctx: HookContext) -> str:
+        """Return the payload's ``task`` description, or an empty string if absent."""
         if not ctx.input:
             return ""
         return ctx.input.get("task") or ""
 
     def _pop_timer(self, key: str) -> Optional[float]:
+        """Pop the timer at ``key`` and return the elapsed time in milliseconds (``None`` if unset)."""
         start = self._timers.pop(key, None)
         return None if start is None else (time.monotonic() - start) * 1000

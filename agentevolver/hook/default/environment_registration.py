@@ -17,6 +17,21 @@ class EnvironmentRegistrationHook(Hook):
     priority: int = 10
 
     async def handle(self, ctx: HookContext) -> HookResult:
+        """Locate the generated environment ``.py`` file, promote it if staged, and register it.
+
+        Fired after an environment generation/optimization run calls ``done_tool``.
+        Resolves the environment file, validates and promotes it out of any staged
+        extension root, then registers it as an evolvable component with
+        ``environment_manager`` via ``extension_manager``.
+
+        Args:
+            ctx: Hook context whose ``input`` carries ``target_name``,
+                ``reasoning`` and ``extension_root``.
+
+        Returns:
+            ``HookResult.allow()`` on success, or ``HookResult.block(reason)``
+            when the file cannot be located or registration fails.
+        """
         extra = ctx.input or {}
         target_name: Optional[str] = extra.get("target_name")
         reasoning: str = extra.get("reasoning") or ""
@@ -47,6 +62,14 @@ class EnvironmentRegistrationHook(Hook):
         return HookResult.allow()
 
     def _resolve_environment_path(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
+        """Find the generated environment ``.py`` file referenced by the run.
+
+        Prefers an ``extension/.../environment/*.py`` path mentioned in the
+        agent's reasoning; falls back to the staged path from ``target_name``.
+
+        Returns:
+            The existing environment file path, or ``None`` if none resolves.
+        """
         from agentevolver.extension import extension_manager
         for token in reasoning.split():
             token = token.strip(".,;:()")

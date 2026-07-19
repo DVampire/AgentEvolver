@@ -36,6 +36,7 @@ class _WorkflowBudget:
 
 
 def _now() -> str:
+    """Return the current UTC time as an ISO-8601 timestamp string."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -84,6 +85,17 @@ class WorkflowRuntime:
         self.max_retained_runs = max_retained_runs
 
     def _new_run(self, definition, values, ctx, run_id=None) -> WorkflowRun:
+        """Create and register a fresh WorkflowRun with its checkpoint path assigned.
+
+        Args:
+            definition: The compiled workflow being executed.
+            values: Raw input values for the run.
+            ctx: Optional execution context used to locate the checkpoint directory.
+            run_id: Optional pre-allocated run id (e.g. from :meth:`start`).
+
+        Returns:
+            The newly created run in the CREATED state.
+        """
         run = WorkflowRun(
             id=run_id or make_id(), workflow_name=definition.name,
             workflow_version=definition.version, runtime_version=self.RUNTIME_VERSION,
@@ -98,6 +110,26 @@ class WorkflowRuntime:
         self, definition: WorkflowDefinition, *, input=None, ctx=None, depth=0,
         run_id=None, _run=None, _budget=None,
     ) -> WorkflowRun:
+        """Validate, admit, and execute a workflow to a terminal state.
+
+        Moves the run through VALIDATING (status, nesting depth, input schema, and
+        preflight capability discovery) then READY before driving execution. A shared
+        root :class:`_WorkflowBudget` bounds total Agents and nesting depth across every
+        nested run. On rejection the run is checkpointed in the REJECTED state instead
+        of raising.
+
+        Args:
+            definition: The compiled workflow to run.
+            input: Raw input values.
+            ctx: Optional execution context.
+            depth: Current nesting depth (0 for a root run).
+            run_id: Optional pre-allocated run id.
+            _run: Internal pre-created run (used by :meth:`start`).
+            _budget: Internal shared budget for nested runs; created when absent.
+
+        Returns:
+            The terminal WorkflowRun (succeeded, failed, cancelled, or rejected).
+        """
         run = _run or self._new_run(definition, input, ctx, run_id)
         budget = _budget or _WorkflowBudget(
             definition.max_agents, definition.max_depth, root_run=run,
@@ -126,6 +158,26 @@ class WorkflowRuntime:
         return await self._drive(definition, run, ctx, depth)
 
     async def resume(self, definition: WorkflowDefinition, checkpoint: str | Path, *, ctx=None, depth=0) -> WorkflowRun:
+        """Reload a checkpointed run and continue it against the same-version program.
+
+        Rejects checkpoints whose runtime major version, workflow identity, or executable
+        program hash no longer match (pre-1.1 checkpoints without a hash are migrated).
+        Incomplete frames are reset to PENDING and non-terminal invocations re-queued,
+        while already-COMPLETED invocations become CACHED so finished work is not redone.
+
+        Args:
+            definition: The registered workflow the checkpoint must match.
+            checkpoint: Path to the checkpoint JSON file.
+            ctx: Optional execution context.
+            depth: Nesting depth to resume at.
+
+        Returns:
+            The run driven to a fresh terminal state.
+
+        Raises:
+            ValueError: On an incompatible or mismatched checkpoint.
+            RuntimeError: If the run is already active in this process.
+        """
         path = Path(checkpoint).resolve()
         run = WorkflowRun.model_validate_json(path.read_text(encoding="utf-8"))
         if run.runtime_version.split(".", 1)[0] != self.RUNTIME_VERSION.split(".", 1)[0]:
@@ -160,6 +212,17 @@ class WorkflowRuntime:
         return await self._drive(definition, run, ctx, depth)
 
     async def _drive(self, definition, run, ctx, depth):
+        """Run the program under cancellation, concurrency, and pause control to a terminal state.
+
+        Sets up the per-run cancel/continue events and concurrency semaphore, executes the
+        program (optionally under the workflow timeout), then transitions through VERIFYING
+        to SUCCEEDED, or to CANCELLED/FAILED on error. The ``finally`` block always cancels
+        active tasks, records final counters, writes the terminal checkpoint, emits the end
+        event, and releases all per-run state before pruning old runs.
+
+        Returns:
+            The run in its terminal state.
+        """
         cancel = asyncio.Event()
         self._cancel[run.id], self._active[run.id] = cancel, set()
         self._semaphores[run.id] = asyncio.Semaphore(definition.max_concurrency)
@@ -213,9 +276,11 @@ class WorkflowRuntime:
         return run_id
 
     def get_run(self, run_id: str) -> Optional[WorkflowRun]:
+        """Return the in-memory run for an id, or None if it is unknown or pruned."""
         return self._runs.get(run_id)
 
     def list_runs(self, workflow_name: Optional[str] = None) -> list[WorkflowRun]:
+        """List retained runs, newest first, optionally filtered by workflow name."""
         runs = list(self._runs.values())
         if workflow_name is not None:
             runs = [run for run in runs if run.workflow_name == workflow_name]
@@ -229,6 +294,17 @@ class WorkflowRuntime:
 
     @classmethod
     def _set_state(cls, run: WorkflowRun, state: WorkflowState, *, recovery=False) -> None:
+        """Transition a run to a new state, enforcing the explicit transition table.
+
+        Args:
+            run: The run whose state is being changed.
+            state: Target state; a no-op when already current.
+            recovery: When True, bypass the transition table for recovery/terminal
+                paths (cancellation, failure, resume).
+
+        Raises:
+            RuntimeError: On an illegal transition when ``recovery`` is False.
+        """
         if run.state == state:
             return
         if not recovery and state not in cls._TRANSITIONS.get(run.state, set()):
@@ -257,6 +333,7 @@ class WorkflowRuntime:
         self._runs.clear()
 
     def _prune_runs(self) -> None:
+        """Evict oldest terminal, non-active runs once retention exceeds the cap."""
         overflow = len(self._runs) - self.max_retained_runs
         if overflow <= 0:
             return
@@ -272,6 +349,15 @@ class WorkflowRuntime:
                 overflow -= 1
 
     async def _execute_steps(self, steps, definition, run, scope, ctx, depth, prefix):
+        """Execute a sequence of steps in order, threading each result into scope.
+
+        Each step gets a unique frame key derived from ``prefix``, its output is bound
+        under ``step.id`` in both the local scope and run variables, and a checkpoint is
+        written after every step so progress survives interruption.
+
+        Returns:
+            The output of the last step, or None if the sequence is empty.
+        """
         last = None
         for position, step in enumerate(steps):
             await self._control_point(run)
@@ -319,6 +405,20 @@ class WorkflowRuntime:
             )
 
     async def _execute_instruction(self, step, definition, run, scope, ctx, depth, key):
+        """Dispatch a single static step to the handler for its control-flow type.
+
+        Callable steps (agent/tool/skill/connector/environment/workflow) route to
+        :meth:`_call`; structural steps expand into their own dynamic frames: PARALLEL
+        fans out children, MAP fans out over resolved items, BRANCH selects then/else,
+        LOOP iterates until/while within ``max_rounds``, REDUCE/VERIFY fan over items,
+        and CHECKPOINT forces a checkpoint write.
+
+        Returns:
+            The step's output value (shape depends on the step type).
+
+        Raises:
+            ValueError: If the step type is not supported.
+        """
         if step.type in {
             StepType.AGENT, StepType.TOOL, StepType.SKILL, StepType.CONNECTOR,
             StepType.ENVIRONMENT, StepType.WORKFLOW,
@@ -329,6 +429,7 @@ class WorkflowRuntime:
         if step.type == StepType.MAP:
             items = self._as_list(self._resolve(step.items, scope))
             async def execute(item, index):
+                """Run one MAP item in its own virtual frame, via the target agent or children."""
                 local = {**scope, step.item_name: item, "index": index}
                 item_key = f"{key}.item[{index}]"
                 item_frame = self._ensure_virtual_frame(
@@ -395,6 +496,7 @@ class WorkflowRuntime:
                 synthetic = step.model_copy(update={"type": StepType.AGENT, "args": {**step.args, "items": items}})
                 return await self._call(synthetic, definition, run, scope, ctx, depth, key)
             async def verify(item, index):
+                """Judge one item with ``min_votes`` agent calls, returning the verdict(s)."""
                 local = {**scope, step.item_name: item, "index": index}
                 synthetic = step.model_copy(update={"type": StepType.AGENT, "args": {**step.args, step.item_name: item}})
                 verdicts = await asyncio.gather(*[
@@ -409,7 +511,14 @@ class WorkflowRuntime:
         raise ValueError(f"Unsupported workflow step: {step.type}")
 
     async def _parallel(self, steps, definition, run, scope, ctx, depth, key, concurrency):
+        """Run sibling steps concurrently and merge their outputs back into scope.
+
+        Returns:
+            A dict mapping each child ``step.id`` to its output; the same bindings are
+            also written into the shared scope.
+        """
         async def execute(step, index):
+            """Execute one parallel branch step and return its (id, output) pair."""
             local = dict(scope)
             value = await self._execute_step(
                 step, definition, run, local, ctx, depth, f"{key}.branch[{index}]",
@@ -421,8 +530,23 @@ class WorkflowRuntime:
         return result
 
     async def _fanout(self, items, callback, concurrency, run_id):
+        """Apply ``callback`` to each item concurrently under a bounded semaphore.
+
+        Every task is registered as active for the run (so cancellation reaches it) and
+        deregistered when the batch settles.
+
+        Args:
+            items: Iterable of items to process.
+            callback: Coroutine ``(item, index) -> result``.
+            concurrency: Maximum simultaneous callbacks.
+            run_id: Owning run id, used for control-point checks and task tracking.
+
+        Returns:
+            Results in item order (via ``asyncio.gather``).
+        """
         semaphore = asyncio.Semaphore(concurrency)
         async def guarded(item, index):
+            """Run one callback under the semaphore after a pause/cancel control check."""
             async with semaphore:
                 await self._control_point(self._runs[run_id])
                 return await callback(item, index)
@@ -434,6 +558,23 @@ class WorkflowRuntime:
             self._active[run_id].difference_update(tasks)
 
     async def _call(self, step, definition, run, scope, ctx, depth, key):
+        """Invoke one capability as a tracked InvocationRun with caching and retries.
+
+        Returns the cached output when a prior invocation at this key already completed
+        (the resume path). Otherwise enforces the local and root Agent budgets, resolves
+        args/task against scope, then runs up to ``retries + 1`` attempts under the run's
+        concurrency slot and optional per-step timeout, applying exponential backoff and
+        accumulating token cost. Each phase updates the invocation/attempt state machine
+        and emits node start/end trace events.
+
+        Returns:
+            The normalized invocation output.
+
+        Raises:
+            RuntimeError: If the Agent budget is exceeded.
+            Exception: The last attempt's error if all retries are exhausted; or
+                asyncio.CancelledError on cancellation.
+        """
         cached = run.invocations.get(key)
         if cached and cached.state in {InvocationState.COMPLETED, InvocationState.CACHED}:
             cached.state, cached.cached = InvocationState.CACHED, True
@@ -527,6 +668,28 @@ class WorkflowRuntime:
         return record.output
 
     async def _invoke(self, kind, target, task, args, ctx, depth, budget=None):
+        """Route a capability call to the owning manager, keeping normal permission boundaries.
+
+        Tool/skill/connector/environment payloads are validated against the target's
+        callable schema before dispatch; nested workflows recurse through the manager
+        with incremented depth and the shared budget.
+
+        Args:
+            kind: The capability :class:`StepType`.
+            target: Registered capability name.
+            task: Optional task text folded into the payload as ``task``.
+            args: Resolved argument mapping.
+            ctx: Execution context passed to the manager.
+            depth: Current nesting depth (nested workflows use ``depth + 1``).
+            budget: Shared root budget forwarded to nested workflow runs.
+
+        Returns:
+            The manager's raw result (later normalized by :meth:`_normalize`).
+
+        Raises:
+            ValueError: If the kind is not directly callable or arguments fail schema
+                validation.
+        """
         payload = dict(args or {})
         if task:
             payload.setdefault("task", task)
@@ -566,6 +729,16 @@ class WorkflowRuntime:
 
     @staticmethod
     async def _validate_invocation_schema(function_calling, payload, label):
+        """Validate a capability payload against its declared function-call schema.
+
+        Args:
+            function_calling: The target's function-calling schema (``{"function": {...}}``).
+            payload: The resolved arguments to validate.
+            label: Human-readable capability label used in error messages.
+
+        Raises:
+            ValueError: If no valid schema exists or the payload violates it.
+        """
         if not function_calling:
             raise ValueError(f"No callable Schema for Workflow capability: {label}")
         parameters = function_calling.get("function", {}).get("parameters")
@@ -578,6 +751,13 @@ class WorkflowRuntime:
             raise ValueError(f"Invalid arguments for Workflow capability {label}: {errors[0].message}")
 
     def _resolve(self, value, scope):
+        """Recursively resolve ``${path}`` template references against the scope.
+
+        Dicts and lists are resolved element-wise. A string that is exactly one
+        ``${...}`` reference yields the referenced value with its native type; embedded
+        references inside larger strings are substituted as text. Non-strings pass
+        through unchanged.
+        """
         if isinstance(value, dict):
             return {key: self._resolve(item, scope) for key, item in value.items()}
         if isinstance(value, list):
@@ -590,6 +770,11 @@ class WorkflowRuntime:
         return _EXPR.sub(lambda match: str(self._path(match.group(1).strip(), scope)), value)
 
     def _truth(self, expression, scope):
+        """Evaluate a branch/loop condition to a boolean, supporting a ``not`` prefix.
+
+        A None expression is False; a string beginning with ``not `` negates the
+        resolved reference; otherwise the resolved value's truthiness is returned.
+        """
         if expression is None:
             return False
         if isinstance(expression, str):
@@ -600,6 +785,14 @@ class WorkflowRuntime:
 
     @staticmethod
     def _path(path, scope):
+        """Traverse a dotted ``a.b.0.c`` path through dicts, list indices, and attributes.
+
+        Returns:
+            The value at the path within the scope.
+
+        Raises:
+            ValueError: If a dict segment of the path is missing.
+        """
         current: Any = scope
         for part in path.split("."):
             if isinstance(current, dict):
@@ -614,6 +807,14 @@ class WorkflowRuntime:
 
     @staticmethod
     def _normalize(value):
+        """Convert a manager result into a plain, scope-referenceable value.
+
+        Unwraps a :class:`Response` into a message/data/files dict and a nested
+        :class:`WorkflowRun` into its output; other values pass through.
+
+        Raises:
+            RuntimeError: If the Response failed or the nested workflow did not succeed.
+        """
         if isinstance(value, Response):
             if not value.success:
                 raise RuntimeError(value.message)
@@ -626,6 +827,10 @@ class WorkflowRuntime:
 
     @staticmethod
     def _token_count(value) -> int:
+        """Extract a non-negative total token count from a result's ``usage``, or 0.
+
+        Prefers ``total_tokens``/``total``, falling back to input+output token sums.
+        """
         usage = getattr(value, "usage", None)
         if usage is None:
             return 0
@@ -640,6 +845,11 @@ class WorkflowRuntime:
 
     @staticmethod
     def _as_list(value):
+        """Coerce a fan-out ``items`` value to a list (None becomes empty).
+
+        Raises:
+            ValueError: If the value is neither None nor a list.
+        """
         if value is None:
             return []
         if not isinstance(value, list):
@@ -648,6 +858,17 @@ class WorkflowRuntime:
 
     @staticmethod
     def _validate_inputs(definition, values):
+        """Apply input defaults and validate values against the workflow input schema.
+
+        Undeclared top-level inputs are rejected (``additionalProperties: false``) and
+        required inputs enforced.
+
+        Returns:
+            The validated input mapping with defaults filled in.
+
+        Raises:
+            ValueError: On the first schema violation, with a located message.
+        """
         result = dict(values)
         for name, spec in definition.inputs.items():
             if name not in result and spec.default is not None:
@@ -682,6 +903,16 @@ class WorkflowRuntime:
         validated = set()
 
         async def check(step, trail):
+            """Verify one step's target (and its children) exists, recursing into nested workflows.
+
+            Args:
+                step: The step whose capability/action to verify.
+                trail: Names on the current nesting chain, used to reject recursion.
+
+            Raises:
+                ValueError: On an unknown capability/action, or an inactive/recursive
+                    nested workflow.
+            """
             target = step.target or ""
             if step.type in {StepType.AGENT, StepType.REDUCE, StepType.VERIFY}:
                 if await agent_manager.get_info(target) is None:
@@ -713,6 +944,7 @@ class WorkflowRuntime:
                 await check(child, trail)
 
         async def validate(current, trail):
+            """Check every step of one workflow's program once, memoized by program hash."""
             if current.program_hash in validated:
                 return
             for item in current.program:
@@ -723,9 +955,18 @@ class WorkflowRuntime:
 
     @staticmethod
     def _public_variables(values):
+        """Return run variables excluding the reserved ``inputs`` binding (default output)."""
         return {key: value for key, value in values.items() if key != "inputs"}
 
     def cancel(self, run_id):
+        """Request cancellation of a run and wake any paused coroutine so it can terminate.
+
+        Sets the run's cancel event, moves it to CANCELLING, releases the continue event
+        (so a paused run reaches its next cancel check), and cancels active fan-out tasks.
+
+        Returns:
+            True if the run was known and signalled, False otherwise.
+        """
         event = self._cancel.get(run_id)
         if event is None:
             return False
@@ -780,6 +1021,7 @@ class WorkflowRuntime:
             self._set_state(run, WorkflowState.RUNNING)
 
     async def _cancel_active(self, run_id):
+        """Cancel and await all outstanding fan-out tasks tracked for a run."""
         tasks = list(self._active.get(run_id, set()))
         for task in tasks:
             if not task.done():
@@ -789,6 +1031,7 @@ class WorkflowRuntime:
 
     @staticmethod
     def _parent_key(key: str) -> Optional[str]:
+        """Return the parent frame key, or None at the ``root`` level."""
         if "." not in key:
             return None
         parent = key.rsplit(".", 1)[0]
@@ -796,6 +1039,7 @@ class WorkflowRuntime:
 
     @staticmethod
     def _index_from_key(key: str) -> Optional[int]:
+        """Extract the last ``[n]`` index from a frame key (map/loop/branch), or None."""
         match = re.search(r"\[(\d+)\](?!.*\[)", key)
         return int(match.group(1)) if match else None
 
@@ -811,6 +1055,14 @@ class WorkflowRuntime:
     def _ensure_virtual_frame(
         run, key, parent_key, step, scope, *, item_index=None, iteration=None,
     ) -> ExecutionFrame:
+        """Get or create the ExecutionFrame for a dynamic expansion (map item/loop round).
+
+        Reuses an existing frame on resume; otherwise creates one in RUNNING state so the
+        expansion is recorded in the inspectable hierarchy.
+
+        Returns:
+            The frame registered under ``key``.
+        """
         frame = run.frames.get(key) or ExecutionFrame(
             key=key, parent_key=parent_key, step_id=step.id, step_type=step.type,
             state=ExecutionState.RUNNING, item_index=item_index, iteration=iteration,
@@ -831,6 +1083,11 @@ class WorkflowRuntime:
 
     @staticmethod
     def _checkpoint_path(run, ctx):
+        """Compute (and create) the per-run checkpoint file path under the workspace.
+
+        Returns:
+            ``<workspace>/.agentevolver/workflows/<run_id>.json``.
+        """
         workspace = Path(getattr(ctx, "workspace_root", None) or os.getcwd()).resolve()
         root = workspace / ".agentevolver" / "workflows"
         root.mkdir(parents=True, exist_ok=True)
@@ -838,6 +1095,10 @@ class WorkflowRuntime:
 
     @staticmethod
     def _write_checkpoint(run):
+        """Atomically persist the run's full state to its checkpoint file (temp + replace).
+
+        No-op when the run has no checkpoint path (e.g. ephemeral runs).
+        """
         if not run.checkpoint_path:
             return
         path = Path(run.checkpoint_path)
@@ -857,6 +1118,7 @@ class WorkflowRuntime:
         event_type, run, ctx, *, action_name=None, input=None, success=None,
         error=None, frame_key=None, invocation_key=None,
     ):
+        """Emit a workflow trace event, swallowing errors so observability never breaks execution."""
         from agentevolver.trace import trace_manager
         from agentevolver.trace.types import TraceEvent, TraceEventType
         try:
