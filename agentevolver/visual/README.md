@@ -1,6 +1,14 @@
+---
+name: visual
+description: "This directory contains dependency-free browser renderers for AgentEvolver's HTML-native artifacts. Runtime parsers never execute these files; CSS and JavaScript are for human preview only."
+version: 1.0.0
+type: module
+category: visual
+requirements: []
+metadata:
+  tracks_package_version: false
+---
 # Visual assets
-
-Visual asset contract version: **1.0.0**
 
 This directory contains dependency-free browser renderers for AgentEvolver's HTML-native
 artifacts. Runtime parsers never execute these files; CSS and JavaScript are for human

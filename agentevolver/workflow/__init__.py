@@ -10,7 +10,7 @@ from .types import (
 
 WORKFLOW_SCHEMA_VERSION = "1.0.0"
 WORKFLOW_RUNTIME_VERSION = "1.0.0"
-WORKFLOW_MODULE_VERSION = "1.4.0"
+WORKFLOW_MODULE_VERSION = "1.5.0"
 
 __all__ = [
     "ExecutionFrame", "ExecutionState", "InvocationAttempt", "InvocationRun",

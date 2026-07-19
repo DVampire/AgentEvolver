@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="name" content="parallel_review">
   <meta name="description" content="Parallel independent review with verification and synthesis.">
-  <meta name="version" content="1.0.0">
+  <meta name="version" content="1.0.1">
   <meta name="workflow-schema-version" content="1.0.0">
   <title>Parallel Review · Dynamic Workflow</title>
   <link rel="stylesheet" href="../../visual/css/prompt.css">
@@ -24,7 +24,7 @@
 <workflow
   name="parallel_review"
   schema-version="1.0.0"
-  version="1.0.0"
+  version="1.0.1"
   description="Review a change from independent perspectives, verify findings, and synthesize a report."
   max-agents="40"
   max-concurrency="8"
@@ -32,6 +32,7 @@
   <inputs>
     <input name="task" type="string" required="true" description="What should be reviewed." />
     <input name="perspectives" type="array" required="true" description="Independent review angles." />
+    <schema for="perspectives">{"type":"array","items":{"type":"string"},"minItems":1}</schema>
   </inputs>
   <applicability>
     <tag>review</tag><tag>verification</tag><tag>parallel</tag>

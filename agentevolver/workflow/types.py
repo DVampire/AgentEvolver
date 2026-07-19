@@ -82,6 +82,8 @@ class WorkflowInput(BaseModel):
     required: bool = False
     default: Any = None
     description: str = ""
+    parameter_schema: Dict[str, Any] = Field(default_factory=dict, description="Complete JSON Schema for this input")
+    schema_source: str = Field(default="declared", description="declared / inferred / legacy_fallback")
 
 
 class WorkflowStep(BaseModel):

@@ -1,6 +1,14 @@
+---
+name: workflow_default
+description: "Each `.html` file is a complete standalone HTML document and an independently versioned, active Workflow definition loaded by `WorkflowManager.initialize()`. It links the shared `visual/css/workflow.css` and `visual/js/workflow.js` preview assets while keeping the executable `<workflow>` element intact. Keep examples generic and parameterized; project-specific or automatically distilled Workflows belong in `extension/workflow/`."
+version: 1.0.1
+type: collection
+category: workflow
+requirements: []
+metadata:
+  tracks_package_version: false
+---
 # Built-in workflows
-
-Built-in workflow collection version: **1.0.0**
 
 Each `.html` file is a complete standalone HTML document and an independently versioned,
 active Workflow definition loaded by `WorkflowManager.initialize()`. It links the shared
@@ -15,7 +23,7 @@ Skill instances, it is live immediately and must be evaluated and rolled back if
 ## Files
 
 - `parallel_review.html` — parallel independent review, per-finding verification, and
-  final synthesis. Workflow version `1.0.0`, schema version `1.0.0`.
+  final synthesis. Workflow version `1.0.1`, schema version `1.0.0`.
 
 When changing behavior, increment the Workflow's `version`. When using new language
 syntax, update `schema-version` and the root Workflow README compatibility section.

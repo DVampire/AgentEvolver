@@ -74,6 +74,11 @@ class InspectAgent(Tool):
             available = await agent_manager.list()
             lines.append(f"\nAvailable agents: {available}")
 
+        schema_json = await agent_manager.get_schema(name, format="json") if info is not None else None
+        schema_md = await agent_manager.get_schema(name, format="md") if info is not None else None
+        if schema_md:
+            lines.append(f"\n{schema_md}")
+
         return Response(
             type=ResponseType.TOOL,
             success=info is not None,
@@ -84,5 +89,6 @@ class InspectAgent(Tool):
                 "enable_evolving": bool(getattr(info, "enable_evolving", False)) if info else False,
                 "instantiated": instance is not None,
                 "agent_type": agent_type_value,
+                "schema": schema_json,
             },
         )

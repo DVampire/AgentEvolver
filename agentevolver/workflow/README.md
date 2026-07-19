@@ -1,8 +1,16 @@
+---
+name: workflow
+description: "This package turns reviewable HTML into a dynamic multi-agent program. A workflow is system orchestration infrastructure, not an Agent subtype and not a fixed DAG."
+version: 1.5.0
+type: module
+category: workflow
+requirements: []
+metadata:
+  tracks_package_version: false
+  html_schema_version: 1.0.0
+  runtime_checkpoint_version: 1.0.0
+---
 # AgentEvolver Dynamic Workflow
-
-Workflow module version: **1.4.0**  
-HTML schema version: **1.0.0**  
-Runtime/checkpoint version: **1.0.0**
 
 This package turns reviewable HTML into a dynamic multi-agent program. A workflow is
 system orchestration infrastructure, not an Agent subtype and not a fixed DAG.
@@ -25,6 +33,10 @@ projected to MetaAgent as a native function named `workflow__<name>` using the H
 input contract. The prompt receives only a compact roster. The read-only
 `inspect_workflow` tool supplies full HTML, compiled nodes, source location, and registry
 facts on demand.
+
+`get_schema(name, format="json"|"md")` follows the shared capability schema protocol.
+Simple inputs use HTML attributes; complex array/object contracts use a sibling
+`<schema for="input-name">` containing inert JSON Schema.
 
 As with Tool and Skill, `WorkflowContextManager` owns non-execution lifecycle state and
 `WorkflowManagerServer` is the stable public facade. `WorkflowRuntime` separately owns

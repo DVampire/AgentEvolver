@@ -13,6 +13,7 @@ from agentevolver.logger import logger
 from agentevolver.agent.types import AgentConfig, Agent, AgentContext
 from agentevolver.agent.context import AgentContextManager
 from agentevolver.utils import assemble_workspace_path, make_id
+from agentevolver.capability import CapabilitySchema, SchemaSource
 
 class AgentManagerServer(BaseModel):
     """Agent Manager Server for managing agent registration and execution with lazy loading."""
@@ -118,7 +119,18 @@ class AgentManagerServer(BaseModel):
         itself). Returns ``[(function_calling, ("agent", name)), ...]``.
         """
         names = allowlist if allowlist is not None else await self.list()
-        params = {
+        out: List[Tuple[Dict[str, Any], Tuple[Any, ...]]] = []
+        for n in names:
+            if n == exclude:
+                continue
+            fc = await self.get_schema(n, format="json")
+            if fc:
+                out.append((fc, ("agent", n)))
+        return out
+
+    @staticmethod
+    def _dispatch_parameters() -> Dict[str, Any]:
+        return {
             "type": "object",
             "properties": {
                 "task": {"type": "string", "description": "Precise, self-contained instruction — the sub-agent receives only this."},
@@ -127,19 +139,22 @@ class AgentManagerServer(BaseModel):
                 "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
                 "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},
                 "connector_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these connectors."},
+                "workflow_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these workflows."},
             },
             "required": ["task"],
             "additionalProperties": False,
         }
-        out: List[Tuple[Dict[str, Any], Tuple[Any, ...]]] = []
-        for n in names:
-            if n == exclude:
-                continue
-            info = await self.get_info(n)
-            desc = (getattr(info, "description", "") or n) if info else n
-            fc = {"type": "function", "function": {"name": n, "description": desc, "parameters": params}}
-            out.append((fc, ("agent", n)))
-        return out
+
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        """Return the strict, uniform sub-agent delegation contract."""
+        info = await self.get_info(name)
+        if info is None:
+            return None
+        return CapabilitySchema(
+            name=name, description=getattr(info, "description", "") or name,
+            parameters=self._dispatch_parameters(), strict=True,
+            source=SchemaSource.DECLARED,
+        ).render(format)
     
     
     async def get(self, agent_name: str) -> Optional[Agent]:

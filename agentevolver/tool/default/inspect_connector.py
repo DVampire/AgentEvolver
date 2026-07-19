@@ -71,6 +71,12 @@ class InspectConnector(Tool):
         lines.append(f"- **Actions ({len(actions)})**: {', '.join(actions) if actions else '(none listed)'}")
         lines.append(f"- **Connector Directory**: `{connector_dir}` (exists: {os.path.isdir(connector_dir) if connector_dir else False})")
         lines.append(f"- **CONNECTOR.md**: `{md_path}` (exists: {os.path.exists(md_path) if md_path else False})")
+        schemas = {}
+        for action in actions:
+            schemas[action] = await connector_manager.get_schema(name, action=action, format="json")
+            schema_md = await connector_manager.get_schema(name, action=action, format="md")
+            if schema_md:
+                lines.append(f"\n{schema_md}")
 
         return Response(
             type=ResponseType.TOOL,
@@ -82,5 +88,6 @@ class InspectConnector(Tool):
                 "enable_evolving": bool(getattr(info, "enable_evolving", False)),
                 "connector_dir": connector_dir,
                 "actions": actions,
+                "schemas": schemas,
             },
         )

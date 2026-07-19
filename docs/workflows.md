@@ -1,6 +1,6 @@
 # Dynamic HTML workflows
 
-Module version: **1.4.0** · HTML schema: **1.0.0** · Runtime: **1.0.0**
+Module version: **1.5.0** · HTML schema: **1.0.0** · Runtime: **1.0.0**
 
 Active workflows are registered capabilities. MetaAgent invokes one directly through its
 `workflow__<name>` function. It can call `inspect_workflow` for the complete HTML and

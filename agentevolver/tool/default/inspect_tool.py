@@ -72,9 +72,11 @@ class InspectTool(Tool):
             + (f" (exists: {os.path.exists(path)})" if path else " (unknown — not a file-backed tool)")
         )
 
+        schema_json = await tool_manager.get_schema(name, format="json")
+        schema_md = await tool_manager.get_schema(name, format="md")
         return Response(
             type=ResponseType.TOOL,
             success=True,
-            message=instruction + facts,
-            data={"tool": name, "registered": True, "enable_evolving": enable_evolving, "path": path},
+            message=instruction + facts + (f"\n\n{schema_md}" if schema_md else ""),
+            data={"tool": name, "registered": True, "enable_evolving": enable_evolving, "path": path, "schema": schema_json},
         )

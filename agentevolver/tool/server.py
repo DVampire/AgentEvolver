@@ -13,6 +13,7 @@ from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolConfig, ToolContext
 from agentevolver.response.types import Response
 from agentevolver.utils import assemble_workspace_path
+from agentevolver.capability import CapabilitySchema, SchemaSource
 
 class ToolManagerServer(BaseModel):
     """tool manager Server for managing tool registration and execution with lazy loading."""
@@ -80,10 +81,27 @@ class ToolManagerServer(BaseModel):
                 continue
             if types and getattr(info, "type", None) and info.type not in types:
                 continue
-            fc = getattr(info, "function_calling", None)
+            fc = await self.get_schema(n, format="json")
             if fc:
                 out.append((fc, ("tool", n)))
         return out
+
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        """Return one Tool's canonical function schema as JSON or Markdown."""
+        info = await self.get_info(name)
+        if info is None:
+            return None
+        fc = getattr(info, "function_calling", None) or {}
+        function = fc.get("function", {}) if isinstance(fc, dict) else {}
+        parameters = function.get("parameters")
+        if not isinstance(parameters, dict):
+            return None
+        return CapabilitySchema(
+            name=name, description=getattr(info, "description", "") or name,
+            parameters=parameters,
+            strict=parameters.get("additionalProperties") is False,
+            source=SchemaSource.INFERRED,
+        ).render(format)
 
     async def register(self,
                        tool: Union[Tool, Type[Tool]],

@@ -62,6 +62,24 @@ class AgentContextManager(BaseModel):
         self._cleanup_registered = False
         self._variables_lock = asyncio.Lock()  # Lock for get/set trainable variables
 
+    def _prepare_instance_config(
+        self,
+        agent_cls: Type[Agent],
+        instance_config: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Return a private config copy with a deterministic workspace fallback.
+
+        Agent ``base_dir`` is intentionally required at the type layer.  Registry
+        discovery, however, may run without a class-specific config file (for
+        example in schema inspection and tests).  The manager owns that lifecycle
+        concern, so it supplies an isolated directory without weakening Agent's
+        constructor contract.
+        """
+        prepared = dict(instance_config or {})
+        agent_name = agent_cls.model_fields["name"].default
+        prepared.setdefault("base_dir", os.path.join(self.base_dir, agent_name))
+        return prepared
+
     async def initialize(self, agent_names: Optional[List[str]] = None) -> None:
         """Initialize the agent context manager and all registered agents."""
 
@@ -247,8 +265,10 @@ class AgentContextManager(BaseModel):
             if agent_config.cls is None:
                 raise ValueError(f"Cannot create agent {agent_config.name}: no class provided. Class should be loaded during initialization.")
             
-            # Instantiate agent instance
-            agent_instance = agent_config.cls(**agent_config.config) if agent_config.config else agent_config.cls()
+            # Instantiate with a manager-owned workspace when no explicit one was
+            # declared. Keep the normalized config so rebuilds are deterministic.
+            agent_config.config = self._prepare_instance_config(agent_config.cls, agent_config.config)
+            agent_instance = agent_config.cls(**agent_config.config)
             
             # Initialize agent if it has an initialize method
             if hasattr(agent_instance, "initialize"):
@@ -294,6 +314,8 @@ class AgentContextManager(BaseModel):
                 agent_config_key = inflection.underscore(agent_cls.__name__)
                 agent_config_dict = getattr(config, agent_config_key, {})
             
+            agent_config_dict = self._prepare_instance_config(agent_cls, agent_config_dict)
+
             # Instantiate agent immediately (register is a runtime operation)
             try:
                 agent_instance = agent_cls(**agent_config_dict)
@@ -428,6 +450,8 @@ class AgentContextManager(BaseModel):
                 agent_config_key = inflection.underscore(agent_cls.__name__)
                 agent_config_dict = getattr(config, agent_config_key, {})
             
+            agent_config_dict = self._prepare_instance_config(agent_cls, agent_config_dict)
+
             # Instantiate agent immediately (update is a runtime operation)
             try:
                 agent_instance = agent_cls(**agent_config_dict)

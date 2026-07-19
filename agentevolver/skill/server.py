@@ -17,6 +17,7 @@ from agentevolver.skill.types import SkillConfig, SkillContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
 from agentevolver.utils import assemble_workspace_path
+from agentevolver.capability import CapabilitySchema, SchemaSource
 
 
 class SkillManagerServer(BaseModel):
@@ -203,8 +204,9 @@ class SkillManagerServer(BaseModel):
         self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None
     ) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
         """Native tool-calling schemas for the selected skills, each paired with its
-        dispatch route. A skill has no argument schema, so a permissive object is used;
-        the name is the skill's own registered name (already ``*_skill``, no prefixing).
+        dispatch route. Arguments come from SKILL.md ``input_schema``; an omitted
+        declaration means a strict no-argument Skill. The name is the skill's own
+        registered name (already ``*_skill``, no prefixing).
 
         ``types`` filters by frontmatter type (["worker"] for sub-agents, ["orchestrator"]
         for the MetaAgent). Returns ``[(function_calling, ("skill", name)), ...]``.
@@ -221,16 +223,24 @@ class SkillManagerServer(BaseModel):
                 have = {stype} if isinstance(stype, str) else set(stype)
                 if not (have & allowed):
                     continue
-            fc = {
-                "type": "function",
-                "function": {
-                    "name": n,
-                    "description": getattr(info, "description", "") or n,
-                    "parameters": {"type": "object", "additionalProperties": True},
-                },
-            }
+            fc = await self.get_schema(n, format="json")
             out.append((fc, ("skill", n)))
         return out
+
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        """Return the SKILL.md frontmatter input_schema as JSON or Markdown."""
+        info = await self.get_info(name)
+        if info is None:
+            return None
+        parameters = getattr(info, "input_schema", None) or {
+            "type": "object", "properties": {}, "additionalProperties": False,
+        }
+        return CapabilitySchema(
+            name=name, description=getattr(info, "description", "") or name,
+            parameters=parameters,
+            strict=parameters.get("additionalProperties") is False,
+            source=SchemaSource.DECLARED,
+        ).render(format)
 
     # ------------------------------------------------------------------
     # Skill execution

@@ -31,6 +31,10 @@ class SkillConfig(BaseModel):
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     version: str = Field(default="1.0.0", description="Version of the skill")
     type: Union[str, List[str]] = Field(default="tool", description="Skill type label(s) from YAML frontmatter. May be a single label (e.g. 'worker') or a list of labels (e.g. ['orchestrator', 'worker']) for a skill that serves multiple roles.")
+    input_schema: Dict[str, Any] = Field(
+        default_factory=lambda: {"type": "object", "properties": {}, "additionalProperties": False},
+        description="JSON Schema for native Skill invocation arguments",
+    )
 
     skill_dir: str = Field(description="Absolute path to the skill directory")
     content: str = Field(default="", description="Full markdown body of SKILL.md (after frontmatter)")
@@ -55,6 +59,7 @@ class SkillConfig(BaseModel):
             "permission_mode": self.permission_mode,
             "version": self.version,
             "type": self.type,
+            "input_schema": self.input_schema,
             "skill_dir": self.skill_dir,
             "content": self.content,
             "scripts": self.scripts,

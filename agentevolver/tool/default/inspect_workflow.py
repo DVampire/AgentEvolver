@@ -72,6 +72,8 @@ class InspectWorkflow(Tool):
         nodes = _step_summary(definition.program)
         summary = workflow_manager.evaluation_summary(name)
         evaluations = [item.model_dump() for item in workflow_manager.evaluations(name)]
+        schema_json = await workflow_manager.get_schema(name, format="json")
+        schema_md = await workflow_manager.get_schema(name, format="md")
         facts = (
             f"## Registry Facts\n"
             f"- **Workflow**: `{definition.name}`\n"
@@ -90,6 +92,7 @@ class InspectWorkflow(Tool):
             f"- **Recorded Evaluations**: {len(evaluations)}\n\n"
             f"## Compiled Nodes\n{nodes}\n\n"
             f"## HTML Definition\n```html\n{definition.source.strip()}\n```"
+            + (f"\n\n{schema_md}" if schema_md else "")
         )
         return Response(
             type=ResponseType.TOOL,
@@ -108,5 +111,6 @@ class InspectWorkflow(Tool):
                 "html": definition.source,
                 "evaluation_summary": summary,
                 "evaluations": evaluations,
+                "schema": schema_json,
             },
         )

@@ -67,6 +67,10 @@ class InspectSkill(Tool):
         lines.append(f"- **Evolvable (enable_evolving)**: {getattr(info, 'enable_evolving', False)}")
         lines.append(f"- **Skill Directory**: `{skill_dir}` (exists: {os.path.isdir(skill_dir) if skill_dir else False})")
         lines.append(f"- **SKILL.md**: `{md_path}` (exists: {os.path.exists(md_path) if md_path else False})")
+        schema_json = await skill_manager.get_schema(name, format="json")
+        schema_md = await skill_manager.get_schema(name, format="md")
+        if schema_md:
+            lines.append(f"\n{schema_md}")
 
         return Response(
             type=ResponseType.TOOL,
@@ -77,5 +81,6 @@ class InspectSkill(Tool):
                 "registered": True,
                 "enable_evolving": bool(getattr(info, "enable_evolving", False)),
                 "skill_dir": skill_dir,
+                "schema": schema_json,
             },
         )

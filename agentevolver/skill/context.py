@@ -164,7 +164,10 @@ class SkillContextManager(BaseModel):
         version = frontmatter.get("version", "1.0.0")
         enable_evolving = str(frontmatter.get("enable_evolving", "false")).lower() == "true"
         type_value = frontmatter.get("type", "tool")
-        metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "enable_evolving")}
+        input_schema = frontmatter.get("input_schema") or {
+            "type": "object", "properties": {}, "additionalProperties": False,
+        }
+        metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "enable_evolving", "input_schema")}
 
         def _scan_dir(d: Path) -> List[str]:
             return [str(p) for p in sorted(d.rglob("*")) if p.is_file()] if d.is_dir() else []
@@ -181,6 +184,7 @@ class SkillContextManager(BaseModel):
             enable_evolving=enable_evolving,
             version=version,
             type=type_value,
+            input_schema=input_schema,
             skill_dir=str(skill_dir),
             content=body.strip(),
             scripts=scripts,

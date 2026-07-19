@@ -11,6 +11,12 @@ metadata: {}
 
 # Skill Creator
 
+## Invocation schema
+
+Every new parameterized Skill declares `input_schema` in SKILL.md frontmatter using JSON
+Schema expressed as YAML. Skills that take no invocation arguments omit it and receive the
+strict empty-object contract. Never use an unbounded permissive schema for a new Skill.
+
 A single skill for the full lifecycle of skills: **creating** new ones, **improving** existing ones, and **evaluating** their quality. Adapted from Anthropic's `skill-creator`; the authoring theory is kept faithfully, while the mechanics are adapted to this framework (agents + MetaAgent orchestration instead of a browser viewer and a human-in-the-loop).
 
 At a high level, the process of building a good skill is a loop:

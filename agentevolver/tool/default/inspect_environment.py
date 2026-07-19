@@ -73,6 +73,12 @@ class InspectEnvironment(Tool):
         lines.append(f"- **Python File (flat)**: `{py_flat}` (exists: {os.path.exists(py_flat)})")
         lines.append(f"- **Python File (dir)**: `{py_dir}` (exists: {os.path.exists(py_dir)})")
         lines.append(f"- **ENVIRONMENT.md**: `{md_path}` (exists: {os.path.exists(md_path)})")
+        schemas = {}
+        for action in (getattr(info, "actions", {}) or {}):
+            schemas[action] = await environment_manager.get_schema(name, action=action, format="json")
+            schema_md = await environment_manager.get_schema(name, action=action, format="md")
+            if schema_md:
+                lines.append(f"\n{schema_md}")
 
         return Response(
             type=ResponseType.TOOL,
@@ -82,5 +88,6 @@ class InspectEnvironment(Tool):
                 "environment": name,
                 "registered": True,
                 "enable_evolving": bool(getattr(info, "enable_evolving", False)),
+                "schemas": schemas,
             },
         )

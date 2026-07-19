@@ -74,6 +74,9 @@ class WorkflowManagerServer(BaseModel):
     async def function_callings(self, allowlist=None) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
         return await self._ensure_context_manager().function_callings(allowlist=allowlist)
 
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        return await self._ensure_context_manager().get_schema(name, action=action, format=format)
+
     def record_evaluation(self, evaluation: WorkflowEvaluation) -> WorkflowEvaluation:
         return self._ensure_context_manager().record_evaluation(evaluation)
 

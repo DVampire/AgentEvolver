@@ -12,6 +12,7 @@ from agentevolver.config import config
 from agentevolver.environment.context import EnvironmentContextManager
 from agentevolver.environment.types import Environment, EnvironmentConfig, EnvironmentContext
 from agentevolver.utils import assemble_workspace_path
+from agentevolver.capability import CapabilitySchema, SchemaSource
 
 class EnvironmentManagerServer(BaseModel):
     """ECP Server for managing environment registration and execution with lazy loading."""
@@ -116,28 +117,38 @@ class EnvironmentManagerServer(BaseModel):
             info = await self.get_info(env_name)
             if info is None:
                 continue
-            for action_name, action in (getattr(info, "actions", {}) or {}).items():
-                function_calling = getattr(action, "function_calling", None) or {}
-                function = function_calling.get("function", {}) if isinstance(function_calling, dict) else {}
-                parameters = function.get("parameters") if isinstance(function, dict) else None
-                if not isinstance(parameters, dict):
-                    args_schema = getattr(action, "args_schema", None)
-                    if args_schema is not None and hasattr(args_schema, "model_json_schema"):
-                        parameters = args_schema.model_json_schema()
-                if not isinstance(parameters, dict):
-                    parameters = {"type": "object", "properties": {}, "additionalProperties": True}
-                out.append((
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": f"{env_name}__{action_name}",
-                            "description": getattr(action, "description", "") or f"{env_name}: {action_name}",
-                            "parameters": parameters,
-                        },
-                    },
-                    ("environment", env_name, action_name),
-                ))
+            for action_name in (getattr(info, "actions", {}) or {}):
+                fc = await self.get_schema(env_name, action=action_name, format="json")
+                if fc:
+                    out.append((fc, ("environment", env_name, action_name)))
         return out
+
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        """Return one Environment action contract from declared/inferred metadata."""
+        info = await self.get_info(name)
+        actions = (getattr(info, "actions", {}) or {}) if info is not None else {}
+        item = actions.get(action) if action else None
+        if item is None:
+            return None
+        function_calling = getattr(item, "function_calling", None) or {}
+        function = function_calling.get("function", {}) if isinstance(function_calling, dict) else {}
+        parameters = function.get("parameters") if isinstance(function, dict) else None
+        source = SchemaSource.DECLARED
+        if not isinstance(parameters, dict):
+            args_schema = getattr(item, "args_schema", None)
+            if args_schema is not None and hasattr(args_schema, "model_json_schema"):
+                parameters = args_schema.model_json_schema()
+                source = SchemaSource.INFERRED
+        if not isinstance(parameters, dict):
+            parameters = {"type": "object", "additionalProperties": True}
+            source = SchemaSource.LEGACY_FALLBACK
+        return CapabilitySchema(
+            name=f"{name}__{action}",
+            description=getattr(item, "description", "") or f"{name}: {action}",
+            parameters=parameters,
+            strict=parameters.get("additionalProperties") is False,
+            source=source,
+        ).render(format)
     
     
     async def get(self, env_name: str) -> Optional[Environment]:

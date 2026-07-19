@@ -18,6 +18,7 @@ from agentevolver.connector.types import ConnectorConfig, ConnectorContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
 from agentevolver.utils import assemble_workspace_path
+from agentevolver.capability import CapabilitySchema, SchemaSource
 
 
 class ConnectorManagerServer(BaseModel):
@@ -232,19 +233,29 @@ class ConnectorManagerServer(BaseModel):
             if info is None:
                 continue
             actions = getattr(info, "actions", None) or []
-            schemas = getattr(info, "action_schemas", None) or {}
-            cdesc = getattr(info, "description", "") or n
             for act in actions:
-                fc = {
-                    "type": "function",
-                    "function": {
-                        "name": f"{n}__{act}",
-                        "description": f"{cdesc} — action '{act}'",
-                        "parameters": schemas.get(act) or {"type": "object", "additionalProperties": True},
-                    },
-                }
+                fc = await self.get_schema(n, action=act, format="json")
                 out.append((fc, ("connector", n, act)))
         return out
+
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        """Return one MCP action's inputSchema; legacy manifests are marked permissive."""
+        info = await self.get_info(name)
+        if info is None or not action or action not in (getattr(info, "actions", None) or []):
+            return None
+        schemas = getattr(info, "action_schemas", None) or {}
+        parameters = schemas.get(action)
+        source = SchemaSource.REMOTE
+        if not isinstance(parameters, dict):
+            parameters = {"type": "object", "additionalProperties": True}
+            source = SchemaSource.LEGACY_FALLBACK
+        return CapabilitySchema(
+            name=f"{name}__{action}",
+            description=f"{getattr(info, 'description', '') or name} — action '{action}'",
+            parameters=parameters,
+            strict=parameters.get("additionalProperties") is False,
+            source=source,
+        ).render(format)
 
     # ------------------------------------------------------------------
     # Connector execution

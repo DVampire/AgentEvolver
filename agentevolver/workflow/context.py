@@ -14,6 +14,7 @@ from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.version import version_manager
+from agentevolver.capability import CapabilitySchema, SchemaSource
 
 from .compiler import workflow_compiler
 from .types import WorkflowDefinition, WorkflowEvaluation, WorkflowStatus
@@ -164,23 +165,34 @@ class WorkflowContextManager(BaseModel):
             definition = self.get(name)
             if definition is None or definition.status != WorkflowStatus.ACTIVE:
                 continue
-            properties, required = {}, []
-            for field, spec in definition.inputs.items():
-                properties[field] = {"type": spec.type, "description": spec.description}
-                if spec.required:
-                    required.append(field)
-            parameters: Dict[str, Any] = {
-                "type": "object", "properties": properties, "additionalProperties": False,
-            }
-            if required:
-                parameters["required"] = required
-            schema = {"type": "function", "function": {
-                "name": f"workflow__{name}",
-                "description": definition.description or name,
-                "parameters": parameters,
-            }}
-            output.append((schema, ("workflow", name)))
+            schema = await self.get_schema(name, format="json")
+            if schema:
+                output.append((schema, ("workflow", name)))
         return output
+
+    async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
+        definition = self.get(name)
+        if definition is None or definition.status != WorkflowStatus.ACTIVE:
+            return None
+        properties, required = {}, []
+        for field, spec in definition.inputs.items():
+            properties[field] = dict(spec.parameter_schema or {"type": spec.type})
+            if spec.required:
+                required.append(field)
+        parameters: Dict[str, Any] = {
+            "type": "object", "properties": properties, "additionalProperties": False,
+        }
+        if required:
+            parameters["required"] = required
+        source = (
+            SchemaSource.LEGACY_FALLBACK
+            if any(spec.schema_source == "legacy_fallback" for spec in definition.inputs.values())
+            else SchemaSource.DECLARED
+        )
+        return CapabilitySchema(
+            name=f"workflow__{name}", description=definition.description or name,
+            parameters=parameters, strict=source != SchemaSource.LEGACY_FALLBACK, source=source,
+        ).render(format)
 
     def record_evaluation(self, evaluation: WorkflowEvaluation) -> WorkflowEvaluation:
         definition = self.require(evaluation.workflow_name)

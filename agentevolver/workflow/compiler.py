@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
@@ -164,10 +165,32 @@ class WorkflowCompiler:
             name = item.get("name", "")
             if not _ID.fullmatch(name):
                 raise WorkflowCompileError(f"Invalid input name: {name!r}")
+            # <input> is an HTML void element, so complex schemas are siblings:
+            # <input name="files" ...><schema for="files">{...}</schema>.
+            schema_node = node.find(f"schema[@for='{name}']")
+            if schema_node is not None:
+                try:
+                    parameter_schema = json.loads("".join(schema_node.itertext()).strip())
+                except Exception as exc:
+                    raise WorkflowCompileError(f"Invalid JSON Schema for input {name!r}: {exc}") from exc
+                if not isinstance(parameter_schema, dict):
+                    raise WorkflowCompileError(f"Input {name!r} schema must be a JSON object")
+                schema_source = "declared"
+            else:
+                parameter_schema = {"type": item.get("type", "string")}
+                schema_source = (
+                    "legacy_fallback" if parameter_schema["type"] in {"array", "object"}
+                    else "declared"
+                )
+            description = item.get("description", "")
+            if description:
+                parameter_schema.setdefault("description", description)
             result[name] = WorkflowInput(
                 name=name, type=item.get("type", "string"),
                 required=item.get("required", "false").lower() in {"true", "required", "1"},
-                default=item.get("default"), description=item.get("description", ""),
+                default=item.get("default"), description=description,
+                parameter_schema=parameter_schema,
+                schema_source=schema_source,
             )
         return result
 
