@@ -84,3 +84,9 @@ npm run dev
 Open `http://127.0.0.1:5173` (or the URL Vite prints). The Web UI connects to `ws://127.0.0.1:9876/ws` by default and lets you change the endpoint or enter a token from its **Connection** panel.
 
 Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted local network. The WebSocket client reconnects automatically and asks the server to replay missed session events. See [`frontend/README.md`](frontend/README.md) for the full startup guide.
+
+## Terminal commands
+
+`agentevolver` has one CLI with three modes: run a control command directly (for
+example, `agentevolver /registry`), use the terminal command loop
+(`agentevolver tui`), or start the Gateway (`agentevolver serve ...`).

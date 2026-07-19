@@ -84,3 +84,9 @@ npm run dev
 打开 `http://127.0.0.1:5173`（或 Vite 输出的地址）。页面默认连接 `ws://127.0.0.1:9876/ws`，可通过侧栏的 **Connection** 修改地址或填写 token。
 
 若服务不在受信任的本地网络，请先设置 `AGENTEVOLVER_GATEWAY_TOKEN`。WebSocket 客户端会自动重连，并请求服务端回放断开期间遗漏的会话事件。完整说明见 [`frontend/README.md`](frontend/README.md)。
+
+## 终端命令
+
+`agentevolver` 只有一个 CLI，提供三种模式：直接执行控制命令（例如
+`agentevolver /registry`）、进入终端交互循环（`agentevolver tui`），或启动
+Gateway（`agentevolver serve ...`）。

@@ -1,4 +1,4 @@
-from agentevolver.gateway.cli import main
+from agentevolver.cli import gateway_main as main
 
 
 if __name__ == "__main__":
