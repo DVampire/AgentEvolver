@@ -352,6 +352,54 @@ def test_session_rejects_client_selected_project_root() -> None:
     asyncio.run(run())
 
 
+def test_gateway_imports_server_workspace_into_session_sandbox(tmp_path: Path) -> None:
+    async def run() -> None:
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "project.txt").write_text("original", encoding="utf-8")
+        gateway = AgentGateway(workspace_source=source)
+        created = await gateway.handle(
+            GatewayCommand(
+                id="create",
+                method="session.create",
+                params={"workspace": str(source)},
+            )
+        )
+        assert created.ok
+        workspace = Path(created.result["workspace"])
+        assert workspace != source
+        assert (workspace / "project.txt").read_text(encoding="utf-8") == "original"
+        assert created.result["workspace_import"]["mode"] == "copy_on_write"
+
+        listed = await gateway.handle(GatewayCommand(id="list", method="session.list"))
+        assert listed.ok
+        assert listed.result["sessions"][0]["source_workspace"] == str(source)
+
+        (workspace / "project.txt").write_text("changed", encoding="utf-8")
+        assert (source / "project.txt").read_text(encoding="utf-8") == "original"
+
+    asyncio.run(run())
+
+
+def test_gateway_rejects_arbitrary_client_workspace(tmp_path: Path) -> None:
+    async def run() -> None:
+        source = tmp_path / "source"
+        source.mkdir()
+        gateway = AgentGateway()
+        created = await gateway.handle(
+            GatewayCommand(
+                id="create",
+                method="session.create",
+                params={"workspace": str(source)},
+            )
+        )
+        assert not created.ok
+        assert created.error is not None
+        assert created.error.code == "invalid_request"
+
+    asyncio.run(run())
+
+
 def test_session_exposes_staged_extension_sandbox() -> None:
     async def run() -> None:
         gateway = AgentGateway()

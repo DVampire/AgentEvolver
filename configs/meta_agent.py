@@ -385,5 +385,5 @@ meta_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step = 100,
+    max_step = 50,
 )

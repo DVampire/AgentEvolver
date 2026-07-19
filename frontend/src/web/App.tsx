@@ -1,36 +1,68 @@
-import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isValidElement, type FormEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import bashLanguage from 'highlight.js/lib/languages/bash';
+import cssLanguage from 'highlight.js/lib/languages/css';
+import javascriptLanguage from 'highlight.js/lib/languages/javascript';
+import jsonLanguage from 'highlight.js/lib/languages/json';
+import markdownLanguage from 'highlight.js/lib/languages/markdown';
+import pythonLanguage from 'highlight.js/lib/languages/python';
+import typescriptLanguage from 'highlight.js/lib/languages/typescript';
+import xmlLanguage from 'highlight.js/lib/languages/xml';
+import yamlLanguage from 'highlight.js/lib/languages/yaml';
 import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 
 import { type ConnectionStatus, type GatewayEvent, GatewaySocket } from './gateway';
 
-type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'commands';
+type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'commands';
 type MessageKind = 'user' | 'assistant' | 'system' | 'error';
 type ActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 type Theme = 'dark' | 'light';
 
-interface CapabilityCatalog { agents: string[]; tools: string[]; skills: string[]; connectors: string[]; environments: string[]; commands: string[]; }
+interface CapabilityCatalog { agents: string[]; tools: string[]; skills: string[]; connectors: string[]; environments: string[]; workflows: string[]; commands: string[]; }
 interface ModelSummary { name: string; id: string; type: string; streaming: boolean; functions: boolean; vision: boolean; }
 interface ProviderSummary { name: string; models: ModelSummary[]; }
 interface ModelEditorState { originalName?: string; configuration: Record<string, unknown>; hasApiKey: boolean; }
 interface Message { id: string; kind: MessageKind; title: string; content?: string; detail?: string; attachments?: string[]; timestamp: string; }
-interface ActivityStep { id: string; title: string; content?: string; detail?: string; timestamp: string; running?: boolean; }
+interface ActivityStep { id: string; title: string; content?: string; detail?: string; trace?: Record<string, unknown>; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
 interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
-interface SessionSummary { session_id: string; name: string; workspace: string; task_ids: string[]; }
+interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; task_ids: string[]; }
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
-interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; document_path?: string; language: 'markdown' | 'schema'; }
+interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
+const HIGHLIGHT_LANGUAGES = {
+  bash: bashLanguage,
+  css: cssLanguage,
+  javascript: javascriptLanguage,
+  json: jsonLanguage,
+  markdown: markdownLanguage,
+  python: pythonLanguage,
+  typescript: typescriptLanguage,
+  xml: xmlLanguage,
+  yaml: yamlLanguage,
+};
+const MARKDOWN_REHYPE_PLUGINS: Parameters<typeof ReactMarkdown>[0]['rehypePlugins'] = [
+  [rehypeHighlight, {
+    languages: HIGHLIGHT_LANGUAGES,
+    aliases: {
+      bash: ['sh', 'shell', 'zsh'], javascript: ['js', 'jsx'], markdown: ['md'],
+      python: ['py'], typescript: ['ts', 'tsx'], xml: ['html', 'svg'], yaml: ['yml'],
+    },
+    detect: false,
+  }],
+];
 const FILE_CHUNK_SIZE = 512 * 1024;
-const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], commands: [] };
+const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [] };
 const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: string; description: string }> = {
   skills: { label: 'Skills', icon: '▧', description: 'Reusable specialist workflows and domain knowledge.' },
   tools: { label: 'Tools', icon: '⌘', description: 'Actions the agent can call while it works.' },
   agents: { label: 'Agents', icon: '✦', description: 'Specialist agents available for delegation.' },
   connectors: { label: 'Connectors', icon: '⌁', description: 'Connected data sources and external services.' },
   environments: { label: 'Environments', icon: '◫', description: 'Session environments and their available actions.' },
+  workflows: { label: 'Workflows', icon: '⎇', description: 'Reusable HTML programs that orchestrate agents and other capabilities.' },
   commands: { label: 'Commands', icon: '›_', description: 'Session control commands; run an enabled command from the composer.' },
 };
 const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
@@ -125,7 +157,7 @@ export function App() {
           && Array.isArray(sessions.result.sessions)
           && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
         if (stillAvailable) {
-          await Promise.all([refreshSessions(socket), loadModels(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
+          await Promise.all([hydrateCapabilities(socket, sessionRef.current), refreshSessions(socket), loadModels(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
           return;
         }
         socket.forgetSession(sessionRef.current);
@@ -552,7 +584,8 @@ export function App() {
   const statusText = useMemo(() => status === 'connected' ? 'Connected' : status[0].toUpperCase() + status.slice(1), [status]);
   const capabilityItems = catalog[activeCapability].filter((name) => name.toLowerCase().includes(capabilitySearch.trim().toLowerCase()));
   const projects = useMemo(() => Object.entries(sessions.reduce<Record<string, SessionSummary[]>>((groups, session) => {
-    (groups[session.workspace] ??= []).push(session);
+    const project = session.source_workspace ?? session.workspace;
+    (groups[project] ??= []).push(session);
     return groups;
   }, {})), [sessions]);
   const timeline = useMemo(() => [
@@ -610,7 +643,7 @@ export function App() {
         {activeTaskId ? <div className="activity-running"><span className="pulse" /> Task running</div> : <div className="activity-idle">Waiting for a task</div>}
         <p className="eyebrow inspector-heading">Gateway</p><code>{activeEndpoint}</code>
         <p className="eyebrow inspector-heading">Selected step</p>
-        {details ? <div className="detail-card"><strong>{details.title}</strong><pre>{details.detail ?? details.content ?? 'No details'}</pre></div> : <p className="empty">Expand an activity and select a step to inspect it.</p>}
+        {details ? <div className="detail-card"><strong>{details.title}</strong>{details.trace ? <StructuredTrace trace={details.trace} compact /> : <pre>{details.detail ?? details.content ?? 'No details'}</pre>}</div> : <p className="empty">Expand an activity and select a step to inspect it.</p>}
       </aside>
 
       {capabilitiesOpen ? <CapabilityDialog activeKind={activeCapability} catalog={catalog} selection={selection} items={capabilityItems} search={capabilitySearch} onSearch={setCapabilitySearch} onSelectKind={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); }} onToggle={toggleCapability} onToggleAll={toggleAllCapabilities} onInspect={openCapabilityDetail} onClose={() => setCapabilitiesOpen(false)} /> : null}
@@ -626,13 +659,74 @@ export function App() {
 }
 
 function MessageCard({ message }: { message: Message }) {
-  return <article className={`message-card ${message.kind}`}><div className="message-avatar">{message.kind === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? <p>{message.content}</p> : null}{message.attachments?.length ? <div className="message-files">{message.attachments.map((attachment) => <span key={attachment}>⌕ {attachment}</span>)}</div> : null}</div></article>;
+  return <article className={`message-card ${message.kind}`}><div className="message-avatar">{message.kind === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? message.kind === 'user' ? <p>{message.content}</p> : <MessageMarkdown content={message.content} /> : null}{message.attachments?.length ? <div className="message-files">{message.attachments.map((attachment) => <span key={attachment}>⌕ {attachment}</span>)}</div> : null}</div></article>;
+}
+
+function MessageMarkdown({ content }: { content: string }) {
+  return <div className="message-markdown"><ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+    components={{
+      pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+      a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+    }}
+  >{content}</ReactMarkdown></div>;
+}
+
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const child = Array.isArray(children) ? children[0] : children;
+  const className = isValidElement<{ className?: string }>(child) ? child.props.className ?? '' : '';
+  const language = className.match(/(?:language-|lang-)([\w+-]+)/)?.[1] ?? 'text';
+  const source = reactNodeText(children).replace(/\n$/, '');
+  return <div className="message-code"><header><span>{language}</span><button type="button" onClick={() => navigator.clipboard?.writeText(source)}>Copy</button></header><pre>{children}</pre></div>;
+}
+
+function reactNodeText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(reactNodeText).join('');
+  if (isValidElement<{ children?: ReactNode }>(node)) return reactNodeText(node.props.children);
+  return '';
 }
 
 function ActivityCard({ activity, expanded, onToggle, onSelect }: { activity: ActivityGroup; expanded: boolean; onToggle: () => void; onSelect: (step: ActivityStep) => void }) {
   const label = activity.status === 'running' ? 'Working' : activity.status === 'completed' ? 'Completed' : activity.status === 'cancelled' ? 'Cancelled' : 'Failed';
-  return <section className={`activity-card ${activity.status}`}><button className="activity-summary" onClick={onToggle} aria-expanded={expanded}><span className="activity-icon">{activity.status === 'running' ? '◌' : '✓'}</span><span className="activity-copy"><strong>{activity.title}</strong><small>{activity.steps.length} execution step{activity.steps.length === 1 ? '' : 's'} · {label}</small></span><span className="activity-chevron">{expanded ? '⌃' : '⌄'}</span></button>{expanded ? <div className="activity-steps">{activity.steps.map((step) => <button className="activity-step" key={step.id} onClick={() => onSelect(step)}><span className="step-dot" /><span><strong>{step.title}</strong>{step.content ? <small>{step.content}</small> : null}</span><time>{formatTime(step.timestamp)}</time></button>)}</div> : null}</section>;
+  return <section className={`activity-card ${activity.status}`}><button className="activity-summary" onClick={onToggle} aria-expanded={expanded}><span className="activity-icon">{activity.status === 'running' ? '◌' : '✓'}</span><span className="activity-copy"><strong>{activity.title}</strong><small>{activity.steps.length} execution step{activity.steps.length === 1 ? '' : 's'} · {label}</small></span><span className="activity-chevron">{expanded ? '⌃' : '⌄'}</span></button>{expanded ? <div className="activity-steps">{activity.steps.map((step) => <details className="activity-step-card" key={step.id} onToggle={(event) => { if (event.currentTarget.open) onSelect(step); }}><summary className="activity-step"><span className="step-dot" /><span><strong>{step.title}</strong>{step.content ? <small>{step.content}</small> : null}</span><time>{formatTime(step.timestamp)}</time></summary>{step.trace ? <StructuredTrace trace={step.trace} /> : <div className="trace-sections"><TraceSection label="Details" value={step.detail ?? step.content} /></div>}</details>)}</div> : null}</section>;
 }
+
+function StructuredTrace({ trace, compact = false }: { trace: Record<string, unknown>; compact?: boolean }) {
+  const input = isRecord(trace.input) ? trace.input : undefined;
+  const command = input && (input.command ?? input.cmd ?? input.script);
+  const reasoning = traceReasoning(trace);
+  const output = trace.output ?? (reasoning ? undefined : trace.message);
+  const metadata = isRecord(trace.metadata) ? trace.metadata : undefined;
+  const inputWithoutCommand = input ? Object.fromEntries(Object.entries(input).filter(([key]) => !['command', 'cmd', 'script'].includes(key))) : undefined;
+  return <div className={`trace-sections ${compact ? 'compact' : ''}`}>
+    <div className="trace-facts">{typeof trace.step_number === 'number' ? <span>Step {trace.step_number}</span> : null}{typeof trace.action_index === 'number' ? <span>Action {trace.action_index + 1}</span> : null}{typeof trace.duration_ms === 'number' ? <span>{formatDuration(trace.duration_ms)}</span> : null}{typeof trace.success === 'boolean' ? <span className={trace.success ? 'success' : 'failure'}>{trace.success ? 'Success' : 'Failed'}</span> : null}</div>
+    {reasoning ? <TraceSection label="Reasoning" value={reasoning} kind="reasoning" /> : null}
+    {command !== undefined ? <TraceSection label="Command" value={command} kind="command" /> : null}
+    {inputWithoutCommand && Object.keys(inputWithoutCommand).length ? <TraceSection label={trace.action_name ? 'Arguments' : 'Input'} value={inputWithoutCommand} /> : null}
+    {output !== undefined && output !== null && output !== '' ? <TraceSection label="Output" value={output} kind="output" /> : null}
+    {trace.error ? <TraceSection label="Error" value={trace.error} kind="error" /> : null}
+    {metadata && Object.keys(metadata).some((key) => key !== 'success') ? <TraceSection label="Metadata" value={metadata} /> : null}
+    {!compact ? <details className="raw-event"><summary>Raw event</summary><pre><code>{JSON.stringify(trace, null, 2)}</code></pre></details> : null}
+  </div>;
+}
+
+function TraceSection({ label, value, kind = 'data' }: { label: string; value: unknown; kind?: 'data' | 'reasoning' | 'command' | 'output' | 'error' }) {
+  if (value === undefined || value === null || value === '') return null;
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  return <section className={`trace-section ${kind}`}><header><span>{traceIcon(kind)}</span><strong>{label}</strong><button onClick={() => navigator.clipboard?.writeText(text)}>Copy</button></header>{kind === 'reasoning' ? <div className="trace-reasoning"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div> : <pre><code>{text}</code></pre>}</section>;
+}
+
+function traceReasoning(trace: Record<string, unknown>): string | undefined {
+  if (typeof trace.reasoning === 'string') return trace.reasoning;
+  if (String(trace.event_type) !== 'agent_call' || typeof trace.message !== 'string') return undefined;
+  const legacy = trace.message.match(/^\{'reasoning':\s*(?:None|'([\s\S]*)')\}$/);
+  return legacy?.[1]?.replaceAll("\\n", "\n").replaceAll("\\'", "'") ?? trace.message;
+}
+
+function traceIcon(kind: string): string { return kind === 'reasoning' ? '✦' : kind === 'command' ? '›_' : kind === 'output' ? '↳' : kind === 'error' ? '!' : '{}'; }
+function formatDuration(value: number): string { return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`; }
 
 function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
   const prompts = [
@@ -658,7 +752,7 @@ function CapabilityDetailDialog({ detail, loading, onEdit, onClose }: { detail?:
   if (loading) return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog loading-detail" onClick={(event) => event.stopPropagation()}><span className="pulse" /> Loading capability details…</section></div>;
   if (!detail) return null;
   const meta = CAPABILITY_META[detail.kind];
-  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2>{meta.icon} {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><div className="detail-header-actions">{detail.editable ? <button className="edit-configuration" onClick={onEdit}>Edit configuration</button> : null}<button className="close-dialog" onClick={onClose}>×</button></div></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
+  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2>{meta.icon} {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><div className="detail-header-actions">{detail.editable ? <button className="edit-configuration" onClick={onEdit}>Edit configuration</button> : null}<button className="close-dialog" onClick={onClose}>×</button></div></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : detail.language === 'source' ? <WorkflowDocument detail={detail} /> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
 }
 
 function CapabilityConfigDialog({ detail, onSave, onClose }: { detail: CapabilityDetail; onSave: (detail: CapabilityDetail, configuration: Record<string, unknown>) => Promise<void>; onClose: () => void }) {
@@ -710,11 +804,20 @@ function ModelConfigDialog({ editor, onSave, onClose }: { editor: ModelEditorSta
 }
 
 function MarkdownDocument({ content }: { content: string }) {
-  return <div className="markdown-document"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content.replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '')}</ReactMarkdown></div>;
+  return <div className="markdown-document"><ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+    components={{ pre: ({ children }) => <CodeBlock>{children}</CodeBlock> }}
+  >{content.replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '')}</ReactMarkdown></div>;
 }
 
 function SchemaPanel({ schema }: { schema?: Record<string, unknown> }) {
   return <div className="schema-panel"><div className="document-toolbar"><span>Parameters</span>{schema ? <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(schema, null, 2))}>Copy schema</button> : null}</div>{schema ? <pre className="source-document"><code>{JSON.stringify(schema, null, 2)}</code></pre> : <div className="schema-empty"><strong>No parameters required</strong><p>This capability does not expose a structured input schema.</p></div>}</div>;
+}
+
+function WorkflowDocument({ detail }: { detail: CapabilityDetail }) {
+  const [view, setView] = useState<'preview' | 'source' | 'schema'>('preview');
+  return <><div className="document-toolbar workflow-toolbar"><div className="document-tabs"><button className={view === 'preview' ? 'active' : ''} onClick={() => setView('preview')}>Preview</button><button className={view === 'source' ? 'active' : ''} onClick={() => setView('source')}>HTML</button><button className={view === 'schema' ? 'active' : ''} onClick={() => setView('schema')}>Inputs</button></div>{view === 'source' ? <button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy source</button> : null}</div>{view === 'preview' ? <iframe className="workflow-preview-frame" title={`${detail.name} workflow preview`} sandbox="allow-scripts" srcDoc={detail.preview_document ?? detail.document} /> : view === 'source' ? <pre className="source-document"><code>{detail.document}</code></pre> : <SchemaPanel schema={detail.parameter_schema} />}</>;
 }
 
 function ConnectionDialog({ endpoint, token, onEndpoint, onToken, onClose, onConnect }: { endpoint: string; token: string; onEndpoint: (value: string) => void; onToken: (value: string) => void; onClose: () => void; onConnect: () => void }) {
@@ -724,7 +827,7 @@ function ConnectionDialog({ endpoint, token, onEndpoint, onToken, onClose, onCon
 function asCapabilities(value: unknown): CapabilityCatalog {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const namesFor = (kind: CapabilityKind) => Array.isArray(source[kind]) ? source[kind].filter((item): item is string => typeof item === 'string') : [];
-  return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), commands: namesFor('commands') };
+  return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), workflows: namesFor('workflows'), commands: namesFor('commands') };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -747,8 +850,9 @@ function asCapabilityDetail(value: Record<string, unknown>): CapabilityDetail {
     configuration: value.configuration && typeof value.configuration === 'object' && !Array.isArray(value.configuration) ? value.configuration as Record<string, unknown> : {},
     editable: Boolean(value.editable),
     document: String(value.document ?? ''),
+    preview_document: typeof value.preview_document === 'string' ? value.preview_document : undefined,
     document_path: typeof value.document_path === 'string' ? value.document_path : undefined,
-    language: value.language === 'schema' ? 'schema' : 'markdown',
+    language: value.language === 'schema' ? 'schema' : value.language === 'html' || value.language === 'source' ? 'source' : 'markdown',
   };
 }
 
@@ -777,6 +881,9 @@ function isSessionSummary(value: unknown): value is SessionSummary {
     && typeof value === 'object'
     && typeof (value as { session_id?: unknown }).session_id === 'string'
     && typeof (value as { workspace?: unknown }).workspace === 'string'
+    && ((value as { source_workspace?: unknown }).source_workspace === undefined
+      || (value as { source_workspace?: unknown }).source_workspace === null
+      || typeof (value as { source_workspace?: unknown }).source_workspace === 'string')
     && typeof (value as { name?: unknown }).name === 'string'
     && Array.isArray((value as { task_ids?: unknown }).task_ids);
 }
@@ -790,8 +897,26 @@ function activityStep(event: GatewayEvent): ActivityStep {
   const trace = event.payload;
   const type = String(trace.event_type ?? 'event').replaceAll('_', ' ');
   const actor = String(trace.action_name ?? trace.agent_name ?? trace.label ?? 'Agent');
-  const content = trace.message ?? trace.error ?? trace.label;
-  return { id: `${event.seq_no}:${type}`, title: `${actor} · ${type}`, content: content ? String(content) : undefined, detail: JSON.stringify(trace, null, 2), timestamp: event.timestamp, running: type.endsWith('start') };
+  return { id: `${event.seq_no}:${type}`, title: `${actor} · ${type}`, content: traceSummary(trace), detail: JSON.stringify(trace, null, 2), trace, timestamp: event.timestamp, running: type.endsWith('start') };
+}
+
+function traceSummary(trace: Record<string, unknown>): string | undefined {
+  const type = String(trace.event_type ?? '');
+  if (type === 'agent_call') {
+    const reasoning = traceReasoning(trace);
+    return reasoning ? reasoning.replace(/[*_`#]/g, '').replace(/\s+/g, ' ').trim() : 'Reasoning completed';
+  }
+  if (type.endsWith('_start') && isRecord(trace.input)) {
+    const command = trace.input.command ?? trace.input.cmd ?? trace.input.script;
+    if (typeof command === 'string') return command.split('\n')[0];
+    const keys = Object.keys(trace.input);
+    return keys.length ? `${keys.length} argument${keys.length === 1 ? '' : 's'}: ${keys.slice(0, 3).join(', ')}` : 'No arguments';
+  }
+  if (trace.error) return String(trace.error);
+  if (typeof trace.output === 'string') return trace.output.replace(/\s+/g, ' ').trim();
+  if (trace.output !== undefined && trace.output !== null) return 'Structured output available';
+  if (trace.success === true) return typeof trace.duration_ms === 'number' ? `Completed in ${formatDuration(trace.duration_ms)}` : 'Completed successfully';
+  return typeof trace.label === 'string' ? trace.label : undefined;
 }
 
 function finalMessage(event: GatewayEvent, kind: Extract<MessageKind, 'assistant' | 'error' | 'system'>): Message {
@@ -804,5 +929,5 @@ function formatTime(timestamp: string): string { return new Date(timestamp).toLo
 function formatFileSize(size: number): string { if (size < 1024) return `${size} B`; if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`; if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`; return `${(size / 1024 ** 3).toFixed(2)} GB`; }
 function fileName(path: string): string { return path.split(/[\\/]/).at(-1) || path; }
 function base64FromBuffer(buffer: ArrayBuffer): string { const bytes = new Uint8Array(buffer); let binary = ''; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); }
-function humanize(name: string): string { return name.replace(/_skill$|_tool$|_agent$|_connector$/, '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function humanize(name: string): string { return name.replace(/_skill$|_tool$|_agent$|_connector$|_workflow$/, '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function capabilityDescription(kind: CapabilityKind, name: string): string { return kind === 'commands' ? `Run /${name} from the composer when this command is enabled.` : `${humanize(name)} ${kind.slice(0, -1)} is ${kind === 'agents' ? 'available for delegation' : 'available to this session'}.`; }

@@ -16,6 +16,7 @@ from typing import Any, Deque, Dict, Optional
 from argparse import Namespace
 
 from dotenv import load_dotenv
+from lxml import etree, html as lxml_html
 from agentevolver.agent import agent_manager
 from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
@@ -82,7 +83,12 @@ class GatewayUpload:
 class AgentGateway:
     """Owns interactive sessions and maps protocol commands to backend operations."""
 
-    def __init__(self, *, event_history_size: int = 10_000) -> None:
+    def __init__(
+        self,
+        *,
+        event_history_size: int = 10_000,
+        workspace_source: Optional[str | Path] = None,
+    ) -> None:
         self._sessions: Dict[str, GatewaySession] = {}
         self._subscribers: set[asyncio.Queue[GatewayEvent]] = set()
         self._events: Dict[str, Deque[GatewayEvent]] = defaultdict(
@@ -92,6 +98,9 @@ class AgentGateway:
         self._active_agent_tasks: Dict[str, asyncio.Task] = {}
         self._initialized = False
         self._stopping = False
+        self._workspace_source = (
+            Path(workspace_source).expanduser().resolve() if workspace_source else None
+        )
 
     _MAX_UPLOAD_SIZE = 100 * 1024 * 1024
     _MAX_UPLOAD_CHUNK_SIZE = 1024 * 1024
@@ -195,13 +204,13 @@ class AgentGateway:
         project_root = default_project_root / session_id
         sandbox = ProjectSandbox.create(project_root, shared_extension_root=Path(config.extension_root))
         requested_workspace = params.get("workspace")
-        if requested_workspace:
-            requested_path = Path(requested_workspace).expanduser().resolve()
-            if requested_path != sandbox.workspace_root:
-                raise ValueError(
-                    "workspace must be the session sandbox workspace. "
-                    "Create/import files under the returned workspace path instead."
-                )
+        requested_source = Path(requested_workspace).expanduser().resolve() if requested_workspace else None
+        if requested_source and (
+            self._workspace_source is None or requested_source != self._workspace_source
+        ):
+            raise ValueError("workspace must match the server-controlled workspace source")
+        source = self._workspace_source
+        workspace_import = sandbox.import_workspace(source) if source else None
         context = SessionContext(
             id=session_id,
             name=params.get("name") or "interactive",
@@ -211,6 +220,7 @@ class AgentGateway:
                 **sandbox.describe(),
                 "gateway_session": True,
                 "sandbox_mounts": sandbox.mounts(),
+                "workspace_import": workspace_import,
             },
         )
         session = GatewaySession(
@@ -221,7 +231,7 @@ class AgentGateway:
         )
         self._sync_session_capabilities(session)
         self._sessions[session_id] = session
-        payload = {"workspace": context.workspace_root, "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name}
+        payload = {"workspace": context.workspace_root, "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "workspace_import": workspace_import}
         await self._publish("session.created", payload, session_id=session_id)
         return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
 
@@ -232,6 +242,9 @@ class AgentGateway:
                     "session_id": session_id,
                     "name": session.context.name,
                     "workspace": session.context.workspace_root,
+                    "source_workspace": (
+                        (session.context.extra.get("workspace_import") or {}).get("source_root")
+                    ),
                     "project_root": str(session.sandbox.project_root),
                     "extension_root": str(session.sandbox.extension_root),
                     "task_ids": session.task_ids,
@@ -468,6 +481,38 @@ class AgentGateway:
         name = str(params.get("name") or "")
         return await self._capability_detail(kind, name)
 
+    @staticmethod
+    def _workflow_preview_document(source: str) -> str:
+        """Build a self-contained preview for a sandboxed browser iframe.
+
+        Persisted Workflows may reference only the framework's shared visual assets.
+        A ``srcdoc`` iframe has no useful base URL for those repository-relative paths,
+        so the Gateway embeds the trusted CSS and renderer without changing the stored
+        executable HTML.
+        """
+        visual_dir = Path(__file__).resolve().parents[1] / "visual"
+        assets = {
+            "prompt.css": (visual_dir / "css" / "prompt.css").read_text(encoding="utf-8"),
+            "workflow.css": (visual_dir / "css" / "workflow.css").read_text(encoding="utf-8"),
+            "workflow.js": (visual_dir / "js" / "workflow.js").read_text(encoding="utf-8"),
+        }
+        document = lxml_html.document_fromstring(source)
+        for link in document.xpath("//link[@rel='stylesheet']"):
+            filename = Path(link.get("href", "")).name
+            if filename not in assets:
+                continue
+            link.tag = "style"
+            link.attrib.clear()
+            link.text = assets[filename]
+        for script in document.xpath("//script[@src]"):
+            filename = Path(script.get("src", "")).name
+            if filename != "workflow.js":
+                continue
+            script.attrib.clear()
+            script.text = assets[filename]
+        rendered = etree.tostring(document, encoding="unicode", method="html")
+        return "<!DOCTYPE html>\n" + rendered
+
     async def _capability_detail(self, kind: str, name: str) -> Dict[str, Any]:
         managers = {
             "skills": skill_manager,
@@ -481,6 +526,23 @@ class AgentGateway:
                 raise ValueError(f"Unknown workflows: {name}")
             spec = workflow_manager.get(name)
             assert spec is not None
+            properties = {
+                input_name: dict(input_spec.parameter_schema or {"type": input_spec.type})
+                for input_name, input_spec in spec.inputs.items()
+            }
+            required = [input_name for input_name, input_spec in spec.inputs.items() if input_spec.required]
+            parameter_schema: Dict[str, Any] = {
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": False,
+            }
+            if required:
+                parameter_schema["required"] = required
+            document_path = None
+            if spec.source_path:
+                _, document_path = self._read_repository_file(
+                    Path(__file__).resolve().parents[2], Path(spec.source_path),
+                )
             return {
                 "kind": kind,
                 "name": name,
@@ -490,13 +552,14 @@ class AgentGateway:
                 "type": "dynamic_html",
                 "enable_evolving": spec.enable_evolving,
                 "actions": [],
-                "parameter_schema": {"type": "object", "additionalProperties": True},
+                "parameter_schema": parameter_schema,
                 "usage": f"Run workflow {name} with an input object.",
                 "configuration": {},
                 "editable": False,
-                "document": spec.model_dump_json(indent=2),
-                "document_path": None,
-                "language": "json",
+                "document": spec.source,
+                "preview_document": self._workflow_preview_document(spec.source),
+                "document_path": document_path,
+                "language": "html",
             }
         if kind == "commands":
             command = await command_manager.get(name)
@@ -784,6 +847,7 @@ class AgentGateway:
                     "task": record.task.content,
                     "files": record.task.files,
                     "capabilities": session.capabilities,
+                    "task_id": record.task.id,
                 },
                 ctx=session.context,
             ),

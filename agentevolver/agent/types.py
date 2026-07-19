@@ -266,6 +266,10 @@ class _AgentRun:
         self.reasoning: Optional[str] = None
         self.stopped_by_constraint = False
         self.paused = False   # control channel: when True, don't start the next turn
+        # MetaAgent uses these fields to detect an unchanged action batch.  They live on
+        # the run (not the Agent singleton) so concurrent sessions never share state.
+        self.previous_action_signature: Optional[str] = None
+        self.repeated_action_rounds = 0
 
 
 class Agent(BaseModel):
@@ -946,6 +950,8 @@ class Agent(BaseModel):
                 },
                 parent_ref=parent_ref, workspace_root=getattr(ctx, "workspace_root", None) or self.base_dir,
             )
+            if not resp.success:
+                raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             return resp.message, False, None, None
         if kind == "workflow":
@@ -957,10 +963,14 @@ class Agent(BaseModel):
             return json.dumps(workflow_run.output, ensure_ascii=False, default=str), False, None, None
         if kind == "skill":
             response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
+            if not response.success:
+                raise RuntimeError(response.message or f"Skill {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
             return response.message, False, None, None
         if kind == "connector":
             response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
+            if not response.success:
+                raise RuntimeError(response.message or f"Connector {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
             return response.message, False, None, None
         if kind == "environment":
@@ -974,6 +984,8 @@ class Agent(BaseModel):
             return action_result, False, None, None
         if kind == "tool":
             tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx)
+            if not tool_response.success:
+                raise RuntimeError(tool_response.message or f"Tool {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Tool '{route[1]}' completed")
             if route[1] == "done_tool":
                 reasoning = (tool_response.data or {}).get("reasoning") if hasattr(tool_response, "data") else None
@@ -1029,7 +1041,9 @@ class Agent(BaseModel):
         if files:
             logger.info(f"| 📂 Attached files: {files}")
 
-        task_id = make_id()
+        # Gateways already own a public task id.  Reuse it when supplied so task events,
+        # trace events, memory, and cancellation all describe one execution identity.
+        task_id = str(kwargs.pop("task_id", "") or make_id())
         run = _AgentRun(task, files, ctx, ref, task_id, kwargs)
         self._runs[ref.name] = run
 

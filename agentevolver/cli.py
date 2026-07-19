@@ -67,6 +67,7 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
         Path(config.project_root) / session_id,
         shared_extension_root=Path(config.extension_root),
     )
+    sandbox.import_workspace(Path.cwd())
     _apply_session_roots(config, sandbox)
     logger.initialize(config=config)
     await _try("version", version_manager.initialize(), timeout)
@@ -160,7 +161,7 @@ async def _run_gateway_stdio(config_path: str) -> int:
     from agentevolver.gateway.service import AgentGateway
     from agentevolver.gateway.transport import serve_stdio
 
-    gateway = AgentGateway()
+    gateway = AgentGateway(workspace_source=Path.cwd())
     await gateway.start(config_path, stdio=True)
     try:
         await serve_stdio(gateway)
@@ -195,7 +196,7 @@ def gateway_main(argv: Optional[Sequence[str]] = None) -> int:
     from agentevolver.gateway.transport import create_websocket_app
     import uvicorn
 
-    gateway = AgentGateway()
+    gateway = AgentGateway(workspace_source=Path.cwd())
 
     @asynccontextmanager
     async def lifespan(app):

@@ -85,6 +85,10 @@ Open `http://127.0.0.1:5173` (or the URL Vite prints). The Web UI connects to `w
 
 Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted local network. The WebSocket client reconnects automatically and asks the server to replay missed session events. See [`frontend/README.md`](frontend/README.md) for the full startup guide.
 
+Local commands, the terminal client, and Web sessions share one project-sandbox model:
+the launch directory is imported into a per-session copy-on-write workspace. Agent writes
+stay inside that workspace rather than modifying the host checkout directly.
+
 The Gateway requires a token when bound to a non-loopback address. Browser origins can
 also be restricted with repeated `--allow-origin https://your-ui.example` options.
 Restricted `bash_tool` configurations execute only inside an isolated sandbox; trusted

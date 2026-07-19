@@ -20,6 +20,7 @@ suspends it on its task_id and posts an EscalationMessage here; ``reply_tool`` r
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, Optional
 
 from pydantic import Field
@@ -56,6 +57,58 @@ class MetaAgent(Agent):
     # The one thing that makes this agent an orchestrator: sub-agents in its roster.
     def _include_agents(self) -> bool:
         return True
+
+    async def _prepare_round(self, run, decision):
+        """Stop unchanged action loops while leaving ordinary replanning unconstrained.
+
+        One repeated batch is skipped and reported back to the model as an error, giving
+        it a chance to delegate, change strategy, or finish.  Repeating the same batch a
+        second time concludes with an explicit partial result instead of burning the
+        remaining step budget indefinitely.
+        """
+        calls = decision["tool_calls"]
+        signature = json.dumps(
+            [{"name": call.name, "input": call.input or {}} for call in calls],
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+        if signature != run.previous_action_signature:
+            run.previous_action_signature = signature
+            run.repeated_action_rounds = 0
+            return calls
+
+        run.repeated_action_rounds += 1
+        if run.repeated_action_rounds == 1:
+            run.round_step = run.step
+            await self._post_step(
+                run.task_id,
+                run.step,
+                run.ctx,
+                run.messages,
+                reasoning=decision["reasoning"],
+                plan=[],
+                step_tokens=decision["step_tokens"],
+                done=False,
+            )
+            run.action_errors = [
+                "No-progress guard: this exact action batch was already executed. "
+                "Do not retry it; delegate, choose a materially different action, or "
+                "call done_tool with the best verified partial result."
+            ]
+            run.step += 1
+            await self._advance(run)
+            return None
+
+        run.done = True
+        run.result = (
+            "Stopped by the no-progress guard after the same action batch was proposed "
+            "three times. The requested task is incomplete; inspect the trace for the "
+            "last successful evidence and failure."
+        )
+        run.reasoning = "Repeated actions made no progress after corrective feedback."
+        await self._conclude(run)
+        return None
 
     async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Expose only active workflow summaries; inspect supplies full HTML on demand."""
