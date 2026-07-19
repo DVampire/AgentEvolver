@@ -31,15 +31,15 @@ class ToolRegistrationHook(Hook):
         from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
         if is_staged_extension_root(extension_root):
             validate_staged_extension(extension_root)
-            logger.info(f"| 📦 ToolRegistrationHook: staged '{target_name or os.path.basename(tool_path)}' for promotion")
-            return HookResult.allow()
+            from agentevolver.hook.promotion import promote_approved_component
+            tool_path = promote_approved_component(extension_root, tool_path)
 
         try:
             from agentevolver.extension import extension_manager
             # Newly generated components are registered evolvable so a later round can optimize
             # them. Overwriting an existing *frozen* entity is still refused inside add_component.
             name = await extension_manager.add_component("tool", tool_path, config={"enable_evolving": True})
-            logger.info(f"| 🔄 ToolRegistrationHook: '{name}' registered from {tool_path}")
+            logger.info(f"| 🔄 ToolRegistrationHook: '{name}' promoted and registered from {tool_path}")
             return HookResult.allow()
         except Exception as e:
             logger.warning(f"| ⚠️  ToolRegistrationHook: {e}")

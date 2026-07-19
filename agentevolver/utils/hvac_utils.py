@@ -3,7 +3,10 @@ import sys
 import socket
 from urllib.parse import urlparse
 
-import hvac
+try:
+    import hvac
+except ImportError:  # Vault is optional; environment variables remain supported.
+    hvac = None
 from dotenv import load_dotenv
 
 load_dotenv(verbose=True)
@@ -45,10 +48,13 @@ class VaultClient:
         url = url or os.environ.get("VAULT_ADDR")
         token = token or os.environ.get("VAULT_TOKEN")
         self._path = secret_engine_path or os.environ.get("SECRET_ENGINE_PATH")
-        self._client: hvac.Client | None = None
+        self._client = None
         self._cache: dict | None = None
 
         if url and token and self._path:
+            if hvac is None:
+                print("[VaultClient] hvac is not installed; using secrets from .env / environment.", file=sys.stderr)
+                return
             # 1) Probe first: if no Vault process is listening, skip hvac
             #    entirely and use .env -- never risk a hanging request.
             if not _vault_running(url):

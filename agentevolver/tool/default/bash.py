@@ -2,6 +2,7 @@
 import asyncio
 import os
 import signal
+import sys
 from typing import Any, Dict
 
 from pydantic import Field
@@ -57,7 +58,7 @@ class BashTool(Tool):
             return Response(type=ResponseType.TOOL, success=False, message="Error: Empty command provided")
 
         ctx = kwargs.get("ctx")
-        if getattr(ctx, "extra", {}).get("project_root") and get_current_sandbox() is None:
+        if getattr(ctx, "extra", {}).get("gateway_session") and get_current_sandbox() is None:
             return Response(
                 type=ResponseType.TOOL,
                 success=False,
@@ -76,11 +77,32 @@ class BashTool(Tool):
         warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
         try:
+            # Keep commands such as ``python3`` and ``pip`` in the same runtime
+            # environment that launched AgentEvolver (for example conda's agentos).
+            runtime_bin = os.path.dirname(sys.executable)
+            command_env = {
+                **os.environ,
+                "PATH": runtime_bin + os.pathsep + os.environ.get("PATH", ""),
+            }
+            # Every session command runs from its isolated workspace.  Besides
+            # keeping relative outputs contained, this makes ordinary scripts
+            # (``open('results/x.json', 'w')``) behave consistently with the
+            # workspace path shown to the agent.
+            workspace_root = getattr(ctx, "workspace_root", None)
+            cwd = os.path.abspath(workspace_root) if workspace_root else None
+            if cwd and not os.path.isdir(cwd):
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=False,
+                    message=f"Workspace directory does not exist: {cwd}",
+                )
             process = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
+                env=command_env,
+                cwd=cwd,
             )
 
             try:

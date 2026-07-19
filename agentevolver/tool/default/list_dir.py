@@ -7,6 +7,7 @@ from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
+from agentevolver.sandbox.project import check_session_path
 
 _DESCRIPTION = "List the contents of a directory as a tree structure."
 
@@ -107,6 +108,9 @@ class ListDirTool(Tool):
             ignore: Names/patterns to skip.
         """
         try:
+            sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
+            if sandbox_denial:
+                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
             if not os.path.exists(path):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path not found: {path}")
             if not os.path.isdir(path):

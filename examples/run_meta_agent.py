@@ -45,6 +45,7 @@ from agentevolver.task import task_manager, TaskCategory, TaskPriority, TaskReco
 from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
 from agentevolver.session.types import SessionContext
+from agentevolver.session.project import ensure_session_sandbox, bind_session_roots
 from agentevolver.utils import make_id
 
 
@@ -82,6 +83,17 @@ async def main():
     args = parse_args()
 
     config.initialize(config_path=args.config, args=args)
+    # A direct script is a session too: bind all runtime state before managers
+    # initialize, so no tag-level log/workspace directories are created.
+    session_id = make_id()
+    ctx = SessionContext(id=session_id, name="main_entrypoint")
+    sandbox = ensure_session_sandbox(
+        ctx,
+        config.project_root,
+        shared_extension_root=config.extension_root,
+    )
+    bind_session_roots(config, sandbox)
+    extension_manager.set_base_dir(config.extension_root)
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
 
@@ -147,14 +159,6 @@ async def main():
     logger.info(f"| ✅ Extensions loaded: {[f'{c.module}:{c.name}' for c in _ext_manifest.components]}")
 
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
-
-    # --- Session context ---
-    session_id = make_id()
-    name = f"main_entrypoint"
-    ctx = SessionContext(
-        id=session_id,
-        name=name,
-    )
 
     # --- TaskManager ---
     task_log_root = os.path.join(config.log_root, "tasks")

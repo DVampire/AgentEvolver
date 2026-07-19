@@ -1,7 +1,63 @@
-import os
-from typing import Union
+"""Canonical path resolution for AgentEvolver's writable and bundled resources."""
 
-from agentevolver.paths import data_path, extension_root, package_root, resource_path
+import os
+from pathlib import Path
+
+
+_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = _PACKAGE_ROOT.parent
+
+
+def package_root() -> Path:
+    """The installed package directory, containing shipped read-only resources."""
+    return _PACKAGE_ROOT
+
+
+def home_dir() -> Path:
+    """Stable user-writable base; ``AGENTEVOLVER_HOME`` overrides the default."""
+    root = Path(os.environ.get("AGENTEVOLVER_HOME", "~/.agentevolver")).expanduser()
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def data_path(rel: str = "") -> str:
+    """Resolve an absolute path or a user-data path relative to ``home_dir``."""
+    if not rel:
+        return str(home_dir())
+    path = Path(rel).expanduser()
+    return str(path.resolve() if path.is_absolute() else (home_dir() / path).resolve())
+
+
+def project_path(rel: str = "") -> str:
+    """Resolve a runtime path relative to the caller's current project directory.
+
+    This is deliberately separate from :func:`data_path`: generated outputs and
+    workspaces belong to the project being run, whereas ``data_path`` is reserved
+    for user-level AgentEvolver state under ``~/.agentevolver``.
+    """
+    path = Path(rel).expanduser()
+    return str(path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve())
+
+
+def extension_root() -> Path:
+    """Shared project extension repository; sessions stage changes elsewhere."""
+    root = Path(os.environ.get("AGENTEVOLVER_EXTENSION_ROOT", "extension")).expanduser()
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def resource_path(rel: str) -> str:
+    """Find an overrideable shipped resource: home → source tree → package."""
+    path = Path(rel).expanduser()
+    if path.is_absolute():
+        return str(path.resolve())
+    for base in (home_dir(), _REPO_ROOT, _PACKAGE_ROOT):
+        candidate = base / path
+        if candidate.exists():
+            return str(candidate)
+    return str((_PACKAGE_ROOT / path).resolve())
 
 
 def get_extension_root() -> str:
@@ -15,7 +71,7 @@ def get_package_root() -> str:
 
 
 def assemble_workspace_path(path: str) -> str:
-    """Resolve a user-data path relative to the AgentEvolver home directory.
+    """Resolve a workspace/runtime path relative to the current project directory.
 
     Args:
         path: Path string (relative or absolute).
@@ -23,7 +79,7 @@ def assemble_workspace_path(path: str) -> str:
     Returns:
         Absolute path string. Absolute inputs are returned as-is.
     """
-    return data_path(path)
+    return project_path(path)
 
 def assemble_resource_path(path: str) -> str:
     """Resolve a shipped RESOURCE (e.g. a default config) that the user may override.

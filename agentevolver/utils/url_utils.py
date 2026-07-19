@@ -6,9 +6,6 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 import aiohttp
-from crawl4ai import AsyncWebCrawler
-
-from agentevolver.utils.hvac_utils import hvac_client
 
 # Default timeout for web fetching (in seconds)
 DEFAULT_FETCH_TIMEOUT = 15  # 15 seconds per fetch attempt
@@ -16,6 +13,8 @@ DEFAULT_FETCH_TIMEOUT = 15  # 15 seconds per fetch attempt
 async def jina_fetch_url(url: str, timeout: int = DEFAULT_FETCH_TIMEOUT):
     """Fetch content using Jina AI Reader (r.jina.ai) with timeout."""
     try:
+        from agentevolver.utils.hvac_utils import hvac_client
+
         safe_chars = ":/?#[]@!$&'()*+,;="
 
         base_url = hvac_client.get("JINA_BASE_URL")
@@ -49,6 +48,8 @@ async def jina_fetch_url(url: str, timeout: int = DEFAULT_FETCH_TIMEOUT):
 async def fetch_crawl4ai_url(url: str, timeout: int = DEFAULT_FETCH_TIMEOUT):
     """Fetch content from a given URL using the crawl4ai library with timeout."""
     try:
+        from crawl4ai import AsyncWebCrawler
+
         async with AsyncWebCrawler() as crawler:
             # Wrap the arun call with timeout
             response = await asyncio.wait_for(
@@ -69,6 +70,8 @@ async def fetch_crawl4ai_url(url: str, timeout: int = DEFAULT_FETCH_TIMEOUT):
 async def firecrawl_fetch_url(url: str, timeout: int = DEFAULT_FETCH_TIMEOUT):
     """Fetch content using Firecrawl scrape API with timeout."""
     try:
+        from agentevolver.utils.hvac_utils import hvac_client
+
         api_base = hvac_client.get("FIRECRAWL_API_BASE") or "https://api.firecrawl.dev/v2"
         api_key = hvac_client.get("FIRECRAWL_API_KEY")
 

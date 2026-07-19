@@ -3,7 +3,7 @@ from mmengine import Config as MMConfig
 from argparse import Namespace
 from typing import Union
 
-from agentevolver.utils import assemble_resource_path, assemble_workspace_path, Singleton
+from agentevolver.utils import assemble_resource_path, assemble_workspace_path, project_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
     """Resolve and validate the per-run output directory hierarchy."""
@@ -13,9 +13,14 @@ def process_general(config: MMConfig) -> MMConfig:
         missing = ", ".join(missing_roots)
         raise ValueError(f"Configuration is missing required output root(s): {missing}")
 
-    project_root = str(assemble_workspace_path(config.project_root))
-    workspace_root = str(assemble_workspace_path(config.workspace_root))
-    log_root = str(assemble_workspace_path(config.log_root))
+    # Runtime output is project-owned.  Do not resolve these through the
+    # user-level ``~/.agentevolver`` directory.
+    project_root = os.path.realpath(project_path(config.project_root))
+    workspace_root = os.path.realpath(project_path(config.workspace_root))
+    log_root = os.path.realpath(project_path(config.log_root))
+    # Extensions are durable project assets, deliberately kept alongside the
+    # project's ``output/`` directory rather than inside one run's output tree.
+    extension_root = os.path.realpath(project_path(config.get("extension_root", "extension")))
 
     for root_name, root_path in (("workspace_root", workspace_root), ("log_root", log_root)):
         if os.path.commonpath((project_root, root_path)) != project_root:
@@ -24,7 +29,13 @@ def process_general(config: MMConfig) -> MMConfig:
     config.project_root = project_root
     config.workspace_root = workspace_root
     config.log_root = log_root
-    for root_path in (project_root, workspace_root, log_root):
+    config.extension_root = extension_root
+    # Make the project extension root available to components initialized after
+    # configuration, without conflating it with user-level AgentEvolver state.
+    os.environ["AGENTEVOLVER_EXTENSION_ROOT"] = extension_root
+    # ``workspace_root`` and ``log_root`` are templates until a session is bound.
+    # Creating them here would leave empty tag-level directories beside sessions.
+    for root_path in (project_root, extension_root):
         os.makedirs(root_path, exist_ok=True)
 
     log_path = os.path.join(log_root, config.log_path)

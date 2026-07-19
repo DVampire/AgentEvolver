@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from agentevolver.registry import TOOL
+from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 
@@ -70,6 +71,9 @@ class GrepSearchTool(Tool):
             max_results:    Cap on returned matches.
         """
         try:
+            sandbox_denial = check_session_path(kwargs.get("ctx"), root, write=False)
+            if sandbox_denial:
+                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
             if not os.path.isdir(root):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Not a directory: {root}")
 

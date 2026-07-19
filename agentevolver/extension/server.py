@@ -62,6 +62,11 @@ class ExtensionManagerServer(BaseModel):
         self.base_dir = os.path.abspath(base_dir) if base_dir else get_extension_root()
         os.makedirs(self.base_dir, exist_ok=True)
 
+    def set_base_dir(self, base_dir: str) -> None:
+        """Select the configured project's durable extension directory."""
+        self.base_dir = os.path.abspath(base_dir)
+        os.makedirs(self.base_dir, exist_ok=True)
+
     def subscribe(self, listener: ExtensionChangeListener) -> None:
         """Receive hot-extension lifecycle changes after a component is live."""
         self._change_listeners.add(listener)

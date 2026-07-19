@@ -1,4 +1,4 @@
-from .path_utils import assemble_workspace_path, assemble_resource_path, get_extension_root, get_package_root
+from .path_utils import assemble_workspace_path, assemble_resource_path, get_extension_root, get_package_root, project_path
 from .singleton import Singleton
 from .utils import (
     _is_package_available,
@@ -41,6 +41,7 @@ from .plan_utils import (
 __all__ = [
     "assemble_workspace_path",
     "assemble_resource_path",
+    "project_path",
     "get_extension_root",
     "get_package_root",
     "Singleton",

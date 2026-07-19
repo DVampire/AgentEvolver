@@ -221,3 +221,4 @@ frontend/dist/
 frontend/.vite/
 
 datasets/
+output/

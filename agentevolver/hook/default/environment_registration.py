@@ -33,13 +33,13 @@ class EnvironmentRegistrationHook(Hook):
         from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
         if is_staged_extension_root(extension_root):
             validate_staged_extension(extension_root)
-            logger.info(f"| 📦 EnvironmentRegistrationHook: staged '{target_name or os.path.basename(py_path)}' for promotion")
-            return HookResult.allow()
+            from agentevolver.hook.promotion import promote_approved_component
+            py_path = promote_approved_component(extension_root, py_path)
 
         try:
             from agentevolver.extension import extension_manager
             inferred_name = await extension_manager.add_component("environment", py_path, config={"enable_evolving": True})
-            logger.info(f"| 🔄 EnvironmentRegistrationHook: '{inferred_name}' registered from {py_path}")
+            logger.info(f"| 🔄 EnvironmentRegistrationHook: '{inferred_name}' promoted and registered from {py_path}")
         except Exception as e:
             logger.warning(f"| ⚠️  EnvironmentRegistrationHook: {e}")
             return HookResult.block(f"[registration failed] {e}\nPlease fix the file and call done_tool again.")

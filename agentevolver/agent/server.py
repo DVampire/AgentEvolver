@@ -252,6 +252,15 @@ class AgentManagerServer(BaseModel):
         
         # Ensure ctx is always an AgentContext instance
         ctx = AgentContext.from_context(ctx) if ctx else AgentContext(name=name, input=input)
+        # Direct Python entry points historically supplied only an id. Attach those
+        # contexts to a session sandbox just as Gateway and CLI invocations are.
+        from agentevolver.session.project import ensure_session_sandbox, stage_input_files
+        ensure_session_sandbox(
+            ctx,
+            config.project_root,
+            shared_extension_root=config.extension_root,
+        )
+        input = stage_input_files(ctx, input)
 
         return await self._ensure_context_manager()(name, input, ctx=ctx, **kwargs)
 

@@ -90,3 +90,11 @@ Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted lo
 `agentevolver` has one CLI with three modes: run a control command directly (for
 example, `agentevolver /registry`), use the terminal command loop
 (`agentevolver tui`), or start the Gateway (`agentevolver serve ...`).
+
+Generated run output is stored in the current project by default, under
+`./output/<tag>/sessions/<session-id>/`. Durable project extensions live in
+`./extension/`; a session stages extension changes under its own output directory
+and promotes them explicitly. User-level overrides and caches use `~/.agentevolver`.
+Set `AGENTEVOLVER_HOME` to place it elsewhere. Each Gateway, CLI, and TUI session
+uses its own project directory with separate workspace and staged extensions; shared
+service metadata and promoted extensions remain under the AgentEvolver home directory.

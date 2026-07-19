@@ -3,8 +3,6 @@
 import json
 from typing import Dict, Any
 
-import json_repair
-
 
 def parse_tool_args(args_str: str) -> Dict[str, Any]:
     """Parse a tool-arguments JSON string into a dict, robustly.
@@ -39,6 +37,8 @@ def parse_tool_args(args_str: str) -> Dict[str, Any]:
     # 2) Repair malformed JSON (unescaped quotes, trailing commas, truncation).
     #    json_repair recovers the full string value instead of truncating it.
     try:
+        import json_repair
+
         repaired = json_repair.loads(args_str)
         if isinstance(repaired, dict):
             return repaired

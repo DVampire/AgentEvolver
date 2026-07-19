@@ -31,15 +31,15 @@ class ConnectorRegistrationHook(Hook):
         from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
         if is_staged_extension_root(extension_root):
             validate_staged_extension(extension_root)
-            logger.info(f"| 📦 ConnectorRegistrationHook: staged '{target_name or os.path.basename(connector_dir)}' for promotion")
-            return HookResult.allow()
+            from agentevolver.hook.promotion import promote_approved_component
+            connector_dir = promote_approved_component(extension_root, connector_dir)
 
         try:
             from agentevolver.extension import extension_manager
             # Newly generated components are registered evolvable so a later round can optimize
             # them. Overwriting an existing *frozen* entity is still refused inside add_component.
             name = await extension_manager.add_component("connector", connector_dir, config={"enable_evolving": True})
-            logger.info(f"| 🔄 ConnectorRegistrationHook: '{name}' registered from {connector_dir}")
+            logger.info(f"| 🔄 ConnectorRegistrationHook: '{name}' promoted and registered from {connector_dir}")
             return HookResult.allow()
         except Exception as e:
             logger.warning(f"| ⚠️  ConnectorRegistrationHook: {e}")

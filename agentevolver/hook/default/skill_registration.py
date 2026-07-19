@@ -31,15 +31,15 @@ class SkillRegistrationHook(Hook):
         from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
         if is_staged_extension_root(extension_root):
             validate_staged_extension(extension_root)
-            logger.info(f"| 📦 SkillRegistrationHook: staged '{target_name or os.path.basename(skill_dir)}' for promotion")
-            return HookResult.allow()
+            from agentevolver.hook.promotion import promote_approved_component
+            skill_dir = promote_approved_component(extension_root, skill_dir)
 
         try:
             from agentevolver.extension import extension_manager
             # Newly generated components are registered evolvable so a later round can optimize
             # them. Overwriting an existing *frozen* entity is still refused inside add_component.
             name = await extension_manager.add_component("skill", skill_dir, config={"enable_evolving": True})
-            logger.info(f"| 🔄 SkillRegistrationHook: '{name}' registered from {skill_dir}")
+            logger.info(f"| 🔄 SkillRegistrationHook: '{name}' promoted and registered from {skill_dir}")
             return HookResult.allow()
         except Exception as e:
             logger.warning(f"| ⚠️  SkillRegistrationHook: {e}")

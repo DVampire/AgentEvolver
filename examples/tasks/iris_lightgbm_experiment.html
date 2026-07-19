@@ -19,8 +19,8 @@ LightGBM. This is NOT a one-shot script that runs five preset configurations.
 It is an iterative auto-research loop: run one round, look at the actual results,
 diagnose what is limiting the model, form a hypothesis for how to improve it,
 change the code/parameters accordingly, and only then run the next round. Deliver
-a single self-contained HTML report that reads as a scientific write-up of the
-experiment, including the round-by-round reasoning that drove each change.
+an HTML report that reads as a scientific write-up of the experiment, including
+the round-by-round reasoning that drove each change.
 </objective>
 
 <requirements>
@@ -47,17 +47,17 @@ experiment, including the round-by-round reasoning that drove each change.
   a round to fail to improve; say so and explain what you learned.
 - Make use of the available skills where they strengthen the experiment's
   quality (e.g. presenting the methodology and reasoning clearly).
-- Deliver the result as a polished, self-contained scientific report
-  (`experiment_report.html`): motivation, data, method, the round-by-round loop
-  with its decision logs, a best-model analysis, and an honest limitations
-  section — with every figure embedded inline as a `data:` URI so the single
-  file renders on its own.
+- Write every figure as a local PNG beneath `figures/` in the session workspace.
+  Results JSON files must store only relative image paths (never base64 or
+  `data:` URIs). Deliver `experiment_report.html` beside `figures/`, using
+  relative image paths so the report and its artifacts remain inspectable and
+  portable together.
 </requirements>
 
 <acceptance>
 ```
-A single self-contained experiment_report.html that opens standalone with all
-figures visible (no external files needed) and verifies as self-contained.
+An `experiment_report.html` plus local PNG figures under `figures/`; the report
+uses relative image paths and the result JSON contains no base64 image payloads.
 
 The report demonstrates, with actual computed values:
   - the real Iris dataset was loaded and prepared for classification, with the

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from agentevolver.utils import get_extension_root, get_package_root
+from agentevolver.utils.path_utils import home_dir
 
 
 _MODULES = ("tool", "agent", "prompt", "skill", "environment", "connector")
@@ -81,7 +82,6 @@ class ProjectSandbox:
             raise ValueError("workspace_root must be located under project_root")
         for root in (project, workspace, log, extension):
             root.mkdir(parents=True, exist_ok=True)
-        (project / ".agentevolver").mkdir(exist_ok=True)
         return cls(
             project_root=project,
             workspace_root=workspace,
@@ -93,7 +93,11 @@ class ProjectSandbox:
 
     @property
     def manifest_path(self) -> Path:
-        return self.project_root / ".agentevolver" / "extension-staging.json"
+        # Session audit state is user-level metadata, not project output.
+        project_key = hashlib.sha256(str(self.project_root).encode("utf-8")).hexdigest()[:16]
+        root = home_dir() / "staging" / project_key
+        root.mkdir(parents=True, exist_ok=True)
+        return root / "extension-staging.json"
 
     def describe(self) -> Dict[str, str]:
         """Return the host paths that map into a session sandbox."""
@@ -107,9 +111,10 @@ class ProjectSandbox:
         }
 
     def mounts(self) -> List[Dict[str, str]]:
-        """Declarative mounts for a container backend or a filesystem fallback."""
+        """Expose only the session roots an agent is allowed to access."""
         return [
-            {"source": str(self.project_root), "target": "/project", "mode": "rw"},
+            {"source": str(self.workspace_root), "target": "/workspace", "mode": "rw"},
+            {"source": str(self.extension_root), "target": "/extension", "mode": "rw"},
             {"source": str(self.package_root), "target": "/package", "mode": "ro"},
             {"source": str(self.shared_extension_root), "target": "/extension-base", "mode": "ro"},
         ]
@@ -153,9 +158,14 @@ class ProjectSandbox:
             })
         return components
 
-    def validate(self) -> Dict[str, Any]:
+    def validate(self, relative_paths: Optional[Iterable[str]] = None) -> Dict[str, Any]:
         """Validate staged contents before a promotion without executing them."""
         components = self.staged_components()
+        if relative_paths is not None:
+            selected = {str(Path(path)) for path in relative_paths}
+            components = [item for item in components if item["relative_path"] in selected]
+            if len(components) != len(selected):
+                raise ValueError("Requested staged extension component was not found")
         files = 0
         total_bytes = 0
         for component in components:
@@ -175,14 +185,19 @@ class ProjectSandbox:
                         raise ValueError(f"Python syntax check failed for {path}: {exc}") from exc
         return {"components": components, "file_count": files, "total_bytes": total_bytes}
 
-    def promote(self, *, overwrite: bool = False) -> Dict[str, Any]:
+    def promote(
+        self,
+        *,
+        overwrite: bool = False,
+        relative_paths: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
         """Copy validated staged components into the shared extension tree.
 
         Existing targets are never overwritten unless requested.  When an overwrite
         is requested, the prior target is moved into a timestamped backup directory
         before the replacement is made.
         """
-        report = self.validate()
+        report = self.validate(relative_paths)
         components = report["components"]
         if not components:
             return {**report, "promoted": [], "backup_root": None}

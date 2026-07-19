@@ -102,6 +102,7 @@ class AgentGateway:
 
         load_dotenv()
         config.initialize(config_path=config_path, args=Namespace(cfg_options=None), verbose=False)
+        extension_manager.set_base_dir(config.extension_root)
         logger.initialize(config=config, console_stream=sys.stderr if stdio else None)
 
         await version_manager.initialize()
@@ -184,10 +185,12 @@ class AgentGateway:
         session_id = params.get("session_id") or make_id()
         if session_id in self._sessions:
             raise ValueError(f"Session already exists: {session_id}")
+        if params.get("project_root") is not None:
+            raise ValueError("project_root is server-managed; create a session without this parameter")
         configured_project_root = getattr(config, "project_root", None)
         default_project_root = Path(configured_project_root) if configured_project_root else Path.cwd() / "output"
-        project_root = params.get("project_root") or default_project_root / "sessions" / session_id
-        sandbox = ProjectSandbox.create(project_root)
+        project_root = default_project_root / session_id
+        sandbox = ProjectSandbox.create(project_root, shared_extension_root=Path(config.extension_root))
         requested_workspace = params.get("workspace")
         if requested_workspace:
             requested_path = Path(requested_workspace).expanduser().resolve()
@@ -203,6 +206,7 @@ class AgentGateway:
             extra={
                 "workspace": str(sandbox.workspace_root),
                 **sandbox.describe(),
+                "gateway_session": True,
                 "sandbox_mounts": sandbox.mounts(),
             },
         )
@@ -282,6 +286,12 @@ class AgentGateway:
         if not content:
             raise ValueError("Task content is required")
         files = [str(item) for item in params.get("files", [])]
+        workspace = Path(self._sessions[session_id].context.workspace_root).resolve()
+        for path in files:
+            try:
+                Path(path).expanduser().resolve().relative_to(workspace)
+            except ValueError as exc:
+                raise ValueError("Task files must be located inside the session workspace") from exc
         task_id = await task_manager.submit(
             content=content,
             category=TaskCategory.USER,
@@ -308,7 +318,7 @@ class AgentGateway:
             raise ValueError("File exceeds the 2 GB upload limit")
         mime_type = str(params.get("mime_type") or "application/octet-stream")[:255]
         upload_id = make_id()
-        upload_dir = Path(session.context.workspace_root) / ".agentevolver" / "uploads" / session.context.id
+        upload_dir = Path(session.context.workspace_root) / "uploads" / session.context.id
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{upload_id}_{name}"
         path.touch(exist_ok=False)
@@ -643,7 +653,11 @@ class AgentGateway:
                 name=command_name,
                 raw=raw,
                 workspace_root=session.context.workspace_root,
-                extra={"session_id": session_id, "capabilities": session.capabilities},
+                extra={
+                    **session.context.extra,
+                    "session_id": session_id,
+                    "capabilities": session.capabilities,
+                },
             ),
         )
         payload = {

@@ -32,8 +32,8 @@ class AgentRegistrationHook(Hook):
         from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension
         if is_staged_extension_root(extension_root):
             validate_staged_extension(extension_root)
-            logger.info(f"| 📦 AgentRegistrationHook: staged '{target_name or os.path.basename(py_path)}' for promotion")
-            return HookResult.allow()
+            from agentevolver.hook.promotion import promote_approved_component
+            py_path = promote_approved_component(extension_root, py_path)
 
         try:
             from agentevolver.extension import extension_manager
@@ -44,7 +44,7 @@ class AgentRegistrationHook(Hook):
                 "enable_evolving": True,
             }
             inferred_name = await extension_manager.add_component("agent", py_path, config=agent_config)
-            logger.info(f"| 🔄 AgentRegistrationHook: '{inferred_name}' registered from {py_path}")
+            logger.info(f"| 🔄 AgentRegistrationHook: '{inferred_name}' promoted and registered from {py_path}")
         except Exception as e:
             logger.warning(f"| ⚠️  AgentRegistrationHook: {e}")
             return HookResult.block(f"[registration failed] {e}\nPlease fix the files and call done_tool again.")

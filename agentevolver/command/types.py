@@ -75,7 +75,9 @@ class SkillCommand(Command):
     async def dispatch_agent(self, task: str, ctx: Optional[CommandContext] = None) -> Response:
         """Send ``task`` to ``target_agent`` via the agent manager and return its Response."""
         from agentevolver.agent.server import agent_manager  # lazy import to avoid import cycles
-        result = await agent_manager(self.target_agent, input={"task": task}, ctx=None)
+        # Preserve the caller's session roots so tools invoked by the agent retain
+        # the same filesystem boundary as the command that launched it.
+        result = await agent_manager(self.target_agent, input={"task": task}, ctx=ctx)
         if isinstance(result, Response):
             return result
         return self.ok(f"Dispatched to {self.target_agent}.", data={"result": result})

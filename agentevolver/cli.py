@@ -21,8 +21,10 @@ import asyncio
 import argparse
 import os
 import sys
+import uuid
 from argparse import Namespace
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional, Sequence
 
 async def _try(name: str, coro, timeout: float):
@@ -33,6 +35,12 @@ async def _try(name: str, coro, timeout: float):
         print(f"[bootstrap] {name} init timed out after {timeout:.0f}s — skipped", file=sys.stderr)
     except Exception as e:  # noqa: BLE001
         print(f"[bootstrap] {name} init failed ({e}) — skipped", file=sys.stderr)
+
+
+def _apply_session_roots(config, sandbox) -> None:
+    """Make all manager state for this CLI run live inside its session project."""
+    from agentevolver.session.project import bind_session_roots
+    bind_session_roots(config, sandbox)
 
 
 async def _bootstrap(config_path: str, timeout: float = 60.0):
@@ -47,8 +55,17 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
     from agentevolver.skill import skill_manager
     from agentevolver.tool import tool_manager
     from agentevolver.version import version_manager
+    from agentevolver.sandbox.project import ProjectSandbox
 
     config.initialize(config_path=config_path, args=Namespace(cfg_options=None), verbose=False)
+    from agentevolver.extension import extension_manager
+    extension_manager.set_base_dir(config.extension_root)
+    session_id = uuid.uuid4().hex
+    sandbox = ProjectSandbox.create(
+        Path(config.project_root) / session_id,
+        shared_extension_root=Path(config.extension_root),
+    )
+    _apply_session_roots(config, sandbox)
     logger.initialize(config=config)
     await _try("version", version_manager.initialize(), timeout)
     await _try("prompt", prompt_manager.initialize(prompt_names=getattr(config, "prompt_names", None)), timeout)
@@ -58,18 +75,34 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
     await _try("environment", environment_manager.initialize(env_names=getattr(config, "environment_names", None)), timeout)
     await _try("agent", agent_manager.initialize(agent_names=getattr(config, "agent_names", None)), timeout)
     await command_manager.initialize()
+    return sandbox
+
+
+def _command_context(raw: str, sandbox):
+    from agentevolver.command.types import CommandContext
+
+    name = raw.strip().lstrip("/").split()[:1]
+    return CommandContext(
+        id=uuid.uuid4().hex,
+        name=name[0] if name else "",
+        raw=raw,
+        workspace_root=str(sandbox.workspace_root),
+        extra=sandbox.describe(),
+    )
 
 
 async def _run(raw: str, config_path: str) -> int:
     from agentevolver.command import command_manager
 
     head = raw.strip().lstrip("/").split()[:1]
+    context = None
     if head and head[0] in ("help", "?"):
         # /help lists the command registry — no capability bootstrap needed.
         await command_manager.initialize()
     else:
-        await _bootstrap(config_path)
-    resp = await command_manager.dispatch(raw)
+        sandbox = await _bootstrap(config_path)
+        context = _command_context(raw, sandbox)
+    resp = await command_manager.dispatch(raw, ctx=context)
     print(("✅ " if resp.success else "❌ ") + raw)
     print(resp.message)
     return 0 if resp.success else 1
@@ -80,7 +113,7 @@ async def _run_tui(config_path: str) -> int:
     from agentevolver.command import command_manager
 
     print("AgentEvolver terminal mode. Type /help for commands; /exit to quit.")
-    bootstrapped = False
+    sandbox = None
     await command_manager.initialize()
     while True:
         try:
@@ -93,10 +126,10 @@ async def _run_tui(config_path: str) -> int:
         if raw.lstrip("/").lower() in {"exit", "quit"}:
             return 0
         head = raw.lstrip("/").split()[:1]
-        if not (head and head[0] in ("help", "?")) and not bootstrapped:
-            await _bootstrap(config_path)
-            bootstrapped = True
-        resp = await command_manager.dispatch(raw)
+        if not (head and head[0] in ("help", "?")) and sandbox is None:
+            sandbox = await _bootstrap(config_path)
+        context = _command_context(raw, sandbox) if sandbox is not None else None
+        resp = await command_manager.dispatch(raw, ctx=context)
         print(("✅ " if resp.success else "❌ ") + resp.message)
 
 
@@ -115,7 +148,7 @@ def _control_main(argv: Optional[Sequence[str]] = None) -> int:
 
 def _tui_main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="agentevolver tui", description="Run the interactive terminal interface")
-    parser.add_argument("--config", default="configs/base.py", help="config file for registered capabilities")
+    parser.add_argument("--config", default="configs/meta_agent.py", help="config file for registered capabilities")
     args = parser.parse_args(argv)
     return asyncio.run(_run_tui(args.config))
 

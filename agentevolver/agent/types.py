@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager

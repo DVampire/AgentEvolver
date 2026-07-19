@@ -288,11 +288,11 @@ def test_model_configuration_is_editable_without_exposing_api_keys() -> None:
     asyncio.run(run())
 
 
-def test_session_files_upload_in_chunks_and_can_be_removed(tmp_path) -> None:
+def test_session_files_upload_in_chunks_and_can_be_removed() -> None:
     async def run() -> None:
         gateway = AgentGateway()
         created = await gateway.handle(
-            GatewayCommand(id="create", method="session.create", params={"project_root": str(tmp_path / "project")})
+            GatewayCommand(id="create", method="session.create", params={})
         )
         assert created.ok
         session_id = created.result["session_id"]
@@ -335,14 +335,14 @@ def test_session_files_upload_in_chunks_and_can_be_removed(tmp_path) -> None:
     asyncio.run(run())
 
 
-def test_session_rejects_workspace_outside_project_sandbox(tmp_path) -> None:
+def test_session_rejects_client_selected_project_root() -> None:
     async def run() -> None:
         gateway = AgentGateway()
         response = await gateway.handle(
             GatewayCommand(
                 id="create",
                 method="session.create",
-                params={"project_root": str(tmp_path / "project"), "workspace": str(tmp_path / "outside")},
+                params={"project_root": "/tmp/not-server-managed"},
             )
         )
         assert not response.ok
@@ -352,14 +352,14 @@ def test_session_rejects_workspace_outside_project_sandbox(tmp_path) -> None:
     asyncio.run(run())
 
 
-def test_session_exposes_staged_extension_sandbox(tmp_path) -> None:
+def test_session_exposes_staged_extension_sandbox() -> None:
     async def run() -> None:
         gateway = AgentGateway()
         created = await gateway.handle(
-            GatewayCommand(id="create", method="session.create", params={"project_root": str(tmp_path / "project")})
+            GatewayCommand(id="create", method="session.create", params={})
         )
         assert created.ok
-        assert created.result["extension_root"] == str(tmp_path / "project" / "extension")
+        assert created.result["extension_root"] == str(Path(created.result["project_root"]) / "extension")
 
         stage = await gateway.handle(
             GatewayCommand(
@@ -371,7 +371,10 @@ def test_session_exposes_staged_extension_sandbox(tmp_path) -> None:
         assert stage.ok
         assert stage.result["staging"]["valid"] is True
         assert stage.result["staging"]["components"] == []
-        assert stage.result["mounts"][0]["target"] == "/project"
+        assert stage.result["mounts"][:2] == [
+            {"source": str(Path(created.result["project_root"]) / "workspace"), "target": "/workspace", "mode": "rw"},
+            {"source": str(Path(created.result["project_root"]) / "extension"), "target": "/extension", "mode": "rw"},
+        ]
 
     asyncio.run(run())
 

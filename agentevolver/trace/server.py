@@ -9,7 +9,7 @@ Lifecycle::
     ...
     await trace_manager.stop()
 
-The FastAPI server runs in a background asyncio task on port 8765.
+The FastAPI server runs in a background asyncio task on port 8765 by default.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from agentevolver.trace.types import TraceEvent
 from agentevolver.trace.writer import TraceWriter
 from agentevolver.utils import Singleton
 
-WEB_PORT = 8765
+WEB_PORT = int(os.environ.get("AGENTEVOLVER_TRACE_PORT", "8765"))
 
 
 class TraceManager(metaclass=Singleton):
