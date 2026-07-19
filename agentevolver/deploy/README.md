@@ -1,12 +1,11 @@
 ---
 name: deploy
 description: "Deploys web artifacts from controlled source directories and records their URLs, health, resources, and lifecycle state."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: deploy
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Deploy
 

@@ -1,12 +1,11 @@
 ---
 name: benchmark
 description: "Provides versioned benchmark definitions and the manager used to load and execute them. Built-in benchmark adapters live in `default/`; dataset parsing belongs to `data/`."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: benchmark
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Benchmark
 

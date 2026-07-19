@@ -1,12 +1,11 @@
 ---
 name: runtime
 description: "Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances registered Agent instances."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: runtime
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Runtime
 

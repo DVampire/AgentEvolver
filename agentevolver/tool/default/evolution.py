@@ -33,7 +33,7 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `diff`: show the source diff between two versions (see what an optimization actually changed). Args: `module`, `name`, `version_a`, `version_b` (optional; defaults to the live version).
 - `rollback`: restore a component to a previous version (becomes live immediately). Args: `module`, `name`, `version`.
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
-- `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `token_cost`, `elapsed_ms`, `notes`.
+- `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Successful evidence requires a real terminal `run_id`; static failures require `case_id`. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `case_id`, `token_cost`, `elapsed_ms`, `notes`.
 
 `module` is one of: tool | agent | prompt | skill | environment | connector | workflow.
 
@@ -108,9 +108,14 @@ class EvolutionTool(Tool):
 
             if action == "record_workflow_evaluation":
                 from agentevolver.workflow import WorkflowEvaluation, workflow_manager
+                raw_success = kwargs["success"]
+                success = (
+                    raw_success if isinstance(raw_success, bool)
+                    else str(raw_success).strip().lower() in {"true", "1", "yes"}
+                )
                 evaluation = WorkflowEvaluation(
                     workflow_name=kwargs["name"], workflow_version=kwargs["version"],
-                    run_id=kwargs.get("run_id"), success=bool(kwargs["success"]),
+                    run_id=kwargs.get("run_id"), case_id=kwargs.get("case_id"), success=success,
                     quality_score=float(kwargs["quality_score"]),
                     token_cost=int(kwargs.get("token_cost", 0)),
                     elapsed_ms=float(kwargs.get("elapsed_ms", 0.0)), notes=kwargs.get("notes", ""),

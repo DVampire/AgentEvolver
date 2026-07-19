@@ -1,12 +1,11 @@
 ---
 name: model
 description: "Provides the model registry, role-based selection, API-key pooling, and provider-neutral generation interface."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: model
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Model
 

@@ -1,7 +1,7 @@
 ---
 name: workflow_creator_skill
 description: Create, optimize, and evaluate reusable AgentEvolver HTML Workflows. Use when a repeated successful multi-agent orchestration should be retained, when an evolvable Workflow has recurring orchestration-level defects, or when a live version needs evidence for keep, improve, or rollback decisions.
-version: 1.1.0
+version: 1.2.0
 type: [orchestrator, worker]
 license: Apache-2.0
 category: meta
@@ -35,15 +35,19 @@ retry, aggregation, budget, or termination defects.
 - Inspect active Workflows first and avoid semantic duplicates.
 - Generalize concrete task details into typed `<inputs>`.
 - Write one complete HTML document to `extension/workflow/{name}.html`.
-- Use a `<workflow>` element with `name`, semantic `version`, `schema-version="1.0.0"`,
+- Use a `<workflow>` element with `name`, semantic `version`, `schema-version="1.1.0"`,
   `status="active"`, a precise `description`, and `enable-evolving="true"`.
 - Include `<applicability>` tags and prose explaining when to use and when not to use it.
-- Use only supported callable nodes: `agent`, `tool`, `skill`, `connector`, `workflow`.
+- Use only supported callable nodes: `agent`, `tool`, `skill`, `connector`, `environment`,
+  `workflow`. Connector and Environment nodes require an `action`.
 - Use only bounded control nodes: `parallel`, `map`, `branch`, `loop`, `verify`, `reduce`,
   `checkpoint`. Every loop requires `max-rounds`; all fan-out needs a concurrency bound.
 - Values use restricted `${path}` expressions. Never embed JavaScript, Python, handlers,
   shell commands, or arbitrary templates.
-- Define explicit `<outputs>` and ensure every referenced value is produced on all paths.
+- Declare complex input constraints with sibling `<schema for="name">` Draft 2020-12 JSON
+  Schema and keep its `type` consistent with the `<input>` attribute.
+- Define explicit `<outputs>` and reference guaranteed top-level step results.
+- Set node `timeout` and retry/backoff policy where an external capability can stall.
 - Compile the file before completion and include its absolute path in `done_tool.reasoning`.
 
 ## Improving a Workflow
@@ -67,7 +71,7 @@ Evaluation is read-only:
    verification policy, input/output clarity, and applicability precision.
 3. Run a representative case when safe. Compare with the prior active version or manual
    orchestration when available.
-4. Score outcome quality from 0.0–1.0 and report success, run id, elapsed time, token cost,
+4. Score outcome quality from 0.0–1.0 and report success, real run id, case id, elapsed time, token cost,
    and concrete notes.
 5. Call `evolution_tool` with `action=record_workflow_evaluation`. Recommend keep,
    optimize, rollback, or unload from concrete evidence.

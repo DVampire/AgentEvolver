@@ -1,12 +1,11 @@
 ---
 name: docker
 description: "Provides the Docker backend integration point through `docker_manager`."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: docker
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Docker
 

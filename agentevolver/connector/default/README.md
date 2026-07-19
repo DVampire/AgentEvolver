@@ -1,12 +1,11 @@
 ---
 name: connector_default
 description: "Each sub-directory here defines one **connector** — a wrapper around a single MCP server — via a `CONNECTOR.md` file. Mirrors `agentevolver/skill/default` (where each sub-directory holds a `SKILL.md`): a YAML frontmatter block for metadata + the connection config, followed by a markdown body that documents the module and each of its tools (actions)."
-version: 0.1.0
+version: 1.0.0
 type: collection
 category: connector
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Default connectors
 

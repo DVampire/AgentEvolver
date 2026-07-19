@@ -12,7 +12,7 @@ from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.agent.types import AgentConfig, Agent, AgentContext
 from agentevolver.agent.context import AgentContextManager
-from agentevolver.utils import assemble_workspace_path, make_id
+from agentevolver.utils import assemble_workspace_path
 from agentevolver.capability import CapabilitySchema, SchemaSource
 
 class AgentManagerServer(BaseModel):
@@ -139,6 +139,7 @@ class AgentManagerServer(BaseModel):
                 "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
                 "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},
                 "connector_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these connectors."},
+                "environment_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Restrict the sub-agent to these Environment capabilities."},
                 "workflow_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these workflows."},
             },
             "required": ["task"],

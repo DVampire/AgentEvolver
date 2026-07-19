@@ -1,12 +1,11 @@
 ---
 name: protocol
 description: "Defines typed agent-to-agent conversations over Runtime delivery. Supported channels include delegation, escalation, progress, control, query, and publish/subscribe."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: protocol
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Protocol
 

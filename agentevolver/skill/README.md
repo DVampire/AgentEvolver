@@ -1,12 +1,11 @@
 ---
 name: skill
 description: "Discovers and executes reusable, filesystem-backed instructions stored as `SKILL.md` plus optional scripts, references, resources, and examples."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: skill
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Skill
 

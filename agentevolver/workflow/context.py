@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -85,8 +86,17 @@ class WorkflowContextManager(BaseModel):
             definition = workflow_compiler.compile(str(workflow))
         if status is not None:
             definition = definition.model_copy(update={"status": WorkflowStatus(status)})
-        if definition.name in self._definitions and not override:
+        current = self._definitions.get(definition.name)
+        if current is not None and not override:
             raise ValueError(f"Workflow {definition.name!r} is already registered")
+        if (
+            current is not None
+            and current.version == definition.version
+            and current.program_hash != definition.program_hash
+        ):
+            raise ValueError(
+                f"Workflow {definition.name!r} changed executable content without a version increment"
+            )
         self._definitions[definition.name] = definition
         self._workflow_history_versions.setdefault(definition.name, {})[definition.version] = definition
         self._invalidate_instruction()
@@ -198,7 +208,45 @@ class WorkflowContextManager(BaseModel):
         definition = self.require(evaluation.workflow_name)
         if evaluation.workflow_version != definition.version:
             raise ValueError("Evaluation version does not match the registered workflow")
-        self._evaluations.setdefault(definition.name, []).append(evaluation)
+        from .runtime import workflow_runtime
+
+        run = workflow_runtime.get_run(evaluation.run_id) if evaluation.run_id else None
+        if evaluation.run_id and run is None:
+            raise ValueError("Evaluation run_id does not identify a retained Workflow run")
+        if run is not None:
+            if (run.workflow_name, run.workflow_version, run.program_hash) != (
+                definition.name, definition.version, definition.program_hash,
+            ):
+                raise ValueError("Evaluation run does not match the registered Workflow contract")
+            terminal = {"succeeded", "failed", "cancelled", "rejected"}
+            if run.state.value not in terminal:
+                raise ValueError("Evaluation run is not terminal")
+            if evaluation.success != run.successful:
+                raise ValueError("Evaluation success must match the recorded Workflow run")
+            elapsed_ms = evaluation.elapsed_ms
+            if run.started_at and run.finished_at:
+                elapsed_ms = (
+                    datetime.fromisoformat(run.finished_at) - datetime.fromisoformat(run.started_at)
+                ).total_seconds() * 1000
+            evaluation = evaluation.model_copy(update={
+                "elapsed_ms": max(0.0, elapsed_ms),
+                "token_cost": run.token_cost,
+                "case_id": evaluation.case_id or evaluation.run_id,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            })
+        else:
+            if evaluation.success:
+                raise ValueError("A successful evaluation requires a real Workflow run_id")
+            if not evaluation.case_id:
+                raise ValueError("A static failure evaluation requires case_id")
+            evaluation = evaluation.model_copy(update={
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        existing = self._evaluations.setdefault(definition.name, [])
+        if evaluation.run_id and any(item.run_id == evaluation.run_id for item in existing):
+            raise ValueError("This Workflow run has already been evaluated")
+        existing.append(evaluation)
         self._save_evaluations()
         return evaluation
 
@@ -214,11 +262,13 @@ class WorkflowContextManager(BaseModel):
     def evaluation_summary(self, name: str) -> Dict[str, Any]:
         evaluations = self.evaluations(name)
         successes = [item for item in evaluations if item.success]
+        distinct_cases = {item.case_id or item.run_id for item in evaluations if item.case_id or item.run_id}
         quality = sum(item.quality_score for item in evaluations) / len(evaluations) if evaluations else 0.0
         success_rate = len(successes) / len(evaluations) if evaluations else 0.0
         return {
-            "healthy": len(evaluations) >= 3 and success_rate >= 0.8 and quality >= 0.7,
+            "healthy": len(distinct_cases) >= 3 and success_rate >= 0.8 and quality >= 0.7,
             "runs": len(evaluations),
+            "distinct_cases": len(distinct_cases),
             "success_rate": success_rate,
             "average_quality": quality,
         }

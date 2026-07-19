@@ -1,12 +1,11 @@
 ---
 name: session
 description: "Defines shared invocation context and session-scoped project state."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: session
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Session
 

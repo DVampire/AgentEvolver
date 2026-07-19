@@ -44,6 +44,7 @@ class WorkflowManagerServer(BaseModel):
         logger.info("| ✅ Workflow manager Server initialized")
 
     async def cleanup(self) -> None:
+        await workflow_runtime.cleanup()
         await self._ensure_context_manager().cleanup()
 
     # Registry/context facade — signatures remain compatible with the previous manager.
@@ -87,14 +88,22 @@ class WorkflowManagerServer(BaseModel):
         return self._ensure_context_manager().evaluation_summary(name)
 
     # Execution facade — WorkflowRuntime alone owns run state and checkpoints.
-    async def run(self, name: str, *, input=None, ctx=None, depth=0) -> WorkflowRun:
-        return await workflow_runtime.run(self._require(name), input=input, ctx=ctx, depth=depth)
+    async def run(self, name: str, *, input=None, ctx=None, depth=0, _budget=None) -> WorkflowRun:
+        return await workflow_runtime.run(
+            self._require(name), input=input, ctx=ctx, depth=depth, _budget=_budget,
+        )
 
     def start(self, name: str, *, input=None, ctx=None, depth=0) -> str:
         return workflow_runtime.start(self._require(name), input=input, ctx=ctx, depth=depth)
 
     def get_run(self, run_id: str) -> Optional[WorkflowRun]:
         return workflow_runtime.get_run(run_id)
+
+    def list_runs(self, workflow_name: Optional[str] = None) -> List[WorkflowRun]:
+        return workflow_runtime.list_runs(workflow_name=workflow_name)
+
+    def discard_run(self, run_id: str) -> bool:
+        return workflow_runtime.discard_run(run_id)
 
     def pause(self, run_id: str) -> bool:
         return workflow_runtime.pause(run_id)

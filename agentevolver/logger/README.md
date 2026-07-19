@@ -1,12 +1,11 @@
 ---
 name: logger
 description: "Provides the framework logger, log levels, display colors, and session-ID context used to correlate output across asynchronous operations."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: logger
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Logger
 

@@ -1,12 +1,11 @@
 ---
 name: extension
 description: "Manages generated extension manifests and their promotion into the active framework. Promotion is journaled and guarded by replay-based smoke checks."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: extension
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Extension
 

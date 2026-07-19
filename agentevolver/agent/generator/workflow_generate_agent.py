@@ -32,7 +32,13 @@ async def _register_workflow(response, ctx, model_name):
     from agentevolver.sandbox.project import staged_extension_root
     result = await hook_manager(
         name="workflow_registration_hook",
-        input={"event": HookEvent.ON_STOP, "reasoning": (response.data or {}).get("reasoning") or "",
+        input={"event": HookEvent.ON_STOP,
+               "target_name": (
+                   (getattr(ctx, "input", None) or {}).get("target_name")
+                   or (getattr(ctx, "extra", None) or {}).get("target_name")
+               ),
+               "artifact_path": (response.data or {}).get("artifact_path"),
+               "reasoning": (response.data or {}).get("reasoning") or "",
                "extension_root": staged_extension_root(ctx), "model_name": model_name},
         ctx=ctx,
     )

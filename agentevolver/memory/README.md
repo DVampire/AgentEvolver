@@ -1,12 +1,11 @@
 ---
 name: memory
 description: "Stores and retrieves durable context derived from agent execution history. The default implementation provides a general memory system while preserving a common Manager API."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: memory
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Memory
 

@@ -8,9 +8,9 @@ from .types import (
     WorkflowState, WorkflowStatus, WorkflowStep,
 )
 
-WORKFLOW_SCHEMA_VERSION = "1.0.0"
-WORKFLOW_RUNTIME_VERSION = "1.0.0"
-WORKFLOW_MODULE_VERSION = "1.5.0"
+WORKFLOW_SCHEMA_VERSION = "1.1.0"
+WORKFLOW_RUNTIME_VERSION = "1.1.0"
+WORKFLOW_MODULE_VERSION = "1.6.0"
 
 __all__ = [
     "ExecutionFrame", "ExecutionState", "InvocationAttempt", "InvocationRun",

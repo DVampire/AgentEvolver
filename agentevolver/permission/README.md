@@ -1,12 +1,11 @@
 ---
 name: permission
 description: "Evaluates command and filesystem operations against explicit permission modes and policies. It also applies size and binary-file safeguards."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: permission
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Permission
 

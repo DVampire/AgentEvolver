@@ -1,12 +1,11 @@
 ---
 name: trace
 description: "Captures structured lifecycle events, persists them, and serves the trace inspection UI."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: trace
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Trace
 

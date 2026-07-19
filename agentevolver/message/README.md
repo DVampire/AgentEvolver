@@ -1,12 +1,11 @@
 ---
 name: message
 description: "Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: message
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Message
 

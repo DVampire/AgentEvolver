@@ -1,12 +1,11 @@
 ---
 name: task
 description: "Models tasks, their priorities and statuses, loads task documents, and resolves CLI task input into normalized records."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: task
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Task
 

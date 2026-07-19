@@ -7,9 +7,12 @@ import json
 import os
 import re
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from jsonschema import Draft202012Validator
 
 from agentevolver.response import Response
 from agentevolver.utils import make_id
@@ -20,6 +23,16 @@ from .types import (
 )
 
 _EXPR = re.compile(r"\$\{([^{}]+)\}")
+
+
+@dataclass
+class _WorkflowBudget:
+    """One root budget shared by every nested Workflow run."""
+
+    max_agents: int
+    max_depth: int
+    agent_count: int = 0
+    root_run: Optional[WorkflowRun] = None
 
 
 def _now() -> str:
@@ -35,36 +48,80 @@ class WorkflowRuntime:
     collapsing back into a fixed DAG model.
     """
 
-    RUNTIME_VERSION = "1.0.0"
+    RUNTIME_VERSION = "1.1.0"
+    _TRANSITIONS = {
+        WorkflowState.CREATED: {WorkflowState.VALIDATING},
+        WorkflowState.VALIDATING: {WorkflowState.READY, WorkflowState.REJECTED},
+        WorkflowState.READY: {WorkflowState.RUNNING, WorkflowState.CANCELLED},
+        WorkflowState.RUNNING: {
+            WorkflowState.PAUSING, WorkflowState.CANCELLING, WorkflowState.VERIFYING,
+            WorkflowState.FAILED, WorkflowState.CANCELLED,
+        },
+        WorkflowState.PAUSING: {
+            WorkflowState.PAUSED, WorkflowState.RESUMING, WorkflowState.CANCELLING,
+            WorkflowState.FAILED, WorkflowState.CANCELLED,
+        },
+        WorkflowState.PAUSED: {WorkflowState.RESUMING, WorkflowState.CANCELLING},
+        WorkflowState.RESUMING: {
+            WorkflowState.RUNNING, WorkflowState.FAILED, WorkflowState.CANCELLED,
+        },
+        WorkflowState.CANCELLING: {WorkflowState.CANCELLED, WorkflowState.FAILED},
+        WorkflowState.VERIFYING: {WorkflowState.SUCCEEDED, WorkflowState.FAILED},
+        WorkflowState.REJECTED: {WorkflowState.RESUMING},
+        WorkflowState.FAILED: {WorkflowState.RESUMING},
+        WorkflowState.CANCELLED: {WorkflowState.RESUMING},
+        WorkflowState.SUCCEEDED: {WorkflowState.RESUMING},
+    }
 
-    def __init__(self) -> None:
+    def __init__(self, max_retained_runs: int = 1000) -> None:
         self._cancel: Dict[str, asyncio.Event] = {}
         self._active: Dict[str, set[asyncio.Task]] = {}
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
         self._continue: Dict[str, asyncio.Event] = {}
         self._runs: Dict[str, WorkflowRun] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
+        self._budgets: Dict[str, _WorkflowBudget] = {}
+        self.max_retained_runs = max_retained_runs
 
-    async def run(self, definition: WorkflowDefinition, *, input=None, ctx=None, depth=0, run_id=None) -> WorkflowRun:
+    def _new_run(self, definition, values, ctx, run_id=None) -> WorkflowRun:
         run = WorkflowRun(
             id=run_id or make_id(), workflow_name=definition.name,
             workflow_version=definition.version, runtime_version=self.RUNTIME_VERSION,
-            state=WorkflowState.CREATED, input=dict(input or {}), started_at=_now(),
+            program_hash=definition.program_hash,
+            state=WorkflowState.CREATED, input=dict(values or {}), started_at=_now(),
         )
         self._runs[run.id] = run
         run.checkpoint_path = str(self._checkpoint_path(run, ctx))
-        run.state = WorkflowState.VALIDATING
+        return run
+
+    async def run(
+        self, definition: WorkflowDefinition, *, input=None, ctx=None, depth=0,
+        run_id=None, _run=None, _budget=None,
+    ) -> WorkflowRun:
+        run = _run or self._new_run(definition, input, ctx, run_id)
+        budget = _budget or _WorkflowBudget(
+            definition.max_agents, definition.max_depth, root_run=run,
+        )
+        self._budgets[run.id] = budget
+        self._set_state(run, WorkflowState.VALIDATING)
         try:
-            if depth >= definition.max_depth:
-                raise ValueError(f"Workflow nesting exceeds max_depth={definition.max_depth}")
+            if definition.status.value == "deprecated":
+                raise ValueError("Deprecated Workflow cannot be executed")
+            if depth >= min(definition.max_depth, budget.max_depth):
+                raise ValueError(
+                    f"Workflow nesting exceeds max_depth={min(definition.max_depth, budget.max_depth)}"
+                )
             values = self._validate_inputs(definition, input or {})
+            await self._validate_capabilities(definition)
         except Exception as exc:
-            run.state, run.error, run.finished_at = WorkflowState.REJECTED, str(exc), _now()
+            self._set_state(run, WorkflowState.REJECTED)
+            run.error, run.finished_at = str(exc), _now()
             self._write_checkpoint(run)
             self._tasks.pop(run.id, None)
+            self._budgets.pop(run.id, None)
             return run
         run.input, run.variables = values, {"inputs": values}
-        run.state = WorkflowState.READY
+        self._set_state(run, WorkflowState.READY)
         self._write_checkpoint(run)
         return await self._drive(definition, run, ctx, depth)
 
@@ -77,7 +134,14 @@ class WorkflowRuntime:
             )
         if (run.workflow_name, run.workflow_version) != (definition.name, definition.version):
             raise ValueError("Checkpoint does not match workflow name and version")
-        run.state = WorkflowState.RESUMING
+        if run.program_hash and run.program_hash != definition.program_hash:
+            raise ValueError("Checkpoint executable contract does not match the registered Workflow")
+        if not run.program_hash:  # migrate pre-1.1 checkpoints after legacy identity checks
+            run.program_hash = definition.program_hash
+        active = self._tasks.get(run.id)
+        if run.id in self._cancel or (active is not None and not active.done()):
+            raise RuntimeError(f"Workflow run {run.id} is already active")
+        self._set_state(run, WorkflowState.RESUMING, recovery=True)
         for item in run.frames.values():
             if item.state in {ExecutionState.RUNNING, ExecutionState.CANCELLED, ExecutionState.FAILED, ExecutionState.RETRY_WAIT}:
                 item.state = ExecutionState.PENDING
@@ -89,16 +153,21 @@ class WorkflowRuntime:
                 item.state, item.error = InvocationState.QUEUED, None
         run.error, run.finished_at, run.paused_at = None, None, None
         run.checkpoint_path = str(path)
+        self._budgets[run.id] = _WorkflowBudget(
+            definition.max_agents, definition.max_depth,
+            agent_count=run.agent_count, root_run=run,
+        )
         return await self._drive(definition, run, ctx, depth)
 
     async def _drive(self, definition, run, ctx, depth):
         cancel = asyncio.Event()
         self._cancel[run.id], self._active[run.id] = cancel, set()
         self._semaphores[run.id] = asyncio.Semaphore(definition.max_concurrency)
-        continue_event = asyncio.Event(); continue_event.set()
+        continue_event = asyncio.Event()
+        continue_event.set()
         self._continue[run.id] = continue_event
         self._runs[run.id] = run
-        run.state = WorkflowState.RUNNING
+        self._set_state(run, WorkflowState.RUNNING)
         await self._emit("workflow_start", run, ctx, input=run.input)
         try:
             execution = self._execute_steps(definition.program, definition, run, run.variables, ctx, depth, "root")
@@ -106,16 +175,20 @@ class WorkflowRuntime:
                 await asyncio.wait_for(execution, definition.timeout)
             else:
                 await execution
-            run.state = WorkflowState.VERIFYING
+            self._set_state(run, WorkflowState.VERIFYING)
             self._write_checkpoint(run)
             run.output = self._resolve(definition.outputs, run.variables) if definition.outputs else self._public_variables(run.variables)
-            run.state = WorkflowState.SUCCEEDED
+            self._set_state(run, WorkflowState.SUCCEEDED)
         except asyncio.CancelledError:
-            run.state, run.error = WorkflowState.CANCELLED, "Workflow cancelled"
+            self._set_state(run, WorkflowState.CANCELLED, recovery=True)
+            run.error = "Workflow cancelled"
         except Exception as exc:
-            run.state, run.error = WorkflowState.FAILED, str(exc)
+            self._set_state(run, WorkflowState.FAILED, recovery=True)
+            run.error = str(exc)
         finally:
             await self._cancel_active(run.id)
+            if depth == 0 and run.id in self._budgets:
+                run.agent_count = self._budgets[run.id].agent_count
             run.finished_at = _now()
             self._write_checkpoint(run)
             await self._emit("workflow_end", run, ctx, success=run.successful, error=run.error)
@@ -124,13 +197,16 @@ class WorkflowRuntime:
             self._semaphores.pop(run.id, None)
             self._continue.pop(run.id, None)
             self._tasks.pop(run.id, None)
+            self._budgets.pop(run.id, None)
+            self._prune_runs()
         return run
 
     def start(self, definition: WorkflowDefinition, *, input=None, ctx=None, depth=0) -> str:
         """Start a workflow in the background and return a stable run id immediately."""
         run_id = make_id()
+        run = self._new_run(definition, input, ctx, run_id)
         task = asyncio.create_task(
-            self.run(definition, input=input, ctx=ctx, depth=depth, run_id=run_id),
+            self.run(definition, input=input, ctx=ctx, depth=depth, run_id=run_id, _run=run),
             name=f"workflow-{definition.name}-{run_id}",
         )
         self._tasks[run_id] = task
@@ -138,6 +214,62 @@ class WorkflowRuntime:
 
     def get_run(self, run_id: str) -> Optional[WorkflowRun]:
         return self._runs.get(run_id)
+
+    def list_runs(self, workflow_name: Optional[str] = None) -> list[WorkflowRun]:
+        runs = list(self._runs.values())
+        if workflow_name is not None:
+            runs = [run for run in runs if run.workflow_name == workflow_name]
+        return sorted(runs, key=lambda run: run.started_at or "", reverse=True)
+
+    def discard_run(self, run_id: str) -> bool:
+        """Forget one terminal in-memory run; its checkpoint remains on disk."""
+        if run_id in self._cancel or run_id in self._tasks:
+            return False
+        return self._runs.pop(run_id, None) is not None
+
+    @classmethod
+    def _set_state(cls, run: WorkflowRun, state: WorkflowState, *, recovery=False) -> None:
+        if run.state == state:
+            return
+        if not recovery and state not in cls._TRANSITIONS.get(run.state, set()):
+            raise RuntimeError(f"Illegal Workflow transition: {run.state.value} -> {state.value}")
+        run.state = state
+
+    async def cleanup(self) -> None:
+        """Cancel live runs and release all process-local Runtime state."""
+        for run_id, event in tuple(self._cancel.items()):
+            event.set()
+            continuation = self._continue.get(run_id)
+            if continuation is not None:
+                continuation.set()
+        tasks = list(self._tasks.values())
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._cancel.clear()
+        self._active.clear()
+        self._semaphores.clear()
+        self._continue.clear()
+        self._tasks.clear()
+        self._budgets.clear()
+        self._runs.clear()
+
+    def _prune_runs(self) -> None:
+        overflow = len(self._runs) - self.max_retained_runs
+        if overflow <= 0:
+            return
+        terminal = {
+            WorkflowState.REJECTED, WorkflowState.SUCCEEDED, WorkflowState.FAILED,
+            WorkflowState.CANCELLED,
+        }
+        for run_id, run in list(self._runs.items()):
+            if overflow <= 0:
+                break
+            if run.state in terminal and run_id not in self._tasks:
+                self._runs.pop(run_id, None)
+                overflow -= 1
 
     async def _execute_steps(self, steps, definition, run, scope, ctx, depth, prefix):
         last = None
@@ -187,7 +319,10 @@ class WorkflowRuntime:
             )
 
     async def _execute_instruction(self, step, definition, run, scope, ctx, depth, key):
-        if step.type in {StepType.AGENT, StepType.TOOL, StepType.SKILL, StepType.CONNECTOR, StepType.WORKFLOW}:
+        if step.type in {
+            StepType.AGENT, StepType.TOOL, StepType.SKILL, StepType.CONNECTOR,
+            StepType.ENVIRONMENT, StepType.WORKFLOW,
+        }:
             return await self._call(step, definition, run, scope, ctx, depth, key)
         if step.type == StepType.PARALLEL:
             return await self._parallel(step.children, definition, run, scope, ctx, depth, key, step.concurrency)
@@ -203,9 +338,9 @@ class WorkflowRuntime:
                 try:
                     if step.target:
                         synthetic = step.model_copy(update={"type": StepType.AGENT, "args": {**step.args, step.item_name: "${" + step.item_name + "}"}})
-                        value = await self._call(synthetic, definition, run, local, ctx, depth, f"{key}[{index}]")
+                        value = await self._call(synthetic, definition, run, local, ctx, depth, item_key)
                     else:
-                        value = await self._execute_steps(step.children, definition, run, local, ctx, depth, f"{key}[{index}]")
+                        value = await self._execute_steps(step.children, definition, run, local, ctx, depth, item_key)
                     item_frame.state, item_frame.output = ExecutionState.SUCCEEDED, value
                     return value
                 except asyncio.CancelledError:
@@ -229,12 +364,13 @@ class WorkflowRuntime:
                 if step.condition_mode == "while" and not self._truth(step.condition, scope):
                     break
                 local = {**scope, "loop": {"round": round_number + 1, "results": outputs}}
+                round_key = f"{key}.round[{round_number}]"
                 round_frame = self._ensure_virtual_frame(
-                    run, f"{key}.round[{round_number}]", key, step, local,
+                    run, round_key, key, step, local,
                     iteration=round_number,
                 )
                 try:
-                    value = await self._execute_steps(step.children, definition, run, local, ctx, depth, f"{key}[{round_number}]")
+                    value = await self._execute_steps(step.children, definition, run, local, ctx, depth, round_key)
                     round_frame.state, round_frame.output = ExecutionState.SUCCEEDED, value
                 except asyncio.CancelledError:
                     round_frame.state, round_frame.error = ExecutionState.CANCELLED, "Cancelled"
@@ -275,7 +411,9 @@ class WorkflowRuntime:
     async def _parallel(self, steps, definition, run, scope, ctx, depth, key, concurrency):
         async def execute(step, index):
             local = dict(scope)
-            value = await self._execute_step(step, definition, run, local, ctx, depth, f"{key}[{index}]")
+            value = await self._execute_step(
+                step, definition, run, local, ctx, depth, f"{key}.branch[{index}]",
+            )
             return step.id, value
         pairs = await self._fanout(steps, execute, concurrency or definition.max_concurrency, run.id)
         result = dict(pairs)
@@ -300,10 +438,18 @@ class WorkflowRuntime:
         if cached and cached.state in {InvocationState.COMPLETED, InvocationState.CACHED}:
             cached.state, cached.cached = InvocationState.CACHED, True
             return cached.output
-        if run.agent_count >= definition.max_agents:
-            raise RuntimeError(f"Workflow exceeded max-agents={definition.max_agents}")
+        budget = self._budgets[run.id]
+        if step.type == StepType.AGENT and (
+            run.agent_count >= definition.max_agents or budget.agent_count >= budget.max_agents
+        ):
+            raise RuntimeError(
+                f"Workflow exceeded Agent budget (local={definition.max_agents}, root={budget.max_agents})"
+            )
         if step.type in {StepType.AGENT}:
             run.agent_count += 1
+            budget.agent_count += 1
+            if budget.root_run is not None:
+                budget.root_run.agent_count = budget.agent_count
         args = self._resolve(step.args, scope)
         task_text = self._resolve(step.task, scope)
         invocation_input = {**args, **({"task": task_text} if task_text else {})}
@@ -328,7 +474,19 @@ class WorkflowRuntime:
                     record.state = attempt_run.state = InvocationState.STARTING
                     attempt_run.started_at = _now()
                     record.state = attempt_run.state = InvocationState.RUNNING
-                    value = await self._invoke(step.type, step.target, task_text, args, ctx, depth)
+                    invocation = self._invoke(
+                        step.type, step.target, task_text, args, ctx, depth, budget=budget,
+                    )
+                    value = (
+                        await asyncio.wait_for(invocation, step.timeout)
+                        if step.timeout else await invocation
+                    )
+                if step.type != StepType.WORKFLOW:
+                    tokens = self._token_count(value)
+                    record.token_cost += tokens
+                    run.token_cost += tokens
+                    if budget.root_run is not None and budget.root_run is not run:
+                        budget.root_run.token_cost += tokens
                 record.output = self._normalize(value)
                 record.state, record.error = InvocationState.COMPLETED, None
                 attempt_run.state, attempt_run.finished_at = InvocationState.COMPLETED, _now()
@@ -358,7 +516,9 @@ class WorkflowRuntime:
                 frame = run.frames.get(key)
                 if frame:
                     frame.state = ExecutionState.RETRY_WAIT
-                await asyncio.sleep(0)
+                delay = step.retry_delay * (step.retry_backoff ** attempt)
+                if delay:
+                    await asyncio.sleep(delay)
         record.finished_at = _now()
         await self._emit(
             "workflow_node_end", run, ctx, action_name=step.target, success=True,
@@ -366,7 +526,7 @@ class WorkflowRuntime:
         )
         return record.output
 
-    async def _invoke(self, kind, target, task, args, ctx, depth):
+    async def _invoke(self, kind, target, task, args, ctx, depth, budget=None):
         payload = dict(args or {})
         if task:
             payload.setdefault("task", task)
@@ -375,18 +535,47 @@ class WorkflowRuntime:
             return await agent_manager(name=target, input=payload, ctx=ctx)
         if kind == StepType.TOOL:
             from agentevolver.tool import tool_manager
+            await self._validate_invocation_schema(await tool_manager.get_schema(target), payload, target)
             return await tool_manager(name=target, input=payload, ctx=ctx)
         if kind == StepType.SKILL:
             from agentevolver.skill import skill_manager
+            await self._validate_invocation_schema(await skill_manager.get_schema(target), payload, target)
             return await skill_manager(name=target, input=payload, ctx=ctx)
         if kind == StepType.CONNECTOR:
             from agentevolver.connector import connector_manager
             action = payload.pop("action", None)
+            await self._validate_invocation_schema(
+                await connector_manager.get_schema(target, action=action), payload,
+                f"{target}.{action}",
+            )
             return await connector_manager(name=target, input={"action": action, "args": payload}, ctx=ctx)
+        if kind == StepType.ENVIRONMENT:
+            from agentevolver.environment import environment_manager
+            action = payload.pop("action", None)
+            await self._validate_invocation_schema(
+                await environment_manager.get_schema(target, action=action), payload,
+                f"{target}.{action}",
+            )
+            return await environment_manager(name=target, action=action, input=payload, ctx=ctx)
         if kind == StepType.WORKFLOW:
             from .server import workflow_manager
-            return await workflow_manager.run(target, input=payload, ctx=ctx, depth=depth + 1)
+            return await workflow_manager.run(
+                target, input=payload, ctx=ctx, depth=depth + 1, _budget=budget,
+            )
         raise ValueError(f"{kind.value} is not directly callable")
+
+    @staticmethod
+    async def _validate_invocation_schema(function_calling, payload, label):
+        if not function_calling:
+            raise ValueError(f"No callable Schema for Workflow capability: {label}")
+        parameters = function_calling.get("function", {}).get("parameters")
+        if not isinstance(parameters, dict):
+            raise ValueError(f"Invalid callable Schema for Workflow capability: {label}")
+        errors = sorted(
+            Draft202012Validator(parameters).iter_errors(payload), key=lambda item: list(item.path),
+        )
+        if errors:
+            raise ValueError(f"Invalid arguments for Workflow capability {label}: {errors[0].message}")
 
     def _resolve(self, value, scope):
         if isinstance(value, dict):
@@ -436,6 +625,20 @@ class WorkflowRuntime:
         return value
 
     @staticmethod
+    def _token_count(value) -> int:
+        usage = getattr(value, "usage", None)
+        if usage is None:
+            return 0
+        if hasattr(usage, "model_dump"):
+            usage = usage.model_dump()
+        if not isinstance(usage, dict):
+            return 0
+        total = usage.get("total_tokens") or usage.get("total")
+        if total is not None:
+            return max(0, int(total))
+        return max(0, int(usage.get("input_tokens", 0) or 0) + int(usage.get("output_tokens", 0) or 0))
+
+    @staticmethod
     def _as_list(value):
         if value is None:
             return []
@@ -446,18 +649,77 @@ class WorkflowRuntime:
     @staticmethod
     def _validate_inputs(definition, values):
         result = dict(values)
-        expected = {
-            "string": str, "array": list, "object": dict,
-            "boolean": bool, "integer": int, "number": (int, float),
-        }
         for name, spec in definition.inputs.items():
             if name not in result and spec.default is not None:
                 result[name] = spec.default
-            if spec.required and name not in result:
-                raise ValueError(f"Missing required workflow input: {name}")
-            if name in result and spec.type in expected and not isinstance(result[name], expected[spec.type]):
-                raise ValueError(f"Workflow input {name!r} must be {spec.type}")
+        properties = {
+            name: dict(spec.parameter_schema or {"type": spec.type})
+            for name, spec in definition.inputs.items()
+        }
+        schema = {
+            "type": "object",
+            "properties": properties,
+            "required": [name for name, spec in definition.inputs.items() if spec.required],
+            "additionalProperties": False,
+        }
+        Draft202012Validator.check_schema(schema)
+        errors = sorted(Draft202012Validator(schema).iter_errors(result), key=lambda item: list(item.path))
+        if errors:
+            issue = errors[0]
+            location = ".".join(str(part) for part in issue.path) or "input"
+            raise ValueError(f"Invalid Workflow {location}: {issue.message}")
         return result
+
+    async def _validate_capabilities(self, definition: WorkflowDefinition) -> None:
+        """Fail before side effects when a statically named capability is unavailable."""
+        from agentevolver.agent import agent_manager
+        from agentevolver.connector import connector_manager
+        from agentevolver.environment import environment_manager
+        from agentevolver.skill import skill_manager
+        from agentevolver.tool import tool_manager
+        from agentevolver.workflow import workflow_manager
+
+        validated = set()
+
+        async def check(step, trail):
+            target = step.target or ""
+            if step.type in {StepType.AGENT, StepType.REDUCE, StepType.VERIFY}:
+                if await agent_manager.get_info(target) is None:
+                    raise ValueError(f"Unknown Workflow Agent capability: {target}")
+            elif step.type == StepType.TOOL and await tool_manager.get_info(target) is None:
+                raise ValueError(f"Unknown Workflow Tool capability: {target}")
+            elif step.type == StepType.SKILL and await skill_manager.get_info(target) is None:
+                raise ValueError(f"Unknown Workflow Skill capability: {target}")
+            elif step.type == StepType.CONNECTOR:
+                info = await connector_manager.get_info(target)
+                action = step.args.get("action")
+                if info is None or (isinstance(action, str) and "${" not in action and action not in (info.actions or [])):
+                    raise ValueError(f"Unknown Workflow Connector action: {target}.{action}")
+            elif step.type == StepType.ENVIRONMENT:
+                info = await environment_manager.get_info(target)
+                action = step.args.get("action")
+                actions = (getattr(info, "actions", {}) or {}) if info is not None else {}
+                if info is None or (isinstance(action, str) and "${" not in action and action not in actions):
+                    raise ValueError(f"Unknown Workflow Environment action: {target}.{action}")
+            elif step.type == StepType.WORKFLOW:
+                nested = workflow_manager.get(target)
+                if nested is None or nested.status.value != "active":
+                    raise ValueError(f"Unknown or inactive nested Workflow: {target}")
+                if nested.name in trail:
+                    chain = " -> ".join([*trail, nested.name])
+                    raise ValueError(f"Recursive Workflow invocation is forbidden: {chain}")
+                await validate(nested, (*trail, nested.name))
+            for child in [*step.children, *step.else_children]:
+                await check(child, trail)
+
+        async def validate(current, trail):
+            if current.program_hash in validated:
+                return
+            for item in current.program:
+                await check(item, trail)
+            validated.add(current.program_hash)
+
+        await validate(definition, (definition.name,))
 
     @staticmethod
     def _public_variables(values):
@@ -469,7 +731,7 @@ class WorkflowRuntime:
             return False
         run = self._runs.get(run_id)
         if run:
-            run.state = WorkflowState.CANCELLING
+            self._set_state(run, WorkflowState.CANCELLING, recovery=True)
         event.set()
         # A paused coroutine is waiting on the continue event, so wake it to let the
         # next control-point cancellation check terminate the run.
@@ -486,7 +748,7 @@ class WorkflowRuntime:
         run = self._runs.get(run_id)
         if event is None or run is None or run.state != WorkflowState.RUNNING:
             return False
-        run.state = WorkflowState.PAUSING
+        self._set_state(run, WorkflowState.PAUSING)
         event.clear()
         return True
 
@@ -496,7 +758,7 @@ class WorkflowRuntime:
         run = self._runs.get(run_id)
         if event is None or run is None or run.state not in {WorkflowState.PAUSED, WorkflowState.PAUSING}:
             return False
-        run.state = WorkflowState.RESUMING
+        self._set_state(run, WorkflowState.RESUMING)
         event.set()
         return True
 
@@ -506,12 +768,16 @@ class WorkflowRuntime:
             raise asyncio.CancelledError
         event = self._continue[run.id]
         if not event.is_set():
-            run.state, run.paused_at = WorkflowState.PAUSED, _now()
+            self._set_state(run, WorkflowState.PAUSED)
+            run.paused_at = _now()
             self._write_checkpoint(run)
             await event.wait()
             if self._cancel[run.id].is_set():
                 raise asyncio.CancelledError
-            run.state, run.paused_at = WorkflowState.RUNNING, None
+            self._set_state(run, WorkflowState.RUNNING)
+            run.paused_at = None
+        elif run.state == WorkflowState.RESUMING:
+            self._set_state(run, WorkflowState.RUNNING)
 
     async def _cancel_active(self, run_id):
         tasks = list(self._active.get(run_id, set()))
@@ -523,7 +789,10 @@ class WorkflowRuntime:
 
     @staticmethod
     def _parent_key(key: str) -> Optional[str]:
-        return key.rsplit(".", 1)[0] if "." in key else None
+        if "." not in key:
+            return None
+        parent = key.rsplit(".", 1)[0]
+        return None if parent == "root" else parent
 
     @staticmethod
     def _index_from_key(key: str) -> Optional[int]:
@@ -576,7 +845,8 @@ class WorkflowRuntime:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(run.model_dump(mode="json"), stream, ensure_ascii=False, indent=2)
-                stream.flush(); os.fsync(stream.fileno())
+                stream.flush()
+                os.fsync(stream.fileno())
             os.replace(temporary, path)
         finally:
             if os.path.exists(temporary):
@@ -589,15 +859,20 @@ class WorkflowRuntime:
     ):
         from agentevolver.trace import trace_manager
         from agentevolver.trace.types import TraceEvent, TraceEventType
-        await trace_manager.emit(TraceEvent(
-            event_type=TraceEventType(event_type), session_id=getattr(ctx, "session_id", None),
-            task_id=run.id, action_type="workflow", action_name=action_name or run.workflow_name,
-            label=action_name or run.workflow_name, input=input, success=success, error=error,
-            metadata={
-                "workflow": run.workflow_name, "runtime_version": run.runtime_version,
-                "frame_key": frame_key, "invocation_key": invocation_key,
-            },
-        ))
+        try:
+            await trace_manager.emit(TraceEvent(
+                event_type=TraceEventType(event_type), session_id=getattr(ctx, "session_id", None),
+                task_id=run.id, action_type="workflow", action_name=action_name or run.workflow_name,
+                label=action_name or run.workflow_name, input=input, success=success, error=error,
+                metadata={
+                    "workflow": run.workflow_name, "runtime_version": run.runtime_version,
+                    "program_hash": run.program_hash, "token_cost": run.token_cost,
+                    "frame_key": frame_key, "invocation_key": invocation_key,
+                },
+            ))
+        except Exception:
+            # Observability must never alter Workflow correctness or prevent cleanup.
+            return
 
 
 workflow_runtime = WorkflowRuntime()

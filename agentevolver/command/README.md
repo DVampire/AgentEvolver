@@ -1,12 +1,11 @@
 ---
 name: command
 description: "Models user-facing commands, their contexts, and command dispatch. Built-in command implementations are registered from `default/`."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: command
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Command
 

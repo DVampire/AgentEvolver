@@ -36,6 +36,7 @@ class StepType(str, Enum):
     TOOL = "tool"
     SKILL = "skill"
     CONNECTOR = "connector"
+    ENVIRONMENT = "environment"
     WORKFLOW = "workflow"
     PARALLEL = "parallel"
     MAP = "map"
@@ -103,6 +104,8 @@ class WorkflowStep(BaseModel):
     max_rounds: Optional[int] = None
     no_progress_limit: int = 0
     retries: int = 0
+    retry_delay: float = 0.0
+    retry_backoff: float = 2.0
     timeout: Optional[float] = None
     min_votes: int = 1
     children: List["WorkflowStep"] = Field(default_factory=list)
@@ -129,6 +132,7 @@ class WorkflowDefinition(BaseModel):
     enable_evolving: bool = False
     source: str = ""
     source_path: Optional[str] = None
+    program_hash: str = Field(default="", description="Stable digest of the executable contract")
 
 
 class ExecutionFrame(BaseModel):
@@ -169,15 +173,17 @@ class InvocationRun(BaseModel):
     output: Any = None
     error: Optional[str] = None
     cached: bool = False
+    token_cost: int = Field(default=0, ge=0)
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
 
 
 class WorkflowRun(BaseModel):
-    runtime_version: str = "1.0.0"
+    runtime_version: str = "1.1.0"
     id: str
     workflow_name: str
     workflow_version: str
+    program_hash: str = ""
     state: WorkflowState = WorkflowState.CREATED
     input: Dict[str, Any] = Field(default_factory=dict)
     variables: Dict[str, Any] = Field(default_factory=dict)
@@ -186,6 +192,7 @@ class WorkflowRun(BaseModel):
     output: Any = None
     error: Optional[str] = None
     agent_count: int = 0
+    token_cost: int = Field(default=0, ge=0)
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     checkpoint_path: Optional[str] = None
@@ -207,6 +214,8 @@ class WorkflowEvaluation(BaseModel):
     token_cost: int = Field(default=0, ge=0)
     elapsed_ms: float = Field(default=0.0, ge=0.0)
     notes: str = ""
+    case_id: Optional[str] = Field(default=None, description="Stable representative-case identifier")
+    recorded_at: Optional[str] = None
 
 
 __all__ = [

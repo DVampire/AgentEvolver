@@ -1,12 +1,11 @@
 ---
 name: hook
 description: "Provides lifecycle interception points for tracing, compaction, registration, promotion, and other cross-cutting behavior."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: hook
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Hook
 

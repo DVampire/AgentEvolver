@@ -1,12 +1,11 @@
 ---
 name: e2b
 description: "Provides the E2B backend integration point through `e2b_manager`."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: e2b
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # E2B
 

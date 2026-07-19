@@ -5,8 +5,7 @@ version: 1.0.0
 type: module
 category: visual
 requirements: []
-metadata:
-  tracks_package_version: false
+metadata: {}
 ---
 # Visual assets
 

@@ -1,12 +1,11 @@
 ---
 name: agentevolver
 description: "This directory contains the runtime Python package. Each first-level functional module owns a `README.md` describing its responsibility, public entry points, important files, and architectural boundary."
-version: 0.1.0
+version: 1.0.0
 type: package
 category: framework
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # AgentEvolver package
 
@@ -16,8 +15,10 @@ and architectural boundary.
 
 ## Documentation convention
 
-- A module without an independent protocol tracks the package version.
-- A module with a persisted or external contract declares its own contract version.
+- A new module README starts at version `1.0.0` and evolves independently from the
+  Python package version.
+- A module with a persisted or external contract increments its README version when its
+  documented architecture or public contract materially changes.
 - `default/`, provider, UI, and bundled Skill script directories are implementation
   subdivisions documented by their owning first-level module unless they expose an
   independently versioned artifact format.

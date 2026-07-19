@@ -159,7 +159,7 @@ class AgentConfig(BaseModel):
                         base_class=Agent,
                         context="agent"
                     )
-                except Exception as e:
+                except Exception:
                     cls_ = None
             else:
                 cls_ = None
@@ -888,7 +888,8 @@ class Agent(BaseModel):
                 raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
             # read_only agents may not invoke framework-mutating tools.
             if (self.permission_mode == "read_only" and kind == "tool"
-                    and route[1] in _READ_ONLY_DENIED_TOOLS):
+                    and route[1] in _READ_ONLY_DENIED_TOOLS
+                    and not self._allow_read_only_tool_call(route[1], call.input or {})):
                 raise PermissionError(
                     f"read_only agent '{self.name}' may not invoke framework-mutating "
                     f"tool '{route[1]}'. Report findings instead of modifying anything."
@@ -937,7 +938,12 @@ class Agent(BaseModel):
             resp = await protocol_manager.delegate(
                 child, inp.get("task", ""),
                 files=inp.get("files"), target_name=inp.get("target_name"),
-                allowlists={k: inp.get(k) for k in ("tool_allowlist", "skill_allowlist", "connector_allowlist")},
+                allowlists={
+                    k: inp.get(k) for k in (
+                        "tool_allowlist", "skill_allowlist", "connector_allowlist",
+                        "environment_allowlist", "workflow_allowlist",
+                    )
+                },
                 parent_ref=parent_ref, workspace_root=getattr(ctx, "workspace_root", None) or self.base_dir,
             )
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
@@ -1244,6 +1250,18 @@ class Agent(BaseModel):
         """Whether to project registered sub-agents into this agent's roster (agent__*).
         False for leaf actors; MetaAgent overrides to True."""
         return False
+
+    def _include_workflows(self) -> bool:
+        """Whether this Agent may invoke registered Workflows directly."""
+        return False
+
+    def _allow_read_only_tool_call(self, name: str, input: Dict[str, Any]) -> bool:
+        """Narrow opt-in for non-mutating actions exposed by a mixed-action Tool."""
+        return False
+
+    def _target_capability_allowlists(self, target_name: Optional[str]) -> Dict[str, Any]:
+        """Optional least-privilege allowlists derived from an evolution target."""
+        return {}
 
     def _extra_tools(self, run: "_AgentRun") -> Optional[List[Any]]:
         """Extra schema-only tools to append beyond the projected capabilities. Default:

@@ -1,12 +1,11 @@
 ---
 name: dynamic
 description: "Loads generated Python source into controlled runtime modules and derives callable metadata such as parameters, argument models, and function-calling schemas."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: dynamic
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Dynamic
 

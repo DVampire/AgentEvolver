@@ -1,12 +1,11 @@
 ---
 name: version
 description: "Tracks versions of evolvable framework entities and generates validated next versions."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: version
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Version
 

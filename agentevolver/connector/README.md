@@ -1,12 +1,11 @@
 ---
 name: connector
 description: "Integrates external capability providers, primarily MCP servers. A connector can expose multiple actions; each action is projected as its own callable function and retains the provider's input schema when available."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: connector
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Connector
 

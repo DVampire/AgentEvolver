@@ -145,6 +145,7 @@ class AgentGateway:
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
         await trace_manager.stop()
+        await workflow_manager.cleanup()
         await agent_manager.cleanup()
         await command_manager.cleanup()
         self._initialized = False

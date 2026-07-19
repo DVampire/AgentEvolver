@@ -1,19 +1,21 @@
 ---
 name: workflow
 description: "This package turns reviewable HTML into a dynamic multi-agent program. A workflow is system orchestration infrastructure, not an Agent subtype and not a fixed DAG."
-version: 1.5.0
+version: 1.0.0
 type: module
 category: workflow
 requirements: []
 metadata:
-  tracks_package_version: false
-  html_schema_version: 1.0.0
-  runtime_checkpoint_version: 1.0.0
+  workflow_module_version: 1.6.0
+  html_schema_version: 1.1.0
+  runtime_checkpoint_version: 1.1.0
 ---
 # AgentEvolver Dynamic Workflow
 
 This package turns reviewable HTML into a dynamic multi-agent program. A workflow is
 system orchestration infrastructure, not an Agent subtype and not a fixed DAG.
+Persisted built-in and extension artifacts must be complete `<!DOCTYPE html>` documents;
+fragment compilation remains available only for ephemeral `run_html()` and unit composition.
 
 ## Modules
 
@@ -23,7 +25,7 @@ system orchestration infrastructure, not an Agent subtype and not a fixed DAG.
 | `compiler.py` | Parse the restricted HTML language and reject unsafe/unbounded programs |
 | `context.py` | Discovery, registry state, compact prompt roster, native schemas, caches, and evaluation evidence |
 | `runtime.py` | Interpret control flow, enforce budgets, invoke capabilities, checkpoint, pause, and resume |
-| `server.py` | Thin registry facade plus Runtime run/start/pause/resume/cancel control |
+| `server.py` | Thin registry facade plus Runtime run/list/pause/resume/cancel/discard control |
 | `default/` | Versioned built-in Workflow HTML documents |
 
 ## Capability model
@@ -36,7 +38,9 @@ facts on demand.
 
 `get_schema(name, format="json"|"md")` follows the shared capability schema protocol.
 Simple inputs use HTML attributes; complex array/object contracts use a sibling
-`<schema for="input-name">` containing inert JSON Schema.
+`<schema for="input-name">` containing inert Draft 2020-12 JSON Schema. The same Schema
+is enforced by Runtime, including required fields, item constraints, ranges, and rejection
+of undeclared top-level inputs.
 
 As with Tool and Skill, `WorkflowContextManager` owns non-execution lifecycle state and
 `WorkflowManagerServer` is the stable public facade. `WorkflowRuntime` separately owns
@@ -65,7 +69,8 @@ WorkflowDefinition (static HTML program)
 ```
 
 The HTML program decides control flow. State machines provide reliable scheduling,
-observability, cancellation, pause/resume, caching, and recovery.
+observability, cancellation, pause/resume, caching, and recovery. Workflow run transitions
+are checked against an explicit transition table instead of being assigned arbitrarily.
 
 ## State machines
 
@@ -95,8 +100,16 @@ without changing the checkpoint schema.
   time are bounded.
 - Side effects go through existing Agent/Tool/Skill/Connector managers and therefore keep
   their normal permission boundaries.
-- Checkpoints are written atomically. Resume caches completed invocations and restarts
-  incomplete ones.
+- Per-node timeout/retry policy, root-wide nested Agent budgets, and preflight capability
+  discovery prevent silent budget bypass and late missing-target failures.
+- Checkpoints are written atomically and carry an executable program hash. Resume caches
+  completed invocations, restarts incomplete ones, and rejects changed same-version programs.
+- Runtime cleanup cancels active tasks and retains only a bounded number of completed runs.
+
+WorkflowEvaluator has a narrow Workflow-only execution seam: it can run the allowlisted
+target and record evaluation evidence, but cannot delegate arbitrary sub-agents or use
+mutating evolution actions. Successful evaluation records must reference a real terminal
+run, duplicate run evidence is rejected, and elapsed/token metrics come from that run.
 
 ## Compatibility
 

@@ -1,12 +1,11 @@
 ---
 name: constraint
 description: "Defines enforceable runtime budgets and status reporting. Built-ins cover step, token, and wall-time limits."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: constraint
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Constraint
 

@@ -1,12 +1,11 @@
 ---
 name: tool
 description: "Defines atomic callable capabilities backed by Python implementations. Tool signatures are introspected into native function-calling schemas and routed through `tool_manager`."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: tool
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Tool
 

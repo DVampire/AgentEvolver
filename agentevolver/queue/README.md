@@ -1,12 +1,11 @@
 ---
 name: queue
 description: "Provides the reusable `AsyncQueue` primitive used by asynchronous framework components."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: queue
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Queue
 

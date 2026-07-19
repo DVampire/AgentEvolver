@@ -45,3 +45,5 @@ def test_all_package_readmes_have_versioned_frontmatter():
         assert isinstance(frontmatter["requirements"], list), readme
         assert isinstance(frontmatter["metadata"], dict), readme
         assert re.search(r"(?im)^#\s+\S", body), f"{readme} needs a human-readable title"
+
+        assert str(frontmatter["version"]) == "1.0.0", readme

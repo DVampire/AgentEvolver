@@ -1,9 +1,9 @@
-/* Dynamic Workflow HTML preview renderer — visual schema version 1.0.0. */
+/* Dynamic Workflow HTML preview renderer — visual schema version 1.1.0. */
 (() => {
   "use strict";
 
   const STEP_TAGS = new Set([
-    "agent", "tool", "skill", "connector", "workflow", "parallel", "map",
+    "agent", "tool", "skill", "connector", "environment", "workflow", "parallel", "map",
     "reduce", "branch", "loop", "verify", "checkpoint",
   ]);
 
@@ -15,7 +15,10 @@
     [...element.children].filter((child) => tags.has(child.tagName.toLowerCase()));
 
   function detailsFor(step) {
-    const keys = ["name", "agent", "items", "as", "concurrency", "min-votes", "max-rounds", "until", "while"];
+    const keys = [
+      "name", "agent", "action", "items", "as", "concurrency", "min-votes",
+      "max-rounds", "until", "while", "timeout", "retries", "retry-delay", "retry-backoff",
+    ];
     return keys
       .filter((key) => step.hasAttribute(key))
       .map((key) => `<span class="wf-detail">${escapeHTML(key)}=${escapeHTML(step.getAttribute(key))}</span>`)

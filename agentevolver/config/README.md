@@ -1,12 +1,11 @@
 ---
 name: config
 description: "Loads Python configuration files into the global `config` object and validates assembled framework configuration before runtime initialization."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: config
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Config
 

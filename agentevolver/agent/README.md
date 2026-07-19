@@ -1,12 +1,11 @@
 ---
 name: agent
 description: "Defines executable agents and their lifecycle. `Agent` provides the event-driven run loop; `ProceduralAgent` supports deterministic procedures; `AgentManagerServer` exposes agents to callers and multi-agent orchestrators."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: agent
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Agent
 

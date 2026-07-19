@@ -1,12 +1,11 @@
 ---
 name: gateway
 description: "Defines the versioned boundary used by interactive clients to communicate with AgentEvolver. The package uses a lazy public import so importing `agentevolver.gateway` does not eagerly start transport dependencies."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: gateway
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Gateway
 

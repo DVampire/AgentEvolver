@@ -1,12 +1,11 @@
 ---
 name: environment
 description: "Defines stateful execution environments and their callable actions. Environment actions are exposed individually with declared or inferred parameter schemas."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: environment
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Environment
 

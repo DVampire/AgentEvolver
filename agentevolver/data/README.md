@@ -1,12 +1,11 @@
 ---
 name: data
 description: "Contains dataset adapters used by the Benchmark module, including AIME, GPQA, GSM8K, LeetCode, HLE, DeepWeb, and ProgramBench."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: data
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Data
 

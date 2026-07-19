@@ -1,12 +1,11 @@
 ---
 name: prompt
 description: "Loads, versions, and renders HTML-native prompts and reusable prompt modules."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: prompt
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Prompt
 

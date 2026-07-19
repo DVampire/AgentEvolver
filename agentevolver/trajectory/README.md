@@ -1,12 +1,11 @@
 ---
 name: trajectory
 description: "Projects agent runs into reward-annotated, step-level training records and exports formats used by supervised fine-tuning or reinforcement learning pipelines."
-version: 0.1.0
+version: 1.0.0
 type: module
 category: trajectory
 requirements: []
-metadata:
-  tracks_package_version: true
+metadata: {}
 ---
 # Trajectory
 

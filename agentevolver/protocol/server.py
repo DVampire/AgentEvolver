@@ -90,7 +90,14 @@ class ProtocolManager(metaclass=Singleton):
             workspace_root=workspace_root,
             parent_session_id=(parent_ref.name if parent_ref is not None else None),
         )
-        for key, val in (allowlists or {}).items():
+        if target_name:
+            ctx.extra["target_name"] = target_name
+        effective_allowlists = dict(allowlists or {})
+        if hasattr(child, "_target_capability_allowlists"):
+            for key, value in child._target_capability_allowlists(target_name).items():
+                if effective_allowlists.get(key) is None:
+                    effective_allowlists[key] = value
+        for key, val in effective_allowlists.items():
             if val is not None:
                 ctx.extra[key] = val
         existing = [f for f in (files or []) if os.path.exists(f)]

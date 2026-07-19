@@ -80,6 +80,7 @@ class InspectWorkflow(Tool):
             f"- **Registered**: True\n"
             f"- **Version**: {definition.version}\n"
             f"- **Schema Version**: {definition.schema_version}\n"
+            f"- **Program Hash**: `{definition.program_hash}`\n"
             f"- **Status**: {definition.status.value}\n"
             f"- **Evolvable (enable_evolving)**: {definition.enable_evolving}\n"
             f"- **Source File**: `{path}`"
@@ -102,6 +103,7 @@ class InspectWorkflow(Tool):
                 "workflow": name,
                 "registered": True,
                 "version": definition.version,
+                "program_hash": definition.program_hash,
                 "status": definition.status.value,
                 "enable_evolving": definition.enable_evolving,
                 "source_path": path,
