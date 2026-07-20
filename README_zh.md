@@ -98,8 +98,8 @@ Gateway（`agentevolver serve ...`）。
 
 生成的运行产物默认存放在当前项目的
 `./output/<tag>/<session-id>/`。可持久化的项目扩展位于与 `output/` 平级的
-`./extension/`；会话先在自己的输出目录内暂存扩展，只有显式提升才会写入此目录。用户级覆盖和缓存等状态存放在
-`~/.agentevolver`。可通过
+`./extension/`；会话先在自己的输出目录内暂存扩展，只有显式提升才会写入此目录。用户级状态（覆盖、缓存、暂存、deploy 注册表）
+存放在项目根目录的 `./.agentevolver/`。可通过
 `AGENTEVOLVER_HOME` 指定其他位置。每个 Gateway、CLI 和 TUI session 都有独立的
 项目目录，其中 workspace 与暂存 extension 相互隔离；服务级元数据和已 promote 的
 extension 则保留在 AgentEvolver home 目录中供各 session 共享。

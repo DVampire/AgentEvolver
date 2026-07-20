@@ -103,7 +103,8 @@ example, `agentevolver /registry`), use the terminal command loop
 Generated run output is stored in the current project by default, under
 `./output/<tag>/<session-id>/`. Durable project extensions live in
 `./extension/`; a session stages extension changes under its own output directory
-and promotes them explicitly. User-level overrides and caches use `~/.agentevolver`.
+and promotes them explicitly. User-level state (overrides, caches, staging, the
+deploy registry) lives in `./.agentevolver/` at the project root.
 Set `AGENTEVOLVER_HOME` to place it elsewhere. Each Gateway, CLI, and TUI session
 uses its own project directory with separate workspace and staged extensions; shared
 service metadata and promoted extensions remain under the AgentEvolver home directory.

@@ -14,8 +14,14 @@ def package_root() -> Path:
 
 
 def home_dir() -> Path:
-    """Stable user-writable base; ``AGENTEVOLVER_HOME`` overrides the default."""
-    root = Path(os.environ.get("AGENTEVOLVER_HOME", "~/.agentevolver")).expanduser()
+    """Stable user-writable base for user-level config and state.
+
+    Defaults to ``.agentevolver`` in the current project directory (like ``.git``),
+    so user-level state lives inside the project rather than the OS home directory.
+    ``AGENTEVOLVER_HOME`` overrides it (e.g. to share one home across projects).
+    """
+    override = os.environ.get("AGENTEVOLVER_HOME")
+    root = Path(override).expanduser() if override else Path.cwd() / ".agentevolver"
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 
@@ -33,7 +39,7 @@ def project_path(rel: str = "") -> str:
 
     This is deliberately separate from :func:`data_path`: generated outputs and
     workspaces belong to the project being run, whereas ``data_path`` is reserved
-    for user-level AgentEvolver state under ``~/.agentevolver``.
+    for user-level AgentEvolver state under ``home_dir`` (``.agentevolver``).
     """
     path = Path(rel).expanduser()
     return str(path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve())

@@ -25,6 +25,28 @@ class EnvironmentContext(BaseContext):
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this environment context.")
 
 
+class EnvironmentView(BaseModel):
+    """A live-view endpoint the frontend connects to directly to watch an environment.
+
+    The heavy media stream flows browser ↔ endpoint (e.g. a websockify VNC socket),
+    never through the agent/gateway — this descriptor only advertises where to look.
+
+    ``kind``:
+      ``vnc``    — ``url`` is a websockify WebSocket a noVNC client renders on a canvas.
+      ``iframe`` — ``url`` is an http(s) page embedded directly in an iframe.
+    New environments implement :meth:`Environment.live_view` to return one of these.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    session_id: str = Field(default="", description="Session this view belongs to (set by the manager).")
+    env_name: str = Field(default="", description="Environment that owns this view.")
+    kind: str = Field(default="vnc", description="vnc | iframe")
+    url: str = Field(description="Endpoint the frontend connects to / embeds.")
+    label: str = Field(default="", description="Human-readable label for the view.")
+    password: Optional[str] = Field(default=None, description="VNC password, when the RFB server requires one.")
+
+
 class Environment(BaseModel):
     """Base abstract class for ECP environments"""
     
@@ -70,6 +92,17 @@ class Environment(BaseModel):
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the environment"""
         raise NotImplementedError("Get state method not implemented")
+
+    async def live_view(self, ctx: "EnvironmentContext") -> Optional[EnvironmentView]:
+        """Return a live-view endpoint the frontend can watch, or None.
+
+        Override to expose a stream the frontend connects to directly (e.g. a
+        headful browser's noVNC/websockify socket).  Returning ``None`` (the
+        default) means this environment has no live view.  Called by the manager
+        after each action, so it should be cheap and idempotent — return the
+        stable endpoint, not a fresh one each call.
+        """
+        return None
 
 
 class ECPErrorCode(Enum):

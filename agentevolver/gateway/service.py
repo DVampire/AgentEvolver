@@ -50,6 +50,8 @@ from agentevolver.utils import make_id
 from agentevolver.version import version_manager
 from agentevolver.tool import tool_manager
 from agentevolver.workflow import workflow_manager
+from agentevolver.deploy import deployment_manager
+from agentevolver.environment.stream import environment_stream
 
 
 @dataclass
@@ -133,6 +135,7 @@ class AgentGateway:
         await trace_manager.initialize()
         await trace_manager.start(start_server=False)
         trace_manager.subscribe(self._on_trace_event)
+        environment_stream.subscribe(self._on_environment_view)
         await trajectory_manager.initialize()
         await hook_manager.initialize()
         await model_manager.initialize()
@@ -146,6 +149,9 @@ class AgentGateway:
             await environment_manager.initialize(env_names=env_names)
         await agent_manager.initialize(agent_names=getattr(config, "agent_names", None))
         await workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None))
+        # Deploy registry is project-global (under the .agentevolver home), so init it
+        # once here — before any session binds — and reconcile sites still serving.
+        await deployment_manager.initialize()
         await command_manager.initialize()
         await extension_manager.initialize()
         extension_manager.subscribe(self._on_extension_change)
@@ -167,6 +173,7 @@ class AgentGateway:
         await task_manager.stop()
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
+        environment_stream.unsubscribe(self._on_environment_view)
         await trace_manager.stop()
         await workflow_manager.cleanup()
         await agent_manager.cleanup()
@@ -615,6 +622,38 @@ class AgentGateway:
         name = str(params.get("name") or "")
         return await self._capability_detail(kind, name)
 
+    # ------------------------------------------------------------------
+    # Deploy — project-global registry of sites/services the agents deployed
+    # ------------------------------------------------------------------
+
+    async def _command_deploy_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        """Return every deployed site (project-global; survives sessions/restarts)."""
+        sites = await deployment_manager.list_sites()
+        return {"sites": [site.model_dump(mode="json") for site in sites]}
+
+    async def _command_port_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the central port registry (fixed + dynamically reserved ports)."""
+        from agentevolver.port import port_manager
+        return {"ports": port_manager.registry()}
+
+    async def _command_deploy_redeploy(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Rebuild a stopped/detached site from its stored request (new URL likely)."""
+        site_id = str(params.get("site_id") or "")
+        if not site_id:
+            raise ValueError("site_id is required")
+        site = await deployment_manager.redeploy(site_id)
+        await self._publish("deploy.changed", {"action": "redeploy", "site_id": site_id})
+        return site.model_dump(mode="json")
+
+    async def _command_deploy_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop a running site; its record stays for later redeploy."""
+        site_id = str(params.get("site_id") or "")
+        if not site_id:
+            raise ValueError("site_id is required")
+        site = await deployment_manager.stop_site(site_id)
+        await self._publish("deploy.changed", {"action": "stop", "site_id": site_id})
+        return site.model_dump(mode="json")
+
     @staticmethod
     def _workflow_preview_document(source: str) -> str:
         """Build a self-contained preview for a sandboxed browser iframe.
@@ -1035,6 +1074,16 @@ class AgentGateway:
     async def _on_trace_event(self, event) -> None:
         payload = event.to_dict()
         await self._publish("trace.event", payload, session_id=event.session_id, task_id=event.task_id)
+
+    async def _on_environment_view(self, view) -> None:
+        """Republish an environment live-view to the client watching the active session.
+
+        Tasks run serially, so the environment producing this view belongs to the
+        currently bound session — scope the event to it (the view's own session_id
+        is a sub-agent id the browser client would not match on).
+        """
+        payload = view.model_dump(mode="json")
+        await self._publish("environment.view", payload, session_id=self._bound_session_id)
 
     async def _on_extension_change(self, change: Dict[str, str]) -> None:
         """Publish registry changes so connected clients see evolved components immediately."""

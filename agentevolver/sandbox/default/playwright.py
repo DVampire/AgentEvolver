@@ -17,8 +17,7 @@ from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
 from agentevolver.sandbox.default.base import OpenSandbox
 from agentevolver.sandbox.types import SandboxConfig
-
-CHROME_DEVTOOLS_PORT = 9222
+from agentevolver.port import CHROME_CDP as CHROME_DEVTOOLS_PORT
 
 
 @SANDBOX.register_module(name="playwright", force=True)

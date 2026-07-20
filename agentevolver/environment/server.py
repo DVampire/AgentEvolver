@@ -24,6 +24,8 @@ class EnvironmentManagerServer(BaseModel):
         """Initialize the ECP Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
+        # (session_id, env_name) -> last announced live-view URL, to dedupe announcements.
+        self._announced_views: Dict[tuple, str] = {}
 
         
     async def initialize(self, env_names: Optional[List[str]] = None):
@@ -285,7 +287,32 @@ class EnvironmentManagerServer(BaseModel):
         elif not isinstance(ctx, EnvironmentContext):
             # Accept a caller's context (e.g. AgentContext) — carry over its id/workspace_root
             ctx = EnvironmentContext.from_context(ctx)
-        return await self.environment_context_manager(name, action, input, ctx, **kwargs)
+        result = await self.environment_context_manager(name, action, input, ctx, **kwargs)
+        # After every action, let the environment advertise a live view (e.g. the
+        # headful browser's noVNC socket) so the frontend can watch it. Generic:
+        # any environment that implements live_view() streams with no manager change.
+        await self._announce_live_view(name, ctx)
+        return result
+
+    async def _announce_live_view(self, name: str, ctx: EnvironmentContext) -> None:
+        """Announce this environment's live-view endpoint on change (idempotent)."""
+        try:
+            env = await self.get(name)
+            if env is None:
+                return
+            view = await env.live_view(ctx)
+            if view is None:
+                return
+            view.session_id = view.session_id or getattr(ctx, "id", "") or ""
+            view.env_name = view.env_name or name
+            key = (view.session_id, name)
+            if self._announced_views.get(key) == view.url:
+                return  # same endpoint already announced — don't spam the bus
+            self._announced_views[key] = view.url
+            from agentevolver.environment.stream import environment_stream
+            await environment_stream.emit(view)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"| ⚠️ live_view announce failed for '{name}': {exc}")
 
 
 # Global EnvironmentManager server instance

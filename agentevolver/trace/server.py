@@ -25,7 +25,8 @@ from agentevolver.trace.types import TraceEvent
 from agentevolver.trace.writer import TraceWriter
 from agentevolver.utils import Singleton
 
-WEB_PORT = int(os.environ.get("AGENTEVOLVER_TRACE_PORT", "8765"))
+from agentevolver.port import TRACE_UI as _TRACE_UI_DEFAULT
+WEB_PORT = int(os.environ.get("AGENTEVOLVER_TRACE_PORT", str(_TRACE_UI_DEFAULT)))
 
 
 class TraceManager(metaclass=Singleton):
@@ -90,6 +91,8 @@ class TraceManager(metaclass=Singleton):
             )
         self._running = True
         if start_server:
+            from agentevolver.port import port_manager
+            port_manager.record("trace_ui", WEB_PORT)
             logger.info(f"| 🌐 Trace web UI: http://localhost:{WEB_PORT}")
 
     async def stop(self) -> None:

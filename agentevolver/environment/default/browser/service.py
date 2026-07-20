@@ -97,7 +97,12 @@ class BrowserService:
         sandbox_api_key: Optional[str] = None,
         sandbox_image: str = "opensandbox/chrome:latest",
         sandbox_timeout_minutes: int = 30,
+        vnc: bool = False,
     ):
+        # VNC live view needs a headful browser in the chrome-vnc sandbox.
+        self.vnc = vnc
+        if vnc:
+            use_sandbox = True
         self.headless = headless
         self.viewport = viewport or {"width": 1024, "height": 768}
         self.use_sandbox = use_sandbox
@@ -144,9 +149,13 @@ class BrowserService:
         """
         from agentevolver.sandbox import sandbox_manager
 
+        # chrome-vnc runs headful Chrome + noVNC (for the live view); plain
+        # playwright is headless. The chrome-vnc sandbox supplies its own image.
+        sandbox_kind = "chrome-vnc" if self.vnc else "playwright"
+        sandbox_image = None if self.vnc else self.sandbox_image
         self._sandbox = await sandbox_manager.acquire(
-            "playwright",
-            image=self.sandbox_image,
+            sandbox_kind,
+            image=sandbox_image,
             domain=self.sandbox_domain,
             api_key=self.sandbox_api_key,
             timeout_minutes=self.sandbox_timeout_minutes,
@@ -156,6 +165,17 @@ class BrowserService:
         contexts = self._browser.contexts
         # CDP-connected Chromium may not allow new_context(); keep the existing one as fallback
         self._base_context = contexts[0] if contexts else None
+
+    async def vnc_ws_url(self) -> Optional[str]:
+        """The websockify WS URL for the live view, or None when VNC isn't active."""
+        sandbox = self._sandbox
+        if not self.vnc or sandbox is None or not hasattr(sandbox, "vnc_ws_url"):
+            return None
+        try:
+            return await sandbox.vnc_ws_url()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"| ⚠️ Could not resolve VNC url: {e}")
+            return None
 
     async def stop(self):
         """Close all sessions and the browser."""

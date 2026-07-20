@@ -10,7 +10,7 @@ from pydantic import ConfigDict, Field
 
 from agentevolver.environment.default.browser.service import BrowserService
 from agentevolver.environment.server import environment_manager
-from agentevolver.environment.types import Environment, ScreenshotInfo
+from agentevolver.environment.types import Environment, ScreenshotInfo, EnvironmentView
 from agentevolver.logger import logger
 from agentevolver.registry import ENVIRONMENT
 from agentevolver.utils import ScreenshotService, assemble_workspace_path
@@ -45,10 +45,15 @@ class BrowserEnvironment(Environment):
         state_detail: str = "elements",
         max_state_elements: int = 0,  # 0 = no truncation (show all interactive elements)
         command_timeout: float = 30.0,
+        vnc: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.base_dir = assemble_workspace_path(base_dir) if base_dir else assemble_workspace_path("browser")
+        # A live noVNC view requires the browser to run headful in the chrome-vnc sandbox.
+        self.vnc = vnc
+        if vnc:
+            headless = False
         self.headless = headless
         self.viewport = viewport or {"width": 1024, "height": 768}
         # State options: use_som draws numbered boxes on the state screenshot matching
@@ -70,6 +75,7 @@ class BrowserEnvironment(Environment):
             sandbox_api_key=sandbox_api_key,
             sandbox_image=sandbox_image,
             sandbox_timeout_minutes=sandbox_timeout_minutes,
+            vnc=vnc,
         )
         # Per-session screenshot/step state, keyed by session_id (one browser tab
         # per session). Screenshots are stored under screenshots/<session_id>/.
@@ -324,6 +330,19 @@ class BrowserEnvironment(Environment):
         if len(elements) > len(shown):
             lines.append(f"... and {len(elements) - len(shown)} more elements not shown")
         return "\n".join(lines) if lines else "(no interactive elements detected)"
+
+    async def live_view(self, ctx=None) -> Optional[EnvironmentView]:
+        """Expose the headful browser's noVNC socket so the frontend can watch it live.
+
+        Returns None unless running in VNC mode (headful in the chrome-vnc sandbox);
+        the URL is the websockify endpoint the frontend's noVNC client connects to.
+        """
+        if not getattr(self, "vnc", False):
+            return None
+        url = await self._service.vnc_ws_url()
+        if not url:
+            return None
+        return EnvironmentView(env_name=self.name, kind="vnc", url=url, label="Browser (live)")
 
     async def get_state(self, ctx=None, **kwargs) -> Dict[str, Any]:
         try:

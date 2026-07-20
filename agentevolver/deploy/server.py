@@ -71,17 +71,20 @@ class DeploymentManagerServer(BaseModel):
             return
         import agentevolver.deploy.default  # noqa: F401  (registers built-in profiles with DEPLOYER)
 
-        # Prefer the framework's per-run default dir; fall back to a local path so the
-        # subsystem still works if it is exercised before config.initialize() has run.
-        log_root = getattr(config, "log_root", None) or os.path.join("workspace_root", "run")
-        base = workspace_root or os.path.join(log_root, "deploy")
+        # Deployed sites are project-global and outlive any single session, so the
+        # registry lives under the user-level home (``.agentevolver/deploy``) rather
+        # than a per-session log root — this keeps every session and every restart
+        # looking at the same set of sites.
+        from agentevolver.utils.path_utils import home_dir
+
+        base = workspace_root or os.path.join(str(home_dir()), "deploy")
         os.makedirs(base, exist_ok=True)
         self._registry_path = os.path.join(base, "sites.json")
         self._load()
-        # Sites recorded but with no live handle after a restart are DETACHED.
-        for rec in self._sites.values():
-            if rec.status == SiteStatus.RUNNING:
-                rec.status = SiteStatus.DETACHED
+        # After a restart the in-process sandbox handles are gone; re-probe each
+        # recorded site so ones still serving are reattached as RUNNING and the
+        # rest are marked DETACHED (redeployable).
+        await self._reconcile_on_start()
         self._save()
         self._initialized = True
         logger.info(
@@ -133,24 +136,41 @@ class DeploymentManagerServer(BaseModel):
         return os.path.join(base, "sites", site_id, "app")
 
     @staticmethod
-    def _free_port(preferred: int) -> int:
-        """Return ``preferred`` if free on the host, else an OS-assigned free port.
+    def _reserve_host_port(site_id: str, preferred: int) -> int:
+        """Reserve (and record) a host port for a host-backend site.
 
-        Used only for the host backend, where sites share the host's port space (a
-        container backend has its own isolated ports, so no collision).
+        Goes through the central ``port_manager`` so the binding lands in
+        ``ports.json`` and is de-conflicted with everything else the framework
+        binds.  Only host-backend sites need this — container backends have their
+        own isolated port space.
         """
-        import socket
-        for cand in (preferred, 0):
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                s.bind(("0.0.0.0", cand))
-                return s.getsockname()[1]
-            except OSError:
+        from agentevolver.port import port_manager
+        return port_manager.reserve(f"deploy:{site_id}", preferred)
+
+    async def _reconcile_on_start(self) -> None:
+        """Re-probe recorded sites at startup to recover ones still serving.
+
+        A site's in-process sandbox handle does not survive a restart, but the
+        service itself (a detached host process or a container) often does.  For
+        each site that had a URL, probe it: reachable → RUNNING (reattached),
+        otherwise DETACHED (its stored request can ``redeploy`` it).
+        """
+        for rec in self._sites.values():
+            if rec.status in (SiteStatus.STOPPED, SiteStatus.FAILED):
                 continue
-            finally:
-                s.close()
-        return preferred
+            rec.status = SiteStatus.RUNNING if await self._url_reachable(rec.url) else SiteStatus.DETACHED
+
+    @staticmethod
+    async def _url_reachable(url: Optional[str]) -> bool:
+        """True if ``url`` answers an HTTP request within a short timeout."""
+        if not url:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+            return resp.status_code < 500
+        except Exception:
+            return False
 
     # --------------------------------------------------------------- registry io
     def _load(self) -> None:
@@ -202,7 +222,7 @@ class DeploymentManagerServer(BaseModel):
             log_path = os.path.join(os.path.dirname(spec.workspace_root), "server.log")
             # Host sites share the machine's ports: if the requested one is taken, move to
             # a free port and reflect it in the start command (literal port) and PORT env.
-            free = self._free_port(spec.port)
+            free = self._reserve_host_port(request.site_id, spec.port)
             if free != spec.port:
                 logger.info(f"| 🖥️  port {spec.port} busy → using free port {free} for '{request.site_id}'")
                 spec.start = spec.start.replace(str(spec.port), str(free))

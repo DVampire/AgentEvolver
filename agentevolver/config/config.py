@@ -24,7 +24,7 @@ def process_general(config: MMConfig) -> MMConfig:
         config.workspace_root = f"{config.project_root}/workspace"
 
     # Runtime output is project-owned.  Do not resolve these through the
-    # user-level ``~/.agentevolver`` directory.
+    # user-level ``.agentevolver`` home directory.
     project_root = os.path.realpath(project_path(config.project_root))
     workspace_root = os.path.realpath(project_path(config.workspace_root))
     log_root = os.path.realpath(project_path(config.log_root))

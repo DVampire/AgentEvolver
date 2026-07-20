@@ -32,8 +32,11 @@ interface UploadedAttachment { id: string; name: string; path?: string; size: nu
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
 interface WorkspaceEntry { name: string; path: string; kind: 'directory' | 'file'; size?: number | null; modified_at: number; }
 interface WorkspaceFile { name: string; path: string; content: string; encoding?: 'utf-8' | 'base64'; size: number; modified_at: number; etag: string; mime_type: string; language: string; }
+interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
+interface EnvironmentViewInfo { env_name: string; kind: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
 const WorkspaceEditor = lazy(() => import('./WorkspaceEditor'));
+const VncView = lazy(() => import('./VncView'));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
@@ -112,6 +115,8 @@ export function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<ModelEditorState>();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [deploys, setDeploys] = useState<DeploySite[]>([]);
+  const [environmentView, setEnvironmentView] = useState<EnvironmentViewInfo>();
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -166,6 +171,14 @@ export function App() {
     const response = await socket.request('model.list');
     if (!response.ok || !Array.isArray(response.result.providers)) throw new Error('Could not load model providers');
     setProviders(response.result.providers.filter(isProviderSummary));
+  }, []);
+
+  // Deployments are project-global (not per session), so this needs no session id.
+  const loadDeploys = useCallback(async (socket: GatewaySocket) => {
+    const response = await socket.request('deploy.list');
+    if (response.ok && Array.isArray(response.result.sites)) {
+      setDeploys(response.result.sites.map(asDeploySite).filter((site): site is DeploySite => Boolean(site)));
+    }
   }, []);
 
   const loadAttachments = useCallback(async (socket: GatewaySocket, currentSessionId: string) => {
@@ -242,7 +255,7 @@ export function App() {
           && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
         if (stillAvailable) {
           setSessionId(sessionRef.current);
-          await Promise.all([hydrateCapabilities(socket, sessionRef.current), refreshSessions(socket), loadModels(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
+          await Promise.all([hydrateCapabilities(socket, sessionRef.current), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
           // Rebuild the conversation/activity for the restored session from its event log.
           const replay = await socket.request('session.events', { session_id: sessionRef.current, after_seq: 0 });
           if (replay.ok && Array.isArray(replay.result.events)) {
@@ -267,12 +280,12 @@ export function App() {
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
       setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
-      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
+      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
       setStatus('error');
     }
-  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, refreshSessions]);
+  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, loadDeploys, refreshSessions]);
 
   const updateAgent = useCallback((name: string, nextStatus: AgentState['status']) => {
     setAgents((current) => {
@@ -357,11 +370,21 @@ export function App() {
       if (traceType === 'agent_start') updateAgent(name, 'running');
       if (traceType === 'agent_end') updateAgent(name, trace.success === false ? 'failed' : 'completed');
     }
+    if (event.type === 'deploy.changed') {
+      if (socketRef.current) void loadDeploys(socketRef.current);
+      return;
+    }
+    if (event.type === 'environment.view') {
+      setEnvironmentView(asEnvironmentView(event.payload));
+      return;
+    }
     if (event.type === 'task.completed') {
       setActiveTaskId(undefined);
       finishActivity(event.task_id, 'completed');
       setMessages((items) => [...items, finalMessage(event, 'assistant')]);
       void loadWorkspaceDirectory().catch(() => undefined);
+      // A task may have deployed or torn down a site.
+      if (socketRef.current) void loadDeploys(socketRef.current);
     }
     if (event.type === 'task.failed') {
       setActiveTaskId(undefined);
@@ -373,12 +396,13 @@ export function App() {
       finishActivity(event.task_id, 'cancelled');
       setMessages((items) => [...items, finalMessage(event, 'system')]);
     }
-  }, [appendActivityStep, finishActivity, loadModels, loadWorkspaceDirectory, updateAgent]);
+  }, [appendActivityStep, finishActivity, loadModels, loadDeploys, loadWorkspaceDirectory, updateAgent]);
 
   const connect = useCallback(() => {
     socketRef.current?.close();
     // Keep sessionRef/sessionId: startSession reuses the stored session when the
     // Gateway still has it (page refresh), or replaces it when it doesn't.
+    setEnvironmentView(undefined);
     setMessages([]);
     setActivities([]);
     setAgents([]);
@@ -404,6 +428,22 @@ export function App() {
     return () => socketRef.current?.close();
   }, [connect]);
 
+  const redeploySite = async (siteId: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    const response = await socket.request('deploy.redeploy', { site_id: siteId });
+    if (!response.ok) setNotice(response.error?.message ?? 'Could not redeploy the site');
+    await loadDeploys(socket);
+  };
+
+  const stopSite = async (siteId: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    const response = await socket.request('deploy.stop', { site_id: siteId });
+    if (!response.ok) setNotice(response.error?.message ?? 'Could not stop the site');
+    await loadDeploys(socket);
+  };
+
   const createNewSession = async () => {
     const socket = socketRef.current;
     if (!socket || status !== 'connected') return;
@@ -419,6 +459,7 @@ export function App() {
       setAgents([]);
       setActiveTaskId(undefined);
       setAttachments([]);
+      setEnvironmentView(undefined);
       const response = await socket.request('session.create', { name: `Web session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` });
       if (!response.ok || typeof response.result.session_id !== 'string') throw new Error(response.error?.message ?? 'Could not create a session');
       sessionRef.current = response.result.session_id;
@@ -450,6 +491,7 @@ export function App() {
       setActivities([]);
       setAgents([]);
       setDetails(undefined);
+      setEnvironmentView(undefined);
       setExpandedActivities(new Set());
       await Promise.all([hydrateCapabilities(socket, nextSession.session_id), loadAttachments(socket, nextSession.session_id), loadExtensionStage(socket, nextSession.session_id)]);
       for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
@@ -728,6 +770,21 @@ export function App() {
           <p className="eyebrow">Active agents</p>
           {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
         </div>
+        <div className="sidebar-section deploy-section">
+          <p className="eyebrow">Deployments <button className="section-refresh" title="Refresh" onClick={() => { if (socketRef.current) void loadDeploys(socketRef.current); }}>↻</button></p>
+          {deploys.length ? deploys.map((site) => <div className={`deploy-row ${site.status}`} key={site.site_id}>
+            <span className={`deploy-dot ${site.status}`} title={site.status} />
+            <div className="deploy-meta">
+              {site.url && site.status === 'running'
+                ? <a href={site.url} target="_blank" rel="noreferrer" title={site.url}>{site.site_id}</a>
+                : <span title={site.site_id}>{site.site_id}</span>}
+              <small>{site.runtime} · {site.status}</small>
+            </div>
+            {site.status === 'running'
+              ? <button className="deploy-action" title="Stop" onClick={() => void stopSite(site.site_id)}>■</button>
+              : <button className="deploy-action" title="Redeploy" onClick={() => void redeploySite(site.site_id)}>↻</button>}
+          </div>) : <p className="empty">No deployed services yet.</p>}
+        </div>
         <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Light theme' : '◐ Dark theme'}</button><button className="text-button" onClick={() => setSettingsOpen(true)}>⚙ Connection</button></div>
       </aside>
 
@@ -737,6 +794,7 @@ export function App() {
           <div className="connection"><button className={`stage-action ${extensionStage.valid ? '' : 'invalid'}`} disabled={!sessionId || !extensionStage.components.length} onClick={() => void promoteStagedExtension()} title={extensionStage.error ?? 'Promote validated staged extensions'}>⇧ Extensions {extensionStage.components.length || ''}</button><span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
         </header>
         <div className="message-list">
+          {environmentView ? <EnvironmentLive view={environmentView} onClose={() => setEnvironmentView(undefined)} /> : null}
           {timeline.length <= 1 ? <QuickStart onSelect={setDraft} /> : null}
           {timeline.map((item) => item.type === 'message'
             ? <MessageCard key={item.id} message={item.value} />
@@ -1009,6 +1067,25 @@ function MediaDocument({ file, src }: { file: WorkspaceFile; src: string }) {
   return <div className="media-document media-document-embed"><iframe title={file.name} src={src} /></div>;
 }
 
+/** Inline live view of an environment (e.g. the browser over noVNC) in the conversation. */
+function EnvironmentLive({ view, onClose }: { view: EnvironmentViewInfo; onClose: () => void }) {
+  return (
+    <section className="environment-live">
+      <header>
+        <span className="live-dot" />
+        <strong>{view.label || 'Live environment'}</strong>
+        <small>{view.env_name}</small>
+        <button className="live-close" onClick={onClose} aria-label="Hide live view">×</button>
+      </header>
+      <div className="environment-live-body">
+        {view.kind === 'vnc'
+          ? <Suspense fallback={<div className="vnc-overlay">Loading live view…</div>}><VncView url={view.url} password={view.password} /></Suspense>
+          : <iframe title={view.label || 'Live environment'} src={view.url} />}
+      </div>
+    </section>
+  );
+}
+
 function MarkdownDocument({ content }: { content: string }) {
   return <div className="markdown-document"><ReactMarkdown
     remarkPlugins={[remarkGfm]}
@@ -1038,6 +1115,28 @@ function asCapabilities(value: unknown): CapabilityCatalog {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asEnvironmentView(value: unknown): EnvironmentViewInfo | undefined {
+  if (!isRecord(value) || typeof value.url !== 'string' || !value.url) return undefined;
+  return {
+    env_name: typeof value.env_name === 'string' ? value.env_name : 'environment',
+    kind: typeof value.kind === 'string' ? value.kind : 'vnc',
+    url: value.url,
+    label: typeof value.label === 'string' ? value.label : undefined,
+    password: typeof value.password === 'string' ? value.password : undefined,
+  };
+}
+
+function asDeploySite(value: unknown): DeploySite | undefined {
+  if (!isRecord(value) || typeof value.site_id !== 'string') return undefined;
+  return {
+    site_id: value.site_id,
+    runtime: typeof value.runtime === 'string' ? value.runtime : 'unknown',
+    status: typeof value.status === 'string' ? value.status : 'detached',
+    url: typeof value.url === 'string' ? value.url : undefined,
+    port: typeof value.port === 'number' ? value.port : undefined,
+  };
 }
 
 function asCapabilityDetail(value: Record<string, unknown>): CapabilityDetail {

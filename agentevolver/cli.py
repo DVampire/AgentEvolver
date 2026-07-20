@@ -28,6 +28,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Sequence
 
+from agentevolver.port import GATEWAY as GATEWAY_PORT
+
 async def _try(name: str, coro, timeout: float):
     """Run a manager init under a timeout; on failure, warn and continue (never hang)."""
     try:
@@ -175,7 +177,7 @@ def gateway_main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--config", default="configs/meta_agent.py")
     parser.add_argument("--transport", choices=("stdio", "websocket"), default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=9876)
+    parser.add_argument("--port", type=int, default=GATEWAY_PORT)
     parser.add_argument("--token", default=os.getenv("AGENTEVOLVER_GATEWAY_TOKEN"))
     parser.add_argument(
         "--allow-origin", action="append", default=None,
@@ -210,6 +212,8 @@ def gateway_main(argv: Optional[Sequence[str]] = None) -> int:
         allowed_origins=set(args.allow_origin) if args.allow_origin else None,
     )
     app.router.lifespan_context = lifespan
+    from agentevolver.port import port_manager
+    port_manager.record("gateway", args.port)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 

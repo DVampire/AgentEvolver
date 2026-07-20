@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@novnc/novnc": "^1.7.0",
     "highlight.js": "^11.11.1",
     "ink": "^5.2.1",
     "monaco-editor": "^0.52.2",
