@@ -8,14 +8,14 @@ Each selected instance gets its own real Docker sandbox
 (`sandbox_manager.acquire("opensandbox", image=f"{image_name}:task_cleanroom_v6", ...)`)
 — the same image tag the official ProgramBench mini-swe-agent baseline uses, so the
 agent actually sees the compiled `./executable` + docs in `/workspace`. Network
-isolation (the baseline's `--network none`, its anti-cheat mechanism) is wired up but
-OFF by default here — set `AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK=1` to enable it; it's
-off by default because the opensandbox egress sidecar that enforces it fails to start
-on hosts with no `/proc/sys/net/ipv6` (IPv6 disabled at the kernel level), confirmed on
-the host this was developed on. See
-docs/superpowers/specs/2026-07-20-programbench-runner-design.md §3.4 for exactly
-what is and isn't replicated from the official baseline (no `--cap-drop`/`--user`
-parity either — the `opensandbox` package has no equivalent parameter).
+isolation (the baseline's `--network none`, its anti-cheat mechanism) is wired up and
+ON by default — set `AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK=0` to disable it. Requires
+`disable_ipv6 = false` under `[egress]` in `~/.sandbox.toml` on hosts where IPv6 is
+disabled at the kernel level (no `/proc/sys/net/ipv6`): opensandbox's egress sidecar
+otherwise fails to start there, since it unconditionally asks Docker to set
+`net.ipv6.*.disable_ipv6` sysctls that don't exist without an IPv6 stack. No
+`--cap-drop`/`--user` parity either — the `opensandbox` package has no equivalent
+parameter.
 
 Requires the `benchmark`/`sandbox` extras (`pip install -e ".[benchmark,sandbox]"`)
 and a reachable Docker daemon.
@@ -84,15 +84,20 @@ IMAGE_TAG = "task_cleanroom_v6"
 SANDBOX_DOMAIN = os.environ.get("AGENTEVOLVER_OPENSANDBOX_DOMAIN", "localhost:28080")
 
 # --network none (the official baseline's anti-cheat mechanism, see design spec §3.4)
-# is what isolating the sandbox's network requests, but the opensandbox egress sidecar
-# that enforces it fails to start on hosts with no /proc/sys/net/ipv6 tree (IPv6
-# disabled at the kernel level) — confirmed on this machine: the identical
-# acquire(..., network=False) 400s on the egress sidecar, network=True succeeds
-# immediately. Defaults to allowing network so the rest of the sandbox binding
-# (image/exec/workspace/submission extraction) is usable everywhere; set
-# AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK=1 once running on a host where the egress
-# sidecar actually starts, to get the real anti-cheat network isolation back.
-SANDBOX_ISOLATE_NETWORK = os.environ.get("AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK", "0") == "1"
+# is what isolating the sandbox's network requests, via the opensandbox egress sidecar.
+# That sidecar used to fail to start on hosts with no /proc/sys/net/ipv6 tree (IPv6
+# disabled at the kernel level, as on this machine) — it unconditionally asked Docker to
+# set net.ipv6.*.disable_ipv6 sysctls in the sidecar's netns, which don't exist when the
+# kernel has no IPv6 stack at all. Fixed with no host changes needed: set
+# `disable_ipv6 = false` under `[egress]` in ~/.sandbox.toml (opensandbox-server's own
+# config, defaults `disable_ipv6 = true`) — skips that sysctl step entirely, which costs
+# nothing on a host with no IPv6 to disable in the first place. Verified live: a direct
+# `acquire(..., network=False)` now succeeds and a `curl` from inside the sandbox to a
+# real external host returns no connection (HTTP code 000), confirming egress is actually
+# blocked. Defaults ON now that the sidecar reliably starts; set
+# AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK=0 to fall back to allowing network (e.g. on a host
+# where ~/.sandbox.toml hasn't been given the disable_ipv6 fix yet).
+SANDBOX_ISOLATE_NETWORK = os.environ.get("AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK", "1") == "1"
 
 # Per the official baseline's system prompt (minisweagent/config/benchmarks/
 # programbench.yaml) and verified container layout: the binary is always at
