@@ -83,7 +83,13 @@ class SandboxServerManager:
         """Write ~/.sandbox.toml before starting the server.
 
         Drops security options (drop_capabilities, no_new_privileges, pids_limit)
-        blocked by restrictive Docker authz plugins on some hosts.
+        blocked by restrictive Docker authz plugins on some hosts. Also points
+        [server].port at self.domain's port — otherwise the spawned process keeps
+        listening on whatever port was last written (8080 by default) regardless of
+        the domain a caller passed to steer the client elsewhere, so a caller using a
+        non-default domain (e.g. because 8080 is already occupied by an unrelated
+        service on a shared host) would silently get a server on the wrong port and
+        time out waiting for it to become "ready" at the domain it actually polls.
         """
         config_path = os.path.expanduser("~/.sandbox.toml")
         try:
@@ -111,6 +117,10 @@ class SandboxServerManager:
         content = _replace_or_append(content, "drop_capabilities", "[]")
         content = _replace_or_append(content, "no_new_privileges", "false")
         content = re.sub(r"^pids_limit\s*=.*\n?", "", content, flags=re.MULTILINE)
+
+        port = self.domain.rsplit(":", 1)[-1]
+        if port.isdigit():
+            content = _replace_or_append(content, "port", port)
 
         with open(config_path, "w") as f:
             f.write(content)
