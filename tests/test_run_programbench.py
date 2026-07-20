@@ -87,8 +87,8 @@ def test_build_task_content_includes_system_prompt_and_fields():
     assert rp.SYSTEM_PROMPT.strip() in content
     assert "abishekvashok/cmatrix" in content
     assert "language: c" in content
-    assert "programbench/abishekvashok_1776_cmatrix.5c082c6" in content
-    assert "commit `5c082c6`" in content
+    assert "./executable" in content
+    assert "./compile.sh" in content
 
 
 def test_extend_roster_for_evolve_off_is_unchanged():
@@ -156,3 +156,49 @@ def test_parse_args_task_ids():
     finally:
         sys.argv = old_argv
     assert args.task_ids == "a,b, c"
+
+
+class _FakeExecResult:
+    def __init__(self, success):
+        self.success = success
+
+    def as_message(self):
+        return "ok" if self.success else "tar: command failed"
+
+
+class _FakeSandbox:
+    """Minimal stand-in for a real OpenSandbox handle — no Docker involved."""
+
+    def __init__(self, tar_bytes=b"fake-tar-bytes", command_success=True):
+        self._tar_bytes = tar_bytes
+        self._command_success = command_success
+        self.commands_run = []
+
+    async def run_command(self, command):
+        self.commands_run.append(command)
+        return _FakeExecResult(self._command_success)
+
+    async def read_bytes(self, path):
+        assert path == "/tmp/submission.tar.gz"
+        return self._tar_bytes
+
+
+@pytest.mark.asyncio
+async def test_extract_submission_writes_tar_to_dest_dir(tmp_path):
+    sandbox = _FakeSandbox(tar_bytes=b"hello-tar")
+    dest_dir = str(tmp_path / "workspace")
+
+    result_path = await rp.extract_submission(sandbox, dest_dir)
+
+    assert result_path == str(Path(dest_dir) / "submission.tar.gz")
+    with open(result_path, "rb") as f:
+        assert f.read() == b"hello-tar"
+    assert sandbox.commands_run == ["tar -czf /tmp/submission.tar.gz -C /workspace . 2>&1"]
+
+
+@pytest.mark.asyncio
+async def test_extract_submission_raises_on_tar_failure():
+    sandbox = _FakeSandbox(command_success=False)
+
+    with pytest.raises(RuntimeError):
+        await rp.extract_submission(sandbox, "/tmp/wherever")

@@ -2,12 +2,19 @@
 
 Runs tasks only — no scoring. See agentevolver/benchmark/default/programbench.py
 for the existing `programbench eval`-based scorer, which can be pointed at this
-script's output workspaces separately.
+script's output (submission.tar.gz per task) separately.
 
-The agent works inside the plain filesystem session sandbox — no per-instance
-Docker binding yet (image_name is only referenced in the task prompt text). See
-docs/superpowers/specs/2026-07-20-programbench-runner-design.md §10 for the
-`sandbox_manager.acquire("opensandbox", image=...)` follow-up.
+Each selected instance gets its own real Docker sandbox
+(`sandbox_manager.acquire("opensandbox", image=f"{image_name}:task_cleanroom_v6",
+network=False, ...)`) — the same image tag and `--network none` policy the official
+ProgramBench mini-swe-agent baseline uses, so the agent actually sees the compiled
+`./executable` + docs in `/workspace` and cannot reach the internet. See
+docs/superpowers/specs/2026-07-20-programbench-runner-design.md §3.4 for exactly
+what is and isn't replicated from the official baseline (no `--cap-drop`/`--user`
+parity — the `opensandbox` package has no equivalent parameter).
+
+Requires the `benchmark`/`sandbox` extras (`pip install -e ".[benchmark,sandbox]"`)
+and a reachable Docker daemon.
 
 Usage
 -----
@@ -56,7 +63,41 @@ from agentevolver.trajectory import trajectory_manager
 from agentevolver.session.types import SessionContext
 from agentevolver.session.project import ensure_session_sandbox, bind_session_roots
 from agentevolver.utils import make_id, dedent
-from agentevolver.benchmark.default.programbench import SYSTEM_PROMPT
+from agentevolver.sandbox import sandbox_manager, use_sandbox
+
+
+# Official ProgramBench baseline (mini-swe-agent) image tag for the agent's own
+# environment — an "artifact-free" build with the compiled binary + docs but no
+# leftover build artifacts/source (verified by pulling and inspecting two instances;
+# see the design spec §3.4). NOT ":latest" — that tag doesn't exist.
+IMAGE_TAG = "task_cleanroom_v6"
+
+# Per the official baseline's system prompt (minisweagent/config/benchmarks/
+# programbench.yaml) and verified container layout: the binary is always at
+# ./executable relative to /workspace (the image's own WORKDIR), regardless of the
+# instance; docs/man pages/README sit alongside it; an empty .git repo is provided
+# for committing the solution into.
+SYSTEM_PROMPT = dedent("""
+    You are an expert software engineer. You are given only a compiled binary of a
+    program together with its documentation, running inside an offline sandbox with
+    no internet access. Your task is to architect and implement, from scratch, a
+    complete codebase that reproduces the original program's observable behavior as
+    faithfully as possible.
+
+    The binary is at `./executable` in your workspace (not named after the project).
+    Documentation (README, man pages, etc.) sits alongside it. An empty git repository
+    is already initialized in the workspace — commit your solution into it.
+
+    Work entirely from the binary and its documentation — you have no internet access
+    and no access to the original source code. Do not search the internet, clone
+    repositories, or install the project from any package manager; do not decompile,
+    disassemble, or use strace/ltrace on the provided `./executable` (only observe it
+    by running it normally). Your final deliverable must include a `./compile.sh` that
+    builds a fresh `./executable` of equivalent behavior from your own source tree, on
+    a clean checkout, with no dependency on the originally provided binary.
+
+    Task:
+""")
 
 
 EVOLVE_AGENT_NAMES = [
@@ -119,17 +160,16 @@ def select_instances(instances, task_ids=None, start=None, end=None):
 def build_task_content(instance):
     """Build the MetaAgent task content for one ProgramBench instance.
 
-    Folds ProgramBenchmark's SYSTEM_PROMPT into the content (agent_manager has
-    no separate system-prompt override hook here, matching how
-    run_meta_agent.py / run_hle.py already thread only task content through).
+    Folds SYSTEM_PROMPT into the content (agent_manager has no separate
+    system-prompt override hook here, matching how run_meta_agent.py / run_hle.py
+    already thread only task content through).
     """
     question = dedent(f"""
         Reconstruct the program `{instance.get('repository', '')}` (language: {instance.get('language', '')}).
 
-        A compiled binary and its documentation are available in your sandbox
-        (task image: `{instance.get('image_name', '')}`, commit `{instance.get('commit', '')}`). Implement a complete
-        codebase that reproduces the program's behavior. Produce the full source
-        tree as your final answer.
+        Implement a complete codebase that reproduces `./executable`'s behavior, with
+        a `./compile.sh` that builds it from a clean checkout. Produce the full source
+        tree (your git commits in the workspace) as your final answer.
     """)
     return f"{SYSTEM_PROMPT}\n\n{question}"
 
@@ -159,16 +199,43 @@ def parse_args():
     return args
 
 
-async def run_agent(record: TaskRecord, ctx: SessionContext):
-    response = await agent_manager(
-        name="meta_agent",
-        input={
-            "task": record.task.content,
-            "files": record.task.files,
-        },
-        ctx=ctx,
-    )
+async def run_agent(record: TaskRecord, ctx: SessionContext, sandbox):
+    """Run MetaAgent on the task, bound to `sandbox` for the duration of the call.
+
+    `use_sandbox()` binds a ContextVar for the current async task — it must wrap the
+    actual `agent_manager(...)` await here (where bash_tool et al. run), not somewhere
+    earlier in main()'s per-task loop, or the binding wouldn't propagate to the
+    coroutine that actually executes tool calls.
+    """
+    with use_sandbox(sandbox):
+        response = await agent_manager(
+            name="meta_agent",
+            input={
+                "task": record.task.content,
+                "files": record.task.files,
+            },
+            ctx=ctx,
+        )
     return response
+
+
+async def extract_submission(sandbox, dest_dir: str) -> str:
+    """Tar `/workspace` inside `sandbox` and pull it out to dest_dir/submission.tar.gz.
+
+    Matches the official baseline's own copy_submission() approach, and produces
+    exactly the file ProgramBenchmark._prepare_submission() expects for future scoring.
+    Returns the local path. Raises on failure — the caller treats this as best-effort.
+    """
+    tar_path = "/tmp/submission.tar.gz"
+    result = await sandbox.run_command(f"tar -czf {tar_path} -C /workspace . 2>&1")
+    if not result.success:
+        raise RuntimeError(f"tar failed: {result.as_message()}")
+    data = await sandbox.read_bytes(tar_path)
+    os.makedirs(dest_dir, exist_ok=True)
+    local_path = os.path.join(dest_dir, "submission.tar.gz")
+    with open(local_path, "wb") as f:
+        f.write(data)
+    return local_path
 
 
 async def main():
@@ -248,6 +315,9 @@ async def main():
     await task_manager.initialize(log_root=task_log_root, handler=None)
     await task_manager.start(num_workers=1)
 
+    logger.info("| 🧩 Initializing sandbox manager...")
+    await sandbox_manager.initialize()
+
     # --- Load & select ProgramBench instances ---
     from agentevolver.data.programbench import ProgramBenchDataset
     dataset = ProgramBenchDataset()
@@ -263,6 +333,7 @@ async def main():
         logger.warning("| ⚠️ No instances selected — nothing to run.")
         await task_manager.stop()
         await trace_manager.stop()
+        await sandbox_manager.cleanup()
         return
 
     # --- Run each selected instance sequentially, in its own session sandbox ---
@@ -273,21 +344,37 @@ async def main():
 
     for i, instance in enumerate(selected, start=1):
         instance_id = instance["instance_id"]
-        logger.info(f"| ▶️ [{i}/{len(selected)}] Starting ProgramBench task: {instance_id}")
+        image_ref = f"{instance.get('image_name', '')}:{IMAGE_TAG}"
+        logger.info(f"| ▶️ [{i}/{len(selected)}] Starting ProgramBench task: {instance_id} (image={image_ref})")
 
         session_id = make_id()
         ctx = SessionContext(id=session_id, name=f"programbench_{instance_id}")
-        sandbox = ensure_session_sandbox(
+        fs_sandbox = ensure_session_sandbox(
             ctx, bootstrap_project_root, shared_extension_root=bootstrap_extension_root,
         )
-        bind_session_roots(config, sandbox)
-        task_manager.set_handler(lambda record, _ctx=ctx: run_agent(record, _ctx))
+        bind_session_roots(config, fs_sandbox)
 
         content = build_task_content(instance)
         t0 = time.time()
         status_value = "failed"
         error_message = None
+        submission_path = None
+        docker_sandbox = None
         try:
+            # network=False -> egress denied entirely (agentevolver/sandbox/default/
+            # base.py wires this to opensandbox's NetworkPolicy(default_action="deny")).
+            # Matches the official baseline's --network none: the anti-cheat mechanism
+            # that stops the agent from downloading the original source instead of
+            # reverse-engineering it, not optional hardening.
+            docker_sandbox = await sandbox_manager.acquire(
+                "opensandbox",
+                image=image_ref,
+                network=False,
+                reuse_key=instance_id,
+                timeout_minutes=180,
+            )
+            task_manager.set_handler(lambda record, _ctx=ctx, _sb=docker_sandbox: run_agent(record, _ctx, _sb))
+
             task_id = await task_manager.submit(
                 content=content,
                 category=TaskCategory.USER,
@@ -307,9 +394,20 @@ async def main():
                 await asyncio.sleep(1)
             status_value = record.task.status.value
             error_message = record.error
+
+            # Pull the reconstructed codebase out before the container is destroyed —
+            # bash_tool ran entirely inside it once a sandbox was bound (see design
+            # spec §8), so nothing landed in fs_sandbox.workspace_root on the host.
+            try:
+                submission_path = await extract_submission(docker_sandbox, str(fs_sandbox.workspace_root))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"| ⚠️ [{instance_id}] submission extraction failed: {e}")
         except Exception as e:  # noqa: BLE001
             logger.error(f"| ❌ [{instance_id}] runner-level failure: {e}", exc_info=True)
             error_message = str(e)
+        finally:
+            if docker_sandbox is not None:
+                await sandbox_manager.release("opensandbox", reuse_key=instance_id)
         elapsed = time.time() - t0
 
         mark = "✅" if status_value == "done" else "❌"
@@ -320,7 +418,8 @@ async def main():
             "status": status_value,
             "time_seconds": round(elapsed, 1),
             "session_id": session_id,
-            "workspace_path": str(sandbox.workspace_root),
+            "workspace_path": str(fs_sandbox.workspace_root),
+            "submission_path": submission_path,
             "error": error_message,
         })
 
@@ -339,6 +438,7 @@ async def main():
 
     await task_manager.stop()
     await trace_manager.stop()
+    await sandbox_manager.cleanup()
 
 
 if __name__ == "__main__":
