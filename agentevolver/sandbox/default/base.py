@@ -77,6 +77,7 @@ class OpenSandbox(Sandbox):
             return
         from opensandbox import Sandbox as OSSandbox
         from opensandbox.config import ConnectionConfig
+        from opensandbox.models.sandboxes import NetworkPolicy
 
         await ensure_server(domain=self.config.domain)
 
@@ -94,9 +95,13 @@ class OpenSandbox(Sandbox):
         )
         if entrypoint:
             create_kwargs["entrypoint"] = entrypoint
+        if not self.config.network:
+            # SandboxConfig.network=False -> deny all egress (no default rule matches,
+            # so the "deny" default_action applies to everything).
+            create_kwargs["network_policy"] = NetworkPolicy(default_action="deny")
         self._sb = await OSSandbox.create(image, **create_kwargs)
         self._started = True
-        logger.info(f"| 📦 Sandbox '{self.name}' started (image={image})")
+        logger.info(f"| 📦 Sandbox '{self.name}' started (image={image}, network={self.config.network})")
 
     async def destroy(self) -> None:
         if self._sb is not None:
