@@ -21,13 +21,22 @@ def test_programbench_agent_config_loads_expected_base_roster():
     assert "code_agent" in config.agent_names
     assert "general_agent" in config.agent_names
     assert "reviewer_agent" in config.agent_names
-    assert "monitor_agent" in config.agent_names
+    # monitor_agent is deliberately excluded — it spawns its own bash subprocess
+    # directly, bypassing the Docker sandbox bash_tool routes through.
+    assert "monitor_agent" not in config.agent_names
     # Base roster excludes the self-evolution add-ons — the running script adds
     # them at runtime via extend_roster_for_evolve() when --evolve is set.
     assert "tool_optimize_agent" not in config.agent_names
     assert "connector_evaluate_agent" not in config.agent_names
     assert "bash_tool" in config.tool_names
     assert "evolution_tool" not in config.tool_names
+    # None of these check get_current_sandbox() — they'd silently operate on the
+    # host workspace instead of the container once a sandbox is bound.
+    assert "read_file_tool" not in config.tool_names
+    assert "write_file_tool" not in config.tool_names
+    assert "edit_file_tool" not in config.tool_names
+    assert "list_dir_tool" not in config.tool_names
+    assert "git_tool" not in config.tool_names
     assert "run_skill" in config.skill_names
     assert "self_evolving_skill" not in config.skill_names
     assert config.connector_names == []

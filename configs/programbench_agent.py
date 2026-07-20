@@ -1,13 +1,29 @@
 """Config for examples/run_programbench.py.
 
 Base roster for a pure ProgramBench code-reconstruction run: MetaAgent +
-code/general/reviewer/monitor actor agents, plus every optimizer/generator/
-evaluator agent, `evolution_tool`, and `self_evolving_skill` are imported and
-configured here too (so their settings exist) but are NOT in the default
+code/general/reviewer actor agents, plus every optimizer/generator/evaluator
+agent, `evolution_tool`, and `self_evolving_skill` are imported and configured
+here too (so their settings exist) but are NOT in the default
 `agent_names`/`tool_names`/`skill_names` lists below — the running script's
 `extend_roster_for_evolve()` appends them at runtime when `--evolve` is set
 (the default). No browser/connector/environment wiring — irrelevant to a
 code-reconstruction task.
+
+`bash_tool` is the ONLY tool in this repo that actually checks
+`get_current_sandbox()` (agentevolver/tool/default/bash.py) and routes into a
+bound real Docker sandbox — confirmed by grepping the whole codebase for
+`get_current_sandbox` usage. `read_file_tool`/`write_file_tool`/`edit_file_tool`/
+`list_dir_tool`/`git_tool` only ever check `check_session_path` (a host
+filesystem path-boundary check, agentevolver/sandbox/project.py) and
+`monitor_agent` spawns its own `asyncio.create_subprocess_shell` directly —
+neither path has any sandbox awareness at all, so all five would silently
+operate on the (nearly empty, once a Docker sandbox is bound) *host* workspace
+directory instead of the container's `/workspace`, giving the agent an
+inconsistent view of its own environment and letting file-tool writes go
+missing from `extract_submission()`'s tar of the container. All five are
+therefore deliberately absent below — `bash_tool` alone covers every file/git
+operation the agent needs (matches the official mini-swe-agent ProgramBench
+baseline, which likewise only gives the agent a single bash tool).
 """
 from mmengine.config import read_base
 with read_base():
@@ -16,7 +32,6 @@ with read_base():
     from .agents.code_agent import code_agent
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
-    from .agents.monitor_agent import monitor_agent
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
     from .agents.tool_generate_agent import tool_generate_agent
@@ -33,11 +48,6 @@ with read_base():
     from .agents.connector_optimize_agent import connector_optimize_agent
     from .agents.connector_evaluate_agent import connector_evaluate_agent
     from .tools.bash import bash_tool
-    from .tools.read_file import read_file_tool
-    from .tools.write_file import write_file_tool
-    from .tools.edit_file import edit_file_tool
-    from .tools.list_dir import list_dir_tool
-    from .tools.git import git_tool
     from .tools.evolution import evolution_tool
     from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
@@ -54,21 +64,22 @@ memory_names = [
 
 # Base roster — extended at runtime by examples/run_programbench.py's
 # extend_roster_for_evolve() when --evolve is set (default: on).
+# monitor_agent is deliberately excluded: it spawns its own bash subprocess
+# directly (asyncio.create_subprocess_shell), bypassing the Docker sandbox
+# bash_tool routes through — see the module docstring above.
 agent_names = [
     "meta_agent",
     "code_agent",
     "general_agent",
     "reviewer_agent",
-    "monitor_agent",
 ]
+# read_file_tool/write_file_tool/edit_file_tool/list_dir_tool/git_tool are
+# deliberately excluded: none of them check get_current_sandbox(), so they'd
+# silently operate on the host workspace instead of the container — see the
+# module docstring above. bash_tool alone covers every file/git operation.
 tool_names = [
     "bash_tool",
     "done_tool",
-    "read_file_tool",
-    "write_file_tool",
-    "edit_file_tool",
-    "list_dir_tool",
-    "git_tool",
     "escalate_tool",
     "reply_tool",
 ]
@@ -101,7 +112,6 @@ env_names = []
 # permission_mode is already "danger_full_access" at the tool's own base default
 # (configs/tools/bash.py) — no need to restate it here, matching meta_agent.py/hle.py.
 bash_tool.update(enable_evolving=False)
-git_tool.update(timeout=60)
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
 file_system_memory.update(
@@ -130,10 +140,6 @@ reviewer_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-)
-
-monitor_agent.update(
-    enable_evolving=False,
 )
 
 #-----------------OPTIMIZER/GENERATOR/EVALUATOR AGENT CONFIGS (self-evolution roster)-----------------
