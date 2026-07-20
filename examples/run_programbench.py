@@ -110,6 +110,10 @@ SYSTEM_PROMPT = dedent("""
     Documentation (README, man pages, etc.) sits alongside it. An empty git repository
     is already initialized in the workspace — commit your solution into it.
 
+    Your absolute working directory is `/workspace` — always use that path (or a
+    relative path from it). Any path under `/home/...` refers to the host machine, not
+    your sandbox, and will not contain the files described above.
+
     Work entirely from the binary and its documentation — you have no internet access
     and no access to the original source code. Do not search the internet, clone
     repositories, or install the project from any package manager; do not decompile,
