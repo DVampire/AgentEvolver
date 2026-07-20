@@ -92,7 +92,7 @@ class TraceManager(metaclass=Singleton):
         self._running = True
         if start_server:
             from agentevolver.port import port_manager
-            port_manager.record("trace_ui", WEB_PORT)
+            port_manager.register("trace_ui", WEB_PORT, kind="host")
             logger.info(f"| 🌐 Trace web UI: http://localhost:{WEB_PORT}")
 
     async def stop(self) -> None:

@@ -213,7 +213,7 @@ def gateway_main(argv: Optional[Sequence[str]] = None) -> int:
     )
     app.router.lifespan_context = lifespan
     from agentevolver.port import port_manager
-    port_manager.record("gateway", args.port)
+    port_manager.register("gateway", args.port, kind="host")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 

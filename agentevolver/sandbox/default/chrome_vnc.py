@@ -21,7 +21,11 @@ from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
 from agentevolver.sandbox.default.playwright import PlaywrightSandbox
 from agentevolver.sandbox.types import SandboxConfig
-from agentevolver.port import NOVNC as NOVNC_PORT
+
+# VNC/websockify ports are fixed inside the chrome-vnc container and mapped to
+# ephemeral host ports by the opensandbox proxy — the browser sandbox's own
+# concern, not a framework-global port.
+NOVNC_PORT = 6080
 
 _IMAGE = "agentevolver/chrome-vnc:latest"
 # repo root: .../agentevolver/sandbox/default/chrome_vnc.py -> parents[3]
@@ -72,4 +76,5 @@ class ChromeVncSandbox(PlaywrightSandbox):
         endpoint = await sb.get_endpoint(NOVNC_PORT)
         host = getattr(endpoint, "endpoint", str(endpoint))  # e.g. 127.0.0.1:PORT/proxy/6080
         proxy_host = host.split("/proxy/")[0]
+        self._register_host_port("novnc", proxy_host)
         return f"ws://{proxy_host}/proxy/{NOVNC_PORT}/websockify"

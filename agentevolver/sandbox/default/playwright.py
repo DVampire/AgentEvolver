@@ -17,7 +17,11 @@ from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
 from agentevolver.sandbox.default.base import OpenSandbox
 from agentevolver.sandbox.types import SandboxConfig
-from agentevolver.port import CHROME_CDP as CHROME_DEVTOOLS_PORT
+
+# Fixed inside the browser container; the opensandbox proxy maps it to an
+# ephemeral host port, so it is the browser sandbox's own concern, not a
+# framework-global port.
+CHROME_DEVTOOLS_PORT = 9222
 
 
 @SANDBOX.register_module(name="playwright", force=True)
@@ -56,6 +60,7 @@ class PlaywrightSandbox(OpenSandbox):
                 devtools_path = raw_ws.split(proxy_host, 1)[-1]  # /devtools/browser/<id>
                 ws_url = f"ws://{proxy_host}/proxy/{CHROME_DEVTOOLS_PORT}{devtools_path}"
                 logger.info(f"| 📦 CDP WebSocket URL: {ws_url}")
+                self._register_host_port("cdp", proxy_host)
                 return ws_url
             except Exception:
                 if attempt == attempts - 1:
@@ -63,3 +68,16 @@ class PlaywrightSandbox(OpenSandbox):
                 logger.info(f"| ⏳ Waiting for Chrome DevTools (attempt {attempt + 1}/{attempts})")
                 await asyncio.sleep(delay)
         raise RuntimeError("Chrome DevTools did not become ready")
+
+    def _register_host_port(self, purpose: str, proxy_host: str) -> None:
+        """Register the host port this sandbox is reachable on into the port registry.
+
+        The port itself is chosen by the opensandbox proxy (not by us); registering
+        it keeps every port — including an environment's own — visible in one place.
+        """
+        try:
+            port = int(str(proxy_host).rsplit(":", 1)[-1])
+        except (ValueError, IndexError):
+            return
+        from agentevolver.port import port_manager
+        port_manager.register(f"{self.name}:{purpose}", port, kind="env")

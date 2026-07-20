@@ -632,9 +632,9 @@ class AgentGateway:
         return {"sites": [site.model_dump(mode="json") for site in sites]}
 
     async def _command_port_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
-        """Return the central port registry (fixed + dynamically reserved ports)."""
+        """Return the central port registry (framework host + env + deploy ports)."""
         from agentevolver.port import port_manager
-        return {"ports": port_manager.registry()}
+        return {"ports": port_manager.list()}
 
     async def _command_deploy_redeploy(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Rebuild a stopped/detached site from its stored request (new URL likely)."""

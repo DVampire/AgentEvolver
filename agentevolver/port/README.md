@@ -13,15 +13,27 @@ Central port registry. Replaces ad-hoc port literals and one-off free-port
 picking with:
 
 - **Named defaults** (`server.py`) — the single source of truth for well-known
-  ports: `GATEWAY` (9876), `OPENSANDBOX` (8080), `TRACE_UI` (8600), and the
-  container-internal `CHROME_CDP` (9222) / `VNC` (5900) / `NOVNC` (6080).
-- **`port_manager`** — `reserve(name, preferred)` returns a host port and records
-  it; `release(name)`, `get(name)`, and `registry()` round out the API. Dynamic
-  allocations (deploy sites, the Gateway/Trace bind) all go through it.
+  framework **host** services: `GATEWAY` (9876), `OPENSANDBOX` (8080),
+  `TRACE_UI` (8765).
+- **`port_manager`** — one registration interface (mirroring the other managers):
+  `register(name, port=None, *, preferred=None, kind=...)` records a binding —
+  pass an explicit ``port`` for a known bind (Gateway, an env's resolved host
+  port), or omit it to allocate one (``preferred`` if free, else OS-assigned).
+  `unregister(name)`, `get(name)`, `get_info(name)`, and `list()` round it out.
 
-Allocations persist to `<home>/ports.json` (the `.agentevolver` home), so every
-process and every run sees the same map of what is bound where.
+Every port the framework uses registers here, so the whole system is visible and
+de-conflicted in one place. Allocations persist to `<home>/ports.json` (the
+`.agentevolver` home), so every process and every run sees the same map.
 
-Container-internal ports (`CHROME_CDP`/`VNC`/`NOVNC`) are fixed inside a sandbox
-and mapped to ephemeral host ports by the opensandbox proxy — they never collide
-on the host and so are constants, not registry entries.
+## What registers, and who owns the value
+
+| Kind | Owner | Examples |
+| --- | --- | --- |
+| `host` | the framework | `gateway` (9876), `trace_ui` (8765), `deploy:<site>` (dynamic) |
+| `env`  | the environment | `chrome-vnc:novnc`, `playwright:cdp` (the host port the sandbox is reachable on) |
+
+The **value** of an environment's port belongs to that environment (a browser
+sandbox knows its own CDP/VNC ports — this module hardcodes no env constants),
+but the environment still **registers** its resolved host port here so it shows up
+in the one central registry. A new environment does the same: define its ports,
+then `register(...)` them.

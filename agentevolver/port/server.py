@@ -21,16 +21,15 @@ from typing import Dict, Optional
 from agentevolver.logger import logger
 from agentevolver.utils.path_utils import home_dir
 
-# --- Well-known default ports (single source of truth) ----------------------
-# Host-bound framework services:
+# --- Well-known framework HOST service ports (single source of truth) --------
+# Only host-bound, framework-level services belong here. Ports that are internal
+# to a specific environment/sandbox (e.g. a browser container's CDP/VNC ports)
+# belong to that environment, not this global registry — they are fixed inside
+# the container and mapped to ephemeral host ports by the opensandbox proxy, so
+# they never collide on the host and never go through the PortManager.
 GATEWAY = 9876          # Gateway WebSocket server
 OPENSANDBOX = 8080      # local opensandbox-server daemon
 TRACE_UI = 8765         # Trace UI web server (AGENTEVOLVER_TRACE_PORT overrides)
-# Container-internal ports (fixed inside a sandbox; the opensandbox proxy maps
-# them to ephemeral host ports, so these never collide on the host):
-CHROME_CDP = 9222
-VNC = 5900
-NOVNC = 6080
 
 
 def _now() -> str:
@@ -86,64 +85,76 @@ class PortManager:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"| ⚠️ Could not save port registry: {e}")
 
-    def reserve(self, name: str, preferred: Optional[int] = None) -> int:
-        """Return the host port for ``name``, allocating and recording it if new.
+    def register(
+        self,
+        name: str,
+        port: Optional[int] = None,
+        *,
+        preferred: Optional[int] = None,
+        kind: str = "host",
+        override: bool = False,
+    ) -> dict:
+        """Register a port under ``name`` and persist it. Returns the record.
 
-        Idempotent: the same name keeps its recorded port across calls and runs.
-        A new name takes ``preferred`` when that port is free, otherwise an
-        OS-assigned free port.
+        Every port the framework uses — framework host services, dynamically
+        allocated deploy ports, and an environment's own ports — registers here
+        so the whole system is visible and de-conflicted in one place.
+
+        - ``port`` given: register that exact binding (a known/fixed port, e.g.
+          the Gateway's, or an environment's resolved host port). Always refreshed.
+        - ``port`` omitted: allocate one — ``preferred`` if free, else an
+          OS-assigned free port. Idempotent per ``name`` (reused across calls and
+          runs) unless ``override`` is set.
+        - ``kind`` labels the entry (``host`` | ``env`` | …) for readability.
         """
         with self._lock:
             self._ensure_loaded()
             existing = self._registry.get(name)
-            if existing and isinstance(existing.get("port"), int):
-                return existing["port"]
-            port = preferred if (preferred and is_free(preferred)) else os_free_port()
-            self._registry[name] = {
+            if port is None:
+                if existing and not override and isinstance(existing.get("port"), int):
+                    return existing
+                port = preferred if (preferred and is_free(preferred)) else os_free_port()
+            record = {
+                "name": name,
                 "port": port,
-                "preferred": preferred,
+                "preferred": preferred if preferred is not None else port,
+                "kind": kind,
                 "pid": os.getpid(),
                 "updated_at": _now(),
             }
+            self._registry[name] = record
             self._save()
-            logger.info(f"| 🔌 Port reserved: {name} -> {port}")
-            return port
+            logger.info(f"| 🔌 Port registered: {name} -> {port} ({kind})")
+            return record
 
-    def record(self, name: str, port: int) -> int:
-        """Record an already-decided binding (e.g. a user-specified Gateway port).
-
-        Unlike :meth:`reserve`, this never reallocates — the caller has already
-        committed to ``port``; this only makes it visible in the registry.
-        """
-        with self._lock:
-            self._ensure_loaded()
-            self._registry[name] = {
-                "port": port,
-                "preferred": port,
-                "pid": os.getpid(),
-                "updated_at": _now(),
-            }
-            self._save()
-            return port
-
-    def release(self, name: str) -> None:
-        """Drop ``name``'s reservation (its port becomes reusable)."""
+    def unregister(self, name: str) -> bool:
+        """Drop ``name``'s registration (its port becomes reusable). Returns whether it existed."""
         with self._lock:
             self._ensure_loaded()
             if self._registry.pop(name, None) is not None:
                 self._save()
+                return True
+            return False
 
     def get(self, name: str) -> Optional[int]:
+        """Return the port registered under ``name``, or None."""
         with self._lock:
             self._ensure_loaded()
             rec = self._registry.get(name)
             return rec.get("port") if rec else None
 
-    def registry(self) -> Dict[str, dict]:
-        """A copy of the full allocation table (for visibility)."""
+    def get_info(self, name: str) -> Optional[dict]:
+        """Return the full registration record for ``name``, or None."""
         with self._lock:
             self._ensure_loaded()
-            return dict(self._registry)
+            rec = self._registry.get(name)
+            return dict(rec) if rec else None
+
+    def list(self) -> Dict[str, dict]:
+        """Return the whole registry (name -> record)."""
+        with self._lock:
+            self._ensure_loaded()
+            return {name: dict(rec) for name, rec in self._registry.items()}
 
 
 # Global registry — import this everywhere.

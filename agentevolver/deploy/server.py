@@ -137,7 +137,7 @@ class DeploymentManagerServer(BaseModel):
 
     @staticmethod
     def _reserve_host_port(site_id: str, preferred: int) -> int:
-        """Reserve (and record) a host port for a host-backend site.
+        """Register (and allocate) a host port for a host-backend site.
 
         Goes through the central ``port_manager`` so the binding lands in
         ``ports.json`` and is de-conflicted with everything else the framework
@@ -145,7 +145,7 @@ class DeploymentManagerServer(BaseModel):
         own isolated port space.
         """
         from agentevolver.port import port_manager
-        return port_manager.reserve(f"deploy:{site_id}", preferred)
+        return port_manager.register(f"deploy:{site_id}", preferred=preferred, kind="host")["port"]
 
     async def _reconcile_on_start(self) -> None:
         """Re-probe recorded sites at startup to recover ones still serving.
