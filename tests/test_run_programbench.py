@@ -116,3 +116,43 @@ def test_extend_roster_for_evolve_does_not_mutate_input_lists():
     base_agents = ["meta_agent"]
     rp.extend_roster_for_evolve(base_agents, [], [], evolve=True)
     assert base_agents == ["meta_agent"]
+
+
+def test_parse_args_requires_a_selector():
+    old_argv = sys.argv
+    sys.argv = ["run_programbench.py"]
+    try:
+        with pytest.raises(SystemExit):
+            rp.parse_args()
+    finally:
+        sys.argv = old_argv
+
+
+def test_parse_args_evolve_defaults_to_true():
+    old_argv = sys.argv
+    sys.argv = ["run_programbench.py", "--start", "0", "--end", "1"]
+    try:
+        args = rp.parse_args()
+    finally:
+        sys.argv = old_argv
+    assert args.evolve is True
+
+
+def test_parse_args_no_evolve_flag():
+    old_argv = sys.argv
+    sys.argv = ["run_programbench.py", "--start", "0", "--end", "1", "--no-evolve"]
+    try:
+        args = rp.parse_args()
+    finally:
+        sys.argv = old_argv
+    assert args.evolve is False
+
+
+def test_parse_args_task_ids():
+    old_argv = sys.argv
+    sys.argv = ["run_programbench.py", "--task-ids", "a,b, c"]
+    try:
+        args = rp.parse_args()
+    finally:
+        sys.argv = old_argv
+    assert args.task_ids == "a,b, c"

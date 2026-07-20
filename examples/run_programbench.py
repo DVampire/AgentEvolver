@@ -132,3 +132,28 @@ def build_task_content(instance):
         tree as your final answer.
     """)
     return f"{SYSTEM_PROMPT}\n\n{question}"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run MetaAgent on selected ProgramBench tasks")
+    parser.add_argument(
+        "--config",
+        default=os.path.join(root, "configs", "programbench_agent.py"),
+        help="Config file path",
+    )
+    parser.add_argument("--task-ids", default=None, help="Comma-separated ProgramBench instance_id list")
+    parser.add_argument("--start", type=int, default=None, help="Start index (inclusive) into the loaded instance list")
+    parser.add_argument("--end", type=int, default=None, help="End index (exclusive) into the loaded instance list")
+    parser.add_argument(
+        "--evolve", action=argparse.BooleanOptionalAction, default=True,
+        help="Include the self-evolution agent/skill/tool roster (default: on; use --no-evolve to disable).",
+    )
+    parser.add_argument("--out", default=None, help="Results JSON output directory")
+    parser.add_argument(
+        "--cfg-options", nargs="+", action=DictAction,
+        help="Override config options in key=value format",
+    )
+    args = parser.parse_args()
+    if not args.task_ids and args.start is None and args.end is None:
+        parser.error("specify --task-ids or --start/--end; refusing to run the entire benchmark by default")
+    return args
