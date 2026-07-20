@@ -5,13 +5,17 @@ for the existing `programbench eval`-based scorer, which can be pointed at this
 script's output (submission.tar.gz per task) separately.
 
 Each selected instance gets its own real Docker sandbox
-(`sandbox_manager.acquire("opensandbox", image=f"{image_name}:task_cleanroom_v6",
-network=False, ...)`) — the same image tag and `--network none` policy the official
-ProgramBench mini-swe-agent baseline uses, so the agent actually sees the compiled
-`./executable` + docs in `/workspace` and cannot reach the internet. See
+(`sandbox_manager.acquire("opensandbox", image=f"{image_name}:task_cleanroom_v6", ...)`)
+— the same image tag the official ProgramBench mini-swe-agent baseline uses, so the
+agent actually sees the compiled `./executable` + docs in `/workspace`. Network
+isolation (the baseline's `--network none`, its anti-cheat mechanism) is wired up but
+OFF by default here — set `AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK=1` to enable it; it's
+off by default because the opensandbox egress sidecar that enforces it fails to start
+on hosts with no `/proc/sys/net/ipv6` (IPv6 disabled at the kernel level), confirmed on
+the host this was developed on. See
 docs/superpowers/specs/2026-07-20-programbench-runner-design.md §3.4 for exactly
 what is and isn't replicated from the official baseline (no `--cap-drop`/`--user`
-parity — the `opensandbox` package has no equivalent parameter).
+parity either — the `opensandbox` package has no equivalent parameter).
 
 Requires the `benchmark`/`sandbox` extras (`pip install -e ".[benchmark,sandbox]"`)
 and a reachable Docker daemon.
@@ -71,6 +75,24 @@ from agentevolver.sandbox import sandbox_manager, use_sandbox
 # leftover build artifacts/source (verified by pulling and inspecting two instances;
 # see the design spec §3.4). NOT ":latest" — that tag doesn't exist.
 IMAGE_TAG = "task_cleanroom_v6"
+
+# opensandbox-server's default port (8080) was found already occupied by an
+# unrelated service on this shared machine when this was tested — ensure_server()'s
+# health check only verifies "some HTTP server answers with status < 500", not "it's
+# actually opensandbox-server", so it silently adopted the foreign service and every
+# sandbox-create call 404'd. Use a dedicated port instead of the shared default.
+SANDBOX_DOMAIN = os.environ.get("AGENTEVOLVER_OPENSANDBOX_DOMAIN", "localhost:28080")
+
+# --network none (the official baseline's anti-cheat mechanism, see design spec §3.4)
+# is what isolating the sandbox's network requests, but the opensandbox egress sidecar
+# that enforces it fails to start on hosts with no /proc/sys/net/ipv6 tree (IPv6
+# disabled at the kernel level) — confirmed on this machine: the identical
+# acquire(..., network=False) 400s on the egress sidecar, network=True succeeds
+# immediately. Defaults to allowing network so the rest of the sandbox binding
+# (image/exec/workspace/submission extraction) is usable everywhere; set
+# AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK=1 once running on a host where the egress
+# sidecar actually starts, to get the real anti-cheat network isolation back.
+SANDBOX_ISOLATE_NETWORK = os.environ.get("AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK", "0") == "1"
 
 # Per the official baseline's system prompt (minisweagent/config/benchmarks/
 # programbench.yaml) and verified container layout: the binary is always at
@@ -365,13 +387,16 @@ async def main():
             # base.py wires this to opensandbox's NetworkPolicy(default_action="deny")).
             # Matches the official baseline's --network none: the anti-cheat mechanism
             # that stops the agent from downloading the original source instead of
-            # reverse-engineering it, not optional hardening.
+            # reverse-engineering it, not optional hardening — see
+            # SANDBOX_ISOLATE_NETWORK's own comment for why it currently defaults to
+            # off (network allowed) on this host.
             docker_sandbox = await sandbox_manager.acquire(
                 "opensandbox",
                 image=image_ref,
-                network=False,
+                network=not SANDBOX_ISOLATE_NETWORK,
                 reuse_key=instance_id,
                 timeout_minutes=180,
+                domain=SANDBOX_DOMAIN,
             )
             task_manager.set_handler(lambda record, _ctx=ctx, _sb=docker_sandbox: run_agent(record, _ctx, _sb))
 
