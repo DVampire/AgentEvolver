@@ -37,6 +37,18 @@ const WorkspaceEditor = lazy(() => import('./WorkspaceEditor'));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
+const SESSION_KEY = 'agentevolver.gateway.session';
+const SIDEBAR_WIDTH_KEY = 'agentevolver.layout.sidebar';
+const INSPECTOR_WIDTH_KEY = 'agentevolver.layout.inspector';
+const SIDEBAR_WIDTH_RANGE = [190, 460] as const;
+const INSPECTOR_WIDTH_RANGE = [300, 680] as const;
+
+const clampWidth = (value: number, [min, max]: readonly [number, number]): number => Math.min(max, Math.max(min, value));
+
+function readWidth(key: string, fallback: number): number {
+  const raw = Number.parseInt(localStorage.getItem(key) ?? '', 10);
+  return Number.isFinite(raw) ? raw : fallback;
+}
 const HIGHLIGHT_LANGUAGES = {
   bash: bashLanguage,
   css: cssLanguage,
@@ -76,7 +88,8 @@ export function App() {
   const [token, setToken] = useState(() => localStorage.getItem('agentevolver.gateway.token') ?? '');
   const [activeEndpoint, setActiveEndpoint] = useState(endpoint);
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
-  const [sessionId, setSessionId] = useState<string>();
+  // Restored on refresh so the same Gateway session is reused instead of a fresh one.
+  const [sessionId, setSessionId] = useState<string | undefined>(() => localStorage.getItem(SESSION_KEY) ?? undefined);
   const [activeTaskId, setActiveTaskId] = useState<string>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [activities, setActivities] = useState<ActivityGroup[]>([]);
@@ -108,9 +121,12 @@ export function App() {
   const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFile>();
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [filePreview, setFilePreview] = useState(false);
+  // Resizable column widths (px), persisted across refreshes.
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => readWidth(SIDEBAR_WIDTH_KEY, 250));
+  const [inspectorWidth, setInspectorWidth] = useState<number>(() => readWidth(INSPECTOR_WIDTH_KEY, 400));
   const socketRef = useRef<GatewaySocket | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const sessionRef = useRef<string | undefined>(undefined);
+  const sessionRef = useRef<string | undefined>(localStorage.getItem(SESSION_KEY) ?? undefined);
   const messageEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -120,6 +136,14 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('agentevolver.theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (sessionId) localStorage.setItem(SESSION_KEY, sessionId);
+    else localStorage.removeItem(SESSION_KEY);
+  }, [sessionId]);
+
+  useEffect(() => { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); }, [sidebarWidth]);
+  useEffect(() => { localStorage.setItem(INSPECTOR_WIDTH_KEY, String(inspectorWidth)); }, [inspectorWidth]);
 
   const hydrateCapabilities = useCallback(async (socket: GatewaySocket, currentSessionId: string) => {
     const [catalogResponse, selectionResponse] = await Promise.all([
@@ -217,7 +241,15 @@ export function App() {
           && Array.isArray(sessions.result.sessions)
           && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
         if (stillAvailable) {
+          setSessionId(sessionRef.current);
           await Promise.all([hydrateCapabilities(socket, sessionRef.current), refreshSessions(socket), loadModels(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
+          // Rebuild the conversation/activity for the restored session from its event log.
+          const replay = await socket.request('session.events', { session_id: sessionRef.current, after_seq: 0 });
+          if (replay.ok && Array.isArray(replay.result.events)) {
+            setMessages([]);
+            setActivities([]);
+            for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
+          }
           return;
         }
         socket.forgetSession(sessionRef.current);
@@ -345,8 +377,8 @@ export function App() {
 
   const connect = useCallback(() => {
     socketRef.current?.close();
-    sessionRef.current = undefined;
-    setSessionId(undefined);
+    // Keep sessionRef/sessionId: startSession reuses the stored session when the
+    // Gateway still has it (page refresh), or replaces it when it doesn't.
     setMessages([]);
     setActivities([]);
     setAgents([]);
@@ -654,8 +686,31 @@ export function App() {
     ...activities.map((activity) => ({ id: activity.id, timestamp: activity.timestamp, type: 'activity' as const, value: activity })),
   ].sort((left, right) => left.timestamp.localeCompare(right.timestamp)), [messages, activities]);
 
+  const startColumnDrag = (column: 'sidebar' | 'inspector') => (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = column === 'sidebar' ? sidebarWidth : inspectorWidth;
+    const onMove = (move: PointerEvent) => {
+      // Sidebar grows as you drag right; the inspector (right column) grows as you drag left.
+      const delta = column === 'sidebar' ? move.clientX - startX : startX - move.clientX;
+      const range = column === 'sidebar' ? SIDEBAR_WIDTH_RANGE : INSPECTOR_WIDTH_RANGE;
+      const next = clampWidth(startWidth + delta, range);
+      if (column === 'sidebar') setSidebarWidth(next); else setInspectorWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('col-resizing');
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    document.body.classList.add('col-resizing');
+  };
+
   return (
-    <main className="app-shell" data-theme={theme}>
+    <main className="app-shell" data-theme={theme} style={{ ['--sidebar-w' as string]: `${sidebarWidth}px`, ['--inspector-w' as string]: `${inspectorWidth}px` }}>
+      <div className="col-resizer col-resizer-left" onPointerDown={startColumnDrag('sidebar')} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
+      <div className="col-resizer col-resizer-right" onPointerDown={startColumnDrag('inspector')} role="separator" aria-orientation="vertical" aria-label="Resize workspace panel" />
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">✦</span><span>AgentEvolver</span></div>
         <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}>＋ New session</button>
