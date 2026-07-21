@@ -93,7 +93,7 @@ class BrowserService:
         headless: bool = True,
         viewport: Dict[str, int] = None,
         use_sandbox: bool = False,
-        sandbox_domain: str = "localhost:8080",
+        sandbox_domain: Optional[str] = None,   # None -> resolved via the port manager
         sandbox_api_key: Optional[str] = None,
         sandbox_image: str = "opensandbox/chrome:latest",
         sandbox_timeout_minutes: int = 30,

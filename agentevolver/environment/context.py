@@ -20,7 +20,7 @@ from agentevolver.version import version_manager
 from agentevolver.utils import assemble_workspace_path, gather_with_concurrency
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.environment.types import Environment, EnvironmentConfig, ActionConfig, EnvironmentContext
-from agentevolver.sandbox import SandboxServerManager
+from agentevolver.sandbox import SandboxServerManager, default_domain
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import ENVIRONMENT
 
@@ -53,7 +53,9 @@ class EnvironmentContextManager(BaseModel):
         # Environment version history, e.g., {"env_name": {"1.0.0": EnvironmentConfig, "1.0.1": EnvironmentConfig}}
         self._environment_history_versions: Dict[str, Dict[str, EnvironmentConfig]] = {}
 
-        self._sandbox_server = SandboxServerManager()
+        # Daemon domain comes from the port manager (preferring OPENSANDBOX, else a
+        # free port) rather than a hard-coded 8080, so it can't collide on a shared host.
+        self._sandbox_server = SandboxServerManager(domain=default_domain())
         self._cleanup_registered = False
         
     async def initialize(self, env_names: Optional[List[str]] = None):

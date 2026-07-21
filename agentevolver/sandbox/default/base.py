@@ -97,10 +97,14 @@ class OpenSandbox(Sandbox):
         from opensandbox.config import ConnectionConfig
         from opensandbox.models.sandboxes import NetworkPolicy
 
-        await ensure_server(domain=self.config.domain)
+        # Resolve once so the daemon and the client connect to the same domain
+        # (config.domain is None by default -> port-manager-assigned port).
+        from agentevolver.sandbox.process import default_domain
+        domain = self.config.domain or default_domain()
+        await ensure_server(domain=domain)
 
         conn = ConnectionConfig(
-            domain=self.config.domain,
+            domain=domain,
             api_key=self.config.api_key,
             request_timeout=timedelta(seconds=60),
         )

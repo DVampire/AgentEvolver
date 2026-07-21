@@ -27,7 +27,7 @@ class SandboxServerManager:
 
     Usage::
 
-        mgr = SandboxServerManager()
+        mgr = SandboxServerManager(domain=default_domain())
         await mgr.ensure_running()   # idempotent — starts the daemon if needed
         ...
         await mgr.shutdown()         # once, on global cleanup
@@ -35,7 +35,7 @@ class SandboxServerManager:
 
     def __init__(
         self,
-        domain: str = "localhost:8080",
+        domain: str,
         server_bin: str = "opensandbox-server",
         startup_timeout: float = 30.0,
         poll_interval: float = 0.5,
@@ -162,9 +162,28 @@ class SandboxServerManager:
 # A single shared daemon for the whole process. ``ensure_server`` is safe to
 # call from anywhere (manager, handles, environments).
 _server_singletons: dict = {}
+_default_domain: Optional[str] = None
 
 
-async def ensure_server(domain: str = "localhost:8080", server_bin: str = "opensandbox-server") -> SandboxServerManager:
+def default_domain() -> str:
+    """Resolve the daemon's domain through the port manager, once per process.
+
+    The port is reserved via ``port_manager`` (preferring the well-known
+    ``OPENSANDBOX`` port, falling back to any free port when it is taken) so the
+    sandbox daemon never hard-codes 8080 and never collides with another service
+    on a shared host. Cached process-wide: every sandbox shares one daemon on one
+    managed port.
+    """
+    global _default_domain
+    if _default_domain is None:
+        from agentevolver.port import port_manager, OPENSANDBOX
+        rec = port_manager.register("opensandbox", preferred=OPENSANDBOX, kind="host")
+        _default_domain = f"localhost:{rec['port']}"
+    return _default_domain
+
+
+async def ensure_server(domain: Optional[str] = None, server_bin: str = "opensandbox-server") -> SandboxServerManager:
+    domain = domain or default_domain()
     mgr = _server_singletons.get(domain)
     if mgr is None:
         mgr = SandboxServerManager(domain=domain, server_bin=server_bin)

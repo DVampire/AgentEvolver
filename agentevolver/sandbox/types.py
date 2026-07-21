@@ -32,8 +32,10 @@ class SandboxConfig(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict, description="Environment variables inside the sandbox.")
     timeout_minutes: int = Field(default=10, description="Sandbox lifetime before auto-kill.")
     network: bool = Field(default=True, description="Whether the sandbox has outbound network access.")
-    # opensandbox-server connection
-    domain: str = Field(default="localhost:8080", description="opensandbox-server domain.")
+    # opensandbox-server connection. None -> resolved through the port manager
+    # (see agentevolver.sandbox.process.default_domain), so the daemon port is
+    # de-conflicted rather than hard-coded to 8080.
+    domain: Optional[str] = Field(default=None, description="opensandbox-server domain; None resolves via the port manager.")
     api_key: Optional[str] = Field(default=None, description="opensandbox-server API key, if any.")
 
 
