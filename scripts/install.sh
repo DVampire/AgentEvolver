@@ -6,10 +6,11 @@ set -euo pipefail
 # Sets up everything needed to run the MetaAgent:
 #   1. a Python env (conda or uv) on Python 3.11+
 #   2. the agentevolver package + dependencies from pyproject.toml
-#   3. Node.js / npm  -- required by the trace web UI and frontend/
+#   3. Node.js / npm  -- required by the frontend/ web UI
 #   4. optional extras (browser / chem / sandbox / benchmark)
-#   5. an .env template, if one does not exist yet
-#   6. a verification pass
+#   5. a Docker reachability check when the sandbox extra is requested
+#   6. an .env template, if one does not exist yet
+#   7. a verification pass
 #
 # Re-running is safe: existing environments are reused, not recreated.
 #
@@ -17,6 +18,7 @@ set -euo pipefail
 #   bash scripts/install.sh                      # conda env "agentos", core + dev
 #   bash scripts/install.sh -n myenv -p 3.12
 #   bash scripts/install.sh --extras browser     # + playwright & chromium
+#   bash scripts/install.sh --extras sandbox     # + container sandboxes (needs Docker)
 #   bash scripts/install.sh --extras all
 #   bash scripts/install.sh --uv                 # use uv instead of conda
 #   bash scripts/install.sh --no-node            # skip Node.js
@@ -34,7 +36,7 @@ USE_UV=0
 WITH_NODE=1
 
 usage() {
-  sed -n '4,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '4,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -62,7 +64,12 @@ case ",${EXTRAS}," in
   *,browser,*|*,all,*) WANT_BROWSER=1 ;;
 esac
 
-STEPS=6
+WANT_SANDBOX=0
+case ",${EXTRAS}," in
+  *,sandbox,*|*,all,*) WANT_SANDBOX=1 ;;
+esac
+
+STEPS=7
 step() { echo; echo "=== [$1/${STEPS}] $2 ==="; }
 
 echo "AgentEvolver installer"
@@ -143,7 +150,29 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-step 5 "Checking .env"
+step 5 "Checking Docker for container sandboxes (optional)"
+# ---------------------------------------------------------------------------
+# The sandbox extra runs code in isolated OpenSandbox containers, which need a
+# reachable Docker daemon. Report what is (not) usable; do not try to fix it,
+# since granting daemon access requires root.
+if [[ ${WANT_SANDBOX} -eq 1 ]]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker CLI not found -- install Docker Engine to use container sandboxes."
+    echo "Without it, only the non-isolated 'host' sandbox works."
+  elif docker info >/dev/null 2>&1; then
+    echo "Docker daemon reachable: $(docker version --format '{{.Server.Version}}' 2>/dev/null)."
+  else
+    echo "docker CLI present but the daemon is not reachable by this user."
+    echo "Add yourself to the docker group (then re-login):"
+    echo "    sudo usermod -aG docker \$USER"
+    echo "Until then, only the non-isolated 'host' sandbox works."
+  fi
+else
+  echo "Skipped (add --extras sandbox to enable)."
+fi
+
+# ---------------------------------------------------------------------------
+step 6 "Checking .env"
 # ---------------------------------------------------------------------------
 # Secrets are read from Vault when it is configured and reachable, and from
 # .env otherwise (see agentevolver/utils/hvac_utils.py).
@@ -179,7 +208,7 @@ ENVEOF
 fi
 
 # ---------------------------------------------------------------------------
-step 6 "Verifying"
+step 7 "Verifying"
 # ---------------------------------------------------------------------------
 FAILED=0
 check() {
@@ -195,6 +224,7 @@ check "import agentevolver"  "'${PY}' -c 'import agentevolver'"
 check "agentevolver CLI"     "'${ENV_PREFIX}/bin/agentevolver' --help"
 [[ ${WITH_NODE} -eq 1 ]] && check "npm" "PATH='${ENV_PREFIX}/bin:${PATH}' npm --version"
 [[ ${WANT_BROWSER} -eq 1 ]] && check "playwright" "'${PY}' -c 'import playwright'"
+[[ ${WANT_SANDBOX} -eq 1 ]] && check "opensandbox import" "'${PY}' -c 'import opensandbox, docker'"
 
 echo
 echo "  test suite:"
