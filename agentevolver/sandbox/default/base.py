@@ -95,7 +95,7 @@ class OpenSandbox(Sandbox):
             return
         from opensandbox import Sandbox as OSSandbox
         from opensandbox.config import ConnectionConfig
-        from opensandbox.models.sandboxes import NetworkPolicy
+        from opensandbox.models.sandboxes import NetworkPolicy, Volume, Host
 
         # Resolve once so the daemon and the client connect to the same domain
         # (config.domain is None by default -> port-manager-assigned port).
@@ -117,6 +117,13 @@ class OpenSandbox(Sandbox):
         )
         if entrypoint:
             create_kwargs["entrypoint"] = entrypoint
+        # Bind-mount host dirs (e.g. the repo at /AgentEvolver) so files stay consistent
+        # between the base container and this peer.
+        if self.config.mounts:
+            create_kwargs["volumes"] = [
+                Volume(name=f"mount{i}", host=Host(path=host_path), mount_path=container_path)
+                for i, (host_path, container_path) in enumerate(self.config.mounts.items())
+            ]
         if not self.config.network:
             # SandboxConfig.network=False -> deny all egress (no default rule matches,
             # so the "deny" default_action applies to everything).

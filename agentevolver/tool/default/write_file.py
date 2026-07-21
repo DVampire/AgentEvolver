@@ -8,6 +8,7 @@ from pydantic import Field
 
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
+from agentevolver.config import config
 from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
@@ -64,10 +65,26 @@ class WriteFileTool(Tool):
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=content),
-                workspace=getattr(kwargs.get("ctx"), "workspace_root", ""),
+                workspace=(config.workspace_root or ""),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
+
+            # A peer sandbox bound on the context routes the write into that container.
+            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+            if sandbox is not None:
+                try:
+                    await sandbox.write_file(path, content)
+                except Exception as e:  # noqa: BLE001
+                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot write {path} in sandbox: {e}")
+                line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+                warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=True,
+                    message=f"{warning_prefix}Wrote {line_count} line(s) to {path} (sandbox).",
+                    data={"path": path, "line_count": line_count, "sandboxed": True},
+                )
 
             parent = os.path.dirname(path)
             if parent:

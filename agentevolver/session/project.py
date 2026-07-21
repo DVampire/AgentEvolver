@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from agentevolver.sandbox.project import ProjectSandbox
+from agentevolver.config import config
 
 
 def ensure_session_sandbox(
@@ -29,7 +30,6 @@ def ensure_session_sandbox(
         Path(project_root) / session_id,
         shared_extension_root=shared_extension_root,
     )
-    ctx.workspace_root = str(sandbox.workspace_root)
     ctx.extra = {**extra, **sandbox.describe()}
     return sandbox
 
@@ -75,10 +75,10 @@ def stage_input_files(ctx: Any, input: Dict[str, Any]) -> Dict[str, Any]:
     """
     prepared = dict(input)
     files = prepared.get("files")
-    if not isinstance(files, list) or not getattr(ctx, "workspace_root", None):
+    if not isinstance(files, list) or not config.workspace_root:
         return prepared
 
-    workspace = Path(ctx.workspace_root).resolve()
+    workspace = Path(config.workspace_root).resolve()
     inputs_dir = workspace / "inputs"
     staged: list[str] = []
     for index, value in enumerate(files):

@@ -156,7 +156,6 @@ async def main():
 
     # --- Teardown ---
     await task_manager.stop()
-    await asyncio.sleep(600)  # Keep trace UI alive for inspection
     await trace_manager.stop()
 
 

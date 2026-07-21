@@ -208,7 +208,6 @@ async def main():
     # --- Teardown ---
     await task_manager.stop()
     await trace_manager.stop()
-    await asyncio.sleep(600)  # Wait for all tasks to finish
 
 
 if __name__ == "__main__":

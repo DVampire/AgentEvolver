@@ -256,7 +256,7 @@ class AgentGateway:
         )
         self._sync_session_capabilities(session)
         self._sessions[session_id] = session
-        payload = {"workspace": context.workspace_root, "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "source_workspace": source_workspace}
+        payload = {"workspace": str(sandbox.workspace_root), "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "source_workspace": source_workspace}
         await self._publish("session.created", payload, session_id=session_id)
         return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
 
@@ -266,7 +266,7 @@ class AgentGateway:
                 {
                     "session_id": session_id,
                     "name": session.context.name,
-                    "workspace": session.context.workspace_root,
+                    "workspace": str(session.sandbox.workspace_root),
                     "source_workspace": session.context.extra.get("source_workspace"),
                     "project_root": str(session.sandbox.project_root),
                     "extension_root": str(session.sandbox.extension_root),
@@ -352,7 +352,7 @@ class AgentGateway:
         if not content:
             raise ValueError("Task content is required")
         files = [str(item) for item in params.get("files", [])]
-        workspace = Path(self._sessions[session_id].context.workspace_root).resolve()
+        workspace = Path(str(self._sessions[session_id].sandbox.workspace_root)).resolve()
         for path in files:
             try:
                 Path(path).expanduser().resolve().relative_to(workspace)
@@ -502,7 +502,7 @@ class AgentGateway:
         upload_id = make_id()
         # An upload is real work in this session — create its roots before writing.
         session.sandbox.materialize()
-        upload_dir = Path(session.context.workspace_root) / "uploads" / session.context.id
+        upload_dir = Path(session.sandbox.workspace_root) / "uploads" / session.context.id
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{upload_id}_{name}"
         path.touch(exist_ok=False)
@@ -980,7 +980,6 @@ class AgentGateway:
                 id=session_id,
                 name=command_name,
                 raw=raw,
-                workspace_root=session.context.workspace_root,
                 extra={
                     **session.context.extra,
                     "session_id": session_id,

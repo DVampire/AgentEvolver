@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentevolver.config import config
 from agentevolver.workflow import (
     ExecutionState, InvocationState, WorkflowCompileError, WorkflowEvaluation,
     WorkflowContextManager, WorkflowRuntime, WorkflowState, WorkflowStatus,
@@ -145,6 +146,7 @@ def test_compiler_rejects_unsafe_or_unbounded_programs():
 
 @pytest.mark.asyncio
 async def test_dynamic_map_verify_reduce_and_checkpoint(tmp_path):
+    config.workspace_root = str(tmp_path)
     active = peak = 0
 
     async def handler(target, task, args):

@@ -18,7 +18,6 @@ class ModelContext(BaseContext):
 
     id: str = Field(description="Unique session/call identifier.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this invocation context.")
-    workspace_root: Optional[str] = Field(default=None, description="Working directory available to the caller.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this context.")
 
 

@@ -5,6 +5,7 @@ import pytest
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.session import SessionContext
 from agentevolver.session.project import ensure_session_sandbox, stage_input_files
+from agentevolver.config import config
 
 
 def test_promote_staged_extension_with_audit_record(tmp_path: Path) -> None:
@@ -90,7 +91,7 @@ def test_direct_context_receives_a_session_sandbox(tmp_path: Path) -> None:
     )
 
     assert sandbox is not None
-    assert context.workspace_root == str(tmp_path / "output" / "meta_agent" / "direct-run" / "workspace")
+    assert context.extra["workspace_root"] == str(tmp_path / "output" / "meta_agent" / "direct-run" / "workspace")
     assert context.extra["extension_root"] == str(tmp_path / "output" / "meta_agent" / "direct-run" / "extension")
     assert context.extra["shared_extension_root"] == str(tmp_path / "extension")
 
@@ -100,9 +101,12 @@ def test_external_task_file_is_staged_inside_workspace(tmp_path: Path) -> None:
     source.write_text("<h1>task</h1>", encoding="utf-8")
     context = SessionContext(id="direct-run")
     ensure_session_sandbox(context, tmp_path / "output")
+    # stage_input_files reads the working dir from config (set per-run by
+    # bind_session_roots); mirror that here.
+    config.workspace_root = context.extra["workspace_root"]
 
     prepared = stage_input_files(context, {"task": "review", "files": [str(source)]})
 
     staged = Path(prepared["files"][0])
-    assert staged.is_relative_to(Path(context.workspace_root))
+    assert staged.is_relative_to(Path(context.extra["workspace_root"]))
     assert staged.read_text(encoding="utf-8") == "<h1>task</h1>"

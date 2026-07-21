@@ -186,8 +186,10 @@ connector_names = [
 ]
 
 #-----------------ENVIRONMENT CONFIGS-----------------
-# browser_agent needs a real browser to verify web/UI deliverables. use_sandbox=False
-# so it runs Playwright/chromium directly on the host (no container runtime required).
+# browser_agent verifies web/UI deliverables in a real browser. Under Model X the
+# agent runs in the base container; the browser runs as a separate peer container
+# (opensandbox/chrome) spawned via the Docker socket and driven over CDP — so the
+# base image needs no chromium of its own. use_sandbox=True selects that peer.
 env_names = [
     "browser_environment",
 ]
@@ -195,7 +197,7 @@ browser_environment = dict(
     base_dir="environment/browser",
     headless=True,
     viewport=dict(width=1280, height=900),
-    use_sandbox=False,
+    use_sandbox=True,
     use_som=True,
     state_detail="elements",
     max_state_elements=0,

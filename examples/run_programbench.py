@@ -67,7 +67,7 @@ from agentevolver.trajectory import trajectory_manager
 from agentevolver.session.types import SessionContext
 from agentevolver.session.project import ensure_session_sandbox, bind_session_roots
 from agentevolver.utils import make_id, dedent
-from agentevolver.sandbox import sandbox_manager, use_sandbox
+from agentevolver.sandbox import sandbox_manager
 
 
 # Official ProgramBench baseline (mini-swe-agent) image tag for the agent's own
@@ -231,22 +231,23 @@ def parse_args():
 
 
 async def run_agent(record: TaskRecord, ctx: SessionContext, sandbox):
-    """Run MetaAgent on the task, bound to `sandbox` for the duration of the call.
+    """Run MetaAgent on the task with tool execution routed into ``sandbox``.
 
-    `use_sandbox()` binds a ContextVar for the current async task — it must wrap the
-    actual `agent_manager(...)` await here (where bash_tool et al. run), not somewhere
-    earlier in main()'s per-task loop, or the binding wouldn't propagate to the
-    coroutine that actually executes tool calls.
+    Binding the peer sandbox on ``ctx.extra["sandbox"]`` makes bash/file/git tools
+    execute inside the per-task cleanroom container (it propagates to the agent and
+    its sub-agents via BaseContext.from_context, which copies ``extra``). The agent
+    brain itself runs where this process runs (the base container), so it keeps LLM
+    network access while the task's shell work stays isolated in the peer.
     """
-    with use_sandbox(sandbox):
-        response = await agent_manager(
-            name="meta_agent",
-            input={
-                "task": record.task.content,
-                "files": record.task.files,
-            },
-            ctx=ctx,
-        )
+    ctx.extra["sandbox"] = sandbox
+    response = await agent_manager(
+        name="meta_agent",
+        input={
+            "task": record.task.content,
+            "files": record.task.files,
+        },
+        ctx=ctx,
+    )
     return response
 
 

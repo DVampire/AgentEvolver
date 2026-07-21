@@ -8,6 +8,7 @@ from pydantic import Field
 
 from agentevolver.permission import Operation, PermissionRequest, is_binary_file, permission_manager
 from agentevolver.registry import TOOL
+from agentevolver.config import config
 from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
@@ -63,24 +64,34 @@ class EditFileTool(Tool):
             sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
             if sandbox_denial:
                 return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-            if not os.path.exists(path):
-                return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
-            if not os.path.isfile(path):
-                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
-            if is_binary_file(path):
-                return Response(type=ResponseType.TOOL, success=False, message="Error: Binary file — use a dedicated binary tool.")
+            # A peer sandbox bound on the context routes the read-modify-write into
+            # that container; otherwise operate on the local fs.
+            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+            if sandbox is None:
+                if not os.path.exists(path):
+                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
+                if not os.path.isfile(path):
+                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
+                if is_binary_file(path):
+                    return Response(type=ResponseType.TOOL, success=False, message="Error: Binary file — use a dedicated binary tool.")
 
             # Permission check (write op)
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=new_string),
-                workspace=getattr(kwargs.get("ctx"), "workspace_root", ""),
+                workspace=(config.workspace_root or ""),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
-            with open(path, "r", encoding="utf-8") as f:
-                original = f.read()
+            if sandbox is not None:
+                try:
+                    original = await sandbox.read_file(path)
+                except Exception as e:  # noqa: BLE001
+                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot read {path} in sandbox: {e}")
+            else:
+                with open(path, "r", encoding="utf-8") as f:
+                    original = f.read()
 
             count = original.count(old_string)
             if count == 0:
@@ -102,8 +113,14 @@ class EditFileTool(Tool):
 
             updated = original.replace(old_string, new_string, 1)
 
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(updated)
+            if sandbox is not None:
+                try:
+                    await sandbox.write_file(path, updated)
+                except Exception as e:  # noqa: BLE001
+                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot write {path} in sandbox: {e}")
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(updated)
 
             # Build unified diff for extra.data
             orig_lines: List[str] = original.splitlines(keepends=True)

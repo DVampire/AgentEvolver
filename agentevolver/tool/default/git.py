@@ -8,6 +8,7 @@ from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
+from agentevolver.config import config
 
 _DESCRIPTION = "Run git operations inside the project workspace_root."
 
@@ -55,8 +56,18 @@ class GitTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
-    async def _run(self, args: list[str], cwd: str) -> tuple[int, str, str]:
-        """Run a git command, return (returncode, stdout, stderr)."""
+    async def _run(self, args: list[str], cwd: str, sandbox=None) -> tuple[int, str, str]:
+        """Run a git command, return (returncode, stdout, stderr).
+
+        When a peer ``sandbox`` is bound on the context, the command runs inside it
+        (git -C <cwd> ...); otherwise it runs locally (Model X: the project container).
+        """
+        if sandbox is not None:
+            import shlex as _shlex
+            cmd = "git -C " + _shlex.quote(cwd) + " " + " ".join(_shlex.quote(a) for a in args)
+            res = await sandbox.run_command(cmd)
+            return (res.exit_code if res.exit_code is not None else (0 if res.success else 1),
+                    res.stdout or "", res.stderr or res.error or "")
         process = await asyncio.create_subprocess_exec(
             "git", *args,
             stdout=asyncio.subprocess.PIPE,
@@ -84,9 +95,9 @@ class GitTool(Tool):
 
         Used to scope git operations to the session's workspace directory.
         """
-        if ctx and hasattr(ctx, "workspace_root") and ctx.workspace_root:
-            return ctx.workspace_root
-        return None
+        # Working dir comes from the global config (set per-run by bind_session_roots),
+        # not from ctx — see BaseContext note on why workspace_root is config-owned.
+        return config.workspace_root or None
 
     async def __call__(
         self,
@@ -105,6 +116,7 @@ class GitTool(Tool):
             count: Number of log entries (for log action).
         """
         ctx = kwargs.get("ctx")
+        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
         workspace_root = self._get_workspace_root(ctx)
         if not workspace_root:
             return Response(type=ResponseType.TOOL, success=False, message="Error: No workspace_root set in context.")
@@ -113,49 +125,49 @@ class GitTool(Tool):
 
         try:
             if action == "status":
-                rc, out, err = await self._run(["status"], workspace_root)
+                rc, out, err = await self._run(["status"], workspace_root, sandbox)
                 return self._respond(rc, out, err, "status")
 
             elif action == "diff":
                 git_args = ["diff"]
                 if path:
                     git_args.append(path)
-                rc, out, err = await self._run(git_args, workspace_root)
+                rc, out, err = await self._run(git_args, workspace_root, sandbox)
                 return self._respond(rc, out or "(no unstaged changes)", err, "diff")
 
             elif action == "diff_staged":
                 git_args = ["diff", "--cached"]
                 if path:
                     git_args.append(path)
-                rc, out, err = await self._run(git_args, workspace_root)
+                rc, out, err = await self._run(git_args, workspace_root, sandbox)
                 return self._respond(rc, out or "(no staged changes)", err, "diff --cached")
 
             elif action == "log":
                 rc, out, err = await self._run(
-                    ["log", f"--max-count={count}", "--oneline", "--decorate"], workspace_root
+                    ["log", f"--max-count={count}", "--oneline", "--decorate"], workspace_root, sandbox
                 )
                 return self._respond(rc, out or "(no commits)", err, "log")
 
             elif action == "add":
                 target = path or "."
-                rc, out, err = await self._run(["add", target], workspace_root)
+                rc, out, err = await self._run(["add", target], workspace_root, sandbox)
                 msg = f"Staged: {target}" if rc == 0 else err
                 return self._respond(rc, msg, err, "add")
 
             elif action == "commit":
                 if not message:
                     return Response(type=ResponseType.TOOL, success=False, message="Error: commit requires a message parameter.")
-                rc, out, err = await self._run(["commit", "-m", message], workspace_root)
+                rc, out, err = await self._run(["commit", "-m", message], workspace_root, sandbox)
                 return self._respond(rc, out or err, err, "commit")
 
             elif action == "checkout":
                 if not path:
                     return Response(type=ResponseType.TOOL, success=False, message="Error: checkout requires a target (branch or file path).")
-                rc, out, err = await self._run(["checkout", path], workspace_root)
+                rc, out, err = await self._run(["checkout", path], workspace_root, sandbox)
                 return self._respond(rc, out or err or f"Checked out: {path}", err, "checkout")
 
             elif action == "branch":
-                rc, out, err = await self._run(["branch", "-a"], workspace_root)
+                rc, out, err = await self._run(["branch", "-a"], workspace_root, sandbox)
                 return self._respond(rc, out or "(no branches)", err, "branch")
 
             else:

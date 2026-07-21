@@ -87,7 +87,6 @@ class ProtocolManager(metaclass=Singleton):
             task = f"Target capability: {target_name}\n\n{task}"
         ctx = AgentContext(
             id=f"{getattr(child, 'name', 'agent')}-{make_id()}",
-            workspace_root=workspace_root,
             parent_session_id=(parent_ref.name if parent_ref is not None else None),
         )
         if target_name:

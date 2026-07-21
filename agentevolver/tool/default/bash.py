@@ -7,9 +7,9 @@ from typing import Any, Dict
 
 from pydantic import Field
 
-from agentevolver.permission import Operation, PermissionMode, PermissionRequest, permission_manager
+from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
-from agentevolver.sandbox.types import get_current_sandbox
+from agentevolver.config import config
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 
@@ -59,24 +59,16 @@ class BashTool(Tool):
             return Response(type=ResponseType.TOOL, success=False, message="Error: Empty command provided")
 
         ctx = kwargs.get("ctx")
-        sandbox = get_current_sandbox()
-        mode = PermissionMode(self.permission_mode)
-        gateway_session = bool(getattr(ctx, "extra", {}).get("gateway_session"))
-        if sandbox is None and (gateway_session or mode != PermissionMode.DANGER_FULL_ACCESS):
-            return Response(
-                type=ResponseType.TOOL,
-                success=False,
-                message=(
-                    "Sandbox blocked host Bash execution for a restricted tool. Configure an "
-                    "isolated backend, or explicitly mark the tool danger_full_access for a "
-                    "trusted local-only run."
-                ),
-            )
+        # A peer sandbox bound on the context (ctx.extra["sandbox"]) means "route this
+        # command into that container" — e.g. a programbench task cleanroom. When absent
+        # (the main path), the command runs locally, which under Model X already IS the
+        # project container. See BaseContext note.
+        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
 
         # Permission check
         req = PermissionRequest(op=Operation.BASH, target=command)
         result = permission_manager.check(
-            self.name, req, workspace=getattr(ctx, "workspace_root", "")
+            self.name, req, workspace=(config.workspace_root or "")
         )
         if not result.allowed:
             return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
@@ -88,16 +80,16 @@ class BashTool(Tool):
                 execution = await asyncio.wait_for(
                     sandbox.run_command(command), timeout=self.timeout
                 )
-                message = warning_prefix + execution.as_message()
                 return Response(
                     type=ResponseType.TOOL,
                     success=execution.success,
-                    message=message,
+                    message=warning_prefix + execution.as_message(),
                     data={"exit_code": execution.exit_code, "command": command, "sandboxed": True},
                 )
 
-            # Keep commands such as ``python3`` and ``pip`` in the same runtime
-            # environment that launched AgentEvolver (for example conda's agentos).
+            # No peer bound: run in the current runtime environment. Under Model X the
+            # whole agent runs inside the project container, so "local" execution already
+            # IS sandboxed. Keep python3 and pip on the interpreter that launched us.
             runtime_bin = os.path.dirname(sys.executable)
             command_env = {
                 **os.environ,
@@ -107,7 +99,7 @@ class BashTool(Tool):
             # keeping relative outputs contained, this makes ordinary scripts
             # (``open('results/x.json', 'w')``) behave consistently with the
             # workspace path shown to the agent.
-            workspace_root = getattr(ctx, "workspace_root", None)
+            workspace_root = config.workspace_root
             cwd = os.path.abspath(workspace_root) if workspace_root else None
             if cwd and not os.path.isdir(cwd):
                 return Response(

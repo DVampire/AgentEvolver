@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 from jsonschema import Draft202012Validator
 
+from agentevolver.config import config
 from agentevolver.response import Response
 from agentevolver.utils import make_id
 
@@ -1088,7 +1089,7 @@ class WorkflowRuntime:
         Returns:
             ``<workspace>/.agentevolver/workflows/<run_id>.json``.
         """
-        workspace = Path(getattr(ctx, "workspace_root", None) or os.getcwd()).resolve()
+        workspace = Path(config.workspace_root or os.getcwd()).resolve()
         root = workspace / ".agentevolver" / "workflows"
         root.mkdir(parents=True, exist_ok=True)
         return root / f"{run.id}.json"

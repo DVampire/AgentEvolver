@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from agentevolver.permission import PermissionMode
 from agentevolver.permission.types import check_file_write, validate_command
 from agentevolver.tool.default.bash import BashTool
-from agentevolver.sandbox import ExecResult, use_sandbox
+from agentevolver.config import config
 
 
 def test_workspace_path_uses_component_boundary(tmp_path: Path) -> None:
@@ -31,36 +31,15 @@ def test_read_only_blocks_chained_redirect_and_git_write() -> None:
     assert not validate_command("ls && rm -rf elsewhere", PermissionMode.READ_ONLY).allowed
 
 
-def test_restricted_bash_never_falls_back_to_host(tmp_path: Path) -> None:
-    tool = BashTool(permission_mode="workspace_write")
-    ctx = SimpleNamespace(workspace_root=str(tmp_path), extra={})
-    response = asyncio.run(tool(command="pwd", ctx=ctx))
-    assert not response.success
-    assert "Sandbox blocked host Bash" in response.message
-
-
-def test_gateway_never_allows_host_bash_even_in_danger_mode(tmp_path: Path) -> None:
+def test_danger_full_access_bash_runs_locally(tmp_path: Path) -> None:
+    # Under Model X the whole agent runs inside the project container, so bash runs
+    # the command in the current process environment (which is the container). There
+    # is no reach-into-a-separate-sandbox path anymore.
+    config.workspace_root = str(tmp_path)
     tool = BashTool(permission_mode="danger_full_access")
-    ctx = SimpleNamespace(workspace_root=str(tmp_path), extra={"gateway_session": True})
-    response = asyncio.run(tool(command="pwd", ctx=ctx))
-    assert not response.success
-    assert "Sandbox blocked host Bash" in response.message
-
-
-def test_restricted_bash_executes_through_bound_sandbox(tmp_path: Path) -> None:
-    class FakeSandbox:
-        command = None
-
-        async def run_command(self, command: str) -> ExecResult:
-            self.command = command
-            return ExecResult(success=True, stdout="sandbox", exit_code=0)
-
-    sandbox = FakeSandbox()
-    tool = BashTool(permission_mode="workspace_write")
-    ctx = SimpleNamespace(workspace_root=str(tmp_path), extra={})
-    with use_sandbox(sandbox):
-        response = asyncio.run(tool(command="pwd", ctx=ctx))
+    ctx = SimpleNamespace(extra={})
+    response = asyncio.run(tool(command="echo hello-sandbox", ctx=ctx))
     assert response.success
-    assert response.data["sandboxed"] is True
-    assert sandbox.command == "pwd"
-    assert response.message == "sandbox"
+    assert "hello-sandbox" in response.message
+    assert "sandboxed" not in (response.data or {})
+

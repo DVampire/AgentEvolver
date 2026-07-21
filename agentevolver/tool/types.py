@@ -14,7 +14,6 @@ class ToolContext(BaseContext):
 
     id: str = Field(default="", description="Unique identifier for this tool call.")
     name: str = Field(default="", description="Name of the tool being called.")
-    workspace_root: Optional[str] = Field(default=None, description="Working directory for file operations.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the tool.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this tool context.")
 

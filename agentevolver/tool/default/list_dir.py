@@ -7,6 +7,7 @@ from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
+from agentevolver.config import config
 from agentevolver.sandbox.project import check_session_path
 
 _DESCRIPTION = "List the contents of a directory as a tree structure."
@@ -131,6 +132,22 @@ class ListDirTool(Tool):
             sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
             if sandbox_denial:
                 return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+
+            # A peer sandbox bound on the context lists inside that container (a flat
+            # find listing); otherwise walk the local fs as a formatted tree.
+            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+            if sandbox is not None:
+                import shlex
+                res = await sandbox.run_command(
+                    f"find {shlex.quote(path)} -maxdepth {int(depth)} 2>/dev/null | sort"
+                )
+                if not res.success:
+                    return Response(type=ResponseType.TOOL, success=False,
+                                    message=f"Error listing {path} in sandbox: {res.as_message()}")
+                listing = res.stdout.strip() or "(empty)"
+                return Response(type=ResponseType.TOOL, success=True, message=listing,
+                                data={"depth": depth, "sandboxed": True})
+
             if not os.path.exists(path):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path not found: {path}")
             if not os.path.isdir(path):

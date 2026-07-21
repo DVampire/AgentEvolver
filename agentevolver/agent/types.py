@@ -83,7 +83,6 @@ class AgentContext(BaseContext):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this agent invocation.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this agent invocation.")
-    workspace_root: Optional[str] = Field(default=None, description="Working directory for file and git tools.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the agent.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this agent context.")
     parent_session_id: Optional[str] = Field(default=None, description="Name of the parent MetaAgent, used by trace and escalation hooks.")
@@ -538,18 +537,12 @@ class Agent(BaseModel):
     async def _resolve_workspace_root(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workspace_root surfaced in the prompt's `{{ workspace_root }}` slot.
 
-        When a container-backed sandbox is bound (bash_tool routes into it), surface the
-        in-container workspace (e.g. /workspace) so the path the agent is told to use
-        matches where its commands actually run. Otherwise prefer ctx.workspace_root
-        (injected by MetaAgent for sub-agents) over self.base_dir so all agents in a
-        MetaAgent run share the same directory.
+        Prefer ctx.workspace_root (injected by MetaAgent for sub-agents) over
+        self.base_dir so all agents in a MetaAgent run share the same directory.
+        Under Model X the whole agent runs inside the project container, so this
+        path is already the in-container working directory.
         """
-        from agentevolver.sandbox.types import get_current_sandbox
-        sandbox = get_current_sandbox()
-        container_ws = getattr(sandbox, "container_workspace", None) if sandbox else None
-        if container_ws:
-            return container_ws
-        return assemble_workspace_path(ctx.workspace_root if ctx and ctx.workspace_root else self.base_dir)
+        return assemble_workspace_path(config.workspace_root or self.base_dir)
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
         """A live listing of the working directory's files, refreshed each step.
@@ -558,13 +551,7 @@ class Agent(BaseModel):
         spending a tool call. Opt-in: agents that do file work expose this as a
         `workspace` sub-module from their `_get_agent_context` override.
         """
-        from agentevolver.sandbox.types import get_current_sandbox
-        sandbox = get_current_sandbox()
-        container_ws = getattr(sandbox, "container_workspace", None) if sandbox else None
-        if container_ws:
-            # Files live inside the sandbox, not on a host path we can os.listdir here.
-            return f"{container_ws}\n  (inside sandbox — run `ls -la {container_ws}` via bash to inspect)"
-        workspace_root = os.path.abspath(ctx.workspace_root if ctx and ctx.workspace_root else self.base_dir)
+        workspace_root = os.path.abspath(config.workspace_root or self.base_dir)
         try:
             entries = sorted(os.listdir(workspace_root))
             lines = [
@@ -768,7 +755,7 @@ class Agent(BaseModel):
         await hook_manager(
             name="snapshot_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
-                   "task_id": task_id, "workspace_root": getattr(ctx, "workspace_root", None),
+                   "task_id": task_id, "workspace_root": config.workspace_root,
                    "messages": messages, "reasoning": reasoning, "plan": plan},
             ctx=ctx,
         )
@@ -1005,7 +992,7 @@ class Agent(BaseModel):
                         "environment_allowlist", "workflow_allowlist",
                     )
                 },
-                parent_ref=parent_ref, workspace_root=getattr(ctx, "workspace_root", None) or self.base_dir,
+                parent_ref=parent_ref, workspace_root=config.workspace_root or self.base_dir,
             )
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
@@ -1093,8 +1080,8 @@ class Agent(BaseModel):
         logger.info(f"| 🚀 Starting {self.name}: {task}")
         if ctx is None:
             ctx = AgentContext()
-        if not ctx.workspace_root:
-            ctx.workspace_root = self.base_dir
+        if not config.workspace_root:
+            config.workspace_root = self.base_dir
         if files:
             logger.info(f"| 📂 Attached files: {files}")
 
@@ -1445,7 +1432,7 @@ class Agent(BaseModel):
         Paths, sizes, and nanosecond mtimes detect ordinary edits cheaply. Large cache
         trees are skipped and traversal is bounded to keep the guard lightweight.
         """
-        root_value = getattr(ctx, "workspace_root", None)
+        root_value = config.workspace_root
         if not root_value:
             return ""
         root = os.path.abspath(root_value)
@@ -1622,8 +1609,8 @@ class ProceduralAgent(Agent):
         from agentevolver.response import ResponseType
 
         ctx = ctx or AgentContext()
-        if not ctx.workspace_root:
-            ctx.workspace_root = self.base_dir
+        if not config.workspace_root:
+            config.workspace_root = self.base_dir
         task_id = str(uuid.uuid4())
         lifecycle = {
             "task_id": task_id,

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
+from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.registry import AGENT
 from agentevolver.hook.server import hook_manager
@@ -252,8 +253,8 @@ class BrowserAgent(Agent):
         if ctx is None:
             ctx = AgentContext()
 
-        if not ctx.workspace_root:
-            ctx.workspace_root = self.base_dir
+        if not config.workspace_root:
+            config.workspace_root = self.base_dir
 
         if files:
             logger.info(f"| 📂 Attached files: {files}")

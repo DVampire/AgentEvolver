@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import base64
 import shlex
-from contextlib import contextmanager
-from contextvars import ContextVar
 from datetime import timedelta
-from typing import Any, Dict, Iterator, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +30,11 @@ class SandboxConfig(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict, description="Environment variables inside the sandbox.")
     timeout_minutes: int = Field(default=10, description="Sandbox lifetime before auto-kill.")
     network: bool = Field(default=True, description="Whether the sandbox has outbound network access.")
+    # Host directories bind-mounted into the container, as {host_path: container_path}.
+    # Peer sandboxes mount the repo at /AgentEvolver so files (source + outputs) are
+    # consistent across the base container and its peers — see base.py, which turns each
+    # entry into an opensandbox Volume(host=Host(path=...), mount_path=...).
+    mounts: Dict[str, str] = Field(default_factory=dict, description="Host->container bind mounts {host_path: container_path}.")
     # opensandbox-server connection. None -> resolved through the port manager
     # (see agentevolver.sandbox.process.default_domain), so the daemon port is
     # de-conflicted rather than hard-coded to 8080.
@@ -167,32 +170,3 @@ class Sandbox:
 
     async def __aexit__(self, *exc: Any) -> None:
         await self.destroy()
-
-
-# ---------------------------------------------------------------------------
-# Ambient sandbox — ContextVar injection
-# ---------------------------------------------------------------------------
-# A tool (bash / read_file / write_file / …) can resolve the sandbox it should
-# run in via ``get_current_sandbox()`` without every call site threading a
-# handle through. An agent/session binds one with ``use_sandbox(sb)`` at the
-# top of a run; tools read it. Falls back to None (run on host) when unset.
-_current_sandbox: ContextVar[Optional[Sandbox]] = ContextVar("current_sandbox", default=None)
-
-
-def get_current_sandbox() -> Optional[Sandbox]:
-    """The sandbox bound for the current async context, or None (host execution)."""
-    return _current_sandbox.get()
-
-
-@contextmanager
-def use_sandbox(sandbox: Optional[Sandbox]) -> Iterator[Optional[Sandbox]]:
-    """Bind ``sandbox`` as the ambient sandbox for the duration of the block.
-
-    ContextVars are task-local, so concurrent agent runs each see their own
-    binding without cross-talk. Restores the prior binding on exit.
-    """
-    token = _current_sandbox.set(sandbox)
-    try:
-        yield sandbox
-    finally:
-        _current_sandbox.reset(token)

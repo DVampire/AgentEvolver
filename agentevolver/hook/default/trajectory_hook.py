@@ -9,6 +9,7 @@ POST_STEP / ON_STOP, mirroring how snapshot_hook is called.
 
 from __future__ import annotations
 
+from agentevolver.config import config
 from agentevolver.hook.types import Hook, HookContext, HookEvent, HookResult
 from agentevolver.registry import HOOK
 
@@ -50,7 +51,7 @@ class TrajectoryHook(Hook):
             id=ctx.id,
             task_id=inp.get("task_id") or ctx.id,
             agent_name=inp.get("agent_name") or "",
-            workspace_root=ctx.workspace_root,
+            workspace_root=config.workspace_root,
             input=inp,
         )
 
