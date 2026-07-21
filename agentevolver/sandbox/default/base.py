@@ -16,8 +16,14 @@ from agentevolver.sandbox.process import ensure_server
 from agentevolver.sandbox.types import ExecResult, Sandbox, SandboxConfig
 
 
-def _logs_to_str(logs_field: Any) -> str:
-    """opensandbox ExecutionLogs.stdout/stderr may be a str or a list of chunks."""
+def _logs_to_str(logs_field: Any, *, sep: str = "") -> str:
+    """opensandbox ExecutionLogs.stdout/stderr may be a str or a list of chunks.
+
+    `sep` defaults to "" (raw stream chunks concatenate with no implied break);
+    pass "\n" for fields that are really a list of discrete message lines (e.g.
+    ExecutionError.traceback, confirmed to come back as e.g. ["exit status 2"]
+    despite being typed as a plain string).
+    """
     if logs_field is None:
         return ""
     if isinstance(logs_field, str):
@@ -26,7 +32,7 @@ def _logs_to_str(logs_field: Any) -> str:
         out = []
         for chunk in logs_field:
             out.append(chunk if isinstance(chunk, str) else getattr(chunk, "text", str(chunk)))
-        return "".join(out)
+        return sep.join(out)
     return str(logs_field)
 
 
@@ -48,7 +54,13 @@ def execution_to_result(execution: Any) -> ExecResult:
     if error_obj is not None:
         name = getattr(error_obj, "name", "") or ""
         value = getattr(error_obj, "value", "") or ""
-        tb = getattr(error_obj, "traceback", "") or ""
+        # traceback is documented/typed as a string but opensandbox actually returns a
+        # list of message lines for at least CommandExecError (e.g. ["exit status 2"]) —
+        # an unconditional "\n".join([..., tb]) TypeErrors on every non-zero exit
+        # otherwise: "sequence item 1: expected str instance, list found", confirmed
+        # live — this silently broke every failed command run through this sandbox
+        # backend before.
+        tb = _logs_to_str(getattr(error_obj, "traceback", "") or "", sep="\n")
         error = "\n".join(p for p in [f"{name}: {value}".strip(": "), tb] if p).strip() or str(error_obj)
 
     success = error is None and (exit_code in (None, 0))
@@ -71,12 +83,19 @@ class OpenSandbox(Sandbox):
         super().__init__(config, **kwargs)
         self._sb = None  # opensandbox.Sandbox instance
 
+    @property
+    def container_workspace(self) -> Optional[str]:
+        # opensandbox mounts the session workspace (and the ProgramBench task image's
+        # WORKDIR) at /workspace; bash_tool runs there, so the prompt must say /workspace.
+        return "/workspace"
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         if self._started:
             return
         from opensandbox import Sandbox as OSSandbox
         from opensandbox.config import ConnectionConfig
+        from opensandbox.models.sandboxes import NetworkPolicy
 
         await ensure_server(domain=self.config.domain)
 
@@ -94,9 +113,13 @@ class OpenSandbox(Sandbox):
         )
         if entrypoint:
             create_kwargs["entrypoint"] = entrypoint
+        if not self.config.network:
+            # SandboxConfig.network=False -> deny all egress (no default rule matches,
+            # so the "deny" default_action applies to everything).
+            create_kwargs["network_policy"] = NetworkPolicy(default_action="deny")
         self._sb = await OSSandbox.create(image, **create_kwargs)
         self._started = True
-        logger.info(f"| 📦 Sandbox '{self.name}' started (image={image})")
+        logger.info(f"| 📦 Sandbox '{self.name}' started (image={image}, network={self.config.network})")
 
     async def destroy(self) -> None:
         if self._sb is not None:

@@ -65,15 +65,16 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["playwright", "browser-use[cli]"]   # browser automation environment
 chem = ["rdkit"]                           # chemistry skills (rdkit)
-sandbox = ["e2b", "docker"]                # remote / container sandboxes
-all = ["playwright", "browser-use[cli]", "rdkit", "e2b", "docker"]
+sandbox = ["e2b", "docker", "opensandbox", "opensandbox-server"]  # remote / container sandboxes
+benchmark = ["programbench"]               # ProgramBench task/eval data (examples/run_programbench.py)
+all = ["playwright", "browser-use[cli]", "rdkit", "e2b", "docker", "programbench", "opensandbox", "opensandbox-server"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"
 testpaths = ["tests"]
 norecursedirs = ["output", "node_modules", ".git", ".venv", "venv"]
-markers = [
+markers = [ 
     "integration: requires external credentials, services, browsers, or containers",
 ]
 asyncio_mode = "strict"
