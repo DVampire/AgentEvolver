@@ -83,6 +83,12 @@ class OpenSandbox(Sandbox):
         super().__init__(config, **kwargs)
         self._sb = None  # opensandbox.Sandbox instance
 
+    @property
+    def container_workspace(self) -> Optional[str]:
+        # opensandbox mounts the session workspace (and the ProgramBench task image's
+        # WORKDIR) at /workspace; bash_tool runs there, so the prompt must say /workspace.
+        return "/workspace"
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         if self._started:

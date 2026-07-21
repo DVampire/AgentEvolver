@@ -538,9 +538,17 @@ class Agent(BaseModel):
     async def _resolve_workspace_root(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workspace_root surfaced in the prompt's `{{ workspace_root }}` slot.
 
-        Prefers ctx.workspace_root (injected by MetaAgent for sub-agents) over
-        self.base_dir so all agents in a MetaAgent run share the same directory.
+        When a container-backed sandbox is bound (bash_tool routes into it), surface the
+        in-container workspace (e.g. /workspace) so the path the agent is told to use
+        matches where its commands actually run. Otherwise prefer ctx.workspace_root
+        (injected by MetaAgent for sub-agents) over self.base_dir so all agents in a
+        MetaAgent run share the same directory.
         """
+        from agentevolver.sandbox.types import get_current_sandbox
+        sandbox = get_current_sandbox()
+        container_ws = getattr(sandbox, "container_workspace", None) if sandbox else None
+        if container_ws:
+            return container_ws
         return assemble_workspace_path(ctx.workspace_root if ctx and ctx.workspace_root else self.base_dir)
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
@@ -550,6 +558,12 @@ class Agent(BaseModel):
         spending a tool call. Opt-in: agents that do file work expose this as a
         `workspace` sub-module from their `_get_agent_context` override.
         """
+        from agentevolver.sandbox.types import get_current_sandbox
+        sandbox = get_current_sandbox()
+        container_ws = getattr(sandbox, "container_workspace", None) if sandbox else None
+        if container_ws:
+            # Files live inside the sandbox, not on a host path we can os.listdir here.
+            return f"{container_ws}\n  (inside sandbox — run `ls -la {container_ws}` via bash to inspect)"
         workspace_root = os.path.abspath(ctx.workspace_root if ctx and ctx.workspace_root else self.base_dir)
         try:
             entries = sorted(os.listdir(workspace_root))

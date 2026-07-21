@@ -84,6 +84,16 @@ class Sandbox:
         self.config = config or SandboxConfig(**kwargs)
         self._started = False
 
+    @property
+    def container_workspace(self) -> Optional[str]:
+        """Working directory *inside* this sandbox, as seen by commands run in it.
+
+        None means the sandbox runs on host paths directly (no remapping), so the
+        prompt keeps showing the host workspace_root. Container-backed sandboxes
+        override this so the prompt matches where bash_tool actually runs.
+        """
+        return None
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         """Create/connect the underlying container. Idempotent."""
