@@ -22,7 +22,7 @@ tag         = "monitor_agent"
 project_root = f"output/{tag}"
 log_path    = "monitor_agent.log"
 
-model_name      = "openrouter/claude-opus-4.8"
+model_name      = "anthropic/claude-opus-4.8"
 
 agent_names  = ["monitor_agent"]
 tool_names   = []

@@ -18,7 +18,7 @@ project_root = f"output/{tag}"
 log_path = "hle.log"
 
 version = "0.1.0"
-model_name = "openrouter/claude-opus-4.8"
+model_name = "anthropic/claude-opus-4.8"
 
 memory_names = ["file_system_memory"]
 agent_names = ["general_agent"]

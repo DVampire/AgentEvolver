@@ -6,31 +6,28 @@
 
 ## 安装
 
-完整的安装步骤（Vault 密钥管理器、Python 环境）详见：
+```bash
+bash scripts/install.sh
+```
 
+它会创建 conda 环境（`agentos`，Python 3.12）、安装本包及其依赖、安装 Node.js，
+并生成 `.env` 模板。重复执行是安全的。可加 `--extras browser` 安装浏览器自动化、
+`--uv` 改用 uv、`--help` 查看全部选项。
+
+然后在项目根目录的 `.env` 里填入 API Key：
+
+```bash
+ANTHROPIC_API_BASE='...'
+ANTHROPIC_API_KEY='...'
+OPENROUTER_API_BASE='...'
+OPENROUTER_API_KEY='...'
+```
+
+密钥也可以交由 **Vault** 集中管理；只要 Vault 已配置且可连通，框架会优先从中读取，
+否则自动回退到 `.env`。
+
+手动安装、Vault、可选 extras 等完整说明：
 **➡️ [scripts/INSTALL_zh.md](scripts/INSTALL_zh.md)**
-
-简要流程：
-
-1. **安装并配置密钥管理器 Vault** —— 本项目的 API Key 统一由 Vault 集中管理，而非明文写入 `.env`。见安装文档第 1 节。
-2. **配置 Python 环境**（conda + pip 或 uv，详见安装文档；需要 Python 3.11+）：
-
-   ```bash
-   conda create -n agent python=3.12 && conda activate agent
-   pip install -e .                      # 或用 uv：uv sync
-
-   # 可选：浏览器自动化
-   pip install -e ".[browser]" && python -m playwright install chromium
-   ```
-
-3. **配置项目根目录的 `.env`**，让框架能连上 Vault：
-
-   ```bash
-   VAULT_ADDR='http://127.0.0.1:8200'
-   VAULT_TOKEN="<initial root token>"
-   UNSEAL_TOKEN='<unseal token key1>'
-   SECRET_ENGINE_PATH='cubbyhole/env'
-   ```
 
 ## 运行 MetaAgent
 
@@ -60,7 +57,6 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 
 ### 运行产物
 
-- **Trace UI** —— 运行时日志会打印 `🌐 Trace UI: http://localhost:<端口>`，打开即可实时观察各智能体的执行过程。
 - **输出目录** —— 每次运行都是独立 session：运行产物、日志和任务视图都写到 `output/<tag>/<session-id>/` 下（`workspace/` 存智能体的工作文件，`log/` 存日志和渲染后的任务视图）。
 - 任务结束时，日志会打印最终结果；若生成了记忆报告，还会打印其 HTML 路径。
 

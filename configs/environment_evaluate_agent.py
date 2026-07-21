@@ -13,7 +13,7 @@ tag = "environment_evaluate_agent"
 project_root = f"output/{tag}"
 log_path = "environment_evaluate_agent.log"
 
-model_name = "openrouter/claude-opus-4.8"
+model_name = "anthropic/claude-opus-4.8"
 
 tool_names = [
     "bash_tool",

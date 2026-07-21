@@ -363,7 +363,10 @@ class ModelContextManager:
                     api_key=config.api_key,
                     base_url=config.api_base,
                     reasoning=config.reasoning or None,
-                    temperature=config.temperature or self.default_temperature,
+                    # Passed through as-is: newer models (opus-4.8, fable-5) reject
+                    # `temperature` outright, and their catalog entries omit it so the
+                    # parameter is left off the request rather than defaulted to 0.7.
+                    temperature=config.temperature,
                     max_tokens=config.max_completion_tokens or self.max_tokens,
                 )
             raise ValueError(

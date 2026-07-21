@@ -56,7 +56,7 @@ tag = "programbench_agent"
 project_root = f"output/{tag}"
 log_path = "agent.log"
 
-model_name = "google/gemini-3.5-flash"
+model_name = "anthropic/claude-opus-4.8"
 
 memory_names = [
     "file_system_memory",

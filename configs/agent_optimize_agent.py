@@ -14,7 +14,7 @@ tag = "agent_optimize_agent"
 project_root = f"output/{tag}"
 log_path = "agent_optimize_agent.log"
 
-model_name = "openrouter/claude-opus-4.8"
+model_name = "anthropic/claude-opus-4.8"
 
 tool_names = [
     "bash_tool",

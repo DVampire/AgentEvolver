@@ -6,31 +6,29 @@ A self-evolving multi-agent framework. A **MetaAgent** orchestrates sub-agents t
 
 ## Installation
 
-All setup steps (Vault secret manager and the Python environment) are documented in detail here:
+```bash
+bash scripts/install.sh
+```
 
+Creates a conda environment (`agentos`, Python 3.12), installs the package and
+its dependencies, installs Node.js, and writes an `.env` template. Re-running is
+safe. Add `--extras browser` for browser automation, `--uv` to use uv instead of
+conda, or `--help` for all options.
+
+Then put your API keys in `.env` at the project root:
+
+```bash
+ANTHROPIC_API_BASE='...'
+ANTHROPIC_API_KEY='...'
+OPENROUTER_API_BASE='...'
+OPENROUTER_API_KEY='...'
+```
+
+Keys can instead be managed centrally in **Vault**, which the framework prefers
+whenever it is configured and reachable, falling back to `.env` otherwise.
+
+Full details — manual setup, Vault, and optional extras:
 **➡️ [scripts/INSTALL.md](scripts/INSTALL.md)**
-
-In short:
-
-1. **Install & configure the secret manager (Vault)** — API keys are managed centrally in Vault instead of plaintext `.env`. See section 1 of the install guide.
-2. **Set up the Python environment** (conda + pip, or uv — see the guide; requires Python 3.11+):
-
-   ```bash
-   conda create -n agent python=3.12 && conda activate agent
-   pip install -e .                      # or with uv: uv sync
-
-   # optional browser automation:
-   pip install -e ".[browser]" && python -m playwright install chromium
-   ```
-
-3. **Configure `.env`** at the project root so the framework can reach Vault:
-
-   ```bash
-   VAULT_ADDR='http://127.0.0.1:8200'
-   VAULT_TOKEN="<initial root token>"
-   UNSEAL_TOKEN='<unseal token key1>'
-   SECRET_ENGINE_PATH='cubbyhole/env'
-   ```
 
 ## Running the MetaAgent
 
@@ -60,7 +58,6 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 
 ### What you get
 
-- **Trace UI** — while running, the log prints `🌐 Trace UI: http://localhost:<port>`; open it to watch the agents step through the task in real time.
 - **Outputs** — each run is its own session: run artifacts, logs, and task views are written under `output/<tag>/<session-id>/` (`workspace/` for the agent's working files, `log/` for logs and rendered task views).
 - On completion the log prints the final result and, if produced, the path to a memory HTML report.
 

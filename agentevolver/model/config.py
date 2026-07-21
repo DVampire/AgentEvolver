@@ -154,6 +154,22 @@ def anthropic_models(*, max_tokens, default_temperature, default_timeout, defaul
     output_format parameter); callers request structured output on these.
     """
     chat_models = [
+        # opus-4.8 and fable-5 reject `temperature` ("deprecated for this model"),
+        # so they omit it and the request is sent without the parameter.
+        {
+            "model_name": "anthropic/claude-opus-4.8",
+            "model_id": "claude-opus-4-8",
+            "model_type": "chat/completions",
+            "max_completion_tokens": max_tokens,
+            "fallback_model": "anthropic/claude-sonnet-4.5",
+        },
+        {
+            "model_name": "anthropic/claude-fable-5",
+            "model_id": "claude-fable-5",
+            "model_type": "chat/completions",
+            "max_completion_tokens": max_tokens,
+            "fallback_model": "anthropic/claude-sonnet-4.5",
+        },
         {
             "model_name": "anthropic/claude-sonnet-4.5",
             "model_id": "claude-sonnet-4-5-20250929",

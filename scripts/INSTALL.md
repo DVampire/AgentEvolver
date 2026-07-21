@@ -1,10 +1,55 @@
 # Preface
 
-All API keys in this project are managed centrally via the secret manager **Vault**, rather than being written entirely into `.env` — this is a necessary measure to prevent key leakage. Accordingly, this document first covers installing and configuring the secret manager (Vault), then setting up the Python environment, and finally provides some additional configuration for reference.
-
 > 🌐 中文版请见 [INSTALL_zh.md](INSTALL_zh.md)
 
-# 1. Install the API Key Manager (Vault)
+## Quick start
+
+One command sets up everything needed to run an agent:
+
+```bash
+bash scripts/install.sh
+```
+
+It creates a conda environment (`agentos`, Python 3.12), installs the package
+and its dependencies, installs Node.js, writes an `.env` template, and verifies
+the result. Re-running it is safe — an existing environment is reused.
+
+```bash
+bash scripts/install.sh --extras browser   # + playwright & chromium
+bash scripts/install.sh --uv               # use uv instead of conda
+bash scripts/install.sh --help             # all options
+```
+
+Then fill in your API keys in `.env` and run:
+
+```bash
+conda activate agentos
+python examples/run_meta_agent.py --task "..."
+```
+
+The rest of this document covers the pieces individually, and Vault for teams
+that want centrally managed secrets.
+
+## Where secrets come from
+
+Keys are read from **Vault** when it is configured and reachable, and from
+**`.env`** otherwise (see `agentevolver/utils/hvac_utils.py`). Vault is
+therefore optional: it keeps keys out of plaintext files, which matters for
+shared or production setups, but a local checkout works with `.env` alone.
+
+For `.env`-only usage, skip to section 2 and set the provider variables
+directly:
+
+```bash
+ANTHROPIC_API_BASE='...'      # a trailing /v1 is accepted, and stripped where needed
+ANTHROPIC_API_KEY='...'
+OPENROUTER_API_BASE='...'
+OPENROUTER_API_KEY='...'
+GOOGLE_API_BASE='https://generativelanguage.googleapis.com'
+GOOGLE_API_KEY='...'
+```
+
+# 1. Install the API Key Manager (Vault) — optional
 
 ## Step 1:
 
@@ -88,10 +133,21 @@ abcabc...
 
 # 2. Set up the Python environment
 
-Pick **one** of the two options below (conda or uv). Python 3.12 is recommended (3.11+ required).
-All dependencies are declared in `pyproject.toml` (there is no `requirements.txt`).
+Python 3.12 is recommended (3.11+ required). All dependencies are declared in
+`pyproject.toml` (there is no `requirements.txt`).
 
-## Step 1 — Option A: conda + pip
+## Step 1 — Option A: the install script (recommended)
+
+```bash
+bash scripts/install.sh                 # conda env "agentos"
+bash scripts/install.sh -n myenv        # a different env name
+bash scripts/install.sh --extras all    # every optional extra
+```
+
+This performs Options B and C below, plus Node.js and the verification pass.
+Skip to Step 2 if you use it.
+
+## Step 1 — Option B: conda + pip
 ```bash
 conda create -n agent python=3.12
 conda activate agent
@@ -104,7 +160,7 @@ pip install -e ".[browser]"   # or ".[chem]", ".[sandbox]", ".[all]"
 python -m playwright install chromium
 ```
 
-## Step 1 — Option B: uv (faster, reproducible)
+## Step 1 — Option C: uv (faster, reproducible)
 [uv](https://docs.astral.sh/uv/) is a fast pip/venv replacement; `uv sync` installs from
 `pyproject.toml` + the committed `uv.lock` for a reproducible environment.
 ```bash
@@ -127,9 +183,9 @@ python -m playwright install chromium
 > `agentevolver` console command. Run data goes to the current directory (or `$AGENTEVOLVER_HOME`),
 > never into the installed package.
 
-## Step 2:
+## Step 2: configure `.env`
 
-Make sure `.env` contains the following:
+Using Vault — point the framework at it:
 ```bash
 VAULT_ADDR='http://127.0.0.1:8200'
 VAULT_TOKEN="<initial root token>"
@@ -137,7 +193,24 @@ UNSEAL_TOKEN='<unseal token key1>'
 SECRET_ENGINE_PATH='cubbyhole/env'
 ```
 
-# 3. Misc
+Not using Vault — set the provider credentials directly (see the Preface). When
+Vault is unset or unreachable, these are used automatically; nothing else needs
+to change.
+
+# 3. Node.js (only for the web UI)
+
+The browser UI in [`frontend/`](../frontend/) is a Vite app and needs Node.js:
+
+```bash
+conda install -n agentos -c conda-forge nodejs   # or use nvm / your package manager
+cd frontend && npm install && npm run dev
+```
+
+`scripts/install.sh` installs Node.js for you. Agent runs — CLI, TUI, and the
+`examples/run_*.py` scripts — do not need it: trace events are written to
+`<log_root>/trace/*.jsonl` and streamed to the frontend by the Gateway.
+
+# 4. Misc
 
 ```bash
 1. Test a model call

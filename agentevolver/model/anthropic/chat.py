@@ -84,9 +84,12 @@ class ChatAnthropic(BaseChatModel):
             'default_headers': headers if headers else None,
         }
         
-        # Add base_url if provided
+        # Add base_url if provided. The SDK appends its own "/v1/messages", so a
+        # base that already ends in "/v1" would POST to "/v1/v1/messages" (404).
+        # Gateways shared with the OpenAI-compatible providers are configured with
+        # the "/v1" suffix, so strip it here rather than requiring a second env var.
         if self.base_url:
-            base_params['base_url'] = str(self.base_url)
+            base_params['base_url'] = str(self.base_url).rstrip('/').removesuffix('/v1')
         
         # Add http_client if provided
         if self.http_client is not None:

@@ -1,10 +1,51 @@
 # 前言
 
-本项目所有 API Key 主要依赖密钥管理软件 Vault 进行统一管理，而非完全写在 `.env` 中，这是防止 key 泄漏的必要措施。因此，本文档先介绍 API Key 管理软件（Vault）的安装与配置，随后介绍 Python 环境的安装，最后提供一些其他配置供参考。
-
 > 🌐 English version: [INSTALL.md](INSTALL.md)
 
-# 一、安装API Key管理软件
+## 快速开始
+
+一条命令即可装好运行 agent 所需的全部环境：
+
+```bash
+bash scripts/install.sh
+```
+
+它会创建 conda 环境（`agentos`，Python 3.12）、安装本包及其依赖、安装 Node.js、
+生成 `.env` 模板，并在最后做一次校验。重复执行是安全的——已存在的环境会被复用。
+
+```bash
+bash scripts/install.sh --extras browser   # 额外安装 playwright 与 chromium
+bash scripts/install.sh --uv               # 用 uv 代替 conda
+bash scripts/install.sh --help             # 查看全部选项
+```
+
+随后在 `.env` 里填入你的 API Key 即可运行：
+
+```bash
+conda activate agentos
+python examples/run_meta_agent.py --task "..."
+```
+
+本文档余下部分逐项说明各个环节，以及需要集中管理密钥的团队所用的 Vault。
+
+## 密钥从哪里读取
+
+框架优先从 **Vault** 读取密钥（前提是已配置且可连通），否则从 **`.env`** 读取
+（见 `agentevolver/utils/hvac_utils.py`）。因此 Vault 是**可选**的：它能让密钥不
+以明文落盘，对共享环境或生产环境有意义；而本地开发只用 `.env` 就够了。
+
+只用 `.env` 的话，可直接跳到第二节，并按如下方式设置各家 provider 的变量：
+
+```bash
+ANTHROPIC_API_BASE='...'      # 末尾带不带 /v1 都可以，需要时框架会自动剥离
+ANTHROPIC_API_KEY='...'
+OPENROUTER_API_BASE='...'
+OPENROUTER_API_KEY='...'
+GOOGLE_API_BASE='https://generativelanguage.googleapis.com'
+GOOGLE_API_KEY='...'
+```
+
+# 一、安装API Key管理软件（可选）
 
 ## Step1: 
 
@@ -88,10 +129,19 @@ abcabc...
 
 # 二、安装python环境
 
-以下两种方式**任选其一**(conda 或 uv)。推荐 Python 3.12(最低 3.11)。
-所有依赖都声明在 `pyproject.toml` 里(不再有 `requirements.txt`)。
+推荐 Python 3.12(最低 3.11)。所有依赖都声明在 `pyproject.toml` 里(不再有 `requirements.txt`)。
 
-## Step1 — 方式 A：conda + pip
+## Step1 — 方式 A：安装脚本（推荐）
+
+```bash
+bash scripts/install.sh                 # conda 环境 "agentos"
+bash scripts/install.sh -n myenv        # 换一个环境名
+bash scripts/install.sh --extras all    # 安装全部可选 extras
+```
+
+它相当于自动完成下面的方式 B / C，外加 Node.js 安装与最终校验。用了它就可以直接跳到 Step2。
+
+## Step1 — 方式 B：conda + pip
 ```bash
 conda create -n agent python=3.12
 conda activate agent
@@ -104,7 +154,7 @@ pip install -e ".[browser]"   # 或 ".[chem]" ".[sandbox]" ".[all]"
 python -m playwright install chromium
 ```
 
-## Step1 — 方式 B：uv（更快、可复现）
+## Step1 — 方式 C：uv（更快、可复现）
 [uv](https://docs.astral.sh/uv/) 是 pip/venv 的高速替代；`uv sync` 会依据 `pyproject.toml`
 + 已提交的 `uv.lock` 安装,环境可复现。
 ```bash
@@ -126,9 +176,9 @@ python -m playwright install chromium
 > 其他项目就能 `import agentevolver`，同时得到 `agentevolver` 命令。运行产生的数据落在当前目录
 > （或 `$AGENTEVOLVER_HOME`），绝不会写进已安装的包里。
 
-## Step2:
+## Step2: 配置 `.env`
 
-保证`.env`内容如下：
+用 Vault 的话，让框架能找到它：
 ```bash
 VAULT_ADDR='http://127.0.0.1:8200'
 VAULT_TOKEN="<initial root token>"
@@ -136,7 +186,23 @@ UNSEAL_TOKEN='<unseal token key1>'
 SECRET_ENGINE_PATH='cubbyhole/env'
 ```
 
-# 三、其他
+不用 Vault 的话，直接写各家 provider 的凭证即可（见前言）。当 Vault 未配置或
+连不通时，框架会自动改用这些值，无需其他改动。
+
+# 三、Node.js（仅 Web UI 需要）
+
+[`frontend/`](../frontend/) 下的浏览器界面是一个 Vite 应用，需要 Node.js：
+
+```bash
+conda install -n agentos -c conda-forge nodejs   # 或用 nvm / 系统包管理器
+cd frontend && npm install && npm run dev
+```
+
+`scripts/install.sh` 会帮你装好 Node.js。跑 agent 本身——CLI、TUI 以及
+`examples/run_*.py` 脚本——都**不需要**它：trace 事件会写入
+`<log_root>/trace/*.jsonl`，并由 Gateway 推送给前端。
+
+# 四、其他
 
 ```bash
 1. 测试模型调用
