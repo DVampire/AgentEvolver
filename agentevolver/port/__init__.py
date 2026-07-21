@@ -3,7 +3,6 @@
 from .server import (
     GATEWAY,
     OPENSANDBOX,
-    TRACE_UI,
     PortManager,
     is_free,
     os_free_port,
@@ -17,5 +16,4 @@ __all__ = [
     "os_free_port",
     "GATEWAY",
     "OPENSANDBOX",
-    "TRACE_UI",
 ]

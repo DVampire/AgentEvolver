@@ -10,7 +10,7 @@ Design:
 - ``replay_smoke`` is dependency-injectable via ``probe`` so the decision logic
   is testable without a live model. The default probe drives a probe agent
   through one synthetic step with a cheap model (resolved from a model role).
-- Smoke events are emitted with ``provenance=HEALTHCHECK`` so the Trace UI can
+- Smoke events are emitted with ``provenance=HEALTHCHECK`` so consumers can
   filter them out of live traces.
 - On failure the caller rolls back to the previous archived version (evolved
   component) or unloads it (brand-new component) — reusing ExtensionManager's

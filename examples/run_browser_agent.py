@@ -81,7 +81,6 @@ async def main():
     trace_log_root = os.path.join(config.log_root, "trace")
     await trace_manager.initialize(log_root=trace_log_root)
     await trace_manager.start()
-    logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
     # --- Hooks --- (registers all default hooks: trace_hook + memory_hook)
     await hook_manager.initialize()

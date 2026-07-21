@@ -133,7 +133,7 @@ class AgentGateway:
 
         await version_manager.initialize()
         await trace_manager.initialize()
-        await trace_manager.start(start_server=False)
+        await trace_manager.start()
         trace_manager.subscribe(self._on_trace_event)
         environment_stream.subscribe(self._on_environment_view)
         await trajectory_manager.initialize()

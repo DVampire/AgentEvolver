@@ -79,7 +79,6 @@ async def main():
     logger.info("| 🌐 Initializing trace manager...")
     await trace_manager.initialize()
     await trace_manager.start()
-    logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
     logger.info("| 🪝 Initializing hook manager...")
     await hook_manager.initialize()

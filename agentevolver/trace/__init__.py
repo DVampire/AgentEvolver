@@ -9,7 +9,7 @@ from .types import (
     skill_start_event,
     skill_call_event,
 )
-from .server import trace_manager, WEB_PORT
+from .server import trace_manager
 
 __all__ = [
     "TraceEvent",
@@ -22,5 +22,4 @@ __all__ = [
     "skill_start_event",
     "skill_call_event",
     "trace_manager",
-    "WEB_PORT",
 ]

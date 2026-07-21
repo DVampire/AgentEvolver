@@ -1,9 +1,9 @@
 """Central port registry.
 
 One place that (a) names the framework's well-known default ports and (b) hands
-out and records host ports, so dynamic bindings (deploy sites, the Gateway, the
-Trace UI) are de-conflicted and discoverable instead of being ad-hoc literals
-scattered across the codebase.
+out and records host ports, so dynamic bindings (deploy sites, the Gateway)
+are de-conflicted and discoverable instead of being ad-hoc literals scattered
+across the codebase.
 
 Allocations are persisted to ``<home>/ports.json`` (the ``.agentevolver`` home),
 so every process and every run sees the same picture of what is bound where.
@@ -29,7 +29,6 @@ from agentevolver.utils.path_utils import home_dir
 # they never collide on the host and never go through the PortManager.
 GATEWAY = 9876          # Gateway WebSocket server
 OPENSANDBOX = 8080      # local opensandbox-server daemon
-TRACE_UI = 8765         # Trace UI web server (AGENTEVOLVER_TRACE_PORT overrides)
 
 
 def _now() -> str:

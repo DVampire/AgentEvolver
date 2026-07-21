@@ -110,7 +110,6 @@ async def main():
     # --- Trace ---
     await trace_manager.initialize()
     await trace_manager.start()
-    logger.info(f"| 🌐 Trace UI: http://localhost:{trace_manager.port}")
 
     # --- Trajectory (training-data capture; fed by trajectory_hook) ---
     await trajectory_manager.initialize()

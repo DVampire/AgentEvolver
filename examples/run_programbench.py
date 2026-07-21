@@ -303,10 +303,7 @@ async def main():
     logger.info(f"| ✅ Versions: {await version_manager.list()}")
 
     await trace_manager.initialize()
-    # start_server=False: a batch runner has no one watching the live web UI
-    # (which needs `npm` to build), unlike run_meta_agent.py's single
-    # interactive run — trace events still get written to disk.
-    await trace_manager.start(start_server=False)
+    await trace_manager.start()
 
     await trajectory_manager.initialize()
     await hook_manager.initialize()

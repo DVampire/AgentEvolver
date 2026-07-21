@@ -13,8 +13,7 @@ Central port registry. Replaces ad-hoc port literals and one-off free-port
 picking with:
 
 - **Named defaults** (`server.py`) — the single source of truth for well-known
-  framework **host** services: `GATEWAY` (9876), `OPENSANDBOX` (8080),
-  `TRACE_UI` (8765).
+  framework **host** services: `GATEWAY` (9876), `OPENSANDBOX` (8080).
 - **`port_manager`** — one registration interface (mirroring the other managers):
   `register(name, port=None, *, preferred=None, kind=...)` records a binding —
   pass an explicit ``port`` for a known bind (Gateway, an env's resolved host
@@ -29,7 +28,7 @@ de-conflicted in one place. Allocations persist to `<home>/ports.json` (the
 
 | Kind | Owner | Examples |
 | --- | --- | --- |
-| `host` | the framework | `gateway` (9876), `trace_ui` (8765), `deploy:<site>` (dynamic) |
+| `host` | the framework | `gateway` (9876), `deploy:<site>` (dynamic) |
 | `env`  | the environment | `chrome-vnc:novnc`, `playwright:cdp` (the host port the sandbox is reachable on) |
 
 The **value** of an environment's port belongs to that environment (a browser
