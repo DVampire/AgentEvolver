@@ -143,8 +143,8 @@ bash scripts/install.sh --extras all    # 安装全部可选 extras
 
 ## Step1 — 方式 B：conda + pip
 ```bash
-conda create -n agent python=3.12
-conda activate agent
+conda create -n agentos python=3.12
+conda activate agentos
 pip install -e .              # 核心依赖 + agentevolver 包（并注册 `agentevolver` 命令行）
 
 # 可选 extras（浏览器自动化 / 化学 / 沙箱）：

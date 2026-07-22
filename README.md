@@ -30,24 +30,48 @@ whenever it is configured and reachable, falling back to `.env` otherwise.
 Full details — manual setup, Vault, and optional extras:
 **➡️ [scripts/INSTALL.md](scripts/INSTALL.md)**
 
-## Running the MetaAgent
+## Usage
 
-The entry point is [`examples/run_meta_agent.py`](examples/run_meta_agent.py). It boots the MetaAgent with its sub-agents and runs a single task to completion.
+AgentEvolver runs the **entire framework inside a container** (this is "Model X"): the
+MetaAgent, every sub-agent, and all tool execution (bash / file edits / git / experiment
+code). The host only launches it; the repo is bind-mounted in, so source edits are live
+and outputs land back on the host under `output/`. Service peers (browser, task images)
+are spawned as sibling containers through the mounted Docker socket over the shared host
+network.
+
+Build the base image once:
 
 ```bash
-conda activate agent
-
-# 1. Run the default task
-python examples/run_meta_agent.py
-
-# 2. Run an inline task
-python examples/run_meta_agent.py --task "Write a Python function to reverse a string and add unit tests."
-
-# 3. Run a task from a task document (.html / .md under examples/tasks/)
-python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experiment.html
+docker build -f docker/base/Dockerfile -t agentevolver/base:latest .
 ```
 
-### Options
+From then on **everything runs the same way** — hand a command to the launcher after `--`:
+
+```bash
+scripts/run-in-sandbox.sh -- <command>          # run <command> in the sandbox
+scripts/run-in-sandbox.sh --gpus -- <command>   # ...also exposing NVIDIA GPUs
+```
+
+The launcher needs a reachable Docker daemon and refuses to fall back to the host; use
+`--image IMG` for a different base image. The bare `<command>` also runs directly on the
+host (no container) after `conda activate agentos`, handy for quick local development.
+
+The three things you'll run are below.
+
+### 1. Run a task (MetaAgent)
+
+[`examples/run_meta_agent.py`](examples/run_meta_agent.py) boots the MetaAgent with its sub-agents and runs a single task to completion.
+
+```bash
+# Default task
+scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py
+
+# Inline task
+scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py --task "Write a Python function to reverse a string and add unit tests."
+
+# Task from a document (.html / .md under examples/tasks/)
+scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experiment.html
+```
 
 | Flag | Description |
 | --- | --- |
@@ -56,52 +80,50 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 | `--config <path>` | Config file (default: `configs/meta_agent.py`). |
 | `--cfg-options key=value ...` | Override any config field, e.g. `--cfg-options model_name=openai/o3`. |
 
-### What you get
+Each run is its own session: artifacts, logs, and task views land under
+`output/<tag>/<session-id>/` (`workspace/` for the agent's files, `log/` for logs and
+rendered task views). On completion the log prints the final result and, if produced, the
+path to a memory HTML report. Ready-made task documents live in [`examples/tasks/`](examples/tasks/).
 
-- **Outputs** — each run is its own session: run artifacts, logs, and task views are written under `output/<tag>/<session-id>/` (`workspace/` for the agent's working files, `log/` for logs and rendered task views).
-- On completion the log prints the final result and, if produced, the path to a memory HTML report.
+### 2. Interactive web UI
 
-Ready-made task documents live in [`examples/tasks/`](examples/tasks/) — browse them for examples of how tasks are specified.
-
-## Interactive web frontend
-
-`frontend/` contains a React/Vite browser UI for interactive AgentEvolver sessions. It talks to AgentEvolver through the versioned Gateway protocol; the Python runtime remains the backend.
+[`frontend/`](frontend/) is a React/Vite browser UI that talks to the Python runtime over the versioned Gateway protocol. Under Model X **both the backend Gateway and the frontend dev server run inside the sandbox** — one container, two processes, started together by [`scripts/serve-ui.sh`](scripts/serve-ui.sh):
 
 ```bash
-# Terminal 1: start the Python backend
-conda activate agent
-agentevolver serve --transport websocket --host 127.0.0.1 --port 9876
-
-# Terminal 2: start the browser UI
-cd frontend
-npm install
-npm run dev
+scripts/run-in-sandbox.sh -- scripts/serve-ui.sh
 ```
 
-Open `http://127.0.0.1:5173` (or the URL Vite prints). The Web UI connects to `ws://127.0.0.1:9876/ws` by default and lets you change the endpoint or enter a token from its **Connection** panel.
+Then open `http://127.0.0.1:5173` in the host browser (the Vite dev server); it connects
+to `ws://127.0.0.1:9876/ws` by default. The sandbox uses `--network host`, so both ports
+are reachable from the host with no extra setup. The first launch runs `npm install`
+inside the sandbox (deps land in `frontend/node_modules`; later launches skip it).
+Override ports with `GATEWAY_PORT` / `UI_PORT`; args after the script pass through to
+`agentevolver serve` (e.g. `--token`, `--allow-origin`).
 
-Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted local network. The WebSocket client reconnects automatically and asks the server to replay missed session events. See [`frontend/README.md`](frontend/README.md) for the full startup guide.
+Set `AGENTEVOLVER_GATEWAY_TOKEN` before binding the Gateway outside a trusted local
+network — it is required for non-loopback hosts, and browser origins can be restricted with
+repeated `--allow-origin`. See [`frontend/README.md`](frontend/README.md) for the full guide.
 
-Local commands, the terminal client, and Web sessions share one project-sandbox model:
-each Session gets an initially empty isolated workspace for staged inputs and generated
-artifacts. Agent writes stay there rather than modifying the host checkout directly.
+### 3. Run the tests
 
-The Gateway requires a token when bound to a non-loopback address. Browser origins can
-also be restricted with repeated `--allow-origin https://your-ui.example` options.
-Restricted `bash_tool` configurations execute only inside an isolated sandbox; trusted
-local host execution must be opted into explicitly with `danger_full_access`.
+```bash
+scripts/run-in-sandbox.sh -- pytest -q                        # fast suite
+scripts/run-in-sandbox.sh -- pytest -q tests/test_gateway.py  # one file
+scripts/run-in-sandbox.sh -- pytest -m integration            # needs creds / services / peers
+```
 
-## Terminal commands
+Tests live in [`tests/`](tests/). The default run passes `-m 'not integration'` (see
+`pyproject.toml`), so it needs no API keys or Docker peers and finishes quickly.
+`scripts/install.sh` already runs this suite once as a post-install check.
 
-`agentevolver` has one CLI with three modes: run a control command directly (for
-example, `agentevolver /registry`), use the terminal command loop
-(`agentevolver tui`), or start the Gateway (`agentevolver serve ...`).
+## Output & project layout
 
-Generated run output is stored in the current project by default, under
-`./output/<tag>/<session-id>/`. Durable project extensions live in
-`./extension/`; a session stages extension changes under its own output directory
-and promotes them explicitly. User-level state (overrides, caches, staging, the
-deploy registry) lives in `./.agentevolver/` at the project root.
-Set `AGENTEVOLVER_HOME` to place it elsewhere. Each Gateway, CLI, and TUI session
-uses its own project directory with separate workspace and staged extensions; shared
-service metadata and promoted extensions remain under the AgentEvolver home directory.
+`agentevolver` has one CLI with three modes: a control command (e.g. `agentevolver /registry`), the terminal loop (`agentevolver tui`), or the Gateway (`agentevolver serve ...`).
+
+Run output is stored under `./output/<tag>/<session-id>/`. Durable project extensions live
+in `./extension/`; a session stages extension changes under its own output directory and
+promotes them explicitly. User-level state (overrides, caches, staging, the deploy
+registry) lives in `./.agentevolver/` at the project root — set `AGENTEVOLVER_HOME` to
+place it elsewhere. Each Gateway, CLI, and TUI session uses its own project directory with
+separate workspace and staged extensions; shared service metadata and promoted extensions
+remain under the AgentEvolver home directory.

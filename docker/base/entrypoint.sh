@@ -13,11 +13,14 @@ set -o pipefail
 status=$?
 
 proj="/AgentEvolver"
-if [ -d "${proj}/output" ]; then
-    owner="$(stat -c '%u:%g' "${proj}" 2>/dev/null || true)"
-    if [ -n "${owner}" ] && [ "${owner}" != "0:0" ]; then
-        chown -R "${owner}" "${proj}/output" 2>/dev/null || true
-    fi
+owner="$(stat -c '%u:%g' "${proj}" 2>/dev/null || true)"
+if [ -n "${owner}" ] && [ "${owner}" != "0:0" ]; then
+    # Outputs created by root inside the container would otherwise be root-owned on
+    # the host through the bind mount. Also covers frontend/node_modules, which
+    # `scripts/serve-ui.sh` installs as root on first launch.
+    for d in "${proj}/output" "${proj}/frontend/node_modules"; do
+        [ -d "${d}" ] && chown -R "${owner}" "${d}" 2>/dev/null || true
+    done
 fi
 
 exit "${status}"

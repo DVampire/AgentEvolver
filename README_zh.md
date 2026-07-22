@@ -29,24 +29,45 @@ OPENROUTER_API_KEY='...'
 手动安装、Vault、可选 extras 等完整说明：
 **➡️ [scripts/INSTALL_zh.md](scripts/INSTALL_zh.md)**
 
-## 运行 MetaAgent
+## 使用
 
-入口脚本是 [`examples/run_meta_agent.py`](examples/run_meta_agent.py)，它会启动 MetaAgent 及其子智能体，并把单个任务跑到完成。
+AgentEvolver 把**整个框架都跑在容器里**（即 "Model X"）：MetaAgent、所有子智能体，以及
+全部工具执行（bash / 文件编辑 / git / 实验代码）。主机只负责启动；项目仓库以 bind-mount
+挂进容器，所以源码改动实时生效、产物落回主机的 `output/` 下。服务型 peer（浏览器、任务
+镜像）则通过挂载的 Docker socket、共享主机网络，作为兄弟容器被拉起。
+
+先构建一次 base 镜像：
 
 ```bash
-conda activate agent
-
-# 1. 运行默认任务
-python examples/run_meta_agent.py
-
-# 2. 直接传入任务文本
-python examples/run_meta_agent.py --task "写一个反转字符串的 Python 函数并补充单元测试。"
-
-# 3. 从任务文档运行（examples/tasks/ 下的 .html / .md）
-python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experiment.html
+docker build -f docker/base/Dockerfile -t agentevolver/base:latest .
 ```
 
-### 参数说明
+之后**所有东西都用同一种方式跑** —— 把命令写在 `--` 之后交给启动器：
+
+```bash
+scripts/run-in-sandbox.sh -- <命令>          # 在 sandbox 里运行 <命令>
+scripts/run-in-sandbox.sh --gpus -- <命令>   # ……并暴露 NVIDIA GPU
+```
+
+启动器要求 Docker 守护进程可达，且拒绝回退到主机执行；用 `--image IMG` 指定别的 base 镜像。
+去掉包裹、`conda activate agentos` 后，裸命令也能在主机上直接跑（不进容器），便于本地快速调试。
+
+下面是你会用到的三件事。
+
+### 1. 运行任务（MetaAgent）
+
+[`examples/run_meta_agent.py`](examples/run_meta_agent.py) 会启动 MetaAgent 及其子智能体，并把单个任务跑到完成。
+
+```bash
+# 默认任务
+scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py
+
+# 直接传入任务文本
+scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py --task "写一个反转字符串的 Python 函数并补充单元测试。"
+
+# 从任务文档运行（examples/tasks/ 下的 .html / .md）
+scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experiment.html
+```
 
 | 参数 | 说明 |
 | --- | --- |
@@ -55,47 +76,44 @@ python examples/run_meta_agent.py --task-file examples/tasks/qsar_egfr_experimen
 | `--config <路径>` | 配置文件（默认：`configs/meta_agent.py`）。 |
 | `--cfg-options key=value ...` | 覆盖任意配置项，例如 `--cfg-options model_name=openai/o3`。 |
 
-### 运行产物
+每次运行都是独立 session：运行产物、日志和任务视图都写到 `output/<tag>/<session-id>/` 下
+（`workspace/` 存智能体的工作文件，`log/` 存日志和渲染后的任务视图）。任务结束时日志会打印
+最终结果；若生成了记忆报告，还会打印其 HTML 路径。现成的任务文档在 [`examples/tasks/`](examples/tasks/) 下。
 
-- **输出目录** —— 每次运行都是独立 session：运行产物、日志和任务视图都写到 `output/<tag>/<session-id>/` 下（`workspace/` 存智能体的工作文件，`log/` 存日志和渲染后的任务视图）。
-- 任务结束时，日志会打印最终结果；若生成了记忆报告，还会打印其 HTML 路径。
+### 2. 交互式网页 UI
 
-现成的任务文档在 [`examples/tasks/`](examples/tasks/) 下，可参考它们了解任务的写法。
-
-## 交互式网页前端
-
-[`frontend/`](frontend/) 是基于 React/Vite 的浏览器界面；AgentEvolver 的 Python 运行时继续作为后端。页面通过版本化 Gateway 协议连接 WebSocket，提供任务输入、实时 Agent 活动、取消任务和事件详情查看。
+[`frontend/`](frontend/) 是基于 React/Vite 的浏览器界面，通过版本化 Gateway 协议连接 Python 运行时。在 Model X 下，**后端 Gateway 和前端 dev server 都跑在 sandbox 里** —— 一个容器、两个进程，由 [`scripts/serve-ui.sh`](scripts/serve-ui.sh) 一起拉起：
 
 ```bash
-# 终端 1：启动 Python 后端
-conda activate agent
-agentevolver serve --transport websocket --host 127.0.0.1 --port 9876
-
-# 终端 2：启动浏览器前端
-cd frontend
-npm install
-npm run dev
+scripts/run-in-sandbox.sh -- scripts/serve-ui.sh
 ```
 
-打开 `http://127.0.0.1:5173`（或 Vite 输出的地址）。页面默认连接 `ws://127.0.0.1:9876/ws`，可通过侧栏的 **Connection** 修改地址或填写 token。
+然后在主机浏览器打开 `http://127.0.0.1:5173`（Vite dev server），它默认连接
+`ws://127.0.0.1:9876/ws`。由于 sandbox 用了 `--network host`，两个端口在主机上都直接可达，
+无需额外配置。首次启动会在 sandbox 内执行 `npm install`（依赖落到 `frontend/node_modules`，
+之后启动跳过）。可用 `GATEWAY_PORT` / `UI_PORT` 覆盖端口；脚本后面追加的参数会透传给
+`agentevolver serve`（如 `--token`、`--allow-origin`）。
 
-若服务不在受信任的本地网络，请先设置 `AGENTEVOLVER_GATEWAY_TOKEN`。WebSocket 客户端会自动重连，并请求服务端回放断开期间遗漏的会话事件。完整说明见 [`frontend/README.md`](frontend/README.md)。
+服务不在受信任的本地网络时，请先设置 `AGENTEVOLVER_GATEWAY_TOKEN`（绑定非本机地址时强制
+要求），浏览器来源还可用重复的 `--allow-origin` 限制。完整说明见 [`frontend/README.md`](frontend/README.md)。
 
-绑定非本机地址时 Gateway 会强制要求 token。浏览器来源还可以通过重复的
-`--allow-origin https://your-ui.example` 显式限制。受限的 `bash_tool` 只会在隔离
-sandbox 中执行；可信的本地调试若确实需要直接执行主机命令，必须把该工具显式配置为
-`danger_full_access`。
+### 3. 运行测试
 
-## 终端命令
+```bash
+scripts/run-in-sandbox.sh -- pytest -q                        # 快速套件
+scripts/run-in-sandbox.sh -- pytest -q tests/test_gateway.py  # 单个文件
+scripts/run-in-sandbox.sh -- pytest -m integration            # 需要凭证 / 服务 / peer 容器
+```
 
-`agentevolver` 只有一个 CLI，提供三种模式：直接执行控制命令（例如
-`agentevolver /registry`）、进入终端交互循环（`agentevolver tui`），或启动
-Gateway（`agentevolver serve ...`）。
+测试都在 [`tests/`](tests/) 下。默认运行会带上 `-m 'not integration'`（见 `pyproject.toml`），
+所以不需要 API Key 或 Docker peer，跑得很快。`scripts/install.sh` 在装完后已自动跑过一遍。
 
-生成的运行产物默认存放在当前项目的
-`./output/<tag>/<session-id>/`。可持久化的项目扩展位于与 `output/` 平级的
-`./extension/`；会话先在自己的输出目录内暂存扩展，只有显式提升才会写入此目录。用户级状态（覆盖、缓存、暂存、deploy 注册表）
-存放在项目根目录的 `./.agentevolver/`。可通过
-`AGENTEVOLVER_HOME` 指定其他位置。每个 Gateway、CLI 和 TUI session 都有独立的
-项目目录，其中 workspace 与暂存 extension 相互隔离；服务级元数据和已 promote 的
-extension 则保留在 AgentEvolver home 目录中供各 session 共享。
+## 产物与项目目录
+
+`agentevolver` 只有一个 CLI，提供三种模式：直接执行控制命令（如 `agentevolver /registry`）、进入终端交互循环（`agentevolver tui`），或启动 Gateway（`agentevolver serve ...`）。
+
+运行产物默认存放在 `./output/<tag>/<session-id>/`。可持久化的项目扩展位于 `./extension/`；
+会话先在自己的输出目录内暂存扩展，只有显式提升才会写入。用户级状态（覆盖、缓存、暂存、deploy
+注册表）存放在项目根目录的 `./.agentevolver/` —— 可通过 `AGENTEVOLVER_HOME` 指定其他位置。
+每个 Gateway、CLI 和 TUI session 都有独立的项目目录，其中 workspace 与暂存 extension 相互
+隔离；服务级元数据和已 promote 的 extension 则保留在 AgentEvolver home 目录中供各 session 共享。

@@ -149,8 +149,8 @@ Skip to Step 2 if you use it.
 
 ## Step 1 — Option B: conda + pip
 ```bash
-conda create -n agent python=3.12
-conda activate agent
+conda create -n agentos python=3.12
+conda activate agentos
 pip install -e .              # core deps + the agentevolver package (adds the `agentevolver` CLI)
 
 # optional extras (browser automation / chemistry / sandboxes):
