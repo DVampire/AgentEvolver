@@ -194,15 +194,32 @@ class _FakeSandbox:
 
 @pytest.mark.asyncio
 async def test_extract_submission_writes_tar_to_dest_dir(tmp_path):
-    sandbox = _FakeSandbox(tar_bytes=b"hello-tar")
+    # extract_submission pulls the tarball out AND unpacks it host-side for
+    # inspection, so the fake sandbox must return a real gzip tar (not a raw
+    # placeholder) or the unpack step raises tarfile.ReadError.
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        member = tarfile.TarInfo(name="hello.txt")
+        payload = b"hello-tar"
+        member.size = len(payload)
+        tf.addfile(member, io.BytesIO(payload))
+    tar_bytes = buf.getvalue()
+
+    sandbox = _FakeSandbox(tar_bytes=tar_bytes)
     dest_dir = str(tmp_path / "workspace")
 
     result_path = await rp.extract_submission(sandbox, dest_dir)
 
     assert result_path == str(Path(dest_dir) / "submission.tar.gz")
     with open(result_path, "rb") as f:
-        assert f.read() == b"hello-tar"
+        assert f.read() == tar_bytes
     assert sandbox.commands_run == ["tar -czf /tmp/submission.tar.gz -C /workspace . 2>&1"]
+    # The tarball is also unpacked into dest_dir/submission/ for direct inspection.
+    unpacked = Path(dest_dir) / "submission" / "hello.txt"
+    assert unpacked.read_bytes() == b"hello-tar"
 
 
 @pytest.mark.asyncio
