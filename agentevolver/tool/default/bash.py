@@ -24,6 +24,10 @@ Execute bash commands in the shell.
 - Be careful with commands that modify the system or require elevated privileges.
 - For file operations, ALWAYS use ABSOLUTE paths to avoid path-related issues.
 - Input should be a VALID bash command string.
+- The command's exit code is reported in the output. A non-zero exit code is an
+  observation, not a tool error (e.g. `grep` returns 1 when it finds no matches);
+  read STDOUT/STDERR and the exit code to decide whether the command did what you
+  intended.
 
 ## Parameters
 - command (str): The command to execute. If file path is necessary, it should be an absolute path.
@@ -147,8 +151,17 @@ class BashTool(Tool):
 
             message = warning_prefix + ("\n\n".join(parts) if parts else f"Command completed with exit code: {exit_code}")
 
-            return Response(type=ResponseType.TOOL, 
-                success=exit_code == 0,
+            # The bash *tool call* succeeds whenever the command actually ran to
+            # completion — the shell exit code is an observation for the model to read
+            # (it is included in the message and in `data["exit_code"]`), not a tool
+            # malfunction. Treating every non-zero exit as a hard failure mislabels
+            # ordinary diagnostics — `grep -c` returns 1 on zero matches, `ls missing`
+            # returns 2 — as "❌ Action failed", which floods the logs and can mislead
+            # the model into thinking its own deliverables broke. Genuine command
+            # failures stay fully visible via STDERR and the exit code; only the tool
+            # itself failing (timeout, spawn error, empty command) is success=False.
+            return Response(type=ResponseType.TOOL,
+                success=True,
                 message=message,
                 data={"exit_code": exit_code, "command": command},
             )

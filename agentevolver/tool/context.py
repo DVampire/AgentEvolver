@@ -779,10 +779,36 @@ class ToolContextManager(BaseModel):
         version = tool_info.version
         tool_instance = tool_info.instance
         logger.info(f"| ✅ Using tool {name}@{version}")
-        
+
         # Other tool args
         tool_kwargs = dict(ctx=ctx, **kwargs)
-        
+
+        # A model's tool call may omit a required parameter or pass an unknown one
+        # (e.g. done_tool without `result`). Binding that to the tool's signature would
+        # raise a raw TypeError that bubbles up as an opaque "Action failed:
+        # __call__() missing 1 required positional argument" — internal noise the model
+        # cannot act on cleanly. Validate the binding first and, on failure, hand back a
+        # structured, recoverable error that names the offending call and the parameters
+        # the tool actually expects, so the agent can simply re-issue the call. The real
+        # invocation below is unchanged, so any TypeError raised *inside* the tool body
+        # still surfaces normally.
+        try:
+            inspect.signature(tool_instance.__call__).bind(**input, **tool_kwargs)
+        except TypeError as bind_error:
+            required = [
+                p.name
+                for p in inspect.signature(tool_instance.__call__).parameters.values()
+                if p.default is inspect.Parameter.empty
+                and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+                and p.name not in ("self", "ctx")
+            ]
+            msg = (
+                f"Invalid arguments for tool '{name}': {bind_error}. "
+                f"Required parameter(s): {required}. Re-issue the call with all required parameters."
+            )
+            logger.warning(f"| ⚠️ {msg}")
+            return Response(type=ResponseType.TOOL, success=False, message=msg)
+
         # Otherwise, use asyncio.wait_for to enforce timeout
         try:
             return await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=self.default_timeout)

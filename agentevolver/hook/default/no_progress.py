@@ -83,7 +83,10 @@ class NoProgressHook(Hook):
         names = ", ".join(repeated)
         return HookResult.block(
             "No-progress guard: successful unchanged action(s) already supplied the "
-            f"same evidence: {names}. Do not repeat them. Reconcile Memory with the "
-            "remaining acceptance conditions; call done_tool if none remain, otherwise "
-            "choose a materially different action or escalate."
+            f"same evidence: {names}. Re-inspecting state that has not changed (re-reading "
+            "the same file, re-listing the same directory) will keep being blocked and "
+            "wastes your step budget. Take a state-CHANGING action instead — run/execute "
+            "the code you have, edit a file, or dispatch a different capability — or, if "
+            "the acceptance conditions in Memory are already met, call done_tool now. "
+            "Escalate only if you are truly blocked."
         )

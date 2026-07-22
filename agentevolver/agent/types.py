@@ -1412,8 +1412,9 @@ class Agent(BaseModel):
             step_tokens=decision["step_tokens"], done=False,
         )
         suffix = (
-            " This is the second blocked proposal; call done_tool or escalate unless a "
-            "materially different action advances an unmet condition."
+            " This is the second blocked proposal. Stop inspecting: take a state-changing "
+            "action (run/execute your code, edit a file) or call done_tool now — the next "
+            "repeated proposal will terminate this agent."
             if run.no_progress_rounds == 2 else ""
         )
         run.action_errors = [reason + suffix]

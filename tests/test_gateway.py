@@ -368,7 +368,10 @@ def test_gateway_keeps_session_workspace_empty_and_separate_from_source(tmp_path
         assert created.ok
         workspace = Path(created.result["workspace"])
         assert workspace != source
-        assert list(workspace.iterdir()) == []
+        # The session sandbox is lazily materialized (ProjectSandbox.create(materialize=False)):
+        # opening a session must leave no empty workspace directory behind — it is created
+        # on first real use, not up front.
+        assert not workspace.exists()
         assert created.result["source_workspace"] == str(source)
 
         listed = await gateway.handle(GatewayCommand(id="list", method="session.list"))
@@ -405,7 +408,8 @@ def test_workspace_browser_is_session_scoped_and_reads_text(tmp_path: Path) -> N
         created = await gateway.handle(GatewayCommand(id="create", method="session.create", params={}))
         session_id = created.result["session_id"]
         workspace = Path(created.result["workspace"])
-        (workspace / "src").mkdir()
+        # Workspace is lazily materialized, so create the tree the way first real use would.
+        (workspace / "src").mkdir(parents=True)
         (workspace / "src" / "app.py").write_text("print('sandbox')\n", encoding="utf-8")
         (workspace / ".secret").write_text("hidden", encoding="utf-8")
 
