@@ -8,7 +8,7 @@ set -euo pipefail
 #   2. the agentevolver package + dependencies from pyproject.toml
 #   3. Node.js / npm  -- required by the frontend/ web UI
 #   4. optional extras (browser / chem / sandbox / benchmark)
-#   5. a Docker reachability check when the sandbox extra is requested
+#   5. the container-sandbox images (built when the sandbox extra is requested)
 #   6. an .env template, if one does not exist yet
 #   7. a verification pass
 #
@@ -18,7 +18,7 @@ set -euo pipefail
 #   bash scripts/install.sh                      # conda env "agentos", core + dev
 #   bash scripts/install.sh -n myenv -p 3.12
 #   bash scripts/install.sh --extras browser     # + playwright & chromium
-#   bash scripts/install.sh --extras sandbox     # + container sandboxes (needs Docker)
+#   bash scripts/install.sh --extras sandbox     # + build the container-sandbox images (needs Docker)
 #   bash scripts/install.sh --extras all
 #   bash scripts/install.sh --uv                 # use uv instead of conda
 #   bash scripts/install.sh --no-node            # skip Node.js
@@ -150,25 +150,56 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-step 5 "Checking Docker for container sandboxes (optional)"
+step 5 "Building container-sandbox images (optional)"
 # ---------------------------------------------------------------------------
-# The sandbox extra runs code in isolated OpenSandbox containers, which need a
-# reachable Docker daemon. Report what is (not) usable; do not try to fix it,
-# since granting daemon access requires root.
+# The sandbox extra runs peers (browser / code-interpreter) in isolated
+# containers, which need a reachable Docker daemon. When it is reachable we
+# also BUILD the two AgentEvolver peer images up front, so the first agent run
+# doesn't stall building them lazily:
+#
+#   agentevolver/chrome-vnc:latest        headful Chrome + noVNC live view
+#                                         (browser_environment / webapp_testing)
+#   agentevolver/code-interpreter:latest  the sandboxed code-interpreter peer
+#
+# Their opensandbox/* base layers are pulled automatically as the Dockerfile
+# FROM, and opensandbox's own helper images (execd / egress) are pulled by the
+# sandbox server on first use — so nothing else needs provisioning here. The
+# Model X launcher image (agentevolver/base) is built separately; see
+# docker/base/README.md and scripts/run-in-sandbox.sh.
+build_sandbox_image() {
+  local tag="$1" dir="$2"
+  if [[ ! -f "${dir}/Dockerfile" ]]; then
+    echo "  skip ${tag} (no Dockerfile at ${dir})"
+    return
+  fi
+  if docker image inspect "${tag}" >/dev/null 2>&1; then
+    echo "  ok   ${tag} already present -- not rebuilding."
+  else
+    echo "  build ${tag} from ${dir} (this can take a few minutes)…"
+    if docker build -t "${tag}" "${dir}"; then
+      echo "  ok   built ${tag}"
+    else
+      echo "  WARN docker build failed for ${tag} -- that sandbox may not start." >&2
+    fi
+  fi
+}
+
 if [[ ${WANT_SANDBOX} -eq 1 ]]; then
   if ! command -v docker >/dev/null 2>&1; then
     echo "docker CLI not found -- install Docker Engine to use container sandboxes."
     echo "Without it, only the non-isolated 'host' sandbox works."
-  elif docker info >/dev/null 2>&1; then
-    echo "Docker daemon reachable: $(docker version --format '{{.Server.Version}}' 2>/dev/null)."
-  else
+  elif ! docker info >/dev/null 2>&1; then
     echo "docker CLI present but the daemon is not reachable by this user."
     echo "Add yourself to the docker group (then re-login):"
     echo "    sudo usermod -aG docker \$USER"
-    echo "Until then, only the non-isolated 'host' sandbox works."
+    echo "Until then, only the non-isolated 'host' sandbox works; images not built."
+  else
+    echo "Docker daemon reachable: $(docker version --format '{{.Server.Version}}' 2>/dev/null)."
+    build_sandbox_image "agentevolver/chrome-vnc:latest"       "${REPO_ROOT}/docker/chrome-vnc"
+    build_sandbox_image "agentevolver/code-interpreter:latest" "${REPO_ROOT}/docker/code-interpreter"
   fi
 else
-  echo "Skipped (add --extras sandbox to enable)."
+  echo "Skipped (add --extras sandbox to build the container-sandbox images)."
 fi
 
 # ---------------------------------------------------------------------------
@@ -225,6 +256,10 @@ check "agentevolver CLI"     "'${ENV_PREFIX}/bin/agentevolver' --help"
 [[ ${WITH_NODE} -eq 1 ]] && check "npm" "PATH='${ENV_PREFIX}/bin:${PATH}' npm --version"
 [[ ${WANT_BROWSER} -eq 1 ]] && check "playwright" "'${PY}' -c 'import playwright'"
 [[ ${WANT_SANDBOX} -eq 1 ]] && check "opensandbox import" "'${PY}' -c 'import opensandbox, docker'"
+if [[ ${WANT_SANDBOX} -eq 1 ]] && docker info >/dev/null 2>&1; then
+  check "chrome-vnc image"       "docker image inspect agentevolver/chrome-vnc:latest"
+  check "code-interpreter image" "docker image inspect agentevolver/code-interpreter:latest"
+fi
 
 echo
 echo "  test suite:"

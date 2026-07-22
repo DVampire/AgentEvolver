@@ -16,6 +16,7 @@ the result. Re-running it is safe — an existing environment is reused.
 
 ```bash
 bash scripts/install.sh --extras browser   # + playwright & chromium
+bash scripts/install.sh --extras sandbox   # + build the container-sandbox images (needs Docker)
 bash scripts/install.sh --uv               # use uv instead of conda
 bash scripts/install.sh --help             # all options
 ```
@@ -210,7 +211,42 @@ cd frontend && npm install && npm run dev
 `examples/run_*.py` scripts — do not need it: trace events are written to
 `<log_root>/trace/*.jsonl` and streamed to the frontend by the Gateway.
 
-# 4. Misc
+# 4. Container sandboxes & images
+
+Agents run untrusted work (browser sessions, code execution, benchmark
+cleanrooms) in isolated Docker containers. Building them is part of the
+one-shot install when you pass the sandbox extra:
+
+```bash
+bash scripts/install.sh --extras sandbox   # builds the peer images below
+bash scripts/install.sh --extras all       # sandbox + browser + everything
+```
+
+Step 5 of the installer checks the Docker daemon and, when reachable, builds:
+
+| Image | Built from | Used by |
+| --- | --- | --- |
+| `agentevolver/chrome-vnc:latest` | `docker/chrome-vnc/` | `browser_environment`, `webapp_testing_skill` — headful Chrome on a virtual display with a **noVNC live view** |
+| `agentevolver/code-interpreter:latest` | `docker/code-interpreter/` | the sandboxed code-interpreter peer |
+
+Builds are idempotent — an image that already exists is not rebuilt. The
+`opensandbox/*` base layers are pulled automatically as each Dockerfile's
+`FROM`, and OpenSandbox's own helper images (`execd`, `egress`) are pulled by
+the sandbox server on first use, so nothing else needs provisioning.
+
+To (re)build a single image by hand:
+
+```bash
+docker build -t agentevolver/chrome-vnc:latest       docker/chrome-vnc/
+docker build -t agentevolver/code-interpreter:latest docker/code-interpreter/
+```
+
+> The **Model X launcher** image (`agentevolver/base`) is a separate concern —
+> it is the base container the whole framework runs *inside*, not a peer
+> sandbox. Build and use it via `docker/base/` and `scripts/run-in-sandbox.sh`
+> (see `docker/base/README.md`).
+
+# 5. Misc
 
 ```bash
 1. Test a model call

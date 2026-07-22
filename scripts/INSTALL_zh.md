@@ -15,6 +15,7 @@ bash scripts/install.sh
 
 ```bash
 bash scripts/install.sh --extras browser   # 额外安装 playwright 与 chromium
+bash scripts/install.sh --extras sandbox   # 额外构建容器沙箱镜像（需要 Docker）
 bash scripts/install.sh --uv               # 用 uv 代替 conda
 bash scripts/install.sh --help             # 查看全部选项
 ```
@@ -202,7 +203,40 @@ cd frontend && npm install && npm run dev
 `examples/run_*.py` 脚本——都**不需要**它：trace 事件会写入
 `<log_root>/trace/*.jsonl`，并由 Gateway 推送给前端。
 
-# 四、其他
+# 四、容器沙箱与镜像
+
+Agent 会把不可信的工作（浏览器会话、代码执行、benchmark 洁净室）放到隔离的
+Docker 容器里运行。只要在安装时带上 sandbox extra，构建这些镜像就是一键安装的
+一部分：
+
+```bash
+bash scripts/install.sh --extras sandbox   # 构建下面的 peer 镜像
+bash scripts/install.sh --extras all       # sandbox + browser + 全部
+```
+
+安装脚本的第 5 步会检查 Docker 守护进程，可连通时构建：
+
+| 镜像 | 构建自 | 使用方 |
+| --- | --- | --- |
+| `agentevolver/chrome-vnc:latest` | `docker/chrome-vnc/` | `browser_environment`、`webapp_testing_skill` —— 虚拟显示上的有头 Chrome，带 **noVNC 实时画面** |
+| `agentevolver/code-interpreter:latest` | `docker/code-interpreter/` | 沙箱化的 code-interpreter peer |
+
+构建是幂等的——已存在的镜像不会重建。各 Dockerfile 的 `FROM`（`opensandbox/*`
+基础层）会自动拉取，OpenSandbox 自己的辅助镜像（`execd`、`egress`）由沙箱服务
+在首次使用时拉取，因此无需再手动准备其他东西。
+
+想手动单独（重）构建某个镜像：
+
+```bash
+docker build -t agentevolver/chrome-vnc:latest       docker/chrome-vnc/
+docker build -t agentevolver/code-interpreter:latest docker/code-interpreter/
+```
+
+> **Model X 启动镜像**（`agentevolver/base`）是另一回事——它是整个框架**运行于
+> 其内部**的基础容器，而不是 peer 沙箱。它通过 `docker/base/` 与
+> `scripts/run-in-sandbox.sh` 构建和使用（详见 `docker/base/README.md`）。
+
+# 五、其他
 
 ```bash
 1. 测试模型调用
