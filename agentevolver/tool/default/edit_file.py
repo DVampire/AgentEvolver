@@ -61,13 +61,17 @@ class EditFileTool(Tool):
             new_string: Replacement text.
         """
         try:
-            sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
-            if sandbox_denial:
-                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
             # A peer sandbox bound on the context routes the read-modify-write into
             # that container; otherwise operate on the local fs.
             sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+
+            # The host-root boundary check only applies to local edits: with a peer
+            # bound, the container itself is the isolation boundary and paths (e.g.
+            # /workspace) live in the peer, not under the host session roots.
             if sandbox is None:
+                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
+                if sandbox_denial:
+                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
                 if not os.path.exists(path):
                     return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
                 if not os.path.isfile(path):
@@ -75,11 +79,12 @@ class EditFileTool(Tool):
                 if is_binary_file(path):
                     return Response(type=ResponseType.TOOL, success=False, message="Error: Binary file — use a dedicated binary tool.")
 
-            # Permission check (write op)
+            # Permission check (write op). With a peer bound the container is the
+            # boundary, so pass workspace="" to skip the host-path check.
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=new_string),
-                workspace=(config.workspace_root or ""),
+                workspace=("" if sandbox is not None else (config.workspace_root or "")),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

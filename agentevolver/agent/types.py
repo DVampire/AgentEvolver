@@ -540,8 +540,14 @@ class Agent(BaseModel):
         Prefer ctx.workspace_root (injected by MetaAgent for sub-agents) over
         self.base_dir so all agents in a MetaAgent run share the same directory.
         Under Model X the whole agent runs inside the project container, so this
-        path is already the in-container working directory.
+        path is already the in-container working directory. When a peer sandbox is
+        bound (e.g. a programbench task cleanroom), tools execute in that container,
+        so surface *its* working directory (e.g. /workspace) — not the host path.
         """
+        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
+        container_ws = getattr(sandbox, "container_workspace", None) if sandbox is not None else None
+        if container_ws:
+            return container_ws
         return assemble_workspace_path(config.workspace_root or self.base_dir)
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
@@ -551,6 +557,13 @@ class Agent(BaseModel):
         spending a tool call. Opt-in: agents that do file work expose this as a
         `workspace` sub-module from their `_get_agent_context` override.
         """
+        # With a peer sandbox bound, the working directory lives in that container;
+        # a synchronous host listing would show the wrong (empty host) directory, so
+        # surface the container path and let the agent list it with list_dir.
+        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
+        container_ws = getattr(sandbox, "container_workspace", None) if sandbox is not None else None
+        if container_ws:
+            return f"{container_ws}\n  (sandboxed — use list_dir to inspect)"
         workspace_root = os.path.abspath(config.workspace_root or self.base_dir)
         try:
             entries = sorted(os.listdir(workspace_root))

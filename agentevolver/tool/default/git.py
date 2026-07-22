@@ -117,11 +117,19 @@ class GitTool(Tool):
         """
         ctx = kwargs.get("ctx")
         sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
-        workspace_root = self._get_workspace_root(ctx)
-        if not workspace_root:
-            return Response(type=ResponseType.TOOL, success=False, message="Error: No workspace_root set in context.")
-        if not os.path.isdir(workspace_root):
-            return Response(type=ResponseType.TOOL, success=False, message=f"Error: workspace_root not found: {workspace_root}")
+        if sandbox is not None:
+            # git runs inside the peer container: use the peer's own workspace dir
+            # (e.g. /workspace), not the host session path — that path does not exist
+            # in the peer's filesystem. No local isdir check for the same reason.
+            workspace_root = sandbox.container_workspace or self._get_workspace_root(ctx)
+            if not workspace_root:
+                return Response(type=ResponseType.TOOL, success=False, message="Error: No workspace_root set in context.")
+        else:
+            workspace_root = self._get_workspace_root(ctx)
+            if not workspace_root:
+                return Response(type=ResponseType.TOOL, success=False, message="Error: No workspace_root set in context.")
+            if not os.path.isdir(workspace_root):
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: workspace_root not found: {workspace_root}")
 
         try:
             if action == "status":

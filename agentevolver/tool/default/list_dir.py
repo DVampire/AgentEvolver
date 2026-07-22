@@ -129,13 +129,18 @@ class ListDirTool(Tool):
             ignore: Names/patterns to skip.
         """
         try:
-            sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
-            if sandbox_denial:
-                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-
             # A peer sandbox bound on the context lists inside that container (a flat
             # find listing); otherwise walk the local fs as a formatted tree.
             sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+
+            # The host-root boundary check only applies to local listings: with a peer
+            # bound, the container itself is the isolation boundary and paths (e.g.
+            # /workspace) live in the peer, not under the host session roots.
+            if sandbox is None:
+                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
+                if sandbox_denial:
+                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+
             if sandbox is not None:
                 import shlex
                 res = await sandbox.run_command(

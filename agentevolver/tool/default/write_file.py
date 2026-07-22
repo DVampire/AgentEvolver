@@ -58,20 +58,27 @@ class WriteFileTool(Tool):
             content: Full content to write.
         """
         try:
-            sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
-            if sandbox_denial:
-                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-            # Permission + size + workspace boundary check
+            # A peer sandbox bound on the context routes the write into that container.
+            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+
+            # The host-root boundary check only applies to local writes: with a peer
+            # bound, the container itself is the isolation boundary and paths (e.g.
+            # /workspace) live in the peer, not under the host session roots.
+            if sandbox is None:
+                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
+                if sandbox_denial:
+                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+            # Permission + size check. With a peer bound the container is the boundary,
+            # so the host-workspace path check does not apply — pass workspace="" to keep
+            # size/read-only checks while skipping the host-path boundary.
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=content),
-                workspace=(config.workspace_root or ""),
+                workspace=("" if sandbox is not None else (config.workspace_root or "")),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
-            # A peer sandbox bound on the context routes the write into that container.
-            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
             if sandbox is not None:
                 try:
                     await sandbox.write_file(path, content)

@@ -62,14 +62,20 @@ class ReadFileTool(Tool):
             limit:  Maximum number of lines to return. None reads to end of file.
         """
         try:
-            sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
-            if sandbox_denial:
-                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-
             # A peer sandbox bound on the context routes file IO into that container
             # (e.g. a programbench task cleanroom); otherwise read the local fs, which
             # under Model X already IS the project container.
             sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+
+            # The host-root boundary check only applies to local reads: with a peer
+            # bound, the container itself is the isolation boundary and paths (e.g.
+            # /workspace) live in the peer, not under the host session roots.
+            if sandbox is None:
+                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
+                if sandbox_denial:
+                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+
+            warning = ""
             if sandbox is not None:
                 try:
                     content = await sandbox.read_file(path)
@@ -90,6 +96,7 @@ class ReadFileTool(Tool):
                 )
                 if not result.allowed:
                     return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
+                warning = result.warning or ""
 
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
                     all_lines = f.readlines()
@@ -109,7 +116,7 @@ class ReadFileTool(Tool):
                     f"Use offset/limit to read more.]"
                 )
 
-            warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
+            warning_prefix = f"Warning: {warning}\n\n" if warning else ""
 
             return Response(type=ResponseType.TOOL, 
                 success=True,
