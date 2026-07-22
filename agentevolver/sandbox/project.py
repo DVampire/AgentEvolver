@@ -108,11 +108,12 @@ class ProjectSandbox:
 
     @property
     def manifest_path(self) -> Path:
-        # Session audit state is user-level metadata, not project output.
+        # Session audit state is user-level metadata, not project output. Pure path
+        # computation — no directory is created here, so a session that never
+        # promotes anything leaves no empty ``staging/`` tree behind (the dir is
+        # created lazily by :meth:`_write_manifest`).
         project_key = hashlib.sha256(str(self.project_root).encode("utf-8")).hexdigest()[:16]
-        root = home_dir() / "staging" / project_key
-        root.mkdir(parents=True, exist_ok=True)
-        return root / "extension-staging.json"
+        return home_dir() / "staging" / project_key / "extension-staging.json"
 
     def describe(self) -> Dict[str, str]:
         """Return the host paths that map into a session sandbox."""
@@ -143,6 +144,7 @@ class ProjectSandbox:
             raise ValueError(f"Invalid staged-extension manifest: {exc}") from exc
 
     def _write_manifest(self, manifest: Dict[str, Any]) -> None:
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.manifest_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         temporary.replace(self.manifest_path)
