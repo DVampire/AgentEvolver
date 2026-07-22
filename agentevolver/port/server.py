@@ -29,6 +29,7 @@ from agentevolver.utils.path_utils import home_dir
 # they never collide on the host and never go through the PortManager.
 GATEWAY = 9876          # Gateway WebSocket server
 OPENSANDBOX = 8080      # local opensandbox-server daemon
+UI = 5173               # Vite dev server for the web UI (single-port reverse proxy)
 
 
 def _now() -> str:

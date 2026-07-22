@@ -39,7 +39,12 @@ const WorkspaceEditor = lazy(() => import('./WorkspaceEditor'));
 const VncView = lazy(() => import('./VncView'));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
-const DEFAULT_ENDPOINT = 'ws://127.0.0.1:9876/ws';
+// Same-origin by default: the page is served by the Vite dev server, which
+// reverse-proxies /ws (and /env/vnc, /health) to the gateway. So a remote user
+// only forwards the one UI port. A localStorage override / the ConnectionDialog
+// can still point at an explicit gateway.
+const wsOrigin = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+const DEFAULT_ENDPOINT = `${wsOrigin()}/ws`;
 const SESSION_KEY = 'agentevolver.gateway.session';
 const SIDEBAR_WIDTH_KEY = 'agentevolver.layout.sidebar';
 const INSPECTOR_WIDTH_KEY = 'agentevolver.layout.inspector';
@@ -86,8 +91,21 @@ const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: string; des
 };
 const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
 
+// Legacy builds hardcoded a direct gateway endpoint and persisted it. That
+// bypasses the same-origin Vite proxy and breaks remote (forward-only-5173)
+// access, so drop the stale value and fall back to the same-origin default.
+const LEGACY_ENDPOINTS = new Set(['ws://127.0.0.1:9876/ws', 'ws://localhost:9876/ws']);
+function initialEndpoint(): string {
+  const stored = localStorage.getItem('agentevolver.gateway.endpoint');
+  if (!stored || LEGACY_ENDPOINTS.has(stored)) {
+    localStorage.removeItem('agentevolver.gateway.endpoint');
+    return DEFAULT_ENDPOINT;
+  }
+  return stored;
+}
+
 export function App() {
-  const [endpoint, setEndpoint] = useState(() => localStorage.getItem('agentevolver.gateway.endpoint') ?? DEFAULT_ENDPOINT);
+  const [endpoint, setEndpoint] = useState(initialEndpoint);
   const [token, setToken] = useState(() => localStorage.getItem('agentevolver.gateway.token') ?? '');
   const [activeEndpoint, setActiveEndpoint] = useState(endpoint);
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
@@ -1122,10 +1140,22 @@ function asEnvironmentView(value: unknown): EnvironmentViewInfo | undefined {
   return {
     env_name: typeof value.env_name === 'string' ? value.env_name : 'environment',
     kind: typeof value.kind === 'string' ? value.kind : 'vnc',
-    url: value.url,
+    url: resolveViewUrl(value.url),
     label: typeof value.label === 'string' ? value.label : undefined,
     password: typeof value.password === 'string' ? value.password : undefined,
   };
+}
+
+// The gateway hands out a relative path (e.g. "/env/vnc") for live views it
+// relays. Resolve it against the page origin (the Vite proxy forwards it to the
+// gateway) and carry the gateway token so the relay authorizes the socket.
+// Absolute ws(s):// urls are passed through untouched.
+function resolveViewUrl(url: string): string {
+  if (/^wss?:\/\//i.test(url)) return url;
+  const base = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+  const tok = localStorage.getItem('agentevolver.gateway.token') ?? '';
+  const query = tok ? `?token=${encodeURIComponent(tok)}` : '';
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}${query}`;
 }
 
 function asDeploySite(value: unknown): DeploySite | undefined {

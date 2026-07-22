@@ -61,16 +61,20 @@ def create_websocket_app(
     async def health():
         return JSONResponse({"ok": True, "protocol_version": 1})
 
-    @app.websocket("/ws")
-    async def websocket_endpoint(websocket: WebSocket):
+    def _authorize(websocket: WebSocket) -> bool:
         supplied_token = websocket.query_params.get("token") or websocket.headers.get("authorization", "").removeprefix("Bearer ")
         supplied_token = supplied_token or ""
         if token and not hmac.compare_digest(supplied_token, token):
-            await websocket.close(code=1008, reason="Invalid gateway token")
-            return
+            return False
         origin = websocket.headers.get("origin")
         if allowed_origins is not None and origin not in allowed_origins:
-            await websocket.close(code=1008, reason="Origin is not allowed")
+            return False
+        return True
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        if not _authorize(websocket):
+            await websocket.close(code=1008, reason="Unauthorized")
             return
         await websocket.accept()
         event_queue = await gateway.subscribe()
@@ -101,5 +105,73 @@ def create_websocket_app(
             writer.cancel()
             await asyncio.gather(forwarder, writer, return_exceptions=True)
             gateway.unsubscribe(event_queue)
+
+    @app.websocket("/env/vnc")
+    async def vnc_relay(websocket: WebSocket):
+        """Relay the browser's noVNC connection to the sandbox websockify endpoint.
+
+        The browser environment's websockify is reachable only via an ephemeral
+        host port (assigned by the opensandbox proxy). Rather than exposing that
+        port, the client connects here on the fixed gateway origin and we pipe
+        frames to/from the upstream target cached by the gateway. This keeps the
+        remote experience to a single forwarded port (the UI).
+        """
+        if not _authorize(websocket):
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
+        target = gateway._latest_vnc_target
+        # noVNC negotiates a subprotocol ("binary"/"base64"); echo the client's
+        # choice on accept and to the upstream, or the RFB handshake fails.
+        requested = websocket.headers.get("sec-websocket-protocol", "")
+        protocols = [p.strip() for p in requested.split(",") if p.strip()]
+        subprotocol = protocols[0] if protocols else None
+        await websocket.accept(subprotocol=subprotocol)
+        if not target:
+            await websocket.close(code=1011, reason="No live VNC target")
+            return
+
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                upstream = await session.ws_connect(
+                    target, protocols=protocols or (), autoping=True
+                )
+            except Exception:
+                with suppress(Exception):
+                    await websocket.close(code=1011, reason="VNC upstream unreachable")
+                return
+
+            async def client_to_upstream() -> None:
+                while True:
+                    message = await websocket.receive()
+                    if message.get("type") == "websocket.disconnect":
+                        return
+                    if (data := message.get("bytes")) is not None:
+                        await upstream.send_bytes(data)
+                    elif (text := message.get("text")) is not None:
+                        await upstream.send_str(text)
+
+            async def upstream_to_client() -> None:
+                async for msg in upstream:
+                    if msg.type == aiohttp.WSMsgType.BINARY:
+                        await websocket.send_bytes(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.TEXT:
+                        await websocket.send_text(msg.data)
+                    elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
+                        return
+
+            c2u = asyncio.create_task(client_to_upstream(), name="vnc-c2u")
+            u2c = asyncio.create_task(upstream_to_client(), name="vnc-u2c")
+            try:
+                await asyncio.wait({c2u, u2c}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                c2u.cancel()
+                u2c.cancel()
+                await asyncio.gather(c2u, u2c, return_exceptions=True)
+                with suppress(Exception):
+                    await upstream.close()
+                with suppress(Exception):
+                    await websocket.close()
 
     return app

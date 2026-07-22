@@ -104,6 +104,11 @@ class AgentGateway:
         # Session whose roots the shared runtime is currently bound to (see
         # _bind_runtime_to_session); None until the first task runs.
         self._bound_session_id: Optional[str] = None
+        # Latest raw VNC websockify target (ws://<ephemeral-host-port>/...) as
+        # reported by the browser environment. The gateway relays it over the
+        # fixed /env/vnc route so a remote user only forwards the UI port — the
+        # ephemeral port stays server-internal. See transport.py:/env/vnc.
+        self._latest_vnc_target: Optional[str] = None
         self._initialized = False
         self._stopping = False
         self._workspace_source = (
@@ -1082,6 +1087,13 @@ class AgentGateway:
         is a sub-agent id the browser client would not match on).
         """
         payload = view.model_dump(mode="json")
+        # For a VNC live view, keep the raw ephemeral websockify target server-side
+        # and hand the client a same-origin relative path instead. The client
+        # resolves it against the gateway origin and connects via /env/vnc, which
+        # the gateway relays to this target — so only the UI port is ever exposed.
+        if payload.get("kind") == "vnc" and payload.get("url"):
+            self._latest_vnc_target = payload["url"]
+            payload["url"] = "/env/vnc"
         await self._publish("environment.view", payload, session_id=self._bound_session_id)
 
     async def _on_extension_change(self, change: Dict[str, str]) -> None:

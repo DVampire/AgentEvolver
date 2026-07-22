@@ -11,12 +11,19 @@ set -euo pipefail
 #   frontend  http://127.0.0.1:5173   (the Vite dev server, serves the SPA)
 #   backend   ws://127.0.0.1:9876/ws  (the Gateway the SPA connects to)
 #
-# Ports are overridable via GATEWAY_PORT / UI_PORT. Extra args are forwarded to
-# `agentevolver serve` (e.g. --token, --allow-origin).
+# Ports are overridable via GATEWAY_PORT / UI_PORT. When unset, they default to
+# the framework's well-known ports from the port registry (agentevolver.port), so
+# there is one source of truth instead of scattered literals. Extra args are
+# forwarded to `agentevolver serve` (e.g. --token, --allow-origin).
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GATEWAY_PORT="${GATEWAY_PORT:-9876}"
-UI_PORT="${UI_PORT:-5173}"
+GATEWAY_PORT="${GATEWAY_PORT:-$(python -c 'from agentevolver.port import GATEWAY; print(GATEWAY)')}"
+UI_PORT="${UI_PORT:-$(python -c 'from agentevolver.port import UI; print(UI)')}"
+
+# Record the UI port in the PortManager (persisted to ports.json) so it is
+# discoverable alongside the Gateway (which `agentevolver serve` registers
+# itself). Both are fixed host ports — the single port a remote user forwards.
+python -c "from agentevolver.port import port_manager; port_manager.register('ui', ${UI_PORT}, kind='host', override=True)" || true
 
 GW_PID=""
 cleanup() {
