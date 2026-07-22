@@ -30,14 +30,20 @@ done
 if [ -z "${CHROME_BIN}" ]; then echo "No Chrome/Chromium binary found in image" >&2; exit 1; fi
 
 # 5) Headful Chrome with remote debugging reachable from the sandbox proxy.
-exec "${CHROME_BIN}" \
-    --no-sandbox \
-    --no-first-run \
-    --disable-gpu \
-    --remote-debugging-address=0.0.0.0 \
-    --remote-debugging-port="${CDP_PORT}" \
-    --window-position=0,0 \
-    --window-size=1280,800 \
-    --start-maximized \
-    "${CHROME_EXTRA_ARGS:-}" \
-    about:blank
+CHROME_ARGS=(
+    --no-sandbox
+    --no-first-run
+    --disable-gpu
+    --remote-debugging-address=0.0.0.0
+    --remote-debugging-port="${CDP_PORT}"
+    --window-position=0,0
+    --window-size=1280,800
+    --start-maximized
+)
+# Only append extra args when actually set — an unset var must NOT expand to a
+# stray empty "" argument, which Chrome would treat as a blank URL to open.
+if [ -n "${CHROME_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2206  # word-splitting is intended for multiple flags
+    CHROME_ARGS+=(${CHROME_EXTRA_ARGS})
+fi
+exec "${CHROME_BIN}" "${CHROME_ARGS[@]}" about:blank

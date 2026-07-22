@@ -39,8 +39,13 @@ class ChromeVncSandbox(PlaywrightSandbox):
     name: str = "chrome-vnc"
     description: str = "Headful Chrome with a noVNC live view, reachable over the DevTools protocol."
     default_image: str = _IMAGE
-    # Our image sets its own ENTRYPOINT (the VNC launcher); do not override it.
-    default_entrypoint = None
+    # OpenSandbox launches the container with its OWN command: it ignores the
+    # image's Dockerfile ENTRYPOINT and, when no entrypoint is passed, falls back
+    # to a keep-alive `bootstrap.sh tail -f /dev/null`. So the VNC launcher must be
+    # passed explicitly as the entrypoint — exactly like PlaywrightSandbox passes
+    # ["/entrypoint"]. Leaving this None meant Xvfb/x11vnc/Chrome never started and
+    # the CDP port (9222) was never opened.
+    default_entrypoint = ["/usr/local/bin/entrypoint-vnc"]
 
     def __init__(self, config: Optional[SandboxConfig] = None, **kwargs: Any):
         super().__init__(config=config, **kwargs)

@@ -195,9 +195,10 @@ env_names = [
 ]
 browser_environment = dict(
     base_dir="environment/browser",
-    headless=True,
+    headless=True,          # ignored when vnc=True (chrome-vnc forces headful)
     viewport=dict(width=1280, height=900),
     use_sandbox=True,
+    vnc=True,               # use the chrome-vnc sandbox (headful Chrome + live noVNC view)
     use_som=True,
     state_detail="elements",
     max_state_elements=0,
