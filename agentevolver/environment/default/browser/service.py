@@ -178,24 +178,36 @@ class BrowserService:
             return None
 
     async def stop(self):
-        """Close all sessions and the browser."""
-        try:
-            for sid in list(self._sessions.keys()):
-                await self.close_session(sid)
-            if self._browser:
-                await self._browser.close()
-            if self._playwright:
-                await self._playwright.stop()
-            if self._sandbox:
-                await self._sandbox.destroy()
-            self._sessions.clear()
-            self._base_context = None
-            self._browser = None
-            self._playwright = None
-            self._sandbox = None
-            logger.info("| 🛑 BrowserService stopped")
-        except Exception as e:
-            logger.error(f"| ❌ Error stopping browser: {e}")
+        """Close all sessions and the browser.
+
+        Each teardown step is time-boxed and isolated: a CDP close or a peer-container
+        destroy that hangs (e.g. the chrome peer being torn down underneath the CDP
+        connection) must not block the others — in particular the peer sandbox must
+        always be destroyed so it can't leak, and the process can exit cleanly (which
+        is what lets the launcher chown outputs back to the host user).
+        """
+        async def _guard(label: str, coro, timeout: float = 15.0):
+            try:
+                await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning(f"| ⚠️ Browser teardown step timed out: {label}")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"| ⚠️ Browser teardown step failed ({label}): {e}")
+
+        for sid in list(self._sessions.keys()):
+            await _guard(f"close_session {sid}", self.close_session(sid), timeout=5.0)
+        if self._browser:
+            await _guard("browser.close", self._browser.close(), timeout=10.0)
+        if self._playwright:
+            await _guard("playwright.stop", self._playwright.stop(), timeout=10.0)
+        if self._sandbox:
+            await _guard("sandbox.destroy", self._sandbox.destroy(), timeout=20.0)
+        self._sessions.clear()
+        self._base_context = None
+        self._browser = None
+        self._playwright = None
+        self._sandbox = None
+        logger.info("| 🛑 BrowserService stopped")
 
     # ------------------------------------------------------------------ session management
 

@@ -206,7 +206,20 @@ async def main():
             logger.info(f"| 📄 Memory HTML: {memory_path}")
 
     # --- Teardown ---
+    # Clean up environments (browser peer containers) and the sandbox subsystem while
+    # the event loop and the opensandbox SDK executor are still alive. Relying on the
+    # asyncio-atexit cleanups instead fails at process exit ("Executor shutdown has
+    # been called"), leaking peer containers.
     await task_manager.stop()
+    try:
+        await environment_manager.cleanup()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"| ⚠️ environment cleanup: {e}")
+    try:
+        from agentevolver.sandbox import sandbox_manager
+        await sandbox_manager.cleanup()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"| ⚠️ sandbox cleanup: {e}")
     await trace_manager.stop()
 
 
