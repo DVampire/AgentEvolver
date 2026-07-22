@@ -256,7 +256,15 @@ async def extract_submission(sandbox, dest_dir: str) -> str:
 
     Matches the official baseline's own copy_submission() approach, and produces
     exactly the file ProgramBenchmark._prepare_submission() expects for future scoring.
-    Returns the local path. Raises on failure — the caller treats this as best-effort.
+
+    The peer cleanroom is deliberately NOT bind-mounted (its /workspace is the task
+    fixture — executable + docs + git — and mounting would destroy it and break the
+    anti-cheat model), so this tar is the only channel by which the reconstructed
+    codebase reaches the host. To keep the result inspectable without manual untarring,
+    the tarball is also unpacked host-side into ``dest_dir/submission/``.
+
+    Returns the local tarball path. Raises on failure — the caller treats this as
+    best-effort.
     """
     tar_path = "/tmp/submission.tar.gz"
     result = await sandbox.run_command(f"tar -czf {tar_path} -C /workspace . 2>&1")
@@ -267,6 +275,18 @@ async def extract_submission(sandbox, dest_dir: str) -> str:
     local_path = os.path.join(dest_dir, "submission.tar.gz")
     with open(local_path, "wb") as f:
         f.write(data)
+
+    # Unpack a browsable copy alongside the tarball so the reconstructed source tree
+    # is directly visible on the host (the scorer still consumes submission.tar.gz).
+    import tarfile
+    extract_dir = os.path.join(dest_dir, "submission")
+    os.makedirs(extract_dir, exist_ok=True)
+    with tarfile.open(local_path, "r:gz") as tf:
+        try:
+            tf.extractall(extract_dir, filter="data")  # py3.12+: block path traversal / unsafe members
+        except TypeError:
+            tf.extractall(extract_dir)  # older Pythons without the filter kwarg
+    logger.info(f"| 📂 Submission unpacked for inspection: {extract_dir}")
     return local_path
 
 
