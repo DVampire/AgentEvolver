@@ -129,7 +129,8 @@
 .app-shell[data-theme='light'] .canvas-cat-head:hover { background: #f2f4f8; }
 .app-shell[data-theme='light'] .canvas-palette-item { border-color: #e5e8ef; color: #3c4557; background: #fff; box-shadow: 0 1px 2px rgba(30,40,70,.05); }
 .app-shell[data-theme='light'] .canvas-palette-item:hover { border-color: #b8c2d8; background: #fafbfd; }
-.app-shell[data-theme='light'] .app-shell[data-theme='light'] .canvas-flow-wrap .react-flow { background: hsl(240, 5%, 96%); } .app-shell[data-theme='light'] .canvas-flow-wrap .react-flow__background { color: hsl(240, 5%, 65%); }
+.app-shell[data-theme='light'] .canvas-flow-wrap .react-flow { background: hsl(240, 5%, 96%); }
+.app-shell[data-theme='light'] .canvas-flow-wrap .react-flow__background { color: hsl(240, 5%, 65%); }
 .app-shell[data-theme='light'] .lf-node { border-color: #e2e6ee; color: #3c4557; background: #fff; box-shadow: 0 6px 22px rgba(30,40,70,.09); }
 .app-shell[data-theme='light'] .lf-node.selected { border-color: hsl(243, 75%, 59%); box-shadow: 0 0 0 3px rgba(79,70,229,.16), 0 6px 22px rgba(30,40,70,.09); }
 .app-shell[data-theme='light'] .lf-node-head strong { color: #171b24; }
