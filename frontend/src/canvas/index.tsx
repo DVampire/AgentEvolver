@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { EDGE_TYPES } from '../CustomEdges';
 import ConnectionLine from './ConnectionLine';
 import { NodePanel } from './NodePanel';
+import { PlaygroundPanel } from './PlaygroundPanel';
 import { NODE_ACTION_EVENT, NODE_TYPES } from './nodes';
 import { Palette } from './Palette';
 import { RunInputDialog, type RunInputField } from './RunInputDialog';
@@ -50,8 +51,9 @@ import {
   type RunData,
 } from './types';
 
-export default function CanvasView({ request, sessionId, connected, theme, onNotice }: {
+export default function CanvasView({ request, subscribe, sessionId, connected, theme, onNotice }: {
   request: RequestFn;
+  subscribe: (listener: (event: import('../controllers/gateway').GatewayEvent) => void) => () => void;
   sessionId?: string;
   connected: boolean;
   theme: 'dark' | 'light';
@@ -70,6 +72,7 @@ export default function CanvasView({ request, sessionId, connected, theme, onNot
   const [runError, setRunError] = useState<string>();
   const [runData, setRunData] = useState<RunData>();
   const [inspected, setInspected] = useState<string>();
+  const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [runDialog, setRunDialog] = useState<{ fields: RunInputField[] }>();
   const [dirty, setDirty] = useState(false);
   const specIndexRef = useRef(new Map<string, NodeSpec>());
@@ -459,16 +462,18 @@ export default function CanvasView({ request, sessionId, connected, theme, onNot
 
   // ----- runs ----------------------------------------------------------------
 
-  const startRun = async (input: Record<string, unknown>) => {
-    if (!sessionId) { onNotice('Connect a session before running a flow.'); return; }
+  const startRun = async (input: Record<string, unknown>): Promise<string | undefined> => {
+    if (!sessionId) { onNotice('Connect a session before running a flow.'); return undefined; }
     setRunOutput(undefined); setRunError(undefined); setRunData(undefined);
     setNodes((current) => current.map((node) => ({ ...node, data: { ...node.data, runState: undefined, runCount: undefined } })));
     try {
       const response = await request('canvas.flow.run', { session_id: sessionId, flow: toDocument(), input });
       if (!response.ok || typeof response.result.run_id !== 'string') throw new Error(response.error?.message ?? 'Could not start the run');
       setRunId(response.result.run_id);
+      return response.result.run_id;
     } catch (error) {
       onNotice(error instanceof Error ? error.message : String(error));
+      return undefined;
     }
   };
 
@@ -545,6 +550,7 @@ export default function CanvasView({ request, sessionId, connected, theme, onNot
           {runId
             ? <Button variant="destructive" size="md" onClick={() => void stopRun()}><Square /> Stop</Button>
             : <Button size="md" onClick={runFlow} disabled={!connected || !nodes.length}><Play /> Run</Button>}
+          <Button variant={playgroundOpen ? 'ghostActive' : 'primary'} size="md" onClick={() => { setPlaygroundOpen((open) => !open); setInspected(undefined); }} disabled={!connected}><Play /> Playground</Button>
         </header>
         <div className="canvas-flow-wrap" onDrop={onCanvasDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}>
           <ReactFlow
@@ -565,7 +571,7 @@ export default function CanvasView({ request, sessionId, connected, theme, onNot
             onNodeDragStart={() => takeSnapshot()}
             onNodeDragStop={onNodeDragStop}
             connectionLineComponent={ConnectionLine}
-            onNodeClick={(_event, node) => { if (node.data.kind === 'step') setInspected(node.id); }}
+            onNodeClick={(_event, node) => { if (node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
             onPaneClick={() => setInspected(undefined)}
             colorMode={theme}
             fitView
@@ -576,7 +582,24 @@ export default function CanvasView({ request, sessionId, connected, theme, onNot
             <MiniMap pannable zoomable />
             <Controls />
           </ReactFlow>
-          {inspectedNode ? <NodePanel node={inspectedNode} runData={runData} onClose={() => setInspected(undefined)} /> : null}
+          {playgroundOpen ? (
+            <PlaygroundPanel
+              request={request}
+              subscribe={subscribe}
+              sessionId={sessionId}
+              connected={connected}
+              onNotice={onNotice}
+              onClose={() => setPlaygroundOpen(false)}
+              inputNodes={nodes.filter((node) => node.data.kind === 'input' && node.data.io.name).map((node) => ({
+                name: node.data.io.name, input_type: node.data.io.input_type, required: node.data.io.required, default: node.data.io.default,
+              }))}
+              startRun={startRun}
+              runId={runId}
+              runData={runData}
+              runOutput={runOutput}
+              runError={runError}
+            />
+          ) : inspectedNode ? <NodePanel node={inspectedNode} runData={runData} onClose={() => setInspected(undefined)} /> : null}
         </div>
         {runId || runOutput !== undefined || runError ? (
           <footer className={`canvas-results${runError ? ' failed' : ''}`}>

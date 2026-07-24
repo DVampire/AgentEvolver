@@ -175,3 +175,7 @@
 .lf-node-icon svg { display: block; }
 .canvas-cat-head em svg, .drag-dots svg { display: block; color: #6d7488; }
 .app-shell[data-theme='light'] .react-flow__edge .lf-edge { stroke: hsl(240, 6%, 70%); }
+
+/* playground panel: shares node-panel chrome, wider chat layout */
+.playground-panel { width: min(440px, 50%); display: flex; flex-direction: column; }
+.playground-panel .node-panel-head { flex-wrap: nowrap; gap: 6px; }
