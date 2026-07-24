@@ -118,3 +118,15 @@ button { cursor: pointer; }
 .playground-markdown :not(pre) > code { border-radius: 4px; padding: 1px 5px; background: rgba(127,127,127,.18); font-size: 12px; }
 .playground-markdown ul, .playground-markdown ol { margin: 6px 0; padding-left: 20px; }
 .app-shell[data-theme='light'] .playground-markdown pre { background: #f1f3f7; }
+
+/* Sidebar lucide icons: center the SVG in its column and align icon+text buttons */
+.capability-nav button > span, .model-nav button > span { display: grid; place-items: center; }
+.capability-nav button > span svg, .model-nav button > span svg { display: block; }
+.brand-mark svg { display: block; }
+.new-chat { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.text-button { display: inline-flex; align-items: center; gap: 7px; }
+.text-button svg { flex: 0 0 auto; }
+.section-refresh svg, .deploy-action svg { display: block; }
+.section-refresh { display: inline-flex; align-items: center; }
+.capability-menu button > span { display: inline-grid; place-items: center; }
+.capability-menu button > span svg, .capability-content h2 svg, .detail-header h2 svg { display: inline-block; vertical-align: -3px; }

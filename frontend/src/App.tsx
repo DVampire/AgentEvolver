@@ -11,6 +11,24 @@ import yamlLanguage from 'highlight.js/lib/languages/yaml';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
+import {
+  Boxes,
+  Cable,
+  GraduationCap,
+  MessageSquare,
+  Monitor,
+  Moon,
+  Plus,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  SquareTerminal,
+  Sun,
+  Waypoints,
+  Workflow,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -85,16 +103,22 @@ const MARKDOWN_REHYPE_PLUGINS: Parameters<typeof ReactMarkdown>[0]['rehypePlugin
 ];
 const FILE_CHUNK_SIZE = 512 * 1024;
 const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [] };
-const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: string; description: string }> = {
-  skills: { label: 'Skills', icon: '▧', description: 'Reusable specialist workflows and domain knowledge.' },
-  tools: { label: 'Tools', icon: '⌘', description: 'Actions the agent can call while it works.' },
-  agents: { label: 'Agents', icon: '✦', description: 'Specialist agents available for delegation.' },
-  connectors: { label: 'Connectors', icon: '⌁', description: 'Connected data sources and external services.' },
-  environments: { label: 'Environments', icon: '◫', description: 'Session environments and their available actions.' },
-  workflows: { label: 'Workflows', icon: '⎇', description: 'Reusable HTML programs that orchestrate agents and other capabilities.' },
-  commands: { label: 'Commands', icon: '›_', description: 'Session control commands; run an enabled command from the composer.' },
+const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: LucideIcon; description: string }> = {
+  skills: { label: 'Skills', icon: GraduationCap, description: 'Reusable specialist workflows and domain knowledge.' },
+  tools: { label: 'Tools', icon: Wrench, description: 'Actions the agent can call while it works.' },
+  agents: { label: 'Agents', icon: Sparkles, description: 'Specialist agents available for delegation.' },
+  connectors: { label: 'Connectors', icon: Cable, description: 'Connected data sources and external services.' },
+  environments: { label: 'Environments', icon: Monitor, description: 'Session environments and their available actions.' },
+  workflows: { label: 'Workflows', icon: Workflow, description: 'Reusable HTML programs that orchestrate agents and other capabilities.' },
+  commands: { label: 'Commands', icon: SquareTerminal, description: 'Session control commands; run an enabled command from the composer.' },
 };
 const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
+
+/** Sidebar capability icon (lucide, matching the canvas + langflow style). */
+function CapIcon({ kind, size = 16 }: { kind: CapabilityKind; size?: number }) {
+  const Icon = CAPABILITY_META[kind].icon;
+  return <Icon size={size} strokeWidth={1.9} />;
+}
 
 // Legacy builds hardcoded a direct gateway endpoint and persisted it. That
 // bypasses the same-origin Vite proxy and breaks remote (forward-only-5173)
@@ -795,8 +819,8 @@ export function App() {
       <div className="col-resizer col-resizer-left" onPointerDown={startColumnDrag('sidebar')} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
       {mainView === 'chat' ? <div className="col-resizer col-resizer-right" onPointerDown={startColumnDrag('inspector')} role="separator" aria-orientation="vertical" aria-label="Resize workspace panel" /> : null}
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">✦</span><span>AgentEvolver</span></div>
-        <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}>＋ New session</button>
+        <div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span></div>
+        <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}><Plus size={16} /> New session</button>
         <div className="sidebar-section projects-section">
           <p className="eyebrow">Projects</p>
           {projects.map(([workspace, projectSessions]) => <div className="project-group" key={workspace}><div className="project-name" title={workspace}>⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{projectSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Session ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>)}
@@ -804,20 +828,20 @@ export function App() {
         </div>
         <nav className="sidebar-section capability-nav view-nav" aria-label="Views">
           <p className="eyebrow">Views</p>
-          <button className={mainView === 'chat' ? 'view-active' : ''} onClick={() => setMainView('chat')}><span>✉</span><strong>Chat</strong></button>
-          <button className={mainView === 'canvas' ? 'view-active' : ''} onClick={() => setMainView('canvas')}><span>⬡</span><strong>Canvas</strong></button>
+          <button className={mainView === 'chat' ? 'view-active' : ''} onClick={() => setMainView('chat')}><span><MessageSquare size={16} strokeWidth={1.9} /></span><strong>Chat</strong></button>
+          <button className={mainView === 'canvas' ? 'view-active' : ''} onClick={() => setMainView('canvas')}><span><Waypoints size={16} strokeWidth={1.9} /></span><strong>Canvas</strong></button>
         </nav>
         <nav className="sidebar-section capability-nav" aria-label="Capabilities">
           <p className="eyebrow">Capabilities</p>
-          {CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }}><span>{CAPABILITY_META[kind].icon}</span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}
+          {CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }}><span><CapIcon kind={kind} /></span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}
         </nav>
-        <div className="sidebar-section model-nav"><p className="eyebrow">Models</p><button onClick={() => void openModels()}><span>◌</span><strong>Providers</strong><em>{providers.reduce((count, provider) => count + provider.models.length, 0)}</em></button></div>
+        <div className="sidebar-section model-nav"><p className="eyebrow">Models</p><button onClick={() => void openModels()}><span><Boxes size={16} strokeWidth={1.9} /></span><strong>Providers</strong><em>{providers.reduce((count, provider) => count + provider.models.length, 0)}</em></button></div>
         <div className="sidebar-section agents-section">
           <p className="eyebrow">Active agents</p>
           {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
         </div>
         <div className="sidebar-section deploy-section">
-          <p className="eyebrow">Deployments <button className="section-refresh" title="Refresh" onClick={() => { if (socketRef.current) void loadDeploys(socketRef.current); }}>↻</button></p>
+          <p className="eyebrow">Deployments <button className="section-refresh" title="Refresh" onClick={() => { if (socketRef.current) void loadDeploys(socketRef.current); }}><RefreshCw size={12} /></button></p>
           {deploys.length ? deploys.map((site) => <div className={`deploy-row ${site.status}`} key={site.site_id}>
             <span className={`deploy-dot ${site.status}`} title={site.status} />
             <div className="deploy-meta">
@@ -831,7 +855,7 @@ export function App() {
               : <button className="deploy-action" title="Redeploy" onClick={() => void redeploySite(site.site_id)}>↻</button>}
           </div>) : <p className="empty">No deployed services yet.</p>}
         </div>
-        <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Light theme' : '◐ Dark theme'}</button><button className="text-button" onClick={() => setSettingsOpen(true)}>⚙ Connection</button></div>
+        <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button></div>
       </aside>
 
       {mainView === 'canvas' ? <section className="conversation canvas-mode">
@@ -1042,20 +1066,20 @@ function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
 }
 
 function MobileNavigation({ projects, sessionId, selection, agents, status, theme, onClose, onCreateSession, onSelectSession, onOpenCapabilities, onToggleTheme, onOpenConnection }: { projects: [string, SessionSummary[]][]; sessionId?: string; selection: CapabilityCatalog; agents: AgentState[]; status: ConnectionStatus; theme: Theme; onClose: () => void; onCreateSession: () => Promise<void>; onSelectSession: (session: SessionSummary) => Promise<void>; onOpenCapabilities: (kind: CapabilityKind) => void; onToggleTheme: () => void; onOpenConnection: () => void }) {
-  return <div className="mobile-nav-backdrop" onClick={onClose}><aside className="mobile-nav" onClick={(event) => event.stopPropagation()}><div className="brand"><span className="brand-mark">✦</span><span>AgentEvolver</span><button className="mobile-close" onClick={onClose} aria-label="Close navigation">×</button></div><button className="new-chat" disabled={status !== 'connected'} onClick={() => { void onCreateSession(); onClose(); }}>＋ New session</button><div className="sidebar-section projects-section"><p className="eyebrow">Projects</p>{projects.map(([workspace, sessions]) => <div className="project-group" key={workspace}><div className="project-name">⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{sessions.map((session) => <button className={`project-session ${session.session_id === sessionId ? 'selected' : ''}`} key={session.session_id} onClick={() => { void onSelectSession(session); onClose(); }}><span className="session-dot" /><span>{session.name}</span><em>{session.task_ids.length}</em></button>)}</div>)}</div><nav className="sidebar-section capability-nav"><p className="eyebrow">Capabilities</p>{CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { onOpenCapabilities(kind); onClose(); }}><span>{CAPABILITY_META[kind].icon}</span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}</nav><div className="sidebar-section agents-section"><p className="eyebrow">Active agents</p>{agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}</div><div className="sidebar-footer"><button className="text-button" onClick={onToggleTheme}>{theme === 'dark' ? '☀ Light theme' : '◐ Dark theme'}</button><button className="text-button" onClick={() => { onOpenConnection(); onClose(); }}>⚙ Connection</button></div></aside></div>;
+  return <div className="mobile-nav-backdrop" onClick={onClose}><aside className="mobile-nav" onClick={(event) => event.stopPropagation()}><div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="mobile-close" onClick={onClose} aria-label="Close navigation">×</button></div><button className="new-chat" disabled={status !== 'connected'} onClick={() => { void onCreateSession(); onClose(); }}><Plus size={16} /> New session</button><div className="sidebar-section projects-section"><p className="eyebrow">Projects</p>{projects.map(([workspace, sessions]) => <div className="project-group" key={workspace}><div className="project-name">⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{sessions.map((session) => <button className={`project-session ${session.session_id === sessionId ? 'selected' : ''}`} key={session.session_id} onClick={() => { void onSelectSession(session); onClose(); }}><span className="session-dot" /><span>{session.name}</span><em>{session.task_ids.length}</em></button>)}</div>)}</div><nav className="sidebar-section capability-nav"><p className="eyebrow">Capabilities</p>{CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { onOpenCapabilities(kind); onClose(); }}><span><CapIcon kind={kind} /></span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}</nav><div className="sidebar-section agents-section"><p className="eyebrow">Active agents</p>{agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}</div><div className="sidebar-footer"><button className="text-button" onClick={onToggleTheme}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => { onOpenConnection(); onClose(); }}><Settings size={14} /> Connection</button></div></aside></div>;
 }
 
 function CapabilityDialog({ activeKind, catalog, selection, items, search, onSearch, onSelectKind, onToggle, onToggleAll, onInspect, onClose }: { activeKind: CapabilityKind; catalog: CapabilityCatalog; selection: CapabilityCatalog; items: string[]; search: string; onSearch: (value: string) => void; onSelectKind: (kind: CapabilityKind) => void; onToggle: (kind: CapabilityKind, name: string) => void; onToggleAll: (kind: CapabilityKind) => void; onInspect: (kind: CapabilityKind, name: string) => void; onClose: () => void }) {
   const meta = CAPABILITY_META[activeKind];
   const allEnabled = catalog[activeKind].length > 0 && selection[activeKind].length === catalog[activeKind].length;
-  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span>{CAPABILITY_META[kind].icon}</span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2>{meta.icon} {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((name) => <div className="capability-item" key={name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, name)}><strong>{humanize(name)}</strong><small>{capabilityDescription(activeKind, name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, name)} aria-pressed={selection[activeKind].includes(name)} aria-label={`Toggle ${name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
+  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span><CapIcon kind={kind} /></span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2><CapIcon kind={activeKind} size={20} /> {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((name) => <div className="capability-item" key={name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, name)}><strong>{humanize(name)}</strong><small>{capabilityDescription(activeKind, name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, name)} aria-pressed={selection[activeKind].includes(name)} aria-label={`Toggle ${name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
 }
 
 function CapabilityDetailDialog({ detail, loading, onEdit, onClose }: { detail?: CapabilityDetail; loading?: boolean; onEdit?: () => void; onClose: () => void }) {
   if (loading) return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog loading-detail" onClick={(event) => event.stopPropagation()}><span className="pulse" /> Loading capability details…</section></div>;
   if (!detail) return null;
   const meta = CAPABILITY_META[detail.kind];
-  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2>{meta.icon} {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><div className="detail-header-actions">{detail.editable ? <button className="edit-configuration" onClick={onEdit}>Edit configuration</button> : null}<button className="close-dialog" onClick={onClose}>×</button></div></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : detail.language === 'source' ? <WorkflowDocument detail={detail} /> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
+  return <div className="modal-backdrop detail-backdrop" onClick={onClose}><section className="capability-detail-dialog" onClick={(event) => event.stopPropagation()}><header className="detail-header"><div><p className="eyebrow">{meta.label.slice(0, -1)} details</p><h2><CapIcon kind={detail.kind} size={20} /> {humanize(detail.name)}</h2><p>{detail.description || 'No description is available.'}</p></div><div className="detail-header-actions">{detail.editable ? <button className="edit-configuration" onClick={onEdit}>Edit configuration</button> : null}<button className="close-dialog" onClick={onClose}>×</button></div></header><div className="detail-layout"><aside className="detail-meta"><p className="eyebrow">Metadata</p><dl><dt>Version</dt><dd>{detail.version}</dd><dt>Permission</dt><dd>{detail.permission_mode}</dd><dt>Type</dt><dd>{Array.isArray(detail.type) ? detail.type.join(', ') : detail.type || '—'}</dd><dt>Evolvable</dt><dd>{detail.enable_evolving ? 'Yes' : 'No'}</dd>{detail.usage ? <><dt>Usage</dt><dd><code>{detail.usage}</code></dd></> : null}{detail.document_path ? <><dt>Source</dt><dd><code>{detail.document_path}</code></dd></> : null}</dl>{detail.actions.length ? <><p className="eyebrow detail-actions-heading">Actions</p><ul className="detail-actions">{detail.actions.map((action) => <li key={action}>{action}</li>)}</ul></> : null}</aside><article className="document-panel">{detail.language === 'markdown' ? <><div className="document-toolbar"><span>Capability guide</span><button onClick={() => navigator.clipboard?.writeText(detail.document)}>Copy</button></div><MarkdownDocument content={detail.document} /></> : detail.language === 'source' ? <WorkflowDocument detail={detail} /> : <SchemaPanel schema={detail.parameter_schema} />}</article></div></section></div>;
 }
 
 function CapabilityConfigDialog({ detail, onSave, onClose }: { detail: CapabilityDetail; onSave: (detail: CapabilityDetail, configuration: Record<string, unknown>) => Promise<void>; onClose: () => void }) {
