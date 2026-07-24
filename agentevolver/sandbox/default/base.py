@@ -82,6 +82,7 @@ class OpenSandbox(Sandbox):
     def __init__(self, config: Optional[SandboxConfig] = None, **kwargs: Any):
         super().__init__(config, **kwargs)
         self._sb = None  # opensandbox.Sandbox instance
+        self._sandbox_id: Optional[str] = None  # ledger entry for crash-safe reaping
 
     @property
     def container_workspace(self) -> Optional[str]:
@@ -130,6 +131,17 @@ class OpenSandbox(Sandbox):
             create_kwargs["network_policy"] = NetworkPolicy(default_action="deny")
         self._sb = await OSSandbox.create(image, **create_kwargs)
         self._started = True
+        # Record the container in the crash ledger so an unclean process exit
+        # cannot leak it: the next boot's reap_stale() removes whatever a dead
+        # run left behind (see agentevolver/sandbox/ledger.py).
+        try:
+            from agentevolver.sandbox import ledger
+            info = await self._sb.get_info()
+            self._sandbox_id = str(getattr(info, "id", None) or getattr(info, "sandbox_id", "") or "") or None
+            if self._sandbox_id:
+                ledger.record(self._sandbox_id)
+        except Exception as e:  # noqa: BLE001 — the sandbox works even if untracked
+            logger.warning(f"| ⚠️ Sandbox '{self.name}': could not record in the crash ledger: {e}")
         logger.info(f"| 📦 Sandbox '{self.name}' started (image={image}, network={self.config.network})")
 
     async def destroy(self) -> None:
@@ -139,6 +151,13 @@ class OpenSandbox(Sandbox):
             except Exception as e:
                 logger.warning(f"| ⚠️ Error killing sandbox '{self.name}': {e}")
             finally:
+                if self._sandbox_id:
+                    try:
+                        from agentevolver.sandbox import ledger
+                        ledger.forget(self._sandbox_id)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._sandbox_id = None
                 self._sb = None
                 self._started = False
 

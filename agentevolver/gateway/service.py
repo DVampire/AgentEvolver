@@ -157,6 +157,16 @@ class AgentGateway:
         env_names = getattr(config, "env_names", None)
         if env_names:
             await environment_manager.initialize(env_names=env_names)
+            # A failed environment is silently absent from the registry; surface
+            # it loudly so an empty capability list is never a mystery.
+            registered_envs = await environment_manager.list()
+            missing_envs = [name for name in env_names if name not in registered_envs]
+            if missing_envs:
+                logger.error(
+                    f"| ❌ {len(missing_envs)} configured environment(s) failed to initialize and are "
+                    f"unavailable this run: {', '.join(missing_envs)} — see the errors above; "
+                    f"stale sandboxes are reaped at boot, so a restart usually recovers."
+                )
         await agent_manager.initialize(agent_names=getattr(config, "agent_names", None))
         await workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None))
         # Deploy registry is project-global (under the .agentevolver home), so init it

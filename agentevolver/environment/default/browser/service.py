@@ -134,7 +134,29 @@ class BrowserService:
             logger.info("| 🌐 BrowserService started")
         except Exception as e:
             logger.error(f"| ❌ Failed to start browser: {e}")
+            # A failed start must not leak partial state: the acquired peer
+            # container especially (an orphaned chrome sandbox breaks every
+            # later boot), but also the Playwright driver process.
+            await self._cleanup_failed_start()
             raise
+
+    async def _cleanup_failed_start(self) -> None:
+        async def _guard(label: str, coro, timeout: float = 20.0):
+            try:
+                await asyncio.wait_for(coro, timeout=timeout)
+            except Exception as cleanup_error:  # noqa: BLE001 — best-effort teardown
+                logger.warning(f"| ⚠️ Browser start-failure cleanup ({label}): {cleanup_error}")
+
+        if self._browser:
+            await _guard("browser.close", self._browser.close(), timeout=10.0)
+        if self._sandbox:
+            await _guard("sandbox.destroy", self._sandbox.destroy())
+        if self._playwright:
+            await _guard("playwright.stop", self._playwright.stop(), timeout=10.0)
+        self._browser = None
+        self._sandbox = None
+        self._playwright = None
+        self._base_context = None
 
     async def _start_local(self):
         self._browser = await self._playwright.chromium.launch(headless=self.headless)

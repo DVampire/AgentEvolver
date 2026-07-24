@@ -182,7 +182,22 @@ def default_domain() -> str:
     return _default_domain
 
 
+_stale_sandboxes_reaped = False
+
+
 async def ensure_server(domain: Optional[str] = None, server_bin: str = "opensandbox-server") -> SandboxServerManager:
+    # Before this process creates its first sandbox, remove containers a dead
+    # previous run left behind — orphans otherwise break subsequent creates
+    # (observed with leaked chrome-vnc peers killing browser-environment init).
+    global _stale_sandboxes_reaped
+    if not _stale_sandboxes_reaped:
+        _stale_sandboxes_reaped = True
+        try:
+            from agentevolver.sandbox import ledger
+            await ledger.reap_stale()
+        except Exception as e:  # noqa: BLE001 — reaping is best-effort
+            logger.warning(f"| ⚠️ Could not reap stale sandboxes: {e}")
+
     domain = domain or default_domain()
     mgr = _server_singletons.get(domain)
     if mgr is None:
