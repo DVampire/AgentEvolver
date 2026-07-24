@@ -147,7 +147,7 @@ class EditFileTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"{warning_prefix}Edited {path} ({delta_str} lines)",
-                file_path=[path],
+                files=[path],
                 data={
                     "old_lines": old_line_count,
                     "new_lines": new_line_count,

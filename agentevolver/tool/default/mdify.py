@@ -152,7 +152,7 @@ class MdifyTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                file_path=[saved_path] if saved_path else None,
+                files=[saved_path] if saved_path else None,
                 data={
                     "file_name": file_name,
                     "file_size": file_size,

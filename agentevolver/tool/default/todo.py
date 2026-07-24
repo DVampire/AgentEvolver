@@ -580,7 +580,7 @@ class TodoTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=message,
-                file_path=[todo.todo_file],
+                files=[todo.todo_file],
                 data={
                     "step_id": new_step.id,
                     "after_step_id": after_step_id,
@@ -613,7 +613,7 @@ class TodoTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"✅ Completed step {step_id} with status: {status}",
-                file_path=[todo.todo_file],
+                files=[todo.todo_file],
                 data={
                     "step_id": step_id,
                     "status": status,
@@ -642,7 +642,7 @@ class TodoTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"✅ Updated step {step_id}",
-                file_path=[todo.todo_file],
+                files=[todo.todo_file],
                 data={
                     "step_id": step_id,
                     "updated_fields": {
@@ -692,7 +692,7 @@ class TodoTool(Tool):
         return Response(type=ResponseType.TOOL, 
             success=True,
             message=result,
-            file_path=[todo.todo_file],
+            files=[todo.todo_file],
             data={
                 "total_steps": len(todo.steps),
                 "steps": [step.model_dump() for step in todo.steps],
@@ -711,7 +711,7 @@ class TodoTool(Tool):
         return Response(type=ResponseType.TOOL, 
             success=True,
             message=f"✅ Removed {len(completed_steps)} completed step(s)",
-            file_path=[todo.todo_file],
+            files=[todo.todo_file],
             data={
                 "removed_count": len(completed_steps),
                 "removed_steps": [step.model_dump() for step in completed_steps],
@@ -729,7 +729,7 @@ class TodoTool(Tool):
         return Response(type=ResponseType.TOOL, 
             success=True,
             message=f"📄 Todo.md content:\n\n```markdown\n{content}\n```",
-            file_path=[todo.todo_file],
+            files=[todo.todo_file],
             data={
                 "content": content,
                 "file_size": len(content),
@@ -762,7 +762,7 @@ class TodoTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"✅ Successfully exported todo.md to: {export_path}",
-                file_path=[todo.todo_file, export_path],
+                files=[todo.todo_file, export_path],
                 data={
                     "source_file": todo.todo_file,
                     "export_path": export_path,

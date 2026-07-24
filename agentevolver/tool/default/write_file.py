@@ -125,7 +125,7 @@ class WriteFileTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=f"{warning_prefix}{action} {path} ({line_count} lines)",
-                file_path=[path],
+                files=[path],
                 data={"existed": existed, "line_count": line_count, "patch": patch},
             )
 

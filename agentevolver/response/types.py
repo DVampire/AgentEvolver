@@ -24,7 +24,7 @@ class Response(BaseModel):
     success: bool
     message: str
     data: Optional[Dict[str, Any]] = None
-    file_path: Optional[List[str]] = None
+    files: Optional[List[str]] = None
     parsed_model: Optional[BaseModel] = None
     usage: Optional[Any] = None          # TokenUsage at runtime; Any to avoid circular import
     extra: Optional[Dict[str, Any]] = None  # caller-defined extension data, not read by framework

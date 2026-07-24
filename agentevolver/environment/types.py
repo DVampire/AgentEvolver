@@ -313,12 +313,30 @@ class ScreenshotInfo(BaseModel):
     transform_info: Optional[Dict[str, Any]] = Field(default=None, description="Transform information")
 
 class ActionResult(BaseModel):
-    """Action result"""
+    """Action result.
+
+    Satisfies the canonical capability-output contract shared with
+    ``Response`` — ``success`` / ``message`` / ``data`` / ``files`` — so every
+    capability (tool, agent, skill, connector, environment) exposes the same
+    accessors and normalizes to the same ``{message, data, files}`` shape.
+    An environment action keeps its payload in ``extra``; ``data`` is a
+    read-only alias so consumers do not special-case environments.
+    """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     success: bool = Field(description="Whether the action was successful")
     message: str = Field(description="The message of the action result")
     extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra information of the action result")
+
+    @property
+    def data(self) -> Optional[Dict[str, Any]]:
+        """Capability-output alias for ``extra`` (matches ``Response.data``)."""
+        return self.extra
+
+    @property
+    def files(self) -> Optional[list]:
+        """Capability-output contract field; environment actions produce no files."""
+        return None
 
     def __str__(self) -> str:
         return f"ActionResult(success={self.success}, message={self.message}, extra={self.extra})"

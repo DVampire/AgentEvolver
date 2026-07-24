@@ -842,16 +842,21 @@ class WorkflowRuntime:
     def _normalize(value):
         """Convert a manager result into a plain, scope-referenceable value.
 
-        Unwraps a :class:`Response` into a message/data/files dict and a nested
-        :class:`WorkflowRun` into its output; other values pass through.
+        Every capability result (Response from tool/agent/skill/connector/model,
+        ActionResult from environment) unwraps to the SAME canonical shape —
+        ``{message, data, files}`` — so ``${step}`` / ``${step.data.x}`` work the
+        same regardless of which capability produced it. A nested WorkflowRun
+        unwraps to its output; other values pass through.
 
         Raises:
-            RuntimeError: If the Response failed or the nested workflow did not succeed.
+            RuntimeError: If the result failed or the nested workflow did not succeed.
         """
-        if isinstance(value, Response):
+        from agentevolver.environment.types import ActionResult
+
+        if isinstance(value, (Response, ActionResult)):
             if not value.success:
                 raise RuntimeError(value.message)
-            return {"message": value.message, "data": value.data, "files": value.file_path}
+            return {"message": value.message, "data": value.data, "files": value.files}
         if isinstance(value, WorkflowRun):
             if not value.successful:
                 raise RuntimeError(value.error or "Nested workflow failed")

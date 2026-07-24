@@ -121,7 +121,7 @@ class ReadFileTool(Tool):
             return Response(type=ResponseType.TOOL, 
                 success=True,
                 message=warning_prefix + numbered + truncation_note,
-                file_path=[path],
+                files=[path],
                 data={"total_lines": total_lines, "start": start + 1, "end": end},
             )
 
