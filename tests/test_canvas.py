@@ -75,6 +75,39 @@ def test_embedded_source_roundtrip() -> None:
     assert extract_embedded_source(plain) is None
 
 
+def test_agent_mounts_compile_to_allowlist_args() -> None:
+    graph = FlowGraph(
+        name="mounted",
+        nodes=[
+            _node("q", kind="input", name="q", required=True),
+            _node("ag", step_type="agent", target="general_agent", task="Answer: ${inputs.q}",
+                  mounts={"tools": ["bash_tool", "web_searcher_tool"], "skills": ["debug"], "connectors": []}),
+            _node("out", kind="output", name="answer"),
+        ],
+        edges=[GraphEdge(id="e", source="ag", target="out", param="value")],
+    )
+    _, definition = compile_graph(graph)
+    agent_step = next(step for step in definition.program if step.type == StepType.AGENT)
+    # Non-empty selections become args; the empty one is omitted (agent keeps defaults).
+    assert agent_step.args.get("tools") == "bash_tool,web_searcher_tool"
+    assert agent_step.args.get("skills") == "debug"
+    assert "connectors" not in agent_step.args
+
+
+def test_runtime_lifts_agent_mounts_into_allowlists() -> None:
+    from agentevolver.agent.types import AgentContext
+    from agentevolver.workflow.runtime import workflow_runtime
+
+    ctx = AgentContext(extra={"session_id": "s1"})
+    payload = {"task": "hi", "tools": "bash_tool,web_searcher_tool", "skills": "debug", "connectors": ""}
+    derived = workflow_runtime._apply_agent_mounts(payload, ctx)
+    assert payload == {"task": "hi"}  # mount args popped
+    assert derived.extra["tool_allowlist"] == ["bash_tool", "web_searcher_tool"]
+    assert derived.extra["skill_allowlist"] == ["debug"]
+    assert "connector_allowlist" not in derived.extra  # empty selection ignored
+    assert "tool_allowlist" not in ctx.extra  # shared ctx untouched (parallel-safe)
+
+
 def test_compile_branch_then_else_and_args() -> None:
     graph = FlowGraph(
         name="branchy",

@@ -56,7 +56,7 @@ class NodeSpec(BaseModel):
     """
 
     id: str
-    category: Literal["tool", "agent", "workflow", "structural", "io"]
+    category: Literal["agent", "workflow", "structural", "io"]
     step_type: Optional[str] = None
     target: Optional[str] = None
     label: str
@@ -65,6 +65,11 @@ class NodeSpec(BaseModel):
     has_task: bool = False
     has_items: bool = False
     container: bool = False
+    # For agent specs: which capability rosters can be mounted (scoped) on this
+    # agent — one of tools/skills/connectors/agents/environments. The frontend
+    # renders a search+select picker per kind; the selection compiles to the
+    # agent step's ``<arg name="<kind>">`` allowlist.
+    mount_kinds: List[str] = Field(default_factory=list)
 
 
 class GraphNode(BaseModel):
@@ -85,6 +90,10 @@ class GraphNode(BaseModel):
     args: Dict[str, Any] = Field(default_factory=dict)
     items: str = ""
     attrs: Dict[str, Any] = Field(default_factory=dict)
+    # For agent steps: capability names mounted (scoped) on this agent, keyed by
+    # kind (tools/skills/connectors/agents/environments). Compiles to the agent
+    # step's allowlist args; an empty/absent list means "use the agent's defaults".
+    mounts: Dict[str, List[str]] = Field(default_factory=dict)
     name: str = ""
     input_type: str = "string"
     required: bool = False

@@ -1,12 +1,37 @@
-"""Builds the palette: structural workflow steps, io declarations, and one
-entry per registered tool / agent / workflow."""
+"""Builds the palette and mount rosters.
+
+The canvas is agent-centric (matching AgentEvolver): tools/skills/connectors
+are not standalone palette nodes — they are *mounted* on an agent through its
+capability picker. The palette therefore contains structural steps, io
+declarations, the actor agents, and reusable workflows. Evolver agents
+(generator/optimizer/evaluator) stay registered for the self-evolution system
+but are hidden from the canvas.
+"""
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Dict, List
 
 from agentevolver.canvas.types import NodeSpec, ParamSpec
 from agentevolver.logger import logger
+
+# Which capability rosters an agent node can mount (scope). All are optional:
+# leaving a picker empty means the agent uses its configured defaults.
+AGENT_MOUNT_KINDS = ["tools", "skills", "connectors", "agents", "environments"]
+
+
+def _is_actor_agent(info: Any) -> bool:
+    """True for the user-facing worker agents (agentevolver.agent.actor.*).
+
+    Derived from the class module so the split is self-maintaining: a new actor
+    appears automatically, a new evolver agent stays hidden — no name list.
+    """
+    cls = getattr(info, "cls", None)
+    module = getattr(cls, "__module__", "") if cls is not None else ""
+    if module:
+        return ".agent.actor." in module or module.endswith(".agent.actor")
+    return False
 
 
 def _structural_specs(agent_names: List[str]) -> List[NodeSpec]:
@@ -81,58 +106,13 @@ def _structural_specs(agent_names: List[str]) -> List[NodeSpec]:
     ]
 
 
-def _param_from_schema(name: str, schema: Dict[str, Any], required: bool) -> ParamSpec:
-    json_type = schema.get("type")
-    options = schema.get("enum")
-    if isinstance(options, list) and options:
-        param_type, options = "select", [str(option) for option in options]
-    elif json_type in {"integer", "number"}:
-        param_type, options = "number", None
-    elif json_type == "boolean":
-        param_type, options = "boolean", None
-    elif json_type == "string":
-        param_type, options = "string", None
-    else:
-        param_type, options = "json", None
-    return ParamSpec(
-        name=name,
-        label=name.replace("_", " ").capitalize(),
-        type=param_type,
-        required=required,
-        default=schema.get("default"),
-        options=options,
-        multiline=param_type == "string" and name in {"command", "content", "code", "script", "text", "prompt"},
-        description=str(schema.get("description", "")),
-    )
-
-
-def _tool_spec(name: str, info: Any) -> NodeSpec:
-    function_calling = getattr(info, "function_calling", None) or {}
-    function = function_calling.get("function", {}) if isinstance(function_calling, dict) else {}
-    parameters = function.get("parameters") if isinstance(function, dict) else None
-    params: List[ParamSpec] = []
-    if isinstance(parameters, dict):
-        required = set(parameters.get("required") or [])
-        properties = parameters.get("properties")
-        if isinstance(properties, dict):
-            params = [
-                _param_from_schema(key, value if isinstance(value, dict) else {}, key in required)
-                for key, value in properties.items()
-            ]
-    return NodeSpec(
-        id=f"tool/{name}", category="tool", step_type="tool", target=name,
-        label=name.removesuffix("_tool").replace("_", " ").capitalize(),
-        description=str(getattr(info, "description", "") or ""),
-        params=params,
-    )
-
-
 def _agent_spec(name: str, info: Any) -> NodeSpec:
     return NodeSpec(
         id=f"agent/{name}", category="agent", step_type="agent", target=name,
         label=name.removesuffix("_agent").replace("_", " ").capitalize(),
         description=str(getattr(info, "description", "") or ""),
         has_task=True,
+        mount_kinds=list(AGENT_MOUNT_KINDS),
     )
 
 
@@ -157,7 +137,7 @@ def _workflow_spec(name: str, definition: Any) -> NodeSpec:
 
 
 async def build_catalog() -> List[NodeSpec]:
-    """Assemble the palette; registry failures degrade to a smaller palette."""
+    """Assemble the palette (structural + io + actor agents + workflows)."""
     agent_names: List[str] = []
     try:
         from agentevolver.agent import agent_manager
@@ -167,22 +147,12 @@ async def build_catalog() -> List[NodeSpec]:
 
     specs = _structural_specs(agent_names)
 
-    try:
-        from agentevolver.tool import tool_manager
-        for name in await tool_manager.list():
-            try:
-                info = await tool_manager.get_info(name)
-                if info is not None:
-                    specs.append(_tool_spec(name, info))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"| ⚠️ Canvas palette: skipping tool {name}: {exc}")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"| ⚠️ Canvas palette: tool registry unavailable: {exc}")
-
     for name in agent_names:
         try:
             from agentevolver.agent import agent_manager
-            specs.append(_agent_spec(name, await agent_manager.get_info(name)))
+            info = await agent_manager.get_info(name)
+            if info is not None and _is_actor_agent(info):
+                specs.append(_agent_spec(name, info))
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"| ⚠️ Canvas palette: skipping agent {name}: {exc}")
 
@@ -199,4 +169,46 @@ async def build_catalog() -> List[NodeSpec]:
     return specs
 
 
-__all__ = ["build_catalog"]
+async def _roster(kind: str) -> List[Dict[str, str]]:
+    """Selectable capabilities of one kind: [{name, description}]. Agents are
+    restricted to actors (the same set the palette shows)."""
+    try:
+        if kind == "tools":
+            from agentevolver.tool import tool_manager
+            names, get_info = await tool_manager.list(), tool_manager.get_info
+        elif kind == "skills":
+            from agentevolver.skill import skill_manager
+            names, get_info = await skill_manager.list(), skill_manager.get_info
+        elif kind == "connectors":
+            from agentevolver.connector import connector_manager
+            names, get_info = await connector_manager.list(), connector_manager.get_info
+        elif kind == "environments":
+            from agentevolver.environment import environment_manager
+            names, get_info = await environment_manager.list(), environment_manager.get_info
+        elif kind == "agents":
+            from agentevolver.agent import agent_manager
+            names, get_info = await agent_manager.list(), agent_manager.get_info
+        else:
+            return []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"| ⚠️ Canvas roster: {kind} unavailable: {exc}")
+        return []
+
+    out: List[Dict[str, str]] = []
+    for name in names:
+        try:
+            info = await get_info(name) if inspect.iscoroutinefunction(get_info) else get_info(name)
+        except Exception:  # noqa: BLE001
+            info = None
+        if kind == "agents" and not _is_actor_agent(info):
+            continue
+        out.append({"name": name, "description": str(getattr(info, "description", "") or "")})
+    return sorted(out, key=lambda item: item["name"])
+
+
+async def build_mounts() -> Dict[str, List[Dict[str, str]]]:
+    """Global capability rosters the agent capability picker selects from."""
+    return {kind: await _roster(kind) for kind in AGENT_MOUNT_KINDS}
+
+
+__all__ = ["AGENT_MOUNT_KINDS", "build_catalog", "build_mounts"]

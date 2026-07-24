@@ -182,3 +182,20 @@
 /* playground panel: shares node-panel chrome, wider chat layout */
 .playground-panel { width: min(440px, 50%); display: flex; flex-direction: column; }
 .playground-panel .node-panel-head { flex-wrap: nowrap; gap: 6px; }
+
+/* Agent capability mounts (tools/skills/connectors selected inside the agent node) */
+.lf-mounts { display: grid; gap: 7px; margin-top: 2px; padding-top: 9px; border-top: 1px dashed #333a4a; }
+.lf-mount-section { display: grid; gap: 4px; }
+.lf-mount-head { display: flex; align-items: center; justify-content: space-between; }
+.lf-mount-head > span { color: #aab1c2; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.lf-mount-add { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #333a4a; border-radius: 5px; color: #aab6d4; background: #14171e; }
+.lf-mount-add:hover { border-color: hsl(243, 75%, 59%); color: #cdd3e0; }
+.lf-mount-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.lf-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 4px 2px 7px; color: #dfe3ec; background: #2a3141; font-size: 10.5px; }
+.lf-chip button { display: grid; place-items: center; border: 0; border-radius: 4px; color: #9aa3b8; background: transparent; padding: 0; }
+.lf-chip button:hover { color: #ff9ba3; }
+.lf-mount-empty { margin: 0; color: #6d7488; font-size: 10.5px; font-style: italic; }
+.app-shell[data-theme='light'] .lf-mounts { border-color: #dde2ec; }
+.app-shell[data-theme='light'] .lf-mount-head > span { color: #4c566b; }
+.app-shell[data-theme='light'] .lf-mount-add { border-color: #d9dee8; color: #43516c; background: #fff; }
+.app-shell[data-theme='light'] .lf-chip { color: #2a3040; background: #eef1f6; }

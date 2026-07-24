@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agentevolver.canvas.catalog import build_catalog
+from agentevolver.canvas.catalog import build_catalog, build_mounts
 from agentevolver.canvas.compiler import compile_graph, extract_embedded_source
 from agentevolver.canvas.types import FlowGraph, NodeSpec, workflow_name_for
 from agentevolver.logger import logger
@@ -46,6 +46,10 @@ class CanvasManagerServer:
 
     async def catalog(self) -> List[NodeSpec]:
         return await build_catalog()
+
+    async def mounts(self) -> Dict[str, Any]:
+        """Global capability rosters the agent capability picker selects from."""
+        return await build_mounts()
 
     # ------------------------------------------------------------------
     # Drafts (JSON under the session's output) + published extension flows

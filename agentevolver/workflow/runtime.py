@@ -668,6 +668,37 @@ class WorkflowRuntime:
         )
         return record.output
 
+    # Canvas agent nodes mount capabilities (tools/skills/connectors/agents/
+    # environments) as comma-string args; agents read the corresponding
+    # per-run allowlist from ctx.extra. Lift the mount args into a derived ctx
+    # so a mounted agent is scoped to exactly its selection, without mutating
+    # the shared ctx (parallel siblings must not see each other's scope).
+    _MOUNT_TO_ALLOWLIST = {
+        "tools": "tool_allowlist",
+        "skills": "skill_allowlist",
+        "connectors": "connector_allowlist",
+        "agents": "agent_allowlist",
+        "environments": "environment_allowlist",
+    }
+
+    def _apply_agent_mounts(self, payload, ctx):
+        overrides = {}
+        for arg_key, allow_key in self._MOUNT_TO_ALLOWLIST.items():
+            raw = payload.pop(arg_key, None)
+            if raw is None:
+                continue
+            names = [part.strip() for part in str(raw).split(",") if part.strip()]
+            if names:
+                overrides[allow_key] = names
+        if not overrides:
+            return ctx
+        if ctx is None:
+            from agentevolver.agent.types import AgentContext
+            return AgentContext(extra=dict(overrides))
+        derived = ctx.model_copy()
+        derived.extra = {**(getattr(ctx, "extra", None) or {}), **overrides}
+        return derived
+
     async def _invoke(self, kind, target, task, args, ctx, depth, budget=None):
         """Route a capability call to the owning manager, keeping normal permission boundaries.
 
@@ -696,6 +727,7 @@ class WorkflowRuntime:
             payload.setdefault("task", task)
         if kind == StepType.AGENT:
             from agentevolver.agent import agent_manager
+            ctx = self._apply_agent_mounts(payload, ctx)
             return await agent_manager(name=target, input=payload, ctx=ctx)
         if kind == StepType.TOOL:
             from agentevolver.tool import tool_manager

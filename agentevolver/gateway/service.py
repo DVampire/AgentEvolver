@@ -685,9 +685,13 @@ class AgentGateway:
     # ------------------------------------------------------------------
 
     async def _command_canvas_catalog(self, _: Dict[str, Any]) -> Dict[str, Any]:
-        """Return the palette: structural steps, io nodes, and live capabilities."""
+        """Return the palette (structural/io/agents/workflows) plus the capability
+        rosters the agent capability picker mounts from."""
         specs = await canvas_manager.catalog()
-        return {"nodes": [spec.model_dump(mode="json") for spec in specs]}
+        return {
+            "nodes": [spec.model_dump(mode="json") for spec in specs],
+            "mounts": await canvas_manager.mounts(),
+        }
 
     def _canvas_flows_dir(self, session_id: str) -> Path:
         """Session drafts live under the session's own project output (evolution

@@ -23,6 +23,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { EDGE_TYPES } from '../CustomEdges';
 import ConnectionLine from './ConnectionLine';
+import { MountRosterContext } from './CapabilityPicker';
 import { NodePanel } from './NodePanel';
 import { PlaygroundPanel } from './PlaygroundPanel';
 import { NODE_ACTION_EVENT, NODE_TYPES } from './nodes';
@@ -46,6 +47,7 @@ import {
   type FrameState,
   type GraphNodeDoc,
   type InvocationDoc,
+  type MountRosters,
   type NodeSpec,
   type RequestFn,
   type RunData,
@@ -60,6 +62,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   onNotice: (message: string) => void;
 }) {
   const [specs, setSpecs] = useState<NodeSpec[]>([]);
+  const [rosters, setRosters] = useState<MountRosters>({});
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [flowId, setFlowId] = useState('');
   const [flowName, setFlowName] = useState('Untitled flow');
@@ -104,6 +107,9 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       setSpecs(list);
       specIndexRef.current = new Map(list.map((spec) => [spec.id, spec]));
     }
+    if (catalog.ok && catalog.result.mounts && typeof catalog.result.mounts === 'object') {
+      setRosters(catalog.result.mounts as MountRosters);
+    }
     if (flowList.ok && Array.isArray(flowList.result.flows)) setFlows(flowList.result.flows as FlowSummary[]);
   }, [request, sessionId]);
 
@@ -126,6 +132,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       target: spec.target ?? (spec.category === 'structural' ? '' : undefined),
       task: '', args: {}, items: '', attrs: {},
       io: { name: '', input_type: 'string', required: false, default: '', description: '', value: '' },
+      mounts: {},
       boundParams: new Set(),
       update: updateNodeData,
     };
@@ -179,7 +186,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       position: node.parentId && idMap.has(node.parentId) ? { ...node.position } : { x: node.position.x + 48, y: node.position.y + 48 },
       data: {
         ...node.data,
-        args: { ...node.data.args }, attrs: { ...node.data.attrs }, io: { ...node.data.io },
+        args: { ...node.data.args }, attrs: { ...node.data.attrs }, io: { ...node.data.io }, mounts: { ...node.data.mounts },
         boundParams: new Set(node.data.boundParams), runState: undefined, runCount: undefined,
         update: updateNodeData,
       },
@@ -264,6 +271,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           doc.items = data.items;
           doc.args = Object.fromEntries(Object.entries(data.args).filter(([, value]) => String(value).trim() !== ''));
           doc.attrs = Object.fromEntries(Object.entries(data.attrs).filter(([, value]) => String(value).trim() !== ''));
+          const mountEntries = Object.entries(data.mounts).filter(([, names]) => names.length);
+          if (mountEntries.length) doc.mounts = Object.fromEntries(mountEntries);
         } else {
           doc.name = data.io.name; doc.input_type = data.io.input_type; doc.required = data.io.required;
           doc.default = data.io.default || null; doc.description = data.io.description; doc.value = data.io.value;
@@ -290,6 +299,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
         items: item.items ?? '',
         attrs: Object.fromEntries(Object.entries(item.attrs ?? {}).map(([key, value]) => [key, String(value ?? '')])),
         io: { name: item.name ?? '', input_type: item.input_type ?? 'string', required: Boolean(item.required), default: item.default == null ? '' : String(item.default), description: item.description ?? '', value: item.value ?? '' },
+        mounts: item.mounts ?? {},
         boundParams: new Set(),
         update: updateNodeData,
       };
@@ -529,6 +539,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const inspectedNode = inspected ? nodes.find((node) => node.id === inspected) : undefined;
 
   return (
+    <MountRosterContext.Provider value={rosters}>
     <div className="canvas-view">
       <Palette specs={specs} connected={connected} onAdd={(spec) => { takeSnapshot(); addFromSpec(spec); }} />
       <div className="canvas-stage">
@@ -614,5 +625,6 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           onRun={(input) => { setRunDialog(undefined); void startRun(input); }} />
       ) : null}
     </div>
+    </MountRosterContext.Provider>
   );
 }

@@ -1,6 +1,7 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
 import { Copy, Trash2 } from 'lucide-react';
 
+import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -111,6 +112,13 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
               : <ParamControl param={param} value={paramValue(param)} onChange={setParam} />}
           </FieldShell>
         ))}
+        {spec?.mount_kinds?.length ? (
+          <AgentMounts
+            kinds={spec.mount_kinds}
+            mounts={data.mounts}
+            onChange={(kind, next) => data.update(id, (current) => ({ mounts: { ...current.mounts, [kind]: next } }))}
+          />
+        ) : null}
       </div>
       <footer className="lf-node-foot">
         <span>Result</span>

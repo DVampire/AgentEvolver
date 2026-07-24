@@ -20,7 +20,7 @@ export interface ParamSpec {
 
 export interface NodeSpec {
   id: string;
-  category: 'tool' | 'agent' | 'workflow' | 'structural' | 'io';
+  category: 'agent' | 'workflow' | 'structural' | 'io';
   step_type?: string | null;
   target?: string | null;
   label: string;
@@ -29,7 +29,14 @@ export interface NodeSpec {
   has_task: boolean;
   has_items: boolean;
   container: boolean;
+  mount_kinds?: string[];
 }
+
+export interface MountItem { name: string; description: string; }
+export type MountRosters = Record<string, MountItem[]>;
+export const MOUNT_LABELS: Record<string, string> = {
+  tools: 'Tools', skills: 'Skills', connectors: 'Connectors', agents: 'Agents', environments: 'Environments',
+};
 
 export interface FlowSummary { id: string; name: string; description: string; version: string; published: boolean; updated_at?: string | null; node_count: number; }
 export interface FlowStatus { workflow_name: string; registered: boolean; registered_version?: string | null; drifted: boolean; }
@@ -43,6 +50,7 @@ export interface GraphNodeDoc {
   args?: Record<string, unknown>;
   items?: string;
   attrs?: Record<string, unknown>;
+  mounts?: Record<string, string[]>;
   name?: string;
   input_type?: string;
   required?: boolean;
@@ -89,6 +97,8 @@ export interface CanvasData extends Record<string, unknown> {
   items: string;
   attrs: Record<string, string>;
   io: { name: string; input_type: string; required: boolean; default: string; description: string; value: string };
+  // Agent capability mounts, keyed by kind (tools/skills/connectors/...).
+  mounts: Record<string, string[]>;
   runState?: FrameState;
   runCount?: number;
   boundParams: Set<string>;

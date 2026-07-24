@@ -214,6 +214,16 @@ def _emit_steps(
             if target_id == node.id and param.startswith("arg:"):
                 args[param[4:]] = ref
 
+        # Agent capability mounts → allowlist args (tools/skills/connectors/...).
+        # A non-empty selection scopes the agent to exactly those; an empty one
+        # is omitted so the agent keeps its defaults. The runtime lifts these
+        # args into ctx.extra["<kind>_allowlist"].
+        if tag == "agent":
+            for kind, names in (node.mounts or {}).items():
+                selected = [str(n) for n in names if str(n).strip()]
+                if selected:
+                    args[kind] = ",".join(dict.fromkeys(selected))
+
         children_then = _ordered_children(graph, parent=node.id, slot="then" if tag == "branch" else "body")
         children_else = _ordered_children(graph, parent=node.id, slot="else") if tag == "branch" else []
         has_body = bool(args or children_then or children_else)
