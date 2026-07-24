@@ -20,6 +20,8 @@ from argparse import Namespace
 from dotenv import load_dotenv
 from lxml import etree, html as lxml_html
 from agentevolver.agent import agent_manager
+from agentevolver.canvas import canvas_manager
+from agentevolver.canvas.types import FlowGraph
 from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
 from agentevolver.config import config
@@ -157,6 +159,7 @@ class AgentGateway:
         # Deploy registry is project-global (under the .agentevolver home), so init it
         # once here — before any session binds — and reconcile sites still serving.
         await deployment_manager.initialize()
+        await canvas_manager.initialize()
         await command_manager.initialize()
         await extension_manager.initialize()
         extension_manager.subscribe(self._on_extension_change)
@@ -180,6 +183,7 @@ class AgentGateway:
         trace_manager.unsubscribe(self._on_trace_event)
         environment_stream.unsubscribe(self._on_environment_view)
         await trace_manager.stop()
+        await canvas_manager.cleanup()
         await workflow_manager.cleanup()
         await agent_manager.cleanup()
         await command_manager.cleanup()
@@ -658,6 +662,80 @@ class AgentGateway:
         site = await deployment_manager.stop_site(site_id)
         await self._publish("deploy.changed", {"action": "stop", "site_id": site_id})
         return site.model_dump(mode="json")
+
+    # ------------------------------------------------------------------
+    # Canvas — visual workflow editor (JSON source → workflow HTML artifact)
+    # ------------------------------------------------------------------
+
+    async def _command_canvas_catalog(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the palette: structural steps, io nodes, and live capabilities."""
+        specs = await canvas_manager.catalog()
+        return {"nodes": [spec.model_dump(mode="json") for spec in specs]}
+
+    async def _command_canvas_flow_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        return {"flows": canvas_manager.list_flows()}
+
+    async def _command_canvas_flow_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        flow_id = str(params.get("flow_id") or "")
+        if not flow_id:
+            raise ValueError("flow_id is required")
+        graph = canvas_manager.get_flow(flow_id)
+        return {"flow": graph.model_dump(mode="json"), "status": canvas_manager.flow_status(graph)}
+
+    @staticmethod
+    def _parse_graph(payload: Any) -> FlowGraph:
+        if not isinstance(payload, dict):
+            raise ValueError("flow must be an object")
+        try:
+            return FlowGraph.model_validate(payload)
+        except Exception as exc:
+            raise ValueError(f"Invalid flow document: {exc}") from exc
+
+    async def _command_canvas_flow_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist a draft. Drafts may be incomplete; publish performs full validation."""
+        graph = canvas_manager.save_flow(self._parse_graph(params.get("flow")))
+        await self._publish("canvas.flow.saved", graph.summary(), session_id=params.get("session_id"))
+        return {"flow": graph.model_dump(mode="json"), "status": canvas_manager.flow_status(graph)}
+
+    async def _command_canvas_flow_publish(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Compile the saved JSON source to workflow HTML and register it."""
+        flow_id = str(params.get("flow_id") or "")
+        if not flow_id:
+            raise ValueError("flow_id is required")
+        result = await canvas_manager.publish_flow(flow_id)
+        await self._publish("canvas.flow.published", result, session_id=params.get("session_id"))
+        return result
+
+    async def _command_canvas_flow_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        flow_id = str(params.get("flow_id") or "")
+        if not flow_id:
+            raise ValueError("flow_id is required")
+        return {"flow_id": flow_id, "deleted": canvas_manager.delete_flow(flow_id)}
+
+    async def _command_canvas_flow_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Compile the posted graph and start it on the workflow runtime (draft run)."""
+        session_id = self._require_session_id(params)
+        graph = self._parse_graph(params.get("flow"))
+        run_input = params.get("input")
+        if run_input is not None and not isinstance(run_input, dict):
+            raise ValueError("input must be an object")
+        session = self._sessions[session_id]
+        # Steps write run output under the session's own roots.
+        self._bind_runtime_to_session(session)
+        run_id = await canvas_manager.run_flow(graph, input=run_input, ctx=session.context)
+        return {"run_id": run_id}
+
+    async def _command_canvas_run_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = str(params.get("run_id") or "")
+        if not run_id:
+            raise ValueError("run_id is required")
+        return {"run": canvas_manager.run_status(run_id)}
+
+    async def _command_canvas_run_cancel(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = str(params.get("run_id") or "")
+        if not run_id:
+            raise ValueError("run_id is required")
+        return {"run_id": run_id, "cancelled": canvas_manager.cancel_run(run_id)}
 
     @staticmethod
     def _workflow_preview_document(source: str) -> str:

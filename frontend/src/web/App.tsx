@@ -35,8 +35,10 @@ interface WorkspaceFile { name: string; path: string; content: string; encoding?
 interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
 interface EnvironmentViewInfo { env_name: string; kind: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
+type MainView = 'chat' | 'canvas';
 const WorkspaceEditor = lazy(() => import('./WorkspaceEditor'));
 const VncView = lazy(() => import('./VncView'));
+const CanvasView = lazy(() => import('./CanvasView'));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 // Same-origin by default: the page is served by the Vite dev server, which
@@ -138,6 +140,7 @@ export function App() {
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mainView, setMainView] = useState<MainView>('chat');
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('files');
   const [workspaceEntries, setWorkspaceEntries] = useState<Record<string, WorkspaceEntry[]>>({});
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
@@ -331,6 +334,7 @@ export function App() {
   }, []);
 
   const handleGatewayEvent = useCallback((event: GatewayEvent) => {
+    if (event.type.startsWith('canvas.')) return; // the canvas panel polls run status itself
     if (event.type === 'session.capabilities.updated') {
       if (event.session_id === sessionRef.current) setSelection(asCapabilities(event.payload.capabilities));
       return;
@@ -552,6 +556,12 @@ export function App() {
     if (!activeTaskId) return;
     await socketRef.current?.request('task.cancel', { task_id: activeTaskId });
   };
+
+  const canvasRequest = useCallback((method: string, params: Record<string, unknown> = {}) => {
+    const socket = socketRef.current;
+    if (!socket) return Promise.reject(new Error('Gateway is not connected'));
+    return socket.request(method, params);
+  }, []);
 
   const uploadFiles = async (files: FileList | null) => {
     const socket = socketRef.current;
@@ -779,6 +789,11 @@ export function App() {
           {projects.map(([workspace, projectSessions]) => <div className="project-group" key={workspace}><div className="project-name" title={workspace}>⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{projectSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Session ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>)}
           {!projects.length ? <p className="empty">Connecting to projects…</p> : null}
         </div>
+        <nav className="sidebar-section capability-nav view-nav" aria-label="Views">
+          <p className="eyebrow">Views</p>
+          <button className={mainView === 'chat' ? 'view-active' : ''} onClick={() => setMainView('chat')}><span>✉</span><strong>Chat</strong></button>
+          <button className={mainView === 'canvas' ? 'view-active' : ''} onClick={() => setMainView('canvas')}><span>⬡</span><strong>Canvas</strong></button>
+        </nav>
         <nav className="sidebar-section capability-nav" aria-label="Capabilities">
           <p className="eyebrow">Capabilities</p>
           {CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }}><span>{CAPABILITY_META[kind].icon}</span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}
@@ -806,7 +821,16 @@ export function App() {
         <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Light theme' : '◐ Dark theme'}</button><button className="text-button" onClick={() => setSettingsOpen(true)}>⚙ Connection</button></div>
       </aside>
 
-      <section className="conversation">
+      {mainView === 'canvas' ? <section className="conversation canvas-mode">
+        <header className="topbar">
+          <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Visual orchestration</p><h1>Canvas</h1></div></div>
+          <div className="connection"><span className={`connection-dot ${status}`} />{statusText}</div>
+        </header>
+        <Suspense fallback={<div className="workspace-placeholder">Loading canvas…</div>}>
+          <CanvasView request={canvasRequest} sessionId={sessionId} connected={status === 'connected'} theme={theme} onNotice={setNotice} />
+        </Suspense>
+        {notice ? <p className="notice canvas-notice">{notice}</p> : null}
+      </section> : <section className="conversation">
         <header className="topbar">
           <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Workspace agent</p><h1>New task</h1></div></div>
           <div className="connection"><button className={`stage-action ${extensionStage.valid ? '' : 'invalid'}`} disabled={!sessionId || !extensionStage.components.length} onClick={() => void promoteStagedExtension()} title={extensionStage.error ?? 'Promote validated staged extensions'}>⇧ Extensions {extensionStage.components.length || ''}</button><span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
@@ -828,7 +852,7 @@ export function App() {
             <div className="composer-actions"><button className="attach-file" type="button" onClick={() => fileInputRef.current?.click()} disabled={status !== 'connected' || Boolean(activeTaskId)}>⌕ Attach files</button><span>Enter to send · Shift+Enter for a new line</span>{activeTaskId ? <button type="button" className="stop" onClick={cancelTask}>■ Stop task</button> : <button type="submit" disabled={(!draft.trim() && !attachments.some((attachment) => attachment.status === 'ready')) || attachments.some((attachment) => attachment.status === 'uploading') || status !== 'connected'}>Send <span>↵</span></button>}</div>
           </form>
         </div>
-      </section>
+      </section>}
 
       <WorkspaceWorkbench
         tab={inspectorTab}
