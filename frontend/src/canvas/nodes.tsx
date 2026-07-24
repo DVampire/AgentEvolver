@@ -33,13 +33,14 @@ function CardToolbar({ id, visible }: { id: string; visible: boolean }) {
 }
 
 export function FieldShell({ label, required, hint, handle, children }: { label: string; required?: boolean; hint?: string; handle?: React.ReactNode; children: React.ReactNode }) {
+  // Langflow node mechanics: each field is a full-width row flush to the node
+  // border; the handle sits at the row's left edge (on the border), vertically
+  // centered on the row via top:50%.
   return (
     <div className="lf-field" title={hint}>
+      {handle}
       <span className="lf-field-label">{label}{required ? <em> *</em> : null}</span>
-      <div className="lf-field-control">
-        {handle}
-        {children}
-      </div>
+      {children}
     </div>
   );
 }

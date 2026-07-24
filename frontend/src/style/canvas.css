@@ -45,31 +45,36 @@
 .lf-node.run-succeeded { border-color: #3f9e63; }
 .lf-node.run-failed { border-color: #cf5560; }
 .lf-node.run-skipped { opacity: .55; }
-.lf-node-head { display: flex; align-items: center; gap: 8px; padding: 11px 13px 6px; }
+.lf-node-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; }
 .lf-node-head strong { min-width: 0; overflow: hidden; color: #f0f2f8; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .lf-node-ref { margin-left: auto; color: #8b9cc9; font-size: 9.5px; background: #232837; border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
 .lf-pulse { width: 8px; height: 8px; border-radius: 50%; background: #5f8dff; animation: pulse 1.2s ease infinite; }
 .lf-run-count { color: #8ea4d8; font-size: 10px; font-style: normal; }
-.lf-node-desc { display: -webkit-box; overflow: hidden; margin: 0; padding: 0 13px 8px; color: #8d94a5; font-size: 11.5px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.lf-node-body { display: grid; gap: 10px; padding: 10px 13px; border-top: 1px solid #262a35; }
-.lf-field { position: relative; display: grid; gap: 5px; }
+.lf-node-desc { display: -webkit-box; overflow: hidden; margin: 0; padding: 0 14px 8px; color: #8d94a5; font-size: 11.5px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Body rows are flush to the node border (no horizontal padding on the body);
+   each field pads itself, so a handle at the field's left:0 lands on the border. */
+.lf-node-body { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid #262a35; }
+.lf-field { position: relative; display: grid; gap: 5px; padding: 6px 14px; }
 .lf-field-label { color: #aab1c2; font-size: 11.5px; font-weight: 600; }
 .lf-field-label em { color: #d98b8b; font-style: normal; }
 .lf-bound { display: inline-block; border: 1px dashed #4a5f52; border-radius: 8px; padding: 6px 10px; color: #7dd3a8; font-size: 11.5px; }
-.lf-node-foot { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 9px 13px; border-top: 1px solid #262a35; color: #aab1c2; font-size: 12px; font-weight: 600; }
-.lf-node-error { margin: 0; padding: 7px 13px 9px; color: #f2b8bd; font-size: 11px; }
-.lf-handle { width: 12px; height: 12px; border: 2px solid #1b1e26; background: #4F46E5; }
-/* Handles are centered on the CONTROL, not the whole field: the label sits
-   above in its own row, so a control-relative wrapper keeps the dot aligned
-   with the input/textarea/"Connected" pill whatever its height. */
-.lf-field-control { position: relative; }
-.lf-handle.in { position: absolute; left: -19px; top: 50%; transform: translateY(-50%); }
-.lf-handle.out { position: absolute; right: -19px; top: 50%; transform: translateY(-50%); }
+.lf-node-foot { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 9px 14px; border-top: 1px solid #262a35; color: #aab1c2; font-size: 12px; font-weight: 600; }
+.lf-node-error { margin: 0; padding: 7px 14px 9px; color: #f2b8bd; font-size: 11px; }
+/* Handle style ported from langflow's handleRenderComponent: a small solid
+   dot (no chunky border) with a thin ring shadow that expands on hover, plus
+   a larger transparent hit area, centered on the node's border edge. */
+.lf-handle { width: 10px; height: 10px; border: 0; border-radius: 9999px; background: #4F46E5; box-shadow: 0 0 0 1.5px hsl(var(--border)); transition: box-shadow .14s ease; cursor: crosshair; }
+.lf-handle:hover { box-shadow: 0 0 0 3px hsl(var(--node-ring)); }
+.lf-handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 9999px; }
+/* Handle sits on the node border edge (field row is flush to it), vertically
+   centered on the field row — Langflow's mechanism. */
+.lf-handle.in { position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); }
+.lf-handle.out { position: absolute; right: 0; top: 50%; transform: translate(50%, -50%); }
 
 /* --- containers --- */
 .lf-container { display: flex; flex-direction: column; border-style: dashed; background: rgba(24, 27, 36, .82); }
 .lf-container .lf-node-body { border-top: 0; padding-top: 6px; }
-.lf-container-body { position: relative; flex: 1; margin: 0 10px 8px; border: 1px dashed #333a4a; border-radius: 10px; }
+.lf-container-body { position: relative; flex: 1; margin: 0 14px 8px; border: 1px dashed #333a4a; border-radius: 10px; }
 .lf-container-body .zone-hint, .lf-container-body .zone-label { color: #565f75; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .lf-container-body .zone-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
 .lf-container-body .zone-label { position: absolute; left: 10px; }
@@ -141,7 +146,6 @@
 .app-shell[data-theme='light'] .lf-node-desc { color: #79839a; }
 .app-shell[data-theme='light'] .lf-node-body, .app-shell[data-theme='light'] .lf-node-foot { border-color: #edf0f5; }
 .app-shell[data-theme='light'] .lf-field-label, .app-shell[data-theme='light'] .lf-node-foot, .app-shell[data-theme='light'] .panel-field-label { color: #4c566b; }
-.app-shell[data-theme='light'] .lf-handle { border-color: #fff; }
 .app-shell[data-theme='light'] .lf-container { background: rgba(250, 251, 253, .85); }
 .app-shell[data-theme='light'] .lf-container-body { border-color: #dde2ec; }
 .app-shell[data-theme='light'] .node-panel { border-color: #e2e6ee; background: rgba(255,255,255,.99); box-shadow: 0 18px 50px rgba(30,40,70,.16); }
@@ -184,7 +188,7 @@
 .playground-panel .node-panel-head { flex-wrap: nowrap; gap: 6px; }
 
 /* Agent capability mounts (tools/skills/connectors selected inside the agent node) */
-.lf-mounts { display: grid; gap: 7px; margin-top: 2px; padding-top: 9px; border-top: 1px dashed #333a4a; }
+.lf-mounts { display: grid; gap: 7px; margin: 2px 0 0; padding: 9px 14px 2px; border-top: 1px dashed #333a4a; }
 .lf-mount-section { display: grid; gap: 4px; }
 .lf-mount-head { display: flex; align-items: center; justify-content: space-between; }
 .lf-mount-head > span { color: #aab1c2; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
