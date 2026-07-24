@@ -34,9 +34,11 @@ function CardToolbar({ id, visible }: { id: string; visible: boolean }) {
 export function FieldShell({ label, required, hint, handle, children }: { label: string; required?: boolean; hint?: string; handle?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="lf-field" title={hint}>
-      {handle}
       <span className="lf-field-label">{label}{required ? <em> *</em> : null}</span>
-      {children}
+      <div className="lf-field-control">
+        {handle}
+        {children}
+      </div>
     </div>
   );
 }

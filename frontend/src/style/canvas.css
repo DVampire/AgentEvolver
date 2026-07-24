@@ -59,9 +59,12 @@
 .lf-node-foot { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 9px 13px; border-top: 1px solid #262a35; color: #aab1c2; font-size: 12px; font-weight: 600; }
 .lf-node-error { margin: 0; padding: 7px 13px 9px; color: #f2b8bd; font-size: 11px; }
 .lf-handle { width: 12px; height: 12px; border: 2px solid #1b1e26; background: #4F46E5; }
-.lf-handle.in { position: absolute; left: -19px; top: 50%; }
-.lf-field .lf-handle.in { top: 60%; }
-.lf-handle.out { position: absolute; right: -19px; top: 50%; }
+/* Handles are centered on the CONTROL, not the whole field: the label sits
+   above in its own row, so a control-relative wrapper keeps the dot aligned
+   with the input/textarea/"Connected" pill whatever its height. */
+.lf-field-control { position: relative; }
+.lf-handle.in { position: absolute; left: -19px; top: 50%; transform: translateY(-50%); }
+.lf-handle.out { position: absolute; right: -19px; top: 50%; transform: translateY(-50%); }
 
 /* --- containers --- */
 .lf-container { display: flex; flex-direction: column; border-style: dashed; background: rgba(24, 27, 36, .82); }
