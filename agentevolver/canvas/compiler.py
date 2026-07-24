@@ -9,9 +9,11 @@ is guaranteed to register and run.
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from xml.sax.saxutils import escape, quoteattr
 
 from agentevolver.canvas.types import (
@@ -45,7 +47,33 @@ class CanvasCompileError(ValueError):
     """A graph cannot be compiled; the message lists every problem found."""
 
 
-def compile_graph(graph: FlowGraph) -> Tuple[str, WorkflowDefinition]:
+# The compiled HTML can carry its own canvas JSON source (base64, so arbitrary
+# content can never terminate the HTML comment). This makes a published
+# extension artifact self-sufficient: the canvas reopens it for editing
+# without any separate JSON store.
+_SOURCE_PREFIX = "canvas-flow-source:v2:"
+_SOURCE_COMMENT = re.compile(r"<!--\s*" + re.escape(_SOURCE_PREFIX) + r"([A-Za-z0-9+/=\s]+?)-->")
+
+
+def embed_source_comment(graph: FlowGraph) -> str:
+    payload = json.dumps(graph.model_dump(mode="json"), ensure_ascii=False)
+    encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+    return f"<!-- {_SOURCE_PREFIX}{encoded} -->"
+
+
+def extract_embedded_source(html: str) -> Optional[FlowGraph]:
+    """Recover the canvas JSON source from compiled HTML, or None if absent."""
+    match = _SOURCE_COMMENT.search(html or "")
+    if match is None:
+        return None
+    try:
+        payload = base64.b64decode(re.sub(r"\s+", "", match.group(1)))
+        return FlowGraph.model_validate_json(payload)
+    except Exception:  # noqa: BLE001 — a corrupt marker means "not canvas-editable"
+        return None
+
+
+def compile_graph(graph: FlowGraph, embed_source: bool = False) -> Tuple[str, WorkflowDefinition]:
     """Return ``(html, compiled_definition)`` or raise ``CanvasCompileError``."""
     errors: List[str] = []
     nodes = {node.id: node for node in graph.nodes}
@@ -99,7 +127,8 @@ def compile_graph(graph: FlowGraph) -> Tuple[str, WorkflowDefinition]:
     _emit_steps(ordered, graph, bindings, lines, indent=4)
 
     name = workflow_name_for(graph)
-    html = _document(graph, name, inputs, outputs, bindings, lines)
+    html = _document(graph, name, inputs, outputs, bindings, lines,
+                     source_comment=embed_source_comment(graph) if embed_source else None)
     try:
         definition = WorkflowCompiler().compile(html)
     except Exception as exc:
@@ -215,6 +244,7 @@ def _document(
     outputs: List[GraphNode],
     bindings: Dict[Tuple[str, str], str],
     flow_lines: List[str],
+    source_comment: Optional[str] = None,
 ) -> str:
     input_lines: List[str] = []
     for node in sorted(inputs, key=lambda item: (item.position.y, item.position.x)):
@@ -256,7 +286,9 @@ def _document(
         '  schema-version="1.1.0"',
         f"  version={quoteattr(graph.version)}",
         f"  description={quoteattr(description)}",
-        '  enable-evolving="false">',
+        # Canvas flows republish through extension_manager.add_component, whose
+        # evolvable gate refuses frozen components — so they must stay evolvable.
+        '  enable-evolving="true">',
     ]
     if input_lines:
         parts.append("  <inputs>")
@@ -269,8 +301,16 @@ def _document(
         parts.append("  <outputs>")
         parts.extend(output_lines)
         parts.append("  </outputs>")
-    parts.extend(["</workflow>", "</body>", "</html>"])
+    parts.append("</workflow>")
+    if source_comment:
+        parts.append(source_comment)
+    parts.extend(["</body>", "</html>"])
     return "\n".join(parts) + "\n"
 
 
-__all__ = ["CanvasCompileError", "compile_graph"]
+__all__ = [
+    "CanvasCompileError",
+    "compile_graph",
+    "embed_source_comment",
+    "extract_embedded_source",
+]

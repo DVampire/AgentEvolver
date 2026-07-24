@@ -98,6 +98,9 @@ class AgentGateway:
     ) -> None:
         self._sessions: Dict[str, GatewaySession] = {}
         self._subscribers: set[asyncio.Queue[GatewayEvent]] = set()
+        # Playground chats stream in background tasks (the WS command loop is
+        # sequential, so a long stream must never run inside a handler).
+        self._chat_tasks: Dict[str, asyncio.Task] = {}
         self._events: Dict[str, Deque[GatewayEvent]] = defaultdict(
             lambda: deque(maxlen=event_history_size)
         )
@@ -178,6 +181,10 @@ class AgentGateway:
             task.cancel()
         await asyncio.gather(*self._active_agent_tasks.values(), return_exceptions=True)
         self._active_agent_tasks.clear()
+        for task in tuple(self._chat_tasks.values()):
+            task.cancel()
+        await asyncio.gather(*self._chat_tasks.values(), return_exceptions=True)
+        self._chat_tasks.clear()
         await task_manager.stop()
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
@@ -672,14 +679,21 @@ class AgentGateway:
         specs = await canvas_manager.catalog()
         return {"nodes": [spec.model_dump(mode="json") for spec in specs]}
 
-    async def _command_canvas_flow_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
-        return {"flows": canvas_manager.list_flows()}
+    def _canvas_flows_dir(self, session_id: str) -> Path:
+        """Session drafts live under the session's own project output (evolution
+        model: session artifacts stage locally, publishing promotes to extension)."""
+        return Path(self._sessions[session_id].sandbox.project_root) / "canvas"
+
+    async def _command_canvas_flow_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        return {"flows": canvas_manager.list_flows(self._canvas_flows_dir(session_id))}
 
     async def _command_canvas_flow_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
         flow_id = str(params.get("flow_id") or "")
         if not flow_id:
             raise ValueError("flow_id is required")
-        graph = canvas_manager.get_flow(flow_id)
+        graph = canvas_manager.get_flow(flow_id, self._canvas_flows_dir(session_id))
         return {"flow": graph.model_dump(mode="json"), "status": canvas_manager.flow_status(graph)}
 
     @staticmethod
@@ -692,25 +706,31 @@ class AgentGateway:
             raise ValueError(f"Invalid flow document: {exc}") from exc
 
     async def _command_canvas_flow_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Persist a draft. Drafts may be incomplete; publish performs full validation."""
-        graph = canvas_manager.save_flow(self._parse_graph(params.get("flow")))
-        await self._publish("canvas.flow.saved", graph.summary(), session_id=params.get("session_id"))
+        """Persist a session draft. Drafts may be incomplete; publish validates fully."""
+        session_id = self._require_session_id(params)
+        session = self._sessions[session_id]
+        session.sandbox.materialize()
+        graph = canvas_manager.save_flow(self._parse_graph(params.get("flow")), self._canvas_flows_dir(session_id))
+        await self._publish("canvas.flow.saved", graph.summary(), session_id=session_id)
         return {"flow": graph.model_dump(mode="json"), "status": canvas_manager.flow_status(graph)}
 
     async def _command_canvas_flow_publish(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Compile the saved JSON source to workflow HTML and register it."""
+        """Promote a draft: compile to workflow HTML and hand it to the extension system."""
+        session_id = self._require_session_id(params)
         flow_id = str(params.get("flow_id") or "")
         if not flow_id:
             raise ValueError("flow_id is required")
-        result = await canvas_manager.publish_flow(flow_id)
-        await self._publish("canvas.flow.published", result, session_id=params.get("session_id"))
+        result = await canvas_manager.publish_flow(flow_id, self._canvas_flows_dir(session_id))
+        await self._publish("canvas.flow.published", result, session_id=session_id)
         return result
 
     async def _command_canvas_flow_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
         flow_id = str(params.get("flow_id") or "")
         if not flow_id:
             raise ValueError("flow_id is required")
-        return {"flow_id": flow_id, "deleted": canvas_manager.delete_flow(flow_id)}
+        deleted = await canvas_manager.delete_flow(flow_id, self._canvas_flows_dir(session_id))
+        return {"flow_id": flow_id, "deleted": deleted}
 
     async def _command_canvas_flow_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Compile the posted graph and start it on the workflow runtime (draft run)."""
@@ -1005,6 +1025,71 @@ class AgentGateway:
             "configuration": self._safe_model_configuration(model),
             "has_api_key": bool(model.api_key),
         }
+
+    # ------------------------------------------------------------------
+    # Playground — direct model chat over model_manager (no agent involved)
+    # ------------------------------------------------------------------
+
+    async def _command_model_chat(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start a streaming chat completion; tokens arrive as model.chat.* events."""
+        session_id = self._require_session_id(params)
+        model = str(params.get("model") or "")
+        if not model:
+            raise ValueError("model is required")
+        if model_manager.get_model_config(model) is None:
+            raise ValueError(f"Unknown model: {model}")
+        messages = params.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError("messages must be a non-empty list")
+        for message in messages:
+            if not isinstance(message, dict) or message.get("role") not in {"system", "user", "assistant"} \
+                    or not isinstance(message.get("content"), str):
+                raise ValueError("each message needs a role (system/user/assistant) and string content")
+
+        request_id = make_id()
+        task = asyncio.create_task(
+            self._run_model_chat(request_id, model, messages, session_id),
+            name=f"model-chat-{request_id}",
+        )
+        self._chat_tasks[request_id] = task
+        task.add_done_callback(lambda _finished: self._chat_tasks.pop(request_id, None))
+        return {"request_id": request_id, "model": model}
+
+    async def _run_model_chat(self, request_id: str, model: str, messages: list, session_id: str) -> None:
+        from agentevolver.message.types import AssistantMessage, HumanMessage, SystemMessage
+        from agentevolver.model.types import StreamDone, TextDelta, ThinkingDelta
+
+        message_types = {"user": HumanMessage, "system": SystemMessage, "assistant": AssistantMessage}
+        messages = [message_types[item["role"]](content=item["content"]) for item in messages]
+        text_parts: list[str] = []
+        usage: Optional[Dict[str, Any]] = None
+        try:
+            async for event in model_manager.stream(name=model, input={"messages": messages}):
+                if isinstance(event, TextDelta):
+                    text_parts.append(event.text)
+                    await self._publish("model.chat.delta", {"request_id": request_id, "text": event.text}, session_id=session_id)
+                elif isinstance(event, ThinkingDelta):
+                    await self._publish("model.chat.delta", {"request_id": request_id, "thinking": event.text}, session_id=session_id)
+                elif isinstance(event, StreamDone):
+                    usage = getattr(event, "usage", None)
+            await self._publish(
+                "model.chat.done",
+                {"request_id": request_id, "message": "".join(text_parts), "usage": usage},
+                session_id=session_id,
+            )
+        except asyncio.CancelledError:
+            await self._publish("model.chat.cancelled", {"request_id": request_id, "message": "".join(text_parts)}, session_id=session_id)
+            raise
+        except Exception as exc:  # noqa: BLE001 — surface provider failures to the panel
+            await self._publish("model.chat.error", {"request_id": request_id, "error": str(exc)}, session_id=session_id)
+
+    async def _command_model_chat_cancel(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        request_id = str(params.get("request_id") or "")
+        task = self._chat_tasks.get(request_id)
+        if task is not None and not task.done():
+            task.cancel()
+            return {"request_id": request_id, "cancelled": True}
+        return {"request_id": request_id, "cancelled": False}
 
     @staticmethod
     def _model_summary(model: ModelConfig) -> Dict[str, Any]:
