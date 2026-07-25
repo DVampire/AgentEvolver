@@ -109,6 +109,14 @@ class CanvasCompiler:
             if source.kind == "output":
                 errors.append(f"Edge {edge.id} starts at an output node")
                 continue
+            port = edge.source_port or "out"
+            # Control-flow outputs (Langflow model) are not ordinary data refs:
+            #  - branch true/false are CONTROL edges — they define body membership
+            #    (see _assign_bodies) and carry no data binding.
+            #  - loop/map "item" edge → the body reads the current item variable.
+            #  - "done" edge → the aggregated/final result (the whole node value).
+            if source.step_type in ("branch", "loop", "map") and port in ("true", "false"):
+                continue
             key = (edge.target, edge.param)
             if key in bindings:
                 errors.append(f"{edge.target}.{edge.param} has more than one incoming edge")
@@ -116,6 +124,11 @@ class CanvasCompiler:
             # in place of a ${...} reference, so the frozen node need not run.
             if self._is_frozen(source):
                 bindings[key] = self._frozen_literal(source, edge.source_port)
+            elif source.step_type in ("map", "loop") and port == "item":
+                item_name = str((source.attrs or {}).get("item_name") or "item")
+                bindings[key] = f"${{{item_name}}}"
+            elif source.step_type in ("branch", "loop", "map") and port == "done":
+                bindings[key] = f"${{{source.id}}}"
             else:
                 bindings[key] = self._ref(source, edge.source_port)
             if edge.param.startswith("arg:"):
@@ -128,6 +141,7 @@ class CanvasCompiler:
         if errors:
             raise CanvasCompileError("; ".join(errors))
 
+        self._assign_bodies(graph)
         ordered = self._ordered_children(graph, parent=None, slot="body")
         lines: List[str] = []
         self._emit_steps(ordered, graph, bindings, lines, indent=4)
@@ -165,6 +179,60 @@ class CanvasCompiler:
         if source_port and source_port != "out" and node.kind != "input":
             return f"${{{base}.{source_port}}}"
         return f"${{{base}}}"
+
+    # Control-flow output ports (branch true/false, loop/map item) → nested body.
+    _CF_PORTS: Dict[str, List[Tuple[str, str]]] = {
+        "branch": [("true", "then"), ("false", "else")],
+        "map": [("item", "body")],
+        "loop": [("item", "body")],
+    }
+
+    def _assign_bodies(self, graph: FlowGraph) -> None:
+        """Derive each step's (parent, slot) from control-flow output edges — the
+        Langflow model (regular nodes wired by ports) mapped onto the runtime's
+        nested then/else/body so ``_emit_steps`` is unchanged.
+
+        A node belongs to a control-flow node CF's body via output port P when the
+        (CF, P) edges are a *cut* for it: removing them makes the node unreachable
+        from the graph roots. Nesting resolves to the innermost owner (the CF with
+        the smallest body). Reference-only ``${id}`` bodies still work because the
+        connected canvas uses real edges from the control node's output ports.
+        """
+        step_ids = {node.id for node in graph.nodes if node.kind == "step"}
+        nodes_by_id = {node.id: node for node in graph.nodes}
+        out_edges: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
+        for edge in graph.edges:
+            out_edges[edge.source].append((edge.target, edge.source_port or "out"))
+        targets = {edge.target for edge in graph.edges}
+        roots = [node.id for node in graph.nodes if node.id not in targets]
+
+        def reach(exclude: Set[Tuple[str, str]]) -> Set[str]:
+            seen, stack = set(roots), list(roots)
+            while stack:
+                current = stack.pop()
+                for target_id, port in out_edges.get(current, []):
+                    if (current, port) in exclude or target_id in seen:
+                        continue
+                    seen.add(target_id)
+                    stack.append(target_id)
+            return seen
+
+        reachable_all = reach(set())
+        claims: Dict[str, List[Tuple[int, str, str]]] = defaultdict(list)
+        for cf in graph.nodes:
+            if cf.kind != "step" or cf.step_type not in self._CF_PORTS:
+                continue
+            for port, slot in self._CF_PORTS[cf.step_type]:
+                body = ((reachable_all - reach({(cf.id, port)})) - {cf.id}) & step_ids
+                for node_id in body:
+                    claims[node_id].append((len(body), cf.id, slot))
+        for node_id, options in claims.items():
+            options.sort()  # smallest body first → the innermost enclosing control node
+            _, cf_id, slot = options[0]
+            node = nodes_by_id.get(node_id)
+            if node is not None:
+                node.parent = cf_id
+                node.slot = slot
 
     def _ordered_children(self, graph: FlowGraph, parent: str | None, slot: str) -> List[GraphNode]:
         """Steps under one container slot, topologically ordered by data references
@@ -206,7 +274,9 @@ class CanvasCompiler:
             attrs: List[str] = [f"id={quoteattr(node.id)}"]
             if node.target:
                 attrs.append(f"name={quoteattr(node.target)}")
-            task = (node.task or "").strip()
+            # A connected task input (e.g. map/loop item edge → child task) binds
+            # here; a typed task is the fallback.
+            task = (bindings.get((node.id, "task")) or node.task or "").strip()
             if task:
                 attrs.append(f"task={quoteattr(task)}")
             items = bindings.get((node.id, "items")) or (node.items or "").strip()
