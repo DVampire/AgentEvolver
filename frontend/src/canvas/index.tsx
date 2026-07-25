@@ -15,7 +15,12 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../style/canvas.css';
 
-import { Play, Save, Square, Trash2, UploadCloud } from 'lucide-react';
+import { ChevronDown, Download, Play, Save, Share2, Square, Trash2, UploadCloud } from 'lucide-react';
+
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenuShortcut, DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -602,6 +607,16 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   };
   runFlowRef.current = runFlow;
 
+  const exportFlow = () => {
+    const blob = new Blob([JSON.stringify(toDocument(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${flowName.trim() || 'flow'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     if (!runId) return;
     const timer = window.setInterval(async () => {
@@ -661,14 +676,30 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           <Input className="h-8 w-[min(280px,30vw)] text-sm" value={flowName} onChange={(event) => { setFlowName(event.target.value); setDirty(true); }} placeholder="Flow name" />
           {flowStatus?.registered ? <em className={`canvas-badge${flowStatus.drifted ? ' drift' : ''}`} title={flowStatus.drifted ? 'The registered workflow changed outside the canvas; publishing overwrites it.' : `Registered as ${flowStatus.workflow_name}`}>{flowStatus.drifted ? '⚠ drifted' : `● ${flowStatus.workflow_name} v${flowStatus.registered_version}`}</em> : null}
           <span className="canvas-toolbar-spacer" />
-          {dirty ? <em className="canvas-dirty">unsaved</em> : null}
-          <Button variant="primary" size="md" onClick={() => void saveFlow()} disabled={!connected || !nodes.length}><Save /> Save draft</Button>
-          <Button variant="primary" size="md" onClick={() => void publishFlow()} disabled={!connected || !nodes.length} title="Compile to workflow HTML and register it via the extension system"><UploadCloud /> Publish</Button>
-          {flowId ? <Button variant="destructive" size="md" onClick={() => void deleteFlow()}><Trash2 /> Delete</Button> : null}
+          {/* Langflow flow-toolbar hierarchy: exactly one filled accent (Run);
+              everything else ghost + font-normal. Secondary actions consolidate
+              under a ghost "Share ▾" dropdown (deploy-dropdown.tsx). */}
+          {dirty ? (
+            <Button variant="ghost" size="md" className="font-normal text-muted-foreground" onClick={() => void saveFlow()} disabled={!connected || !nodes.length} title="Save draft (⌘S)"><Save /> Save</Button>
+          ) : null}
+          <Button variant={playgroundOpen ? 'ghostActive' : 'ghost'} size="md" className="font-normal" onClick={() => { setPlaygroundOpen((open) => !open); setInspected(undefined); }} disabled={!connected}><Play /> Playground</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="md" className="!px-2.5 font-normal"><Share2 /> Share <ChevronDown className="h-4 w-4" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={() => void saveFlow()} disabled={!connected || !nodes.length}><Save className="mr-2 h-4 w-4" />Save draft<DropdownMenuShortcut>⌘S</DropdownMenuShortcut></DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void publishFlow()} disabled={!connected || !nodes.length}><UploadCloud className="mr-2 h-4 w-4" />Publish as workflow</DropdownMenuItem>
+              <DropdownMenuItem onClick={exportFlow} disabled={!nodes.length}><Download className="mr-2 h-4 w-4" />Export JSON</DropdownMenuItem>
+              {flowId ? <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void deleteFlow()}><Trash2 className="mr-2 h-4 w-4" />Delete flow</DropdownMenuItem>
+              </> : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {runId
-            ? <Button variant="destructive" size="md" onClick={() => void stopRun()}><Square /> Stop</Button>
-            : <Button size="md" onClick={runFlow} disabled={!connected || !nodes.length}><Play /> Run</Button>}
-          <Button variant={playgroundOpen ? 'ghostActive' : 'primary'} size="md" onClick={() => { setPlaygroundOpen((open) => !open); setInspected(undefined); }} disabled={!connected}><Play /> Playground</Button>
+            ? <Button variant="destructive" size="md" className="font-normal" onClick={() => void stopRun()}><Square /> Stop</Button>
+            : <Button size="md" className="font-normal" onClick={runFlow} disabled={!connected || !nodes.length}><Play /> Run</Button>}
         </header>
         <div ref={flowWrapRef} className="canvas-flow-wrap" onDrop={onCanvasDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}>
           <ReactFlow
