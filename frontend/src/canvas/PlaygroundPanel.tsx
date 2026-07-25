@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, Loader2, Pencil, Sparkles, Square, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
+import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, Loader2, MessagesSquare, PanelLeft, Pencil, Plus, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, User, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -173,6 +173,42 @@ function Bubble({ role, failed, senderName, metadata, copyText, onEdit, onFeedba
   );
 }
 
+// Session sidebar — Langflow's IOModal sidebar-open-view: a per-conversation
+// list (title from the first user message) with switch + delete.
+function SessionSidebar({ sessions, activeId, onSwitch, onDelete }: {
+  sessions: Array<{ session_id: string; title?: string; message_count?: number }>;
+  activeId: string;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="flex w-[184px] shrink-0 flex-col overflow-y-auto border-r border-border bg-muted/40 p-2 custom-scroll">
+      <div className="flex items-center gap-2 px-1 pb-2 pt-1">
+        <MessagesSquare className="h-[18px] w-[18px] text-muted-foreground" />
+        <span className="text-sm font-medium">Chats</span>
+      </div>
+      {sessions.length === 0 ? <p className="px-1 text-xs text-muted-foreground">No saved chats yet.</p> : null}
+      {sessions.map((session) => (
+        <div
+          key={session.session_id}
+          onClick={() => onSwitch(session.session_id)}
+          className={cn('group flex cursor-pointer items-center gap-1 rounded-md px-2 py-1.5 text-sm hover:bg-muted', session.session_id === activeId && 'bg-muted font-medium')}
+        >
+          <span className="flex-1 truncate">{session.title || 'Untitled'}</span>
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onDelete(session.session_id); }}
+            className="text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
+            aria-label="Delete chat"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Langflow chat-view.tsx branded empty state (LangflowLogo → our brand glyph).
 function EmptyState({ subtitle, hint }: { subtitle: string; hint?: React.ReactNode }) {
   return (
@@ -218,6 +254,41 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
     if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   }, []);
 
+  // ----- persistent chat sessions (flow tab): sidebar list + switching ------
+  // The chat-record id is client-managed (decoupled from the WS session) so we
+  // can hold several conversations under one connection; the sidebar reads
+  // output/<owner>/sessions via the chat.* gateway commands.
+  const [chatSessionId, setChatSessionId] = useState<string>(() => `c${Math.random().toString(36).slice(2, 10)}`);
+  const [sessions, setSessions] = useState<Array<{ session_id: string; title?: string; updated_at?: string; message_count?: number }>>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const persistFlow = useCallback((role: 'user' | 'assistant', content: string) => {
+    void request('chat.append', { session_id: chatSessionId, role, content, tab: 'flow' });
+  }, [request, chatSessionId]);
+
+  const loadSessions = useCallback(async () => {
+    const response = await request('chat.sessions.list');
+    if (response.ok && Array.isArray(response.result.sessions)) setSessions(response.result.sessions as typeof sessions);
+  }, [request]);
+
+  const switchSession = useCallback(async (id: string) => {
+    const response = await request('chat.session.load', { session_id: id });
+    const messages = response.ok && Array.isArray(response.result.messages) ? response.result.messages as Array<{ role: string; content: unknown }> : [];
+    setFlowMessages(messages.map((message) => ({ role: message.role === 'user' ? 'user' : 'assistant', content: String(message.content ?? '') })));
+    setChatSessionId(id);
+    setTab('flow');
+  }, [request]);
+
+  const newSession = useCallback(() => { setChatSessionId(`c${Math.random().toString(36).slice(2, 10)}`); setFlowMessages([]); setTab('flow'); }, []);
+
+  const deleteSession = useCallback(async (id: string) => {
+    await request('chat.session.delete', { session_id: id });
+    if (id === chatSessionId) newSession();
+    void loadSessions();
+  }, [request, chatSessionId, newSession, loadSessions]);
+
+  useEffect(() => { if (sidebarOpen) void loadSessions(); }, [sidebarOpen, loadSessions]);
+
   // ----- flow chat: input mapping ------------------------------------------
   const targetInput = useMemo(() => {
     const strings = inputNodes.filter((field) => field.input_type === 'string');
@@ -236,6 +307,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
       }
     }
     setFlowMessages((current) => [...current, { role: 'user', content }]);
+    persistFlow('user', content);
     setFlowInput('');
     const rid = await startRun(input);
     if (!rid) {
@@ -243,7 +315,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
       return;
     }
     setPendingRun(rid);
-  }, [flowInput, pendingRun, runId, inputNodes, targetInput, startRun]);
+  }, [flowInput, pendingRun, runId, inputNodes, targetInput, startRun, persistFlow]);
 
   // Run a flow that has no Chat Input directly (Langflow's no-input.tsx).
   const runFlowNoInput = useCallback(async () => {
@@ -273,11 +345,13 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
       duration: frameDuration(frame),
     }));
     const duration = runWallDuration(frames);
+    const replyContent = runError ? runError : formatOutputs(runOutput);
     setFlowMessages((current) => [...current, runError
       ? { role: 'assistant', content: runError, failed: true, execution }
-      : { role: 'assistant', content: formatOutputs(runOutput), execution, duration }]);
+      : { role: 'assistant', content: replyContent, execution, duration }]);
+    persistFlow('assistant', replyContent);
     setPendingRun(undefined);
-  }, [pendingRun, runId, runData, runOutput, runError]);
+  }, [pendingRun, runId, runData, runOutput, runError, persistFlow]);
 
   // ----- model chat (direct model_manager) ----------------------------------
   const [models, setModels] = useState<string[]>([]);
@@ -367,6 +441,12 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
     <aside className="node-panel playground-panel nodrag nowheel">
       <header className="node-panel-head items-center">
         <div className="flex items-center gap-1.5">
+          {tab === 'flow' ? (
+            <>
+              <Button variant={sidebarOpen ? 'ghostActive' : 'ghost'} size="iconSm" onClick={() => setSidebarOpen((open) => !open)} title="Chats" aria-label="Toggle chats"><PanelLeft /></Button>
+              <Button variant="ghost" size="iconSm" onClick={newSession} title="New chat" aria-label="New chat"><Plus /></Button>
+            </>
+          ) : null}
           <Button variant={tab === 'flow' ? 'ghostActive' : 'ghost'} size="xs" onClick={() => setTab('flow')}>Flow</Button>
           <Button variant={tab === 'model' ? 'ghostActive' : 'ghost'} size="xs" onClick={() => setTab('model')}>Model</Button>
         </div>
@@ -387,6 +467,11 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
         <Button variant="ghost" size="iconSm" className="shrink-0" onClick={onClose} aria-label="Close playground"><X /></Button>
       </header>
 
+      <div className="flex min-h-0 flex-1">
+        {sidebarOpen && tab === 'flow' ? (
+          <SessionSidebar sessions={sessions} activeId={chatSessionId} onSwitch={(id) => void switchSession(id)} onDelete={(id) => void deleteSession(id)} />
+        ) : null}
+        <div className="flex min-h-0 flex-1 flex-col">
       {/* Transcript — centered max-w-[768px] column (Langflow chat-view.tsx) */}
       <div ref={scrollRef} onScroll={onScroll} className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
         {!atBottom ? (
@@ -543,6 +628,8 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
         </div>
       </div>
       )}
+        </div>
+      </div>
     </aside>
   );
 }
