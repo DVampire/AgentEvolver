@@ -51,6 +51,9 @@
 .canvas-flow-wrap { position: relative; min-height: 0; flex: 1; }
 .canvas-flow-wrap .react-flow { background: hsl(var(--canvas)); }
 .canvas-flow-wrap .react-flow__background { color: hsl(var(--canvas-dot)); }
+/* Alignment guides while dragging — copied from Langflow applies.css. */
+.helper-lines { pointer-events: none; position: absolute; left: 0; top: 0; z-index: 10; height: 100%; width: 100%; }
+.helper-line { stroke: hsl(var(--primary)); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.8; filter: drop-shadow(0 0 2px hsl(var(--primary) / 0.3)); }
 
 /* --- node cards (Langflow genericNode: white card, subtle border+shadow) --- */
 /* Langflow genericNode: rounded-xl border shadow-sm hover:shadow-md, white card. */

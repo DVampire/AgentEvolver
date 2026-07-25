@@ -3,7 +3,6 @@ import {
   addEdge,
   Background,
   BackgroundVariant,
-  MiniMap,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -28,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { EDGE_TYPES } from '../CustomEdges';
 import { CanvasControls } from './CanvasControls';
 import ConnectionLine from './ConnectionLine';
+import { HelperLines, getHelperLines, type HelperLinesState } from './HelperLines';
 import { MountRosterContext } from './CapabilityPicker';
 import { NodePanel } from './NodePanel';
 import { PlaygroundPanel } from './PlaygroundPanel';
@@ -99,6 +99,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const specIndexRef = useRef(new Map<string, NodeSpec>());
   const flowInstanceRef = useRef<ReactFlowInstance<CanvasNode, Edge>>();
   const flowWrapRef = useRef<HTMLDivElement>(null);
+  const [helperLines, setHelperLines] = useState<HelperLinesState>({});
   const graphRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>({ nodes: [], edges: [] });
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>();
   // saveFlow is declared further down; the node-action handler reaches it here.
@@ -718,7 +719,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             }}
             onConnect={onConnect}
             onNodeDragStart={() => takeSnapshot()}
-            onNodeDragStop={onNodeDragStop}
+            onNodeDrag={(_event, node) => setHelperLines(getHelperLines(node, nodes))}
+            onNodeDragStop={(event, node) => { setHelperLines({}); onNodeDragStop(event, node); }}
             connectionLineComponent={ConnectionLine}
             onNodeClick={(_event, node) => { if (node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
             onNodeContextMenu={(event, node) => {
@@ -742,8 +744,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             proOptions={{ hideAttribution: true }}
           >
             <Background id="main-canvas-bg" gap={20} size={2} variant={BackgroundVariant.Dots} />
-            <MiniMap pannable zoomable />
             <CanvasControls />
+            <HelperLines helperLines={helperLines} />
           </ReactFlow>
           {playgroundOpen ? (
             <PlaygroundPanel
