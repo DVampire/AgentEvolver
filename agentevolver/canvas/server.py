@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agentevolver.canvas.catalog import build_catalog, build_mounts
-from agentevolver.canvas.compiler import compile_graph, extract_embedded_source
+from agentevolver.canvas.compiler import canvas_compiler
 from agentevolver.canvas.types import FlowGraph, NodeSpec, workflow_name_for
 from agentevolver.logger import logger
 from agentevolver.utils import make_id
@@ -76,7 +76,7 @@ class CanvasManagerServer:
         from agentevolver.workflow import workflow_manager
         for name in workflow_manager.list():
             definition = workflow_manager.get(name)
-            graph = extract_embedded_source(getattr(definition, "source", "") or "")
+            graph = canvas_compiler.extract_source(getattr(definition, "source", "") or "")
             if graph is None:
                 continue  # hand-written workflow: not canvas-editable
             summaries.append({
@@ -97,7 +97,7 @@ class CanvasManagerServer:
             definition = workflow_manager.get(name)
             if definition is None:
                 raise ValueError(f"Unknown workflow: {name}")
-            graph = extract_embedded_source(definition.source or "")
+            graph = canvas_compiler.extract_source(definition.source or "")
             if graph is None:
                 raise ValueError(f"Workflow {name} was not created with the canvas and cannot be edited")
             # Editing starts a fresh session draft; publishing evolves the same name.
@@ -169,11 +169,11 @@ class CanvasManagerServer:
         from agentevolver.workflow import workflow_manager
 
         graph = self.get_flow(flow_id, flows_dir)
-        html, definition = compile_graph(graph, embed_source=True)
+        html, definition = canvas_compiler.compile(graph, embed_source=True)
         name = definition.name
 
         existing = workflow_manager.get(name)
-        if existing is not None and extract_embedded_source(existing.source or "") is None:
+        if existing is not None and canvas_compiler.extract_source(existing.source or "") is None:
             raise ValueError(
                 f"A hand-written workflow named {name!r} already exists; rename the flow instead of overwriting it"
             )
@@ -209,7 +209,7 @@ class CanvasManagerServer:
         from agentevolver.workflow.runtime import workflow_runtime
         from agentevolver.workflow.types import WorkflowStatus
 
-        _, definition = compile_graph(graph)
+        _, definition = canvas_compiler.compile(graph)
         definition = definition.model_copy(update={"status": WorkflowStatus.EPHEMERAL})
         return workflow_runtime.start(definition, input=input or {}, ctx=ctx)
 

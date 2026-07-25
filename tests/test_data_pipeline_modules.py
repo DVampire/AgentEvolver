@@ -87,7 +87,7 @@ async def test_generic_text_processors() -> None:
 
 @pytest.mark.asyncio
 async def test_frozen_node_is_inlined_and_not_run() -> None:
-    from agentevolver.canvas.compiler import compile_graph
+    from agentevolver.canvas.compiler import canvas_compiler
     from agentevolver.canvas.types import FlowGraph, GraphEdge, GraphNode, Position
 
     await process_manager.initialize()
@@ -99,7 +99,7 @@ async def test_frozen_node_is_inlined_and_not_run() -> None:
                   args={"fields": '["close"]'}, position=Position(y=100)),
     ], edges=[GraphEdge(id="e1", source="src", target="clean", param="arg:records", source_port="data")])
 
-    html, definition = compile_graph(graph)
+    html, definition = canvas_compiler.compile(graph)
     assert "<datasource" not in html  # the frozen node's step is dropped
     run = await workflow_runtime.run(definition)
     assert run.successful, run.error

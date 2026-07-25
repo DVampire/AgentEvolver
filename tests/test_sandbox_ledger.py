@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from agentevolver.sandbox import ledger
+from agentevolver.sandbox.ledger import ledger
 
 
 def _use_home(monkeypatch, tmp_path) -> None:

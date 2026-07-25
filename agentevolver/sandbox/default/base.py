@@ -135,7 +135,7 @@ class OpenSandbox(Sandbox):
         # cannot leak it: the next boot's reap_stale() removes whatever a dead
         # run left behind (see agentevolver/sandbox/ledger.py).
         try:
-            from agentevolver.sandbox import ledger
+            from agentevolver.sandbox.ledger import ledger
             info = await self._sb.get_info()
             self._sandbox_id = str(getattr(info, "id", None) or getattr(info, "sandbox_id", "") or "") or None
             if self._sandbox_id:
@@ -153,7 +153,7 @@ class OpenSandbox(Sandbox):
             finally:
                 if self._sandbox_id:
                     try:
-                        from agentevolver.sandbox import ledger
+                        from agentevolver.sandbox.ledger import ledger
                         ledger.forget(self._sandbox_id)
                     except Exception:  # noqa: BLE001
                         pass

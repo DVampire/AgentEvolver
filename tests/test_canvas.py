@@ -7,11 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agentevolver.canvas.compiler import (
-    CanvasCompileError,
-    compile_graph,
-    extract_embedded_source,
-)
+from agentevolver.canvas.compiler import CanvasCompileError, canvas_compiler
 from agentevolver.canvas.server import CanvasManagerServer
 from agentevolver.canvas.types import FlowGraph, GraphEdge, GraphNode, Position, workflow_name_for
 from agentevolver.workflow import workflow_manager
@@ -46,7 +42,7 @@ def _review_graph(name: str = "Canvas review") -> FlowGraph:
 
 
 def test_compile_produces_valid_registered_workflow_shape() -> None:
-    html, definition = compile_graph(_review_graph())
+    html, definition = canvas_compiler.compile(_review_graph())
     assert definition.name == "canvas_review"
     assert set(definition.inputs) == {"task", "angles"}
     assert definition.outputs == {"report": "${report}"}
@@ -64,15 +60,15 @@ def test_compile_produces_valid_registered_workflow_shape() -> None:
 
 def test_embedded_source_roundtrip() -> None:
     graph = _review_graph(name="Embed me")
-    html, _ = compile_graph(graph, embed_source=True)
-    recovered = extract_embedded_source(html)
+    html, _ = canvas_compiler.compile(graph, embed_source=True)
+    recovered = canvas_compiler.extract_source(html)
     assert recovered is not None
     assert recovered.name == "Embed me"
     assert {node.id for node in recovered.nodes} == {node.id for node in graph.nodes}
     assert recovered.nodes[2].position == graph.nodes[2].position  # layout survives
 
-    plain, _ = compile_graph(graph)  # without embedding: not canvas-editable
-    assert extract_embedded_source(plain) is None
+    plain, _ = canvas_compiler.compile(graph)  # without embedding: not canvas-editable
+    assert canvas_compiler.extract_source(plain) is None
 
 
 def test_catalog_ports_are_typed() -> None:
@@ -106,7 +102,7 @@ def test_typed_edge_compiles_to_sub_path() -> None:
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="message")],
     )
-    _, definition = compile_graph(graph)
+    _, definition = canvas_compiler.compile(graph)
     # message output port → ${ag.message} sub-path (not the whole ${ag}).
     assert definition.outputs == {"answer": "${ag.message}"}
 
@@ -120,7 +116,7 @@ def test_out_port_compiles_to_whole_value() -> None:
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="out")],
     )
-    _, definition = compile_graph(graph)
+    _, definition = canvas_compiler.compile(graph)
     assert definition.outputs == {"answer": "${ag}"}
 
 
@@ -135,7 +131,7 @@ def test_agent_mounts_compile_to_allowlist_args() -> None:
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value")],
     )
-    _, definition = compile_graph(graph)
+    _, definition = canvas_compiler.compile(graph)
     agent_step = next(step for step in definition.program if step.type == StepType.AGENT)
     # Non-empty selections become args; the empty one is omitted (agent keeps defaults).
     assert agent_step.args.get("tools") == "bash_tool,web_searcher_tool"
@@ -171,7 +167,7 @@ def test_compile_branch_then_else_and_args() -> None:
         ],
         edges=[],
     )
-    _, definition = compile_graph(graph)
+    _, definition = canvas_compiler.compile(graph)
     branch = definition.program[1]
     assert branch.type == StepType.BRANCH and branch.condition == "${check}"
     assert [child.id for child in branch.children] == ["yes"]
@@ -188,17 +184,17 @@ def test_compile_orders_steps_by_references() -> None:
                   position=Position(y=500)),
         ],
     )
-    _, definition = compile_graph(graph)
+    _, definition = canvas_compiler.compile(graph)
     assert [step.id for step in definition.program] == ["first", "second"]
 
 
 def test_compile_rejects_broken_graphs() -> None:
     with pytest.raises(CanvasCompileError, match="no capability"):
-        compile_graph(FlowGraph(name="x", nodes=[_node("a", step_type="tool")]))
+        canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("a", step_type="tool")]))
     with pytest.raises(CanvasCompileError, match="no steps"):
-        compile_graph(FlowGraph(name="x", nodes=[_node("i", kind="input", name="q")]))
+        canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("i", kind="input", name="q")]))
     with pytest.raises(CanvasCompileError, match="both connected and set"):
-        compile_graph(FlowGraph(
+        canvas_compiler.compile(FlowGraph(
             name="x",
             nodes=[
                 _node("a", step_type="tool", target="bash_tool", args={"command": "echo hi"}),
@@ -239,7 +235,7 @@ def test_publish_promotes_through_extension_manager(tmp_path, monkeypatch) -> No
             assert artifact.is_file()
             assert workflow_manager.get(name) is not None
             # The artifact alone is enough to reopen the flow in the canvas.
-            assert extract_embedded_source(artifact.read_text(encoding="utf-8")) is not None
+            assert canvas_compiler.extract_source(artifact.read_text(encoding="utf-8")) is not None
             # It shows up as a published (editable) flow in any session.
             listed = manager.list_flows(tmp_path / "elsewhere")
             assert any(item["id"] == f"wf:{name}" for item in listed)

@@ -193,7 +193,7 @@ async def ensure_server(domain: Optional[str] = None, server_bin: str = "opensan
     if not _stale_sandboxes_reaped:
         _stale_sandboxes_reaped = True
         try:
-            from agentevolver.sandbox import ledger
+            from agentevolver.sandbox.ledger import ledger
             await ledger.reap_stale()
         except Exception as e:  # noqa: BLE001 — reaping is best-effort
             logger.warning(f"| ⚠️ Could not reap stale sandboxes: {e}")
