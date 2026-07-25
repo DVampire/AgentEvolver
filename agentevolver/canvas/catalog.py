@@ -115,6 +115,7 @@ _ICON_BY_TARGET = {
     "to_eval_records": "Shuffle",
     "split_text": "Scissors", "regex_extract": "Regex", "parse_json": "Braces",
     "type_convert": "Repeat2", "combine_text": "Merge", "extract_field": "KeyRound",
+    "table_operations": "Table2",
     # evaluation
     "exact_match": "Target",
     # file tools

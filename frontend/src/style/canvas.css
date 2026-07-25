@@ -51,6 +51,10 @@
 /* --- node cards --- */
 .lf-node { width: 300px; border: 1px solid #2e323e; border-radius: 13px; color: #d6dae5; background: #1b1e26; box-shadow: 0 8px 26px rgba(0,0,0,.35); font-size: 12.5px; }
 .lf-node.selected { border-color: hsl(243, 75%, 59%); box-shadow: 0 0 0 3px rgba(79,70,229,.22), 0 8px 26px rgba(0,0,0,.35); }
+/* Collapsed node: header only, but tall enough to stack its input handles down
+   the left edge so connected edges stay anchored. */
+.lf-node.lf-minimized { min-height: 48px; }
+.lf-min-handle { position: absolute; }
 .lf-node.run-running { border-color: #5f8dff; box-shadow: 0 0 0 3px rgba(95,141,255,.2); }
 .lf-node.run-succeeded { border-color: #3f9e63; }
 .lf-node.run-failed { border-color: #cf5560; }

@@ -95,6 +95,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const flowInstanceRef = useRef<ReactFlowInstance<CanvasNode, Edge>>();
   const graphRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>({ nodes: [], edges: [] });
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>();
+  // saveFlow is declared further down; the node-action handler reaches it here.
+  const saveFlowRef = useRef<(() => void) | undefined>(undefined);
   useEffect(() => { graphRef.current = { nodes, edges }; }, [nodes, edges]);
 
   const updateNodeData = useCallback((nodeId: string, patch: Partial<CanvasData> | ((data: CanvasData) => Partial<CanvasData>)) => {
@@ -272,6 +274,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       else if (detail.action === 'docs') setInspected(detail.nodeId);
       else if (detail.action === 'minimize') minimizeNode(detail.nodeId);
       else if (detail.action === 'download') downloadNode(detail.nodeId);
+      else if (detail.action === 'save') saveFlowRef.current?.();
     };
     window.addEventListener(NODE_ACTION_EVENT, onAction);
     return () => window.removeEventListener(NODE_ACTION_EVENT, onAction);
@@ -488,6 +491,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       return undefined;
     }
   };
+  saveFlowRef.current = () => { void saveFlow(); };
 
   const publishFlow = async () => {
     const id = await saveFlow();

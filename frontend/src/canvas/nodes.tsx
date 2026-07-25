@@ -1,5 +1,5 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Maximize2, Minimize2, MoreHorizontal, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Maximize2, Minimize2, MoreHorizontal, Save, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -54,7 +54,7 @@ function OutputPorts({ outputs, ioType }: { outputs?: PortSpec[]; ioType?: PortT
  * components have no app handlers, so actions travel as a DOM CustomEvent
  * that the canvas root listens for. */
 export const NODE_ACTION_EVENT = 'canvas-node-action';
-export type NodeAction = 'duplicate' | 'copy' | 'docs' | 'minimize' | 'download' | 'delete';
+export type NodeAction = 'save' | 'duplicate' | 'copy' | 'docs' | 'minimize' | 'download' | 'delete';
 function emitNodeAction(nodeId: string, action: NodeAction) {
   window.dispatchEvent(new CustomEvent(NODE_ACTION_EVENT, { detail: { nodeId, action } }));
 }
@@ -70,6 +70,7 @@ function CardToolbar({ id, visible, minimized }: { id: string; visible: boolean;
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="node-toolbar"><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44 nodrag nowheel">
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'save')}><Save className="mr-2 h-4 w-4" />Save flow<DropdownMenuShortcut>⌘S</DropdownMenuShortcut></DropdownMenuItem>
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'duplicate')}><Copy className="mr-2 h-4 w-4" />Duplicate<DropdownMenuShortcut>⌘D</DropdownMenuShortcut></DropdownMenuItem>
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'copy')}><ClipboardCopy className="mr-2 h-4 w-4" />Copy<DropdownMenuShortcut>⌘C</DropdownMenuShortcut></DropdownMenuItem>
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'docs')}><FileText className="mr-2 h-4 w-4" />Docs</DropdownMenuItem>
@@ -176,9 +177,27 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
           />
         ) : null}
       </div> : null}
+      {data.minimized ? <MinimizedHandles inputs={spec?.inputs} /> : null}
       <OutputPorts outputs={spec?.outputs} />
       {data.runState === 'failed' ? <p className="lf-node-error">Failed — open the panel for details</p> : null}
     </div>
+  );
+}
+
+/** When a node is collapsed, its per-field input handles are gone with the body,
+ * so edges would float. Re-render just the handle dots stacked on the left edge
+ * (same ids the edges bind to) so connections stay anchored. */
+function MinimizedHandles({ inputs }: { inputs?: PortSpec[] }) {
+  const ports = inputs ?? [];
+  if (!ports.length) return null;
+  return (
+    <>
+      {ports.map((port, index) => (
+        <Handle key={port.name} type="target" id={port.name} position={Position.Left}
+          className="lf-handle in lf-min-handle" style={{ background: portColor(port.type), top: `${((index + 1) / (ports.length + 1)) * 100}%` }}
+          title={`${port.label} · ${port.type}`} />
+      ))}
+    </>
   );
 }
 

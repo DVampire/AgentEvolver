@@ -20,4 +20,5 @@ __all__ = [
     "TypeConvertProcessor",
     "CombineTextProcessor",
     "ExtractFieldProcessor",
+    "TableOperationsProcessor",
 ]

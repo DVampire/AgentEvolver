@@ -7,6 +7,7 @@ from .records import (
     SortRecordsProcessor,
     ToEvalRecordsProcessor,
 )
+from .table import TableOperationsProcessor
 from .text import (
     CombineTextProcessor,
     ExtractFieldProcessor,
@@ -30,4 +31,5 @@ __all__ = [
     "TypeConvertProcessor",
     "CombineTextProcessor",
     "ExtractFieldProcessor",
+    "TableOperationsProcessor",
 ]

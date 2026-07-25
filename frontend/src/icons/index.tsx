@@ -41,6 +41,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Split,
+  Table2,
   Target,
   Wrench,
   type LucideIcon,
@@ -53,7 +54,7 @@ export const LUCIDE_ICONS: Record<string, LucideIcon> = {
   Columns3, Combine, Database, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
   FolderInput, FolderTree, GitBranch, Globe, KeyRound, LogIn, LogOut, Merge, Network, PenLine,
   Percent, Regex, Repeat, Repeat2, RotateCw, Rows3, Scissors, Search, ShieldCheck, Shuffle,
-  SlidersHorizontal, Sparkles, Split, Target, Wrench,
+  SlidersHorizontal, Sparkles, Split, Table2, Target, Wrench,
 };
 
 // Category → lucide icon name, used for the palette section headers.

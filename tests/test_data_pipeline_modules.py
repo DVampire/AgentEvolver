@@ -86,6 +86,15 @@ async def test_generic_text_processors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_table_operations_group_by() -> None:
+    from agentevolver.process import TableOperationsProcessor
+    rows = [{"sym": "A", "px": 10.0}, {"sym": "A", "px": 12.0}, {"sym": "B", "px": 6.0}]
+    result = await TableOperationsProcessor()(records=rows, operation="group_by", by="sym", column="px", agg="mean")
+    grouped = {r["sym"]: r["px"] for r in result.data["records"]}
+    assert grouped == {"A": 11.0, "B": 6.0}
+
+
+@pytest.mark.asyncio
 async def test_fmp_requires_key() -> None:
     # No key configured / no FMP_API_KEY → a graceful failed Response, not a crash.
     result = await FMPPlugin()(symbol="AAPL", api_key="")
