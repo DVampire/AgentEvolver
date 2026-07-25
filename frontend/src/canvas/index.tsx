@@ -3,7 +3,6 @@ import {
   addEdge,
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
   ReactFlow,
   useEdgesState,
@@ -22,6 +21,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { EDGE_TYPES } from '../CustomEdges';
+import { CanvasControls } from './CanvasControls';
 import ConnectionLine from './ConnectionLine';
 import { MountRosterContext } from './CapabilityPicker';
 import { NodePanel } from './NodePanel';
@@ -684,7 +684,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           >
             <Background gap={22} size={1.4} variant={BackgroundVariant.Dots} />
             <MiniMap pannable zoomable />
-            <Controls />
+            <CanvasControls />
           </ReactFlow>
           {playgroundOpen ? (
             <PlaygroundPanel
