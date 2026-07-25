@@ -18,9 +18,26 @@ export interface ParamSpec {
   connectable: boolean;
 }
 
+export type PortType = 'text' | 'list' | 'object' | 'any';
+export interface PortSpec { name: string; label: string; type: PortType; description?: string; }
+
+/** Data-flow port colors (a small closed set; Langflow-style colored handles). */
+export const PORT_COLORS: Record<PortType, string> = {
+  text: '#4F46E5',   // indigo
+  list: '#D97706',   // amber
+  object: '#059669', // emerald
+  any: '#94A3B8',    // slate
+};
+
+export function portsCompatible(source: PortType, target: PortType): boolean {
+  return source === target || source === 'any' || target === 'any';
+}
+
 export interface NodeSpec {
   id: string;
-  category: 'agent' | 'workflow' | 'structural' | 'io';
+  // Palette group: io / structural / agent / workflow, or a capability's
+  // canvas category (data / process / evaluation / files / knowledge / tool).
+  category: string;
   step_type?: string | null;
   target?: string | null;
   label: string;
@@ -29,6 +46,8 @@ export interface NodeSpec {
   has_task: boolean;
   has_items: boolean;
   container: boolean;
+  inputs?: PortSpec[];
+  outputs?: PortSpec[];
   mount_kinds?: string[];
 }
 
@@ -62,7 +81,7 @@ export interface GraphNodeDoc {
   position: { x: number; y: number };
 }
 
-export interface GraphEdgeDoc { id: string; source: string; target: string; param: string; }
+export interface GraphEdgeDoc { id: string; source: string; target: string; param: string; source_port?: string; }
 
 export interface FlowGraphDoc {
   id: string;

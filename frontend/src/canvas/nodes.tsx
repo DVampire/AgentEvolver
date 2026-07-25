@@ -9,9 +9,42 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import { CategoryIcon } from '../icons';
-import { CONTAINER_H, CONTAINER_W, type CanvasData, type CanvasNode, type ParamSpec } from './types';
+import { CONTAINER_H, CONTAINER_W, PORT_COLORS, type CanvasData, type CanvasNode, type NodeSpec, type ParamSpec, type PortSpec, type PortType } from './types';
 
 function runClass(data: CanvasData): string { return data.runState ? ` run-${data.runState}` : ''; }
+
+// Typed data-flow handles (Langflow-style colored dots): color = port type.
+const IO_INPUT_PORT: Record<string, PortType> = { string: 'text', array: 'list', object: 'object', number: 'text', boolean: 'text' };
+function portColor(type: PortType): string { return PORT_COLORS[type] ?? PORT_COLORS.any; }
+function inputPortType(spec: NodeSpec | undefined, name: string): PortType {
+  return spec?.inputs?.find((port) => port.name === name)?.type ?? 'any';
+}
+
+function InHandle({ id, type }: { id: string; type: PortType }) {
+  return <Handle type="target" id={id} position={Position.Left} className="lf-handle in" style={{ background: portColor(type) }} title={`${id} · ${type}`} />;
+}
+
+/** A single output handle (Langflow-clean, one row). Capability nodes are
+ * polymorphic — one adaptive port whose sub-path (message/data/files) is
+ * inferred from what you connect it to; other nodes carry their one typed
+ * output. ``ioType`` colors the io-input node's output by its declared type. */
+function OutputPorts({ outputs, ioType }: { outputs?: PortSpec[]; ioType?: PortType }) {
+  const adaptive = (outputs?.length ?? 0) > 1;
+  const port = outputs?.[0] ?? { name: 'out', label: 'Result', type: 'any' as PortType };
+  const type: PortType = adaptive ? 'any' : (ioType ?? port.type);
+  const label = adaptive ? 'Output' : port.label;
+  const hint = adaptive
+    ? 'Output — the sub-value is chosen by what you connect it to (text→message, object→data, list→files)'
+    : `${label} · ${type}`;
+  return (
+    <footer className="lf-node-foot">
+      <div className="lf-out-row" title={hint}>
+        <span>{label}</span>
+        <Handle type="source" id="out" position={Position.Right} className="lf-handle out" style={{ background: portColor(type) }} title={hint} />
+      </div>
+    </footer>
+  );
+}
 
 /** Selected-node action bar (Langflow's nodeToolbarComponent pattern). Node
  * components have no app handlers, so actions travel as a DOM CustomEvent
@@ -94,20 +127,23 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       <div className="lf-node-body nodrag nowheel">
         {spec?.has_items || data.items ? (
           <FieldShell label="Items" hint="A list to iterate: connect a step or type ${...}"
-            handle={<Handle type="target" id="items" position={Position.Left} className="lf-handle in" />}>
+            handle={<InHandle id="items" type={inputPortType(spec, 'items')} />}>
             {data.boundParams.has('items')
               ? <span className="lf-bound">Connected</span>
               : <Input className="h-8 px-2.5 text-xs" value={data.items} placeholder="${inputs.list}" onChange={(event) => data.update(id, { items: event.target.value })} />}
           </FieldShell>
         ) : null}
         {spec?.has_task || data.task ? (
-          <FieldShell label="Task" hint="Instruction text; embed results with ${step_id} and inputs with ${inputs.name}">
-            <Textarea rows={3} className="min-h-0 px-2.5 py-1.5 text-xs" value={data.task} spellCheck={false} placeholder="Type something…" onChange={(event) => data.update(id, { task: event.target.value })} />
+          <FieldShell label="Task" hint="Instruction text; embed results with ${step_id} and inputs with ${inputs.name}"
+            handle={<InHandle id="task" type={inputPortType(spec, 'task')} />}>
+            {data.boundParams.has('task')
+              ? <span className="lf-bound">Connected</span>
+              : <Textarea rows={3} className="min-h-0 px-2.5 py-1.5 text-xs" value={data.task} spellCheck={false} placeholder="Type something…" onChange={(event) => data.update(id, { task: event.target.value })} />}
           </FieldShell>
         ) : null}
         {(spec?.params ?? []).map((param) => (
           <FieldShell key={param.name} label={param.label} required={param.required} hint={param.description}
-            handle={param.connectable ? <Handle type="target" id={`arg:${param.name}`} position={Position.Left} className="lf-handle in" /> : undefined}>
+            handle={param.connectable ? <InHandle id={`arg:${param.name}`} type={inputPortType(spec, `arg:${param.name}`)} /> : undefined}>
             {data.boundParams.has(`arg:${param.name}`)
               ? <span className="lf-bound">Connected</span>
               : <ParamControl param={param} value={paramValue(param)} onChange={setParam} />}
@@ -121,10 +157,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
           />
         ) : null}
       </div>
-      <footer className="lf-node-foot">
-        <span>Result</span>
-        <Handle type="source" id="out" position={Position.Right} className="lf-handle out" />
-      </footer>
+      <OutputPorts outputs={spec?.outputs} />
       {data.runState === 'failed' ? <p className="lf-node-error">Failed — open the panel for details</p> : null}
     </div>
   );
@@ -146,7 +179,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       </header>
       <div className="lf-node-body nodrag nowheel">
         {spec?.has_items ? (
-          <FieldShell label="Items" handle={<Handle type="target" id="items" position={Position.Left} className="lf-handle in" />}>
+          <FieldShell label="Items" handle={<InHandle id="items" type={inputPortType(spec, 'items')} />}>
             {data.boundParams.has('items')
               ? <span className="lf-bound">Connected</span>
               : <Input className="h-8 px-2.5 text-xs" value={data.items} placeholder="${inputs.list}" onChange={(event) => data.update(id, { items: event.target.value })} />}
@@ -161,10 +194,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       <div className={`lf-container-body${isBranch ? ' branch' : ''}`}>
         {isBranch ? <><span className="zone-label then">then</span><span className="zone-label else">else</span><div className="zone-divider" /></> : <span className="zone-hint">Drop steps here</span>}
       </div>
-      <footer className="lf-node-foot">
-        <span>Result</span>
-        <Handle type="source" id="out" position={Position.Right} className="lf-handle out" />
-      </footer>
+      <OutputPorts outputs={spec?.outputs} />
     </div>
   );
 }
@@ -187,14 +217,14 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
           <FieldShell label="Type"><Select value={io.input_type} onValueChange={(next) => set({ input_type: next })}><SelectTrigger className="h-8 text-xs nodrag"><SelectValue /></SelectTrigger><SelectContent>{['string', 'number', 'boolean', 'array', 'object'].map((option) => <SelectItem key={option} value={option} className="text-xs">{option}</SelectItem>)}</SelectContent></Select></FieldShell>
           <FieldShell label="Required"><Switch checked={io.required} onCheckedChange={(checked) => set({ required: checked })} /></FieldShell>
         </> : (
-          <FieldShell label="Value" handle={<Handle type="target" id="value" position={Position.Left} className="lf-handle in" />}>
+          <FieldShell label="Value" handle={<InHandle id="value" type="any" />}>
             {data.boundParams.has('value')
               ? <span className="lf-bound">Connected</span>
               : <Input className="h-8 px-2.5 text-xs" value={io.value} placeholder="${step_id}" onChange={(event) => set({ value: event.target.value })} />}
           </FieldShell>
         )}
       </div>
-      {isInput ? <footer className="lf-node-foot"><span>Value</span><Handle type="source" id="out" position={Position.Right} className="lf-handle out" /></footer> : null}
+      {isInput ? <OutputPorts outputs={data.spec?.outputs} ioType={IO_INPUT_PORT[io.input_type] ?? 'any'} /> : null}
     </div>
   );
 }

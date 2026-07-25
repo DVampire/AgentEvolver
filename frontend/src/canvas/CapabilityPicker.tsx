@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState } from 'react';
-import { Plus, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Search, X } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { MOUNT_LABELS, type MountRosters } from './types';
@@ -67,13 +67,22 @@ function MountSection({ kind, selected, onChange }: { kind: string; selected: st
   );
 }
 
-/** The capability mount block shown inside an agent node. */
+/** The capability mount block shown inside an agent node — one collapsible
+ * "Capabilities" row (defaults collapsed) that expands to the per-kind pickers.
+ * Keeps the node compact while the common "use defaults" case is a single row. */
 export function AgentMounts({ kinds, mounts, onChange }: { kinds: string[]; mounts: Record<string, string[]>; onChange: (kind: string, next: string[]) => void }) {
+  const total = kinds.reduce((sum, kind) => sum + (mounts[kind]?.length ?? 0), 0);
+  const [open, setOpen] = useState(total > 0);
   return (
     <div className="lf-mounts nodrag nowheel">
-      {kinds.map((kind) => (
+      <button className="lf-mounts-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+        <span>Capabilities</span>
+        <em>{total ? `${total} mounted` : 'Defaults'}</em>
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+      </button>
+      {open ? kinds.map((kind) => (
         <MountSection key={kind} kind={kind} selected={mounts[kind] ?? []} onChange={(next) => onChange(kind, next)} />
-      ))}
+      )) : null}
     </div>
   );
 }

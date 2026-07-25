@@ -75,6 +75,55 @@ def test_embedded_source_roundtrip() -> None:
     assert extract_embedded_source(plain) is None
 
 
+def test_catalog_ports_are_typed() -> None:
+    from agentevolver.canvas.catalog import build_catalog
+
+    specs = {spec.id: spec for spec in asyncio.run(build_catalog())}
+    io_input = specs["io/input"]
+    assert [(port.name, port.type) for port in io_input.outputs] == [("out", "any")]
+    map_spec = specs["step/map"]
+    assert [port.name for port in map_spec.inputs] == ["items"]
+    assert map_spec.inputs[0].type == "list"
+    assert [port.name for port in map_spec.outputs] == ["out"] and map_spec.outputs[0].type == "list"
+
+
+def test_capability_nodes_expose_message_data_files_ports() -> None:
+    from agentevolver.canvas.catalog import build_catalog
+
+    agent = next((s for s in asyncio.run(build_catalog()) if s.category == "agent"), None)
+    if agent is None:
+        pytest.skip("no actor agents registered")
+    out = {port.name: port.type for port in agent.outputs}
+    assert out == {"message": "text", "data": "object", "files": "list", "out": "any"}
+
+
+def test_typed_edge_compiles_to_sub_path() -> None:
+    graph = FlowGraph(
+        name="typed",
+        nodes=[
+            _node("ag", step_type="agent", target="general_agent", task="Answer"),
+            _node("out", kind="output", name="answer"),
+        ],
+        edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="message")],
+    )
+    _, definition = compile_graph(graph)
+    # message output port → ${ag.message} sub-path (not the whole ${ag}).
+    assert definition.outputs == {"answer": "${ag.message}"}
+
+
+def test_out_port_compiles_to_whole_value() -> None:
+    graph = FlowGraph(
+        name="whole",
+        nodes=[
+            _node("ag", step_type="agent", target="general_agent", task="Answer"),
+            _node("out", kind="output", name="answer"),
+        ],
+        edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="out")],
+    )
+    _, definition = compile_graph(graph)
+    assert definition.outputs == {"answer": "${ag}"}
+
+
 def test_agent_mounts_compile_to_allowlist_args() -> None:
     graph = FlowGraph(
         name="mounted",

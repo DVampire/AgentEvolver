@@ -38,6 +38,12 @@ class StepType(str, Enum):
     CONNECTOR = "connector"
     ENVIRONMENT = "environment"
     WORKFLOW = "workflow"
+    # Data-pipeline capabilities: a datasource fetches from a provider plugin, a
+    # processor purely transforms, a benchmark evaluates. plugin is NOT a step
+    # type — it is a packaging kind surfaced through the semantic DATASOURCE step.
+    DATASOURCE = "datasource"
+    PROCESS = "process"
+    BENCHMARK = "benchmark"
     PARALLEL = "parallel"
     MAP = "map"
     REDUCE = "reduce"

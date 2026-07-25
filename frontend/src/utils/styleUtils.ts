@@ -23,6 +23,11 @@ export const categoryColors: Record<string, string> = {
   tool: nodeColors.tools,
   agent: nodeColors.agents,
   workflow: nodeColors.prompts,
+  data: nodeColors.data,
+  process: nodeColors.chains,
+  evaluation: nodeColors.outputs,
+  files: nodeColors.memories,
+  knowledge: nodeColors.models,
 };
 
 export function categoryColor(category: string): string {

@@ -37,6 +37,7 @@ import {
   REF_PATTERN,
   freshId,
   nextPlacement,
+  portsCompatible,
   specKeyFor,
   type CanvasData,
   type CanvasNode,
@@ -49,9 +50,21 @@ import {
   type InvocationDoc,
   type MountRosters,
   type NodeSpec,
+  type PortType,
   type RequestFn,
   type RunData,
 } from './types';
+
+const IO_INPUT_PORT: Record<string, PortType> = { string: 'text', array: 'list', object: 'object', number: 'text', boolean: 'text' };
+
+/** Resolve a node's port type. io-input nodes type their ``out`` by input_type;
+ * everything else reads the spec's inputs/outputs. */
+function portTypeOf(node: CanvasNode, portName: string | null | undefined, side: 'in' | 'out'): PortType {
+  if (!portName) return 'any';
+  if (side === 'out' && node.data.kind === 'input') return IO_INPUT_PORT[node.data.io.input_type] ?? 'any';
+  const ports = side === 'in' ? node.data.spec?.inputs : node.data.spec?.outputs;
+  return ports?.find((port) => port.name === portName)?.type ?? 'any';
+}
 
 export default function CanvasView({ request, subscribe, sessionId, connected, theme, onNotice }: {
   request: RequestFn;
@@ -281,6 +294,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       }),
       edges: edges.filter((edge) => !edge.id.startsWith('ref-')).map((edge) => ({
         id: edge.id, source: edge.source, target: edge.target, param: edge.targetHandle ?? '',
+        source_port: (edge.data as { sourcePort?: string } | undefined)?.sourcePort ?? 'out',
       })),
     };
   }, [nodes, edges, flowId, flowName, flowVersion]);
@@ -313,7 +327,10 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     }
     restored.sort((left, right) => Number(Boolean(left.parentId)) - Number(Boolean(right.parentId)));
     const restoredEdges: Edge[] = doc.edges.map((edge) => ({
+      // The rendered source handle is always "out"; the sub-path lives in edge
+      // data (migration: pre-typed edges have no source_port → whole value).
       id: edge.id, source: edge.source, sourceHandle: 'out', target: edge.target, targetHandle: edge.param,
+      data: { sourcePort: edge.source_port ?? 'out' },
     }));
     for (const node of restored) node.data.boundParams = boundParamsFor(node.id, restoredEdges);
     setNodes(restored);
@@ -325,11 +342,24 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.targetHandle || !connection.source || !connection.target || connection.source === connection.target) return;
     const target = nodes.find((node) => node.id === connection.target);
-    if (!target) return;
+    const source = nodes.find((node) => node.id === connection.source);
+    if (!target || !source) return;
     if (edges.some((edge) => edge.target === connection.target && edge.targetHandle === connection.targetHandle && !edge.id.startsWith('ref-'))) {
       onNotice('That input is already connected; remove the existing edge first.');
       return;
     }
+    const targetType = portTypeOf(target, connection.targetHandle, 'in');
+    // Capability nodes (>1 output) are polymorphic: one adaptive handle whose
+    // sub-path is inferred from the target's type. Others carry one typed output.
+    const adaptive = (source.data.spec?.outputs?.length ?? 0) > 1;
+    const sourceType = adaptive ? 'any' : portTypeOf(source, 'out', 'out');
+    if (!portsCompatible(sourceType, targetType)) {
+      onNotice(`Type mismatch: a ${sourceType} output can't connect to a ${targetType} input.`);
+      return;
+    }
+    const sourcePort = adaptive
+      ? (({ text: 'message', object: 'data', list: 'files' } as Record<string, string>)[targetType] ?? 'message')
+      : 'out';
     const param = connection.targetHandle;
     if (param.startsWith('arg:') && String(target.data.args[param.slice(4)] ?? '').trim()) {
       onNotice('That parameter has a literal value; clear it before connecting.');
@@ -343,7 +373,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     setDirty(true);
     const id = `e${connection.source}-${connection.target}-${param.replace(':', '_')}`;
     setEdges((current) => {
-      const next = addEdge({ ...connection, id }, current);
+      const next = addEdge({ ...connection, id, data: { sourcePort } }, current);
       setNodes((currentNodes) => currentNodes.map((node) => node.id === connection.target
         ? { ...node, data: { ...node.data, boundParams: boundParamsFor(node.id, next) } } : node));
       return next;

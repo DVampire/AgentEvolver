@@ -212,6 +212,7 @@ __marimo__/
 others/
 work_dir/
 .claude/
+.claude.bak/
 .DS_Store
 .idea/
 .vscode/

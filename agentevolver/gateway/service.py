@@ -40,6 +40,8 @@ from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
+from agentevolver.plugins import plugin_manager
+from agentevolver.process import process_manager
 from agentevolver.prompt import prompt_manager
 from agentevolver.session.types import SessionContext
 from agentevolver.session.project import bind_session_roots
@@ -154,6 +156,12 @@ class AgentGateway:
         await tool_manager.initialize(tool_names=getattr(config, "tool_names", None))
         await skill_manager.initialize(skill_names=getattr(config, "skill_names", None))
         await connector_manager.initialize(connector_names=getattr(config, "connector_names", None))
+        await plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None))
+        await process_manager.initialize(process_names=getattr(config, "process_names", None))
+        # NOTE: benchmark_manager is intentionally NOT eagerly initialized here —
+        # its initialize() builds every registered benchmark (downloading datasets),
+        # which is slow and noisy. The benchmark canvas node / step is a later
+        # increment that will init on demand.
         env_names = getattr(config, "env_names", None)
         if env_names:
             await environment_manager.initialize(env_names=env_names)

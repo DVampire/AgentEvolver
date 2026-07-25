@@ -6,11 +6,20 @@ export const CONTAINER_H = 320;
 export const CATEGORY_LABELS: Record<string, string> = {
   io: 'Input & Output',
   structural: 'Flow Control',
-  tool: 'Tools',
   agent: 'Agents',
+  data: 'Data Sources',
+  process: 'Processing',
+  evaluation: 'Evaluation',
+  files: 'Files',
+  knowledge: 'Knowledge',
+  tool: 'Tools',
   workflow: 'Workflows',
 };
-export const CATEGORY_ORDER = ['io', 'structural', 'tool', 'agent', 'workflow'];
+export const CATEGORY_ORDER = [
+  'io', 'structural', 'agent',
+  'data', 'process', 'evaluation', 'files', 'knowledge',
+  'tool', 'workflow',
+];
 
 export const REF_PATTERN = /\$\{([A-Za-z][A-Za-z0-9_-]*)/g;
 export const DND_MIME = 'application/agentevolver-spec';

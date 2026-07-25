@@ -24,8 +24,10 @@ from .inspect_skill import InspectSkill
 from .inspect_environment import InspectEnvironment
 from .inspect_connector import InspectConnector
 from .inspect_workflow import InspectWorkflow
+from .data_sources import HttpRequestTool
 
 __all__ = [
+    "HttpRequestTool",
     "BashTool",
     "CodeInterpreterTool",
     "DoneTool",

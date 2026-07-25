@@ -46,7 +46,7 @@ class GrepSearchTool(Tool):
     name: str = "grep_search_tool"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
-    metadata: Dict[str, Any] = Field(default={})
+    metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
 
     def __init__(self, enable_evolving: bool = False, **kwargs):

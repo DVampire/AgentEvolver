@@ -44,7 +44,7 @@ class ListDirTool(Tool):
     name: str = "list_dir_tool"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
-    metadata: Dict[str, Any] = Field(default={})
+    metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
 
     def __init__(self, enable_evolving: bool = False, **kwargs):

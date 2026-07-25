@@ -1,9 +1,14 @@
 import {
   Cable,
+  Database,
+  FileText,
   GitBranch,
   Network,
   Sparkles,
   Split,
+  SlidersHorizontal,
+  Target,
+  BookOpen,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -15,8 +20,13 @@ import { categoryColor } from '../utils/styleUtils';
 export const CATEGORY_ICON_MAP: Record<string, LucideIcon> = {
   io: Cable,
   structural: Split,
-  tool: Wrench,
   agent: Sparkles,
+  data: Database,
+  process: SlidersHorizontal,
+  evaluation: Target,
+  files: FileText,
+  knowledge: BookOpen,
+  tool: Wrench,
   workflow: Network,
 };
 

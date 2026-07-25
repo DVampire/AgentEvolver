@@ -423,6 +423,7 @@ class WorkflowRuntime:
         if step.type in {
             StepType.AGENT, StepType.TOOL, StepType.SKILL, StepType.CONNECTOR,
             StepType.ENVIRONMENT, StepType.WORKFLOW,
+            StepType.DATASOURCE, StepType.PROCESS, StepType.BENCHMARK,
         }:
             return await self._call(step, definition, run, scope, ctx, depth, key)
         if step.type == StepType.PARALLEL:
@@ -758,6 +759,30 @@ class WorkflowRuntime:
             return await workflow_manager.run(
                 target, input=payload, ctx=ctx, depth=depth + 1, _budget=budget,
             )
+        if kind == StepType.DATASOURCE:
+            from agentevolver.plugins import plugin_manager
+            return await plugin_manager(name=target, input=payload, ctx=ctx)
+        if kind == StepType.PROCESS:
+            from agentevolver.process import process_manager
+            return await process_manager(name=target, input=payload, ctx=ctx)
+        if kind == StepType.BENCHMARK:
+            from agentevolver.benchmark import benchmark_manager
+            from agentevolver.response.types import Response, ResponseType
+            # Accept results directly, or lift them out of an upstream {records:[...]}.
+            results = payload.get("results")
+            if results is None:
+                container = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+                results = container.get("records") if isinstance(container, dict) else None
+            results = results or []
+            score = await benchmark_manager(
+                benchmark_name=target, results=results,
+                concurrency=int(payload.get("concurrency", 10) or 10),
+            )
+            return Response(
+                type=ResponseType.TOOL, success=True,
+                message=f"{target}: avg score {score:.4f} over {len(results)} item(s).",
+                data={"benchmark": target, "score": score, "count": len(results)},
+            )
         raise ValueError(f"{kind.value} is not directly callable")
 
     @staticmethod
@@ -932,8 +957,11 @@ class WorkflowRuntime:
     async def _validate_capabilities(self, definition: WorkflowDefinition) -> None:
         """Fail before side effects when a statically named capability is unavailable."""
         from agentevolver.agent import agent_manager
+        from agentevolver.benchmark import benchmark_manager
         from agentevolver.connector import connector_manager
         from agentevolver.environment import environment_manager
+        from agentevolver.plugins import plugin_manager
+        from agentevolver.process import process_manager
         from agentevolver.skill import skill_manager
         from agentevolver.tool import tool_manager
         from agentevolver.workflow import workflow_manager
@@ -959,6 +987,12 @@ class WorkflowRuntime:
                 raise ValueError(f"Unknown Workflow Tool capability: {target}")
             elif step.type == StepType.SKILL and await skill_manager.get_info(target) is None:
                 raise ValueError(f"Unknown Workflow Skill capability: {target}")
+            elif step.type == StepType.DATASOURCE and await plugin_manager.get_info(target) is None:
+                raise ValueError(f"Unknown Workflow Datasource (plugin) capability: {target}")
+            elif step.type == StepType.PROCESS and await process_manager.get_info(target) is None:
+                raise ValueError(f"Unknown Workflow Process capability: {target}")
+            elif step.type == StepType.BENCHMARK and await benchmark_manager.get_info(target) is None:
+                raise ValueError(f"Unknown Workflow Benchmark capability: {target}")
             elif step.type == StepType.CONNECTOR:
                 info = await connector_manager.get_info(target)
                 action = step.args.get("action")

@@ -20,7 +20,7 @@ DOCUMENT_VERSION = 2
 # Step ids must satisfy the workflow compiler's id rule.
 NODE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 
-CALLABLE_STEPS = {"tool", "agent", "skill", "workflow"}
+CALLABLE_STEPS = {"tool", "agent", "skill", "workflow", "datasource", "process", "benchmark"}
 STRUCTURAL_STEPS = {"map", "branch", "loop", "reduce", "verify", "checkpoint"}
 STEP_TYPES = CALLABLE_STEPS | STRUCTURAL_STEPS
 
@@ -28,10 +28,33 @@ NodeKind = Literal["step", "input", "output"]
 Slot = Literal["body", "then", "else"]
 ParamType = Literal["string", "number", "boolean", "select", "json"]
 
+# Data-flow port types (a small closed set; Langflow-style colored handles).
+# A connection is valid when the two port types are equal or either is ``any``.
+PortType = Literal["text", "list", "object", "any"]
+
+
+def ports_compatible(source: str, target: str) -> bool:
+    return source == target or source == "any" or target == "any"
+
 
 class Position(BaseModel):
     x: float = 0.0
     y: float = 0.0
+
+
+class PortSpec(BaseModel):
+    """One typed connection point on a node.
+
+    ``name`` is the handle id used by edges: an input port is ``task`` /
+    ``items`` / ``value`` / ``arg:<param>``; an output port is ``message`` /
+    ``data`` / ``files`` / ``out`` and names the sub-path the edge compiles to
+    (``${node.<name>}``; ``out`` means the whole value ``${node}``).
+    """
+
+    name: str
+    label: str
+    type: PortType = "any"
+    description: str = ""
 
 
 class ParamSpec(BaseModel):
@@ -56,7 +79,9 @@ class NodeSpec(BaseModel):
     """
 
     id: str
-    category: Literal["agent", "workflow", "structural", "io"]
+    # Palette group: agent/workflow/structural/io, or a tool's canvas_category
+    # (data/processing/files/knowledge) for standalone deterministic tool nodes.
+    category: str
     step_type: Optional[str] = None
     target: Optional[str] = None
     label: str
@@ -65,6 +90,10 @@ class NodeSpec(BaseModel):
     has_task: bool = False
     has_items: bool = False
     container: bool = False
+    # Typed data-flow ports the frontend renders (colored handles) and the
+    # compiler binds. Config params (concurrency, target, …) are NOT ports.
+    inputs: List[PortSpec] = Field(default_factory=list)
+    outputs: List[PortSpec] = Field(default_factory=list)
     # For agent specs: which capability rosters can be mounted (scoped) on this
     # agent — one of tools/skills/connectors/agents/environments. The frontend
     # renders a search+select picker per kind; the selection compiles to the
@@ -113,17 +142,21 @@ class GraphNode(BaseModel):
 
 
 class GraphEdge(BaseModel):
-    """A whole-value binding: the target slot's value becomes ``${source}``.
+    """A typed binding: the target port's value becomes ``${source.<source_port>}``.
 
-    ``param`` is ``arg:<name>`` (an argument), ``items`` (map/verify/reduce
-    input), or ``value`` (an output node). Inline ``${...}`` references typed
-    into task text are part of the text itself, not edges.
+    ``param`` names the TARGET input port — ``arg:<name>`` (an argument),
+    ``task``, ``items`` (map/verify/reduce input), or ``value`` (an output
+    node). ``source_port`` names the SOURCE output port — ``message`` /
+    ``data`` / ``files`` compile to ``${source.<port>}``, ``out`` (the default)
+    to the whole ``${source}``. Inline ``${...}`` references typed into task
+    text are part of the text itself, not edges.
     """
 
     id: str
     source: str
     target: str
     param: str
+    source_port: str = "out"
 
 
 class FlowGraph(BaseModel):
@@ -173,8 +206,11 @@ __all__ = [
     "NODE_ID",
     "NodeSpec",
     "ParamSpec",
+    "PortSpec",
+    "PortType",
     "Position",
     "STEP_TYPES",
     "STRUCTURAL_STEPS",
+    "ports_compatible",
     "workflow_name_for",
 ]

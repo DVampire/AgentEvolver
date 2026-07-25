@@ -111,7 +111,7 @@ def compile_graph(graph: FlowGraph, embed_source: bool = False) -> Tuple[str, Wo
         key = (edge.target, edge.param)
         if key in bindings:
             errors.append(f"{edge.target}.{edge.param} has more than one incoming edge")
-        bindings[key] = _ref(source)
+        bindings[key] = _ref(source, edge.source_port)
         if edge.param.startswith("arg:"):
             arg_name = edge.param[4:]
             literal = target.args.get(arg_name)
@@ -136,8 +136,17 @@ def compile_graph(graph: FlowGraph, embed_source: bool = False) -> Tuple[str, Wo
     return html, definition
 
 
-def _ref(node: GraphNode) -> str:
-    return f"${{inputs.{node.name}}}" if node.kind == "input" else f"${{{node.id}}}"
+def _ref(node: GraphNode, source_port: str = "out") -> str:
+    """Reference to a source node's output port.
+
+    ``message``/``data``/``files`` compile to ``${node.<port>}`` (a sub-path
+    into the capability's ``{message, data, files}`` result); ``out`` (or an
+    input node, which has no sub-ports) compiles to the whole ``${node}``.
+    """
+    base = f"inputs.{node.name}" if node.kind == "input" else node.id
+    if source_port and source_port != "out" and node.kind != "input":
+        return f"${{{base}.{source_port}}}"
+    return f"${{{base}}}"
 
 
 def _ordered_children(graph: FlowGraph, parent: str | None, slot: str) -> List[GraphNode]:
