@@ -680,6 +680,7 @@ class WorkflowRuntime:
         "connectors": "connector_allowlist",
         "agents": "agent_allowlist",
         "environments": "environment_allowlist",
+        "workflows": "workflow_allowlist",
     }
 
     def _apply_agent_mounts(self, payload, ctx):

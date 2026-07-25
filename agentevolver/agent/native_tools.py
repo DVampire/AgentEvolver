@@ -104,7 +104,7 @@ async def assemble_native_tools(
 
     include_workflows = include_agents or (
         hasattr(agent, "_include_workflows") and agent._include_workflows()
-    )
+    ) or bool(extra.get("workflow_allowlist"))  # a canvas "Tool Mode" mount opts in explicitly
     if include_workflows:
         from agentevolver.workflow import workflow_manager
         pairs += await workflow_manager.function_callings(extra.get("workflow_allowlist"))

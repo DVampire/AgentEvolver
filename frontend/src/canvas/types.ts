@@ -55,7 +55,8 @@ export interface NodeSpec {
 export interface MountItem { name: string; description: string; }
 export type MountRosters = Record<string, MountItem[]>;
 export const MOUNT_LABELS: Record<string, string> = {
-  tools: 'Tools', skills: 'Skills', connectors: 'Connectors', agents: 'Agents', environments: 'Environments',
+  tools: 'Tools', skills: 'Skills', connectors: 'Connectors', agents: 'Agents',
+  environments: 'Environments', workflows: 'Workflows (Tool Mode)',
 };
 
 export interface FlowSummary { id: string; name: string; description: string; version: string; published: boolean; updated_at?: string | null; node_count: number; }

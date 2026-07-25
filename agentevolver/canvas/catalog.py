@@ -18,7 +18,7 @@ from agentevolver.logger import logger
 
 # Which capability rosters an agent node can mount (scope). All are optional:
 # leaving a picker empty means the agent uses its configured defaults.
-AGENT_MOUNT_KINDS = ["tools", "skills", "connectors", "agents", "environments"]
+AGENT_MOUNT_KINDS = ["tools", "skills", "connectors", "agents", "environments", "workflows"]
 
 # A capability result normalizes to {message, data, files} — so callable nodes
 # expose these three typed output ports (each compiles to ${node.<name>}), plus
@@ -481,6 +481,11 @@ async def _roster(kind: str) -> List[Dict[str, str]]:
         elif kind == "agents":
             from agentevolver.agent import agent_manager
             names, get_info = await agent_manager.list(), agent_manager.get_info
+        elif kind == "workflows":
+            # Published canvas flows / registered workflows an agent can call as a
+            # tool — the agent-centric equivalent of Langflow's "Tool Mode".
+            from agentevolver.workflow import workflow_manager
+            names, get_info = workflow_manager.list(), workflow_manager.get
         else:
             return []
     except Exception as exc:  # noqa: BLE001
