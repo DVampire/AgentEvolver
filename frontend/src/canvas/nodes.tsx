@@ -253,8 +253,8 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
     <div className={`lf-node lf-io${selected ? ' selected' : ''}`}>
       <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
-        <NodeIcon name="MessagesSquare" category="io" className="lf-head-icon" />
-        <strong>{isInput ? 'Flow Input' : 'Flow Output'}</strong>
+        <NodeIcon name="MessagesSquare" category="io" size={18} className="lf-head-icon" />
+        <strong>{isInput ? 'Chat Input' : 'Chat Output'}</strong>
         {isInput && io.name ? <code className="lf-node-ref">{'$'}{'{'}inputs.{io.name}{'}'}</code> : null}
       </header>
       <div className="lf-node-body nodrag nowheel">
