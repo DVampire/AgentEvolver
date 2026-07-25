@@ -41,7 +41,7 @@ CANVAS_TOOL_CATEGORIES = {"data", "files", "knowledge"}
 # Per-node lucide icon names (Langflow gives every component its own glyph).
 # Resolution order: exact node id → capability target → category fallback.
 _ICON_BY_ID = {
-    "io/input": "LogIn", "io/output": "LogOut",
+    "io/input": "MessagesSquare", "io/output": "MessagesSquare",
     "step/map": "Repeat", "step/branch": "GitBranch", "step/loop": "RotateCw",
     "step/reduce": "Combine", "step/verify": "ShieldCheck", "step/checkpoint": "Flag",
     "data/dataset_save": "UploadCloud", "data/dataset_load": "DownloadCloud",
@@ -481,7 +481,7 @@ class Catalog:
         agent_options = sorted(agent_names) or None
         return [
             NodeSpec(
-                id="io/input", category="io", label="Flow input",
+                id="io/input", category="io", label="Chat Input",
                 description="Declares one workflow input; reference it anywhere as ${inputs.<name>}.",
                 params=[
                     ParamSpec(name="name", label="Name", required=True, connectable=False),
@@ -493,7 +493,7 @@ class Catalog:
                 ],
             ),
             NodeSpec(
-                id="io/output", category="io", label="Flow output",
+                id="io/output", category="io", label="Chat Output",
                 description="Publishes one value as a named workflow output.",
                 params=[ParamSpec(name="name", label="Name", required=True, connectable=False)],
             ),

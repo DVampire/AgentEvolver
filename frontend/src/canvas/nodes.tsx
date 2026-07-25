@@ -1,5 +1,5 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Maximize2, Minimize2, MoreHorizontal, Save, Snowflake, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Info, Maximize2, Minimize2, MoreHorizontal, Save, Snowflake, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -88,14 +88,19 @@ function CardToolbar({ id, visible, minimized, frozen }: { id: string; visible: 
 }
 
 export function FieldShell({ label, required, hint, handle, children }: { label: string; required?: boolean; hint?: string; handle?: React.ReactNode; children: React.ReactNode }) {
-  // Langflow node mechanics: each field is a full-width row flush to the node
-  // border; the handle sits at the row's left edge (on the border), vertically
-  // centered on the row via top:50%.
+  // Markup copied from Langflow's NodeInputField: a min-h-10 px-5 py-2 row with
+  // the handle on the left edge, then a flex-col of the label row + control.
   return (
-    <div className="lf-field" title={hint}>
+    <div className="relative flex min-h-10 w-full items-center justify-between px-5 py-2" title={hint}>
       {handle}
-      <span className="lf-field-label">{label}{required ? <em> *</em> : null}</span>
-      {children}
+      <div className="flex w-full min-w-0 flex-col gap-2">
+        <div className="flex w-full items-center text-sm">
+          <span className="truncate text-sm font-medium text-foreground">{label}</span>
+          {required ? <span className="ml-0.5 text-destructive">*</span> : null}
+          {hint ? <Info strokeWidth={1.5} className="ml-1 h-3 w-3 shrink-0 text-muted-foreground" /> : null}
+        </div>
+        {children}
+      </div>
     </div>
   );
 }
@@ -248,7 +253,7 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
     <div className={`lf-node lf-io${selected ? ' selected' : ''}`}>
       <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
-        <NodeIcon name={isInput ? 'LogIn' : 'LogOut'} category="io" className="lf-head-icon" />
+        <NodeIcon name="MessagesSquare" category="io" className="lf-head-icon" />
         <strong>{isInput ? 'Flow Input' : 'Flow Output'}</strong>
         {isInput && io.name ? <code className="lf-node-ref">{'$'}{'{'}inputs.{io.name}{'}'}</code> : null}
       </header>

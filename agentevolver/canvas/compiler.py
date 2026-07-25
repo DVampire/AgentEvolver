@@ -287,9 +287,14 @@ class CanvasCompiler:
         output_lines: List[str] = []
         for node in sorted(outputs, key=lambda item: (item.position.y, item.position.x)):
             value = bindings.get((node.id, "value")) or (node.value or "").strip()
-            if not node.name or not value:
+            if not value:
                 continue
-            output_lines.append(f"    <output name={quoteattr(node.name)} value={quoteattr(value)} />")
+            # Output names are workflow identifiers: slugify whatever the user
+            # typed (e.g. "code agent" -> "code_agent") so it never fails validation.
+            safe = re.sub(r"[^A-Za-z0-9_]+", "_", node.name or "output").strip("_") or "output"
+            if not safe[0].isalpha():
+                safe = f"out_{safe}"
+            output_lines.append(f"    <output name={quoteattr(safe)} value={quoteattr(value)} />")
 
         description = graph.description or f"Canvas flow: {graph.name}"
         parts = [

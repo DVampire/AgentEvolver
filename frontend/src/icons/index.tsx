@@ -29,6 +29,7 @@ import {
   LogIn,
   LogOut,
   Merge,
+  MessagesSquare,
   Network,
   PenLine,
   Percent,
@@ -56,7 +57,7 @@ import {
 export const LUCIDE_ICONS: Record<string, LucideIcon> = {
   Activity, ArrowUpDown, BookOpen, BookOpenText, BookPlus, Bot, Box, Boxes, Braces, Cable, CandlestickChart, Code,
   Columns3, Combine, Database, DownloadCloud, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
-  FolderInput, FolderTree, GitBranch, Globe, KeyRound, LogIn, LogOut, Merge, Network, PenLine,
+  FolderInput, FolderTree, GitBranch, Globe, KeyRound, LogIn, LogOut, Merge, MessagesSquare, Network, PenLine,
   Percent, Regex, Repeat, Repeat2, RotateCw, Rows3, Scissors, Search, ShieldCheck, Shuffle,
   SlidersHorizontal, Sparkles, Split, Table2, Target, UploadCloud, Wrench,
 };
