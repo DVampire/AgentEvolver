@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../style/canvas.css';
 
-import { Boxes, ChevronDown, Copy, Download, Play, Save, Share2, Square, Trash2, UploadCloud } from 'lucide-react';
+import { Boxes, ChevronDown, Copy, Download, Play, Save, Share2, Square, Trash2, UploadCloud, Workflow } from 'lucide-react';
 
 import ShadTooltip from '../components/common/shadTooltipComponent';
 import {
@@ -680,14 +680,17 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       <Palette specs={specs} connected={connected} onAdd={(spec) => { takeSnapshot(); addFromSpec(spec); }} />
       <div className="canvas-stage">
         <header className="canvas-toolbar">
+          {/* Flow identity — Langflow FlowMenu: colored icon swatch + a picker
+              breadcrumb + a semibold name field. */}
+          <div className="flex shrink-0 items-center justify-center rounded bg-muted p-1 text-primary"><Workflow className="h-3.5 w-3.5" /></div>
           <Select value={flowId || '__new__'} onValueChange={(next) => void openFlow(next === '__new__' ? '' : next)}>
-            <SelectTrigger className="h-8 w-[220px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__new__" className="text-xs">＋ New flow</SelectItem>
               {flows.map((flow) => <SelectItem key={flow.id} value={flow.id} className="text-xs">{flow.published ? '● ' : '○ '}{flow.name} v{flow.version}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Input className="h-8 w-[min(280px,30vw)] text-sm" value={flowName} onChange={(event) => { setFlowName(event.target.value); setDirty(true); }} placeholder="Flow name" />
+          <Input className="h-8 w-[min(240px,26vw)] text-sm font-semibold" value={flowName} onChange={(event) => { setFlowName(event.target.value); setDirty(true); }} placeholder="Flow name" />
           {flowStatus?.registered ? <em className={`canvas-badge${flowStatus.drifted ? ' drift' : ''}`} title={flowStatus.drifted ? 'The registered workflow changed outside the canvas; publishing overwrites it.' : `Registered as ${flowStatus.workflow_name}`}>{flowStatus.drifted ? '⚠ drifted' : `● ${flowStatus.workflow_name} v${flowStatus.registered_version}`}</em> : null}
           <span className="canvas-toolbar-spacer" />
           {/* Langflow flow-toolbar hierarchy: exactly one filled accent (Run);
