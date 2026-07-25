@@ -1,9 +1,10 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Info, Maximize2, Minimize2, MoreHorizontal, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
 import { Button } from '../components/ui/button';
+import { cn } from '../utils/utils';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   DropdownMenuShortcut, DropdownMenuTrigger,
@@ -74,9 +75,36 @@ function OutputPorts({ nodeId, outputs, ioType, frozen }: { nodeId?: string; out
  * components have no app handlers, so actions travel as a DOM CustomEvent
  * that the canvas root listens for. */
 export const NODE_ACTION_EVENT = 'canvas-node-action';
-export type NodeAction = 'save' | 'duplicate' | 'copy' | 'docs' | 'minimize' | 'freeze' | 'download' | 'delete';
+export type NodeAction = 'run' | 'save' | 'duplicate' | 'copy' | 'docs' | 'minimize' | 'freeze' | 'download' | 'delete';
 function emitNodeAction(nodeId: string, action: NodeAction) {
   window.dispatchEvent(new CustomEvent(NODE_ACTION_EVENT, { detail: { nodeId, action } }));
+}
+
+// Header run/status cluster copied from Langflow's NodeStatus: a right-aligned
+// Play button (Loader2 while running) preceded by a run-count badge in the same
+// emerald/font-mono treatment Langflow uses for its duration/token badge.
+function NodeRunStatus({ id, state, count }: { id: string; state?: CanvasData['runState']; count?: number }) {
+  const running = state === 'running';
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+      {count && count > 1 ? (
+        <span className={cn('flex items-center gap-1 rounded-sm px-1 font-mono text-xs',
+          state === 'failed' ? 'text-destructive' : 'text-accent-emerald-foreground')}>×{count}</span>
+      ) : null}
+      <ShadTooltip content="Run flow">
+        <Button
+          unstyled
+          className="nodrag flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={() => emitNodeAction(id, 'run')}
+          aria-label="Run flow"
+        >
+          {running
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-emerald-foreground" />
+            : <Play className="h-3.5 w-3.5" strokeWidth={2} />}
+        </Button>
+      </ShadTooltip>
+    </div>
+  );
 }
 
 /** Selected-node action bar: quick Duplicate/Delete plus a ⋯ menu (Langflow's
@@ -167,9 +195,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
         <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} size={18} className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType ?? 'Step'}</strong>
         {data.frozen ? <Snowflake size={12} className="lf-frozen-badge" /> : null}
-        {data.runState === 'running' ? <span className="lf-pulse" /> : null}
-        {data.runCount && data.runCount > 1 ? <em className="lf-run-count">×{data.runCount}</em> : null}
         <code className="lf-node-ref" title="Reference this step in task text">{'$'}{'{'}{id}{'}'}</code>
+        <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
       </header>
       {!data.minimized && spec?.description ? <p className="lf-node-desc">{spec.description}</p> : null}
       {!data.minimized ? <div className="lf-node-body nodrag nowheel">
@@ -239,9 +266,8 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category="structural" className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType}</strong>
-        {data.runState === 'running' ? <span className="lf-pulse" /> : null}
-        {data.runCount && data.runCount > 1 ? <em className="lf-run-count">×{data.runCount}</em> : null}
         <code className="lf-node-ref">{'$'}{'{'}{id}{'}'}</code>
+        <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
       </header>
       <div className="lf-node-body nodrag nowheel">
         {spec?.has_items ? (
@@ -276,6 +302,7 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
         <NodeIcon name="MessagesSquare" category="io" size={18} className="lf-head-icon" />
         <strong>{isInput ? 'Chat Input' : 'Chat Output'}</strong>
         {isInput && io.name ? <code className="lf-node-ref">{'$'}{'{'}inputs.{io.name}{'}'}</code> : null}
+        <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
       </header>
       <div className="lf-node-body nodrag nowheel">
         <FieldShell label="Name" required><Input className="h-8 px-2.5 text-xs" value={io.name} placeholder="name" onChange={(event) => set({ name: event.target.value })} /></FieldShell>

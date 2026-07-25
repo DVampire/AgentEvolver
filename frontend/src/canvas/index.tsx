@@ -97,6 +97,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>();
   // saveFlow is declared further down; the node-action handler reaches it here.
   const saveFlowRef = useRef<(() => void) | undefined>(undefined);
+  const runFlowRef = useRef<(() => void) | undefined>(undefined);
   const runDataRef = useRef<RunData | undefined>(undefined);
   useEffect(() => { graphRef.current = { nodes, edges }; }, [nodes, edges]);
 
@@ -291,6 +292,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       else if (detail.action === 'download') downloadNode(detail.nodeId);
       else if (detail.action === 'freeze') freezeNode(detail.nodeId);
       else if (detail.action === 'save') saveFlowRef.current?.();
+      else if (detail.action === 'run') runFlowRef.current?.();
     };
     window.addEventListener(NODE_ACTION_EVENT, onAction);
     return () => window.removeEventListener(NODE_ACTION_EVENT, onAction);
@@ -582,6 +584,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     if (inputFields.length) setRunDialog({ fields: inputFields });
     else void startRun({});
   };
+  runFlowRef.current = runFlow;
 
   useEffect(() => {
     if (!runId) return;
