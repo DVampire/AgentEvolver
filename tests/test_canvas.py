@@ -72,9 +72,9 @@ def test_embedded_source_roundtrip() -> None:
 
 
 def test_catalog_ports_are_typed() -> None:
-    from agentevolver.canvas.catalog import build_catalog
+    from agentevolver.canvas.catalog import catalog
 
-    specs = {spec.id: spec for spec in asyncio.run(build_catalog())}
+    specs = {spec.id: spec for spec in asyncio.run(catalog.build())}
     io_input = specs["io/input"]
     assert [(port.name, port.type) for port in io_input.outputs] == [("out", "any")]
     map_spec = specs["step/map"]
@@ -84,9 +84,9 @@ def test_catalog_ports_are_typed() -> None:
 
 
 def test_capability_nodes_expose_message_data_files_ports() -> None:
-    from agentevolver.canvas.catalog import build_catalog
+    from agentevolver.canvas.catalog import catalog
 
-    agent = next((s for s in asyncio.run(build_catalog()) if s.category == "agent"), None)
+    agent = next((s for s in asyncio.run(catalog.build()) if s.category == "agent"), None)
     if agent is None:
         pytest.skip("no actor agents registered")
     out = {port.name: port.type for port in agent.outputs}
