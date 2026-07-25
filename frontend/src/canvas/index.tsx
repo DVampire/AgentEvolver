@@ -693,6 +693,12 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             onPaneClick={() => setInspected(undefined)}
             colorMode={theme}
             fitView
+            fitViewOptions={{ minZoom: 0.25, maxZoom: 2 }}
+            minZoom={0.25}
+            maxZoom={2}
+            selectNodesOnDrag={false}
+            elevateEdgesOnSelect={false}
+            connectionRadius={30}
             deleteKeyCode={['Backspace', 'Delete']}
             proOptions={{ hideAttribution: true }}
           >

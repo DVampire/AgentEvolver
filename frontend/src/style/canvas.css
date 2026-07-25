@@ -8,11 +8,18 @@
 .app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); }
 .canvas-mode { grid-template-rows: auto 1fr auto; min-height: 100vh; }
 .canvas-notice { margin: 0 24px 12px; }
-.canvas-view { min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
+.canvas-view { min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); }
 
 /* --- palette --- */
-.canvas-catalog { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid hsl(var(--border)); background: hsl(var(--background)); }
-.canvas-catalog-title { margin: 4px 16px 6px; color: hsl(var(--foreground)); font-size: 13px; font-weight: 650; }
+.canvas-catalog { width: 280px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid hsl(var(--border)); background: hsl(var(--background)); transition: width .15s ease; }
+.canvas-catalog.collapsed { width: 48px; }
+.canvas-catalog-head { display: flex; align-items: center; margin: 4px 8px 6px 16px; }
+.canvas-catalog-title { margin: 0; color: hsl(var(--foreground)); font-size: 13px; font-weight: 650; }
+/* collapsed icon rail — Langflow sidebarSegmentedNav (vertical icon buttons) */
+.lf-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
+.lf-rail-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 6px; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; transition: background .12s ease, color .12s ease; }
+.lf-rail-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.lf-rail-sep { width: 20px; border-top: 1px solid hsl(var(--border)); margin: 2px 0; }
 .canvas-catalog-list { min-height: 0; flex: 1; overflow-y: auto; padding: 0 10px 16px; }
 .canvas-cat-head { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 6px; border: 0; border-radius: 9px; padding: 8px 8px; color: hsl(var(--foreground)); background: transparent; text-align: left; }
 .canvas-cat-head:hover { background: hsl(var(--accent)); }
@@ -36,7 +43,7 @@
 
 /* --- stage & toolbar --- */
 .canvas-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.canvas-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--background)); }
+.canvas-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 5px 12px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--background)); }
 .canvas-toolbar-spacer { flex: 1; }
 .canvas-dirty { color: hsl(26 90% 45%); font-size: 11.5px; font-style: normal; }
 .canvas-badge { color: hsl(142 60% 40%); font-size: 11px; font-style: normal; white-space: nowrap; }

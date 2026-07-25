@@ -1,17 +1,50 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, GripVertical, Plus, Search } from 'lucide-react';
+import { ChevronRight, GripVertical, PanelLeft, PanelLeftClose, Plus, Search } from 'lucide-react';
 
+import ShadTooltip from '../components/common/shadTooltipComponent';
 import { Input } from '../components/ui/input';
 import { useDebounce } from '../hooks/use-debounce';
 import { CategoryGlyph, NodeIcon } from '../icons';
 import { CATEGORY_LABELS, CATEGORY_ORDER, DND_MIME, type NodeSpec } from './types';
 
 /** Langflow-style component sidebar: search, collapsible category sections,
- * draggable rows (double-click also places the node). */
+ * draggable rows (double-click also places the node). Collapses to a thin icon
+ * rail (Langflow's sidebarSegmentedNav) to give the canvas more room. */
 export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connected: boolean; onAdd: (spec: NodeSpec) => void }) {
   const [search, setSearch] = useState('');
+  const [railed, setRailed] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(['agent', 'workflow']));
   const query = useDebounce(search, 150).trim().toLowerCase();
+
+  // Categories that actually have components — for the collapsed icon rail.
+  const railCategories = useMemo(
+    () => CATEGORY_ORDER.filter((category) => specs.some((spec) => spec.category === category)),
+    [specs],
+  );
+
+  if (railed) {
+    return (
+      <aside className="canvas-catalog collapsed">
+        <div className="lf-rail">
+          <ShadTooltip content="Expand components" side="right">
+            <button className="lf-rail-btn" onClick={() => setRailed(false)} aria-label="Expand components"><PanelLeft className="h-5 w-5" /></button>
+          </ShadTooltip>
+          <div className="lf-rail-sep" />
+          {railCategories.map((category) => (
+            <ShadTooltip key={category} content={CATEGORY_LABELS[category]} side="right">
+              <button
+                className="lf-rail-btn"
+                onClick={() => { setRailed(false); setCollapsed((current) => { const next = new Set(current); next.delete(category); return next; }); }}
+                aria-label={CATEGORY_LABELS[category]}
+              >
+                <CategoryGlyph category={category} size={18} />
+              </button>
+            </ShadTooltip>
+          ))}
+        </div>
+      </aside>
+    );
+  }
 
   const grouped = useMemo(() => {
     const filtered = specs.filter((spec) => !query || spec.label.toLowerCase().includes(query) || spec.id.toLowerCase().includes(query));
@@ -30,7 +63,12 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
         <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input className="h-9 pl-9 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" />
       </div>
-      <p className="canvas-catalog-title">Components</p>
+      <div className="canvas-catalog-head">
+        <p className="canvas-catalog-title">Components</p>
+        <ShadTooltip content="Collapse" side="right">
+          <button className="lf-rail-btn ml-auto" onClick={() => setRailed(true)} aria-label="Collapse components"><PanelLeftClose className="h-4 w-4" /></button>
+        </ShadTooltip>
+      </div>
       <div className="canvas-catalog-list">
         {grouped.map((group) => {
           const isCollapsed = collapsed.has(group.category) && !query;
