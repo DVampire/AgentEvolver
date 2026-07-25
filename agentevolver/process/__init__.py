@@ -13,4 +13,5 @@ __all__ = [
     "RenameFieldsProcessor",
     "FilterRowsProcessor",
     "DeriveReturnProcessor",
+    "ToEvalRecordsProcessor",
 ]

@@ -20,7 +20,7 @@ class Task(BaseModel):
     
     # Input
     task_id: str = Field(description="Unique identifier for the task")
-    input: str = Field(description="The input prompt/question for the task")
+    input: str = Field(default="", description="The input prompt/question for the task")
     system_prompt: Optional[str] = Field(default=None, description="The system prompt for the task")
     ground_truth: Optional[Any] = Field(default=None, description="The expected correct answer")
     

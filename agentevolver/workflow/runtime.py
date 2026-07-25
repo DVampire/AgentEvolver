@@ -769,14 +769,28 @@ class WorkflowRuntime:
             from agentevolver.data import data_manager
             return await data_manager(name=target, input=payload, ctx=ctx)
         if kind == StepType.BENCHMARK:
+            import json as _json
+
             from agentevolver.benchmark import benchmark_manager
             from agentevolver.response.types import Response, ResponseType
-            # Accept results directly, or lift them out of an upstream {records:[...]}.
+            # Results may arrive as a list, a JSON string, or (when a `data`
+            # output port is connected) the whole {records:[...]} envelope.
             results = payload.get("results")
+            if isinstance(results, str) and results.strip().startswith(("[", "{")):
+                try:
+                    results = _json.loads(results)
+                except (ValueError, TypeError):
+                    results = None
+            if isinstance(results, dict):
+                results = results.get("records")
             if results is None:
                 container = payload.get("data") if isinstance(payload.get("data"), dict) else payload
                 results = container.get("records") if isinstance(container, dict) else None
-            results = results or []
+            results = results if isinstance(results, list) else []
+            # Build the target benchmark on first use (startup only inits the
+            # dataset-free evaluators; a heavier one is materialized on demand).
+            if await benchmark_manager.get(target) is None:
+                await benchmark_manager.initialize(benchmark_names=[target])
             score = await benchmark_manager(
                 benchmark_name=target, results=results,
                 concurrency=int(payload.get("concurrency", 10) or 10),
@@ -997,8 +1011,14 @@ class WorkflowRuntime:
                 raise ValueError(f"Unknown Workflow Process capability: {target}")
             elif step.type == StepType.DATA and await data_manager.get_info(target) is None:
                 raise ValueError(f"Unknown Workflow Data operation: {target}")
-            elif step.type == StepType.BENCHMARK and await benchmark_manager.get_info(target) is None:
-                raise ValueError(f"Unknown Workflow Benchmark capability: {target}")
+            elif step.type == StepType.BENCHMARK:
+                if await benchmark_manager.get_info(target) is None:
+                    try:  # startup inits only exact_match; materialize others on demand
+                        await benchmark_manager.initialize(benchmark_names=[target])
+                    except Exception:  # noqa: BLE001 — unknown/failed benchmark reported below
+                        pass
+                if await benchmark_manager.get_info(target) is None:
+                    raise ValueError(f"Unknown Workflow Benchmark capability: {target}")
             elif step.type == StepType.CONNECTOR:
                 info = await connector_manager.get_info(target)
                 action = step.args.get("action")

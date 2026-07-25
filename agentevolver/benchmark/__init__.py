@@ -15,4 +15,5 @@ __all__ = [
     "HLEBenchmark",
     "DeepWebBenchmark",
     "ProgramBenchmark",
+    "ExactMatchBenchmark",
 ]

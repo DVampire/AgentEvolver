@@ -204,6 +204,44 @@ class DeriveReturnProcessor(Processor):
 
 
 @PROCESS.register_module(force=True)
+class ToEvalRecordsProcessor(Processor):
+    """Shape records into the {task_id, prediction, ground_truth} eval format.
+
+    The bridge from a data pipeline to a ``benchmark`` node: pick which fields
+    carry the prediction and the ground truth (and optionally an id).
+    """
+
+    name: str = "to_eval_records"
+    description: str = "Map fields to {task_id, prediction, ground_truth} for a benchmark node."
+    instruction: str = (
+        "## Function\nReshape rows for evaluation.\n\n"
+        "## Parameters\n- records (list) OR data ({records}): input rows.\n"
+        "- prediction_field (str): field holding the prediction (default ``prediction``).\n"
+        "- ground_truth_field (str): field holding the truth (default ``ground_truth``).\n"
+        "- id_field (str): optional field for task_id (else the row index)."
+    )
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {"canvas_category": "process"})
+
+    async def __call__(self, records: Any = None, data: Any = None,
+                       prediction_field: str = "prediction", ground_truth_field: str = "ground_truth",
+                       id_field: str = "", **kwargs) -> Response:
+        rows = _coerce_records(records, data)
+        out: List[Dict[str, Any]] = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            task_id = row.get(id_field) if id_field else None
+            out.append({
+                "task_id": str(task_id) if task_id is not None else str(index),
+                "prediction": row.get(prediction_field),
+                "ground_truth": row.get(ground_truth_field),
+            })
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=f"Shaped {len(out)} record(s) for evaluation.",
+                        data={"records": out, "count": len(out)})
+
+
+@PROCESS.register_module(force=True)
 class SortRecordsProcessor(Processor):
     """Sort records by a field."""
 

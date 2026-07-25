@@ -54,6 +54,7 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
     from agentevolver.connector import connector_manager
     from agentevolver.environment import environment_manager
     from agentevolver.logger import logger
+    from agentevolver.benchmark import benchmark_manager
     from agentevolver.data import data_manager
     from agentevolver.plugins import plugin_manager
     from agentevolver.process import process_manager
@@ -82,6 +83,8 @@ async def _bootstrap(config_path: str, timeout: float = 60.0):
     await _try("plugin", plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None)), timeout)
     await _try("process", process_manager.initialize(process_names=getattr(config, "process_names", None)), timeout)
     await _try("data", data_manager.initialize(), timeout)
+    await _try("benchmark", benchmark_manager.initialize(
+        benchmark_names=getattr(config, "benchmark_names", None) or ["exact_match"]), timeout)
     await _try("environment", environment_manager.initialize(env_names=getattr(config, "environment_names", None)), timeout)
     await _try("agent", agent_manager.initialize(agent_names=getattr(config, "agent_names", None)), timeout)
     await _try("workflow", workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None)), timeout)

@@ -20,6 +20,7 @@ from argparse import Namespace
 from dotenv import load_dotenv
 from lxml import etree, html as lxml_html
 from agentevolver.agent import agent_manager
+from agentevolver.benchmark import benchmark_manager
 from agentevolver.canvas import canvas_manager
 from agentevolver.canvas.types import FlowGraph
 from agentevolver.command import command_manager
@@ -160,10 +161,12 @@ class AgentGateway:
         await plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None))
         await process_manager.initialize(process_names=getattr(config, "process_names", None))
         await data_manager.initialize()
-        # NOTE: benchmark_manager is intentionally NOT eagerly initialized here —
-        # its initialize() builds every registered benchmark (downloading datasets),
-        # which is slow and noisy. The benchmark canvas node / step is a later
-        # increment that will init on demand.
+        # Init ONLY the dataset-free evaluators by default — building every
+        # benchmark would download datasets (slow/noisy). ``exact_match`` needs
+        # no data; add more via config.benchmark_names when a run wants them.
+        await benchmark_manager.initialize(
+            benchmark_names=getattr(config, "benchmark_names", None) or ["exact_match"]
+        )
         env_names = getattr(config, "env_names", None)
         if env_names:
             await environment_manager.initialize(env_names=env_names)

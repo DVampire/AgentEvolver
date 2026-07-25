@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from agentevolver.benchmark import benchmark_manager
+from agentevolver.benchmark.types import Task
 from agentevolver.data import data_manager
 from agentevolver.plugins import FMPPlugin, Plugin, plugin_manager
 from agentevolver.process import (
@@ -147,3 +149,45 @@ async def test_pipeline_saves_and_loads_dataset() -> None:
         {"date": "2024-01-01", "close": 1.0},
         {"date": "2024-01-02", "close": 2.0},
     ]
+
+
+def test_task_input_is_optional() -> None:
+    # Regression: benchmark_manager.__call__ builds a Task without `input`, so it
+    # must be optional or every evaluation silently scores 0.
+    task = Task(task_id="1", result="5", ground_truth="5")
+    assert task.input == ""
+
+
+class _PredSource(Plugin):
+    """A source of prediction/ground-truth records for the eval pipeline."""
+
+    name: str = "pred_source"
+    kind: str = "data_source"
+
+    async def __call__(self, **kwargs) -> Response:
+        return Response(type=ResponseType.TOOL, success=True, message="2 preds",
+                        data={"records": [{"p": 5, "g": 5}, {"p": 3, "g": 4}]})
+
+
+@pytest.mark.asyncio
+async def test_benchmark_pipeline_scores_predictions() -> None:
+    await plugin_manager.initialize()
+    await process_manager.initialize()
+    await benchmark_manager.initialize(benchmark_names=["exact_match"])
+    await plugin_manager.register(_PredSource(), override=True)
+
+    # datasource → to_eval_records → benchmark(exact_match): 1 of 2 correct → 0.5.
+    src = """<html><body><workflow name="t" version="1.0.0"><flow>
+      <datasource id="src" name="pred_source"/>
+      <process id="shape" name="to_eval_records">
+        <arg name="records" value="${src.data}"/>
+        <arg name="prediction_field" value="p"/>
+        <arg name="ground_truth_field" value="g"/>
+      </process>
+      <benchmark id="score" name="exact_match">
+        <arg name="results" value="${shape.data}"/>
+      </benchmark>
+    </flow></workflow></body></html>"""
+    run = await workflow_runtime.run(WorkflowCompiler().compile(src))
+    assert run.successful, run.error
+    assert run.invocations["root.2:score"].output["data"]["score"] == 0.5

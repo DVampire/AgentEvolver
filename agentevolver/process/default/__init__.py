@@ -5,6 +5,7 @@ from .records import (
     RenameFieldsProcessor,
     SelectFieldsProcessor,
     SortRecordsProcessor,
+    ToEvalRecordsProcessor,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "RenameFieldsProcessor",
     "FilterRowsProcessor",
     "DeriveReturnProcessor",
+    "ToEvalRecordsProcessor",
 ]
