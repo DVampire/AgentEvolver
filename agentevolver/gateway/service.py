@@ -764,9 +764,14 @@ class AgentGateway:
         return self._owner_sessions_dir(owner) / safe
 
     async def _command_chat_append(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Append one message to the current session's transcript + update meta."""
-        session_id = self._require_session_id(params)
-        owner = self._sessions[session_id].owner
+        """Append one message to a conversation's transcript + update meta. The
+        chat-record id is decoupled from the live WS session, so the playground
+        can keep several conversations under one connection (sidebar switching)."""
+        session_id = str(params.get("session_id") or "")
+        if not session_id:
+            raise ValueError("session_id is required")
+        live = self._sessions.get(session_id)
+        owner = live.owner if live else self._owner_for(params)
         role = str(params.get("role") or "")
         if role not in ("user", "assistant"):
             raise ValueError("role must be 'user' or 'assistant'")
