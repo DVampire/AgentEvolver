@@ -97,19 +97,17 @@ button { cursor: pointer; }
 
 /* Alert toasts (langflow alerts module) */
 .alert-stack { position: fixed; top: 16px; right: 16px; z-index: 20; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); }
-.alert-toast { display: flex; align-items: center; gap: 9px; border: 1px solid #3a3e4d; border-radius: 11px; padding: 10px 12px; color: #e6e9f1; background: rgba(24, 26, 33, .97); box-shadow: 0 10px 34px rgba(0,0,0,.4); font-size: 12.5px; animation: alert-in .18s ease; }
+.alert-toast { display: flex; align-items: center; gap: 9px; border: 1px solid hsl(var(--border)); border-radius: 11px; padding: 10px 12px; color: hsl(var(--popover-foreground)); background: hsl(var(--popover)); box-shadow: 0 10px 34px rgba(0,0,0,.4); font-size: 12.5px; animation: alert-in .18s ease; }
 .alert-toast span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .alert-toast svg { flex: 0 0 auto; }
-.alert-toast.error { border-color: #7a3b42; color: #ffd4d8; }
-.alert-toast.error svg:first-child { color: #f27d88; }
-.alert-toast.success { border-color: #34594a; }
-.alert-toast.success svg:first-child { color: #4fca7f; }
-.alert-toast.notice svg:first-child { color: #7ba2ff; }
+.alert-toast.error { border-color: hsl(var(--destructive)); }
+.alert-toast.error svg:first-child { color: hsl(var(--destructive)); }
+.alert-toast.success { border-color: hsl(var(--accent-emerald-foreground)); }
+.alert-toast.success svg:first-child { color: hsl(var(--accent-emerald-foreground)); }
+.alert-toast.notice svg:first-child { color: hsl(var(--primary)); }
 .alert-toast button { display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 6px; width: 22px; height: 22px; color: inherit; background: transparent; opacity: .7; }
-.alert-toast button:hover { opacity: 1; background: rgba(255,255,255,.08); }
+.alert-toast button:hover { opacity: 1; background: hsl(var(--accent)); }
 @keyframes alert-in { from { transform: translateY(-6px); opacity: 0; } }
-.app-shell[data-theme='light'] .alert-toast { border-color: #d9dee8; color: #2a3040; background: rgba(255,255,255,.98); box-shadow: 0 10px 30px rgba(30,40,70,.16); }
-.app-shell[data-theme='light'] .alert-toast.error { border-color: #ecb6bb; color: #8c333c; }
 
 /* Playground markdown bubbles */
 .playground-markdown p { margin: 0 0 8px; }
