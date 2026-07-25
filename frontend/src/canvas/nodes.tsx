@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import { NodeIcon } from '../icons';
-import { CONTAINER_H, CONTAINER_W, PORT_COLORS, type CanvasData, type CanvasNode, type NoteColor, type NodeSpec, type ParamSpec, type PortSpec, type PortType } from './types';
+import { PORT_COLORS, type CanvasData, type CanvasNode, type NoteColor, type NodeSpec, type ParamSpec, type PortSpec, type PortType } from './types';
 
 function runClass(data: CanvasData): string { return data.runState ? ` run-${data.runState}` : ''; }
 
@@ -326,41 +326,6 @@ function MinimizedHandles({ inputs }: { inputs?: PortSpec[] }) {
   );
 }
 
-function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
-  const spec = data.spec;
-  const { paramValue, setParam } = paramAccess(id, data);
-  const isBranch = data.stepType === 'branch';
-  return (
-    <div className={`lf-node lf-container${runClass(data)}${selected ? ' selected' : ''}`} style={{ width: CONTAINER_W, height: CONTAINER_H }}>
-      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
-      <header className="lf-node-head">
-        <NodeIcon name={spec?.icon} category="structural" className="lf-head-icon" />
-        <EditableNodeName id={id} name={data.name} fallback={spec?.label ?? data.stepType ?? 'Step'} selected={Boolean(selected)} update={data.update} />
-        <code className="lf-node-ref">{'$'}{'{'}{id}{'}'}</code>
-        <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
-      </header>
-      <div className="lf-node-body nodrag nowheel">
-        {spec?.has_items ? (
-          <FieldShell label="Items" handle={<InHandle id="items" type={inputPortType(spec, 'items')} />}>
-            {data.boundParams.has('items')
-              ? <span className="lf-bound">Connected</span>
-              : <Input className="h-8 px-2.5 text-xs" value={data.items} placeholder="${inputs.list}" onChange={(event) => data.update(id, { items: event.target.value })} />}
-          </FieldShell>
-        ) : null}
-        {(spec?.params ?? []).slice(0, 2).map((param) => (
-          <FieldShell key={param.name} label={param.label} required={param.required} hint={param.description}>
-            <ParamControl param={param} value={paramValue(param)} onChange={setParam} />
-          </FieldShell>
-        ))}
-      </div>
-      <div className={`lf-container-body${isBranch ? ' branch' : ''}`}>
-        {isBranch ? <><span className="zone-label then">then</span><span className="zone-label else">else</span><div className="zone-divider" /></> : <span className="zone-hint">Drop steps here</span>}
-      </div>
-      <OutputPorts nodeId={id} outputs={spec?.outputs} />
-    </div>
-  );
-}
-
 function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const isInput = data.kind === 'input';
   const io = data.io;
@@ -432,4 +397,4 @@ function NoteNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   );
 }
 
-export const NODE_TYPES = { stepNode: StepNodeCard, containerNode: ContainerNodeCard, ioNode: IoNodeCard, noteNode: NoteNodeCard };
+export const NODE_TYPES = { stepNode: StepNodeCard, ioNode: IoNodeCard, noteNode: NoteNodeCard };

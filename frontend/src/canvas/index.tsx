@@ -39,8 +39,6 @@ import { Palette } from './Palette';
 import { RunInputDialog, type RunInputField } from './RunInputDialog';
 import { useUndoRedo } from './useUndoRedo';
 import {
-  CONTAINER_H,
-  CONTAINER_W,
   DND_MIME,
   REF_PATTERN,
   freshId,
@@ -179,7 +177,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     }
     const node: CanvasNode = {
       id,
-      type: spec.category === 'io' ? 'ioNode' : spec.container ? 'containerNode' : 'stepNode',
+      type: spec.category === 'io' ? 'ioNode' : 'stepNode',
       position: placed ?? { x: 160 + (fallback % 4) * 80, y: 100 + (fallback % 6) * 70 },
       data,
     };
@@ -390,22 +388,17 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   }, [undo, redo, copySelection, pasteClipboard]);
 
   const toDocument = useCallback((): FlowGraphDoc => {
-    const containerOf = new Map(nodes.map((node) => [node.id, node]));
     return {
       id: flowId, name: flowName.trim() || 'Untitled flow', description: '',
       version: flowVersion, document_version: 2, published: false, program_hash: '',
       nodes: nodes.filter((node) => node.type !== 'noteNode').map((node) => {
         const data = node.data;
-        const parent = node.parentId ?? null;
-        let slot: 'body' | 'then' | 'else' = 'body';
-        if (parent) {
-          const container = containerOf.get(parent);
-          if (container?.data.stepType === 'branch') slot = node.position.y > CONTAINER_H / 2 ? 'else' : 'then';
-        }
+        // Control-flow bodies are derived from the output edges at compile time
+        // (backend _assign_bodies); nodes are never parented on the canvas.
         const doc: GraphNodeDoc = {
           id: node.id, kind: data.kind,
           position: { x: node.position.x, y: node.position.y },
-          parent, slot,
+          parent: null, slot: 'body',
         };
         if (data.kind === 'step') {
           if (data.name?.trim()) doc.name = data.name.trim();
@@ -462,11 +455,9 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       };
       restored.push({
         id: item.id,
-        // Control flow (map/branch/loop) is now regular port-wired nodes, not
-        // drop-in containers (Langflow model).
-        type: item.kind !== 'step' ? 'ioNode' : spec?.container ? 'containerNode' : 'stepNode',
+        // Control flow (map/branch/loop) is edge-wired, never a container.
+        type: item.kind !== 'step' ? 'ioNode' : 'stepNode',
         position: item.position,
-        parentId: item.parent ?? undefined,
         data,
       });
     }
@@ -576,32 +567,9 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     return derived.filter((edge) => !persisted.has(`${edge.source}->${edge.target}`));
   }, [nodes, edges]);
 
-  // ----- container parenting on drag stop -----------------------------------
-
-  const onNodeDragStop = useCallback((_event: unknown, dragged: Node) => {
-    setDirty(true);
-    setNodes((current) => {
-      const node = current.find((item) => item.id === dragged.id);
-      if (!node || node.type === 'containerNode') return current;
-      const parent = node.parentId ? current.find((item) => item.id === node.parentId) : undefined;
-      const absolute = parent
-        ? { x: parent.position.x + node.position.x, y: parent.position.y + node.position.y }
-        : node.position;
-      const center = { x: absolute.x + 130, y: absolute.y + 40 };
-      const host = current.find((item) => item.type === 'containerNode'
-        && center.x > item.position.x && center.x < item.position.x + CONTAINER_W
-        && center.y > item.position.y && center.y < item.position.y + CONTAINER_H);
-      let next = current;
-      if (host && node.parentId !== host.id) {
-        next = current.map((item) => item.id === node.id
-          ? { ...item, parentId: host.id, position: { x: absolute.x - host.position.x, y: absolute.y - host.position.y } }
-          : item);
-      } else if (!host && node.parentId) {
-        next = current.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item);
-      }
-      return [...next].sort((left, right) => Number(Boolean(left.parentId)) - Number(Boolean(right.parentId)));
-    });
-  }, [setNodes]);
+  // Control flow is edge-wired (Langflow model), so there is no container
+  // parenting — a drag just marks the flow dirty.
+  const onNodeDragStop = useCallback(() => { setDirty(true); }, []);
 
   // ----- persistence ---------------------------------------------------------
 
@@ -817,7 +785,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             onConnect={onConnect}
             onNodeDragStart={() => takeSnapshot()}
             onNodeDrag={(_event, node) => setHelperLines(getHelperLines(node, nodes))}
-            onNodeDragStop={(event, node) => { setHelperLines({}); onNodeDragStop(event, node); }}
+            onNodeDragStop={() => { setHelperLines({}); onNodeDragStop(); }}
             connectionLineComponent={ConnectionLine}
             onNodeClick={(_event, node) => { if (node.type !== 'noteNode' && node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
             onNodeContextMenu={(event, node) => {
