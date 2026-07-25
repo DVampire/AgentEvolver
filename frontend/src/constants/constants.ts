@@ -1,7 +1,7 @@
 // UI constants (langflow keeps these in src/constants/constants.ts).
 
-export const CONTAINER_W = 460;
-export const CONTAINER_H = 320;
+export const CONTAINER_W = 340;
+export const CONTAINER_H = 210;
 
 export const CATEGORY_LABELS: Record<string, string> = {
   io: 'Input & Output',
