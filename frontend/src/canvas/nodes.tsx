@@ -1,9 +1,13 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { Copy, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Maximize2, Minimize2, MoreHorizontal, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenuShortcut, DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
@@ -50,16 +54,31 @@ function OutputPorts({ outputs, ioType }: { outputs?: PortSpec[]; ioType?: PortT
  * components have no app handlers, so actions travel as a DOM CustomEvent
  * that the canvas root listens for. */
 export const NODE_ACTION_EVENT = 'canvas-node-action';
-function emitNodeAction(nodeId: string, action: 'duplicate' | 'delete') {
+export type NodeAction = 'duplicate' | 'copy' | 'docs' | 'minimize' | 'download' | 'delete';
+function emitNodeAction(nodeId: string, action: NodeAction) {
   window.dispatchEvent(new CustomEvent(NODE_ACTION_EVENT, { detail: { nodeId, action } }));
 }
 
-function CardToolbar({ id, visible }: { id: string; visible: boolean }) {
+/** Selected-node action bar: quick Duplicate/Delete plus a ⋯ menu (Langflow's
+ * nodeToolbarComponent). ``minimized`` flips the Minimize item to Expand. */
+function CardToolbar({ id, visible, minimized }: { id: string; visible: boolean; minimized?: boolean }) {
   return (
     <NodeToolbar isVisible={visible} position={Position.Top} offset={8}>
       <div className="lf-node-toolbar">
         <ShadTooltip content="Duplicate (Ctrl+D)"><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'duplicate')}><Copy /></Button></ShadTooltip>
-        <ShadTooltip content="Delete (Del)"><Button variant="ghost" size="node-toolbar" className="hover:text-destructive" onClick={() => emitNodeAction(id, 'delete')}><Trash2 /></Button></ShadTooltip>
+        <ShadTooltip content={minimized ? 'Expand' : 'Minimize'}><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'minimize')}>{minimized ? <Maximize2 /> : <Minimize2 />}</Button></ShadTooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="ghost" size="node-toolbar"><MoreHorizontal /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44 nodrag nowheel">
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'duplicate')}><Copy className="mr-2 h-4 w-4" />Duplicate<DropdownMenuShortcut>⌘D</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'copy')}><ClipboardCopy className="mr-2 h-4 w-4" />Copy<DropdownMenuShortcut>⌘C</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'docs')}><FileText className="mr-2 h-4 w-4" />Docs</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'minimize')}>{minimized ? <Maximize2 className="mr-2 h-4 w-4" /> : <Minimize2 className="mr-2 h-4 w-4" />}{minimized ? 'Expand' : 'Minimize'}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'download')}><Download className="mr-2 h-4 w-4" />Download<DropdownMenuShortcut>⌘J</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => emitNodeAction(id, 'delete')}><Trash2 className="mr-2 h-4 w-4" />Delete<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </NodeToolbar>
   );
@@ -114,8 +133,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = data.spec;
   const { paramValue, setParam } = paramAccess(id, data);
   return (
-    <div className={`lf-node${runClass(data)}${selected ? ' selected' : ''}`}>
-      <CardToolbar id={id} visible={Boolean(selected)} />
+    <div className={`lf-node${runClass(data)}${selected ? ' selected' : ''}${data.minimized ? ' lf-minimized' : ''}`}>
+      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} />
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType ?? 'Step'}</strong>
@@ -123,8 +142,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
         {data.runCount && data.runCount > 1 ? <em className="lf-run-count">×{data.runCount}</em> : null}
         <code className="lf-node-ref" title="Reference this step in task text">{'$'}{'{'}{id}{'}'}</code>
       </header>
-      {spec?.description ? <p className="lf-node-desc">{spec.description}</p> : null}
-      <div className="lf-node-body nodrag nowheel">
+      {!data.minimized && spec?.description ? <p className="lf-node-desc">{spec.description}</p> : null}
+      {!data.minimized ? <div className="lf-node-body nodrag nowheel">
         {spec?.has_items || data.items ? (
           <FieldShell label="Items" hint="A list to iterate: connect a step or type ${...}"
             handle={<InHandle id="items" type={inputPortType(spec, 'items')} />}>
@@ -156,7 +175,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
             onChange={(kind, next) => data.update(id, (current) => ({ mounts: { ...current.mounts, [kind]: next } }))}
           />
         ) : null}
-      </div>
+      </div> : null}
       <OutputPorts outputs={spec?.outputs} />
       {data.runState === 'failed' ? <p className="lf-node-error">Failed — open the panel for details</p> : null}
     </div>
@@ -169,7 +188,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const isBranch = data.stepType === 'branch';
   return (
     <div className={`lf-node lf-container${runClass(data)}${selected ? ' selected' : ''}`} style={{ width: CONTAINER_W, height: CONTAINER_H }}>
-      <CardToolbar id={id} visible={Boolean(selected)} />
+      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} />
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category="structural" className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType}</strong>
@@ -205,7 +224,7 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const set = (patch: Partial<CanvasData['io']>) => data.update(id, (current) => ({ io: { ...current.io, ...patch } }));
   return (
     <div className={`lf-node lf-io${selected ? ' selected' : ''}`}>
-      <CardToolbar id={id} visible={Boolean(selected)} />
+      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} />
       <header className="lf-node-head">
         <NodeIcon name={isInput ? 'LogIn' : 'LogOut'} category="io" className="lf-head-icon" />
         <strong>{isInput ? 'Flow Input' : 'Flow Output'}</strong>

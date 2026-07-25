@@ -121,6 +121,7 @@ export interface CanvasData extends Record<string, unknown> {
   mounts: Record<string, string[]>;
   runState?: FrameState;
   runCount?: number;
+  minimized?: boolean;
   boundParams: Set<string>;
   update: (nodeId: string, patch: Partial<CanvasData> | ((data: CanvasData) => Partial<CanvasData>)) => void;
 }

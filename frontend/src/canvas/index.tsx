@@ -231,16 +231,51 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     setInspected((current) => (current === nodeId ? undefined : current));
   }, [setEdges, setNodes, takeSnapshot]);
 
+  const copyNode = useCallback((nodeId: string) => {
+    const node = graphRef.current.nodes.find((item) => item.id === nodeId);
+    if (node) clipboardRef.current = { nodes: [node], edges: [] };
+  }, []);
+
+  const minimizeNode = useCallback((nodeId: string) => {
+    setDirty(true);
+    setNodes((current) => current.map((node) =>
+      node.id === nodeId ? { ...node, data: { ...node.data, minimized: !node.data.minimized } } : node));
+  }, [setNodes]);
+
+  const downloadNode = useCallback((nodeId: string) => {
+    const node = graphRef.current.nodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    const d = node.data;
+    const payload = {
+      id: node.id, type: node.type, position: node.position,
+      data: { kind: d.kind, stepType: d.stepType, target: d.target, task: d.task,
+        args: d.args, items: d.items, attrs: d.attrs, mounts: d.mounts, io: d.io },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${nodeId}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, []);
+
   useEffect(() => {
     const onAction = (event: Event) => {
       const detail = (event as CustomEvent<{ nodeId: string; action: string }>).detail;
       if (!detail) return;
       if (detail.action === 'duplicate') duplicateNode(detail.nodeId);
-      if (detail.action === 'delete') deleteNode(detail.nodeId);
+      else if (detail.action === 'delete') deleteNode(detail.nodeId);
+      else if (detail.action === 'copy') copyNode(detail.nodeId);
+      else if (detail.action === 'docs') setInspected(detail.nodeId);
+      else if (detail.action === 'minimize') minimizeNode(detail.nodeId);
+      else if (detail.action === 'download') downloadNode(detail.nodeId);
     };
     window.addEventListener(NODE_ACTION_EVENT, onAction);
     return () => window.removeEventListener(NODE_ACTION_EVENT, onAction);
-  }, [duplicateNode, deleteNode]);
+  }, [duplicateNode, deleteNode, copyNode, minimizeNode, downloadNode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
