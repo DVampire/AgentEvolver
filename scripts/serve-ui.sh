@@ -26,10 +26,26 @@ UI_PORT="${UI_PORT:-$(python -c 'from agentevolver.port import UI; print(UI)')}"
 python -c "from agentevolver.port import port_manager; port_manager.register('ui', ${UI_PORT}, kind='host', override=True)" || true
 
 GW_PID=""
+CHOWN_PID=""
 cleanup() {
   [[ -n "${GW_PID}" ]] && kill "${GW_PID}" 2>/dev/null || true
+  [[ -n "${CHOWN_PID}" ]] && kill "${CHOWN_PID}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
+
+# The container runs as root (needed for pip-install into conda + the Docker
+# socket to spawn peer containers — see entrypoint). The entrypoint only chowns
+# output/ back to the host owner on EXIT, but the UI server is long-lived, so
+# without this loop the host user could never delete output/ while it runs.
+# Periodically hand root-created output files back to the host project owner.
+HOST_OWNER="$(stat -c '%u:%g' "${REPO_ROOT}" 2>/dev/null || echo '')"
+if [[ -n "${HOST_OWNER}" && "${HOST_OWNER}" != "0:0" ]]; then
+  ( while true; do
+      sleep 20
+      find "${REPO_ROOT}/output" -uid 0 -exec chown "${HOST_OWNER}" {} + 2>/dev/null || true
+    done ) &
+  CHOWN_PID=$!
+fi
 
 echo "AgentEvolver — serve UI in sandbox (Model X)"
 echo "  backend  : ws://127.0.0.1:${GATEWAY_PORT}/ws"
