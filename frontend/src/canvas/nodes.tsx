@@ -111,13 +111,24 @@ function NodeRunStatus({ id, state, count }: { id: string; state?: CanvasData['r
 /** Selected-node action bar: quick Duplicate/Delete plus a ⋯ menu (Langflow's
  * nodeToolbarComponent). ``minimized`` flips the Minimize item to Expand. */
 function CardToolbar({ id, visible, minimized, frozen }: { id: string; visible: boolean; minimized?: boolean; frozen?: boolean }) {
+  // The ⋯ menu is controlled so a right-click on the node (canvas-node-menu
+  // event, dispatched by onNodeContextMenu) can open it — Langflow's
+  // openDropdownOnRightClick.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    const onMenu = (event: Event) => {
+      if ((event as CustomEvent<{ nodeId: string }>).detail?.nodeId === id) setMenuOpen(true);
+    };
+    window.addEventListener('canvas-node-menu', onMenu);
+    return () => window.removeEventListener('canvas-node-menu', onMenu);
+  }, [id]);
   return (
     <NodeToolbar isVisible={visible} position={Position.Top} offset={8}>
       <div className="lf-node-toolbar">
         <ShadTooltip content={frozen ? 'Unfreeze (recompute)' : 'Freeze (reuse last output)'}><Button variant="ghost" size="node-toolbar" className={frozen ? 'text-[#3ba0ff]' : ''} onClick={() => emitNodeAction(id, 'freeze')}><Snowflake /></Button></ShadTooltip>
         <ShadTooltip content="Duplicate (Ctrl+D)"><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'duplicate')}><Copy /></Button></ShadTooltip>
         <ShadTooltip content={minimized ? 'Expand' : 'Minimize'}><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'minimize')}>{minimized ? <Maximize2 /> : <Minimize2 />}</Button></ShadTooltip>
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="node-toolbar"><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44 nodrag nowheel">
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'save')}><Save className="mr-2 h-4 w-4" />Save flow<DropdownMenuShortcut>⌘S</DropdownMenuShortcut></DropdownMenuItem>

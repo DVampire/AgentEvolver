@@ -690,7 +690,15 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             onNodeDragStop={onNodeDragStop}
             connectionLineComponent={ConnectionLine}
             onNodeClick={(_event, node) => { if (node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
+            onNodeContextMenu={(event, node) => {
+              // Langflow onNodeContextMenu: select only this node, then open its
+              // toolbar dropdown (the CardToolbar ⋯ menu) at the cursor.
+              event.preventDefault();
+              setNodes((current) => current.map((entry) => ({ ...entry, selected: entry.id === node.id })));
+              window.dispatchEvent(new CustomEvent('canvas-node-menu', { detail: { nodeId: node.id } }));
+            }}
             onPaneClick={() => setInspected(undefined)}
+            onBeforeDelete={async () => { takeSnapshot(); return true; }}
             colorMode={theme}
             fitView
             fitViewOptions={{ minZoom: 0.25, maxZoom: 2 }}
@@ -702,7 +710,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             deleteKeyCode={['Backspace', 'Delete']}
             proOptions={{ hideAttribution: true }}
           >
-            <Background gap={22} size={1.4} variant={BackgroundVariant.Dots} />
+            <Background id="main-canvas-bg" gap={20} size={2} variant={BackgroundVariant.Dots} />
             <MiniMap pannable zoomable />
             <CanvasControls />
           </ReactFlow>
