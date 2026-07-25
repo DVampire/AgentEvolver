@@ -46,7 +46,9 @@
 .canvas-flow-wrap .react-flow__background { color: hsl(var(--canvas-dot)); }
 
 /* --- node cards (Langflow genericNode: white card, subtle border+shadow) --- */
-.lf-node { width: 300px; border: 1px solid hsl(var(--border)); border-radius: 12px; color: hsl(var(--foreground)); background: hsl(var(--card)); box-shadow: 0 1px 2px hsl(var(--border) / 0.5); font-size: 12.5px; }
+/* Langflow genericNode: rounded-xl border shadow-sm hover:shadow-md, white card. */
+.lf-node { width: 300px; border: 1px solid hsl(var(--border)); border-radius: 12px; color: hsl(var(--foreground)); background: hsl(var(--card)); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); font-size: 13px; transition: box-shadow .15s ease; }
+.lf-node:hover { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
 .lf-node.selected { border-color: hsl(var(--node-selected)); box-shadow: 0 0 0 2px hsl(var(--node-selected) / 0.35); }
 /* Collapsed node: header only, but tall enough to stack its input handles down
    the left edge so connected edges stay anchored. */
@@ -59,17 +61,19 @@
 .lf-node.run-succeeded { border-color: hsl(142 71% 45%); }
 .lf-node.run-failed { border-color: hsl(0 72% 51%); }
 .lf-node.run-skipped { opacity: .55; }
-.lf-node-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; }
-.lf-node-head strong { min-width: 0; overflow: hidden; color: hsl(var(--foreground)); font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+/* Langflow header: icon + ml-3 + title(text-base font-medium text-primary), px-4 py-3. */
+.lf-node-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.lf-node-head strong { min-width: 0; overflow: hidden; color: hsl(var(--primary)); font-size: 16px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .lf-node-ref { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 9.5px; background: hsl(var(--muted)); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
 .lf-pulse { width: 8px; height: 8px; border-radius: 50%; background: hsl(217 91% 60%); animation: pulse 1.2s ease infinite; }
 .lf-run-count { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }
-.lf-node-desc { display: -webkit-box; overflow: hidden; margin: 0; padding: 0 14px 8px; color: hsl(var(--muted-foreground)); font-size: 11.5px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.lf-node-desc { display: -webkit-box; overflow: hidden; margin: 0; padding: 2px 16px 12px; color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Body rows are flush to the node border (no horizontal padding on the body);
    each field pads itself, so a handle at the field's left:0 lands on the border. */
 .lf-node-body { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid hsl(var(--border)); }
-.lf-field { position: relative; display: grid; gap: 5px; padding: 6px 14px; }
-.lf-field-label { color: hsl(var(--muted-foreground)); font-size: 11.5px; font-weight: 600; }
+/* Langflow NodeInputField: min-h-10 px-5 py-2, label text-sm font-medium, input below. */
+.lf-field { position: relative; display: grid; gap: 8px; min-height: 40px; padding: 8px 20px; align-content: center; }
+.lf-field-label { color: hsl(var(--foreground)); font-size: 14px; font-weight: 500; }
 .lf-field-label em { color: hsl(0 72% 51%); font-style: normal; }
 .lf-bound { display: inline-block; border: 1px dashed hsl(var(--border)); border-radius: 8px; padding: 6px 10px; color: hsl(var(--muted-foreground)); font-size: 11.5px; }
 .lf-node-foot { display: flex; flex-direction: column; border-top: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 600; }

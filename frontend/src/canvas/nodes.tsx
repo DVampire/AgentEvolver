@@ -139,7 +139,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
     <div className={`lf-node${runClass(data)}${selected ? ' selected' : ''}${data.minimized ? ' lf-minimized' : ''}${data.frozen ? ' lf-frozen' : ''}`}>
       <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
-        <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} className="lf-head-icon" />
+        <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} size={18} className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType ?? 'Step'}</strong>
         {data.frozen ? <Snowflake size={12} className="lf-frozen-badge" /> : null}
         {data.runState === 'running' ? <span className="lf-pulse" /> : null}
