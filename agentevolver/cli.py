@@ -3,12 +3,12 @@
 The ``agentevolver`` command owns all user-facing modes: a one-shot control command,
 the interactive terminal loop (``tui``), and the Gateway service (``serve``).
 
-Gateway code deliberately exposes no separate console entry point: it is a runtime
-transport selected by this module, not a competing application CLI.
-
-Bootstrap is resilient: ``/help`` needs no managers at all, and every capability manager
-is initialized under a timeout so a slow/unavailable subsystem (e.g. a browser
-environment or an MCP connector) degrades to "skipped" instead of hanging the CLI.
+The Gateway is the single backend: it owns every capability manager's lifecycle.
+The one-shot command and the terminal loop (``tui``) do NOT bootstrap managers
+themselves — they drive an in-process Gateway (``session.create`` +
+``command.execute``), so there is exactly one place that initializes
+capabilities and one command-dispatch path. ``serve`` runs the same Gateway over
+a stdio/websocket transport for remote clients (web UI, terminal client).
 
 Examples:
     agentevolver /help
@@ -22,131 +22,76 @@ import argparse
 import os
 import ipaddress
 import sys
-import uuid
-from argparse import Namespace
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Sequence
 
 from agentevolver.port import GATEWAY as GATEWAY_PORT
 
-async def _try(name: str, coro, timeout: float):
-    """Run a manager init under a timeout; on failure, warn and continue (never hang)."""
+
+@asynccontextmanager
+async def _gateway_session(config_path: str):
+    """Drive the Gateway in-process.
+
+    The Gateway is the single backend that owns every manager's lifecycle, so
+    control commands and the terminal loop go THROUGH it instead of a second,
+    parallel bootstrap — one place initializes capabilities, one command
+    dispatch. Yields ``(gateway, session_id)`` and stops the Gateway on exit.
+    """
+    from agentevolver.gateway.protocol import GatewayCommand
+    from agentevolver.gateway.service import AgentGateway
+    from agentevolver.utils import make_id
+
+    gateway = AgentGateway(workspace_source=Path.cwd())
+    await gateway.start(config_path, stdio=True)
     try:
-        await asyncio.wait_for(coro, timeout=timeout)
-    except asyncio.TimeoutError:
-        print(f"[bootstrap] {name} init timed out after {timeout:.0f}s — skipped", file=sys.stderr)
-    except Exception as e:  # noqa: BLE001
-        print(f"[bootstrap] {name} init failed ({e}) — skipped", file=sys.stderr)
+        created = await gateway.handle(GatewayCommand(id=make_id(), method="session.create"))
+        if not created.ok:
+            raise RuntimeError(created.error.message if created.error else "session.create failed")
+        yield gateway, created.result["session_id"]
+    finally:
+        await gateway.stop()
 
 
-def _apply_session_roots(config, sandbox) -> None:
-    """Make all manager state for this CLI run live inside its session project."""
-    from agentevolver.session.project import bind_session_roots
-    bind_session_roots(config, sandbox)
+async def _dispatch(gateway, session_id: str, raw: str) -> tuple[bool, str]:
+    """Run one slash command through the Gateway's ``command.execute``."""
+    from agentevolver.gateway.protocol import GatewayCommand
+    from agentevolver.utils import make_id
 
-
-async def _bootstrap(config_path: str, timeout: float = 60.0):
-    """Initialize the managers a control command may touch, each bounded by a timeout."""
-    from agentevolver.agent import agent_manager
-    from agentevolver.command import command_manager
-    from agentevolver.config import config
-    from agentevolver.connector import connector_manager
-    from agentevolver.environment import environment_manager
-    from agentevolver.logger import logger
-    from agentevolver.benchmark import benchmark_manager
-    from agentevolver.data import data_manager
-    from agentevolver.knowledge import knowledge_manager
-    from agentevolver.plugins import plugin_manager
-    from agentevolver.process import process_manager
-    from agentevolver.prompt import prompt_manager
-    from agentevolver.skill import skill_manager
-    from agentevolver.tool import tool_manager
-    from agentevolver.workflow import workflow_manager
-    from agentevolver.version import version_manager
-    from agentevolver.sandbox.project import ProjectSandbox
-
-    config.initialize(config_path=config_path, args=Namespace(cfg_options=None), verbose=False)
-    from agentevolver.extension import extension_manager
-    extension_manager.set_base_dir(config.extension_root)
-    session_id = uuid.uuid4().hex
-    sandbox = ProjectSandbox.create(
-        Path(config.project_root) / session_id,
-        shared_extension_root=Path(config.extension_root),
-    )
-    _apply_session_roots(config, sandbox)
-    logger.initialize(config=config)
-    await _try("version", version_manager.initialize(), timeout)
-    await _try("prompt", prompt_manager.initialize(prompt_names=getattr(config, "prompt_names", None)), timeout)
-    await _try("tool", tool_manager.initialize(tool_names=getattr(config, "tool_names", None)), timeout)
-    await _try("skill", skill_manager.initialize(skill_names=getattr(config, "skill_names", None)), timeout)
-    await _try("connector", connector_manager.initialize(connector_names=getattr(config, "connector_names", None)), timeout)
-    await _try("plugin", plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None)), timeout)
-    await _try("process", process_manager.initialize(process_names=getattr(config, "process_names", None)), timeout)
-    await _try("data", data_manager.initialize(), timeout)
-    await _try("knowledge", knowledge_manager.initialize(), timeout)
-    await _try("benchmark", benchmark_manager.initialize(
-        benchmark_names=getattr(config, "benchmark_names", None) or ["exact_match"]), timeout)
-    await _try("environment", environment_manager.initialize(env_names=getattr(config, "environment_names", None)), timeout)
-    await _try("agent", agent_manager.initialize(agent_names=getattr(config, "agent_names", None)), timeout)
-    await _try("workflow", workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None)), timeout)
-    await command_manager.initialize()
-    return sandbox
-
-
-def _command_context(raw: str, sandbox):
-    from agentevolver.command.types import CommandContext
-
-    name = raw.strip().lstrip("/").split()[:1]
-    return CommandContext(
-        id=uuid.uuid4().hex,
-        name=name[0] if name else "",
-        raw=raw,
-        workspace_root=str(sandbox.workspace_root),
-        extra=sandbox.describe(),
-    )
+    resp = await gateway.handle(GatewayCommand(
+        id=make_id(), method="command.execute",
+        params={"session_id": session_id, "raw": raw},
+    ))
+    if not resp.ok:
+        return False, resp.error.message if resp.error else "command failed"
+    return bool(resp.result.get("success")), str(resp.result.get("message", ""))
 
 
 async def _run(raw: str, config_path: str) -> int:
-    from agentevolver.command import command_manager
-
-    head = raw.strip().lstrip("/").split()[:1]
-    context = None
-    if head and head[0] in ("help", "?"):
-        # /help lists the command registry — no capability bootstrap needed.
-        await command_manager.initialize()
-    else:
-        sandbox = await _bootstrap(config_path)
-        context = _command_context(raw, sandbox)
-    resp = await command_manager.dispatch(raw, ctx=context)
-    print(("✅ " if resp.success else "❌ ") + raw)
-    print(resp.message)
-    return 0 if resp.success else 1
+    """Run a single control command through the Gateway."""
+    async with _gateway_session(config_path) as (gateway, session_id):
+        ok, message = await _dispatch(gateway, session_id, raw)
+    print(("✅ " if ok else "❌ ") + raw)
+    print(message)
+    return 0 if ok else 1
 
 
 async def _run_tui(config_path: str) -> int:
-    """Run a small terminal command loop over the command registry."""
-    from agentevolver.command import command_manager
-
+    """Run the interactive terminal loop over the Gateway."""
     print("AgentEvolver terminal mode. Type /help for commands; /exit to quit.")
-    sandbox = None
-    await command_manager.initialize()
-    while True:
-        try:
-            raw = input("agentevolver> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return 0
-        if not raw:
-            continue
-        if raw.lstrip("/").lower() in {"exit", "quit"}:
-            return 0
-        head = raw.lstrip("/").split()[:1]
-        if not (head and head[0] in ("help", "?")) and sandbox is None:
-            sandbox = await _bootstrap(config_path)
-        context = _command_context(raw, sandbox) if sandbox is not None else None
-        resp = await command_manager.dispatch(raw, ctx=context)
-        print(("✅ " if resp.success else "❌ ") + resp.message)
+    async with _gateway_session(config_path) as (gateway, session_id):
+        while True:
+            try:
+                raw = input("agentevolver> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            if not raw:
+                continue
+            if raw.lstrip("/").lower() in {"exit", "quit"}:
+                return 0
+            ok, message = await _dispatch(gateway, session_id, raw)
+            print(("✅ " if ok else "❌ ") + message)
 
 
 def _control_main(argv: Optional[Sequence[str]] = None) -> int:
