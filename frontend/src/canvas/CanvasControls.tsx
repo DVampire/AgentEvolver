@@ -27,16 +27,20 @@ function ControlButton({ icon: Icon, label, onClick, disabled }: { icon: LucideI
   );
 }
 
+const ZOOM = { duration: 250 } as const;
+
 export function CanvasControls() {
   const { zoomIn, zoomOut, fitView, zoomTo } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
+  // Animated zoom, anchored on the viewport center — matches Langflow's smooth
+  // feel (bare zoomIn/zoomOut jump instantly, which reads as "not following").
   return (
     <Panel
       position="bottom-center"
       data-testid="main_canvas_controls"
       className="react-flow__controls !m-4 flex !flex-row items-center gap-1 !overflow-visible rounded-lg border border-border bg-background p-1 text-primary shadow-md [&>button]:border-0"
     >
-      <ControlButton icon={Minus} label="Zoom out" onClick={() => zoomOut()} />
+      <ControlButton icon={Minus} label="Zoom out" onClick={() => zoomOut(ZOOM)} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -51,14 +55,14 @@ export function CanvasControls() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="center" className="w-44">
-          <DropdownMenuItem onClick={() => zoomIn()}>Zoom in<DropdownMenuShortcut>+</DropdownMenuShortcut></DropdownMenuItem>
-          <DropdownMenuItem onClick={() => zoomOut()}>Zoom out<DropdownMenuShortcut>-</DropdownMenuShortcut></DropdownMenuItem>
-          <DropdownMenuItem onClick={() => zoomTo(1)}>Zoom to 100%<DropdownMenuShortcut>0</DropdownMenuShortcut></DropdownMenuItem>
-          <DropdownMenuItem onClick={() => fitView()}>Fit view<DropdownMenuShortcut>1</DropdownMenuShortcut></DropdownMenuItem>
+          <DropdownMenuItem onClick={() => zoomIn(ZOOM)}>Zoom in<DropdownMenuShortcut>+</DropdownMenuShortcut></DropdownMenuItem>
+          <DropdownMenuItem onClick={() => zoomOut(ZOOM)}>Zoom out<DropdownMenuShortcut>-</DropdownMenuShortcut></DropdownMenuItem>
+          <DropdownMenuItem onClick={() => zoomTo(1, ZOOM)}>Zoom to 100%<DropdownMenuShortcut>0</DropdownMenuShortcut></DropdownMenuItem>
+          <DropdownMenuItem onClick={() => fitView(ZOOM)}>Fit view<DropdownMenuShortcut>1</DropdownMenuShortcut></DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ControlButton icon={Plus} label="Zoom in" onClick={() => zoomIn()} />
-      <ControlButton icon={Maximize} label="Fit view" onClick={() => fitView()} />
+      <ControlButton icon={Plus} label="Zoom in" onClick={() => zoomIn(ZOOM)} />
+      <ControlButton icon={Maximize} label="Fit view" onClick={() => fitView(ZOOM)} />
       <div className="mx-0.5 h-5 w-px bg-border" />
       <ControlButton icon={StickyNote} label="Add sticky note" onClick={() => window.dispatchEvent(new Event('canvas-add-note'))} />
     </Panel>
