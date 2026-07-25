@@ -14,4 +14,10 @@ __all__ = [
     "FilterRowsProcessor",
     "DeriveReturnProcessor",
     "ToEvalRecordsProcessor",
+    "SplitTextProcessor",
+    "RegexExtractProcessor",
+    "ParseJsonProcessor",
+    "TypeConvertProcessor",
+    "CombineTextProcessor",
+    "ExtractFieldProcessor",
 ]

@@ -113,6 +113,8 @@ _ICON_BY_TARGET = {
     "select_fields": "Columns3", "head": "Rows3", "sort_records": "ArrowUpDown",
     "rename_fields": "PenLine", "filter_rows": "Filter", "derive_return": "Percent",
     "to_eval_records": "Shuffle",
+    "split_text": "Scissors", "regex_extract": "Regex", "parse_json": "Braces",
+    "type_convert": "Repeat2", "combine_text": "Merge", "extract_field": "KeyRound",
     # evaluation
     "exact_match": "Target",
     # file tools

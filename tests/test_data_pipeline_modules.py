@@ -18,7 +18,10 @@ from agentevolver.plugins import FMPPlugin, Plugin, plugin_manager
 from agentevolver.process import (
     DeriveReturnProcessor,
     FilterRowsProcessor,
+    ParseJsonProcessor,
     SelectFieldsProcessor,
+    SplitTextProcessor,
+    TypeConvertProcessor,
     process_manager,
 )
 from agentevolver.response.types import Response, ResponseType
@@ -72,6 +75,14 @@ async def test_derive_return_and_filter_rows() -> None:
     # numeric string comparison value is coerced, so this filters numerically
     kept = await FilterRowsProcessor()(records=rows, field="close", op="gt", value="10")
     assert [r["close"] for r in kept.data["records"]] == [11.0]
+
+
+@pytest.mark.asyncio
+async def test_generic_text_processors() -> None:
+    assert (await SplitTextProcessor()(text="a\nb\nc")).data["chunks"] == ["a", "b", "c"]
+    assert (await ParseJsonProcessor()(text='[{"x": 1}]')).data["value"] == [{"x": 1}]
+    # string "3.5" coerces through float → int
+    assert (await TypeConvertProcessor()(value="3.5", to="int")).data["value"] == 3
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,14 @@ from .records import (
     SortRecordsProcessor,
     ToEvalRecordsProcessor,
 )
+from .text import (
+    CombineTextProcessor,
+    ExtractFieldProcessor,
+    ParseJsonProcessor,
+    RegexExtractProcessor,
+    SplitTextProcessor,
+    TypeConvertProcessor,
+)
 
 __all__ = [
     "SelectFieldsProcessor",
@@ -16,4 +24,10 @@ __all__ = [
     "FilterRowsProcessor",
     "DeriveReturnProcessor",
     "ToEvalRecordsProcessor",
+    "SplitTextProcessor",
+    "RegexExtractProcessor",
+    "ParseJsonProcessor",
+    "TypeConvertProcessor",
+    "CombineTextProcessor",
+    "ExtractFieldProcessor",
 ]

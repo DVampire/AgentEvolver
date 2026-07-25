@@ -5,6 +5,7 @@ import {
   Bot,
   Box,
   Boxes,
+  Braces,
   Cable,
   CandlestickChart,
   Code,
@@ -21,14 +22,19 @@ import {
   FolderTree,
   GitBranch,
   Globe,
+  KeyRound,
   LogIn,
   LogOut,
+  Merge,
   Network,
   PenLine,
   Percent,
+  Regex,
   Repeat,
+  Repeat2,
   RotateCw,
   Rows3,
+  Scissors,
   Search,
   ShieldCheck,
   Shuffle,
@@ -43,11 +49,11 @@ import {
 // Curated lucide registry the backend catalog draws NodeSpec.icon names from
 // (Langflow's ForwardedIconComponent pattern — every node has its own glyph).
 export const LUCIDE_ICONS: Record<string, LucideIcon> = {
-  Activity, ArrowUpDown, BookOpen, Bot, Box, Boxes, Cable, CandlestickChart, Code,
+  Activity, ArrowUpDown, BookOpen, Bot, Box, Boxes, Braces, Cable, CandlestickChart, Code,
   Columns3, Combine, Database, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
-  FolderInput, FolderTree, GitBranch, Globe, LogIn, LogOut, Network, PenLine, Percent,
-  Repeat, RotateCw, Rows3, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles,
-  Split, Target, Wrench,
+  FolderInput, FolderTree, GitBranch, Globe, KeyRound, LogIn, LogOut, Merge, Network, PenLine,
+  Percent, Regex, Repeat, Repeat2, RotateCw, Rows3, Scissors, Search, ShieldCheck, Shuffle,
+  SlidersHorizontal, Sparkles, Split, Target, Wrench,
 };
 
 // Category → lucide icon name, used for the palette section headers.
