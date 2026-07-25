@@ -20,7 +20,7 @@ DOCUMENT_VERSION = 2
 # Step ids must satisfy the workflow compiler's id rule.
 NODE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 
-CALLABLE_STEPS = {"tool", "agent", "skill", "workflow", "datasource", "process", "benchmark"}
+CALLABLE_STEPS = {"tool", "agent", "skill", "workflow", "datasource", "process", "data", "benchmark"}
 STRUCTURAL_STEPS = {"map", "branch", "loop", "reduce", "verify", "checkpoint"}
 STEP_TYPES = CALLABLE_STEPS | STRUCTURAL_STEPS
 

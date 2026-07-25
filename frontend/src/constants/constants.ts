@@ -7,7 +7,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   io: 'Input & Output',
   structural: 'Flow Control',
   agent: 'Agents',
-  data: 'Data Sources',
+  data: 'Data',
   process: 'Processing',
   evaluation: 'Evaluation',
   files: 'Files',

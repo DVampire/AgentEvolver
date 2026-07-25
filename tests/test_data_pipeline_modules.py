@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from agentevolver.data import data_manager
 from agentevolver.plugins import Plugin, plugin_manager
 from agentevolver.process import SelectFieldsProcessor, process_manager
 from agentevolver.response.types import Response, ResponseType
@@ -88,6 +89,37 @@ async def test_runtime_runs_datasource_to_process() -> None:
     # The datasource's records crossed the ${src.data.records} edge and were
     # projected to exactly the selected fields.
     assert clean["data"]["records"] == [
+        {"date": "2024-01-01", "close": 1.0},
+        {"date": "2024-01-02", "close": 2.0},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_saves_and_loads_dataset() -> None:
+    await plugin_manager.initialize()
+    await process_manager.initialize()
+    await data_manager.initialize()
+    await plugin_manager.register(_StubSource(), override=True)
+
+    # datasource → process → data(save_dataset), each edge over the ${node.data} port.
+    src = """<html><body><workflow name="t" version="1.0.0"><flow>
+      <datasource id="src" name="stub_source"/>
+      <process id="clean" name="select_fields">
+        <arg name="records" value="${src.data}"/>
+        <arg name="fields" value='["date","close"]'/>
+      </process>
+      <data id="save" name="save_dataset">
+        <arg name="name" value="pytest_pipeline_ds"/>
+        <arg name="records" value="${clean.data}"/>
+      </data>
+    </flow></workflow></body></html>"""
+    run = await workflow_runtime.run(WorkflowCompiler().compile(src))
+    assert run.successful, run.error
+
+    # The saved dataset reads back as exactly the processed records.
+    loaded = await data_manager(name="load_dataset", input={"name": "pytest_pipeline_ds"})
+    assert loaded.success
+    assert loaded.data["records"] == [
         {"date": "2024-01-01", "close": 1.0},
         {"date": "2024-01-02", "close": 2.0},
     ]

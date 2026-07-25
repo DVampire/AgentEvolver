@@ -153,6 +153,31 @@ def _capability_node_spec(name: str, info: Any, category: str, step_type: str, s
     )
 
 
+def _data_node_specs() -> List[NodeSpec]:
+    """The dataset sink/source nodes: save upstream records, or load them back.
+
+    A ``data`` node is the internal-asset end of a pipeline (vs a ``datasource``,
+    the external boundary). Both operations take the dataset name as a config
+    param; ``save`` also takes the records to persist (connect from a process).
+    """
+    return [
+        NodeSpec(
+            id="data/save_dataset", category="data", step_type="data", target="save_dataset",
+            label="Save dataset", description="Persist upstream records as a named JSONL dataset.",
+            params=[
+                ParamSpec(name="name", label="Dataset name", required=True, connectable=False),
+                ParamSpec(name="records", label="Records", type="json",
+                          description="Records to persist — connect from a process/datasource node."),
+            ],
+        ),
+        NodeSpec(
+            id="data/load_dataset", category="data", step_type="data", target="load_dataset",
+            label="Load dataset", description="Load a previously saved dataset back into the flow.",
+            params=[ParamSpec(name="name", label="Dataset name", required=True, connectable=False)],
+        ),
+    ]
+
+
 def _benchmark_node_spec(name: str, info: Any) -> NodeSpec:
     """A benchmark (evaluation) node: takes upstream records, returns a score."""
     return NodeSpec(
@@ -189,7 +214,7 @@ def _with_ports(spec: NodeSpec) -> NodeSpec:
         if param.connectable:
             inputs.append(PortSpec(name=f"arg:{param.name}", label=param.label, type=_param_port_type(param.type)))
 
-    if spec.category == "agent" or spec.step_type in ("reduce", "tool", "datasource", "process", "benchmark"):
+    if spec.category == "agent" or spec.step_type in ("reduce", "tool", "datasource", "process", "data", "benchmark"):
         outputs = list(_CAPABILITY_OUTPUTS)
     elif spec.id == "io/input":
         outputs = [PortSpec(name="out", label="Value", type="any")]  # frontend colors by input_type
@@ -364,6 +389,9 @@ async def build_catalog() -> List[NodeSpec]:
                 processor.name, processor, category="process", step_type="process"))
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"| ⚠️ Canvas palette: process registry unavailable: {exc}")
+
+    # Dataset sink/source nodes (persist processed records, or load them back).
+    specs.extend(_data_node_specs())
 
     try:
         from agentevolver.benchmark import benchmark_manager

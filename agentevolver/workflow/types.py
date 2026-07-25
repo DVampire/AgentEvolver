@@ -43,6 +43,7 @@ class StepType(str, Enum):
     # type — it is a packaging kind surfaced through the semantic DATASOURCE step.
     DATASOURCE = "datasource"
     PROCESS = "process"
+    DATA = "data"
     BENCHMARK = "benchmark"
     PARALLEL = "parallel"
     MAP = "map"

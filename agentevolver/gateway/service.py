@@ -26,6 +26,7 @@ from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
 from agentevolver.config import config
 from agentevolver.connector import connector_manager
+from agentevolver.data import data_manager
 from agentevolver.environment import environment_manager
 from agentevolver.extension import extension_manager
 from agentevolver.gateway.protocol import (
@@ -158,6 +159,7 @@ class AgentGateway:
         await connector_manager.initialize(connector_names=getattr(config, "connector_names", None))
         await plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None))
         await process_manager.initialize(process_names=getattr(config, "process_names", None))
+        await data_manager.initialize()
         # NOTE: benchmark_manager is intentionally NOT eagerly initialized here —
         # its initialize() builds every registered benchmark (downloading datasets),
         # which is slow and noisy. The benchmark canvas node / step is a later

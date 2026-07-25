@@ -17,15 +17,22 @@ from agentevolver.process.types import Processor
 
 
 def _coerce_records(records: Any, data: Any) -> List[Dict[str, Any]]:
-    """Pull a list of record dicts out of whatever the upstream node handed us."""
+    """Pull a list of record dicts out of whatever the upstream node handed us.
+
+    Connecting a capability's ``data`` output port yields the whole
+    ``{records, count, …}`` envelope, so ``records`` may arrive as that dict —
+    unwrap it. Also accepts a JSON-string list or a separate ``data`` envelope.
+    """
     records = _as_list(records)
-    if isinstance(records, list) and records:
+    if isinstance(records, dict) and isinstance(records.get("records"), list):
+        return records["records"]
+    if isinstance(records, list):
         return records
     if isinstance(data, dict) and isinstance(data.get("records"), list):
         return data["records"]
     if isinstance(data, list):
         return data
-    return records if isinstance(records, list) else []
+    return []
 
 
 def _as_list(value: Any) -> Any:
