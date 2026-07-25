@@ -93,6 +93,10 @@
 .lf-field-label em { color: hsl(0 72% 51%); font-style: normal; }
 .lf-bound { display: inline-block; border: 1px dashed hsl(var(--border)); border-radius: 8px; padding: 6px 10px; color: hsl(var(--muted-foreground)); font-size: 11.5px; }
 .lf-node-error { margin: 0; padding: 7px 14px 9px; color: hsl(0 72% 51%); font-size: 11px; }
+/* Sticky note (Langflow NoteNode): fills the resizable node wrapper. */
+.lf-note { width: 100%; height: 100%; border-radius: 12px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.14); overflow: hidden; }
+.lf-note-text { width: 100%; height: 100%; resize: none; border: 0; background: transparent; padding: 12px 14px; color: #1a1a1a; font-size: 13px; line-height: 1.5; outline: none; }
+.lf-note-text::placeholder { color: rgba(0,0,0,.38); }
 /* Handle style ported from langflow's handleRenderComponent: a small solid dot
    with a thin card ring, a 32px transparent hit area, and a datatype-colored
    neon glow on hover / valid drop (getNeonShadow). Its color comes from the

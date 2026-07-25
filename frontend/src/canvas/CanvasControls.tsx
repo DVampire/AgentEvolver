@@ -1,5 +1,5 @@
 import { Panel, useReactFlow, useStore } from '@xyflow/react';
-import { ChevronUp, Maximize, Minus, Plus } from 'lucide-react';
+import { ChevronUp, Maximize, Minus, Plus, StickyNote } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -59,6 +59,8 @@ export function CanvasControls() {
       </DropdownMenu>
       <ControlButton icon={Plus} label="Zoom in" onClick={() => zoomIn()} />
       <ControlButton icon={Maximize} label="Fit view" onClick={() => fitView()} />
+      <div className="mx-0.5 h-5 w-px bg-border" />
+      <ControlButton icon={StickyNote} label="Add sticky note" onClick={() => window.dispatchEvent(new Event('canvas-add-note'))} />
     </Panel>
   );
 }

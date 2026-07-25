@@ -87,6 +87,9 @@ export interface GraphNodeDoc {
 
 export interface GraphEdgeDoc { id: string; source: string; target: string; param: string; source_port?: string; }
 
+// Sticky-note annotation — visual only, stored alongside (not inside) the graph.
+export interface NoteDoc { id: string; position: { x: number; y: number }; width: number; height: number; text: string; color: string; }
+
 export interface FlowGraphDoc {
   id: string;
   name: string;
@@ -95,6 +98,7 @@ export interface FlowGraphDoc {
   document_version: number;
   nodes: GraphNodeDoc[];
   edges: GraphEdgeDoc[];
+  notes?: NoteDoc[];
   published: boolean;
   program_hash: string;
 }
@@ -110,9 +114,15 @@ export interface RunData { state: string; frames: Record<string, FrameDoc>; invo
 // React Flow node data
 // ---------------------------------------------------------------------------
 
+// Sticky-note node payload (Langflow NoteNode): editable text + a color key.
+export type NoteColor = 'amber' | 'neutral' | 'rose' | 'blue' | 'lime';
+export interface NoteData { text: string; color: NoteColor; }
+
 export interface CanvasData extends Record<string, unknown> {
   spec?: NodeSpec;
   kind: 'step' | 'input' | 'output';
+  // Present only on sticky-note nodes (type 'noteNode'); excluded from the graph.
+  note?: NoteData;
   // Editable display name (Langflow display_name). Distinct from the node id
   // that `${id}` references bind to; falls back to the spec label when unset.
   name?: string;

@@ -187,6 +187,36 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     setNodes((current) => [...current, node]);
   }, [setNodes, updateNodeData]);
 
+  const addNote = useCallback(() => {
+    const id = freshId();
+    const data: CanvasData = {
+      kind: 'step', task: '', args: {}, items: '', attrs: {},
+      io: { name: '', input_type: 'string', required: false, default: '', description: '', value: '' },
+      mounts: {}, boundParams: new Set(), update: updateNodeData,
+      note: { text: '', color: 'amber' },
+    };
+    let placed: { x: number; y: number } | undefined;
+    const instance = flowInstanceRef.current;
+    const wrap = flowWrapRef.current;
+    if (instance && wrap) {
+      const rect = wrap.getBoundingClientRect();
+      const center = instance.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      placed = { x: center.x - 110, y: center.y - 70 };
+    }
+    takeSnapshot();
+    setNodes((current) => [
+      ...current.map((node) => ({ ...node, selected: false })),
+      { id, type: 'noteNode', position: placed ?? { x: 200, y: 200 }, width: 220, height: 150, data, selected: true } as CanvasNode,
+    ]);
+    setDirty(true);
+  }, [setNodes, updateNodeData, takeSnapshot]);
+
+  useEffect(() => {
+    const onAddNote = () => addNote();
+    window.addEventListener('canvas-add-note', onAddNote);
+    return () => window.removeEventListener('canvas-add-note', onAddNote);
+  }, [addNote]);
+
   const onCanvasDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     const specId = event.dataTransfer.getData(DND_MIME);
@@ -352,7 +382,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     return {
       id: flowId, name: flowName.trim() || 'Untitled flow', description: '',
       version: flowVersion, document_version: 2, published: false, program_hash: '',
-      nodes: nodes.map((node) => {
+      nodes: nodes.filter((node) => node.type !== 'noteNode').map((node) => {
         const data = node.data;
         const parent = node.parentId ?? null;
         let slot: 'body' | 'then' | 'else' = 'body';
@@ -386,6 +416,14 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
         id: edge.id, source: edge.source, target: edge.target, param: edge.targetHandle ?? '',
         source_port: (edge.data as { sourcePort?: string } | undefined)?.sourcePort ?? 'out',
       })),
+      notes: nodes.filter((node) => node.type === 'noteNode').map((node) => ({
+        id: node.id,
+        position: { x: node.position.x, y: node.position.y },
+        width: node.width ?? 220,
+        height: node.height ?? 150,
+        text: node.data.note?.text ?? '',
+        color: node.data.note?.color ?? 'amber',
+      })),
     };
   }, [nodes, edges, flowId, flowName, flowVersion]);
 
@@ -417,6 +455,22 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
         parentId: item.parent ?? undefined,
         data,
       });
+    }
+    // Sticky notes ride alongside the graph (doc.notes), never inside it.
+    for (const note of doc.notes ?? []) {
+      restored.push({
+        id: note.id,
+        type: 'noteNode',
+        position: note.position,
+        width: note.width,
+        height: note.height,
+        data: {
+          kind: 'step', task: '', args: {}, items: '', attrs: {},
+          io: { name: '', input_type: 'string', required: false, default: '', description: '', value: '' },
+          mounts: {}, boundParams: new Set(), update: updateNodeData,
+          note: { text: note.text, color: note.color },
+        },
+      } as CanvasNode);
     }
     restored.sort((left, right) => Number(Boolean(left.parentId)) - Number(Boolean(right.parentId)));
     const restoredEdges: Edge[] = doc.edges.map((edge) => ({
@@ -738,7 +792,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             onNodeDrag={(_event, node) => setHelperLines(getHelperLines(node, nodes))}
             onNodeDragStop={(event, node) => { setHelperLines({}); onNodeDragStop(event, node); }}
             connectionLineComponent={ConnectionLine}
-            onNodeClick={(_event, node) => { if (node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
+            onNodeClick={(_event, node) => { if (node.type !== 'noteNode' && node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
             onNodeContextMenu={(event, node) => {
               // Langflow onNodeContextMenu: select only this node, then open its
               // toolbar dropdown (the CardToolbar ⋯ menu) at the cursor.

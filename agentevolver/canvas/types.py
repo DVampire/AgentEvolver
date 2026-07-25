@@ -180,6 +180,9 @@ class FlowGraph(BaseModel):
     document_version: int = DOCUMENT_VERSION
     nodes: List[GraphNode] = Field(default_factory=list)
     edges: List[GraphEdge] = Field(default_factory=list)
+    # Sticky-note annotations — visual only; round-tripped through save/load but
+    # never part of the compiled graph (the compiler iterates ``nodes`` only).
+    notes: List[Dict[str, Any]] = Field(default_factory=list)
     published: bool = False
     program_hash: str = ""
     created_at: Optional[str] = None

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
+import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
 import { ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PencilLine, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import { NodeIcon } from '../icons';
-import { CONTAINER_H, CONTAINER_W, PORT_COLORS, type CanvasData, type CanvasNode, type NodeSpec, type ParamSpec, type PortSpec, type PortType } from './types';
+import { CONTAINER_H, CONTAINER_W, PORT_COLORS, type CanvasData, type CanvasNode, type NoteColor, type NodeSpec, type ParamSpec, type PortSpec, type PortType } from './types';
 
 function runClass(data: CanvasData): string { return data.runState ? ` run-${data.runState}` : ''; }
 
@@ -371,4 +371,44 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   );
 }
 
-export const NODE_TYPES = { stepNode: StepNodeCard, containerNode: ContainerNodeCard, ioNode: IoNodeCard };
+// Sticky note — Langflow NoteNode: a resizable colored card with editable
+// markdown-ish text and a select-only color/delete toolbar. Purely visual; the
+// serializer stores notes separately so they never enter the compiled graph.
+const NOTE_ORDER: NoteColor[] = ['amber', 'neutral', 'rose', 'blue', 'lime'];
+const NOTE_BG: Record<NoteColor, string> = {
+  amber: 'hsl(48 96% 77%)', neutral: 'hsl(240 5% 88%)', rose: 'hsl(347 77% 86%)', blue: 'hsl(214 95% 86%)', lime: 'hsl(85 78% 80%)',
+};
+
+function NoteNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
+  const note = data.note ?? { text: '', color: 'amber' as NoteColor };
+  return (
+    <>
+      <NodeResizer minWidth={180} minHeight={110} isVisible={Boolean(selected)}
+        lineClassName="!border !border-muted-foreground" handleClassName="!h-2 !w-2 !rounded-sm !border !border-muted-foreground !bg-background" />
+      {selected ? (
+        <NodeToolbar isVisible position={Position.Top} offset={8}>
+          <div className="lf-node-toolbar">
+            {NOTE_ORDER.map((color) => (
+              <button key={color} type="button" aria-label={color}
+                className={cn('h-4 w-4 rounded-full border border-black/20', note.color === color && 'ring-2 ring-offset-1 ring-primary')}
+                style={{ background: NOTE_BG[color] }}
+                onClick={() => data.update(id, { note: { ...note, color } })} />
+            ))}
+            <ShadTooltip content="Delete note"><Button variant="ghost" size="node-toolbar" className="text-destructive" onClick={() => emitNodeAction(id, 'delete')}><Trash2 /></Button></ShadTooltip>
+          </div>
+        </NodeToolbar>
+      ) : null}
+      <div className="lf-note" style={{ background: NOTE_BG[note.color] ?? NOTE_BG.amber }}>
+        <textarea
+          className="lf-note-text nodrag nowheel"
+          value={note.text}
+          spellCheck={false}
+          placeholder="Write a note…"
+          onChange={(event) => data.update(id, { note: { ...note, text: event.target.value } })}
+        />
+      </div>
+    </>
+  );
+}
+
+export const NODE_TYPES = { stepNode: StepNodeCard, containerNode: ContainerNodeCard, ioNode: IoNodeCard, noteNode: NoteNodeCard };
