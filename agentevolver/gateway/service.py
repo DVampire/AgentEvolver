@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import json
 import mimetypes
 import os
 import re
+import shutil
 import sys
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -747,6 +749,108 @@ class AgentGateway:
         library at output/<owner>/state/flows. Publishing promotes to extension."""
         owner = self._sessions[session_id].owner
         return self._owner_state_dir(owner) / "flows"
+
+    # ------------------------------------------------------------------
+    # Chat sessions — persistent per-owner conversation records at
+    #   output/<owner>/sessions/<session_id>/{meta.json, chat.jsonl, feedback.jsonl}
+    # These are gateway-managed record files (written directly, independent of the
+    # sandbox), so the sidebar can list/reopen past conversations.
+    # ------------------------------------------------------------------
+
+    def _session_record_dir(self, owner: str, session_id: str) -> Path:
+        safe = "".join(char for char in session_id if char.isalnum() or char in "-_")
+        if not safe or safe != session_id:
+            raise ValueError(f"Invalid session id: {session_id!r}")
+        return self._owner_sessions_dir(owner) / safe
+
+    async def _command_chat_append(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Append one message to the current session's transcript + update meta."""
+        session_id = self._require_session_id(params)
+        owner = self._sessions[session_id].owner
+        role = str(params.get("role") or "")
+        if role not in ("user", "assistant"):
+            raise ValueError("role must be 'user' or 'assistant'")
+        rec_dir = self._session_record_dir(owner, session_id)
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc).isoformat()
+        entry: Dict[str, Any] = {"role": role, "content": params.get("content"), "ts": now}
+        if params.get("tab"):
+            entry["tab"] = params["tab"]
+        with (rec_dir / "chat.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        meta_path = rec_dir / "meta.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+        except Exception:  # noqa: BLE001
+            meta = {}
+        meta.setdefault("session_id", session_id)
+        meta.setdefault("created_at", now)
+        if params.get("flow_id"):
+            meta["flow_id"] = params["flow_id"]
+        if not meta.get("title") and role == "user" and isinstance(entry["content"], str):
+            meta["title"] = entry["content"].strip()[:60] or None
+        meta["updated_at"] = now
+        meta["message_count"] = int(meta.get("message_count", 0)) + 1
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True}
+
+    async def _command_chat_sessions_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Every persisted conversation for the owner (for the sidebar)."""
+        owner = self._owner_for(params)
+        root = self._owner_sessions_dir(owner)
+        items: list[Dict[str, Any]] = []
+        if root.is_dir():
+            for child in root.iterdir():
+                meta_path = child / "meta.json"
+                if not meta_path.is_file():
+                    continue
+                try:
+                    items.append(json.loads(meta_path.read_text(encoding="utf-8")))
+                except Exception:  # noqa: BLE001 — one bad file must not hide the rest
+                    continue
+        items.sort(key=lambda meta: meta.get("updated_at") or "", reverse=True)
+        return {"sessions": items}
+
+    async def _command_chat_session_load(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """The transcript of one conversation (for switching sessions)."""
+        owner = self._owner_for(params)
+        session_id = str(params.get("session_id") or "")
+        rec_dir = self._session_record_dir(owner, session_id)
+        chat_path = rec_dir / "chat.jsonl"
+        messages: list[Dict[str, Any]] = []
+        if chat_path.is_file():
+            for line in chat_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    messages.append(json.loads(line))
+                except Exception:  # noqa: BLE001
+                    continue
+        return {"messages": messages}
+
+    async def _command_chat_session_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        owner = self._owner_for(params)
+        session_id = str(params.get("session_id") or "")
+        rec_dir = self._session_record_dir(owner, session_id)
+        if rec_dir.is_dir():
+            shutil.rmtree(rec_dir, ignore_errors=True)
+        return {"deleted": True}
+
+    async def _command_chat_feedback(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Append a thumbs up/down to the conversation's feedback log."""
+        owner = self._owner_for(params)
+        session_id = str(params.get("session_id") or "")
+        rec_dir = self._session_record_dir(owner, session_id)
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "message_id": params.get("message_id"),
+            "value": params.get("value"),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        with (rec_dir / "feedback.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return {"ok": True}
 
     async def _command_canvas_flow_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
