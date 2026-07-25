@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, Loader2, Pencil, Sparkles, Square, User, X } from 'lucide-react';
+import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, Loader2, Pencil, Sparkles, Square, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -83,9 +83,10 @@ function formatOutputs(output: unknown): string {
 
 // Langflow message-options.tsx: the floating bordered action bar — an optional
 // edit (pencil) for user messages, plus copy with a copied-state check.
-function MessageActions({ copyText, onEdit }: { copyText?: string; onEdit?: () => void }) {
+function MessageActions({ copyText, onEdit, onFeedback }: { copyText?: string; onEdit?: () => void; onFeedback?: (value: 1 | -1) => void }) {
   const [copied, setCopied] = useState(false);
-  if (!copyText && !onEdit) return null;
+  const [vote, setVote] = useState<1 | -1 | 0>(0);
+  if (!copyText && !onEdit && !onFeedback) return null;
   return (
     <div className="flex items-center rounded-md border border-border bg-background">
       {onEdit ? (
@@ -94,6 +95,22 @@ function MessageActions({ copyText, onEdit }: { copyText?: string; onEdit?: () =
             <Pencil className="h-4 w-4" />
           </Button>
         </div>
+      ) : null}
+      {onFeedback ? (
+        <>
+          <div className="p-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Helpful"
+              onClick={() => { setVote((current) => (current === 1 ? 0 : 1)); onFeedback(1); }}>
+              <ThumbsUp className={cn('h-4 w-4', vote === 1 && 'text-accent-emerald-foreground')} />
+            </Button>
+          </div>
+          <div className="p-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Not helpful"
+              onClick={() => { setVote((current) => (current === -1 ? 0 : -1)); onFeedback(-1); }}>
+              <ThumbsDown className={cn('h-4 w-4', vote === -1 && 'text-destructive')} />
+            </Button>
+          </div>
+        </>
       ) : null}
       {copyText ? (
         <div className="p-1">
@@ -115,22 +132,23 @@ function MessageActions({ copyText, onEdit }: { copyText?: string; onEdit?: () =
 // Langflow chatMessage/chat-message.tsx row: a full-width row with a 32px
 // avatar, sender name (+ inline metadata), then the message content — not
 // left/right bubbles. A hover copy bar floats above the row.
-function Bubble({ role, failed, senderName, metadata, copyText, onEdit, children }: {
+function Bubble({ role, failed, senderName, metadata, copyText, onEdit, onFeedback, children }: {
   role: 'user' | 'assistant';
   failed?: boolean;
   senderName: string;
   metadata?: React.ReactNode;
   copyText?: string;
   onEdit?: () => void;
+  onFeedback?: (value: 1 | -1) => void;
   children: React.ReactNode;
 }) {
   const isUser = role === 'user';
   return (
     <div className="w-full py-4 word-break-break-word">
       <div className="group relative flex w-full gap-4 rounded-md p-2 hover:bg-muted">
-        {(copyText || onEdit) ? (
+        {(copyText || onEdit || onFeedback) ? (
           <div className="invisible absolute bottom-full right-0 group-hover:visible">
-            <MessageActions copyText={copyText} onEdit={onEdit} />
+            <MessageActions copyText={copyText} onEdit={onEdit} onFeedback={onFeedback} />
           </div>
         ) : null}
         <div className={cn(
@@ -392,6 +410,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
                   senderName={message.role === 'user' ? 'User' : 'AI'}
                   copyText={message.content}
                   onEdit={message.role === 'user' && !flowBusy ? () => { setFlowInput(message.content); setFlowMessages((current) => current.slice(0, index)); inputRef.current?.focus(); } : undefined}
+                  onFeedback={message.role === 'assistant' && sessionId ? (value) => { void request('chat.feedback', { session_id: sessionId, message_id: `flow-${index}`, value }); } : undefined}
                   metadata={message.role === 'assistant' && message.duration ? (
                     <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
                       <Check className="h-4 w-4 text-accent-emerald-foreground" />
@@ -436,7 +455,8 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
             hasModel ? <>
               {modelMessages.map((message, index) => (
                 <Bubble key={index} role={message.role} senderName={message.role === 'user' ? 'User' : 'AI'} copyText={message.content}
-                  onEdit={message.role === 'user' && !chatRequestId ? () => { setModelInput(message.content); setModelMessages((current) => current.slice(0, index)); inputRef.current?.focus(); } : undefined}>
+                  onEdit={message.role === 'user' && !chatRequestId ? () => { setModelInput(message.content); setModelMessages((current) => current.slice(0, index)); inputRef.current?.focus(); } : undefined}
+                  onFeedback={message.role === 'assistant' && sessionId ? (value) => { void request('chat.feedback', { session_id: sessionId, message_id: `model-${index}`, value }); } : undefined}>
                   {message.role === 'user'
                     ? <span className="whitespace-pre-wrap">{message.content}</span>
                     : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}
