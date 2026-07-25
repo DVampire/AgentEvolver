@@ -18,6 +18,7 @@ from agentevolver.utils import assemble_workspace_path
 from agentevolver.utils import file_lock
 from agentevolver.registry import TOOL
 from agentevolver.logger import logger
+from agentevolver.config import config
 from agentevolver.tool.types import ToolContext
 
 
@@ -375,10 +376,13 @@ class TodoTool(Tool):
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     
-    # Configuration parameters
-    base_dir: str = Field(
-        default="workspace_root/todo_tool",
-        description="The base directory for saving todo files."
+    # Configuration parameters.  When unset, todo files live under the
+    # configured workspace root (``config.workspace_root``), which the gateway
+    # binds per-session under ``output/``.  A ``None`` default avoids anchoring
+    # to a literal ``workspace_root/`` folder in the process cwd.
+    base_dir: Optional[str] = Field(
+        default=None,
+        description="The base directory for saving todo files. Defaults to <workspace_root>/todo_tool."
     )
     
     def __init__(
@@ -393,8 +397,10 @@ class TodoTool(Tool):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(self.base_dir)
-            
+            # Anchor to the configured workspace root (bound per-session by the
+            # gateway under output/), never to the process cwd.
+            self.base_dir = os.path.join(config.workspace_root, "todo_tool")
+
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
         
