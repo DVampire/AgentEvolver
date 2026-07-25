@@ -14,7 +14,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../style/canvas.css';
 
-import { ChevronDown, Download, Play, Save, Share2, Square, Trash2, UploadCloud } from 'lucide-react';
+import { Boxes, ChevronDown, Download, Play, Save, Share2, Square, Trash2, UploadCloud } from 'lucide-react';
 
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -747,6 +747,13 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             <CanvasControls />
             <HelperLines helperLines={helperLines} />
           </ReactFlow>
+          {!nodes.length ? (
+            <div className="canvas-empty">
+              <Boxes strokeWidth={1.25} />
+              <h3>Start building your flow</h3>
+              <p>Drag a component from the left, or hover a component and click <strong>+</strong> to drop it here.</p>
+            </div>
+          ) : null}
           {playgroundOpen ? (
             <PlaygroundPanel
               request={request}
