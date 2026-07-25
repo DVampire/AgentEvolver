@@ -170,24 +170,27 @@ async def test_pipeline_saves_and_loads_dataset() -> None:
     await data_manager.initialize()
     await plugin_manager.register(_StubSource(), override=True)
 
-    # datasource → process → data(save_dataset), each edge over the ${node.data} port.
+    # datasource → process → data(dataset_save, local), each edge over ${node.data}.
+    # Local target uses the HuggingFace datasets format (save_to_disk) — offline,
+    # no token, so it exercises the unified format without hitting the Hub.
     src = """<html><body><workflow name="t" version="1.0.0"><flow>
       <datasource id="src" name="stub_source"/>
       <process id="clean" name="select_fields">
         <arg name="records" value="${src.data}"/>
         <arg name="fields" value='["date","close"]'/>
       </process>
-      <data id="save" name="save_dataset">
-        <arg name="name" value="pytest_pipeline_ds"/>
+      <data id="save" name="dataset_save">
+        <arg name="repo" value="pytest_pipeline_ds"/>
+        <arg name="target" value="local"/>
         <arg name="records" value="${clean.data}"/>
       </data>
     </flow></workflow></body></html>"""
     run = await workflow_runtime.run(WorkflowCompiler().compile(src))
     assert run.successful, run.error
 
-    # The saved dataset reads back as exactly the processed records.
-    loaded = await data_manager(name="load_dataset", input={"name": "pytest_pipeline_ds"})
-    assert loaded.success
+    # The saved HF dataset reads back as exactly the processed records.
+    loaded = await data_manager(name="dataset_load", input={"repo": "pytest_pipeline_ds", "source": "local"})
+    assert loaded.success, loaded.message
     assert loaded.data["records"] == [
         {"date": "2024-01-01", "close": 1.0},
         {"date": "2024-01-02", "close": 2.0},

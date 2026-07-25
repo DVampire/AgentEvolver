@@ -12,6 +12,7 @@ import {
   Columns3,
   Combine,
   Database,
+  DownloadCloud,
   FilePen,
   FilePlus2,
   FileSearch,
@@ -43,6 +44,7 @@ import {
   Split,
   Table2,
   Target,
+  UploadCloud,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -51,10 +53,10 @@ import {
 // (Langflow's ForwardedIconComponent pattern — every node has its own glyph).
 export const LUCIDE_ICONS: Record<string, LucideIcon> = {
   Activity, ArrowUpDown, BookOpen, Bot, Box, Boxes, Braces, Cable, CandlestickChart, Code,
-  Columns3, Combine, Database, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
+  Columns3, Combine, Database, DownloadCloud, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
   FolderInput, FolderTree, GitBranch, Globe, KeyRound, LogIn, LogOut, Merge, Network, PenLine,
   Percent, Regex, Repeat, Repeat2, RotateCw, Rows3, Scissors, Search, ShieldCheck, Shuffle,
-  SlidersHorizontal, Sparkles, Split, Table2, Target, Wrench,
+  SlidersHorizontal, Sparkles, Split, Table2, Target, UploadCloud, Wrench,
 };
 
 // Category → lucide icon name, used for the palette section headers.

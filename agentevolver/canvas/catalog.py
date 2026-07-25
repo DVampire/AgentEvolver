@@ -104,7 +104,7 @@ _ICON_BY_ID = {
     "io/input": "LogIn", "io/output": "LogOut",
     "step/map": "Repeat", "step/branch": "GitBranch", "step/loop": "RotateCw",
     "step/reduce": "Combine", "step/verify": "ShieldCheck", "step/checkpoint": "Flag",
-    "data/save_dataset": "Save", "data/load_dataset": "FolderInput",
+    "data/dataset_save": "UploadCloud", "data/dataset_load": "DownloadCloud",
 }
 _ICON_BY_TARGET = {
     # data sources
@@ -206,18 +206,33 @@ def _data_node_specs() -> List[NodeSpec]:
     """
     return [
         NodeSpec(
-            id="data/save_dataset", category="data", step_type="data", target="save_dataset",
-            label="Save dataset", description="Persist upstream records as a named JSONL dataset.",
+            id="data/dataset_save", category="data", step_type="data", target="dataset_save",
+            label="Save dataset", description="Save records as a HuggingFace dataset (push to the Hub or save locally).",
             params=[
-                ParamSpec(name="name", label="Dataset name", required=True, connectable=False),
+                ParamSpec(name="repo", label="Repo / name", required=True, connectable=False,
+                          description="Hub repo id (namespace/name) or local dataset name."),
+                ParamSpec(name="target", label="Target", type="select", options=["hub", "local"],
+                          default="hub", connectable=False),
+                ParamSpec(name="split", label="Split", default="train", connectable=False),
+                ParamSpec(name="private", label="Private", type="boolean", connectable=False),
+                ParamSpec(name="token", label="HF token", connectable=False,
+                          description="Hub token (else HF_TOKEN). Public datasets need none."),
                 ParamSpec(name="records", label="Records", type="json",
-                          description="Records to persist — connect from a process/datasource node."),
+                          description="Records to save — connect from a process/datasource node."),
             ],
         ),
         NodeSpec(
-            id="data/load_dataset", category="data", step_type="data", target="load_dataset",
-            label="Load dataset", description="Load a previously saved dataset back into the flow.",
-            params=[ParamSpec(name="name", label="Dataset name", required=True, connectable=False)],
+            id="data/dataset_load", category="data", step_type="data", target="dataset_load",
+            label="Load dataset", description="Load a HuggingFace dataset (Hub or local) into the flow.",
+            params=[
+                ParamSpec(name="repo", label="Repo / name", required=True, connectable=False,
+                          description="Hub repo id (namespace/name) or local dataset name."),
+                ParamSpec(name="source", label="Source", type="select", options=["hub", "local"],
+                          default="hub", connectable=False),
+                ParamSpec(name="split", label="Split", default="train", connectable=False),
+                ParamSpec(name="token", label="HF token", connectable=False,
+                          description="Hub token (else HF_TOKEN). Public datasets need none."),
+            ],
         ),
     ]
 
