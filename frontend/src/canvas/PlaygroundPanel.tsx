@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Bot, Check, Copy, Eraser, Sparkles, Square, User, X } from 'lucide-react';
+import { ArrowUp, Bot, Check, Copy, Eraser, Loader2, Sparkles, Square, User, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -207,6 +207,24 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
     setPendingRun(rid);
   }, [flowInput, pendingRun, runId, inputNodes, targetInput, startRun]);
 
+  // Run a flow that has no Chat Input directly (Langflow's no-input.tsx).
+  const runFlowNoInput = useCallback(async () => {
+    if (pendingRun || runId) return;
+    const input: Record<string, unknown> = {};
+    for (const field of inputNodes) {
+      if (field.default) {
+        try { input[field.name] = ['array', 'object', 'number', 'boolean'].includes(field.input_type) ? JSON.parse(field.default) : field.default; }
+        catch { input[field.name] = field.default; }
+      }
+    }
+    const rid = await startRun(input);
+    if (!rid) {
+      setFlowMessages((current) => [...current, { role: 'assistant', content: 'The flow could not start — check the notice.', failed: true }]);
+      return;
+    }
+    setPendingRun(rid);
+  }, [pendingRun, runId, inputNodes, startRun]);
+
   // When the watched run settles, turn its outputs + frames into a reply.
   useEffect(() => {
     if (!pendingRun || runId) return;
@@ -372,7 +390,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
               ))}
               {flowBusy ? (
                 <Bubble role="assistant" senderName="AI">
-                  <span className="animate-pulse text-muted-foreground">Flow running…</span>
+                  <span className="lf-shimmer text-sm font-medium">Flow running…</span>
                 </Bubble>
               ) : null}
             </> : (
@@ -405,7 +423,22 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
         </div>
       </div>
 
-      {/* Composer — bordered focus-reactive card (Langflow input-wrapper.tsx) */}
+      {/* No Chat Input → a "Run Flow" block instead of the composer (Langflow no-input.tsx) */}
+      {tab === 'flow' && !targetInput ? (
+        <div className="mx-auto w-full max-w-[768px] px-4 pb-4 md:w-5/6">
+          <div className="flex w-full flex-col items-center justify-center gap-3 rounded-md border border-input bg-muted p-2 py-4">
+            {!flowBusy ? (
+              <Button className="font-semibold" onClick={() => void runFlowNoInput()} disabled={!connected}>Run Flow</Button>
+            ) : (
+              <Button unstyled disabled className="cursor-default rounded-md bg-muted px-2.5 py-1.5 text-foreground">
+                <div className="flex items-center gap-2 text-sm font-medium">Running<Loader2 className="h-4 w-4 animate-spin" /></div>
+              </Button>
+            )}
+            <p className="text-sm text-muted-foreground">This flow has no Chat Input — run it directly, or add a Chat Input node to send messages.</p>
+          </div>
+        </div>
+      ) : (
+      /* Composer — bordered focus-reactive card (Langflow input-wrapper.tsx) */
       <div className="mx-auto w-full max-w-[768px] px-4 pb-4 md:w-5/6">
         <div
           data-testid="input-wrapper"
@@ -457,6 +490,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
           </div>
         </div>
       </div>
+      )}
     </aside>
   );
 }

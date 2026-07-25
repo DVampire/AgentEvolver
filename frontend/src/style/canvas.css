@@ -174,6 +174,15 @@
 
 /* Langflow chat utility classes referenced by the copied markup. */
 .word-break-break-word { word-break: break-word; }
+/* TextShimmer sweep (Langflow FlowRunningSqueleton "Flow running..."). */
+@keyframes lf-shimmer { 0% { background-position: 200% center; } 100% { background-position: -200% center; } }
+.lf-shimmer {
+  background: linear-gradient(90deg, hsl(var(--muted-foreground)) 0%, hsl(var(--muted-foreground)) 42%, hsl(var(--foreground)) 50%, hsl(var(--muted-foreground)) 58%, hsl(var(--muted-foreground)) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: lf-shimmer 2s linear infinite;
+}
 .custom-scroll { scrollbar-width: thin; scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent; }
 .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: hsl(var(--muted-foreground) / 0.4); }
