@@ -66,6 +66,10 @@ class GatewaySession:
     context: SessionContext
     created_at: str
     sandbox: ProjectSandbox
+    # The connection's owner (user) — the top level of the output tree:
+    # output/<owner>/sessions/<id>/ (runtime) + output/<owner>/state/ (durable
+    # flows/files/settings). Defaults to "local" for the single-user case.
+    owner: str = "local"
     task_ids: list[str] = field(default_factory=list)
     capabilities: Dict[str, list[str]] = field(default_factory=dict)
     uploads: Dict[str, "GatewayUpload"] = field(default_factory=dict)
@@ -261,9 +265,11 @@ class AgentGateway:
             raise ValueError(f"Session already exists: {session_id}")
         if params.get("project_root") is not None:
             raise ValueError("project_root is server-managed; create a session without this parameter")
-        configured_project_root = getattr(config, "project_root", None)
-        default_project_root = Path(configured_project_root) if configured_project_root else Path.cwd() / "output"
-        project_root = default_project_root / session_id
+        # Output tree: output/<owner>/sessions/<session_id>/{workspace,log,runs}
+        # for runtime; output/<owner>/state/ for the owner's durable library
+        # (flows/files/settings). owner = the connection's user (default "local").
+        owner = self._owner_for(params)
+        project_root = self._output_base() / owner / "sessions" / session_id
         # Clients open a session as soon as they connect; most never run anything.
         # Only describe the sandbox here — it is created on first real use so idle
         # sessions leave no empty directory behind.
@@ -293,6 +299,7 @@ class AgentGateway:
             context=context,
             created_at=datetime.now(timezone.utc).isoformat(),
             sandbox=sandbox,
+            owner=owner,
             capabilities=await self._available_capabilities(),
         )
         self._sync_session_capabilities(session)
@@ -541,9 +548,10 @@ class AgentGateway:
             raise ValueError("File exceeds the 2 GB upload limit")
         mime_type = str(params.get("mime_type") or "application/octet-stream")[:255]
         upload_id = make_id()
-        # An upload is real work in this session — create its roots before writing.
-        session.sandbox.materialize()
-        upload_dir = Path(session.sandbox.workspace_root) / "uploads" / session.context.id
+        # Uploads are DURABLE per-owner assets: output/<owner>/state/files. They
+        # outlive the session and are staged into a run's workspace on demand
+        # (session.project.stage_input_files), not written into the sandbox here.
+        upload_dir = self._owner_state_dir(session.owner) / "files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{upload_id}_{name}"
         path.touch(exist_ok=False)
@@ -708,10 +716,37 @@ class AgentGateway:
             "mounts": await canvas_manager.mounts(),
         }
 
+    # ------------------------------------------------------------------
+    # Output tree helpers — output/<owner>/{sessions/<id>, state/{flows,files}}
+    # ------------------------------------------------------------------
+
+    def _output_base(self) -> Path:
+        """The output/ root: parent of the configured project_root (output/<tag>).
+        The tag level becomes the owner slot in the gateway's per-user tree."""
+        configured = getattr(config, "project_root", None)
+        return Path(configured).parent if configured else Path.cwd() / "output"
+
+    @staticmethod
+    def _owner_for(params: Dict[str, Any]) -> str:
+        """Resolve the connection's owner (user). Sanitized to a safe dir name;
+        defaults to "local" for the single-user case (multi-user auth later)."""
+        raw = str(params.get("user_id") or "local").strip()
+        safe = "".join(char for char in raw if char.isalnum() or char in "-_")
+        return safe or "local"
+
+    def _owner_state_dir(self, owner: str) -> Path:
+        """The owner's durable library root: flows/, files/, settings.json."""
+        return self._output_base() / owner / "state"
+
+    def _owner_sessions_dir(self, owner: str) -> Path:
+        """The owner's session records + runtime root."""
+        return self._output_base() / owner / "sessions"
+
     def _canvas_flows_dir(self, session_id: str) -> Path:
-        """Session drafts live under the session's own project output (evolution
-        model: session artifacts stage locally, publishing promotes to extension)."""
-        return Path(self._sessions[session_id].sandbox.project_root) / "canvas"
+        """Draft flows are per-OWNER (not per-session): the owner's durable flow
+        library at output/<owner>/state/flows. Publishing promotes to extension."""
+        owner = self._sessions[session_id].owner
+        return self._owner_state_dir(owner) / "flows"
 
     async def _command_canvas_flow_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
