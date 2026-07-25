@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Bot, Check, Copy, Eraser, Loader2, Sparkles, Square, User, X } from 'lucide-react';
+import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, Loader2, Pencil, Sparkles, Square, User, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -81,22 +81,33 @@ function formatOutputs(output: unknown): string {
   return JSON.stringify(output, null, 2);
 }
 
-// Langflow message-options.tsx copy button — the floating bordered action bar.
-function CopyButton({ text }: { text: string }) {
+// Langflow message-options.tsx: the floating bordered action bar — an optional
+// edit (pencil) for user messages, plus copy with a copied-state check.
+function MessageActions({ copyText, onEdit }: { copyText?: string; onEdit?: () => void }) {
   const [copied, setCopied] = useState(false);
+  if (!copyText && !onEdit) return null;
   return (
     <div className="flex items-center rounded-md border border-border bg-background">
-      <div className="p-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          aria-label={copied ? 'Copied' : 'Copy message'}
-          onClick={() => { void navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-        >
-          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-        </Button>
-      </div>
+      {onEdit ? (
+        <div className="p-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit message" onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : null}
+      {copyText ? (
+        <div className="p-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            aria-label={copied ? 'Copied' : 'Copy message'}
+            onClick={() => { void navigator.clipboard.writeText(copyText); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -104,21 +115,22 @@ function CopyButton({ text }: { text: string }) {
 // Langflow chatMessage/chat-message.tsx row: a full-width row with a 32px
 // avatar, sender name (+ inline metadata), then the message content — not
 // left/right bubbles. A hover copy bar floats above the row.
-function Bubble({ role, failed, senderName, metadata, copyText, children }: {
+function Bubble({ role, failed, senderName, metadata, copyText, onEdit, children }: {
   role: 'user' | 'assistant';
   failed?: boolean;
   senderName: string;
   metadata?: React.ReactNode;
   copyText?: string;
+  onEdit?: () => void;
   children: React.ReactNode;
 }) {
   const isUser = role === 'user';
   return (
     <div className="w-full py-4 word-break-break-word">
       <div className="group relative flex w-full gap-4 rounded-md p-2 hover:bg-muted">
-        {copyText ? (
+        {(copyText || onEdit) ? (
           <div className="invisible absolute bottom-full right-0 group-hover:visible">
-            <CopyButton text={copyText} />
+            <MessageActions copyText={copyText} onEdit={onEdit} />
           </div>
         ) : null}
         <div className={cn(
@@ -178,7 +190,15 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
   const [flowInput, setFlowInput] = useState('');
   const [pendingRun, setPendingRun] = useState<string>();
   const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Stick-to-bottom: only auto-scroll when the user is already near the bottom
+  // (Langflow's use-stick-to-bottom behavior — don't yank them down mid-scroll).
+  const [atBottom, setAtBottom] = useState(true);
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+  }, []);
 
   // ----- flow chat: input mapping ------------------------------------------
   const targetInput = useMemo(() => {
@@ -253,7 +273,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
   chatRequestRef.current = chatRequestId;
 
   useEffect(() => { if (model) localStorage.setItem(MODEL_KEY, model); }, [model]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [flowMessages, modelMessages, streaming, tab, pendingRun]);
+  useEffect(() => { if (atBottom) endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [flowMessages, modelMessages, streaming, tab, pendingRun, atBottom]);
 
   // Auto-resize the composer textarea on value / tab change (Langflow parity).
   const currentValue = tab === 'flow' ? flowInput : modelInput;
@@ -350,7 +370,17 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
       </header>
 
       {/* Transcript — centered max-w-[768px] column (Langflow chat-view.tsx) */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
+      <div ref={scrollRef} onScroll={onScroll} className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
+        {!atBottom ? (
+          <button
+            type="button"
+            onClick={() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); setAtBottom(true); }}
+            className="absolute bottom-3 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md hover:text-foreground"
+            aria-label="Scroll to bottom"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        ) : null}
         <div className="mx-auto flex w-5/6 max-w-[768px] flex-grow flex-col">
           {tab === 'flow' ? (
             hasFlow ? <>
@@ -361,6 +391,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
                   failed={message.failed}
                   senderName={message.role === 'user' ? 'User' : 'AI'}
                   copyText={message.content}
+                  onEdit={message.role === 'user' && !flowBusy ? () => { setFlowInput(message.content); setFlowMessages((current) => current.slice(0, index)); inputRef.current?.focus(); } : undefined}
                   metadata={message.role === 'assistant' && message.duration ? (
                     <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
                       <Check className="h-4 w-4 text-accent-emerald-foreground" />
@@ -404,7 +435,8 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
           ) : (
             hasModel ? <>
               {modelMessages.map((message, index) => (
-                <Bubble key={index} role={message.role} senderName={message.role === 'user' ? 'User' : 'AI'} copyText={message.content}>
+                <Bubble key={index} role={message.role} senderName={message.role === 'user' ? 'User' : 'AI'} copyText={message.content}
+                  onEdit={message.role === 'user' && !chatRequestId ? () => { setModelInput(message.content); setModelMessages((current) => current.slice(0, index)); inputRef.current?.focus(); } : undefined}>
                   {message.role === 'user'
                     ? <span className="whitespace-pre-wrap">{message.content}</span>
                     : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}
