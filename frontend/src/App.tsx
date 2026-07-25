@@ -150,7 +150,7 @@ export function App() {
   const [draft, setDraft] = useState('');
   const setNotice = useAlertStore((state) => state.notify);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('agentevolver.theme') === 'light' ? 'light' : 'dark');
+  const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('agentevolver.theme') === 'dark' ? 'dark' : 'light');
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   const [activeCapability, setActiveCapability] = useState<CapabilityKind>('skills');
   const [capabilitySearch, setCapabilitySearch] = useState('');
