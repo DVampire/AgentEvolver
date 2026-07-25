@@ -1,5 +1,5 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Maximize2, Minimize2, MoreHorizontal, Save, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Maximize2, Minimize2, MoreHorizontal, Save, Snowflake, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -54,23 +54,25 @@ function OutputPorts({ outputs, ioType }: { outputs?: PortSpec[]; ioType?: PortT
  * components have no app handlers, so actions travel as a DOM CustomEvent
  * that the canvas root listens for. */
 export const NODE_ACTION_EVENT = 'canvas-node-action';
-export type NodeAction = 'save' | 'duplicate' | 'copy' | 'docs' | 'minimize' | 'download' | 'delete';
+export type NodeAction = 'save' | 'duplicate' | 'copy' | 'docs' | 'minimize' | 'freeze' | 'download' | 'delete';
 function emitNodeAction(nodeId: string, action: NodeAction) {
   window.dispatchEvent(new CustomEvent(NODE_ACTION_EVENT, { detail: { nodeId, action } }));
 }
 
 /** Selected-node action bar: quick Duplicate/Delete plus a ⋯ menu (Langflow's
  * nodeToolbarComponent). ``minimized`` flips the Minimize item to Expand. */
-function CardToolbar({ id, visible, minimized }: { id: string; visible: boolean; minimized?: boolean }) {
+function CardToolbar({ id, visible, minimized, frozen }: { id: string; visible: boolean; minimized?: boolean; frozen?: boolean }) {
   return (
     <NodeToolbar isVisible={visible} position={Position.Top} offset={8}>
       <div className="lf-node-toolbar">
+        <ShadTooltip content={frozen ? 'Unfreeze (recompute)' : 'Freeze (reuse last output)'}><Button variant="ghost" size="node-toolbar" className={frozen ? 'text-[#3ba0ff]' : ''} onClick={() => emitNodeAction(id, 'freeze')}><Snowflake /></Button></ShadTooltip>
         <ShadTooltip content="Duplicate (Ctrl+D)"><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'duplicate')}><Copy /></Button></ShadTooltip>
         <ShadTooltip content={minimized ? 'Expand' : 'Minimize'}><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'minimize')}>{minimized ? <Maximize2 /> : <Minimize2 />}</Button></ShadTooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="node-toolbar"><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44 nodrag nowheel">
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'save')}><Save className="mr-2 h-4 w-4" />Save flow<DropdownMenuShortcut>⌘S</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={() => emitNodeAction(id, 'freeze')}><Snowflake className="mr-2 h-4 w-4" />{frozen ? 'Unfreeze' : 'Freeze'}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'duplicate')}><Copy className="mr-2 h-4 w-4" />Duplicate<DropdownMenuShortcut>⌘D</DropdownMenuShortcut></DropdownMenuItem>
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'copy')}><ClipboardCopy className="mr-2 h-4 w-4" />Copy<DropdownMenuShortcut>⌘C</DropdownMenuShortcut></DropdownMenuItem>
             <DropdownMenuItem onClick={() => emitNodeAction(id, 'docs')}><FileText className="mr-2 h-4 w-4" />Docs</DropdownMenuItem>
@@ -134,11 +136,12 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = data.spec;
   const { paramValue, setParam } = paramAccess(id, data);
   return (
-    <div className={`lf-node${runClass(data)}${selected ? ' selected' : ''}${data.minimized ? ' lf-minimized' : ''}`}>
-      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} />
+    <div className={`lf-node${runClass(data)}${selected ? ' selected' : ''}${data.minimized ? ' lf-minimized' : ''}${data.frozen ? ' lf-frozen' : ''}`}>
+      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType ?? 'Step'}</strong>
+        {data.frozen ? <Snowflake size={12} className="lf-frozen-badge" /> : null}
         {data.runState === 'running' ? <span className="lf-pulse" /> : null}
         {data.runCount && data.runCount > 1 ? <em className="lf-run-count">×{data.runCount}</em> : null}
         <code className="lf-node-ref" title="Reference this step in task text">{'$'}{'{'}{id}{'}'}</code>
@@ -207,7 +210,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const isBranch = data.stepType === 'branch';
   return (
     <div className={`lf-node lf-container${runClass(data)}${selected ? ' selected' : ''}`} style={{ width: CONTAINER_W, height: CONTAINER_H }}>
-      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} />
+      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category="structural" className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType}</strong>
@@ -243,7 +246,7 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
   const set = (patch: Partial<CanvasData['io']>) => data.update(id, (current) => ({ io: { ...current.io, ...patch } }));
   return (
     <div className={`lf-node lf-io${selected ? ' selected' : ''}`}>
-      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} />
+      <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
         <NodeIcon name={isInput ? 'LogIn' : 'LogOut'} category="io" className="lf-head-icon" />
         <strong>{isInput ? 'Flow Input' : 'Flow Output'}</strong>

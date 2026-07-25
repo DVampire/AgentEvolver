@@ -55,6 +55,9 @@
    the left edge so connected edges stay anchored. */
 .lf-node.lf-minimized { min-height: 48px; }
 .lf-min-handle { position: absolute; }
+/* Frozen node: its last output is pinned and reused (compiler inlines it). */
+.lf-node.lf-frozen { border-color: #3ba0ff; box-shadow: 0 0 0 2px rgba(59,160,255,.18), 0 8px 26px rgba(0,0,0,.35); }
+.lf-frozen-badge { color: #3ba0ff; flex: 0 0 auto; }
 .lf-node.run-running { border-color: #5f8dff; box-shadow: 0 0 0 3px rgba(95,141,255,.2); }
 .lf-node.run-succeeded { border-color: #3f9e63; }
 .lf-node.run-failed { border-color: #cf5560; }

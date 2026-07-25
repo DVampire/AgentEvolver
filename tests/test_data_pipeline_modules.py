@@ -86,6 +86,29 @@ async def test_generic_text_processors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_frozen_node_is_inlined_and_not_run() -> None:
+    from agentevolver.canvas.compiler import compile_graph
+    from agentevolver.canvas.types import FlowGraph, GraphEdge, GraphNode, Position
+
+    await process_manager.initialize()
+    frozen = {"message": "f", "data": {"records": [{"close": 1.0}, {"close": 2.0}]}, "files": None}
+    graph = FlowGraph(name="F", nodes=[
+        GraphNode(id="src", kind="step", step_type="datasource", target="yahoo",
+                  frozen=True, frozen_output=frozen, position=Position()),
+        GraphNode(id="clean", kind="step", step_type="process", target="select_fields",
+                  args={"fields": '["close"]'}, position=Position(y=100)),
+    ], edges=[GraphEdge(id="e1", source="src", target="clean", param="arg:records", source_port="data")])
+
+    html, definition = compile_graph(graph)
+    assert "<datasource" not in html  # the frozen node's step is dropped
+    run = await workflow_runtime.run(definition)
+    assert run.successful, run.error
+    # only the process step ran — the frozen datasource was inlined, not executed
+    assert list(run.invocations.keys()) == ["root.0:clean"]
+    assert run.invocations["root.0:clean"].output["data"]["records"] == [{"close": 1.0}, {"close": 2.0}]
+
+
+@pytest.mark.asyncio
 async def test_table_operations_group_by() -> None:
     from agentevolver.process import TableOperationsProcessor
     rows = [{"sym": "A", "px": 10.0}, {"sym": "A", "px": 12.0}, {"sym": "B", "px": 6.0}]

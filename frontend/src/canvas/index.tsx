@@ -97,6 +97,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>();
   // saveFlow is declared further down; the node-action handler reaches it here.
   const saveFlowRef = useRef<(() => void) | undefined>(undefined);
+  const runDataRef = useRef<RunData | undefined>(undefined);
   useEffect(() => { graphRef.current = { nodes, edges }; }, [nodes, edges]);
 
   const updateNodeData = useCallback((nodeId: string, patch: Partial<CanvasData> | ((data: CanvasData) => Partial<CanvasData>)) => {
@@ -244,6 +245,20 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       node.id === nodeId ? { ...node, data: { ...node.data, minimized: !node.data.minimized } } : node));
   }, [setNodes]);
 
+  // Freeze: pin the node's last run output so it is reused (and not re-executed)
+  // on the next run; unfreeze clears it. The compiler inlines a frozen output.
+  runDataRef.current = runData;
+  const freezeNode = useCallback((nodeId: string) => {
+    const invocations = runDataRef.current?.invocations ?? {};
+    const captured = Object.values(invocations).find((inv) => inv.key.split(':').pop() === nodeId)?.output;
+    setDirty(true);
+    setNodes((current) => current.map((node) => {
+      if (node.id !== nodeId) return node;
+      if (node.data.frozen) return { ...node, data: { ...node.data, frozen: false, frozenOutput: undefined } };
+      return { ...node, data: { ...node.data, frozen: true, frozenOutput: captured ?? node.data.frozenOutput } };
+    }));
+  }, [setNodes]);
+
   const downloadNode = useCallback((nodeId: string) => {
     const node = graphRef.current.nodes.find((item) => item.id === nodeId);
     if (!node) return;
@@ -274,11 +289,12 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       else if (detail.action === 'docs') setInspected(detail.nodeId);
       else if (detail.action === 'minimize') minimizeNode(detail.nodeId);
       else if (detail.action === 'download') downloadNode(detail.nodeId);
+      else if (detail.action === 'freeze') freezeNode(detail.nodeId);
       else if (detail.action === 'save') saveFlowRef.current?.();
     };
     window.addEventListener(NODE_ACTION_EVENT, onAction);
     return () => window.removeEventListener(NODE_ACTION_EVENT, onAction);
-  }, [duplicateNode, deleteNode, copyNode, minimizeNode, downloadNode]);
+  }, [duplicateNode, deleteNode, copyNode, minimizeNode, downloadNode, freezeNode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -324,6 +340,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           doc.attrs = Object.fromEntries(Object.entries(data.attrs).filter(([, value]) => String(value).trim() !== ''));
           const mountEntries = Object.entries(data.mounts).filter(([, names]) => names.length);
           if (mountEntries.length) doc.mounts = Object.fromEntries(mountEntries);
+          if (data.frozen) { doc.frozen = true; if (data.frozenOutput !== undefined) doc.frozen_output = data.frozenOutput; }
         } else {
           doc.name = data.io.name; doc.input_type = data.io.input_type; doc.required = data.io.required;
           doc.default = data.io.default || null; doc.description = data.io.description; doc.value = data.io.value;
@@ -352,6 +369,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
         attrs: Object.fromEntries(Object.entries(item.attrs ?? {}).map(([key, value]) => [key, String(value ?? '')])),
         io: { name: item.name ?? '', input_type: item.input_type ?? 'string', required: Boolean(item.required), default: item.default == null ? '' : String(item.default), description: item.description ?? '', value: item.value ?? '' },
         mounts: item.mounts ?? {},
+        frozen: item.frozen ?? false,
+        frozenOutput: item.frozen_output,
         boundParams: new Set(),
         update: updateNodeData,
       };

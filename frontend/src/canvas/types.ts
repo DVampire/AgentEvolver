@@ -79,6 +79,8 @@ export interface GraphNodeDoc {
   value?: string;
   parent?: string | null;
   slot?: 'body' | 'then' | 'else';
+  frozen?: boolean;
+  frozen_output?: unknown;
   position: { x: number; y: number };
 }
 
@@ -122,6 +124,8 @@ export interface CanvasData extends Record<string, unknown> {
   runState?: FrameState;
   runCount?: number;
   minimized?: boolean;
+  frozen?: boolean;
+  frozenOutput?: unknown;
   boundParams: Set<string>;
   update: (nodeId: string, patch: Partial<CanvasData> | ((data: CanvasData) => Partial<CanvasData>)) => void;
 }

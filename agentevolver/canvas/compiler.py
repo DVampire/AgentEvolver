@@ -111,7 +111,12 @@ def compile_graph(graph: FlowGraph, embed_source: bool = False) -> Tuple[str, Wo
         key = (edge.target, edge.param)
         if key in bindings:
             errors.append(f"{edge.target}.{edge.param} has more than one incoming edge")
-        bindings[key] = _ref(source, edge.source_port)
+        # A frozen source with a captured output substitutes a literal (JSON) in
+        # place of a ${...} reference, so the frozen node need not run.
+        if _is_frozen(source):
+            bindings[key] = _frozen_literal(source, edge.source_port)
+        else:
+            bindings[key] = _ref(source, edge.source_port)
         if edge.param.startswith("arg:"):
             arg_name = edge.param[4:]
             literal = target.args.get(arg_name)
@@ -134,6 +139,18 @@ def compile_graph(graph: FlowGraph, embed_source: bool = False) -> Tuple[str, Wo
     except Exception as exc:
         raise CanvasCompileError(f"Compiled workflow failed validation: {exc}") from exc
     return html, definition
+
+
+def _is_frozen(node: GraphNode) -> bool:
+    """A node whose last output is captured and pinned — skip re-execution."""
+    return bool(getattr(node, "frozen", False)) and getattr(node, "frozen_output", None) is not None
+
+
+def _frozen_literal(node: GraphNode, source_port: str = "out") -> str:
+    """The frozen node's captured sub-value as a literal arg (JSON for non-text)."""
+    output = node.frozen_output or {}
+    value = output if (source_port == "out" or not source_port) else output.get(source_port)
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
 def _ref(node: GraphNode, source_port: str = "out") -> str:
@@ -189,6 +206,8 @@ def _emit_steps(
 ) -> None:
     pad = " " * indent
     for node in nodes:
+        if _is_frozen(node):
+            continue  # its output is inlined as a literal; the step does not run
         tag = node.step_type or "tool"
         attrs: List[str] = [f"id={quoteattr(node.id)}"]
         if node.target:

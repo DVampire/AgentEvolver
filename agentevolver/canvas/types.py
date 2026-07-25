@@ -126,6 +126,11 @@ class GraphNode(BaseModel):
     # kind (tools/skills/connectors/agents/environments). Compiles to the agent
     # step's allowlist args; an empty/absent list means "use the agent's defaults".
     mounts: Dict[str, List[str]] = Field(default_factory=dict)
+    # Freeze: when frozen and a captured output is present, the compiler drops
+    # this node's step and substitutes ``frozen_output`` as a literal wherever it
+    # is referenced — so it is not re-executed, its last result is reused.
+    frozen: bool = False
+    frozen_output: Optional[Dict[str, Any]] = None
     name: str = ""
     input_type: str = "string"
     required: bool = False
