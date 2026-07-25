@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, GripVertical, Search } from 'lucide-react';
+import { ChevronRight, GripVertical, Search } from 'lucide-react';
 
 import { Input } from '../components/ui/input';
 import { useDebounce } from '../hooks/use-debounce';
-import { CategoryIcon } from '../icons';
+import { CategoryGlyph, NodeIcon } from '../icons';
+import { categoryColor } from '../utils/styleUtils';
 import { CATEGORY_LABELS, CATEGORY_ORDER, DND_MIME, type NodeSpec } from './types';
 
 /** Langflow-style component sidebar: search, collapsible category sections,
@@ -37,17 +38,18 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
           return (
             <section key={group.category}>
               <button className="canvas-cat-head" onClick={() => toggle(group.category)} aria-expanded={!isCollapsed}>
-                <CategoryIcon category={group.category} />
+                <CategoryGlyph category={group.category} className="lf-cat-icon" />
                 <strong>{CATEGORY_LABELS[group.category]}</strong>
-                <em>{isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</em>
+                <em className="lf-cat-chevron"><ChevronRight size={14} /></em>
               </button>
               {!isCollapsed ? group.items.map((spec) => (
                 <div className="canvas-palette-item" key={spec.id} title={spec.description} draggable
+                  style={{ borderLeftColor: categoryColor(spec.category) }}
                   onDragStart={(event) => { event.dataTransfer.setData(DND_MIME, spec.id); event.dataTransfer.effectAllowed = 'copy'; }}
                   onDoubleClick={() => onAdd(spec)}>
-                  <CategoryIcon category={spec.category} />
+                  <NodeIcon name={spec.icon} category={spec.category} size={18} className="lf-item-icon" />
                   <strong>{spec.label}</strong>
-                  <i className="drag-dots"><GripVertical size={13} /></i>
+                  <i className="drag-dots"><GripVertical size={14} /></i>
                 </div>
               )) : null}
             </section>

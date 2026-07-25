@@ -86,6 +86,9 @@ class NodeSpec(BaseModel):
     target: Optional[str] = None
     label: str
     description: str = ""
+    # Per-node lucide icon name (Langflow-style: every node has its own glyph).
+    # The frontend resolves it, falling back to the category icon.
+    icon: str = ""
     params: List[ParamSpec] = Field(default_factory=list)
     has_task: bool = False
     has_items: bool = False

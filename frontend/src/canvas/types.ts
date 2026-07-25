@@ -42,6 +42,7 @@ export interface NodeSpec {
   target?: string | null;
   label: string;
   description: string;
+  icon?: string;
   params: ParamSpec[];
   has_task: boolean;
   has_items: boolean;

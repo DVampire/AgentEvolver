@@ -1,40 +1,74 @@
 import {
+  Activity,
+  ArrowUpDown,
+  BookOpen,
+  Bot,
+  Box,
+  Boxes,
   Cable,
+  CandlestickChart,
+  Code,
+  Columns3,
+  Combine,
   Database,
+  FilePen,
+  FilePlus2,
+  FileSearch,
   FileText,
+  Filter,
+  Flag,
+  FolderInput,
+  FolderTree,
   GitBranch,
+  Globe,
+  LogIn,
+  LogOut,
   Network,
+  PenLine,
+  Percent,
+  Repeat,
+  RotateCw,
+  Rows3,
+  Search,
+  ShieldCheck,
+  Shuffle,
+  SlidersHorizontal,
   Sparkles,
   Split,
-  SlidersHorizontal,
   Target,
-  BookOpen,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
-import { categoryColor } from '../utils/styleUtils';
-
-// Category → lucide icon registry (langflow's categoryIcons pattern; they map
-// sidebar categories to lucide icon names in utils/styleUtils.ts).
-export const CATEGORY_ICON_MAP: Record<string, LucideIcon> = {
-  io: Cable,
-  structural: Split,
-  agent: Sparkles,
-  data: Database,
-  process: SlidersHorizontal,
-  evaluation: Target,
-  files: FileText,
-  knowledge: BookOpen,
-  tool: Wrench,
-  workflow: Network,
+// Curated lucide registry the backend catalog draws NodeSpec.icon names from
+// (Langflow's ForwardedIconComponent pattern — every node has its own glyph).
+export const LUCIDE_ICONS: Record<string, LucideIcon> = {
+  Activity, ArrowUpDown, BookOpen, Bot, Box, Boxes, Cable, CandlestickChart, Code,
+  Columns3, Combine, Database, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
+  FolderInput, FolderTree, GitBranch, Globe, LogIn, LogOut, Network, PenLine, Percent,
+  Repeat, RotateCw, Rows3, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles,
+  Split, Target, Wrench,
 };
 
-export function CategoryIcon({ category, size = 13 }: { category: string; size?: number }) {
-  const Icon = CATEGORY_ICON_MAP[category] ?? GitBranch;
-  return (
-    <span className={`lf-node-icon cat-${category}`} style={{ color: categoryColor(category) }}>
-      <Icon size={size} strokeWidth={2.2} />
-    </span>
-  );
+// Category → lucide icon name, used for the palette section headers.
+export const CATEGORY_ICON_NAME: Record<string, string> = {
+  io: 'Cable', structural: 'Split', agent: 'Sparkles', data: 'Database',
+  process: 'SlidersHorizontal', evaluation: 'Target', files: 'FileText',
+  knowledge: 'BookOpen', tool: 'Wrench', workflow: 'Network',
+};
+
+/** Resolve a node's icon by lucide name, falling back to its category glyph. */
+export function NodeIcon({
+  name, category, size = 16, className, strokeWidth = 2,
+}: { name?: string | null; category?: string; size?: number; className?: string; strokeWidth?: number }) {
+  const Icon =
+    (name && LUCIDE_ICONS[name]) ||
+    (category && LUCIDE_ICONS[CATEGORY_ICON_NAME[category] ?? '']) ||
+    Boxes;
+  return <Icon size={size} strokeWidth={strokeWidth} className={className} />;
+}
+
+/** A palette section-header glyph (looked up by category name). */
+export function CategoryGlyph({ category, size = 16, className }: { category: string; size?: number; className?: string }) {
+  return <NodeIcon name={CATEGORY_ICON_NAME[category]} category={category} size={size} className={className} />;
 }

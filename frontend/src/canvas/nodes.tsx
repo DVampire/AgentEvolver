@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
-import { CategoryIcon } from '../icons';
+import { NodeIcon } from '../icons';
 import { CONTAINER_H, CONTAINER_W, PORT_COLORS, type CanvasData, type CanvasNode, type NodeSpec, type ParamSpec, type PortSpec, type PortType } from './types';
 
 function runClass(data: CanvasData): string { return data.runState ? ` run-${data.runState}` : ''; }
@@ -117,7 +117,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
     <div className={`lf-node${runClass(data)}${selected ? ' selected' : ''}`}>
       <CardToolbar id={id} visible={Boolean(selected)} />
       <header className="lf-node-head">
-        <CategoryIcon category={spec?.category ?? 'tool'} />
+        <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType ?? 'Step'}</strong>
         {data.runState === 'running' ? <span className="lf-pulse" /> : null}
         {data.runCount && data.runCount > 1 ? <em className="lf-run-count">×{data.runCount}</em> : null}
@@ -171,7 +171,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
     <div className={`lf-node lf-container${runClass(data)}${selected ? ' selected' : ''}`} style={{ width: CONTAINER_W, height: CONTAINER_H }}>
       <CardToolbar id={id} visible={Boolean(selected)} />
       <header className="lf-node-head">
-        <CategoryIcon category="structural" />
+        <NodeIcon name={spec?.icon} category="structural" className="lf-head-icon" />
         <strong>{spec?.label ?? data.stepType}</strong>
         {data.runState === 'running' ? <span className="lf-pulse" /> : null}
         {data.runCount && data.runCount > 1 ? <em className="lf-run-count">×{data.runCount}</em> : null}
@@ -207,7 +207,7 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
     <div className={`lf-node lf-io${selected ? ' selected' : ''}`}>
       <CardToolbar id={id} visible={Boolean(selected)} />
       <header className="lf-node-head">
-        <CategoryIcon category="io" />
+        <NodeIcon name={isInput ? 'LogIn' : 'LogOut'} category="io" className="lf-head-icon" />
         <strong>{isInput ? 'Flow Input' : 'Flow Output'}</strong>
         {isInput && io.name ? <code className="lf-node-ref">{'$'}{'{'}inputs.{io.name}{'}'}</code> : null}
       </header>

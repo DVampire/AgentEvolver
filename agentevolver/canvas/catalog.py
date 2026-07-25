@@ -98,6 +98,47 @@ def _tool_spec(name: str, info: Any, category: str) -> NodeSpec:
     )
 
 
+# Per-node lucide icon names (Langflow gives every component its own glyph).
+# Resolution order: exact node id → capability target → category fallback.
+_ICON_BY_ID = {
+    "io/input": "LogIn", "io/output": "LogOut",
+    "step/map": "Repeat", "step/branch": "GitBranch", "step/loop": "RotateCw",
+    "step/reduce": "Combine", "step/verify": "ShieldCheck", "step/checkpoint": "Flag",
+    "data/save_dataset": "Save", "data/load_dataset": "FolderInput",
+}
+_ICON_BY_TARGET = {
+    # data sources
+    "yahoo": "CandlestickChart", "fmp": "TrendingUp", "http_request_tool": "Globe",
+    # processing
+    "select_fields": "Columns3", "head": "Rows3", "sort_records": "ArrowUpDown",
+    "rename_fields": "PenLine", "filter_rows": "Filter", "derive_return": "Percent",
+    "to_eval_records": "Shuffle",
+    # evaluation
+    "exact_match": "Target",
+    # file tools
+    "read_file_tool": "FileText", "write_file_tool": "FilePlus2", "edit_file_tool": "FilePen",
+    "list_dir_tool": "FolderTree", "glob_search_tool": "FileSearch", "grep_search_tool": "Search",
+    # actor agents
+    "meta_agent": "Sparkles", "general_agent": "Bot", "code_agent": "Code",
+    "reviewer_agent": "ShieldCheck", "monitor_agent": "Activity", "browser_agent": "Globe",
+}
+_ICON_BY_CATEGORY = {
+    "io": "Cable", "structural": "Split", "agent": "Sparkles", "data": "Database",
+    "process": "SlidersHorizontal", "evaluation": "Target", "files": "FileText",
+    "knowledge": "BookOpen", "tool": "Wrench", "workflow": "Network",
+}
+
+
+def _icon_for(spec: NodeSpec) -> str:
+    """Resolve a node's lucide icon: id → target → category → default."""
+    return (
+        _ICON_BY_ID.get(spec.id)
+        or (_ICON_BY_TARGET.get(spec.target) if spec.target else None)
+        or _ICON_BY_CATEGORY.get(spec.category)
+        or "Box"
+    )
+
+
 def _param_type_from_annotation(annotation: Any) -> str:
     """Best-effort map a ``__call__`` type hint to a canvas ParamType."""
     text = str(annotation)
@@ -229,6 +270,8 @@ def _with_ports(spec: NodeSpec) -> NodeSpec:
 
     spec.inputs = inputs
     spec.outputs = outputs
+    if not spec.icon:
+        spec.icon = _icon_for(spec)
     return spec
 
 

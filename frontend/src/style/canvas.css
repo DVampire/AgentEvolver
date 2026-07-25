@@ -13,12 +13,22 @@
 .canvas-cat-head { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 6px; border: 0; border-radius: 9px; padding: 8px 8px; color: #dfe3ec; background: transparent; text-align: left; }
 .canvas-cat-head:hover { background: #1d212a; }
 .canvas-cat-head strong { flex: 1; font-size: 13px; font-weight: 600; }
+.canvas-cat-head[aria-expanded='true'] strong { font-weight: 680; }
 .canvas-cat-head em { color: #6d7488; font-style: normal; font-size: 13px; }
-.canvas-palette-item { display: flex; align-items: center; gap: 9px; margin: 4px 2px 4px 6px; border: 1px solid #2b2f3a; border-radius: 10px; padding: 9px 10px; color: #cdd3e0; background: #191c23; cursor: grab; transition: border-color .12s ease, background .12s ease; }
-.canvas-palette-item:hover { border-color: #4b566f; background: #1f232d; }
+/* Langflow section-header glyph: muted, accent-pink when the section is open. */
+.lf-cat-icon { color: #8b93a6; flex: 0 0 auto; }
+.canvas-cat-head[aria-expanded='true'] .lf-cat-icon { color: #e5397a; }
+.lf-cat-chevron svg { transition: transform .15s ease; }
+.canvas-cat-head[aria-expanded='true'] .lf-cat-chevron svg { transform: rotate(90deg); }
+/* Langflow component row: muted pill + colored LEFT border (set inline per
+   category), a plain monochrome glyph, and a grip handle. */
+.canvas-palette-item { display: flex; align-items: center; gap: 9px; margin: 4px 2px 4px 6px; border: 1px solid #2b2f3a; border-left-width: 3px; border-radius: 8px; padding: 8px 10px; color: #cdd3e0; background: #191c23; cursor: grab; transition: border-color .12s ease, background .12s ease; }
+.canvas-palette-item:hover { background: #1f232d; }
 .canvas-palette-item:active { cursor: grabbing; }
 .canvas-palette-item strong { flex: 1; font-size: 12.5px; font-weight: 550; }
 .canvas-palette-item .drag-dots { color: #565e70; font-style: normal; font-size: 12px; }
+.lf-item-icon { color: #9aa2b4; flex: 0 0 auto; }
+.lf-head-icon { color: #cbd2e0; flex: 0 0 auto; }
 
 /* --- category icon chips --- */
 .lf-node-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; font-size: 12px; flex: 0 0 auto; }
@@ -137,8 +147,12 @@
 .app-shell[data-theme='light'] .canvas-catalog-title { color: #1f2430; }
 .app-shell[data-theme='light'] .canvas-cat-head { color: #2a3040; }
 .app-shell[data-theme='light'] .canvas-cat-head:hover { background: #f2f4f8; }
-.app-shell[data-theme='light'] .canvas-palette-item { border-color: #e5e8ef; color: #3c4557; background: #fff; box-shadow: 0 1px 2px rgba(30,40,70,.05); }
-.app-shell[data-theme='light'] .canvas-palette-item:hover { border-color: #b8c2d8; background: #fafbfd; }
+.app-shell[data-theme='light'] .canvas-palette-item { border-color: #e5e8ef; color: #3c4557; background: #f7f8fb; box-shadow: 0 1px 2px rgba(30,40,70,.04); }
+.app-shell[data-theme='light'] .canvas-palette-item:hover { background: #eef1f6; }
+.app-shell[data-theme='light'] .lf-item-icon { color: #5a6478; }
+.app-shell[data-theme='light'] .lf-head-icon { color: #3c4557; }
+.app-shell[data-theme='light'] .lf-cat-icon { color: #6b7382; }
+.app-shell[data-theme='light'] .canvas-cat-head[aria-expanded='true'] .lf-cat-icon { color: #e5397a; }
 .app-shell[data-theme='light'] .canvas-flow-wrap .react-flow { background: hsl(240, 5%, 96%); }
 .app-shell[data-theme='light'] .canvas-flow-wrap .react-flow__background { color: hsl(240, 5%, 65%); }
 .app-shell[data-theme='light'] .lf-node { border-color: #e2e6ee; color: #3c4557; background: #fff; box-shadow: 0 6px 22px rgba(30,40,70,.09); }
