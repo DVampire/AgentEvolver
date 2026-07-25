@@ -26,6 +26,7 @@
     --secondary-hover: 240 6% 90%;
     --accent: 240 5% 96%;
     --accent-foreground: 0 0% 0%;
+    --accent-emerald-foreground: 161 94% 23%;
     --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
     --ring: 0 0% 0%;
@@ -66,6 +67,7 @@
     --secondary-hover: 240 4% 16%;
     --accent: 240 4% 16%;
     --accent-foreground: 0 0% 100%;
+    --accent-emerald-foreground: 158 64% 52%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --ring: 0 0% 100%;
