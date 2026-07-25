@@ -93,6 +93,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const [dirty, setDirty] = useState(false);
   const specIndexRef = useRef(new Map<string, NodeSpec>());
   const flowInstanceRef = useRef<ReactFlowInstance<CanvasNode, Edge>>();
+  const flowWrapRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>({ nodes: [], edges: [] });
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] }>();
   // saveFlow is declared further down; the node-action handler reaches it here.
@@ -154,10 +155,23 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       update: updateNodeData,
     };
     const fallback = nextPlacement();
+    // Click-to-add (no drop point): drop the node at the CENTER of the current
+    // viewport so it lands where the user is looking, not at a fixed flow
+    // coordinate that may be scrolled off-screen. Small jitter avoids stacking.
+    let placed = position;
+    if (!placed) {
+      const instance = flowInstanceRef.current;
+      const wrap = flowWrapRef.current;
+      if (instance && wrap) {
+        const rect = wrap.getBoundingClientRect();
+        const center = instance.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        placed = { x: center.x - 150 + (fallback % 5) * 28, y: center.y - 40 + (fallback % 5) * 28 };
+      }
+    }
     const node: CanvasNode = {
       id,
       type: spec.category === 'io' ? 'ioNode' : spec.container ? 'containerNode' : 'stepNode',
-      position: position ?? { x: 160 + (fallback % 4) * 80, y: 100 + (fallback % 6) * 70 },
+      position: placed ?? { x: 160 + (fallback % 4) * 80, y: 100 + (fallback % 6) * 70 },
       data,
     };
     setDirty(true);
@@ -656,7 +670,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             : <Button size="md" onClick={runFlow} disabled={!connected || !nodes.length}><Play /> Run</Button>}
           <Button variant={playgroundOpen ? 'ghostActive' : 'primary'} size="md" onClick={() => { setPlaygroundOpen((open) => !open); setInspected(undefined); }} disabled={!connected}><Play /> Playground</Button>
         </header>
-        <div className="canvas-flow-wrap" onDrop={onCanvasDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}>
+        <div ref={flowWrapRef} className="canvas-flow-wrap" onDrop={onCanvasDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}>
           <ReactFlow
             nodes={nodes}
             edges={displayEdges}
