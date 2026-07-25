@@ -2,6 +2,8 @@ import {
   Activity,
   ArrowUpDown,
   BookOpen,
+  BookOpenText,
+  BookPlus,
   Bot,
   Box,
   Boxes,
@@ -52,7 +54,7 @@ import {
 // Curated lucide registry the backend catalog draws NodeSpec.icon names from
 // (Langflow's ForwardedIconComponent pattern — every node has its own glyph).
 export const LUCIDE_ICONS: Record<string, LucideIcon> = {
-  Activity, ArrowUpDown, BookOpen, Bot, Box, Boxes, Braces, Cable, CandlestickChart, Code,
+  Activity, ArrowUpDown, BookOpen, BookOpenText, BookPlus, Bot, Box, Boxes, Braces, Cable, CandlestickChart, Code,
   Columns3, Combine, Database, DownloadCloud, FilePen, FilePlus2, FileSearch, FileText, Filter, Flag,
   FolderInput, FolderTree, GitBranch, Globe, KeyRound, LogIn, LogOut, Merge, Network, PenLine,
   Percent, Regex, Repeat, Repeat2, RotateCw, Rows3, Scissors, Search, ShieldCheck, Shuffle,

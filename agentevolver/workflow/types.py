@@ -44,6 +44,7 @@ class StepType(str, Enum):
     DATASOURCE = "datasource"
     PROCESS = "process"
     DATA = "data"
+    KNOWLEDGE = "knowledge"
     BENCHMARK = "benchmark"
     PARALLEL = "parallel"
     MAP = "map"

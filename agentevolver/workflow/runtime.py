@@ -423,7 +423,7 @@ class WorkflowRuntime:
         if step.type in {
             StepType.AGENT, StepType.TOOL, StepType.SKILL, StepType.CONNECTOR,
             StepType.ENVIRONMENT, StepType.WORKFLOW,
-            StepType.DATASOURCE, StepType.PROCESS, StepType.DATA, StepType.BENCHMARK,
+            StepType.DATASOURCE, StepType.PROCESS, StepType.DATA, StepType.KNOWLEDGE, StepType.BENCHMARK,
         }:
             return await self._call(step, definition, run, scope, ctx, depth, key)
         if step.type == StepType.PARALLEL:
@@ -769,6 +769,9 @@ class WorkflowRuntime:
         if kind == StepType.DATA:
             from agentevolver.data import data_manager
             return await data_manager(name=target, input=payload, ctx=ctx)
+        if kind == StepType.KNOWLEDGE:
+            from agentevolver.knowledge import knowledge_manager
+            return await knowledge_manager(name=target, input=payload, ctx=ctx)
         if kind == StepType.BENCHMARK:
             import json as _json
 
@@ -979,6 +982,7 @@ class WorkflowRuntime:
         from agentevolver.connector import connector_manager
         from agentevolver.environment import environment_manager
         from agentevolver.data import data_manager
+        from agentevolver.knowledge import knowledge_manager
         from agentevolver.plugins import plugin_manager
         from agentevolver.process import process_manager
         from agentevolver.skill import skill_manager
@@ -1012,6 +1016,8 @@ class WorkflowRuntime:
                 raise ValueError(f"Unknown Workflow Process capability: {target}")
             elif step.type == StepType.DATA and await data_manager.get_info(target) is None:
                 raise ValueError(f"Unknown Workflow Data operation: {target}")
+            elif step.type == StepType.KNOWLEDGE and await knowledge_manager.get_info(target) is None:
+                raise ValueError(f"Unknown Workflow Knowledge operation: {target}")
             elif step.type == StepType.BENCHMARK:
                 if await benchmark_manager.get_info(target) is None:
                     try:  # startup inits only exact_match; materialize others on demand

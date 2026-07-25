@@ -105,6 +105,7 @@ _ICON_BY_ID = {
     "step/map": "Repeat", "step/branch": "GitBranch", "step/loop": "RotateCw",
     "step/reduce": "Combine", "step/verify": "ShieldCheck", "step/checkpoint": "Flag",
     "data/dataset_save": "UploadCloud", "data/dataset_load": "DownloadCloud",
+    "knowledge/knowledge_ingest": "BookPlus", "knowledge/knowledge_retrieve": "BookOpenText",
 }
 _ICON_BY_TARGET = {
     # data sources
@@ -237,6 +238,39 @@ def _data_node_specs() -> List[NodeSpec]:
     ]
 
 
+def _knowledge_node_specs(types: List[str]) -> List[NodeSpec]:
+    """The RAG nodes: ingest documents into a base, retrieve top-k by query.
+
+    ``type`` selects the retrieval backend (bm25 / tfidf / …) from the registry.
+    """
+    type_options = types or ["bm25"]
+    return [
+        NodeSpec(
+            id="knowledge/knowledge_ingest", category="knowledge", step_type="knowledge", target="knowledge_ingest",
+            label="Ingest", description="Add documents to a knowledge base (RAG).",
+            params=[
+                ParamSpec(name="base", label="Knowledge base", required=True, connectable=False),
+                ParamSpec(name="type", label="RAG type", type="select", options=type_options,
+                          default=type_options[0], connectable=False),
+                ParamSpec(name="text_field", label="Text field", default="text", connectable=False,
+                          description="Which record field holds the document text."),
+                ParamSpec(name="documents", label="Documents", type="json",
+                          description="Records/text to index — connect from a process/datasource node."),
+            ],
+        ),
+        NodeSpec(
+            id="knowledge/knowledge_retrieve", category="knowledge", step_type="knowledge", target="knowledge_retrieve",
+            label="Retrieve", description="Retrieve the top-k most relevant documents by query.",
+            params=[
+                ParamSpec(name="base", label="Knowledge base", required=True, connectable=False),
+                ParamSpec(name="query", label="Query", multiline=True,
+                          description="The search query (connect a step or type text)."),
+                ParamSpec(name="top_k", label="Top K", type="number", default=4, connectable=False),
+            ],
+        ),
+    ]
+
+
 def _benchmark_node_spec(name: str, info: Any) -> NodeSpec:
     """A benchmark (evaluation) node: takes upstream records, returns a score."""
     return NodeSpec(
@@ -273,7 +307,7 @@ def _with_ports(spec: NodeSpec) -> NodeSpec:
         if param.connectable:
             inputs.append(PortSpec(name=f"arg:{param.name}", label=param.label, type=_param_port_type(param.type)))
 
-    if spec.category == "agent" or spec.step_type in ("reduce", "tool", "datasource", "process", "data", "benchmark"):
+    if spec.category == "agent" or spec.step_type in ("reduce", "tool", "datasource", "process", "data", "knowledge", "benchmark"):
         outputs = list(_CAPABILITY_OUTPUTS)
     elif spec.id == "io/input":
         outputs = [PortSpec(name="out", label="Value", type="any")]  # frontend colors by input_type
@@ -453,6 +487,13 @@ async def build_catalog() -> List[NodeSpec]:
 
     # Dataset sink/source nodes (persist processed records, or load them back).
     specs.extend(_data_node_specs())
+
+    # Knowledge (RAG) nodes: ingest documents, retrieve top-k by query.
+    try:
+        from agentevolver.knowledge import knowledge_manager
+        specs.extend(_knowledge_node_specs(await knowledge_manager.list_types()))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"| ⚠️ Canvas palette: knowledge registry unavailable: {exc}")
 
     try:
         from agentevolver.benchmark import benchmark_manager

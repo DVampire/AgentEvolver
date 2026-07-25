@@ -40,6 +40,7 @@ from agentevolver.gateway.protocol import (
 from agentevolver.hook import hook_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
+from agentevolver.knowledge import knowledge_manager
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
 from agentevolver.plugins import plugin_manager
@@ -161,6 +162,7 @@ class AgentGateway:
         await plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None))
         await process_manager.initialize(process_names=getattr(config, "process_names", None))
         await data_manager.initialize()
+        await knowledge_manager.initialize()
         # Init ONLY the dataset-free evaluators by default — building every
         # benchmark would download datasets (slow/noisy). ``exact_match`` needs
         # no data; add more via config.benchmark_names when a run wants them.

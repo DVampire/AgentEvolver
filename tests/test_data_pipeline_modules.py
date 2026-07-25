@@ -109,6 +109,23 @@ async def test_frozen_node_is_inlined_and_not_run() -> None:
 
 
 @pytest.mark.asyncio
+async def test_knowledge_ingest_then_retrieve() -> None:
+    from agentevolver.knowledge import knowledge_manager
+
+    await knowledge_manager.initialize()
+    assert set(await knowledge_manager.list_types()) >= {"bm25", "tfidf"}
+    docs = [{"text": "The cat sat on the mat."}, {"text": "Python is a programming language."}]
+    ingested = await knowledge_manager(name="knowledge_ingest",
+                                       input={"base": "pytest_kb", "type": "bm25", "documents": docs})
+    assert ingested.success
+    hit = await knowledge_manager(name="knowledge_retrieve",
+                                  input={"base": "pytest_kb", "query": "a cat on the mat", "top_k": 1})
+    assert hit.success, hit.message
+    # the most relevant document is retrieved first
+    assert hit.data["records"][0]["text"] == "The cat sat on the mat."
+
+
+@pytest.mark.asyncio
 async def test_table_operations_group_by() -> None:
     from agentevolver.process import TableOperationsProcessor
     rows = [{"sym": "A", "px": 10.0}, {"sym": "A", "px": 12.0}, {"sym": "B", "px": 6.0}]
