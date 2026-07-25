@@ -217,6 +217,18 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     return () => window.removeEventListener('canvas-add-note', onAddNote);
   }, [addNote]);
 
+  useEffect(() => {
+    const onMinimizeAll = () => {
+      setNodes((current) => {
+        const anyExpanded = current.some((node) => node.type === 'stepNode' && !node.data.minimized);
+        return current.map((node) => (node.type === 'stepNode' ? { ...node, data: { ...node.data, minimized: anyExpanded } } : node));
+      });
+      setDirty(true);
+    };
+    window.addEventListener('canvas-minimize-all', onMinimizeAll);
+    return () => window.removeEventListener('canvas-minimize-all', onMinimizeAll);
+  }, [setNodes]);
+
   const onCanvasDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     const specId = event.dataTransfer.getData(DND_MIME);
