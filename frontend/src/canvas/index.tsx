@@ -3,6 +3,8 @@ import {
   addEdge,
   Background,
   BackgroundVariant,
+  NodeToolbar,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -14,8 +16,9 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../style/canvas.css';
 
-import { Boxes, ChevronDown, Download, Play, Save, Share2, Square, Trash2, UploadCloud } from 'lucide-react';
+import { Boxes, ChevronDown, Copy, Download, Play, Save, Share2, Square, Trash2, UploadCloud } from 'lucide-react';
 
+import ShadTooltip from '../components/common/shadTooltipComponent';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   DropdownMenuShortcut, DropdownMenuTrigger,
@@ -246,6 +249,15 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     clipboardRef.current = { nodes: [node], edges: [] };
     pasteClipboard();
   }, [pasteClipboard]);
+
+  const deleteSelection = useCallback(() => {
+    const ids = new Set(graphRef.current.nodes.filter((node) => node.selected).map((node) => node.id));
+    if (!ids.size) return;
+    takeSnapshot();
+    setNodes((current) => current.filter((node) => !ids.has(node.id)));
+    setEdges((current) => current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)));
+    setDirty(true);
+  }, [setNodes, setEdges, takeSnapshot]);
 
   const deleteNode = useCallback((nodeId: string) => {
     takeSnapshot();
@@ -659,6 +671,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   // ----- render --------------------------------------------------------------
 
   const displayEdges = useMemo(() => [...edges, ...refEdges], [edges, refEdges]);
+  const selectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id);
   const inspectedNode = inspected ? nodes.find((node) => node.id === inspected) : undefined;
 
   return (
@@ -746,6 +759,15 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             <Background id="main-canvas-bg" gap={20} size={2} variant={BackgroundVariant.Dots} />
             <CanvasControls />
             <HelperLines helperLines={helperLines} />
+            {selectedNodeIds.length > 1 ? (
+              // Floating toolbar over a multi-selection (Langflow SelectionMenu).
+              <NodeToolbar nodeId={selectedNodeIds} isVisible position={Position.Top} offset={8}>
+                <div className="lf-node-toolbar">
+                  <ShadTooltip content={`Duplicate ${selectedNodeIds.length} nodes`}><Button variant="ghost" size="node-toolbar" onClick={() => { if (copySelection()) pasteClipboard(); }}><Copy /></Button></ShadTooltip>
+                  <ShadTooltip content={`Delete ${selectedNodeIds.length} nodes`}><Button variant="ghost" size="node-toolbar" className="text-destructive" onClick={deleteSelection}><Trash2 /></Button></ShadTooltip>
+                </div>
+              </NodeToolbar>
+            ) : null}
           </ReactFlow>
           {!nodes.length ? (
             <div className="canvas-empty">
