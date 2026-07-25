@@ -104,6 +104,106 @@ class HeadProcessor(Processor):
 
 
 @PROCESS.register_module(force=True)
+class RenameFieldsProcessor(Processor):
+    """Rename fields on each record via a {old: new} mapping."""
+
+    name: str = "rename_fields"
+    description: str = "Rename record fields via a {old: new} mapping."
+    instruction: str = (
+        "## Function\nRename keys on each record.\n\n"
+        "## Parameters\n- records (list) OR data ({records}): input rows.\n"
+        "- mapping (object): {old_name: new_name} (required)."
+    )
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {"canvas_category": "process"})
+
+    async def __call__(self, records: Any = None, data: Any = None,
+                       mapping: Any = None, **kwargs) -> Response:
+        rows = _coerce_records(records, data)
+        mapping = _as_list(mapping)
+        if not isinstance(mapping, dict) or not mapping:
+            return Response(type=ResponseType.TOOL, success=False,
+                            message="rename_fields: 'mapping' object is required.")
+        out = [{mapping.get(k, k): v for k, v in row.items()} for row in rows if isinstance(row, dict)]
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=f"Renamed {len(mapping)} field(s) across {len(out)} record(s).",
+                        data={"records": out, "count": len(out)})
+
+
+_OPS = {
+    "eq": lambda a, b: a == b, "ne": lambda a, b: a != b,
+    "gt": lambda a, b: a is not None and a > b, "ge": lambda a, b: a is not None and a >= b,
+    "lt": lambda a, b: a is not None and a < b, "le": lambda a, b: a is not None and a <= b,
+}
+
+
+@PROCESS.register_module(force=True)
+class FilterRowsProcessor(Processor):
+    """Keep records whose field satisfies a comparison."""
+
+    name: str = "filter_rows"
+    description: str = "Keep records where field <op> value (eq/ne/gt/ge/lt/le)."
+    instruction: str = (
+        "## Function\nKeep rows where ``field`` compares to ``value``.\n\n"
+        "## Parameters\n- records (list) OR data ({records}): input rows.\n"
+        "- field (str): field to test (required).\n- op (str): eq/ne/gt/ge/lt/le (default eq).\n"
+        "- value: comparison value (numbers are compared numerically)."
+    )
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {"canvas_category": "process"})
+
+    async def __call__(self, records: Any = None, data: Any = None,
+                       field: str = "", op: str = "eq", value: Any = None, **kwargs) -> Response:
+        rows = _coerce_records(records, data)
+        if not field:
+            return Response(type=ResponseType.TOOL, success=False, message="filter_rows: 'field' is required.")
+        compare = _OPS.get(str(op or "eq"))
+        if compare is None:
+            return Response(type=ResponseType.TOOL, success=False, message=f"filter_rows: unknown op '{op}'.")
+        # Numeric-coerce the comparison value when the string looks like a number.
+        if isinstance(value, str):
+            try:
+                value = float(value) if ("." in value or "e" in value.lower()) else int(value)
+            except (TypeError, ValueError):
+                pass
+        out = [row for row in rows if isinstance(row, dict) and compare(row.get(field), value)]
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=f"Kept {len(out)} of {len(rows)} record(s) where {field} {op} {value}.",
+                        data={"records": out, "count": len(out)})
+
+
+@PROCESS.register_module(force=True)
+class DeriveReturnProcessor(Processor):
+    """Add a period-over-period return column derived from a price field."""
+
+    name: str = "derive_return"
+    description: str = "Add a 'return' column = (x - prev_x) / prev_x over a price field."
+    instruction: str = (
+        "## Function\nAppend a simple return column from consecutive ``field`` values.\n\n"
+        "## Parameters\n- records (list) OR data ({records}): input rows (assumed time-ordered).\n"
+        "- field (str): price field (default ``close``).\n- output (str): new column name (default ``return``)."
+    )
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {"canvas_category": "process"})
+
+    async def __call__(self, records: Any = None, data: Any = None,
+                       field: str = "close", output: str = "return", **kwargs) -> Response:
+        rows = _coerce_records(records, data)
+        out: List[Dict[str, Any]] = []
+        prev = None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            current = row.get(field)
+            ret = None
+            if isinstance(current, (int, float)) and isinstance(prev, (int, float)) and prev != 0:
+                ret = (current - prev) / prev
+            out.append({**row, output: ret})
+            if isinstance(current, (int, float)):
+                prev = current
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=f"Derived '{output}' from '{field}' over {len(out)} record(s).",
+                        data={"records": out, "count": len(out)})
+
+
+@PROCESS.register_module(force=True)
 class SortRecordsProcessor(Processor):
     """Sort records by a field."""
 

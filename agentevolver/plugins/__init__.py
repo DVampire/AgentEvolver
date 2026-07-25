@@ -8,4 +8,5 @@ __all__ = [
     "plugin_manager",
     "PluginManager",
     "YahooPlugin",
+    "FMPPlugin",
 ]

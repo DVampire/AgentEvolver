@@ -12,8 +12,13 @@ from __future__ import annotations
 import pytest
 
 from agentevolver.data import data_manager
-from agentevolver.plugins import Plugin, plugin_manager
-from agentevolver.process import SelectFieldsProcessor, process_manager
+from agentevolver.plugins import FMPPlugin, Plugin, plugin_manager
+from agentevolver.process import (
+    DeriveReturnProcessor,
+    FilterRowsProcessor,
+    SelectFieldsProcessor,
+    process_manager,
+)
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.workflow.compiler import WorkflowCompiler
 from agentevolver.workflow.runtime import workflow_runtime
@@ -53,6 +58,25 @@ async def test_default_capabilities_register() -> None:
     await process_manager.initialize()
     assert "yahoo" in await plugin_manager.list()
     assert "select_fields" in await process_manager.list()
+
+
+@pytest.mark.asyncio
+async def test_derive_return_and_filter_rows() -> None:
+    rows = [{"d": "1", "close": 10.0}, {"d": "2", "close": 11.0}, {"d": "3", "close": 9.0}]
+    derived = await DeriveReturnProcessor()(records=rows, field="close")
+    returns = [r["return"] for r in derived.data["records"]]
+    assert returns[0] is None and returns[1] == pytest.approx(0.1)
+
+    # numeric string comparison value is coerced, so this filters numerically
+    kept = await FilterRowsProcessor()(records=rows, field="close", op="gt", value="10")
+    assert [r["close"] for r in kept.data["records"]] == [11.0]
+
+
+@pytest.mark.asyncio
+async def test_fmp_requires_key() -> None:
+    # No key configured / no FMP_API_KEY → a graceful failed Response, not a crash.
+    result = await FMPPlugin()(symbol="AAPL", api_key="")
+    assert not result.success and "key" in result.message.lower()
 
 
 @pytest.mark.asyncio

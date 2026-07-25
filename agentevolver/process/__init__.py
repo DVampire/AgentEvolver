@@ -10,4 +10,7 @@ __all__ = [
     "SelectFieldsProcessor",
     "HeadProcessor",
     "SortRecordsProcessor",
+    "RenameFieldsProcessor",
+    "FilterRowsProcessor",
+    "DeriveReturnProcessor",
 ]
