@@ -427,17 +427,21 @@ class Catalog:
             if param.connectable:
                 inputs.append(PortSpec(name=f"arg:{param.name}", label=param.label, type=self._param_port_type(param.type)))
 
-        if spec.category == "agent" or spec.step_type in ("reduce", "tool", "datasource", "process", "data", "knowledge", "benchmark"):
+        # Control-flow specs declare their own output ports (branch true/false,
+        # map/loop item/done); honor those. Otherwise derive from the node shape.
+        if spec.outputs:
+            outputs = list(spec.outputs)
+        elif spec.category == "agent" or spec.step_type in ("reduce", "tool", "datasource", "process", "data", "knowledge", "benchmark"):
             outputs = list(_CAPABILITY_OUTPUTS)
         elif spec.id == "io/input":
             outputs = [PortSpec(name="out", label="Value", type="any")]  # frontend colors by input_type
-        elif spec.step_type in ("map", "verify"):
+        elif spec.step_type == "verify":
             outputs = [PortSpec(name="out", label="Result", type="list")]
         elif spec.category == "workflow":
             outputs = [PortSpec(name="out", label="Result", type="object")]
         elif spec.id == "io/output":
             outputs = []
-        else:  # branch / loop / checkpoint
+        else:  # checkpoint etc.
             outputs = [PortSpec(name="out", label="Result", type="any")]
 
         spec.inputs = inputs
@@ -497,31 +501,47 @@ class Catalog:
                 description="Publishes one value as a named workflow output.",
                 params=[ParamSpec(name="name", label="Name", required=True, connectable=False)],
             ),
+            # Control flow is expressed like Langflow: regular nodes with typed
+            # output ports wired by edges (no drop-in containers). Map/Loop fan a
+            # data input over an `item` output (connect the per-item body, whose
+            # tail feeds back) and aggregate into `done`; Branch routes to `true`
+            # / `false` output ports. The canvas compiler turns these edges back
+            # into the runtime's map/loop/branch bodies.
             NodeSpec(
                 id="step/map", category="structural", step_type="map", label="Map",
-                description="Run the contained steps once per item, concurrently.",
-                has_items=True, container=True,
+                description="Fan a list over the body (item output) and collect results (done).",
+                has_items=True,
                 params=[
                     ParamSpec(name="item_name", label="Item variable", default="item", connectable=False),
                     ParamSpec(name="concurrency", label="Concurrency", type="number", connectable=False),
                 ],
+                outputs=[
+                    PortSpec(name="item", label="Item", type="any", description="The current item — connect the per-item body."),
+                    PortSpec(name="done", label="Done", type="list", description="Aggregated results after all items."),
+                ],
             ),
             NodeSpec(
                 id="step/branch", category="structural", step_type="branch", label="Branch",
-                description="Run the then/else steps depending on a ${...} test expression.",
-                container=True,
+                description="Route to the True or False output by a ${...} test expression.",
                 params=[ParamSpec(name="condition", label="Test", required=True, multiline=True,
                                   description="e.g. ${check} or a comparison over step results", connectable=False)],
+                outputs=[
+                    PortSpec(name="true", label="True", type="any", description="Taken when the test is truthy."),
+                    PortSpec(name="false", label="False", type="any", description="Taken when the test is falsy."),
+                ],
             ),
             NodeSpec(
                 id="step/loop", category="structural", step_type="loop", label="Loop",
-                description="Repeat the contained steps until/while a condition, bounded by max rounds.",
-                container=True,
+                description="Repeat the body (item output) until/while a condition; done emits the last result.",
                 params=[
                     ParamSpec(name="max_rounds", label="Max rounds", type="number", required=True, connectable=False),
                     ParamSpec(name="condition", label="Condition", multiline=True, connectable=False),
                     ParamSpec(name="condition_mode", label="Mode", type="select",
                               options=["until", "while"], default="until", connectable=False),
+                ],
+                outputs=[
+                    PortSpec(name="item", label="Item", type="any", description="The current round value — connect the body; its tail feeds back."),
+                    PortSpec(name="done", label="Done", type="any", description="The value after the loop ends."),
                 ],
             ),
             NodeSpec(

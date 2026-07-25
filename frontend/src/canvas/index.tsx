@@ -462,7 +462,9 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       };
       restored.push({
         id: item.id,
-        type: item.kind !== 'step' ? 'ioNode' : spec?.container || ['map', 'branch', 'loop'].includes(item.step_type ?? '') ? 'containerNode' : 'stepNode',
+        // Control flow (map/branch/loop) is now regular port-wired nodes, not
+        // drop-in containers (Langflow model).
+        type: item.kind !== 'step' ? 'ioNode' : spec?.container ? 'containerNode' : 'stepNode',
         position: item.position,
         parentId: item.parent ?? undefined,
         data,
@@ -485,12 +487,17 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       } as CanvasNode);
     }
     restored.sort((left, right) => Number(Boolean(left.parentId)) - Number(Boolean(right.parentId)));
-    const restoredEdges: Edge[] = doc.edges.map((edge) => ({
-      // The rendered source handle is always "out"; the sub-path lives in edge
-      // data (migration: pre-typed edges have no source_port → whole value).
-      id: edge.id, source: edge.source, sourceHandle: 'out', target: edge.target, targetHandle: edge.param,
-      data: { sourcePort: edge.source_port ?? 'out' },
-    }));
+    const restoredEdges: Edge[] = doc.edges.map((edge) => {
+      // Capability sub-paths (message/data/files) all leave the single adaptive
+      // "out" handle; control-flow ports (true/false/item/done) are their own
+      // handle. Pick the rendered handle accordingly.
+      const port = edge.source_port ?? 'out';
+      const handle = ['message', 'data', 'files'].includes(port) ? 'out' : port;
+      return {
+        id: edge.id, source: edge.source, sourceHandle: handle, target: edge.target, targetHandle: edge.param,
+        data: { sourcePort: port },
+      };
+    });
     for (const node of restored) node.data.boundParams = boundParamsFor(node.id, restoredEdges);
     setNodes(restored);
     setEdges(restoredEdges);
@@ -508,16 +515,24 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       return;
     }
     const targetType = portTypeOf(target, connection.targetHandle, 'in');
-    // Capability nodes (>1 output) are polymorphic: one adaptive handle whose
-    // sub-path is inferred from the target's type. Others carry one typed output.
-    const adaptive = (source.data.spec?.outputs?.length ?? 0) > 1;
-    const sourceType = adaptive ? 'any' : portTypeOf(source, 'out', 'out');
+    // Three source shapes: (a) capability nodes are polymorphic — one adaptive
+    // "out" handle whose sub-path is inferred from the target's type; (b)
+    // control-flow nodes have distinct named output handles (branch true/false,
+    // loop/map item/done) — use the specific handle; (c) single typed output.
+    const outs = source.data.spec?.outputs ?? [];
+    const capabilityAdaptive = outs.length > 1 && outs.some((port) => port.name === 'out');
+    const multiOutput = outs.length > 1 && !capabilityAdaptive;
+    const srcHandle = connection.sourceHandle || 'out';
+    const sourceType = capabilityAdaptive ? 'any'
+      : multiOutput ? portTypeOf(source, srcHandle, 'out')
+      : portTypeOf(source, 'out', 'out');
     if (!portsCompatible(sourceType, targetType)) {
       onNotice(`Type mismatch: a ${sourceType} output can't connect to a ${targetType} input.`);
       return;
     }
-    const sourcePort = adaptive
+    const sourcePort = capabilityAdaptive
       ? (({ text: 'message', object: 'data', list: 'files' } as Record<string, string>)[targetType] ?? 'message')
+      : multiOutput ? srcHandle
       : 'out';
     const param = connection.targetHandle;
     if (param.startsWith('arg:') && String(target.data.args[param.slice(4)] ?? '').trim()) {

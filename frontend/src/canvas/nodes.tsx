@@ -41,34 +41,55 @@ function InHandle({ id, type }: { id: string; type: PortType }) {
  * polymorphic — one adaptive port whose sub-path (message/data/files) is
  * inferred from what you connect it to; other nodes carry their one typed
  * output. ``ioType`` colors the io-input node's output by its declared type. */
-// Output row markup copied from Langflow's NodeOutputfield: an h-11 bg-muted
-// band with the output name (px-2 py-1 text-sm font-medium), an inspect button
-// (TextSearch → opens the node inspector), then the source handle.
-function OutputPorts({ nodeId, outputs, ioType, frozen }: { nodeId?: string; outputs?: PortSpec[]; ioType?: PortType; frozen?: boolean }) {
-  const adaptive = (outputs?.length ?? 0) > 1;
-  const port = outputs?.[0] ?? { name: 'out', label: 'Result', type: 'any' as PortType };
-  const type: PortType = adaptive ? 'any' : (ioType ?? port.type);
-  const label = adaptive ? 'Output' : port.label;
-  const hint = adaptive
-    ? 'Output — the sub-value is chosen by what you connect it to (text→message, object→data, list→files)'
-    : `${label} · ${type}`;
+// One output row — Langflow NodeOutputfield: an h-11 bg-muted band with the
+// output name + (single-output only) an inspect button, then the source handle.
+function OutputRow({ nodeId, name, label, type, hint, inspect, frozen, last }: {
+  nodeId?: string; name: string; label: string; type: PortType; hint: string; inspect?: boolean; frozen?: boolean; last?: boolean;
+}) {
   return (
-    <div className="relative flex h-11 w-full flex-wrap items-center justify-between rounded-b-[0.69rem] bg-muted px-5 py-2" title={hint}>
+    <div className={cn('relative flex h-11 w-full flex-wrap items-center justify-between bg-muted px-5 py-2', last && 'rounded-b-[0.69rem]')} title={hint}>
       <div className="flex w-full items-center justify-end truncate text-sm">
         <div className="flex flex-1" />
         {frozen ? <Snowflake className="mr-1 h-3 w-3 text-[#3ba0ff]" /> : null}
         <div className="flex items-center gap-2">
           <span className="px-2 py-1 text-sm font-medium">{label}</span>
-          <ShadTooltip content="Inspect output">
-            <Button variant="ghost" size="icon" className="h-6 w-6 nodrag" aria-label="Inspect output"
-              onClick={() => { if (nodeId) emitNodeAction(nodeId, 'docs'); }}>
-              <TextSearch className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </ShadTooltip>
+          {inspect ? (
+            <ShadTooltip content="Inspect output">
+              <Button variant="ghost" size="icon" className="h-6 w-6 nodrag" aria-label="Inspect output"
+                onClick={() => { if (nodeId) emitNodeAction(nodeId, 'docs'); }}>
+                <TextSearch className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </ShadTooltip>
+          ) : null}
         </div>
       </div>
-      <Handle type="source" id="out" position={Position.Right} className="lf-handle out" style={handleStyle(type)} title={hint} />
+      <Handle type="source" id={name} position={Position.Right} className="lf-handle out" style={handleStyle(type)} title={hint} />
     </div>
+  );
+}
+
+// Capability nodes have a polymorphic output set (message/data/files/out) → one
+// adaptive "out" port. Control-flow nodes (branch true/false, loop/map item/done)
+// have distinct named outputs → one row + handle per output (like Langflow).
+function OutputPorts({ nodeId, outputs, ioType, frozen }: { nodeId?: string; outputs?: PortSpec[]; ioType?: PortType; frozen?: boolean }) {
+  const list = outputs ?? [];
+  const adaptive = list.length > 1 && list.some((port) => port.name === 'out');
+  if (adaptive || list.length <= 1) {
+    const port = list[0] ?? { name: 'out', label: 'Result', type: 'any' as PortType };
+    const type: PortType = adaptive ? 'any' : (ioType ?? port.type);
+    const label = adaptive ? 'Output' : port.label;
+    const hint = adaptive
+      ? 'Output — the sub-value is chosen by what you connect it to (text→message, object→data, list→files)'
+      : `${label} · ${type}`;
+    return <OutputRow nodeId={nodeId} name={adaptive ? 'out' : port.name} label={label} type={type} hint={hint} inspect frozen={frozen} last />;
+  }
+  return (
+    <>
+      {list.map((port, index) => (
+        <OutputRow key={port.name} nodeId={nodeId} name={port.name} label={port.label} type={port.type}
+          hint={`${port.label} · ${port.type}`} frozen={frozen && index === 0} last={index === list.length - 1} />
+      ))}
+    </>
   );
 }
 
