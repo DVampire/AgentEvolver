@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, Loader2, MessagesSquare, PanelLeft, Pencil, Plus, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, User, X } from 'lucide-react';
+import { ArrowUp, Bot, Check, ChevronDown, Copy, Eraser, FileText, Loader2, MessagesSquare, PanelLeft, Paperclip, Pencil, Plus, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, User, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -289,6 +289,43 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
 
   useEffect(() => { if (sidebarOpen) void loadSessions(); }, [sidebarOpen, loadSessions]);
 
+  // ----- file attachments (Langflow upload/drag/preview) --------------------
+  // Chunked base64 upload via the file.upload.* commands (uploads land in the
+  // owner's durable state/files); attached paths ride along on the next run.
+  const [attached, setAttached] = useState<Array<{ id: string; name: string; path: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!sessionId || !list.length) return;
+    setUploading(true);
+    const CHUNK = 512 * 1024;
+    const toB64 = (bytes: Uint8Array) => { let binary = ''; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); };
+    try {
+      for (const file of list) {
+        const begin = await request('file.upload.begin', { session_id: sessionId, name: file.name, size: file.size, mime_type: file.type || 'application/octet-stream' });
+        if (!begin.ok) { onNotice(begin.error?.message ?? 'Upload failed'); continue; }
+        const meta = begin.result.file as { id: string; path: string };
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let ok = true;
+        for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+          const resp = await request('file.upload.chunk', { session_id: sessionId, file_id: meta.id, data: toB64(bytes.subarray(offset, offset + CHUNK)) });
+          if (!resp.ok) { onNotice('Upload chunk failed'); ok = false; break; }
+        }
+        if (!ok) continue;
+        const done = await request('file.upload.complete', { session_id: sessionId, file_id: meta.id });
+        if (done.ok) setAttached((current) => [...current, { id: meta.id, name: file.name, path: (done.result.file as { path: string }).path }]);
+      }
+    } finally { setUploading(false); }
+  }, [sessionId, request, onNotice]);
+
+  const removeAttached = useCallback((id: string) => {
+    setAttached((current) => current.filter((file) => file.id !== id));
+    if (sessionId) void request('file.remove', { session_id: sessionId, file_id: id });
+  }, [sessionId, request]);
+
   // ----- flow chat: input mapping ------------------------------------------
   const targetInput = useMemo(() => {
     const strings = inputNodes.filter((field) => field.input_type === 'string');
@@ -306,16 +343,18 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
         catch { input[field.name] = field.default; }
       }
     }
+    if (attached.length) input.files = attached.map((file) => file.path);
     setFlowMessages((current) => [...current, { role: 'user', content }]);
     persistFlow('user', content);
     setFlowInput('');
+    setAttached([]);
     const rid = await startRun(input);
     if (!rid) {
       setFlowMessages((current) => [...current, { role: 'assistant', content: 'The flow could not start — check the notice.', failed: true }]);
       return;
     }
     setPendingRun(rid);
-  }, [flowInput, pendingRun, runId, inputNodes, targetInput, startRun, persistFlow]);
+  }, [flowInput, pendingRun, runId, inputNodes, targetInput, startRun, persistFlow, attached]);
 
   // Run a flow that has no Chat Input directly (Langflow's no-input.tsx).
   const runFlowNoInput = useCallback(async () => {
@@ -579,13 +618,30 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
       <div className="mx-auto w-full max-w-[768px] px-4 pb-4 md:w-5/6">
         <div
           data-testid="input-wrapper"
-          className="flex w-full cursor-text flex-col rounded-md border border-input bg-muted p-3 hover:border-muted-foreground focus-within:border-primary"
+          className={cn(
+            'flex w-full cursor-text flex-col rounded-md border bg-muted p-3 hover:border-muted-foreground focus-within:border-primary',
+            dragging ? 'border-primary' : 'border-input',
+          )}
           onClick={(event) => {
             const target = event.target as HTMLElement;
             if (target.closest("textarea,button,input,[role='button']")) return;
             inputRef.current?.focus();
           }}
+          onDragOver={tab === 'flow' ? (event) => { event.preventDefault(); setDragging(true); } : undefined}
+          onDragLeave={tab === 'flow' ? () => setDragging(false) : undefined}
+          onDrop={tab === 'flow' ? (event) => { event.preventDefault(); setDragging(false); if (event.dataTransfer.files.length) void uploadFiles(event.dataTransfer.files); } : undefined}
         >
+          {tab === 'flow' && attached.length ? (
+            <div className="flex w-full flex-wrap items-center gap-2 pb-3">
+              {attached.map((file) => (
+                <div key={file.id} className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="max-w-[160px] truncate">{file.name}</span>
+                  <button type="button" onClick={() => removeAttached(file.id)} className="text-muted-foreground hover:text-destructive" aria-label="Remove file"><X className="h-3 w-3" /></button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="w-full">
             <Textarea
               ref={inputRef}
@@ -604,7 +660,18 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
             />
           </div>
           <div className="flex w-full items-center justify-between pt-3">
-            <div className="flex-shrink-0" />
+            <div className="flex-shrink-0">
+              {tab === 'flow' ? (
+                <>
+                  <input ref={fileInputRef} type="file" multiple className="hidden"
+                    onChange={(event) => { if (event.target.files?.length) void uploadFiles(event.target.files); event.target.value = ''; }} />
+                  <Button unstyled className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary-hover hover:text-foreground disabled:opacity-50"
+                    onClick={() => fileInputRef.current?.click()} disabled={!connected || uploading} title="Attach files" aria-label="Attach files">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                  </Button>
+                </>
+              ) : null}
+            </div>
             <div className="flex flex-shrink-0 items-center gap-2">
               <Button
                 unstyled
