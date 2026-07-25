@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Eraser, Play, Square, X } from 'lucide-react';
+import { Bot, Eraser, Play, Square, User, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -42,13 +42,20 @@ function formatOutputs(output: unknown): string {
   return JSON.stringify(output, null, 2);
 }
 
+// Langflow chatMessage transcript row: a full-width row with a 32px avatar,
+// the sender name, then the message content — not left/right bubbles.
 function Bubble({ role, failed, children }: { role: 'user' | 'assistant'; failed?: boolean; children: React.ReactNode }) {
+  const isUser = role === 'user';
   return (
-    <div className={role === 'user' ? 'self-end' : 'self-start'}>
-      <div className={role === 'user'
-        ? 'max-w-[320px] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-[13px] text-primary-foreground'
-        : `playground-markdown max-w-[360px] rounded-2xl rounded-bl-sm px-3.5 py-2 text-[13px] ${failed ? 'bg-error-background text-error-foreground' : 'bg-muted text-foreground'}`}>
-        {children}
+    <div className="group flex w-full gap-3 rounded-md p-2 hover:bg-muted/60">
+      <div className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-muted text-foreground">
+        {isUser ? <User size={16} /> : <Bot size={16} />}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="text-[13px] font-semibold text-foreground">{isUser ? 'User' : 'AI'}</span>
+        <div className={`playground-markdown min-w-0 text-[13px] leading-relaxed ${failed ? 'text-destructive' : 'text-foreground'}`}>
+          {children}
+        </div>
       </div>
     </div>
   );
