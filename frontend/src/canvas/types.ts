@@ -113,6 +113,9 @@ export interface RunData { state: string; frames: Record<string, FrameDoc>; invo
 export interface CanvasData extends Record<string, unknown> {
   spec?: NodeSpec;
   kind: 'step' | 'input' | 'output';
+  // Editable display name (Langflow display_name). Distinct from the node id
+  // that `${id}` references bind to; falls back to the spec label when unset.
+  name?: string;
   stepType?: string;
   target?: string;
   task: string;

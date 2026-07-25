@@ -334,6 +334,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           parent, slot,
         };
         if (data.kind === 'step') {
+          if (data.name?.trim()) doc.name = data.name.trim();
           doc.step_type = data.stepType;
           doc.target = data.target || null;
           doc.task = data.task;
@@ -363,6 +364,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       const data: CanvasData = {
         spec,
         kind: item.kind,
+        name: item.kind === 'step' ? (item.name ?? undefined) : undefined,
         stepType: item.step_type ?? spec?.step_type ?? undefined,
         target: item.target ?? spec?.target ?? undefined,
         task: item.task ?? '',

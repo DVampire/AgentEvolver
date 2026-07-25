@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PencilLine, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -135,6 +136,43 @@ function CardToolbar({ id, visible, minimized, frozen }: { id: string; visible: 
   );
 }
 
+// Editable node title copied from Langflow's NodeName: a static title with a
+// pencil (shown on select) that swaps it for an Input. The custom name is
+// stored as `data.name` — separate from the `${id}` reference — and falls back
+// to the spec label when empty.
+function EditableNodeName({ id, name, fallback, selected, update }: {
+  id: string; name?: string; fallback: string; selected?: boolean; update: CanvasData['update'];
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name ?? '');
+  useEffect(() => { if (!editing) setDraft(name ?? ''); }, [name, editing]);
+  const commit = () => { update(id, { name: draft.trim() || undefined }); setEditing(false); };
+  if (editing) {
+    return (
+      <Input autoFocus value={draft} className="nodrag h-6 min-w-0 flex-1 px-1.5 py-0 text-base"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); commit(); }
+          else if (event.key === 'Escape') { setDraft(name ?? ''); setEditing(false); }
+        }} />
+    );
+  }
+  return (
+    <>
+      <strong>{name || fallback}</strong>
+      {selected ? (
+        <ShadTooltip content="Rename">
+          <Button unstyled className="nodrag flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Rename node" onClick={() => setEditing(true)}>
+            <PencilLine className="h-3.5 w-3.5" />
+          </Button>
+        </ShadTooltip>
+      ) : null}
+    </>
+  );
+}
+
 export function FieldShell({ label, required, hint, handle, children }: { label: string; required?: boolean; hint?: string; handle?: React.ReactNode; children: React.ReactNode }) {
   // Markup copied from Langflow's NodeInputField: a min-h-10 px-5 py-2 row with
   // the handle on the left edge, then a flex-col of the label row + control.
@@ -193,7 +231,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category={spec?.category ?? 'tool'} size={18} className="lf-head-icon" />
-        <strong>{spec?.label ?? data.stepType ?? 'Step'}</strong>
+        <EditableNodeName id={id} name={data.name} fallback={spec?.label ?? data.stepType ?? 'Step'} selected={Boolean(selected)} update={data.update} />
         {data.frozen ? <Snowflake size={12} className="lf-frozen-badge" /> : null}
         <code className="lf-node-ref" title="Reference this step in task text">{'$'}{'{'}{id}{'}'}</code>
         <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
@@ -265,7 +303,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       <CardToolbar id={id} visible={Boolean(selected)} minimized={data.minimized} frozen={data.frozen} />
       <header className="lf-node-head">
         <NodeIcon name={spec?.icon} category="structural" className="lf-head-icon" />
-        <strong>{spec?.label ?? data.stepType}</strong>
+        <EditableNodeName id={id} name={data.name} fallback={spec?.label ?? data.stepType ?? 'Step'} selected={Boolean(selected)} update={data.update} />
         <code className="lf-node-ref">{'$'}{'{'}{id}{'}'}</code>
         <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
       </header>
