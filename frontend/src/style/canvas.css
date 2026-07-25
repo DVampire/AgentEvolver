@@ -76,16 +76,20 @@
 .lf-field-label { color: hsl(var(--foreground)); font-size: 14px; font-weight: 500; }
 .lf-field-label em { color: hsl(0 72% 51%); font-style: normal; }
 .lf-bound { display: inline-block; border: 1px dashed hsl(var(--border)); border-radius: 8px; padding: 6px 10px; color: hsl(var(--muted-foreground)); font-size: 11.5px; }
-.lf-node-foot { display: flex; flex-direction: column; border-top: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 600; }
-.lf-out-row { position: relative; display: flex; align-items: center; justify-content: flex-end; padding: 7px 14px; }
-.lf-out-row + .lf-out-row { border-top: 1px solid hsl(var(--border)); }
 .lf-node-error { margin: 0; padding: 7px 14px 9px; color: hsl(0 72% 51%); font-size: 11px; }
 /* Handle style ported from langflow's handleRenderComponent: a small solid dot
-   (no chunky border) with a thin ring shadow that expands on hover, plus a
-   larger transparent hit area, centered on the node's border edge. */
-.lf-handle { width: 10px; height: 10px; border: 0; border-radius: 9999px; background: hsl(var(--node-selected)); box-shadow: 0 0 0 2px hsl(var(--card)); transition: box-shadow .14s ease; cursor: crosshair; }
-.lf-handle:hover { box-shadow: 0 0 0 3px hsl(var(--node-ring)); }
-.lf-handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 9999px; }
+   with a thin card ring, a 32px transparent hit area, and a datatype-colored
+   neon glow on hover / valid drop (getNeonShadow). Its color comes from the
+   inline `--handle-color` var set alongside the dot's background. */
+.lf-handle { --handle-color: hsl(var(--node-selected)); width: 10px; height: 10px; border: 0; border-radius: 9999px; box-shadow: 0 0 0 2px hsl(var(--card)); transition: box-shadow .14s ease; cursor: crosshair; }
+.lf-handle:hover { box-shadow: 0 0 0 2px hsl(var(--card)), 0 0 0 5px var(--handle-color); }
+.lf-handle.react-flow__handle-valid,
+.lf-handle.connectionindicator:hover {
+  box-shadow: 0 0 0 1px hsl(var(--border)), 0 0 2px var(--handle-color), 0 0 4px var(--handle-color),
+    0 0 6px var(--handle-color), 0 0 8px var(--handle-color), 0 0 10px var(--handle-color),
+    0 0 15px var(--handle-color), 0 0 20px var(--handle-color);
+}
+.lf-handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; transform: translate(-50%, -50%); border-radius: 9999px; }
 .lf-handle.in { position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); }
 .lf-handle.out { position: absolute; right: 0; top: 50%; transform: translate(50%, -50%); }
 

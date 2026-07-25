@@ -1,5 +1,5 @@
 import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Info, Maximize2, Minimize2, MoreHorizontal, Save, Snowflake, Trash2 } from 'lucide-react';
+import { ClipboardCopy, Copy, Download, FileText, Info, Maximize2, Minimize2, MoreHorizontal, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
 
 import { AgentMounts } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -24,15 +24,25 @@ function inputPortType(spec: NodeSpec | undefined, name: string): PortType {
   return spec?.inputs?.find((port) => port.name === name)?.type ?? 'any';
 }
 
+// The `--handle-color` var lets the CSS neon-glow (canvas.css) match the dot's
+// own datatype color, mirroring Langflow's getNeonShadow(handleColor, …).
+function handleStyle(type: PortType, extra?: React.CSSProperties): React.CSSProperties {
+  const color = portColor(type);
+  return { background: color, ['--handle-color' as string]: color, ...extra };
+}
+
 function InHandle({ id, type }: { id: string; type: PortType }) {
-  return <Handle type="target" id={id} position={Position.Left} className="lf-handle in" style={{ background: portColor(type) }} title={`${id} · ${type}`} />;
+  return <Handle type="target" id={id} position={Position.Left} className="lf-handle in" style={handleStyle(type)} title={`${id} · ${type}`} />;
 }
 
 /** A single output handle (Langflow-clean, one row). Capability nodes are
  * polymorphic — one adaptive port whose sub-path (message/data/files) is
  * inferred from what you connect it to; other nodes carry their one typed
  * output. ``ioType`` colors the io-input node's output by its declared type. */
-function OutputPorts({ outputs, ioType }: { outputs?: PortSpec[]; ioType?: PortType }) {
+// Output row markup copied from Langflow's NodeOutputfield: an h-11 bg-muted
+// band with the output name (px-2 py-1 text-sm font-medium), an inspect button
+// (TextSearch → opens the node inspector), then the source handle.
+function OutputPorts({ nodeId, outputs, ioType, frozen }: { nodeId?: string; outputs?: PortSpec[]; ioType?: PortType; frozen?: boolean }) {
   const adaptive = (outputs?.length ?? 0) > 1;
   const port = outputs?.[0] ?? { name: 'out', label: 'Result', type: 'any' as PortType };
   const type: PortType = adaptive ? 'any' : (ioType ?? port.type);
@@ -41,12 +51,22 @@ function OutputPorts({ outputs, ioType }: { outputs?: PortSpec[]; ioType?: PortT
     ? 'Output — the sub-value is chosen by what you connect it to (text→message, object→data, list→files)'
     : `${label} · ${type}`;
   return (
-    <footer className="lf-node-foot">
-      <div className="lf-out-row" title={hint}>
-        <span>{label}</span>
-        <Handle type="source" id="out" position={Position.Right} className="lf-handle out" style={{ background: portColor(type) }} title={hint} />
+    <div className="relative flex h-11 w-full flex-wrap items-center justify-between rounded-b-[0.69rem] bg-muted px-5 py-2" title={hint}>
+      <div className="flex w-full items-center justify-end truncate text-sm">
+        <div className="flex flex-1" />
+        {frozen ? <Snowflake className="mr-1 h-3 w-3 text-[#3ba0ff]" /> : null}
+        <div className="flex items-center gap-2">
+          <span className="px-2 py-1 text-sm font-medium">{label}</span>
+          <ShadTooltip content="Inspect output">
+            <Button variant="ghost" size="icon" className="h-6 w-6 nodrag" aria-label="Inspect output"
+              onClick={() => { if (nodeId) emitNodeAction(nodeId, 'docs'); }}>
+              <TextSearch className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </ShadTooltip>
+        </div>
       </div>
-    </footer>
+      <Handle type="source" id="out" position={Position.Right} className="lf-handle out" style={handleStyle(type)} title={hint} />
+    </div>
   );
 }
 
@@ -186,7 +206,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
         ) : null}
       </div> : null}
       {data.minimized ? <MinimizedHandles inputs={spec?.inputs} /> : null}
-      <OutputPorts outputs={spec?.outputs} />
+      <OutputPorts nodeId={id} outputs={spec?.outputs} frozen={data.frozen} />
       {data.runState === 'failed' ? <p className="lf-node-error">Failed — open the panel for details</p> : null}
     </div>
   );
@@ -202,7 +222,7 @@ function MinimizedHandles({ inputs }: { inputs?: PortSpec[] }) {
     <>
       {ports.map((port, index) => (
         <Handle key={port.name} type="target" id={port.name} position={Position.Left}
-          className="lf-handle in lf-min-handle" style={{ background: portColor(port.type), top: `${((index + 1) / (ports.length + 1)) * 100}%` }}
+          className="lf-handle in lf-min-handle" style={handleStyle(port.type, { top: `${((index + 1) / (ports.length + 1)) * 100}%` })}
           title={`${port.label} · ${port.type}`} />
       ))}
     </>
@@ -240,7 +260,7 @@ function ContainerNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
       <div className={`lf-container-body${isBranch ? ' branch' : ''}`}>
         {isBranch ? <><span className="zone-label then">then</span><span className="zone-label else">else</span><div className="zone-divider" /></> : <span className="zone-hint">Drop steps here</span>}
       </div>
-      <OutputPorts outputs={spec?.outputs} />
+      <OutputPorts nodeId={id} outputs={spec?.outputs} />
     </div>
   );
 }
@@ -270,7 +290,7 @@ function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
           </FieldShell>
         )}
       </div>
-      {isInput ? <OutputPorts outputs={data.spec?.outputs} ioType={IO_INPUT_PORT[io.input_type] ?? 'any'} /> : null}
+      {isInput ? <OutputPorts nodeId={id} outputs={data.spec?.outputs} ioType={IO_INPUT_PORT[io.input_type] ?? 'any'} /> : null}
     </div>
   );
 }
