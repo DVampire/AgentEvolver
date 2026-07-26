@@ -501,7 +501,10 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     const target = nodes.find((node) => node.id === connection.target);
     const source = nodes.find((node) => node.id === connection.source);
     if (!target || !source) return;
-    if (edges.some((edge) => edge.target === connection.target && edge.targetHandle === connection.targetHandle && !edge.id.startsWith('ref-'))) {
+    // Mount ports (mount:tools/skills/connectors) accept many capabilities; every
+    // other input takes a single edge.
+    const isMount = connection.targetHandle?.startsWith('mount:');
+    if (!isMount && edges.some((edge) => edge.target === connection.target && edge.targetHandle === connection.targetHandle && !edge.id.startsWith('ref-'))) {
       onNotice('That input is already connected; remove the existing edge first.');
       return;
     }

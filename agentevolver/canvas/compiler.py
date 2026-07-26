@@ -109,6 +109,10 @@ class CanvasCompiler:
             if source.kind == "output":
                 errors.append(f"Edge {edge.id} starts at an output node")
                 continue
+            # Agent capability mounts (mount:<kind>) accept MANY capability edges
+            # and are collected into allowlist args below, not as data bindings.
+            if edge.param.startswith("mount:"):
+                continue
             port = edge.source_port or "out"
             # Control-flow outputs (Langflow model) are not ordinary data refs:
             #  - branch true/false are CONTROL edges — they define body membership
@@ -311,7 +315,19 @@ class CanvasCompiler:
             # is omitted so the agent keeps its defaults. The runtime lifts these
             # args into ctx.extra["<kind>_allowlist"].
             if tag == "agent":
-                for kind, names in (node.mounts or {}).items():
+                # Two ways to mount a capability, merged: the node's picker
+                # selection (node.mounts) AND edges wired into the agent's
+                # mount:<kind> input ports (Langflow-style — connect a tool node
+                # to the agent). Each edge contributes its source capability name.
+                mounted: Dict[str, List[str]] = {k: list(v) for k, v in (node.mounts or {}).items()}
+                nodes_by_id = {other.id: other for other in graph.nodes}
+                for edge in graph.edges:
+                    if edge.target == node.id and edge.param.startswith("mount:"):
+                        kind = edge.param[len("mount:"):]
+                        src = nodes_by_id.get(edge.source)
+                        cap = (src.target if src and src.target else edge.source) if src else edge.source
+                        mounted.setdefault(kind, []).append(cap)
+                for kind, names in mounted.items():
                     selected = [str(n) for n in names if str(n).strip()]
                     if selected:
                         args[kind] = ",".join(dict.fromkeys(selected))

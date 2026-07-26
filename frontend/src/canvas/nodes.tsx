@@ -294,6 +294,14 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
               : <ParamControl param={param} value={paramValue(param)} onChange={setParam} />}
           </FieldShell>
         ))}
+        {/* Capability mount ports (Langflow-style): wire tool/skill/connector
+            nodes into the agent to grant access; each accepts many edges. */}
+        {(spec?.inputs ?? []).filter((port) => port.name.startsWith('mount:')).map((port) => (
+          <FieldShell key={port.name} label={port.label} hint={`Connect ${port.label.toLowerCase()} nodes here to grant the agent access`}
+            handle={<InHandle id={port.name} type={inputPortType(spec, port.name)} />}>
+            <span className="lf-bound">{data.boundParams.has(port.name) ? 'Connected' : 'Wire capabilities, or pick below'}</span>
+          </FieldShell>
+        ))}
         {spec?.mount_kinds?.length ? (
           <AgentMounts
             kinds={spec.mount_kinds}
