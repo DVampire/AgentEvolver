@@ -678,10 +678,12 @@ class AgentGateway:
         result: Dict[str, list] = {}
         for kind, names in (await self._available_capabilities()).items():
             items = []
+            canvas_defaults = set(canvas_manager.list_default_names()) if kind == "canvas" else set()
             for name in names:
                 if kind == "canvas":
-                    # Library flows live under extension/canvas/; they are not evolvable.
-                    items.append({"type": "canvas", "name": name, "source": "extension", "evolving": False})
+                    # Shipped templates are `default`; user library flows `extension`.
+                    src = "default" if name in canvas_defaults else "extension"
+                    items.append({"type": "canvas", "name": name, "source": src, "evolving": False})
                     continue
                 info = await info_for(kind, name)
                 items.append({
@@ -1632,8 +1634,8 @@ class AgentGateway:
             "environments": await environment_manager.list(),
             "workflows": workflow_manager.list(),
             "commands": await command_manager.list(),
-            # Canvas library: reusable visual flows (JSON under extension/canvas/).
-            "canvas": canvas_manager.list_library_names(),
+            # Canvas flows: shipped default templates + the user's reuse library.
+            "canvas": canvas_manager.list_default_names() + canvas_manager.list_library_names(),
         }
 
     def _capability_document(self, kind: str, name: str, info: Any) -> tuple[str, Optional[str], str]:

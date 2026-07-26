@@ -125,9 +125,11 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
 
   const loadCatalog = useCallback(async () => {
     if (!sessionId) return;
-    const [catalog, flowList] = await Promise.all([
+    const [catalog, flowList, defaults, library] = await Promise.all([
       request('canvas.catalog'),
       request('canvas.flow.list', { session_id: sessionId }),
+      request('canvas.defaults.list', {}),
+      request('canvas.library.list', {}),
     ]);
     if (catalog.ok && Array.isArray(catalog.result.nodes)) {
       const list = catalog.result.nodes as NodeSpec[];
@@ -138,6 +140,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       setRosters(catalog.result.mounts as MountRosters);
     }
     if (flowList.ok && Array.isArray(flowList.result.flows)) setFlows(flowList.result.flows as FlowSummary[]);
+    if (defaults.ok && Array.isArray(defaults.result.flows)) setDefaultFlows(defaults.result.flows as FlowSummary[]);
+    if (library.ok && Array.isArray(library.result.flows)) setLibraryFlows(library.result.flows as FlowSummary[]);
   }, [request, sessionId]);
 
   useEffect(() => {
