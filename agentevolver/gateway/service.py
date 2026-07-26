@@ -1571,9 +1571,14 @@ class AgentGateway:
         # it by polling canvas.run.status (which can be missed/dropped). The
         # trace's task_id IS the run_id; the client matches it to its live run.
         if payload.get("event_type") == "workflow_end" and event.task_id:
+            # Report the run's real terminal state (a cancelled run is not "failed").
+            # Clients re-fetch canvas.run.status for the authoritative record, so this
+            # is a hint; fall back to the trace's success flag if the run is gone.
+            run = workflow_manager.get_run(event.task_id)
+            state = getattr(getattr(run, "state", None), "value", None) if run else None
             await self._publish(
                 "canvas.run.ended",
-                {"run_id": event.task_id, "state": "succeeded" if payload.get("success") else "failed"},
+                {"run_id": event.task_id, "state": state or ("succeeded" if payload.get("success") else "failed")},
                 session_id=event.session_id,
                 task_id=event.task_id,
             )

@@ -1067,7 +1067,8 @@ class WorkflowRuntime:
         """Request cancellation of a run and wake any paused coroutine so it can terminate.
 
         Sets the run's cancel event, moves it to CANCELLING, releases the continue event
-        (so a paused run reaches its next cancel check), and cancels active fan-out tasks.
+        (so a paused run reaches its next cancel check), cancels active fan-out tasks,
+        and interrupts the run task itself.
 
         Returns:
             True if the run was known and signalled, False otherwise.
@@ -1085,6 +1086,15 @@ class WorkflowRuntime:
         if continue_event is not None:
             continue_event.set()
         for task in self._active.get(run_id, set()):
+            task.cancel()
+        # Interrupt the step that is currently in flight. The cancel event alone is
+        # only observed at a control point (between steps), so a run blocked inside a
+        # long step — an agent's model call — would keep running, and a single-step
+        # flow would reach SUCCEEDED without ever passing another control point.
+        # Cancelling the run task raises CancelledError inside run(), which converts
+        # it to CANCELLED and still runs the terminal/cleanup path in its `finally`.
+        task = self._tasks.get(run_id)
+        if task is not None and not task.done():
             task.cancel()
         return True
 
