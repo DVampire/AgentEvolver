@@ -798,8 +798,11 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
 
   return (
     <MountRosterContext.Provider value={rosters}>
-    <div className="canvas-view">
-      <Palette specs={specs} connected={connected} onAdd={(spec) => { takeSnapshot(); addFromSpec(spec); }} />
+    <div className={`canvas-view${playgroundOpen ? ' playground-active' : ''}`}>
+      {/* The Playground is a full chat modal — hide the component palette while
+          it's open (and collapse the grid to one column so the stage fills the
+          width) so the chat reads as a clean full-width page. */}
+      {!playgroundOpen ? <Palette specs={specs} connected={connected} onAdd={(spec) => { takeSnapshot(); addFromSpec(spec); }} /> : null}
       <div className="canvas-stage">
         <header className="canvas-toolbar">
           {/* Flow identity — Langflow FlowMenu: colored icon swatch + a picker

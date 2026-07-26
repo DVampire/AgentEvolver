@@ -623,7 +623,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
         <div
           data-testid="input-wrapper"
           className={cn(
-            'flex w-full cursor-text flex-col rounded-md border bg-muted p-3 hover:border-muted-foreground focus-within:border-primary',
+            'flex w-full cursor-text flex-col rounded-2xl border bg-background p-3.5 shadow-[0_18px_44px_rgba(0,0,0,0.16)] transition-colors hover:border-muted-foreground focus-within:border-primary focus-within:shadow-[0_18px_44px_rgba(0,0,0,0.22)]',
             dragging ? 'border-primary' : 'border-input',
           )}
           onClick={(event) => {
@@ -651,7 +651,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
               ref={inputRef}
               rows={1}
               data-testid="input-chat-playground"
-              className="form-input custom-scroll !min-h-0 block w-full resize-none rounded-none border-0 !bg-transparent p-0 shadow-none focus:border-ring focus:ring-0 sm:text-sm"
+              className="custom-scroll !min-h-0 block w-full resize-none !border-0 !bg-transparent p-0 text-sm leading-relaxed text-foreground !shadow-none placeholder:text-muted-foreground !outline-none focus:!outline-none focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0"
               style={{ maxHeight: `${CHAT_INPUT_MAX_HEIGHT}px` }}
               placeholder={placeholder}
               value={value}
@@ -676,13 +676,14 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
                 </>
               ) : null}
             </div>
-            <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="flex flex-1 items-center justify-end gap-3">
+              <span className="hidden text-[11px] text-muted-foreground sm:inline">Enter to send · Shift+Enter for a new line</span>
               <Button
                 unstyled
                 className={cn(
-                  'flex h-6 w-6 items-center justify-center rounded-md px-0',
+                  'flex h-8 w-8 items-center justify-center rounded-full px-0 transition-colors',
                   'bg-primary text-primary-foreground hover:bg-primary-hover hover:text-secondary',
-                  !busy && !canSend && 'pointer-events-none opacity-50',
+                  !busy && !canSend && 'pointer-events-none opacity-40',
                 )}
                 onClick={busy ? onStop : onSend}
                 disabled={inputDisabled}
@@ -690,9 +691,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
                 aria-label={busy ? 'Stop' : 'Send'}
                 title={busy ? 'Stop' : 'Send'}
               >
-                <div className="flex h-fit w-fit items-center gap-2 text-sm font-medium">
-                  {busy ? <Square className="h-3.5 w-3.5" fill="currentColor" aria-hidden /> : <ArrowUp className="h-4 w-4" />}
-                </div>
+                {busy ? <Square className="h-3.5 w-3.5" fill="currentColor" aria-hidden /> : <ArrowUp className="h-[18px] w-[18px]" />}
               </Button>
             </div>
           </div>

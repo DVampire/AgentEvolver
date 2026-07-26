@@ -16,6 +16,9 @@
 .canvas-mode { grid-template-rows: auto 1fr auto; height: 100vh; min-height: 0; overflow: hidden; }
 .canvas-notice { margin: 0 24px 12px; }
 .canvas-view { min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); }
+/* Playground modal open: palette hidden, so drop to a single column and let the
+   stage (hence the full-cover chat modal) span the whole width. */
+.canvas-view.playground-active { grid-template-columns: minmax(0, 1fr); }
 
 /* --- palette --- */
 .canvas-catalog { width: 280px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid hsl(var(--border)); background: hsl(var(--background)); transition: width .15s ease; }
