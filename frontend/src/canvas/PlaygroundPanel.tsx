@@ -225,7 +225,7 @@ function EmptyState({ subtitle, hint }: { subtitle: string; hint?: React.ReactNo
   );
 }
 
-export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNotice, onClose, inputNodes, startRun, runId, runData, runOutput, runError }: {
+export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNotice, onClose, inputNodes, startRun, stopRun, runId, runData, runOutput, runError }: {
   request: RequestFn;
   subscribe: (listener: (event: GatewayEvent) => void) => () => void;
   sessionId?: string;
@@ -234,6 +234,7 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
   onClose: () => void;
   inputNodes: FlowInputField[];
   startRun: (input: Record<string, unknown>) => Promise<string | undefined>;
+  stopRun?: () => void;
   runId?: string;
   runData?: RunData;
   runOutput?: unknown;
@@ -467,7 +468,10 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
   const canSend = tab === 'flow' ? Boolean(flowInput.trim()) && !flowBusy : Boolean(model && modelInput.trim());
 
   const onSend = () => void (tab === 'flow' ? sendFlow() : sendModel());
-  const onStop = () => { if (tab === 'model' && chatRequestId) void request('model.chat.cancel', { request_id: chatRequestId }); };
+  const onStop = () => {
+    if (tab === 'model' && chatRequestId) void request('model.chat.cancel', { request_id: chatRequestId });
+    else if (tab === 'flow' && flowBusy) stopRun?.();
+  };
 
   const placeholder = tab === 'flow'
     ? 'Send a message...'

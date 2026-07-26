@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../style/canvas.css';
 
-import { Boxes, ChevronDown, Copy, Download, Play, Save, Share2, Square, Trash2, UploadCloud, Workflow } from 'lucide-react';
+import { Boxes, ChevronDown, Copy, Download, Play, Save, Share2, Trash2, UploadCloud, Workflow } from 'lucide-react';
 
 import ShadTooltip from '../components/common/shadTooltipComponent';
 import {
@@ -825,7 +825,6 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           {dirty ? (
             <Button variant="ghost" size="md" className="font-normal text-muted-foreground" onClick={() => void saveFlow()} disabled={!connected || !nodes.length} title="Save draft (⌘S)"><Save /> Save</Button>
           ) : null}
-          <Button variant={playgroundOpen ? 'ghostActive' : 'ghost'} size="md" className="font-normal" onClick={() => { setPlaygroundOpen((open) => !open); setInspected(undefined); }} disabled={!connected}><Play /> Playground</Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="md" className="!px-2.5 font-normal"><Share2 /> Share <ChevronDown className="h-4 w-4" /></Button>
@@ -840,9 +839,9 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
               </> : null}
             </DropdownMenuContent>
           </DropdownMenu>
-          {runId
-            ? <Button variant="destructive" size="md" className="font-normal" onClick={() => void stopRun()}><Square /> Stop</Button>
-            : <Button size="md" className="font-normal" onClick={runFlow} disabled={!connected || !nodes.length}><Play /> Run</Button>}
+          {/* Playground is the single run affordance — it opens the chat modal
+              that drives the flow (no separate Run button). */}
+          <Button variant={playgroundOpen ? 'ghostActive' : 'default'} size="md" className="font-normal" onClick={() => { setPlaygroundOpen((open) => !open); setInspected(undefined); }} disabled={!connected}><Play /> Playground</Button>
         </header>
         <div ref={flowWrapRef} className="canvas-flow-wrap" onDrop={onCanvasDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}>
           <ReactFlow
@@ -920,6 +919,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
                 name: node.data.io.name, input_type: node.data.io.input_type, required: node.data.io.required, default: node.data.io.default,
               }))}
               startRun={startRun}
+              stopRun={() => void stopRun()}
               runId={runId}
               runData={runData}
               runOutput={runOutput}

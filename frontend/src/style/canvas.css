@@ -206,8 +206,11 @@
 .lf-node-icon svg { display: block; }
 .canvas-cat-head em svg, .drag-dots svg { display: block; color: hsl(var(--muted-foreground)); }
 
-/* playground panel: shares node-panel chrome, wider chat layout */
-.playground-panel { width: min(520px, 55%); display: flex; flex-direction: column; }
+/* Playground is a full-cover chat modal over the canvas (Langflow IOModal),
+   not the docked node-panel. Overrides node-panel's top/right/bottom inset,
+   width, border and rounding to fill the flow area; the chat column inside
+   stays centered at max-w-768px. */
+.playground-panel { inset: 0; width: auto; max-width: none; z-index: 20; border: 0; border-radius: 0; box-shadow: none; display: flex; flex-direction: column; }
 .playground-panel .node-panel-head { flex-wrap: nowrap; gap: 6px; }
 
 /* Langflow chat utility classes referenced by the copied markup. */
