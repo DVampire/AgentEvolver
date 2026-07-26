@@ -36,7 +36,9 @@ class FMPPlugin(Plugin):
         "- limit (int): most-recent N candles (default 30).\n\n"
         "## Output\n``data.records`` = list of {date, open, high, low, close, adj_close, volume}."
     )
-    metadata: Dict[str, Any] = Field(default_factory=lambda: {"canvas_category": "data"})
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {
+        "canvas_category": "data", "bundle": "fmp", "bundle_label": "FMP",
+        "display_name": "FMP", "icon": "bundle:fmp"})
     api_key: str = Field(default="", description="FMP api key (else FMP_API_KEY / config).")
 
     def _resolve_key(self, arg_key: str) -> str:

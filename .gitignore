@@ -227,6 +227,3 @@ output/
 
 # User-level AgentEvolver home (config, staging, deploy registry, caches)
 .agentevolver/
-
-# Stray workspace root created when the CLI runs the gateway with a relative workspace_root default
-workspace_root/

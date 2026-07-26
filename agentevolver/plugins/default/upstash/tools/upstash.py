@@ -1,0 +1,35 @@
+"""Upstash — from the Langflow `upstash` vector-store bundle (ported)."""
+
+from typing import Any, List, Optional
+
+from agentevolver.registry import PLUGIN
+from agentevolver.response.types import Response
+from agentevolver.plugins.types import VectorStorePlugin
+
+
+@PLUGIN.register_module(force=True)
+class UpstashUpstashPlugin(VectorStorePlugin):
+    name: str = "upstash.upstash"
+    display_name: str = 'Upstash'
+    description: str = 'Upstash Vector Store with search capabilities'
+    kind: str = "vectorstore"
+    bundle: str = "upstash"
+    bundle_label: str = 'Upstash'
+    source: str = "langflow/bundles/upstash"
+    status: str = "complete"
+    needs_embedding: bool = False
+
+    def _build(self, embedding: Any, **conn: Any) -> Any:
+        from langchain_community.vectorstores import UpstashVectorStore
+        url = conn.get("index_url") or ""
+        token = self._secret(conn.get("index_token"), "UPSTASH_VECTOR_REST_TOKEN")
+        if not url or not token:
+            raise ValueError("Upstash needs 'index_url' and 'index_token'.")
+        return UpstashVectorStore(embedding=True, text_key=conn.get("text_key") or "text",
+                                  index_url=url, index_token=token,
+                                  namespace=conn.get("namespace") or "")
+
+    async def __call__(self, index_url: str = "", index_token: str = "", text_key: str = "text", namespace: str = "", query: str = "", texts: Optional[List[str]] = None,
+                       embedding: str = "", k: int = 4, **kwargs) -> Response:
+        return await self._run(query=query, texts=texts, embedding=embedding, k=int(k),
+            index_url=index_url, index_token=index_token, text_key=text_key, namespace=namespace)

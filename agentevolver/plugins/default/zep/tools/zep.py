@@ -1,0 +1,30 @@
+"""Zep Chat Memory — from the Langflow `zep` bundle (ported)."""
+
+from typing import Any, List, Optional
+
+from agentevolver.registry import PLUGIN
+from agentevolver.response.types import Response
+from agentevolver.plugins.types import MemoryPlugin
+
+
+@PLUGIN.register_module(force=True)
+class ZepZepPlugin(MemoryPlugin):
+    name: str = "zep.zep"
+    display_name: str = 'Zep Chat Memory'
+    description: str = 'Retrieves and store chat messages from Zep.'
+    kind: str = "memory"
+    bundle: str = "zep"
+    bundle_label: str = 'Zep'
+    category: str = "agent"
+    source: str = "langflow/bundles/zep"
+    status: str = "complete"
+
+    def _history(self, session_id: str, **cfg: Any) -> Any:
+        from langchain_community.chat_message_histories import ZepChatMessageHistory
+        return ZepChatMessageHistory(session_id=session_id, url=cfg.get("zep_url") or "",
+                                     api_key=self._secret(cfg.get("api_key"), "ZEP_API_KEY"))
+
+    async def __call__(self, action: str = "get", session_id: str = "default", message: str = "",
+                       role: str = "user", zep_url: str = "", api_key: str = "", **kwargs) -> Response:
+        return await self._memory(action=action, session_id=session_id, message=message, role=role,
+                                  **{k: v for k, v in kwargs.items()})

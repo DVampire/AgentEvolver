@@ -12,6 +12,10 @@ set -euo pipefail
 #   6. an .env template, if one does not exist yet
 #   7. a verification pass
 #
+# It does NOT install the optional per-provider SDKs for the migrated Langflow
+# bundle plugins (langchain-openai, jigsawstack, composio, …) — those are
+# lazy and installed on demand per bundle. See scripts/install-bundle.sh.
+#
 # Re-running is safe: existing environments are reused, not recreated.
 #
 # Usage:
@@ -276,6 +280,12 @@ if [[ ${FAILED} -eq 0 ]]; then
   echo
   echo "Then run an agent:"
   echo "    python examples/run_meta_agent.py --task \"...\""
+  echo
+  echo "Provider plugins (migrated Langflow bundles) install their SDKs on demand:"
+  echo "    scripts/install-bundle.sh --names            # list all bundles"
+  echo "    scripts/install-bundle.sh --list <bundle>    # show a bundle's deps"
+  echo "    scripts/install-bundle.sh <bundle> [...]     # install a bundle's deps"
+  echo "    scripts/install-bundle.sh --all              # install every bundle's deps"
 else
   echo "Some checks failed -- see the FAIL lines above." >&2
   exit 1

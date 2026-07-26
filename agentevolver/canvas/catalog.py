@@ -118,7 +118,14 @@ class Catalog:
         try:
             from agentevolver.plugins import plugin_manager
             for plugin in await plugin_manager.list_infos():
-                if getattr(plugin, "kind", "data_source") == "data_source":
+                metadata = getattr(plugin, "metadata", None) or {}
+                bundle = metadata.get("bundle") if isinstance(metadata, dict) else None
+                if bundle:
+                    # A migrated Langflow bundle tool — surfaced under the palette's
+                    # nested "Bundles" group (category="bundle"), invoked through the
+                    # same datasource → plugin_manager path as any provider plugin.
+                    specs.append(self._bundle_node_spec(plugin, metadata))
+                elif getattr(plugin, "kind", "data_source") == "data_source":
                     specs.append(self._capability_node_spec(
                         plugin.name, plugin, category="data", step_type="datasource", skip=("timeout",)))
         except Exception as exc:  # noqa: BLE001
@@ -329,6 +336,25 @@ class Catalog:
             label=name.replace("_", " ").capitalize(),
             description=str(getattr(info, "description", "") or ""),
             params=self._signature_params(info, skip=skip),
+        )
+
+    def _bundle_node_spec(self, plugin: Any, metadata: Dict[str, Any]) -> NodeSpec:
+        """A migrated Langflow bundle tool node.
+
+        Grouped in the palette's nested ``bundle`` section (by ``bundle`` /
+        ``bundle_label``), carrying the preserved bundle glyph (``icon`` =
+        ``bundle:<id>``, resolved to ``resources/icon.svg`` on the frontend).
+        Executes via the shared datasource → ``plugin_manager`` path.
+        """
+        name = plugin.name
+        return NodeSpec(
+            id=f"datasource/{name}", category="bundle", step_type="datasource", target=name,
+            label=str(metadata.get("display_name") or name),
+            description=str(getattr(plugin, "description", "") or ""),
+            icon=str(metadata.get("icon") or ""),
+            bundle=str(metadata.get("bundle") or ""),
+            bundle_label=str(metadata.get("bundle_label") or metadata.get("bundle") or ""),
+            params=self._signature_params(plugin, skip=("timeout",)),
         )
 
     @staticmethod

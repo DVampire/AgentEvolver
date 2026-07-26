@@ -83,6 +83,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const [specs, setSpecs] = useState<NodeSpec[]>([]);
   const [rosters, setRosters] = useState<MountRosters>({});
   const [flows, setFlows] = useState<FlowSummary[]>([]);
+  const [libraryFlows, setLibraryFlows] = useState<FlowSummary[]>([]);
   const [flowId, setFlowId] = useState('');
   const [flowName, setFlowName] = useState('Untitled flow');
   const [flowVersion, setFlowVersion] = useState('1.0.0');
@@ -580,6 +581,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     if (!sessionId) return;
     const flowList = await request('canvas.flow.list', { session_id: sessionId });
     if (flowList.ok && Array.isArray(flowList.result.flows)) setFlows(flowList.result.flows as FlowSummary[]);
+    const library = await request('canvas.library.list', {});
+    if (library.ok && Array.isArray(library.result.flows)) setLibraryFlows(library.result.flows as FlowSummary[]);
   }, [request, sessionId]);
 
   const saveFlow = async (): Promise<string | undefined> => {
@@ -600,18 +603,33 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   };
   saveFlowRef.current = () => { void saveFlow(); };
 
-  const publishFlow = async () => {
+  // Export the current draft into the shared canvas library (JSON), reusable via
+  // import. Isolated from the agent system's HTML workflows.
+  const exportToLibrary = async () => {
     const id = await saveFlow();
     if (!id) return;
     try {
-      const response = await request('canvas.flow.publish', { flow_id: id, session_id: sessionId });
-      if (!response.ok) throw new Error(response.error?.message ?? 'Publish failed');
-      const version = String(response.result.version ?? '');
-      const workflowName = String(response.result.workflow_name ?? '');
-      setFlowVersion(version);
-      setFlowStatus({ workflow_name: workflowName, registered: true, registered_version: version, drifted: false });
-      onNotice(`Published as workflow "${workflowName}" v${version} — now a callable capability.`);
-      await refreshFlows();
+      const response = await request('canvas.library.export', { flow_id: id, session_id: sessionId });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Export failed');
+      const name = String(response.result.name ?? flowName);
+      setFlowStatus({ name, in_library: true });
+      onNotice(`Exported "${name}" to the canvas library — reuse it with Import.`);
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const importFromLibrary = async (name: string) => {
+    try {
+      const response = await request('canvas.library.import', { name, session_id: sessionId });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Import failed');
+      const doc = response.result.flow as FlowGraphDoc;
+      setFlowId(''); setFlowName(doc.name); setFlowVersion(doc.version);
+      setFlowStatus({ name: doc.name, in_library: true });
+      fromDocument(doc);
+      resetHistory();
+      setRunOutput(undefined); setRunError(undefined); setRunId(undefined); setRunData(undefined); setInspected(undefined); setDirty(true);
+      onNotice(`Imported "${doc.name}" from the library as a new draft.`);
     } catch (error) {
       onNotice(error instanceof Error ? error.message : String(error));
     }
@@ -634,7 +652,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   };
 
   const deleteFlow = async () => {
-    if (!flowId || !window.confirm(`Delete flow "${flowName}"?${flowStatus?.registered ? ' Its registered workflow will be unregistered too.' : ''}`)) return;
+    if (!flowId || !window.confirm(`Delete draft "${flowName}"? (The canvas library copy, if any, is kept.)`)) return;
     const response = await request('canvas.flow.delete', { flow_id: flowId, session_id: sessionId });
     if (!response.ok) { onNotice(response.error?.message ?? 'Could not delete the flow'); return; }
     newFlow();
@@ -735,15 +753,17 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           {/* Flow identity — Langflow FlowMenu: colored icon swatch + a picker
               breadcrumb + a semibold name field. */}
           <div className="flex shrink-0 items-center justify-center rounded bg-muted p-1 text-primary"><Workflow className="h-3.5 w-3.5" /></div>
-          <Select value={flowId || '__new__'} onValueChange={(next) => void openFlow(next === '__new__' ? '' : next)}>
+          <Select value={flowId || '__new__'} onValueChange={(next) => { if (next === '__new__') { newFlow(); } else if (next.startsWith('lib:')) { void importFromLibrary(next.slice(4)); } else { void openFlow(next); } }}>
             <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__new__" className="text-xs">＋ New flow</SelectItem>
-              {flows.map((flow) => <SelectItem key={flow.id} value={flow.id} className="text-xs">{flow.published ? '● ' : '○ '}{flow.name} v{flow.version}</SelectItem>)}
+              {flows.map((flow) => <SelectItem key={flow.id} value={flow.id} className="text-xs">○ {flow.name} v{flow.version}</SelectItem>)}
+              {libraryFlows.length ? <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Library</div> : null}
+              {libraryFlows.map((flow) => <SelectItem key={`lib:${flow.name}`} value={`lib:${flow.name}`} className="text-xs">⤓ {flow.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Input className="h-8 w-[min(240px,26vw)] text-sm font-semibold" value={flowName} onChange={(event) => { setFlowName(event.target.value); setDirty(true); }} placeholder="Flow name" />
-          {flowStatus?.registered ? <em className={`canvas-badge${flowStatus.drifted ? ' drift' : ''}`} title={flowStatus.drifted ? 'The registered workflow changed outside the canvas; publishing overwrites it.' : `Registered as ${flowStatus.workflow_name}`}>{flowStatus.drifted ? '⚠ drifted' : `● ${flowStatus.workflow_name} v${flowStatus.registered_version}`}</em> : null}
+          {flowStatus?.in_library ? <em className="canvas-badge" title={`Saved in the canvas library as "${flowStatus.name}"`}>● in library</em> : null}
           <span className="canvas-toolbar-spacer" />
           {/* Langflow flow-toolbar hierarchy: exactly one filled accent (Run);
               everything else ghost + font-normal. Secondary actions consolidate
@@ -758,7 +778,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={() => void saveFlow()} disabled={!connected || !nodes.length}><Save className="mr-2 h-4 w-4" />Save draft<DropdownMenuShortcut>⌘S</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void publishFlow()} disabled={!connected || !nodes.length}><UploadCloud className="mr-2 h-4 w-4" />Publish as workflow</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void exportToLibrary()} disabled={!connected || !nodes.length}><UploadCloud className="mr-2 h-4 w-4" />Export to library</DropdownMenuItem>
               <DropdownMenuItem onClick={exportFlow} disabled={!nodes.length}><Download className="mr-2 h-4 w-4" />Export JSON</DropdownMenuItem>
               {flowId ? <>
                 <DropdownMenuSeparator />

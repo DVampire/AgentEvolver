@@ -102,6 +102,13 @@ class NodeSpec(BaseModel):
     # renders a search+select picker per kind; the selection compiles to the
     # agent step's ``<arg name="<kind>">`` allowlist.
     mount_kinds: List[str] = Field(default_factory=list)
+    # For migrated Langflow *bundle* tools: the bundle this node belongs to, so
+    # the palette can nest tools under a collapsible bundle group (Langflow's
+    # "Bundles" sidebar section). ``bundle`` is the id (e.g. ``youtube``),
+    # ``bundle_label`` the display name (e.g. ``YouTube``). Empty for non-bundle
+    # nodes.
+    bundle: str = ""
+    bundle_label: str = ""
 
 
 class GraphNode(BaseModel):

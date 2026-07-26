@@ -1,0 +1,35 @@
+"""Yahoo! Finance — from the Langflow `yahoosearch` bundle (ported)."""
+
+from typing import Any, List, Optional
+
+from agentevolver.registry import PLUGIN
+from agentevolver.response.types import Response
+from agentevolver.plugins.types import BundlePlugin
+
+
+@PLUGIN.register_module(force=True)
+class YahoosearchYahooPlugin(BundlePlugin):
+    name: str = "yahoosearch.yahoo"
+    display_name: str = 'Yahoo! Finance'
+    description: str = 'Yahoo! Finance'
+    kind: str = "tool"
+    bundle: str = "yahoosearch"
+    bundle_label: str = 'Yahoo Search'
+    category: str = "data"
+    source: str = "langflow/bundles/yahoosearch"
+    status: str = "complete"
+
+    async def __call__(self, symbol: str = "", method: str = "news", **kwargs) -> Response:
+        sym = str(symbol or "").strip().upper()
+        if not sym:
+            return self._fail("yahoo: 'symbol' is required.")
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(sym)
+            data = getattr(ticker, method, None)
+            if callable(data):
+                data = data()
+            result = data if isinstance(data, (list, dict)) else str(data)
+        except Exception as exc:  # noqa: BLE001
+            return self._fail(f"yahoo: {type(exc).__name__}: {exc}")
+        return self._ok(f"Yahoo {method} for {sym}.", symbol=sym, result=result)

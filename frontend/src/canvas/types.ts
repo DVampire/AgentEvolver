@@ -50,6 +50,10 @@ export interface NodeSpec {
   inputs?: PortSpec[];
   outputs?: PortSpec[];
   mount_kinds?: string[];
+  // Migrated Langflow bundle grouping (category === 'bundle'): the palette nests
+  // this node under a collapsible bundle sub-group.
+  bundle?: string;
+  bundle_label?: string;
 }
 
 export interface MountItem { name: string; description: string; }
@@ -60,7 +64,7 @@ export const MOUNT_LABELS: Record<string, string> = {
 };
 
 export interface FlowSummary { id: string; name: string; description: string; version: string; published: boolean; updated_at?: string | null; node_count: number; }
-export interface FlowStatus { workflow_name: string; registered: boolean; registered_version?: string | null; drifted: boolean; }
+export interface FlowStatus { name: string; in_library: boolean; }
 
 export interface GraphNodeDoc {
   id: string;

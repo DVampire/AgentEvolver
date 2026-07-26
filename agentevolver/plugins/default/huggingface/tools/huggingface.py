@@ -1,0 +1,33 @@
+"""Hugging Face — from the Langflow `huggingface` LLM bundle (ported)."""
+
+from typing import Any
+
+from agentevolver.registry import PLUGIN
+from agentevolver.response.types import Response
+from agentevolver.plugins.types import LLMPlugin
+
+
+@PLUGIN.register_module(force=True)
+class HuggingfaceHuggingfacePlugin(LLMPlugin):
+    name: str = "huggingface.huggingface"
+    display_name: str = 'Hugging Face'
+    description: str = 'Generate text using Hugging Face Inference APIs.'
+    kind: str = "model"
+    bundle: str = "huggingface"
+    bundle_label: str = 'Hugging Face'
+    source: str = "langflow/bundles/huggingface"
+    status: str = "complete"
+
+    def _model(self, **cfg: Any) -> Any:
+        from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+        key = self._secret(cfg.get("api_key"), "HUGGINGFACEHUB_API_TOKEN", "HF_TOKEN")
+        if not key:
+            raise ValueError("no API key (set api_key or HUGGINGFACEHUB_API_TOKEN).")
+        endpoint = HuggingFaceEndpoint(repo_id=cfg.get("model_name"), huggingfacehub_api_token=key,
+                                      temperature=cfg.get("temperature", 0.1) or 0.1)
+        return ChatHuggingFace(llm=endpoint)
+
+    async def __call__(self, prompt: str = "", model_name: str = "HuggingFaceH4/zephyr-7b-beta", api_key: str = "",
+                       base_url: str = "", temperature: float = 0.1, **kwargs) -> Response:
+        return await self._generate(prompt=prompt, model_name=model_name, api_key=api_key,
+                                    base_url=base_url, temperature=temperature)

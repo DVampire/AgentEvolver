@@ -35,7 +35,9 @@ class YahooPlugin(Plugin):
         "- interval (str): candle interval — 1m/5m/1h/1d/1wk/1mo (default ``1d``).\n\n"
         "## Output\n``data.records`` = list of {date, open, high, low, close, adj_close, volume}."
     )
-    metadata: Dict[str, Any] = Field(default_factory=lambda: {"canvas_category": "data"})
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {
+        "canvas_category": "data", "bundle": "yahoo", "bundle_label": "Yahoo Finance",
+        "display_name": "Yahoo Finance", "icon": "bundle:yahoo"})
 
     async def __call__(self, symbol: str = "", range: str = "1mo", interval: str = "1d",  # noqa: A002
                        timeout: float = 30.0, **kwargs) -> Response:

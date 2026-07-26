@@ -35,12 +35,17 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { type ConnectionStatus, type GatewayEvent, GatewaySocket } from './controllers/gateway';
 import useAlertStore from './stores/alertStore';
 
-type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'commands';
+type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'commands' | 'canvas';
 type MessageKind = 'user' | 'assistant' | 'system' | 'error';
 type ActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 type Theme = 'dark' | 'light';
 
-interface CapabilityCatalog { agents: string[]; tools: string[]; skills: string[]; connectors: string[]; environments: string[]; workflows: string[]; commands: string[]; }
+// One available capability, tagged with where it came from (default vs the
+// shared extension root) and whether it self-evolves.
+interface CapabilityItem { type: string; name: string; source: 'default' | 'extension'; evolving: boolean; }
+type CapabilityCatalog = Record<CapabilityKind, CapabilityItem[]>;
+// The session's selected capabilities are tracked by name only.
+type CapabilitySelection = Record<CapabilityKind, string[]>;
 interface ModelSummary { name: string; id: string; type: string; streaming: boolean; functions: boolean; vision: boolean; }
 interface ProviderSummary { name: string; models: ModelSummary[]; }
 interface ModelEditorState { originalName?: string; configuration: Record<string, unknown>; hasApiKey: boolean; }
@@ -102,7 +107,8 @@ const MARKDOWN_REHYPE_PLUGINS: Parameters<typeof ReactMarkdown>[0]['rehypePlugin
   }],
 ];
 const FILE_CHUNK_SIZE = 512 * 1024;
-const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [] };
+const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [], canvas: [] };
+const EMPTY_SELECTION: CapabilitySelection = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [], canvas: [] };
 const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: LucideIcon; description: string }> = {
   skills: { label: 'Skills', icon: GraduationCap, description: 'Reusable specialist workflows and domain knowledge.' },
   tools: { label: 'Tools', icon: Wrench, description: 'Actions the agent can call while it works.' },
@@ -111,6 +117,7 @@ const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: LucideIcon;
   environments: { label: 'Environments', icon: Monitor, description: 'Session environments and their available actions.' },
   workflows: { label: 'Workflows', icon: Workflow, description: 'Reusable HTML programs that orchestrate agents and other capabilities.' },
   commands: { label: 'Commands', icon: SquareTerminal, description: 'Session control commands; run an enabled command from the composer.' },
+  canvas: { label: 'Canvas', icon: Waypoints, description: 'Reusable visual flows saved from the canvas (a human-facing library, separate from agent workflows).' },
 };
 const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
 
@@ -146,7 +153,7 @@ export function App() {
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(new Set());
   const [agents, setAgents] = useState<AgentState[]>([]);
   const [catalog, setCatalog] = useState<CapabilityCatalog>(EMPTY_CAPABILITIES);
-  const [selection, setSelection] = useState<CapabilityCatalog>(EMPTY_CAPABILITIES);
+  const [selection, setSelection] = useState<CapabilitySelection>(EMPTY_SELECTION);
   const [draft, setDraft] = useState('');
   const setNotice = useAlertStore((state) => state.notify);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -205,9 +212,9 @@ export function App() {
       socket.request('session.capabilities.get', { session_id: currentSessionId }),
     ]);
     if (!catalogResponse.ok || !selectionResponse.ok) throw new Error('Could not load capability configuration');
-    const available = asCapabilities(catalogResponse.result);
+    const available = asCatalog(catalogResponse.result);
     setCatalog(available);
-    setSelection(asCapabilities(selectionResponse.result.capabilities));
+    setSelection(asSelection(selectionResponse.result.capabilities));
   }, []);
 
   const refreshSessions = useCallback(async (socket: GatewaySocket) => {
@@ -364,11 +371,11 @@ export function App() {
   const handleGatewayEvent = useCallback((event: GatewayEvent) => {
     if (event.type.startsWith('canvas.') || event.type.startsWith('model.chat.')) return; // panels handle these themselves
     if (event.type === 'session.capabilities.updated') {
-      if (event.session_id === sessionRef.current) setSelection(asCapabilities(event.payload.capabilities));
+      if (event.session_id === sessionRef.current) setSelection(asSelection(event.payload.capabilities));
       return;
     }
     if (event.type === 'capabilities.changed') {
-      setCatalog(asCapabilities(event.payload.capabilities));
+      setCatalog(asCatalog(event.payload.capabilities));
       const name = typeof event.payload.name === 'string' ? humanize(event.payload.name) : 'Capabilities';
       const action = String(event.payload.action ?? 'updated');
       const kind = typeof event.payload.kind === 'string' ? event.payload.kind : 'capabilities';
@@ -652,7 +659,7 @@ export function App() {
     try {
       const response = await socketRef.current?.request('session.capabilities.set', { session_id: sessionRef.current, capabilities: next });
       if (!response?.ok) throw new Error(response?.error?.message ?? 'Could not update capabilities');
-      setSelection(asCapabilities(response.result.capabilities));
+      setSelection(asSelection(response.result.capabilities));
     } catch (error) {
       setSelection(selection);
       setNotice(error instanceof Error ? error.message : String(error));
@@ -661,7 +668,7 @@ export function App() {
 
   const toggleAllCapabilities = async (kind: CapabilityKind) => {
     if (!sessionRef.current) return;
-    const next = { ...selection, [kind]: selection[kind].length === catalog[kind].length ? [] : catalog[kind] };
+    const next = { ...selection, [kind]: selection[kind].length === catalog[kind].length ? [] : catalog[kind].map((item) => item.name) };
     setSelection(next);
     try {
       const response = await socketRef.current?.request('session.capabilities.set', { session_id: sessionRef.current, capabilities: next });
@@ -780,7 +787,7 @@ export function App() {
   };
 
   const statusText = useMemo(() => status === 'connected' ? 'Connected' : status[0].toUpperCase() + status.slice(1), [status]);
-  const capabilityItems = catalog[activeCapability].filter((name) => name.toLowerCase().includes(capabilitySearch.trim().toLowerCase()));
+  const capabilityItems = catalog[activeCapability].filter((item) => item.name.toLowerCase().includes(capabilitySearch.trim().toLowerCase()));
   const projects = useMemo(() => Object.entries(sessions.reduce<Record<string, SessionSummary[]>>((groups, session) => {
     const project = session.source_workspace ?? session.workspace;
     (groups[project] ??= []).push(session);
@@ -869,7 +876,7 @@ export function App() {
       </section> : <section className="conversation">
         <header className="topbar">
           <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Workspace agent</p><h1>New task</h1></div></div>
-          <div className="connection"><button className={`stage-action ${extensionStage.valid ? '' : 'invalid'}`} disabled={!sessionId || !extensionStage.components.length} onClick={() => void promoteStagedExtension()} title={extensionStage.error ?? 'Promote validated staged extensions'}>⇧ Extensions {extensionStage.components.length || ''}</button><span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
+          <div className="connection">{extensionStage.components.length ? <button className={`stage-action ${extensionStage.valid ? '' : 'invalid'}`} disabled={!sessionId} onClick={() => void promoteStagedExtension()} title={extensionStage.error ?? 'Promote validated staged extensions'}>⇧ Promote {extensionStage.components.length} extension{extensionStage.components.length === 1 ? '' : 's'}</button> : null}<span className={`connection-dot ${status}`} />{statusText}<button onClick={() => setSettingsOpen(true)}>Configure</button></div>
         </header>
         <div className="message-list">
           {environmentView ? <EnvironmentLive view={environmentView} onClose={() => setEnvironmentView(undefined)} /> : null}
@@ -1065,14 +1072,14 @@ function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
   return <section className="quick-start"><p className="eyebrow">Get started</p><h2>What would you like to work on?</h2><p>Choose a starting point or describe a task in your own words.</p><div className="quick-prompts">{prompts.map(([title, prompt]) => <button key={title} onClick={() => onSelect(prompt)}><strong>{title}</strong><span>{prompt}</span></button>)}</div></section>;
 }
 
-function MobileNavigation({ projects, sessionId, selection, agents, status, theme, onClose, onCreateSession, onSelectSession, onOpenCapabilities, onToggleTheme, onOpenConnection }: { projects: [string, SessionSummary[]][]; sessionId?: string; selection: CapabilityCatalog; agents: AgentState[]; status: ConnectionStatus; theme: Theme; onClose: () => void; onCreateSession: () => Promise<void>; onSelectSession: (session: SessionSummary) => Promise<void>; onOpenCapabilities: (kind: CapabilityKind) => void; onToggleTheme: () => void; onOpenConnection: () => void }) {
+function MobileNavigation({ projects, sessionId, selection, agents, status, theme, onClose, onCreateSession, onSelectSession, onOpenCapabilities, onToggleTheme, onOpenConnection }: { projects: [string, SessionSummary[]][]; sessionId?: string; selection: CapabilitySelection; agents: AgentState[]; status: ConnectionStatus; theme: Theme; onClose: () => void; onCreateSession: () => Promise<void>; onSelectSession: (session: SessionSummary) => Promise<void>; onOpenCapabilities: (kind: CapabilityKind) => void; onToggleTheme: () => void; onOpenConnection: () => void }) {
   return <div className="mobile-nav-backdrop" onClick={onClose}><aside className="mobile-nav" onClick={(event) => event.stopPropagation()}><div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="mobile-close" onClick={onClose} aria-label="Close navigation">×</button></div><button className="new-chat" disabled={status !== 'connected'} onClick={() => { void onCreateSession(); onClose(); }}><Plus size={16} /> New session</button><div className="sidebar-section projects-section"><p className="eyebrow">Projects</p>{projects.map(([workspace, sessions]) => <div className="project-group" key={workspace}><div className="project-name">⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{sessions.map((session) => <button className={`project-session ${session.session_id === sessionId ? 'selected' : ''}`} key={session.session_id} onClick={() => { void onSelectSession(session); onClose(); }}><span className="session-dot" /><span>{session.name}</span><em>{session.task_ids.length}</em></button>)}</div>)}</div><nav className="sidebar-section capability-nav"><p className="eyebrow">Capabilities</p>{CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { onOpenCapabilities(kind); onClose(); }}><span><CapIcon kind={kind} /></span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}</nav><div className="sidebar-section agents-section"><p className="eyebrow">Active agents</p>{agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}</div><div className="sidebar-footer"><button className="text-button" onClick={onToggleTheme}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => { onOpenConnection(); onClose(); }}><Settings size={14} /> Connection</button></div></aside></div>;
 }
 
-function CapabilityDialog({ activeKind, catalog, selection, items, search, onSearch, onSelectKind, onToggle, onToggleAll, onInspect, onClose }: { activeKind: CapabilityKind; catalog: CapabilityCatalog; selection: CapabilityCatalog; items: string[]; search: string; onSearch: (value: string) => void; onSelectKind: (kind: CapabilityKind) => void; onToggle: (kind: CapabilityKind, name: string) => void; onToggleAll: (kind: CapabilityKind) => void; onInspect: (kind: CapabilityKind, name: string) => void; onClose: () => void }) {
+function CapabilityDialog({ activeKind, catalog, selection, items, search, onSearch, onSelectKind, onToggle, onToggleAll, onInspect, onClose }: { activeKind: CapabilityKind; catalog: CapabilityCatalog; selection: CapabilitySelection; items: CapabilityItem[]; search: string; onSearch: (value: string) => void; onSelectKind: (kind: CapabilityKind) => void; onToggle: (kind: CapabilityKind, name: string) => void; onToggleAll: (kind: CapabilityKind) => void; onInspect: (kind: CapabilityKind, name: string) => void; onClose: () => void }) {
   const meta = CAPABILITY_META[activeKind];
   const allEnabled = catalog[activeKind].length > 0 && selection[activeKind].length === catalog[activeKind].length;
-  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span><CapIcon kind={kind} /></span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2><CapIcon kind={activeKind} size={20} /> {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((name) => <div className="capability-item" key={name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, name)}><strong>{humanize(name)}</strong><small>{capabilityDescription(activeKind, name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, name)} aria-pressed={selection[activeKind].includes(name)} aria-label={`Toggle ${name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
+  return <div className="modal-backdrop capability-backdrop" onClick={onClose}><section className="capability-dialog" onClick={(event) => event.stopPropagation()}><aside className="capability-menu"><div className="modal-title"><h2>Capabilities</h2></div><p className="eyebrow">Browse capabilities</p>{CAPABILITY_KINDS.map((kind) => <button role="tab" aria-selected={kind === activeKind} className={kind === activeKind ? 'active' : ''} key={kind} onClick={() => onSelectKind(kind)}><span><CapIcon kind={kind} /></span>{CAPABILITY_META[kind].label}<em>{selection[kind].length}</em></button>)}</aside><section className="capability-content" role="tabpanel"><header><div><p className="eyebrow">Capabilities · {meta.label}</p><h2><CapIcon kind={activeKind} size={20} /> {meta.label}</h2><p>{meta.description}</p></div><button className="close-dialog" onClick={onClose}>×</button></header><div className="capability-toolbar"><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}…`} /><button className="select-all" onClick={() => void onToggleAll(activeKind)}>{allEnabled ? 'Disable all' : 'Enable all'}</button></div><div className="capability-count">{selection[activeKind].length} of {catalog[activeKind].length} enabled for this session</div><div className="capability-list">{items.map((item) => <div className="capability-item" key={item.name}><button className="capability-detail-button" onClick={() => onInspect(activeKind, item.name)}><span className="capability-item-head"><strong>{humanize(item.name)}</strong><span className={`cap-tag cap-${item.source}`}>{item.source === 'extension' ? 'Extension' : 'Default'}</span>{item.evolving ? <span className="cap-tag cap-evolving">Evolving</span> : null}</span><small>{capabilityDescription(activeKind, item.name)}</small><em>Open {CAPABILITY_META[activeKind].label.slice(0, -1)} details →</em></button><button className={`toggle ${selection[activeKind].includes(item.name) ? 'enabled' : ''}`} onClick={() => void onToggle(activeKind, item.name)} aria-pressed={selection[activeKind].includes(item.name)} aria-label={`Toggle ${item.name}`}><span /></button></div>)}{!items.length ? <p className="empty">No {meta.label.toLowerCase()} match this search.</p> : null}</div></section></section></div>;
 }
 
 function CapabilityDetailDialog({ detail, loading, onEdit, onClose }: { detail?: CapabilityDetail; loading?: boolean; onEdit?: () => void; onClose: () => void }) {
@@ -1185,10 +1192,32 @@ function ConnectionDialog({ endpoint, token, onEndpoint, onToken, onClose, onCon
   return <div className="modal-backdrop"><section className="modal"><div className="modal-title"><h2>Gateway connection</h2><button onClick={onClose}>×</button></div><label>WebSocket endpoint<input value={endpoint} onChange={(event) => onEndpoint(event.target.value)} placeholder={DEFAULT_ENDPOINT} /></label><label>Token <span>(optional)</span><input value={token} onChange={(event) => onToken(event.target.value)} type="password" /></label><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button onClick={onConnect}>Connect</button></div></section></div>;
 }
 
-function asCapabilities(value: unknown): CapabilityCatalog {
+// Available capabilities: each entry may be an enriched object ({type, name,
+// source, evolving}) or — for backward-compat — a bare name string.
+function asCatalog(value: unknown): CapabilityCatalog {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const namesFor = (kind: CapabilityKind) => Array.isArray(source[kind]) ? source[kind].filter((item): item is string => typeof item === 'string') : [];
-  return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), workflows: namesFor('workflows'), commands: namesFor('commands') };
+  const itemsFor = (kind: CapabilityKind): CapabilityItem[] => (Array.isArray(source[kind]) ? source[kind] : [])
+    .map((entry): CapabilityItem | null => {
+      if (typeof entry === 'string') return { type: kind.slice(0, -1), name: entry, source: 'default', evolving: false };
+      if (entry && typeof entry === 'object') {
+        const e = entry as Record<string, unknown>;
+        if (typeof e.name !== 'string') return null;
+        return { type: typeof e.type === 'string' ? e.type : kind.slice(0, -1), name: e.name,
+                 source: e.source === 'extension' ? 'extension' : 'default', evolving: Boolean(e.evolving) };
+      }
+      return null;
+    })
+    .filter((item): item is CapabilityItem => item !== null);
+  return { agents: itemsFor('agents'), tools: itemsFor('tools'), skills: itemsFor('skills'), connectors: itemsFor('connectors'), environments: itemsFor('environments'), workflows: itemsFor('workflows'), commands: itemsFor('commands'), canvas: itemsFor('canvas') };
+}
+
+// Selected capabilities are tracked by name (strings or {name} objects).
+function asSelection(value: unknown): CapabilitySelection {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const namesFor = (kind: CapabilityKind) => (Array.isArray(source[kind]) ? source[kind] : [])
+    .map((item) => (typeof item === 'string' ? item : (item && typeof item === 'object' && typeof (item as Record<string, unknown>).name === 'string' ? (item as Record<string, string>).name : null)))
+    .filter((name): name is string => typeof name === 'string');
+  return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), workflows: namesFor('workflows'), commands: namesFor('commands'), canvas: namesFor('canvas') };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

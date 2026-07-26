@@ -3,8 +3,12 @@
   "use strict";
 
   const STEP_TAGS = new Set([
-    "agent", "tool", "skill", "connector", "environment", "workflow", "parallel", "map",
-    "reduce", "branch", "loop", "verify", "checkpoint",
+    // Capabilities
+    "agent", "tool", "skill", "connector", "environment", "workflow",
+    // Data pipeline
+    "datasource", "process", "data", "knowledge", "benchmark",
+    // Control flow
+    "parallel", "map", "reduce", "branch", "loop", "verify", "checkpoint",
   ]);
 
   const escapeHTML = (value = "") => String(value)

@@ -626,7 +626,72 @@ class AgentGateway:
         return {"task_id": task_id, "cancelled": cancelled}
 
     async def _command_capability_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
-        return await self._available_capabilities()
+        """Capabilities enriched per item with ``{type, name, source, evolving}``:
+        ``source`` is ``extension`` when the capability's file lives under the
+        shared extension root, else ``default``; ``evolving`` reflects
+        ``enable_evolving``. The interactive UI renders these as per-item tags."""
+        import os
+        from inspect import getfile
+
+        ext_root = os.path.realpath(str(getattr(config, "extension_root", "") or "")) or None
+        managers = {
+            "skills": skill_manager, "tools": tool_manager, "agents": agent_manager,
+            "connectors": connector_manager, "environments": environment_manager,
+        }
+        type_of = {"skills": "skill", "tools": "tool", "agents": "agent", "connectors": "connector",
+                   "environments": "environment", "workflows": "workflow", "commands": "command",
+                   "canvas": "canvas"}
+
+        def source_of(info: Any) -> str:
+            candidates = [getattr(info, a, None) for a in ("path", "skill_dir", "connector_dir", "source_path")]
+            cls = getattr(info, "cls", None)
+            if cls is not None:
+                try:
+                    candidates.append(getfile(cls))
+                except (TypeError, OSError):
+                    pass
+            for p in candidates:
+                if not p:
+                    continue
+                try:
+                    rp = os.path.realpath(str(p))
+                except (TypeError, ValueError):
+                    continue
+                if ext_root and (rp == ext_root or rp.startswith(ext_root + os.sep)):
+                    return "extension"
+            return "default"
+
+        async def info_for(kind: str, name: str) -> Any:
+            try:
+                if kind == "workflows":
+                    return workflow_manager.get(name)
+                if kind == "commands":
+                    return await command_manager.get(name)
+                mgr = managers.get(kind)
+                if mgr is not None and hasattr(mgr, "get_info"):
+                    res = mgr.get_info(name)
+                    return await res if asyncio.iscoroutine(res) else res
+            except Exception:  # noqa: BLE001 — a broken lookup must not drop the list
+                return None
+            return None
+
+        result: Dict[str, list] = {}
+        for kind, names in (await self._available_capabilities()).items():
+            items = []
+            for name in names:
+                if kind == "canvas":
+                    # Library flows live under extension/canvas/; they are not evolvable.
+                    items.append({"type": "canvas", "name": name, "source": "extension", "evolving": False})
+                    continue
+                info = await info_for(kind, name)
+                items.append({
+                    "type": type_of.get(kind, kind),
+                    "name": name,
+                    "source": source_of(info) if info is not None else "default",
+                    "evolving": bool(getattr(info, "enable_evolving", False)) if info is not None else False,
+                })
+            result[kind] = items
+        return result
 
     async def _command_workflow_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Launch a registered workflow without blocking the interactive Gateway."""
@@ -887,15 +952,38 @@ class AgentGateway:
         await self._publish("canvas.flow.saved", graph.summary(), session_id=session_id)
         return {"flow": graph.model_dump(mode="json"), "status": canvas_manager.flow_status(graph)}
 
-    async def _command_canvas_flow_publish(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Promote a draft: compile to workflow HTML and hand it to the extension system."""
+    async def _command_canvas_library_export(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a canvas draft (JSON) into the shared reuse library under
+        ``extension/canvas/``. Isolated from the agent system's HTML workflows."""
         session_id = self._require_session_id(params)
         flow_id = str(params.get("flow_id") or "")
         if not flow_id:
             raise ValueError("flow_id is required")
-        result = await canvas_manager.publish_flow(flow_id, self._canvas_flows_dir(session_id))
-        await self._publish("canvas.flow.published", result, session_id=session_id)
+        result = await canvas_manager.export_to_library(flow_id, self._canvas_flows_dir(session_id))
+        await self._publish("canvas.library.changed", result, session_id=session_id)
         return result
+
+    async def _command_canvas_library_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        return {"flows": canvas_manager.list_library()}
+
+    async def _command_canvas_library_import(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Load a library flow as a fresh draft (returns the graph; the frontend
+        saves it as a new session flow)."""
+        name = str(params.get("name") or "")
+        if not name:
+            raise ValueError("name is required")
+        graph = canvas_manager.import_from_library(name)
+        return {"flow": graph.model_dump(mode="json")}
+
+    async def _command_canvas_library_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        name = str(params.get("name") or "")
+        if not name:
+            raise ValueError("name is required")
+        deleted = await canvas_manager.delete_from_library(name)
+        if deleted:
+            await self._publish("canvas.library.changed", {"name": name, "deleted": True}, session_id=session_id)
+        return {"name": name, "deleted": deleted}
 
     async def _command_canvas_flow_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
@@ -1035,9 +1123,25 @@ class AgentGateway:
                 "document_path": None,
                 "language": "markdown",
             }
+        if kind == "canvas":
+            path = canvas_manager.library_path(name)
+            if not path.is_file():
+                raise ValueError(f"Unknown canvas flow: {name}")
+            graph = FlowGraph.model_validate_json(path.read_text(encoding="utf-8"))
+            steps = len([n for n in graph.nodes if getattr(n, "kind", "") == "step"])
+            return {
+                "kind": kind, "name": name,
+                "description": graph.description or f"Canvas library flow · {steps} step(s).",
+                "version": graph.version, "permission_mode": "read_only", "type": "canvas",
+                "enable_evolving": False, "actions": [], "parameter_schema": {},
+                "usage": "Reusable visual flow — import it into the canvas to run or edit.",
+                "configuration": {}, "editable": False,
+                "document": json.dumps(graph.model_dump(mode="json"), indent=2, ensure_ascii=False),
+                "document_path": str(path), "language": "source",
+            }
         manager = managers.get(kind)
         if manager is None:
-            raise ValueError("kind must be one of: skills, tools, agents, connectors, environments, workflows, commands")
+            raise ValueError("kind must be one of: skills, tools, agents, connectors, environments, workflows, commands, canvas")
         if not name:
             raise ValueError("Capability name is required")
         if name not in await manager.list():
@@ -1517,6 +1621,8 @@ class AgentGateway:
             "environments": await environment_manager.list(),
             "workflows": workflow_manager.list(),
             "commands": await command_manager.list(),
+            # Canvas library: reusable visual flows (JSON under extension/canvas/).
+            "canvas": canvas_manager.list_library_names(),
         }
 
     def _capability_document(self, kind: str, name: str, info: Any) -> tuple[str, Optional[str], str]:

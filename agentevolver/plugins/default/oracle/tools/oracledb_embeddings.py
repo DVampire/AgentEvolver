@@ -1,0 +1,31 @@
+"""Oracle Embeddings — from the Langflow `oracle` embeddings bundle (ported)."""
+
+from typing import Any
+
+from agentevolver.registry import PLUGIN
+from agentevolver.response.types import Response
+from agentevolver.plugins.types import EmbeddingPlugin
+
+
+@PLUGIN.register_module(force=True)
+class OracleOracledbEmbeddingsPlugin(EmbeddingPlugin):
+    name: str = "oracle.oracledb_embeddings"
+    display_name: str = 'Oracle Embeddings'
+    description: str = 'Generate embeddings using Oracle AI Vector Search.'
+    kind: str = "embedding"
+    bundle: str = "oracle"
+    bundle_label: str = "Oracle"
+    source: str = "langflow/bundles/oracle"
+    status: str = "complete"
+
+    def _embeddings(self, **cfg: Any) -> Any:
+        import oracledb
+        from langchain_community.embeddings.oracleai import OracleEmbeddings
+        conn = oracledb.connect(user=cfg.get("user", ""), password=cfg.get("password", ""), dsn=cfg.get("dsn", ""))
+        return OracleEmbeddings(conn=conn, params={"provider": "database", "model": cfg.get("model_name")})
+
+    async def __call__(self, text: str = "", model_name: str = "", user: str = "", password: str = "",
+                       dsn: str = "", **kwargs) -> Response:
+        if not dsn:
+            return self._fail("oracle.embeddings: 'dsn', 'user', 'password' are required.")
+        return await self._embed(text=text, model_name=model_name, user=user, password=password, dsn=dsn)

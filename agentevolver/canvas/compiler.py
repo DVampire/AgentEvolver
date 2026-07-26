@@ -1,15 +1,16 @@
-"""Compile a canvas flow graph (JSON) into ``<workflow>`` HTML.
+"""Compile a canvas flow graph (JSON) into a runnable ``WorkflowDefinition``.
 
-One direction only: the graph is the editable source, the HTML is the build
-artifact. The produced document mirrors the shape of the hand-written
-workflows under ``agentevolver/workflow/default/`` and is validated with the
-real ``WorkflowCompiler`` before it leaves this module, so anything we emit
-is guaranteed to register and run.
+One direction only: the JSON graph is the canvas's editable source of truth.
+Compilation emits a transient ``<workflow>`` document (never persisted — the
+canvas stores nothing as HTML) that mirrors the hand-written workflows under
+``agentevolver/workflow/default/`` and is validated by the real
+``WorkflowCompiler``, so the resulting definition is guaranteed to run. Callers
+run it ephemerally on the shared runtime; the canvas is isolated from the agent
+system's HTML workflows under ``extension/workflow/``.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 from collections import defaultdict
@@ -51,31 +52,13 @@ class CanvasCompiler:
         "min_votes": "min-votes",
     }
 
-    # The compiled HTML can carry its own canvas JSON source (base64, so arbitrary
-    # content can never terminate the HTML comment). This makes a published
-    # extension artifact self-sufficient: the canvas reopens it for editing
-    # without any separate JSON store.
-    _SOURCE_PREFIX = "canvas-flow-source:v2:"
-    _SOURCE_COMMENT = re.compile(r"<!--\s*canvas-flow-source:v2:([A-Za-z0-9+/=\s]+?)-->")
+    def compile(self, graph: FlowGraph) -> Tuple[str, WorkflowDefinition]:
+        """Return ``(html, compiled_definition)`` or raise ``CanvasCompileError``.
 
-    def embed_source_comment(self, graph: FlowGraph) -> str:
-        payload = json.dumps(graph.model_dump(mode="json"), ensure_ascii=False)
-        encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
-        return f"<!-- {self._SOURCE_PREFIX}{encoded} -->"
-
-    def extract_source(self, html: str) -> Optional[FlowGraph]:
-        """Recover the canvas JSON source from compiled HTML, or None if absent."""
-        match = self._SOURCE_COMMENT.search(html or "")
-        if match is None:
-            return None
-        try:
-            payload = base64.b64decode(re.sub(r"\s+", "", match.group(1)))
-            return FlowGraph.model_validate_json(payload)
-        except Exception:  # noqa: BLE001 — a corrupt marker means "not canvas-editable"
-            return None
-
-    def compile(self, graph: FlowGraph, embed_source: bool = False) -> Tuple[str, WorkflowDefinition]:
-        """Return ``(html, compiled_definition)`` or raise ``CanvasCompileError``."""
+        The canvas keeps JSON as its source of truth and stores nothing as HTML;
+        the ``html`` here is a transient validation artifact, and callers use the
+        ``WorkflowDefinition`` to run the flow ephemerally on the shared runtime.
+        """
         errors: List[str] = []
         nodes = {node.id: node for node in graph.nodes}
         if len(nodes) != len(graph.nodes):
@@ -151,8 +134,7 @@ class CanvasCompiler:
         self._emit_steps(ordered, graph, bindings, lines, indent=4)
 
         name = workflow_name_for(graph)
-        html = self._document(graph, name, inputs, outputs, bindings, lines,
-                              source_comment=self.embed_source_comment(graph) if embed_source else None)
+        html = self._document(graph, name, inputs, outputs, bindings, lines, source_comment=None)
         try:
             definition = WorkflowCompiler().compile(html)
         except Exception as exc:

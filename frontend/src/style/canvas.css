@@ -5,7 +5,10 @@
 
 .view-nav { margin-bottom: 4px; }
 .view-nav button.view-active { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
-.app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); }
+.app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); height: 100vh; overflow: hidden; }
+/* Canvas fills exactly one viewport: the sidebar scrolls inside itself instead
+   of growing the shell past 100vh (which left dead space below the canvas). */
+.app-shell.canvas-wide .sidebar { min-height: 0; overflow-y: auto; }
 /* Fixed to the viewport (Langflow's h-screen), not min-height — otherwise the
    canvas can grow past one screen and push the bottom-center controls pill off
    the visible area. overflow-hidden keeps the flow pane clipped so the pill (a
@@ -35,6 +38,14 @@
 .canvas-cat-head[aria-expanded='true'] .lf-cat-icon { color: hsl(333 71% 51%); }
 .lf-cat-chevron svg { transition: transform .15s ease; }
 .canvas-cat-head[aria-expanded='true'] .lf-cat-chevron svg { transform: rotate(90deg); }
+/* Bundles: a super-section whose sub-groups (one per migrated Langflow bundle)
+   nest one level deeper — indented, with a small count chip. */
+.lf-cat-count { margin-right: 2px; color: hsl(var(--muted-foreground)); font-size: 11px; font-variant-numeric: tabular-nums; }
+.lf-bundle { margin-left: 10px; border-left: 1px solid hsl(var(--border)); padding-left: 6px; }
+.lf-bundle-head { margin-top: 2px; padding: 6px 8px; }
+.lf-bundle-head strong { font-size: 12.5px; font-weight: 500; }
+.lf-bundle-head[aria-expanded='true'] strong { font-weight: 620; }
+.lf-bundle-head img { border-radius: 4px; }
 /* Langflow component row: muted pill + colored LEFT border (set inline per
    category), a plain monochrome glyph, and a grip handle. */
 .canvas-palette-item { display: flex; align-items: center; gap: 9px; margin: 4px 2px 4px 6px; border: 1px solid hsl(var(--border)); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; color: hsl(var(--foreground)); background: hsl(var(--muted)); cursor: grab; transition: background .12s ease; }

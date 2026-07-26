@@ -1,17 +1,17 @@
-"""Canvas manager — session-scoped drafts, extension-managed publishing, draft runs.
+"""Canvas manager — session drafts, a JSON reuse library, and ephemeral runs.
 
-Storage follows the framework's evolution model:
+The canvas stores everything as **JSON** and is isolated from the agent system's
+``<workflow>`` HTML workflows (``extension/workflow/``). A canvas flow never
+becomes an agent workflow and is never registered/callable by an agent.
 
 - **Drafts** are session artifacts: JSON documents in a directory supplied by
   the caller (the Gateway passes ``<session project root>/canvas``).
-- **Published flows** are extension components: publishing writes
-  ``extension/workflow/<name>.html`` through ``extension_manager`` (versioning,
-  archive/rollback, manifest persistence, startup loading, and capability
-  change events all come from the extension system). The compiled HTML embeds
-  the canvas JSON source, so a published flow can be reopened for editing from
-  the artifact alone.
-- **Runs** compile in memory and start the workflow runtime as EPHEMERAL
-  definitions; the canvas owns no executor.
+- **Library** flows are the reuse store: ``export_to_library`` saves a flow as
+  ``extension/canvas/<name>.json``; ``import_from_library`` loads it back as a
+  fresh draft. The library surfaces as the ``canvas`` capability kind (a
+  human-facing library — not agent-callable).
+- **Runs** compile in memory and start the shared workflow runtime as EPHEMERAL
+  definitions; the canvas owns no executor and registers nothing.
 """
 
 from __future__ import annotations
@@ -72,40 +72,9 @@ class CanvasManagerServer:
                 except Exception as exc:  # noqa: BLE001 — one bad file must not hide the rest
                     logger.warning(f"| ⚠️ Canvas: unreadable flow file {path.name}: {exc}")
         summaries.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
-
-        from agentevolver.workflow import workflow_manager
-        for name in workflow_manager.list():
-            definition = workflow_manager.get(name)
-            graph = canvas_compiler.extract_source(getattr(definition, "source", "") or "")
-            if graph is None:
-                continue  # hand-written workflow: not canvas-editable
-            summaries.append({
-                "id": f"{PUBLISHED_PREFIX}{name}",
-                "name": graph.name,
-                "description": definition.description,
-                "version": definition.version,
-                "published": True,
-                "updated_at": None,
-                "node_count": len([node for node in graph.nodes if node.kind == "step"]),
-            })
         return summaries
 
     def get_flow(self, flow_id: str, flows_dir: Path) -> FlowGraph:
-        if flow_id.startswith(PUBLISHED_PREFIX):
-            from agentevolver.workflow import workflow_manager
-            name = flow_id[len(PUBLISHED_PREFIX):]
-            definition = workflow_manager.get(name)
-            if definition is None:
-                raise ValueError(f"Unknown workflow: {name}")
-            graph = canvas_compiler.extract_source(definition.source or "")
-            if graph is None:
-                raise ValueError(f"Workflow {name} was not created with the canvas and cannot be edited")
-            # Editing starts a fresh session draft; publishing evolves the same name.
-            graph.id = ""
-            graph.version = definition.version
-            graph.published = True
-            graph.program_hash = definition.program_hash
-            return graph
         path = self._flow_path(flows_dir, flow_id)
         if not path.is_file():
             raise ValueError(f"Unknown flow: {flow_id}")
@@ -120,7 +89,7 @@ class CanvasManagerServer:
             if edge.source not in node_ids or edge.target not in node_ids:
                 raise ValueError(f"Edge {edge.id} references a missing node")
         now = datetime.now(timezone.utc).isoformat()
-        if not graph.id or graph.id.startswith(PUBLISHED_PREFIX):
+        if not graph.id:
             graph.id = f"flow-{make_id()}"
             graph.created_at = now
         graph.created_at = graph.created_at or now
@@ -133,12 +102,6 @@ class CanvasManagerServer:
         return graph
 
     async def delete_flow(self, flow_id: str, flows_dir: Path) -> bool:
-        if flow_id.startswith(PUBLISHED_PREFIX):
-            from agentevolver.extension import extension_manager
-            name = flow_id[len(PUBLISHED_PREFIX):]
-            removed = await extension_manager.unload("workflow", name)
-            Path(extension_manager.stage_path("workflow", f"{name}.html")).unlink(missing_ok=True)
-            return removed
         path = self._flow_path(flows_dir, flow_id)
         if not path.is_file():
             return False
@@ -146,60 +109,71 @@ class CanvasManagerServer:
         return True
 
     def flow_status(self, graph: FlowGraph) -> Dict[str, Any]:
-        """Registry view of a flow: registered version and drift vs last publish."""
-        from agentevolver.workflow import workflow_manager
+        """Whether this flow is saved in the shared canvas reuse library (by name)."""
         name = workflow_name_for(graph)
-        registered = workflow_manager.get(name)
-        return {
-            "workflow_name": name,
-            "registered": registered is not None,
-            "registered_version": getattr(registered, "version", None),
-            "drifted": bool(
-                graph.published and registered is not None
-                and graph.program_hash and registered.program_hash != graph.program_hash
-            ),
-        }
+        return {"name": name, "in_library": (self._library_dir() / f"{name}.json").is_file()}
 
     # ------------------------------------------------------------------
-    # Publish — hand the compiled artifact to the extension system
+    # Canvas library — reusable flows saved as JSON under ``extension/canvas/``.
+    # A human-facing reuse library, deliberately ISOLATED from the agent
+    # system's workflows (which live as HTML DSL under ``extension/workflow/``).
+    # Different storage format (JSON vs HTML) so the two never mix. The library
+    # is not agent-callable: canvas flows are for people to compose and rerun.
     # ------------------------------------------------------------------
 
-    async def publish_flow(self, flow_id: str, flows_dir: Path) -> Dict[str, Any]:
-        from agentevolver.extension import extension_manager
-        from agentevolver.workflow import workflow_manager
+    @staticmethod
+    def _library_dir() -> Path:
+        from agentevolver.utils.path_utils import get_extension_root
+        directory = Path(get_extension_root()) / "canvas"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
 
+    def list_library(self) -> List[Dict[str, Any]]:
+        """Summaries of every saved canvas library flow."""
+        out: List[Dict[str, Any]] = []
+        for path in sorted(self._library_dir().glob("*.json")):
+            try:
+                out.append(FlowGraph.model_validate_json(path.read_text(encoding="utf-8")).summary())
+            except Exception as exc:  # noqa: BLE001 — one bad file must not hide the rest
+                logger.warning(f"| ⚠️ Canvas library: unreadable {path.name}: {exc}")
+        return out
+
+    def list_library_names(self) -> List[str]:
+        """Library flow names — the ``canvas`` capability kind draws from this."""
+        return [path.stem for path in sorted(self._library_dir().glob("*.json"))]
+
+    def library_path(self, name: str) -> Path:
+        return self._library_dir() / f"{name}.json"
+
+    async def export_to_library(self, flow_id: str, flows_dir: Path) -> Dict[str, Any]:
+        """Save a session draft into the shared canvas library (JSON) for reuse."""
         graph = self.get_flow(flow_id, flows_dir)
-        html, definition = canvas_compiler.compile(graph, embed_source=True)
-        name = definition.name
+        name = workflow_name_for(graph)
+        library_graph = graph.model_copy(deep=True)
+        library_graph.id = ""  # a library copy is standalone, unbound from any session
+        path = self.library_path(name)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(library_graph.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, path)
+        logger.info(f"| 🎨 Canvas: exported '{name}' to the reuse library")
+        return {"name": name, "artifact": str(path), "in_library": True}
 
-        existing = workflow_manager.get(name)
-        if existing is not None and canvas_compiler.extract_source(existing.source or "") is None:
-            raise ValueError(
-                f"A hand-written workflow named {name!r} already exists; rename the flow instead of overwriting it"
-            )
+    def import_from_library(self, name: str) -> FlowGraph:
+        """Load a library flow as a fresh session draft (gets a new id on save)."""
+        path = self.library_path(name)
+        if not path.is_file():
+            raise ValueError(f"Unknown canvas library flow: {name}")
+        graph = FlowGraph.model_validate_json(path.read_text(encoding="utf-8"))
+        graph.id = ""  # importing starts a new draft, never overwrites the library copy
+        return graph
 
-        artifact = Path(extension_manager.stage_path("workflow", f"{name}.html"))
-        temporary = artifact.with_suffix(".html.tmp")
-        temporary.write_text(html, encoding="utf-8")
-        os.replace(temporary, artifact)
-        # The canvas flow was drawn and draft-tested by the user; skip the smoke
-        # replay gate that guards unattended evolver writes.
-        await extension_manager.add_component("workflow", str(artifact), run_smoke=False)
-
-        registered = workflow_manager.get(name)
-        version = getattr(registered, "version", definition.version)
-        graph.published = True
-        graph.version = version
-        graph.program_hash = getattr(registered, "program_hash", definition.program_hash)
-        self.save_flow(graph, flows_dir)
-        logger.info(f"| 🚀 Canvas published workflow '{name}' v{version} via extension manager")
-        return {
-            "flow": graph.summary(),
-            "workflow_name": name,
-            "version": version,
-            "program_hash": graph.program_hash,
-            "artifact": str(artifact),
-        }
+    async def delete_from_library(self, name: str) -> bool:
+        path = self.library_path(name)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
 
     # ------------------------------------------------------------------
     # Draft runs — ephemeral compile, straight into the workflow runtime

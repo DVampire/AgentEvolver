@@ -1,0 +1,31 @@
+"""List Users  — from the Langflow `notion` bundle (ported)."""
+
+from typing import Any, Optional
+
+from agentevolver.registry import PLUGIN
+from agentevolver.response.types import Response
+from agentevolver.plugins.default.notion._base import NotionPlugin
+
+
+@PLUGIN.register_module(force=True)
+class NotionListUsersPlugin(NotionPlugin):
+    name: str = "notion.list_users"
+    display_name: str = 'List Users '
+    description: str = 'Retrieve users from Notion.'
+    kind: str = "tool"
+    bundle: str = "notion"
+    bundle_label: str = "Notion"
+    source: str = "langflow/bundles/notion"
+    status: str = "complete"
+
+    async def __call__(self, api_key: str = "", **kwargs) -> Response:
+        err = self._need_token(api_key)
+        if err:
+            return err
+        token = self._token(api_key)
+        try:
+            js = self._request("GET", "/users", token)
+            results = js.get("results", [])
+            return self._ok(f"Notion has {len(results)} users.", records=results, count=len(results))
+        except Exception as exc:  # noqa: BLE001
+            return self._fail(f"notion.list_users: {type(exc).__name__}: {exc}")
