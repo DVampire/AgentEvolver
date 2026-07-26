@@ -389,9 +389,44 @@ class AgentGateway:
         await self._publish("session.renamed", {"name": name}, session_id=session_id)
         return {"session_id": session_id, "name": name}
 
+    # Task lifecycle event types, used to detect orphaned (interrupted) tasks.
+    _TASK_START_EVENTS = ("task.started",)
+    _TASK_TERMINAL_EVENTS = ("task.completed", "task.failed", "task.cancelled")
+
+    async def _reconcile_orphan_tasks(self, session_id: str) -> None:
+        """Close out tasks that began but never reached a terminal event and are
+        no longer running — e.g. the runtime was interrupted/restarted while a
+        task was in flight, so `task.completed` was never emitted and the client
+        activity would otherwise hang on "Working" forever. Emitting a synthetic
+        `task.cancelled` lets the replaying client resolve the activity. A task
+        still in `_active_agent_tasks` is genuinely running and left untouched;
+        if a just-started task is closed here by a race, its real terminal event
+        (published when it finishes) supersedes this one on the client."""
+        started: set[str] = set()
+        terminal: set[str] = set()
+        for event in self._events[session_id]:
+            if not event.task_id:
+                continue
+            if event.type in self._TASK_START_EVENTS:
+                started.add(event.task_id)
+            elif event.type in self._TASK_TERMINAL_EVENTS:
+                terminal.add(event.task_id)
+        for task_id in started - terminal:
+            if task_id in self._active_agent_tasks:
+                continue
+            await self._publish(
+                "task.cancelled",
+                {"reason": "interrupted", "detail": "Task did not finish — the runtime was interrupted or restarted."},
+                session_id=session_id,
+                task_id=task_id,
+            )
+
     async def _command_session_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
         after_seq = int(params.get("after_seq", 0))
+        # Resolve any interrupted-but-unfinished tasks before replaying, so a
+        # reconnecting client never rebuilds a permanently-"Working" activity.
+        await self._reconcile_orphan_tasks(session_id)
         return {
             "events": [event.model_dump(mode="json") for event in self._events[session_id] if event.seq_no > after_seq]
         }
