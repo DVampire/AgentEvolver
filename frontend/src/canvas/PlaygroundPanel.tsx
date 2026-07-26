@@ -68,16 +68,30 @@ function runWallDuration(frames: Record<string, FrameDoc>): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
 }
 
-function formatOutputs(output: unknown): string {
+// Turn a flow's structured output into the chat reply text. Agent/Chat-Output
+// nodes emit shapes like { answer: { message, data: { result, reasoning }, files } }
+// or { result: "…" }; the chat should show the natural-language reply, not the
+// raw JSON (which stays visible in the run-output panel). We look for a text
+// field, dig into a nested `data`, and unwrap single-key envelopes recursively;
+// only truly unknown multi-field objects fall back to pretty JSON.
+const REPLY_KEYS = ['message', 'result', 'text', 'content', 'answer', 'output', 'response', 'reply'];
+function formatOutputs(output: unknown, depth = 0): string {
   if (output === null || output === undefined) return '(no output)';
   if (typeof output === 'string') return output;
-  if (typeof output === 'object' && !Array.isArray(output)) {
-    const entries = Object.entries(output as Record<string, unknown>);
-    if (entries.length === 1) {
-      const value = entries[0][1];
-      return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  if (typeof output !== 'object') return String(output);
+  if (Array.isArray(output)) return JSON.stringify(output, null, 2);
+  const obj = output as Record<string, unknown>;
+  for (const key of REPLY_KEYS) {
+    if (typeof obj[key] === 'string' && (obj[key] as string).trim()) return obj[key] as string;
+  }
+  if (obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
+    for (const key of REPLY_KEYS) {
+      const value = (obj.data as Record<string, unknown>)[key];
+      if (typeof value === 'string' && value.trim()) return value;
     }
   }
+  const entries = Object.entries(obj);
+  if (entries.length === 1 && depth < 4) return formatOutputs(entries[0][1], depth + 1);
   return JSON.stringify(output, null, 2);
 }
 

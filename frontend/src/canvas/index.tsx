@@ -930,7 +930,10 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             />
           ) : inspectedNode ? <NodePanel node={inspectedNode} runData={runData} onClose={() => setInspected(undefined)} /> : null}
         </div>
-        {runId || runOutput !== undefined || runError ? (
+        {/* The Playground chat already renders the reply + execution, so the raw
+            run-output bar is redundant (and pokes out under the modal) while it's
+            open — only show this footer for runs outside the Playground. */}
+        {!playgroundOpen && (runId || runOutput !== undefined || runError) ? (
           <footer className={`canvas-results${runError ? ' failed' : ''}`}>
             {runId ? <span><span className="pulse" /> Running on the workflow runtime…</span>
               : runError ? <span>✕ {runError}</span>
