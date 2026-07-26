@@ -12,6 +12,15 @@ export default defineConfig({
   build: { target: 'es2022' },
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
   server: {
+    // This shared host's inotify instance limit (fs.inotify.max_user_instances,
+    // 128) is exhausted by other containers, so native fs.watch throws EMFILE.
+    // Poll instead (no inotify), and ignore trees the UI never imports so polling
+    // stays cheap (only frontend/src is walked).
+    watch: {
+      usePolling: true,
+      interval: 300,
+      ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/output/**', '**/__pycache__/**', '**/extension/**'],
+    },
     proxy: {
       '/ws': { target: `ws://127.0.0.1:${GATEWAY}`, ws: true, changeOrigin: true },
       '/env/vnc': { target: `ws://127.0.0.1:${GATEWAY}`, ws: true, changeOrigin: true },

@@ -64,5 +64,10 @@ if [[ ! -d node_modules ]]; then
   npm install
 fi
 
+# Raise the open-file limit: Vite's file watcher (chokidar) opens many FDs, and
+# the repo is large, so the container's default soft limit (often 1024) trips
+# EMFILE. Bump toward the hard limit; fall back gracefully if not permitted.
+ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn 2>/dev/null || echo 8192)" 2>/dev/null || true
+
 # Vite dev server in the foreground; Ctrl-C stops it and the trap kills the Gateway.
 exec npm run dev -- --port "${UI_PORT}"

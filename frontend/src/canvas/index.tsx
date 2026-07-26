@@ -84,6 +84,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const [rosters, setRosters] = useState<MountRosters>({});
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [libraryFlows, setLibraryFlows] = useState<FlowSummary[]>([]);
+  const [defaultFlows, setDefaultFlows] = useState<FlowSummary[]>([]);
   const [flowId, setFlowId] = useState('');
   const [flowName, setFlowName] = useState('Untitled flow');
   const [flowVersion, setFlowVersion] = useState('1.0.0');
@@ -583,6 +584,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     if (flowList.ok && Array.isArray(flowList.result.flows)) setFlows(flowList.result.flows as FlowSummary[]);
     const library = await request('canvas.library.list', {});
     if (library.ok && Array.isArray(library.result.flows)) setLibraryFlows(library.result.flows as FlowSummary[]);
+    const defaults = await request('canvas.defaults.list', {});
+    if (defaults.ok && Array.isArray(defaults.result.flows)) setDefaultFlows(defaults.result.flows as FlowSummary[]);
   }, [request, sessionId]);
 
   const saveFlow = async (): Promise<string | undefined> => {
@@ -630,6 +633,23 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       resetHistory();
       setRunOutput(undefined); setRunError(undefined); setRunId(undefined); setRunData(undefined); setInspected(undefined); setDirty(true);
       onNotice(`Imported "${doc.name}" from the library as a new draft.`);
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  // Load a shipped default flow (template) as a fresh draft to run or edit.
+  const importDefault = async (id: string) => {
+    try {
+      const response = await request('canvas.defaults.import', { name: id, session_id: sessionId });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Load failed');
+      const doc = response.result.flow as FlowGraphDoc;
+      setFlowId(''); setFlowName(doc.name); setFlowVersion(doc.version);
+      setFlowStatus({ name: doc.name, in_library: false });
+      fromDocument(doc);
+      resetHistory();
+      setRunOutput(undefined); setRunError(undefined); setRunId(undefined); setRunData(undefined); setInspected(undefined); setDirty(true);
+      onNotice(`Loaded template "${doc.name}" as a new draft.`);
     } catch (error) {
       onNotice(error instanceof Error ? error.message : String(error));
     }
@@ -753,11 +773,13 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           {/* Flow identity — Langflow FlowMenu: colored icon swatch + a picker
               breadcrumb + a semibold name field. */}
           <div className="flex shrink-0 items-center justify-center rounded bg-muted p-1 text-primary"><Workflow className="h-3.5 w-3.5" /></div>
-          <Select value={flowId || '__new__'} onValueChange={(next) => { if (next === '__new__') { newFlow(); } else if (next.startsWith('lib:')) { void importFromLibrary(next.slice(4)); } else { void openFlow(next); } }}>
+          <Select value={flowId || '__new__'} onValueChange={(next) => { if (next === '__new__') { newFlow(); } else if (next.startsWith('def:')) { void importDefault(next.slice(4)); } else if (next.startsWith('lib:')) { void importFromLibrary(next.slice(4)); } else { void openFlow(next); } }}>
             <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__new__" className="text-xs">＋ New flow</SelectItem>
               {flows.map((flow) => <SelectItem key={flow.id} value={flow.id} className="text-xs">○ {flow.name} v{flow.version}</SelectItem>)}
+              {defaultFlows.length ? <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Templates</div> : null}
+              {defaultFlows.map((flow) => <SelectItem key={`def:${flow.id}`} value={`def:${flow.id}`} className="text-xs">✦ {flow.name}</SelectItem>)}
               {libraryFlows.length ? <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Library</div> : null}
               {libraryFlows.map((flow) => <SelectItem key={`lib:${flow.name}`} value={`lib:${flow.name}`} className="text-xs">⤓ {flow.name}</SelectItem>)}
             </SelectContent>

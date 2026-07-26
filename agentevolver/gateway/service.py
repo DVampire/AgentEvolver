@@ -966,6 +966,17 @@ class AgentGateway:
     async def _command_canvas_library_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         return {"flows": canvas_manager.list_library()}
 
+    async def _command_canvas_defaults_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        """Shipped example flows the picker offers as templates."""
+        return {"flows": canvas_manager.list_defaults()}
+
+    async def _command_canvas_defaults_import(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(params.get("name") or "")
+        if not name:
+            raise ValueError("name is required")
+        graph = canvas_manager.import_default(name)
+        return {"flow": graph.model_dump(mode="json")}
+
     async def _command_canvas_library_import(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Load a library flow as a fresh draft (returns the graph; the frontend
         saves it as a new session flow)."""

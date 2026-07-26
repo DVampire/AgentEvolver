@@ -176,6 +176,41 @@ class CanvasManagerServer:
         return True
 
     # ------------------------------------------------------------------
+    # Default flows — example canvas flows shipped in ``canvas/default/``
+    # (read-only templates). The picker offers them; selecting one loads it as
+    # a fresh draft to run/edit. Managed here, never written to.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _defaults_dir() -> Path:
+        return Path(__file__).resolve().parent / "default"
+
+    def list_defaults(self) -> List[Dict[str, Any]]:
+        """Summaries of the shipped default flows (id = filename stem)."""
+        out: List[Dict[str, Any]] = []
+        directory = self._defaults_dir()
+        if directory.is_dir():
+            for path in sorted(directory.glob("*.json")):
+                try:
+                    graph = FlowGraph.model_validate_json(path.read_text(encoding="utf-8"))
+                    out.append({**graph.summary(), "id": path.stem})
+                except Exception as exc:  # noqa: BLE001 — one bad file must not hide the rest
+                    logger.warning(f"| ⚠️ Canvas defaults: unreadable {path.name}: {exc}")
+        return out
+
+    def list_default_names(self) -> List[str]:
+        return [path.stem for path in sorted(self._defaults_dir().glob("*.json"))]
+
+    def import_default(self, name: str) -> FlowGraph:
+        """Load a default flow as a fresh draft (new id on save)."""
+        path = self._defaults_dir() / f"{name}.json"
+        if not path.is_file():
+            raise ValueError(f"Unknown default flow: {name}")
+        graph = FlowGraph.model_validate_json(path.read_text(encoding="utf-8"))
+        graph.id = ""  # importing a template starts a new draft
+        return graph
+
+    # ------------------------------------------------------------------
     # Draft runs — ephemeral compile, straight into the workflow runtime
     # ------------------------------------------------------------------
 
