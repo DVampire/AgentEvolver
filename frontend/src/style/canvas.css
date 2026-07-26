@@ -6,7 +6,11 @@
 .view-nav { margin-bottom: 4px; }
 .view-nav button.view-active { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
 .app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); }
-.canvas-mode { grid-template-rows: auto 1fr auto; min-height: 100vh; }
+/* Fixed to the viewport (Langflow's h-screen), not min-height — otherwise the
+   canvas can grow past one screen and push the bottom-center controls pill off
+   the visible area. overflow-hidden keeps the flow pane clipped so the pill (a
+   React Flow Panel, screen-fixed within this box) always sits at the bottom. */
+.canvas-mode { grid-template-rows: auto 1fr auto; height: 100vh; min-height: 0; overflow: hidden; }
 .canvas-notice { margin: 0 24px 12px; }
 .canvas-view { min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); }
 
