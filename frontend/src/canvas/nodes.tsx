@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ChevronDown, ChevronRight, ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PencilLine, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PencilLine, Play, Save, SlidersHorizontal, Snowflake, TextSearch, Trash2 } from 'lucide-react';
 
 import { MountPicker } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
@@ -105,13 +105,25 @@ function emitNodeAction(nodeId: string, action: NodeAction) {
 // Header run/status cluster copied from Langflow's NodeStatus: a right-aligned
 // Play button (Loader2 while running) preceded by a run-count badge in the same
 // emerald/font-mono treatment Langflow uses for its duration/token badge.
-function NodeRunStatus({ id, state, count }: { id: string; state?: CanvasData['runState']; count?: number }) {
+function NodeRunStatus({ id, state, count, editable }: { id: string; state?: CanvasData['runState']; count?: number; editable?: boolean }) {
   const running = state === 'running';
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1.5">
       {count && count > 1 ? (
         <span className={cn('flex items-center gap-1 rounded-sm px-1 font-mono text-xs',
           state === 'failed' ? 'text-destructive' : 'text-accent-emerald-foreground')}>×{count}</span>
+      ) : null}
+      {editable ? (
+        <ShadTooltip content="Edit configuration">
+          <Button
+            unstyled
+            className="nodrag flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => emitNodeAction(id, 'docs')}
+            aria-label="Edit configuration"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={2} />
+          </Button>
+        </ShadTooltip>
       ) : null}
       <ShadTooltip content="Run flow">
         <Button
@@ -270,7 +282,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
         <EditableNodeName id={id} name={data.name} fallback={spec?.label ?? data.stepType ?? 'Step'} selected={Boolean(selected)} update={data.update} />
         {data.frozen ? <Snowflake size={12} className="lf-frozen-badge" /> : null}
         <code className="lf-node-ref" title="Reference this step in task text">{'$'}{'{'}{id}{'}'}</code>
-        <NodeRunStatus id={id} state={data.runState} count={data.runCount} />
+        <NodeRunStatus id={id} state={data.runState} count={data.runCount} editable />
       </header>
       {!data.minimized && spec?.description ? <p className="lf-node-desc">{spec.description}</p> : null}
       {!data.minimized ? <div className="lf-node-body nodrag nowheel">

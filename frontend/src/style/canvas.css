@@ -101,7 +101,7 @@
 .lf-node:hover .lf-node-ref, .lf-node.selected .lf-node-ref { opacity: 1; }
 .lf-pulse { width: 8px; height: 8px; border-radius: 50%; background: hsl(217 91% 60%); animation: pulse 1.2s ease infinite; }
 .lf-run-count { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }
-.lf-node-desc { display: -webkit-box; overflow: hidden; margin: 0; padding: 2px 16px 12px; color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.lf-node-desc { margin: 0; padding: 2px 16px 12px; color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 /* Body rows are flush to the node border (no horizontal padding on the body);
    each field pads itself, so a handle at the field's left:0 lands on the border. */
 .lf-node-body { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid hsl(var(--border)); }

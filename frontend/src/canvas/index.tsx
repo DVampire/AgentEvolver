@@ -865,7 +865,9 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
             onNodeDrag={(_event, node) => setHelperLines(getHelperLines(node, nodes))}
             onNodeDragStop={() => { setHelperLines({}); onNodeDragStop(); }}
             connectionLineComponent={ConnectionLine}
-            onNodeClick={(_event, node) => { if (node.type !== 'noteNode' && node.data.kind === 'step') { setInspected(node.id); setPlaygroundOpen(false); } }}
+            // Plain click only selects (React Flow default). The config panel
+            // opens from the node's "Edit configuration" button (docs action),
+            // never on a stray click.
             onNodeContextMenu={(event, node) => {
               // Langflow onNodeContextMenu: select only this node, then open its
               // toolbar dropdown (the CardToolbar ⋯ menu) at the cursor.
