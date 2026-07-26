@@ -752,41 +752,61 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     URL.revokeObjectURL(url);
   };
 
+  // Fetch a run's status once and apply it: mirror per-node run state, and when
+  // the run is terminal, resolve it (clear runId, capture output/error). Shared
+  // by the poll and the push listener below.
+  const syncRunStatus = useCallback(async (id: string) => {
+    let response;
+    try {
+      response = await request('canvas.run.status', { run_id: id });
+    } catch {
+      return; // transient WS error — the next poll (or push) will retry
+    }
+    if (!response.ok) return;
+    const run = response.result.run as { state: string; output?: unknown; error?: string | null; frames?: Record<string, FrameDoc>; invocations?: Record<string, InvocationDoc> };
+    setRunData({ state: run.state, frames: run.frames ?? {}, invocations: run.invocations ?? {} });
+    const byStep = new Map<string, { state: FrameState; count: number }>();
+    const precedence: FrameState[] = ['failed', 'running', 'retry_wait', 'ready', 'pending', 'cancelled', 'skipped', 'cached', 'succeeded'];
+    for (const frame of Object.values(run.frames ?? {})) {
+      if (!frame.step_id || !frame.state) continue;
+      const existing = byStep.get(frame.step_id);
+      const state = frame.state as FrameState;
+      if (!existing) byStep.set(frame.step_id, { state, count: 1 });
+      else byStep.set(frame.step_id, {
+        state: precedence.indexOf(state) < precedence.indexOf(existing.state) ? state : existing.state,
+        count: existing.count + 1,
+      });
+    }
+    setNodes((current) => current.map((node) => {
+      const info = byStep.get(node.id);
+      return info ? { ...node, data: { ...node.data, runState: info.state, runCount: info.count } } : node;
+    }));
+    if (['succeeded', 'failed', 'cancelled'].includes(run.state)) {
+      setRunId(undefined);
+      if (run.state === 'succeeded') setRunOutput(run.output ?? null);
+      else setRunError(run.error || `Run ${run.state}`);
+    }
+  }, [request, setNodes]);
+
+  // Poll as a fallback (in case the push is missed), but the primary signal is
+  // the gateway's pushed `canvas.run.ended` event handled below.
   useEffect(() => {
     if (!runId) return;
-    const timer = window.setInterval(async () => {
-      try {
-        const response = await request('canvas.run.status', { run_id: runId });
-        if (!response.ok) throw new Error(response.error?.message ?? 'status failed');
-        const run = response.result.run as { state: string; output?: unknown; error?: string | null; frames?: Record<string, FrameDoc>; invocations?: Record<string, InvocationDoc> };
-        setRunData({ state: run.state, frames: run.frames ?? {}, invocations: run.invocations ?? {} });
-        const byStep = new Map<string, { state: FrameState; count: number }>();
-        const precedence: FrameState[] = ['failed', 'running', 'retry_wait', 'ready', 'pending', 'cancelled', 'skipped', 'cached', 'succeeded'];
-        for (const frame of Object.values(run.frames ?? {})) {
-          if (!frame.step_id || !frame.state) continue;
-          const existing = byStep.get(frame.step_id);
-          const state = frame.state as FrameState;
-          if (!existing) byStep.set(frame.step_id, { state, count: 1 });
-          else byStep.set(frame.step_id, {
-            state: precedence.indexOf(state) < precedence.indexOf(existing.state) ? state : existing.state,
-            count: existing.count + 1,
-          });
-        }
-        setNodes((current) => current.map((node) => {
-          const info = byStep.get(node.id);
-          return info ? { ...node, data: { ...node.data, runState: info.state, runCount: info.count } } : node;
-        }));
-        if (['succeeded', 'failed', 'cancelled'].includes(run.state)) {
-          setRunId(undefined);
-          if (run.state === 'succeeded') setRunOutput(run.output ?? null);
-          else setRunError(run.error || `Run ${run.state}`);
-        }
-      } catch {
-        // transient status errors: keep polling until the run resolves
-      }
-    }, 1000);
+    const timer = window.setInterval(() => void syncRunStatus(runId), 1000);
     return () => window.clearInterval(timer);
-  }, [runId, request, setNodes]);
+  }, [runId, syncRunStatus]);
+
+  // Push-based completion: the gateway emits `canvas.run.ended` the instant the
+  // workflow run finishes, so the flow resolves immediately without waiting for
+  // (or depending on) a poll landing. runIdRef keeps the check current without
+  // re-subscribing on every run.
+  const runIdRef = useRef<string | undefined>(undefined);
+  runIdRef.current = runId;
+  useEffect(() => subscribe((event) => {
+    if (event.type !== 'canvas.run.ended') return;
+    const rid = (event.payload as { run_id?: string }).run_id;
+    if (rid && rid === runIdRef.current) void syncRunStatus(rid);
+  }), [subscribe, syncRunStatus]);
 
   const stopRun = async () => { if (runId) await request('canvas.run.cancel', { run_id: runId }); };
 

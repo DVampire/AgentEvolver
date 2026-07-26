@@ -1566,6 +1566,17 @@ class AgentGateway:
     async def _on_trace_event(self, event) -> None:
         payload = event.to_dict()
         await self._publish("trace.event", payload, session_id=event.session_id, task_id=event.task_id)
+        # A workflow run (canvas draft run) just finished. Push an explicit
+        # terminal so canvas clients resolve immediately instead of discovering
+        # it by polling canvas.run.status (which can be missed/dropped). The
+        # trace's task_id IS the run_id; the client matches it to its live run.
+        if payload.get("event_type") == "workflow_end" and event.task_id:
+            await self._publish(
+                "canvas.run.ended",
+                {"run_id": event.task_id, "state": "succeeded" if payload.get("success") else "failed"},
+                session_id=event.session_id,
+                task_id=event.task_id,
+            )
 
     async def _on_environment_view(self, view) -> None:
         """Republish an environment live-view to the client watching the active session.
