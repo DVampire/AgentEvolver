@@ -18,7 +18,7 @@ project_root = f"output/{tag}"
 log_path = "hle.log"
 
 version = "0.1.0"
-model_name = "anthropic/claude-opus-4.8"
+model_name = "openrouter/gemini-3.5-flash"
 
 memory_names = ["file_system_memory"]
 agent_names = ["general_agent"]
@@ -56,7 +56,7 @@ general_agent.update(
 # model_name here is the LLM judge used to score each answer.
 hle_benchmark.update(
     base_dir="benchmark/hle",
-    model_name="openrouter/o3-mini",
+    model_name="openrouter/gemini-3.5-flash",
     start=0,
     end=None,
 )

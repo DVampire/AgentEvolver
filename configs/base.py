@@ -2,7 +2,7 @@
 tag = "base"
 project_root = f"output/{tag}"
 log_path = "base.log"
-model_name = "anthropic/claude-opus-4.8"
+model_name = "openrouter/gemini-3.5-flash"
 
 # Named model roles — behavior×model orthogonality (borrowed from HarnessX ModelConfig).
 # Callers resolve a model by ROLE (`model_manager(role="judge", ...)`) instead of a

@@ -14,7 +14,7 @@ tag = "agent_generate_agent"
 project_root = f"output/{tag}"
 log_path = "agent_generate_agent.log"
 
-model_name = "anthropic/claude-opus-4.8"
+model_name = "openrouter/gemini-3.5-flash"
 
 tool_names = [
     "bash_tool",

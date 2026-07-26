@@ -9,7 +9,7 @@ project_root = f"output/{tag}"
 log_path = "agent.log"
 
 version = "0.1.0"
-model_name = "anthropic/claude-opus-4.8"
+model_name = "openrouter/gemini-3.5-flash"
 
 memory_names = [
     "file_system_memory",
