@@ -449,10 +449,10 @@ class Catalog:
             inputs.append(PortSpec(name="task", label="Task", type="text"))
         if spec.id == "io/output":
             inputs.append(PortSpec(name="value", label="Value", type="any"))
-        # Agent capability mount ports (Langflow-style): wire tool/skill/connector
-        # nodes in to grant the agent access (in addition to the picker). Each
-        # accepts many edges; the compiler folds them into the allowlist args.
-        for kind in ("tools", "skills", "connectors"):
+        # Agent capability mount ports (Langflow-style): every agent can mount all
+        # six capability kinds — wire nodes into the handle OR multi-select in the
+        # box. Each accepts many edges; the compiler folds them into the allowlist.
+        for kind in AGENT_MOUNT_KINDS:
             if kind in (spec.mount_kinds or []):
                 inputs.append(PortSpec(name=f"mount:{kind}", label=kind.capitalize(), type="any"))
         for param in spec.params:

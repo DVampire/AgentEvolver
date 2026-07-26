@@ -225,21 +225,27 @@
 .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: hsl(var(--muted-foreground) / 0.4); }
 
-/* Agent capability mounts (tools/skills/connectors selected inside the agent node) */
-.lf-mounts { display: grid; gap: 7px; margin: 2px 0 0; padding: 9px 14px 2px; border-top: 1px dashed hsl(var(--border)); }
-.lf-mount-section { display: grid; gap: 4px; }
-.lf-mount-head { display: flex; align-items: center; justify-content: space-between; }
-.lf-mount-head > span { color: hsl(var(--muted-foreground)); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-.lf-mount-add { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid hsl(var(--border)); border-radius: 5px; color: hsl(var(--muted-foreground)); background: hsl(var(--background)); }
-.lf-mount-add:hover { border-color: hsl(var(--node-selected)); color: hsl(var(--foreground)); }
-.lf-mount-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Agent capabilities — one collapsible section holding every mount kind
+   (tools/skills/connectors/workflows/environments/agents) selected inside the
+   agent node. Collapsed = header + summary; expanded = one box per kind. */
+/* No horizontal padding on the section — like .lf-node-body (6px 0) — so each
+   mount FieldShell's left:0 handle lands on the node border, not inset. The
+   FieldShell's own px-5 supplies the content inset; the header matches it. */
+.lf-mounts { position: relative; margin: 2px 0 0; padding: 4px 0 2px; border-top: 1px dashed hsl(var(--border)); }
+.lf-mounts.open { padding-bottom: 4px; }
+.lf-mounts-head { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; padding: 5px 20px; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; }
+.lf-mounts-head:hover { color: hsl(var(--foreground)); }
+.lf-mounts-head svg { flex: 0 0 auto; }
+.lf-mounts-title { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.lf-mounts-summary { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.lf-mounts-body { display: grid; gap: 8px; margin-top: 2px; }
 .lf-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 4px 2px 7px; color: hsl(var(--foreground)); background: hsl(var(--accent)); font-size: 10.5px; }
 .lf-chip button { display: grid; place-items: center; border: 0; border-radius: 4px; color: hsl(var(--muted-foreground)); background: transparent; padding: 0; }
 .lf-chip button:hover { color: hsl(var(--destructive)); }
-.lf-mount-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: 10.5px; font-style: italic; }
-
-/* collapsible capability block head */
-.lf-mounts-head { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; padding: 2px 0 6px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-.lf-mounts-head > span { flex: 0 0 auto; }
-.lf-mounts-head > em { margin-left: auto; color: hsl(var(--muted-foreground)); font-style: normal; text-transform: none; letter-spacing: 0; }
-.lf-mounts-head svg { color: hsl(var(--muted-foreground)); }
+/* Agent mount box: a clickable field (chips of the current selection, or a
+   placeholder) that opens the roster multi-select. */
+.lf-mount-box { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 34px; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 5px 9px; color: hsl(var(--foreground)); background: hsl(var(--background)); text-align: left; cursor: pointer; transition: border-color .12s ease; }
+.lf-mount-box:hover { border-color: hsl(var(--node-selected)); }
+.lf-mount-box-body { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.lf-mount-placeholder { color: hsl(var(--muted-foreground)); font-size: 11.5px; }
+.lf-mount-caret { flex: 0 0 auto; color: hsl(var(--muted-foreground)); }

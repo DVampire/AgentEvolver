@@ -502,17 +502,21 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
 
   // ----- edges: bindings + derived reference display ------------------------
 
-  const onConnect = useCallback((connection: Connection) => {
-    if (!connection.targetHandle || !connection.source || !connection.target || connection.source === connection.target) return;
+  // Validate a proposed connection and, if legal, build the edge to add. Shared
+  // by onConnect (new edges) and onReconnect (dragging an endpoint to another
+  // handle). `existing` is the edge set the "already connected" check runs
+  // against — reconnect passes it with the edge being moved excluded, so
+  // re-anchoring to a fresh handle on the same target doesn't self-collide.
+  const buildEdge = useCallback((connection: Connection, existing: Edge[]): { edge?: Edge; error?: string } => {
+    if (!connection.targetHandle || !connection.source || !connection.target || connection.source === connection.target) return {};
     const target = nodes.find((node) => node.id === connection.target);
     const source = nodes.find((node) => node.id === connection.source);
-    if (!target || !source) return;
+    if (!target || !source) return {};
     // Mount ports (mount:tools/skills/connectors) accept many capabilities; every
     // other input takes a single edge.
-    const isMount = connection.targetHandle?.startsWith('mount:');
-    if (!isMount && edges.some((edge) => edge.target === connection.target && edge.targetHandle === connection.targetHandle && !edge.id.startsWith('ref-'))) {
-      onNotice('That input is already connected; remove the existing edge first.');
-      return;
+    const isMount = connection.targetHandle.startsWith('mount:');
+    if (!isMount && existing.some((edge) => edge.target === connection.target && edge.targetHandle === connection.targetHandle && !edge.id.startsWith('ref-'))) {
+      return { error: 'That input is already connected; remove the existing edge first.' };
     }
     const targetType = portTypeOf(target, connection.targetHandle, 'in');
     // Three source shapes: (a) capability nodes are polymorphic — one adaptive
@@ -527,8 +531,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       : multiOutput ? portTypeOf(source, srcHandle, 'out')
       : portTypeOf(source, 'out', 'out');
     if (!portsCompatible(sourceType, targetType)) {
-      onNotice(`Type mismatch: a ${sourceType} output can't connect to a ${targetType} input.`);
-      return;
+      return { error: `Type mismatch: a ${sourceType} output can't connect to a ${targetType} input.` };
     }
     const sourcePort = capabilityAdaptive
       ? (({ text: 'message', object: 'data', list: 'files' } as Record<string, string>)[targetType] ?? 'message')
@@ -536,23 +539,48 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       : 'out';
     const param = connection.targetHandle;
     if (param.startsWith('arg:') && String(target.data.args[param.slice(4)] ?? '').trim()) {
-      onNotice('That parameter has a literal value; clear it before connecting.');
-      return;
+      return { error: 'That parameter has a literal value; clear it before connecting.' };
     }
     if (param === 'items' && target.data.items.trim()) {
-      onNotice('Items already has a literal reference; clear it before connecting.');
-      return;
+      return { error: 'Items already has a literal reference; clear it before connecting.' };
     }
+    const id = `e${connection.source}-${connection.target}-${param.replace(':', '_')}`;
+    return { edge: { ...connection, id, data: { sourcePort } } as Edge };
+  }, [nodes]);
+
+  const onConnect = useCallback((connection: Connection) => {
+    const { edge, error } = buildEdge(connection, edges);
+    if (error) { onNotice(error); return; }
+    if (!edge) return;
     takeSnapshot();
     setDirty(true);
-    const id = `e${connection.source}-${connection.target}-${param.replace(':', '_')}`;
     setEdges((current) => {
-      const next = addEdge({ ...connection, id, data: { sourcePort } }, current);
-      setNodes((currentNodes) => currentNodes.map((node) => node.id === connection.target
+      const next = addEdge(edge, current);
+      setNodes((currentNodes) => currentNodes.map((node) => node.id === edge.target
         ? { ...node, data: { ...node.data, boundParams: boundParamsFor(node.id, next) } } : node));
       return next;
     });
-  }, [nodes, edges, boundParamsFor, onNotice, setEdges, setNodes, takeSnapshot]);
+  }, [edges, buildEdge, boundParamsFor, onNotice, setEdges, setNodes, takeSnapshot]);
+
+  // Drag an existing edge's endpoint onto a different handle. Reuses the same
+  // validation; recomputes boundParams for both the old and new target nodes
+  // (a reconnect can move the edge to another node). Derived reference edges
+  // (ref-…) are display-only and can't be re-anchored.
+  const onReconnect = useCallback((oldEdge: Edge, connection: Connection) => {
+    if (oldEdge.id.startsWith('ref-')) return;
+    const { edge, error } = buildEdge(connection, edges.filter((existing) => existing.id !== oldEdge.id));
+    if (error) { onNotice(error); return; }
+    if (!edge) return;
+    takeSnapshot();
+    setDirty(true);
+    setEdges((current) => {
+      const next = current.filter((existing) => existing.id !== oldEdge.id).concat(edge);
+      const affected = new Set([oldEdge.target, edge.target].filter(Boolean) as string[]);
+      setNodes((currentNodes) => currentNodes.map((node) => affected.has(node.id)
+        ? { ...node, data: { ...node.data, boundParams: boundParamsFor(node.id, next) } } : node));
+      return next;
+    });
+  }, [edges, buildEdge, boundParamsFor, onNotice, setEdges, setNodes, takeSnapshot]);
 
   const refEdges = useMemo(() => {
     const ids = new Set(nodes.map((node) => node.id));
@@ -567,7 +595,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
           seen.add(source);
           derived.push({
             id: `ref-${source}-${node.id}`, source, sourceHandle: 'out', target: node.id, targetHandle: undefined,
-            className: 'canvas-ref-edge', selectable: false, focusable: false, animated: true,
+            className: 'canvas-ref-edge', selectable: false, focusable: false, reconnectable: false, animated: true,
           } as Edge);
         }
       }
@@ -832,6 +860,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
               }
             }}
             onConnect={onConnect}
+            onReconnect={onReconnect}
             onNodeDragStart={() => takeSnapshot()}
             onNodeDrag={(_event, node) => setHelperLines(getHelperLines(node, nodes))}
             onNodeDragStop={() => { setHelperLines({}); onNodeDragStop(); }}

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Handle, NodeResizer, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
-import { ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PencilLine, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardCopy, Copy, Download, FileText, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PencilLine, Play, Save, Snowflake, TextSearch, Trash2 } from 'lucide-react';
 
-import { AgentMounts } from './CapabilityPicker';
+import { MountPicker } from './CapabilityPicker';
 import ShadTooltip from '../components/common/shadTooltipComponent';
 import { Button } from '../components/ui/button';
 import { cn } from '../utils/utils';
@@ -209,13 +209,17 @@ export function FieldShell({ label, required, hint, handle, children }: { label:
   // Markup copied from Langflow's NodeInputField: a min-h-10 px-5 py-2 row with
   // the handle on the left edge, then a flex-col of the label row + control.
   return (
-    <div className="relative flex min-h-10 w-full items-center justify-between px-5 py-2" title={hint}>
+    <div className="relative flex min-h-10 w-full items-center justify-between px-5 py-2">
       {handle}
       <div className="flex w-full min-w-0 flex-col gap-2">
         <div className="flex w-full items-center text-sm">
           <span className="truncate text-sm font-medium text-foreground">{label}</span>
           {required ? <span className="ml-0.5 text-destructive">*</span> : null}
-          {hint ? <Info strokeWidth={1.5} className="ml-1 h-3 w-3 shrink-0 text-muted-foreground" /> : null}
+          {hint ? (
+            <ShadTooltip content={hint} side="top">
+              <Info strokeWidth={1.5} className="ml-1 h-3 w-3 shrink-0 cursor-help text-muted-foreground" />
+            </ShadTooltip>
+          ) : null}
         </div>
         {children}
       </div>
@@ -294,25 +298,57 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
               : <ParamControl param={param} value={paramValue(param)} onChange={setParam} />}
           </FieldShell>
         ))}
-        {/* Capability mount ports (Langflow-style): wire tool/skill/connector
-            nodes into the agent to grant access; each accepts many edges. */}
-        {(spec?.inputs ?? []).filter((port) => port.name.startsWith('mount:')).map((port) => (
-          <FieldShell key={port.name} label={port.label} hint={`Connect ${port.label.toLowerCase()} nodes here to grant the agent access`}
-            handle={<InHandle id={port.name} type={inputPortType(spec, port.name)} />}>
-            <span className="lf-bound">{data.boundParams.has(port.name) ? 'Connected' : 'Wire capabilities, or pick below'}</span>
-          </FieldShell>
-        ))}
-        {spec?.mount_kinds?.length ? (
-          <AgentMounts
-            kinds={spec.mount_kinds}
-            mounts={data.mounts}
-            onChange={(kind, next) => data.update(id, (current) => ({ mounts: { ...current.mounts, [kind]: next } }))}
-          />
-        ) : null}
+        <AgentMountsSection id={id} spec={spec} mounts={data.mounts} boundParams={data.boundParams} update={data.update} />
       </div> : null}
       {data.minimized ? <MinimizedHandles inputs={spec?.inputs} /> : null}
       <OutputPorts nodeId={id} outputs={spec?.outputs} frozen={data.frozen} />
       {data.runState === 'failed' ? <p className="lf-node-error">Failed — open the panel for details</p> : null}
+    </div>
+  );
+}
+
+/** Capability mounts folded into one collapsible "Capabilities" section so the
+ * agent node stays compact. Collapsed shows a header + summary (how many kinds
+ * are mounted, "Defaults" if none); expanded reveals one box per kind — wire
+ * capability nodes into the handle, OR click the box to multi-select from the
+ * roster. Every agent can mount tools/skills/connectors/workflows/environments/
+ * agents. Collapsed hides the mount handles entirely (folded away); it opens by
+ * default whenever anything is mounted, so wired edges stay visible. */
+function AgentMountsSection({ id, spec, mounts, boundParams, update }: {
+  id: string; spec?: NodeSpec; mounts: Record<string, string[]>;
+  boundParams: Set<string>; update: CanvasData['update'];
+}) {
+  const ports = (spec?.inputs ?? []).filter((port) => port.name.startsWith('mount:'));
+  const active = ports.reduce((sum, port) => {
+    const kind = port.name.slice('mount:'.length);
+    return sum + (boundParams.has(port.name) || (mounts[kind]?.length ?? 0) > 0 ? 1 : 0);
+  }, 0);
+  const [open, setOpen] = useState(active > 0);
+  if (!ports.length) return null;
+  return (
+    <div className={`lf-mounts${open ? ' open' : ''}`}>
+      <button type="button" className="lf-mounts-head nodrag" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span className="lf-mounts-title">Capabilities</span>
+        <span className="lf-mounts-summary">{active ? `${active} mounted` : 'Defaults'}</span>
+      </button>
+      {open ? (
+        <div className="lf-mounts-body">
+          {ports.map((port) => {
+            const kind = port.name.slice('mount:'.length);
+            return (
+              <FieldShell key={port.name} label={port.label}
+                hint={`Wire ${port.label.toLowerCase()} nodes in, or click to pick`}
+                handle={<InHandle id={port.name} type={inputPortType(spec, port.name)} />}>
+                <MountPicker kind={kind} label={port.label}
+                  selected={mounts[kind] ?? []}
+                  connected={boundParams.has(port.name)}
+                  onChange={(next) => update(id, (current) => ({ mounts: { ...current.mounts, [kind]: next } }))} />
+              </FieldShell>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
