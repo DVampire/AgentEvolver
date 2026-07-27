@@ -1,6 +1,6 @@
 ---
 name: port
-description: "Central port registry — names the framework's well-known default ports and hands out / records host ports, persisted to the .agentevolver home so bindings are de-conflicted and discoverable."
+description: "Central port registry — names the framework's well-known default ports and hands out / records host ports, persisted to output/.runtime so bindings are de-conflicted and discoverable."
 version: 1.0.0
 type: module
 category: port
@@ -21,8 +21,8 @@ picking with:
   `unregister(name)`, `get(name)`, `get_info(name)`, and `list()` round it out.
 
 Every port the framework uses registers here, so the whole system is visible and
-de-conflicted in one place. Allocations persist to `<home>/ports.json` (the
-`.agentevolver` home), so every process and every run sees the same map.
+de-conflicted in one place. Allocations persist to `output/.runtime/ports.json` (`P.PORTS` in the layout
+table), so every process and every run sees the same map.
 
 ## What registers, and who owns the value
 

@@ -73,7 +73,7 @@ class DeploymentManagerServer(BaseModel):
         import agentevolver.deploy.default  # noqa: F401  (registers built-in profiles with DEPLOYER)
 
         # Deployed sites are project-global and outlive any single session, so the
-        # registry lives under the user-level home (``.agentevolver/deploy``) rather
+        # registry lives at ``output/.runtime/deploy`` (``P.DEPLOY``) rather
         # than a per-session log root — this keeps every session and every restart
         # looking at the same set of sites.
         from agentevolver.utils.path_utils import home_dir

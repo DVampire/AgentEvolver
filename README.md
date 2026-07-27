@@ -81,7 +81,7 @@ scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py --task-file examp
 | `--cfg-options key=value ...` | Override any config field, e.g. `--cfg-options model_name=openai/o3`. |
 
 Each run is its own session: artifacts, logs, and task views land under
-`output/<tag>/<session-id>/` (`workspace/` for the agent's files, `log/` for logs and
+`output/<owner>/sessions/<session-id>/` (`workspace/` for the agent's files, `log/` for logs and
 rendered task views). On completion the log prints the final result and, if produced, the
 path to a memory HTML report. Ready-made task documents live in [`examples/tasks/`](examples/tasks/).
 
@@ -120,10 +120,26 @@ Tests live in [`tests/`](tests/). The default run passes `-m 'not integration'` 
 
 `agentevolver` has one CLI with three modes: a control command (e.g. `agentevolver /registry`), the terminal loop (`agentevolver tui`), or the Gateway (`agentevolver serve ...`).
 
-Run output is stored under `./output/<tag>/<session-id>/`. Durable project extensions live
-in `./extension/`; a session stages extension changes under its own output directory and
-promotes them explicitly. User-level state (overrides, caches, staging, the deploy
-registry) lives in `./.agentevolver/` at the project root — set `AGENTEVOLVER_HOME` to
-place it elsewhere. Each Gateway, CLI, and TUI session uses its own project directory with
-separate workspace and staged extensions; shared service metadata and promoted extensions
-remain under the AgentEvolver home directory.
+There are two writable roots, and only two. Every path the framework writes is declared in
+one table (`agentevolver/paths`) and resolved through `path_manager`, so the layout below is
+the whole disk contract:
+
+```
+output/                        generated state — disposable
+  .runtime/                    machine-level: port registry, sandbox ledger, deploy, staging
+  <owner>/
+    state/                     durable across sessions: files, flows, IDE extensions + logins
+    sessions/<session-id>/     one task, one directory (workspace/, session.json)
+extension/                     shared, durable components — versioned with the project
+```
+
+A task started from a config file and the same task started from the browser resolve to the
+*same* directory: both build their sandbox from the layout rather than joining paths
+themselves. A session stages extension changes under its own output directory and promotes
+them into `extension/` explicitly.
+
+`AGENTEVOLVER_HOME` moves the whole tree elsewhere (a shared volume, a scratch disk);
+`AGENTEVOLVER_EXTENSION_ROOT` moves just the shared component library. There is no longer a
+third location — the `./.agentevolver/` directory this used to describe was created by the
+container as root, outside the chown loop, so the host user could neither edit nor delete
+it; its contents live under `output/.runtime/` now.

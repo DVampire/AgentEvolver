@@ -34,23 +34,33 @@ def data_path(rel: str = "") -> str:
 
 
 def project_path(rel: str = "") -> str:
-    """Resolve a runtime path relative to the caller's current project directory.
+    """Resolve a runtime path against the project directory the layout hangs off.
 
-    This is deliberately separate from :func:`data_path`: generated outputs and
-    workspaces belong to the project being run, whereas ``data_path`` is reserved
-    for user-level AgentEvolver state under ``home_dir`` (``.agentevolver``).
+    Identical to the current directory in the normal case, and to
+    ``$AGENTEVOLVER_HOME`` when that is set. Going through the path manager is
+    what keeps a config-started run and a gateway-started one in the same tree:
+    this used to resolve against ``cwd`` unconditionally, so with
+    ``AGENTEVOLVER_HOME`` set the gateway wrote to ``$HOME/output`` while a run
+    launched from a config file wrote to ``./output``.
     """
+    from agentevolver.paths import path_manager
+
     path = Path(rel).expanduser()
-    return str(path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve())
+    return str(path.resolve() if path.is_absolute() else (path_manager.project_dir() / path).resolve())
 
 
 def extension_root() -> Path:
-    """Shared project extension repository; sessions stage changes elsewhere."""
-    root = Path(os.environ.get("AGENTEVOLVER_EXTENSION_ROOT", "extension")).expanduser()
-    if not root.is_absolute():
-        root = Path.cwd() / root
-    root.mkdir(parents=True, exist_ok=True)
-    return root.resolve()
+    """Shared project extension repository; sessions stage changes elsewhere.
+
+    A thin alias, like :func:`home_dir`: the layout is owned by
+    ``agentevolver.paths`` so there is one answer to "where is extension/",
+    not one per caller. This used to resolve against ``cwd`` and ignore
+    ``AGENTEVOLVER_HOME``, so setting that variable relocated ``output/`` but
+    left every shared component behind.
+    """
+    from agentevolver.paths import P, path_manager
+
+    return path_manager.get(P.EXTENSION, create=True)
 
 
 def resource_path(rel: str) -> str:

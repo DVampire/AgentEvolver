@@ -23,14 +23,22 @@ def process_general(config: MMConfig) -> MMConfig:
     if "workspace_root" not in config:
         config.workspace_root = f"{config.project_root}/workspace"
 
-    # Runtime output is project-owned.  Do not resolve these through the
-    # user-level ``.agentevolver`` home directory.
+    # Runtime output is project-owned: these resolve against the project the
+    # layout hangs off, so a config-started run lands in the same tree the
+    # gateway uses.
     project_root = os.path.realpath(project_path(config.project_root))
     workspace_root = os.path.realpath(project_path(config.workspace_root))
     log_root = os.path.realpath(project_path(config.log_root))
     # Extensions are durable project assets, deliberately kept alongside the
     # project's ``output/`` directory rather than inside one run's output tree.
-    extension_root = os.path.realpath(project_path(config.get("extension_root", "extension")))
+    # An explicit config value still wins; otherwise the layout decides, so a
+    # config-started run and a browser-started one agree on where shared
+    # components live.
+    from agentevolver.paths import P, path_manager
+
+    configured = config.get("extension_root")
+    extension_root = os.path.realpath(
+        project_path(configured) if configured else str(path_manager.get(P.EXTENSION)))
 
     for root_name, root_path in (("workspace_root", workspace_root), ("log_root", log_root)):
         if os.path.commonpath((project_root, root_path)) != project_root:
@@ -40,8 +48,10 @@ def process_general(config: MMConfig) -> MMConfig:
     config.workspace_root = workspace_root
     config.log_root = log_root
     config.extension_root = extension_root
-    # Make the project extension root available to components initialized after
-    # configuration, without conflating it with user-level AgentEvolver state.
+    # Publish the resolved root so the path manager — and therefore every
+    # component initialized after configuration — agrees with it. Writing back
+    # the layout's own default is a no-op; what this actually propagates is an
+    # explicit ``extension_root`` from the config file.
     os.environ["AGENTEVOLVER_EXTENSION_ROOT"] = extension_root
     # ``project_root``, ``workspace_root`` and ``log_root`` are templates until a
     # session is bound — creating them here would leave empty tag-level directories

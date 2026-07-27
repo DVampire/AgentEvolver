@@ -17,12 +17,18 @@ class P(str, Enum):
     # --- the two buckets -------------------------------------------------
     OUTPUT = "output"
     EXTENSION = "extension"
+    #: One module's shared components — ``extension/skill``, ``extension/tool``,
+    #: ``extension/canvas``, … Parameterised rather than one key per module,
+    #: because the extension manager promotes any module type through the same
+    #: path.
+    EXTENSION_MODULE = "extension_module"
 
     # --- machine-level runtime state (belongs to the host, not a user) ---
     RUNTIME = "runtime"
     PORTS = "ports"
     LEDGER = "ledger"
     DEPLOY = "deploy"
+    CHECKPOINTS = "checkpoints"
     STAGING = "staging"
     #: Where output lands before anything binds a session — the gateway's own
     #: startup logs, or a direct run that never opened one.
@@ -53,11 +59,13 @@ class P(str, Enum):
 LAYOUT: Dict[P, str] = {
     P.OUTPUT: "output",
     P.EXTENSION: "extension",
+    P.EXTENSION_MODULE: "extension/{module}",
 
     P.RUNTIME: "output/.runtime",
     P.PORTS: "output/.runtime/ports.json",
     P.LEDGER: "output/.runtime/sandbox_ledger.json",
     P.DEPLOY: "output/.runtime/deploy",
+    P.CHECKPOINTS: "output/.runtime/checkpoints",
     P.STAGING: "output/.runtime/staging/{project_key}",
     P.UNBOUND: "output/.runtime/unbound",
 

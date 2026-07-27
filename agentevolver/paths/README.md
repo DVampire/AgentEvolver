@@ -32,6 +32,20 @@ path_manager.get(P.PORTS)
 `writable_roots()` returns exactly these, so the rule is testable rather than a
 convention people remember — see `tests/test_paths.py`.
 
+| Variable | Moves |
+|---|---|
+| `AGENTEVOLVER_HOME` | the whole tree — both roots |
+| `AGENTEVOLVER_EXTENSION_ROOT` | `extension/` alone (a shared component library on another volume) |
+
+Both are resolved here and nowhere else. `extension/` used to have three
+answers — `extension_root()` resolved it against `cwd`, skill and connector
+joined `"extension/skill"` themselves, and the layout put it under
+`AGENTEVOLVER_HOME` — so setting that variable relocated generated state and
+left every shared component behind. Likewise `project_path()`, which configs use
+for `project_root`/`workspace_root`/`log_root`, now resolves through
+`project_dir()`: otherwise a config-started run wrote to `./output` while the
+gateway wrote to `$AGENTEVOLVER_HOME/output`.
+
 There used to be a third location, `./.agentevolver`, holding the port registry,
 the sandbox ledger, deploy workspaces and extension staging. The container
 created it as **root**, and `scripts/serve-ui.sh`'s chown loop only walks
@@ -46,6 +60,7 @@ output/
     ports.json                  port registry
     sandbox_ledger.json         crash-safe container reaping
     deploy/                     deploy workspaces
+    checkpoints/<run_id>.json   workflow run checkpoints
     staging/<project_key>/      extension staging
     unbound/                    output produced before anything bound a session
   <owner>/

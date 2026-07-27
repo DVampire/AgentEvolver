@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.connector.types import ConnectorConfig, ConnectorContext
 from agentevolver.response.types import Response, ResponseType
@@ -60,7 +61,8 @@ class ConnectorContextManager(BaseModel):
         # Built-in connectors live in the default/ dir; extension connectors are
         # managed externally (loaded by ExtensionManager into the active version).
         self.default_connectors_dir = default_connectors_dir or str(_src_dir / "default")
-        self.extension_connectors_dir = extension_connectors_dir or assemble_workspace_path(os.path.join("extension", "connector"))
+        self.extension_connectors_dir = extension_connectors_dir or str(
+            path_manager.get(P.EXTENSION_MODULE, module="connector"))
 
         self._connector_configs: Dict[str, ConnectorConfig] = {}
         self._connector_history_versions: Dict[str, Dict[str, ConnectorConfig]] = {}

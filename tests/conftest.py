@@ -1,9 +1,9 @@
 """Shared pytest fixtures.
 
-Every test is given a throwaway ``AGENTEVOLVER_HOME`` so user-level state — staging
-manifests, caches, the deploy registry — is written into a temp directory instead of
-the real project ``.agentevolver/``. Without this, promotion tests (which write a
-staging manifest) leak files into the developer's checkout.
+Every test is given a throwaway ``AGENTEVOLVER_HOME``, which relocates the whole
+tree, so generated state — staging manifests, caches, the deploy registry, run
+checkpoints — lands in a temp directory instead of the developer's checkout.
+Without this, promotion tests (which write a staging manifest) leak files into it.
 """
 
 import pytest

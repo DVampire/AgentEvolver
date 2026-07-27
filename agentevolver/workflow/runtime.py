@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 from jsonschema import Draft202012Validator
 
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.response import Response
 from agentevolver.utils import make_id
 
@@ -104,7 +105,7 @@ class WorkflowRuntime:
             state=WorkflowState.CREATED, input=dict(values or {}), started_at=_now(),
         )
         self._runs[run.id] = run
-        run.checkpoint_path = str(self._checkpoint_path(run, ctx))
+        run.checkpoint_path = str(self._checkpoint_path(run))
         return run
 
     async def run(
@@ -1197,16 +1198,19 @@ class WorkflowRuntime:
             )
 
     @staticmethod
-    def _checkpoint_path(run, ctx):
-        """Compute (and create) the per-run checkpoint file path under the workspace.
+    def _checkpoint_path(run):
+        """Compute (and create) the per-run checkpoint file path.
+
+        Kept in the layout rather than under the workspace: run ids are unique,
+        so nothing is gained by nesting these per workspace, and writing them
+        there dropped framework bookkeeping into the agent's own files — or,
+        when no workspace was configured, into the current directory, outside
+        ``output/`` entirely.
 
         Returns:
-            ``<workspace>/.agentevolver/workflows/<run_id>.json``.
+            ``output/.runtime/checkpoints/<run_id>.json``.
         """
-        workspace = Path(config.workspace_root or os.getcwd()).resolve()
-        root = workspace / ".agentevolver" / "workflows"
-        root.mkdir(parents=True, exist_ok=True)
-        return root / f"{run.id}.json"
+        return path_manager.get(P.CHECKPOINTS, create=True) / f"{run.id}.json"
 
     @staticmethod
     def _write_checkpoint(run):

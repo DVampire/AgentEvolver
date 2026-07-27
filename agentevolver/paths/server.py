@@ -35,6 +35,25 @@ class PathManagerServer:
         override = os.environ.get("AGENTEVOLVER_HOME")
         return Path(override).expanduser().resolve() if override else Path.cwd().resolve()
 
+    @staticmethod
+    def extension_dir() -> Path:
+        """Where shared components live.
+
+        ``AGENTEVOLVER_EXTENSION_ROOT`` moves just this root — a component
+        library on another volume, or a temp dir in a test — while
+        ``AGENTEVOLVER_HOME`` moves the whole tree and takes this root with it.
+        Resolved here rather than in each caller: skill, connector, canvas and
+        the extension manager each used to answer this question themselves, and
+        under ``AGENTEVOLVER_HOME`` they answered it differently.
+        """
+        override = os.environ.get("AGENTEVOLVER_EXTENSION_ROOT")
+        if override:
+            path = Path(override).expanduser()
+            if not path.is_absolute():
+                path = PathManagerServer.project_dir() / path
+            return path.resolve()
+        return PathManagerServer.project_dir() / LAYOUT[P.EXTENSION]
+
     def writable_roots(self) -> Tuple[Path, Path]:
         """The only two directories the framework may write to.
 
@@ -69,10 +88,26 @@ class PathManagerServer:
         if missing:
             raise ValueError(f"{key.value} needs {sorted(missing)}; got {sorted(params)}")
 
-        path = self.project_dir() / template.format(**params)
+        root, template = self._rebase(template)
+        path = (root / template.format(**params)) if template else root
         if create:
             (path.parent if path.suffix else path).mkdir(parents=True, exist_ok=True)
         return path
+
+    @classmethod
+    def _rebase(cls, template: str) -> Tuple[Path, str]:
+        """Split a template into the root it hangs off and the rest of the path.
+
+        Everything under ``extension/`` is resolved against
+        :meth:`extension_dir`, so relocating that root moves the whole subtree
+        with it; everything else hangs off the project directory.
+        """
+        prefix = LAYOUT[P.EXTENSION]
+        if template == prefix:
+            return cls.extension_dir(), ""
+        if template.startswith(f"{prefix}/"):
+            return cls.extension_dir(), template[len(prefix) + 1:]
+        return cls.project_dir(), template
 
     def params_for(self, key: P) -> List[str]:
         """Placeholders a key needs — useful for callers building paths generically."""

@@ -11,7 +11,7 @@ container is created and forgotten on clean destroy. Whatever is still in the
 ledger when a new process boots belongs to a dead run — ``reap_stale`` force-
 removes those containers before the first sandbox of the new run is created.
 
-Assumes one framework instance per ``.agentevolver`` home (the same assumption
+Assumes one framework instance per tree root (the same assumption
 the port registry and deploy registry already make).
 """
 
@@ -29,7 +29,7 @@ from agentevolver.logger import logger
 
 class Ledger:
     """A write-ahead ledger of live sandbox container ids, persisted to the
-    ``.agentevolver`` home. Reaping removes whatever a dead run left behind."""
+    tree root. Reaping removes whatever a dead run left behind."""
 
     DOCKER_SOCKET = "/var/run/docker.sock"
 
@@ -115,7 +115,7 @@ class Ledger:
         return reaped
 
 
-# One ledger per .agentevolver home (same assumption as the port/deploy registries).
+# One ledger per tree root (same assumption as the port/deploy registries).
 ledger = Ledger()
 
 __all__ = ["Ledger", "ledger"]

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.workflow import (
     ExecutionState, InvocationState, WorkflowCompileError, WorkflowEvaluation,
     WorkflowContextManager, WorkflowRuntime, WorkflowState, WorkflowStatus,
@@ -170,7 +171,9 @@ async def test_dynamic_map_verify_reduce_and_checkpoint(tmp_path):
     assert run.output == {"report": {"count": 3}}
     assert run.agent_count == 7
     assert peak == 3
-    saved = json.loads((tmp_path / ".agentevolver/workflows" / f"{run.id}.json").read_text())
+    saved = json.loads(Path(run.checkpoint_path).read_text())
+    # Bookkeeping lives in the layout, never inside the agent's workspace.
+    assert Path(run.checkpoint_path).parent == path_manager.get(P.CHECKPOINTS)
     assert saved["state"] == "succeeded"
 
 

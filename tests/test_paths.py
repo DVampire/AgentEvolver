@@ -9,10 +9,12 @@ from mmengine import Config as MMConfig
 
 
 def test_agentevolver_home_relocates_the_whole_tree(monkeypatch, tmp_path: Path) -> None:
-    """AGENTEVOLVER_HOME moves the tree root, not one directory inside it.
+    """AGENTEVOLVER_HOME moves the tree root — every part of it, not just output/.
 
-    There is a single tree now, owned by the path manager, so the override picks
-    where that tree lives; runtime state sits at output/.runtime beneath it.
+    ``extension/`` used to be exempt: it resolved against ``cwd`` in
+    ``extension_root()`` while the layout put it under the override, so setting
+    this variable relocated generated state and left every shared component
+    behind.
     """
     root = tmp_path / "agent-home"
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(root))
@@ -20,8 +22,44 @@ def test_agentevolver_home_relocates_the_whole_tree(monkeypatch, tmp_path: Path)
 
     assert home_dir() == (root / "output" / ".runtime").resolve()
     assert Path(data_path("run")).is_relative_to(root.resolve())
-    # The default extension tree is project-owned, not user-owned.
-    assert extension_root() == (Path.cwd() / "extension").resolve()
+    assert extension_root() == (root / "extension").resolve()
+    assert Path(project_path("output/demo")) == (root / "output" / "demo").resolve()
+
+
+def test_extension_root_override_moves_only_that_root(monkeypatch, tmp_path: Path) -> None:
+    """AGENTEVOLVER_EXTENSION_ROOT relocates shared components, nothing else."""
+    home, shared = tmp_path / "agent-home", tmp_path / "shared-components"
+    monkeypatch.setenv("AGENTEVOLVER_HOME", str(home))
+    monkeypatch.setenv("AGENTEVOLVER_EXTENSION_ROOT", str(shared))
+
+    assert path_manager.get(P.EXTENSION) == shared.resolve()
+    assert path_manager.get(P.EXTENSION_MODULE, module="skill") == (shared / "skill").resolve()
+    assert extension_root() == shared.resolve()
+    # Generated state stays with the tree root.
+    assert path_manager.get(P.OUTPUT) == (home / "output").resolve()
+
+
+def test_every_resolver_agrees_on_where_extension_lives(monkeypatch, tmp_path: Path) -> None:
+    """Skill, connector, config and the layout must answer this identically.
+
+    Each of them used to resolve ``extension/`` itself — against ``cwd``, or an
+    env var, or ``project_path`` — so under a relocated tree they disagreed and
+    components were written to a directory nothing else read.
+    """
+    monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+    monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
+    expected = (tmp_path / "extension").resolve()
+
+    from agentevolver.connector.context import ConnectorContextManager
+    from agentevolver.skill.context import SkillContextManager
+
+    assert extension_root() == expected
+    assert Path(SkillContextManager().extension_skills_dir) == expected / "skill"
+    assert Path(ConnectorContextManager().extension_connectors_dir) == expected / "connector"
+    config = process_general(MMConfig(dict(
+        project_root="output/demo", workspace_root="output/demo/workspace",
+        log_root="output/demo/log", log_path="agent.log")))
+    assert Path(config.extension_root) == expected
 
 
 def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: Path) -> None:
@@ -32,8 +70,10 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
     output/ back to the host user.
     """
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+    monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
     output, extension = path_manager.writable_roots()
-    sample = {"owner": "someone", "session_id": "sid", "run_id": "rid", "project_key": "key"}
+    sample = {"owner": "someone", "session_id": "sid", "run_id": "rid",
+              "project_key": "key", "module": "skill"}
 
     for key in P:
         resolved = path_manager.get(key, **{p: sample[p] for p in path_manager.params_for(key)})
@@ -50,10 +90,12 @@ def test_missing_placeholder_is_rejected_rather_than_written_literally(monkeypat
 
 
 def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path: Path) -> None:
+    """With no override, everything hangs off the directory the run started in."""
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.chdir(project)
-    monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path / "agent-home"))
+    monkeypatch.delenv("AGENTEVOLVER_HOME", raising=False)
+    monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
 
     config = process_general(MMConfig(dict(
         project_root="output/demo",
@@ -64,7 +106,7 @@ def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path
 
     assert Path(project_path("output/demo")) == project / "output" / "demo"
     assert Path(config.project_root) == project / "output" / "demo"
-    assert not Path(config.project_root).is_relative_to(tmp_path / "agent-home")
     assert Path(config.extension_root) == project / "extension"
+    assert Path(config.project_root) == path_manager.get(P.OUTPUT) / "demo"
     assert not Path(config.workspace_root).exists()
     assert not Path(config.log_root).exists()

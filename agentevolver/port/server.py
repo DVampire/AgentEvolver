@@ -5,7 +5,7 @@ out and records host ports, so dynamic bindings (deploy sites, the Gateway)
 are de-conflicted and discoverable instead of being ad-hoc literals scattered
 across the codebase.
 
-Allocations are persisted to ``<home>/ports.json`` (the ``.agentevolver`` home),
+Allocations are persisted to ``output/.runtime/ports.json`` (``P.PORTS``),
 so every process and every run sees the same picture of what is bound where.
 """
 

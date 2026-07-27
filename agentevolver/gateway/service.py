@@ -193,7 +193,7 @@ class AgentGateway:
                 )
         await agent_manager.initialize(agent_names=getattr(config, "agent_names", None))
         await workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", None))
-        # Deploy registry is project-global (under the .agentevolver home), so init it
+        # Deploy registry is project-global (output/.runtime/deploy), so init it
         # once here — before any session binds — and reconcile sites still serving.
         await deployment_manager.initialize()
         await canvas_manager.initialize()
@@ -1614,7 +1614,7 @@ class AgentGateway:
         before any session exists.  Binding here — on the single, serialized task
         path (the task queue runs one worker) — gives the same result: config roots
         and the managers that persist run output all move under
-        ``output/<tag>/<session-id>/`` for the duration of this task.
+        ``output/<owner>/sessions/<session-id>/`` for the duration of this task.
         """
         if self._bound_session_id == session.context.id:
             return

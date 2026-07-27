@@ -58,7 +58,7 @@ Built-ins live in `agentevolver/workflow/default/*.html`; project extensions liv
 immediately, matching Tool and Skill. Extension versions are archived, evaluated, and can
 be rolled back or unloaded through the normal extension lifecycle.
 
-Runs checkpoint atomically under `.agentevolver/workflows/`. Completed agent invocations
+Runs checkpoint atomically under `output/.runtime/checkpoints/`. Completed agent invocations
 are cached by execution key; resume reuses them and restarts incomplete work.
 
 Runtime checkpoints carry `runtime_version="1.1.0"`, an executable program hash, and preserve four levels of state:

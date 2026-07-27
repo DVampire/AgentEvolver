@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.skill.types import SkillConfig
 from agentevolver.response.types import Response, ResponseType
@@ -55,7 +56,8 @@ class SkillContextManager(BaseModel):
         # domain science/ folder) and discovered recursively. Extension skills
         # (generated/user) are managed externally under extension/skill.
         self.builtin_skills_dir = builtin_skills_dir or str(_src_dir)
-        self.extension_skills_dir = extension_skills_dir or assemble_workspace_path(os.path.join("extension", "skill"))
+        self.extension_skills_dir = extension_skills_dir or str(
+            path_manager.get(P.EXTENSION_MODULE, module="skill"))
 
         self._skill_configs: Dict[str, SkillConfig] = {}
         self._skill_history_versions: Dict[str, Dict[str, SkillConfig]] = {}

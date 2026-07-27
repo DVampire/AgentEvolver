@@ -76,7 +76,7 @@ scripts/run-in-sandbox.sh -- python examples/run_meta_agent.py --task-file examp
 | `--config <路径>` | 配置文件（默认：`configs/meta_agent.py`）。 |
 | `--cfg-options key=value ...` | 覆盖任意配置项，例如 `--cfg-options model_name=openai/o3`。 |
 
-每次运行都是独立 session：运行产物、日志和任务视图都写到 `output/<tag>/<session-id>/` 下
+每次运行都是独立 session：运行产物、日志和任务视图都写到 `output/<owner>/sessions/<session-id>/` 下
 （`workspace/` 存智能体的工作文件，`log/` 存日志和渲染后的任务视图）。任务结束时日志会打印
 最终结果；若生成了记忆报告，还会打印其 HTML 路径。现成的任务文档在 [`examples/tasks/`](examples/tasks/) 下。
 
@@ -112,8 +112,21 @@ scripts/run-in-sandbox.sh -- pytest -m integration            # 需要凭证 / �
 
 `agentevolver` 只有一个 CLI，提供三种模式：直接执行控制命令（如 `agentevolver /registry`）、进入终端交互循环（`agentevolver tui`），或启动 Gateway（`agentevolver serve ...`）。
 
-运行产物默认存放在 `./output/<tag>/<session-id>/`。可持久化的项目扩展位于 `./extension/`；
-会话先在自己的输出目录内暂存扩展，只有显式提升才会写入。用户级状态（覆盖、缓存、暂存、deploy
-注册表）存放在项目根目录的 `./.agentevolver/` —— 可通过 `AGENTEVOLVER_HOME` 指定其他位置。
-每个 Gateway、CLI 和 TUI session 都有独立的项目目录，其中 workspace 与暂存 extension 相互
-隔离；服务级元数据和已 promote 的 extension 则保留在 AgentEvolver home 目录中供各 session 共享。
+可写位置只有两个。框架写入的每一条路径都声明在同一张表里（`agentevolver/paths`），统一经
+`path_manager` 解析，所以下面这棵树就是完整的磁盘契约：
+
+```
+output/                        生成态，可随时删除
+  .runtime/                    机器级：端口注册表、沙箱账本、deploy、staging
+  <owner>/
+    state/                     跨会话持久：files、flows、IDE 扩展与登录态
+    sessions/<session-id>/     一个任务一个目录（workspace/、session.json）
+extension/                     共享且持久的组件，随项目一起版本化
+```
+
+从 config 启动的任务和从浏览器启动的同一个任务落在**同一个目录**：两者都从这张表构建沙箱，
+而不是各自拼路径。会话先在自己的输出目录内暂存扩展改动，只有显式 promote 才写入 `extension/`。
+
+`AGENTEVOLVER_HOME` 把整棵树搬到别处（共享卷、临时盘），`AGENTEVOLVER_EXTENSION_ROOT` 只搬
+共享组件库。不再有第三个位置 —— 这里原先描述的 `./.agentevolver/` 是容器以 root 身份创建的，
+又不在 chown 循环覆盖范围内，宿主用户既改不动也删不掉；它的内容现在都在 `output/.runtime/` 下。
