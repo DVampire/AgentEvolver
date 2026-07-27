@@ -1,8 +1,9 @@
 # vscode — full VS Code in the browser, per session
 
-Extends `gitpod/openvscode-server:latest` with a small terminal toolset and an
-entrypoint that points VS Code at mounted, owner-scoped state. One container per
-gateway session; the frontend embeds it in an iframe.
+Built on `agentevolver/base` (miniconda3 + the installed project) with
+openvscode-server copied in from `gitpod/openvscode-server`, so the editor and
+the agent share one environment. One container per gateway session; the frontend
+embeds it in an iframe.
 
 ## What it adds
 - **root user** — the stock image runs as uid 1000, but workspace files belong
