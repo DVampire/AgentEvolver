@@ -161,8 +161,14 @@ class IdeManagerServer:
     #: Credentials the bundled coding agents look for. Forwarded from the
     #: gateway's own environment so Claude Code and Codex are signed in instead
     #: of opening to a "No authentication found" panel.
+    #: CLAUDE_CODE_OAUTH_TOKEN is the callback-free path: a browser OAuth login
+    #: cannot complete in here, because the CLI's redirect_uri is
+    #: localhost:<random port> inside this container and the user's browser
+    #: resolves that on their own machine. A long-lived token minted elsewhere
+    #: (``claude setup-token``) sidesteps the redirect entirely.
     CREDENTIAL_VARS = (
         "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_API_BASE",
+        "CLAUDE_CODE_OAUTH_TOKEN",
         "OPENAI_API_KEY", "OPENAI_BASE_URL",
     )
 
