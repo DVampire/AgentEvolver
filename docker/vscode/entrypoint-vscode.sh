@@ -14,8 +14,29 @@ EXT_DIR="${IDE_EXTENSIONS_DIR:-/ide/extensions}"
 DATA_DIR="${IDE_USER_DATA_DIR:-/ide/user-data}"
 FOLDER="${IDE_FOLDER:-/workspace}"
 PORT="${IDE_PORT:-3000}"
+# Coding agents, installed on first use. Both ship their CLI as a bundled
+# native binary, so neither needs npm — which matters where registry egress is
+# restricted. Set to "" to opt out.
+DEFAULT_EXTENSIONS="${IDE_DEFAULT_EXTENSIONS-anthropic.claude-code openai.chatgpt}"
 
 mkdir -p "$EXT_DIR" "$DATA_DIR" "$DATA_DIR/server" "$FOLDER"
+
+# Install the defaults before the server starts, so they are present the moment
+# the user connects rather than appearing after a reload. The extensions
+# directory is mounted per OWNER, so this download happens once and every later
+# session skips straight past it.
+for extension in $DEFAULT_EXTENSIONS; do
+    # Installed copies are directories named "<id>-<version>-<platform>".
+    if compgen -G "$EXT_DIR/${extension}-*" > /dev/null; then
+        continue
+    fi
+    echo "| 📦 Installing default extension: ${extension}"
+    # Never fatal: a registry hiccup should cost you an extension, not the IDE.
+    "${OPENVSCODE_SERVER_ROOT}/bin/openvscode-server" \
+        --extensions-dir "$EXT_DIR" \
+        --install-extension "$extension" \
+        || echo "| ⚠️ Could not install ${extension}; continuing without it"
+done
 
 # --without-connection-token: the port is bound to loopback by the opensandbox
 # proxy and only reachable through the gateway-authorised route, so VS Code's

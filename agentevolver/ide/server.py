@@ -37,8 +37,11 @@ class IdeManagerServer:
     #: Cap concurrent IDEs (each costs ~300-500MB). Starting one past the cap
     #: evicts the least recently used.
     max_instances: int = 4
-    #: How long to wait for openvscode-server to accept connections.
-    ready_timeout_seconds: float = 90.0
+    #: How long to wait for openvscode-server to accept connections. Generous
+    #: because the very first container for an owner installs the default
+    #: extensions (a few hundred MB) before the server binds; every later
+    #: session finds them already on the mount and comes up in seconds.
+    ready_timeout_seconds: float = 600.0
 
     def __init__(self) -> None:
         self._instances: Dict[str, IdeInstance] = {}

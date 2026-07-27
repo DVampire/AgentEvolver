@@ -40,6 +40,19 @@ openvscode-server uses the **Open VSX** registry, not the Microsoft
 Marketplace. Microsoft-licensed extensions (Pylance, the official C# and Remote
 packs) are not published there and cannot be installed.
 
+Two coding agents are installed on first use, both published on Open VSX:
+
+| Extension | Ships |
+|---|---|
+| `anthropic.claude-code` — Claude Code for VS Code | its `claude` CLI as a bundled native binary |
+| `openai.chatgpt` — Codex, OpenAI's coding agent | its host binary under `bin/` |
+
+Because each bundles its own CLI, neither needs npm — which matters on hosts
+where registry egress is restricted. They land on the per-owner extensions
+mount, so the (few hundred MB) download happens once and every later session
+skips it. Override the list with `IDE_DEFAULT_EXTENSIONS` (space-separated), or
+set it empty to install nothing.
+
 ## Build
 Built automatically on first use by `VscodeSandbox._ensure_image()`, or:
 

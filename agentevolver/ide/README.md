@@ -76,7 +76,10 @@ but never makes you reinstall your extensions.
   through the permission manager — its reach is the container plus the mounts
   above.
 - Extensions come from **Open VSX**; Microsoft-licensed ones (Pylance, official
-  C#/Remote packs) are not published there.
+  C#/Remote packs) are not published there. **Claude Code**
+  (`anthropic.claude-code`) and **Codex** (`openai.chatgpt`) are, and are
+  installed on first use — each bundles its own CLI, so neither needs npm. See
+  [`docker/vscode/README.md`](../../docker/vscode/README.md).
 
 ## Pieces
 

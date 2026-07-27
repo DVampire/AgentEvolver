@@ -70,7 +70,7 @@ export function IdeView({ request, sessionId, connected }: {
     return (
       <IdeNotice
         title="Starting VS Code…"
-        detail="Booting this session's editor container. The first launch also builds the image, which can take a few minutes."
+        detail="Booting this session's editor container. The first launch also builds the image and installs the Claude Code and Codex extensions, which can take a few minutes; later sessions reuse both."
         spinning
       />
     );
