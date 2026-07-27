@@ -19,7 +19,25 @@ PORT="${IDE_PORT:-3000}"
 # restricted. Set to "" to opt out.
 DEFAULT_EXTENSIONS="${IDE_DEFAULT_EXTENSIONS-anthropic.claude-code openai.chatgpt}"
 
-mkdir -p "$EXT_DIR" "$DATA_DIR" "$DATA_DIR/server" "$FOLDER"
+mkdir -p "$EXT_DIR" "$DATA_DIR" "$DATA_DIR/User" "$DATA_DIR/server" "$FOLDER"
+
+# Seed user settings on first run only — the directory is mounted per owner, so
+# after this the file belongs to the user and is never rewritten.
+#
+# Workspace trust is off because the mounted folder is the user's OWN session
+# workspace, not third-party code they just opened. Left on, VS Code greets
+# every new session with a modal and starts restricted, which disables the
+# terminal and the extensions we just installed — the prompt protects against a
+# threat that does not exist here while breaking the thing outright.
+SETTINGS="$DATA_DIR/User/settings.json"
+if [ ! -f "$SETTINGS" ]; then
+    cat > "$SETTINGS" <<'JSON'
+{
+  "security.workspace.trust.enabled": false,
+  "telemetry.telemetryLevel": "off"
+}
+JSON
+fi
 
 # Install the defaults before the server starts, so they are present the moment
 # the user connects rather than appearing after a reload. The extensions
