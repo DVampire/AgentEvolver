@@ -23,6 +23,8 @@ import {
   Settings,
   Sparkles,
   Code2,
+  PanelLeftClose,
+  PanelLeftOpen,
   SquareTerminal,
   Sun,
   Waypoints,
@@ -77,6 +79,7 @@ const wsOrigin = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${loc
 const DEFAULT_ENDPOINT = `${wsOrigin()}/ws`;
 const SESSION_KEY = 'agentevolver.gateway.session';
 const SIDEBAR_WIDTH_KEY = 'agentevolver.layout.sidebar';
+const SIDEBAR_COLLAPSED_KEY = 'agentevolver.layout.sidebarCollapsed';
 const INSPECTOR_WIDTH_KEY = 'agentevolver.layout.inspector';
 const SIDEBAR_WIDTH_RANGE = [190, 460] as const;
 const INSPECTOR_WIDTH_RANGE = [300, 680] as const;
@@ -185,6 +188,7 @@ export function App() {
   const [filePreview, setFilePreview] = useState(false);
   // Resizable column widths (px), persisted across refreshes.
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => readWidth(SIDEBAR_WIDTH_KEY, 250));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1');
   const [inspectorWidth, setInspectorWidth] = useState<number>(() => readWidth(INSPECTOR_WIDTH_KEY, 400));
   const socketRef = useRef<GatewaySocket | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -206,6 +210,7 @@ export function App() {
   }, [sessionId]);
 
   useEffect(() => { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); }, [sidebarWidth]);
+  useEffect(() => { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0'); }, [sidebarCollapsed]);
   useEffect(() => { localStorage.setItem(INSPECTOR_WIDTH_KEY, String(inspectorWidth)); }, [inspectorWidth]);
 
   const hydrateCapabilities = useCallback(async (socket: GatewaySocket, currentSessionId: string) => {
@@ -823,12 +828,18 @@ export function App() {
 
   return (
     <TooltipProvider skipDelayDuration={0}>
-    <main className={`app-shell${mainView !== 'chat' ? ' canvas-wide' : ''}`} data-theme={theme} style={{ ['--sidebar-w' as string]: `${sidebarWidth}px`, ['--inspector-w' as string]: `${inspectorWidth}px` }}>
+    <main className={`app-shell${mainView !== 'chat' ? ' canvas-wide' : ''}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`} data-theme={theme} style={{ ['--sidebar-w' as string]: `${sidebarWidth}px`, ['--inspector-w' as string]: `${inspectorWidth}px` }}>
       <AlertDisplayArea />
-      <div className="col-resizer col-resizer-left" onPointerDown={startColumnDrag('sidebar')} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
+      {/* Collapsed: the sidebar is out of the layout entirely, so this floating
+          button is the only way back — and there is no column left to resize. */}
+      {sidebarCollapsed ? (
+        <button className="sidebar-reopen" onClick={() => setSidebarCollapsed(false)} title="Show sidebar" aria-label="Show sidebar"><PanelLeftOpen size={16} strokeWidth={1.9} /></button>
+      ) : (
+        <div className="col-resizer col-resizer-left" onPointerDown={startColumnDrag('sidebar')} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
+      )}
       {mainView === 'chat' ? <div className="col-resizer col-resizer-right" onPointerDown={startColumnDrag('inspector')} role="separator" aria-orientation="vertical" aria-label="Resize workspace panel" /> : null}
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span></div>
+        <div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="sidebar-collapse" onClick={() => setSidebarCollapsed(true)} title="Hide sidebar" aria-label="Hide sidebar"><PanelLeftClose size={16} strokeWidth={1.9} /></button></div>
         <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}><Plus size={16} /> New session</button>
         <div className="sidebar-section projects-section">
           <p className="eyebrow">Projects</p>

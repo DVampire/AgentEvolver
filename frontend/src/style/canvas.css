@@ -3,15 +3,6 @@
    inherits the same light/dark theme as every shadcn component — no hardcoded
    colors, no per-theme overrides. Layout/structure only below; color = token. */
 
-/* Compact page header. The eyebrow ("WORKSPACE AGENT", "VISUAL ORCHESTRATION")
-   is decorative — the title already says which view you are in — and together
-   with the generous padding it cost ~85px at the top of every view. Hiding it
-   and tightening the row reclaims ~50px for the canvas/conversation itself.
-   Scoped to .topbar so the sidebar and dialog eyebrows are untouched. */
-.topbar { padding: 10px 24px; }
-.topbar h1 { font-size: 16px; }
-.topbar .eyebrow { display: none; }
-
 .view-nav { margin-bottom: 4px; }
 .view-nav button.view-active { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
 .app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); height: 100vh; overflow: hidden; }
@@ -265,22 +256,3 @@
 .lf-mount-placeholder { color: hsl(var(--muted-foreground)); font-size: 11.5px; }
 .lf-mount-caret { flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
 
-/* Browser IDE (full VS Code in an iframe). The frame fills the stage; the thin
-   toolbar above it only identifies the session host and offers a reload, since
-   everything else lives inside VS Code itself. */
-/* The Code view carries no page header — IdeView's slim toolbar is the only
-   chrome — so this is a single full-height row, not the usual auto/1fr/auto. */
-.ide-mode { grid-template-rows: minmax(0, 1fr); height: 100vh; min-height: 0; overflow: hidden; }
-/* The parent (.conversation) is a GRID, so `flex: 1` here would do nothing —
-   size to the grid row explicitly and let the frame take the leftover space. */
-.ide-view { min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
-.ide-toolbar { flex: 0 0 auto; position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--background)); font-size: 12px; }
-.ide-toolbar strong { color: hsl(var(--foreground)); font-size: 13px; font-weight: 600; }
-.ide-status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.ide-origin { overflow: hidden; border-radius: 6px; padding: 2px 6px; background: hsl(var(--muted)); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.ide-toolbar-spacer { flex: 1; }
-.ide-frame { flex: 1 1 auto; min-height: 0; display: block; width: 100%; border: 0; background: hsl(var(--background)); }
-.ide-notice { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; text-align: center; }
-.ide-notice strong { color: hsl(var(--foreground)); font-size: 15px; }
-.ide-notice p { max-width: 460px; margin: 0; color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.5; }
-.ide-spinner { width: 22px; height: 22px; color: hsl(var(--muted-foreground)); animation: rotate 1.2s linear infinite; }

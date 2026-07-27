@@ -3,6 +3,9 @@ import { Loader2, RefreshCw, SquareTerminal } from 'lucide-react';
 
 import { Button } from '../components/ui/button';
 import type { RequestFn } from '../canvas/types';
+// Owned here rather than in canvas.css: both are lazy modules, so parking the
+// IDE's styles there left this view unstyled until the canvas had been opened.
+import '../style/ide.css';
 
 /** Keep-alive cadence. The manager also refreshes the idle clock on every
  *  proxied request, so this only matters while the IDE sits untouched. */
