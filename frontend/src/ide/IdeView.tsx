@@ -16,10 +16,13 @@ interface IdeStatus { running: boolean; origin?: string }
  * (`<session>.ide.localhost:<ui port>`) because VS Code emits absolute asset
  * paths — see agentevolver/ide/README.md. The container starts lazily on first
  * open and is reaped once idle, so mounting this view is what boots it. */
-export function IdeView({ request, sessionId, connected }: {
+export function IdeView({ request, sessionId, connected, status, statusText, onOpenNav }: {
   request: RequestFn;
   sessionId?: string;
   connected: boolean;
+  status?: string;
+  statusText?: string;
+  onOpenNav?: () => void;
 }) {
   const [origin, setOrigin] = useState<string>();
   const [error, setError] = useState<string>();
@@ -80,12 +83,16 @@ export function IdeView({ request, sessionId, connected }: {
   const src = `${window.location.protocol}//${origin}/?folder=/workspace`;
   return (
     <div className="ide-view">
+      {/* The only chrome above the editor — VS Code supplies the rest, so this
+          stays one slim row instead of the usual eyebrow+title page header. */}
       <header className="ide-toolbar">
-        <SquareTerminal size={15} strokeWidth={1.9} />
-        <strong>VS Code</strong>
+        {onOpenNav ? <button className="mobile-menu" onClick={onOpenNav} aria-label="Open navigation">☰</button> : null}
+        <SquareTerminal size={14} strokeWidth={1.9} />
+        <strong>Code</strong>
         <code className="ide-origin" title="This session's IDE host">{origin}</code>
         <span className="ide-toolbar-spacer" />
-        <Button variant="ghost" size="md" className="font-normal" onClick={() => setReloadKey((key) => key + 1)}>
+        {statusText ? <span className="ide-status"><span className={`connection-dot ${status ?? ''}`} />{statusText}</span> : null}
+        <Button variant="ghost" size="sm" className="font-normal" onClick={() => setReloadKey((key) => key + 1)}>
           <RefreshCw /> Reload
         </Button>
       </header>

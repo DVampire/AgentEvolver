@@ -868,13 +868,13 @@ export function App() {
         <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button></div>
       </aside>
 
-      {mainView === 'code' ? <section className="conversation canvas-mode">
-        <header className="topbar">
-          <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Workspace editor</p><h1>Code</h1></div></div>
-          <div className="connection"><span className={`connection-dot ${status}`} />{statusText}</div>
-        </header>
+      {/* No page header here: VS Code brings its own full chrome, so the usual
+          eyebrow+title bar would be a second wasted strip above it. IdeView's
+          own slim toolbar carries the title, status and controls instead. */}
+      {mainView === 'code' ? <section className="conversation ide-mode">
         <Suspense fallback={<div className="workspace-placeholder">Loading editor…</div>}>
-          <IdeView request={gatewayRequest} sessionId={sessionId} connected={status === 'connected'} />
+          <IdeView request={gatewayRequest} sessionId={sessionId} connected={status === 'connected'}
+            status={status} statusText={statusText} onOpenNav={() => setMobileNavOpen(true)} />
         </Suspense>
       </section> : mainView === 'canvas' ? <section className="conversation canvas-mode">
         <header className="topbar">

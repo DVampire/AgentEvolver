@@ -259,11 +259,15 @@
 /* Browser IDE (full VS Code in an iframe). The frame fills the stage; the thin
    toolbar above it only identifies the session host and offers a reload, since
    everything else lives inside VS Code itself. */
+/* The Code view carries no page header — IdeView's slim toolbar is the only
+   chrome — so this is a single full-height row, not the usual auto/1fr/auto. */
+.ide-mode { grid-template-rows: minmax(0, 1fr); height: 100vh; min-height: 0; overflow: hidden; }
 /* The parent (.conversation) is a GRID, so `flex: 1` here would do nothing —
    size to the grid row explicitly and let the frame take the leftover space. */
 .ide-view { min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
-.ide-toolbar { flex: 0 0 auto; position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--background)); font-size: 12px; }
+.ide-toolbar { flex: 0 0 auto; position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--background)); font-size: 12px; }
 .ide-toolbar strong { color: hsl(var(--foreground)); font-size: 13px; font-weight: 600; }
+.ide-status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .ide-origin { overflow: hidden; border-radius: 6px; padding: 2px 6px; background: hsl(var(--muted)); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .ide-toolbar-spacer { flex: 1; }
 .ide-frame { flex: 1 1 auto; min-height: 0; display: block; width: 100%; border: 0; background: hsl(var(--background)); }
