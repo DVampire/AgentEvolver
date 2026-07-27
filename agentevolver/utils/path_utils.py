@@ -14,23 +14,15 @@ def package_root() -> Path:
 
 
 def home_dir() -> Path:
-    """Machine-level runtime state, inside the project's output tree.
+    """Machine-level runtime state. Delegates to the path manager.
 
-    Everything the framework writes belongs in one of exactly two places:
-    ``output/`` for generated, machine- and user-specific state, and
-    ``extension/`` for shared, durable components. This used to default to a
-    third location, ``./.agentevolver`` — which the container created as **root**,
-    and which ``scripts/serve-ui.sh``'s chown loop (it only walks ``output/``)
-    never handed back, so the host user could not delete or edit it.
-
-    ``.runtime`` holds state that belongs to the machine rather than to any one
-    user: the port registry and the sandbox ledger. Per-user state lives under
-    ``output/<owner>/`` instead. ``AGENTEVOLVER_HOME`` still overrides.
+    Kept as a thin alias because callers outside the framework still import it;
+    the layout itself is owned by ``agentevolver.paths`` so there is one table
+    describing the tree, not two.
     """
-    override = os.environ.get("AGENTEVOLVER_HOME")
-    root = Path(override).expanduser() if override else Path.cwd() / "output" / ".runtime"
-    root.mkdir(parents=True, exist_ok=True)
-    return root.resolve()
+    from agentevolver.paths import P, path_manager
+
+    return path_manager.get(P.RUNTIME, create=True)
 
 
 def data_path(rel: str = "") -> str:

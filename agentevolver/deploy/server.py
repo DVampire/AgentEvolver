@@ -34,6 +34,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.registry import DEPLOYER
 from agentevolver.sandbox import sandbox_manager
@@ -77,7 +78,7 @@ class DeploymentManagerServer(BaseModel):
         # looking at the same set of sites.
         from agentevolver.utils.path_utils import home_dir
 
-        base = workspace_root or os.path.join(str(home_dir()), "deploy")
+        base = workspace_root or str(path_manager.get(P.DEPLOY, create=True))
         os.makedirs(base, exist_ok=True)
         self._registry_path = os.path.join(base, "sites.json")
         self._load()

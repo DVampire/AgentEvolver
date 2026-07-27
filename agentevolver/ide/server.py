@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
+from agentevolver.paths import P, path_manager
 from agentevolver.ide.types import IdeInstance
 from agentevolver.logger import logger
 from agentevolver.sandbox.types import SandboxConfig
@@ -60,13 +61,12 @@ class IdeManagerServer:
         *,
         workspace_root: str | Path,
         owner: str = "local",
-        state_dir: str | Path,
     ) -> IdeInstance:
         """Return the running IDE for ``session_id``, starting one if needed.
 
-        ``state_dir`` is the owner's durable state root; extensions and user data
-        are mounted from under it so installed plugins and settings outlive any
-        single session, even though the container itself is per-session.
+        Extensions, settings and $HOME are mounted from the owner's durable state
+        (see the layout table), so installed plugins and agent logins outlive any
+        single session even though the container itself is per-session.
         """
         lock = self._locks.setdefault(session_id, asyncio.Lock())
         async with lock:
@@ -78,10 +78,9 @@ class IdeManagerServer:
             await self._evict_if_full()
 
             workspace = Path(workspace_root).expanduser().resolve()
-            ide_state = Path(state_dir).expanduser().resolve() / "ide"
-            extensions = ide_state / "extensions"
-            user_data = ide_state / "user-data"
-            home = ide_state / "home"
+            extensions = path_manager.get(P.IDE_EXTENSIONS, owner=owner)
+            user_data = path_manager.get(P.IDE_USER_DATA, owner=owner)
+            home = path_manager.get(P.IDE_HOME, owner=owner)
             for directory in (workspace, extensions, user_data, home):
                 directory.mkdir(parents=True, exist_ok=True)
 

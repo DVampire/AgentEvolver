@@ -41,6 +41,7 @@ from agentevolver.gateway.protocol import (
     error_response,
 )
 from agentevolver.hook import hook_manager
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
 from agentevolver.knowledge import knowledge_manager
@@ -363,7 +364,7 @@ class AgentGateway:
         sandbox is described but not materialized, which keeps an untouched
         session free of directories and lets a restored one reuse what is there.
         """
-        project_root = self._output_base() / owner / "sessions" / session_id
+        project_root = path_manager.get(P.SESSION, owner=owner, session_id=session_id)
         sandbox = ProjectSandbox.create(
             project_root, shared_extension_root=Path(config.extension_root), materialize=False,
         )
@@ -662,7 +663,7 @@ class AgentGateway:
         # Uploads are DURABLE per-owner assets: output/<owner>/state/files. They
         # outlive the session and are staged into a run's workspace on demand
         # (session.project.stage_input_files), not written into the sandbox here.
-        upload_dir = self._owner_state_dir(session.owner) / "files"
+        upload_dir = path_manager.get(P.OWNER_FILES, owner=session.owner)
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{upload_id}_{name}"
         path.touch(exist_ok=False)
@@ -898,11 +899,11 @@ class AgentGateway:
     # Output tree helpers — output/<owner>/{sessions/<id>, state/{flows,files}}
     # ------------------------------------------------------------------
 
-    def _output_base(self) -> Path:
-        """The output/ root: parent of the configured project_root (output/<tag>).
-        The tag level becomes the owner slot in the gateway's per-user tree."""
-        configured = getattr(config, "project_root", None)
-        return Path(configured).parent if configured else Path.cwd() / "output"
+    @staticmethod
+    def _output_base() -> Path:
+        """The output/ root. Taken from the layout table rather than derived from
+        config.project_root, which moves the moment a session binds."""
+        return path_manager.get(P.OUTPUT)
 
     @staticmethod
     def _owner_for(params: Dict[str, Any]) -> str:
@@ -912,9 +913,10 @@ class AgentGateway:
         safe = "".join(char for char in raw if char.isalnum() or char in "-_")
         return safe or "local"
 
-    def _owner_state_dir(self, owner: str) -> Path:
+    @staticmethod
+    def _owner_state_dir(owner: str) -> Path:
         """The owner's durable library root: flows/, files/, settings.json."""
-        return self._output_base() / owner / "state"
+        return path_manager.get(P.OWNER_STATE, owner=owner)
 
     def _owner_sessions_dir(self, owner: str) -> Path:
         """The owner's session records + runtime root."""
@@ -1153,7 +1155,6 @@ class AgentGateway:
             session_id,
             workspace_root=session.sandbox.workspace_root,
             owner=session.owner,
-            state_dir=self._owner_state_dir(session.owner),
         )
         return {**ide_manager.status(session_id), "origin": self._ide_origin(session_id)}
 

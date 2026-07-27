@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import get_extension_root, get_package_root
 from agentevolver.utils.path_utils import home_dir
 
@@ -113,7 +114,7 @@ class ProjectSandbox:
         # promotes anything leaves no empty ``staging/`` tree behind (the dir is
         # created lazily by :meth:`_write_manifest`).
         project_key = hashlib.sha256(str(self.project_root).encode("utf-8")).hexdigest()[:16]
-        return home_dir() / "staging" / project_key / "extension-staging.json"
+        return path_manager.get(P.STAGING, project_key=project_key) / "extension-staging.json"
 
     def describe(self) -> Dict[str, str]:
         """Return the host paths that map into a session sandbox."""

@@ -14,7 +14,10 @@ with read_base():
     from .benchmarks.hle import hle_benchmark
 
 tag = "hle"
-project_root = f"output/{tag}"
+# Pre-binding default only: bind_session_roots() repoints this at the
+# session sandbox as soon as real work starts. `tag` stays as a label,
+# not a directory level, so it cannot collide with an owner name.
+project_root = "output/.runtime/unbound"
 log_path = "hle.log"
 
 version = "0.1.0"

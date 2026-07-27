@@ -18,6 +18,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.utils.path_utils import home_dir
 
@@ -65,7 +66,7 @@ class PortManager:
     def _ensure_loaded(self) -> None:
         if self._path is not None:
             return
-        self._path = os.path.join(str(home_dir()), "ports.json")
+        self._path = str(path_manager.get(P.PORTS, create=True))
         try:
             if os.path.exists(self._path):
                 with open(self._path, encoding="utf-8") as f:

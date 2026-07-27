@@ -1,6 +1,9 @@
 #---------------GENERAL CONFIG-------------
 tag = "base"
-project_root = f"output/{tag}"
+# Pre-binding default only: bind_session_roots() repoints this at the
+# session sandbox as soon as real work starts. `tag` stays as a label,
+# not a directory level, so it cannot collide with an owner name.
+project_root = "output/.runtime/unbound"
 log_path = "base.log"
 model_name = "openrouter/gemini-3.5-flash"
 

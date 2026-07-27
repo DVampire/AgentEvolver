@@ -23,6 +23,7 @@ import os
 from pathlib import Path
 from typing import List
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 
 
@@ -34,7 +35,7 @@ class Ledger:
 
     def _path(self) -> Path:
         from agentevolver.utils.path_utils import home_dir
-        return Path(home_dir()) / "sandbox_ledger.json"
+        return path_manager.get(P.LEDGER, create=True)
 
     def _load(self) -> List[str]:
         try:
