@@ -304,6 +304,23 @@ export function PlaygroundPanel({ request, subscribe, sessionId, connected, onNo
 
   useEffect(() => { if (sidebarOpen) void loadSessions(); }, [sidebarOpen, loadSessions]);
 
+  // Reopen where the last conversation left off. The id above is generated
+  // fresh on every mount, so without this each visit started a brand-new
+  // conversation and the previous transcript — written to
+  // output/<owner>/sessions/<id>/chat.jsonl — was never read back by anything.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const response = await request('chat.sessions.list');
+      if (cancelled || !response.ok || !Array.isArray(response.result.sessions)) return;
+      const list = response.result.sessions as typeof sessions;
+      setSessions(list);
+      const latest = list[0];  // the gateway returns them newest first
+      if (latest?.session_id) await switchSession(latest.session_id);
+    })();
+    return () => { cancelled = true; };
+  }, [request, switchSession]);
+
   // ----- file attachments (Langflow upload/drag/preview) --------------------
   // Chunked base64 upload via the file.upload.* commands (uploads land in the
   // owner's durable state/files); attached paths ride along on the next run.

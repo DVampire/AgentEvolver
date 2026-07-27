@@ -377,6 +377,12 @@ export function App() {
 
   const handleGatewayEvent = useCallback((event: GatewayEvent) => {
     if (event.type.startsWith('canvas.') || event.type.startsWith('model.chat.')) return; // panels handle these themselves
+    // The Gateway broadcasts every event to every client and expects each to
+    // keep its own. Without this, work that is not this conversation's — a
+    // canvas flow, which runs under its own scope — was rendered as if the user
+    // had asked for it. Events with no session (capability and deploy changes)
+    // are gateway-wide and belong to everyone.
+    if (event.session_id && event.session_id !== sessionRef.current) return;
     if (event.type === 'session.capabilities.updated') {
       if (event.session_id === sessionRef.current) setSelection(asSelection(event.payload.capabilities));
       return;
