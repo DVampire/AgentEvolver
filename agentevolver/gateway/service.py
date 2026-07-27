@@ -120,6 +120,13 @@ class AgentGateway:
         )
         self._sequence: Dict[str, int] = defaultdict(int)
         self._active_agent_tasks: Dict[str, asyncio.Task] = {}
+        # Run ids started from the canvas. A canvas run executes in the same
+        # session as the conversation, so its traces carry the same session_id
+        # and the Chat view — which renders every trace event — showed a flow's
+        # internals as if the user had asked for them. Traces are stamped with
+        # their origin so each view can take only its own. Bounded: this is a
+        # display hint, and an old run's traces are long since delivered.
+        self._canvas_runs: Deque[str] = deque(maxlen=512)
         # Session whose roots the shared runtime is currently bound to (see
         # _bind_runtime_to_session); None until the first task runs.
         self._bound_session_id: Optional[str] = None
@@ -317,13 +324,79 @@ class AgentGateway:
             source_workspace=session.context.extra.get("source_workspace"),
         )
 
+    def _event_log_path(self, session_id: str) -> Optional[Path]:
+        """This session's append-only event log, or None if it is not a real session."""
+        session = self._sessions.get(session_id)
+        if session is None:
+            return None
+        return path_manager.get(P.SESSION_EVENTS, owner=session.owner, session_id=session_id)
+
+    def _append_event_log(self, session_id: Optional[str], event: GatewayEvent) -> None:
+        """Persist one event so the transcript survives the gateway process.
+
+        The in-memory buffer is bounded and dies with the process, so a restored
+        session used to reopen as an empty conversation over its own files. The
+        log is unbounded on purpose: it is the record of what happened.
+
+        Nothing is created here. Clients open a session the moment they connect
+        and most never run anything, so — like the manifest beside it — the log
+        only begins once the session has real work in it (:meth:`_flush_event_log`).
+        """
+        if not session_id:
+            return  # gateway-wide events belong to no session
+        path = self._event_log_path(session_id)
+        if path is None or not path.parent.is_dir():
+            return
+        self._write_events(path, [event], mode="a")
+
+    def _flush_event_log(self, session_id: str) -> None:
+        """Start this session's log, writing everything buffered so far.
+
+        Called when the session materializes, so the events leading up to it —
+        the session being created, its capabilities settling — are in the record
+        rather than only what came after.
+        """
+        path = self._event_log_path(session_id)
+        if path is None or path.exists():
+            return
+        self._write_events(path, list(self._events.get(session_id, ())), mode="w")
+
+    @staticmethod
+    def _write_events(path: Path, events: List[GatewayEvent], *, mode: str) -> None:
+        try:
+            with path.open(mode, encoding="utf-8") as handle:
+                for event in events:
+                    handle.write(json.dumps(event.model_dump(mode="json"), ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001 — logging must never break the run
+            logger.warning(f"| ⚠️ Gateway: could not write the event log {path}: {exc}")
+
+    def _load_event_log(self, session_id: str) -> None:
+        """Rehydrate a restored session's transcript from disk.
+
+        Only the tail fits the bounded buffer, but ``_sequence`` continues from
+        the highest id on disk so new events never collide with replayed ones.
+        """
+        path = self._event_log_path(session_id)
+        if path is None or not path.is_file():
+            return
+        highest = 0
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = GatewayEvent.model_validate_json(line)
+            except Exception:  # noqa: BLE001 — one bad line must not hide the rest
+                continue
+            self._events[session_id].append(event)
+            highest = max(highest, event.seq_no)
+        self._sequence[session_id] = max(self._sequence[session_id], highest)
+
     async def _restore_sessions(self) -> None:
         """Rebuild sessions that have a manifest on disk, so their workspaces stay reachable.
 
         Without this the session registry is purely in-memory: a restart leaves
-        every workspace on disk with no way to open it from the UI. Restored
-        sessions carry no event history by design (see SESSION_MANIFEST), so they
-        reopen as an empty conversation over their existing files.
+        every workspace on disk with no way to open it from the UI. The
+        conversation comes back too, replayed from the session's event log.
         """
         base = self._output_base()
         if not base.is_dir():
@@ -343,6 +416,7 @@ class AgentGateway:
                     created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
                     capabilities=await self._available_capabilities(),
                 )
+                self._load_event_log(session_id)
                 restored += 1
             except Exception as exc:  # noqa: BLE001 — one bad manifest must not block startup
                 logger.warning(f"| ⚠️ Skipping unreadable session manifest {manifest}: {exc}")
@@ -918,10 +992,19 @@ class AgentGateway:
         return self._output_base() / owner / "sessions"
 
     def _canvas_flows_dir(self, session_id: str) -> Path:
-        """Draft flows are per-OWNER (not per-session): the owner's durable flow
-        library at output/<owner>/state/flows. Publishing promotes to extension."""
-        owner = self._sessions[session_id].owner
-        return self._owner_state_dir(owner) / "flows"
+        """Draft flows belong to the session that drew them.
+
+        A finished flow is promoted to the shared library (``extension/canvas``)
+        with ``canvas.library.export``, which is what makes it reusable from any
+        session — so drafts do not also have to be global.
+        """
+        return path_manager.get(P.SESSION_FLOWS, owner=self._sessions[session_id].owner,
+                                session_id=session_id)
+
+    def _canvas_runs_dir(self, session_id: str) -> Path:
+        """Where this session records which runs each of its flows produced."""
+        return path_manager.get(P.SESSION_RUNS, owner=self._sessions[session_id].owner,
+                                session_id=session_id)
 
     # ------------------------------------------------------------------
     # Chat sessions — persistent per-owner conversation records at
@@ -1120,16 +1203,32 @@ class AgentGateway:
         if run_input is not None and not isinstance(run_input, dict):
             raise ValueError("input must be an object")
         session = self._sessions[session_id]
+        # Running saves first, so the flow has a stable id to hang its history
+        # off — otherwise a draft that was never explicitly saved (every flow
+        # opened from a template) vanished on refresh along with its run.
+        graph = canvas_manager.save_flow(graph, self._canvas_flows_dir(session_id))
         # Steps write run output under the session's own roots.
         self._bind_runtime_to_session(session)
         run_id = await canvas_manager.run_flow(graph, input=run_input, ctx=session.context)
-        return {"run_id": run_id}
+        self._canvas_runs.append(run_id)  # so its traces are not mistaken for the conversation's
+        canvas_manager.record_run(graph.id, run_id, self._canvas_runs_dir(session_id))
+        await self._publish("canvas.flow.saved", {"flow_id": graph.id}, session_id=session_id)
+        return {"run_id": run_id, "flow_id": graph.id, "flow": graph.model_dump(mode="json")}
 
     async def _command_canvas_run_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         run_id = str(params.get("run_id") or "")
         if not run_id:
             raise ValueError("run_id is required")
         return {"run": canvas_manager.run_status(run_id)}
+
+    async def _command_canvas_run_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Every run this flow has had, newest first — the canvas history panel."""
+        session_id = self._require_session_id(params)
+        flow_id = str(params.get("flow_id") or "")
+        if not flow_id:
+            raise ValueError("flow_id is required")
+        limit = int(params.get("limit") or 50)
+        return {"runs": canvas_manager.list_runs(flow_id, self._canvas_runs_dir(session_id), limit=limit)}
 
     async def _command_canvas_run_cancel(self, params: Dict[str, Any]) -> Dict[str, Any]:
         run_id = str(params.get("run_id") or "")
@@ -1625,6 +1724,7 @@ class AgentGateway:
         # anything still leaves no directory behind, and so what is restorable is
         # exactly what has real work in it.
         self._write_session_manifest(session)
+        self._flush_event_log(session.context.id)
         bind_session_roots(config, session.sandbox)
         # Managers cached their base_dir at initialize(); re-point the ones that
         # persist per-run output. Writers that read config at write time (the
@@ -1677,6 +1777,10 @@ class AgentGateway:
 
     async def _on_trace_event(self, event) -> None:
         payload = event.to_dict()
+        # Say where this trace came from. A canvas run shares the session with
+        # the conversation, so without this the Chat view rendered a flow's
+        # internal steps as if they were its own task's.
+        payload["origin"] = "canvas" if event.task_id in self._canvas_runs else "chat"
         await self._publish("trace.event", payload, session_id=event.session_id, task_id=event.task_id)
         # A workflow run (canvas draft run) just finished. Push an explicit
         # terminal so canvas clients resolve immediately instead of discovering
@@ -1772,6 +1876,7 @@ class AgentGateway:
             seq_no=self._sequence[key],
         )
         self._events[key].append(event)
+        self._append_event_log(session_id, event)
         for queue in tuple(self._subscribers):
             try:
                 queue.put_nowait(event)

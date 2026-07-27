@@ -725,6 +725,11 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     try {
       const response = await request('canvas.flow.run', { session_id: sessionId, flow: toDocument(), input });
       if (!response.ok || typeof response.result.run_id !== 'string') throw new Error(response.error?.message ?? 'Could not start the run');
+      // Running saves the flow first, so adopt the id it came back with: an
+      // unsaved draft (anything opened from a template) is now a real flow and
+      // its run history has somewhere to hang.
+      const saved = response.result.flow as FlowGraphDoc | undefined;
+      if (saved) { setFlowId(saved.id); setFlowVersion(saved.version); setDirty(false); void refreshFlows(); }
       setRunId(response.result.run_id);
       return response.result.run_id;
     } catch (error) {
@@ -807,6 +812,21 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     const rid = (event.payload as { run_id?: string }).run_id;
     if (rid && rid === runIdRef.current) void syncRunStatus(rid);
   }), [subscribe, syncRunStatus]);
+
+  // Reopening a flow shows what it did last. The runtime holds runs in memory
+  // only, so the id comes from the session's run index and the record itself
+  // from the run's checkpoint on disk — which is why this survives a restart.
+  useEffect(() => {
+    if (!flowId || !sessionId || runIdRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      const response = await request('canvas.run.list', { session_id: sessionId, flow_id: flowId, limit: 1 });
+      if (cancelled || !response.ok) return;
+      const last = (response.result.runs as Array<{ run_id?: string; state?: string }> | undefined)?.[0];
+      if (last?.run_id && last.state && last.state !== 'unknown') void syncRunStatus(last.run_id);
+    })();
+    return () => { cancelled = true; };
+  }, [flowId, sessionId, request, syncRunStatus]);
 
   const stopRun = async () => { if (runId) await request('canvas.run.cancel', { run_id: runId }); };
 

@@ -38,10 +38,8 @@ class P(str, Enum):
     OWNER = "owner"
     OWNER_STATE = "owner_state"
     OWNER_FILES = "owner_files"
-    OWNER_FLOWS = "owner_flows"
     OWNER_IDE = "owner_ide"
     IDE_EXTENSIONS = "ide_extensions"
-    IDE_USER_DATA = "ide_user_data"
     IDE_HOME = "ide_home"
 
     # --- per session / per run (disposable) ------------------------------
@@ -49,6 +47,18 @@ class P(str, Enum):
     SESSION = "session"
     SESSION_WORKSPACE = "session_workspace"
     SESSION_MANIFEST = "session_manifest"
+    #: Canvas drafts belong to the session that drew them; a finished flow is
+    #: promoted to the shared library under ``extension/canvas``.
+    SESSION_FLOWS = "session_flows"
+    #: One append-only index per flow: every run it has had, newest last.
+    SESSION_RUNS = "session_runs"
+    #: Every gateway event this session emitted, append-only. The in-memory
+    #: buffer is bounded and dies with the process; this is what lets a restored
+    #: session reopen with its conversation instead of an empty transcript.
+    SESSION_EVENTS = "session_events"
+    #: Editor state — open tabs, layout. Per session, unlike the extensions and
+    #: agent logins beside it, which are worth sharing across all of them.
+    SESSION_IDE_USER_DATA = "session_ide_user_data"
     RUN = "run"
 
 
@@ -72,16 +82,18 @@ LAYOUT: Dict[P, str] = {
     P.OWNER: "output/{owner}",
     P.OWNER_STATE: "output/{owner}/state",
     P.OWNER_FILES: "output/{owner}/state/files",
-    P.OWNER_FLOWS: "output/{owner}/state/flows",
     P.OWNER_IDE: "output/{owner}/state/ide",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
-    P.IDE_USER_DATA: "output/{owner}/state/ide/user-data",
     P.IDE_HOME: "output/{owner}/state/ide/home",
 
     P.SESSIONS: "output/{owner}/sessions",
     P.SESSION: "output/{owner}/sessions/{session_id}",
     P.SESSION_WORKSPACE: "output/{owner}/sessions/{session_id}/workspace",
     P.SESSION_MANIFEST: "output/{owner}/sessions/{session_id}/session.json",
+    P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",
+    P.SESSION_RUNS: "output/{owner}/sessions/{session_id}/runs",
+    P.SESSION_EVENTS: "output/{owner}/sessions/{session_id}/events.jsonl",
+    P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
     P.RUN: "output/{owner}/runs/{run_id}",
 }
 

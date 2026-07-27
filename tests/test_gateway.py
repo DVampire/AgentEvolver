@@ -11,6 +11,7 @@ from unittest.mock import patch
 from agentevolver.gateway.protocol import GatewayCommand, PROTOCOL_VERSION
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.model import model_manager
+from agentevolver.canvas.types import FlowGraph, GraphNode
 from agentevolver.model.types import ModelConfig
 
 
@@ -483,3 +484,111 @@ def test_tool_and_agent_details_are_human_readable_guides() -> None:
     assert "## How to use it" in guide
     assert "Run this only when needed." in guide
     assert '"properties"' not in guide
+
+
+def test_a_restarted_gateway_reopens_the_conversation() -> None:
+    """The transcript is the record of what happened; a restart must not eat it.
+
+    The in-memory event buffer is bounded and dies with the process, so a
+    restored session used to come back as an empty conversation over its own
+    files. It is replayed from the session's event log now.
+    """
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        assert created.ok
+        session_id = created.result["session_id"]
+        # The session becomes real — the point at which it starts leaving a
+        # record, the same rule the manifest beside it follows.
+        session = gateway._sessions[session_id]  # noqa: SLF001
+        session.sandbox.materialize()
+        gateway._write_session_manifest(session)  # noqa: SLF001
+        gateway._flush_event_log(session_id)  # noqa: SLF001
+        await gateway._publish("test.after", {"n": 1}, session_id=session_id)  # noqa: SLF001
+
+        before = await gateway.handle(
+            GatewayCommand(id="e1", method="session.events", params={"session_id": session_id, "after_seq": 0})
+        )
+        assert before.ok and before.result["events"], "the session emitted nothing to replay"
+
+        # A fresh gateway over the same tree — the restart.
+        restarted = AgentGateway()
+        await restarted._restore_sessions()  # noqa: SLF001 — this is the behaviour under test
+        assert session_id in restarted._sessions  # noqa: SLF001
+
+        after = await restarted.handle(
+            GatewayCommand(id="e2", method="session.events", params={"session_id": session_id, "after_seq": 0})
+        )
+        assert after.ok
+        assert [event["type"] for event in after.result["events"]] == \
+               [event["type"] for event in before.result["events"]]
+        # New events continue the numbering rather than colliding with replayed ones.
+        highest = max(event["seq_no"] for event in after.result["events"])
+        published = await restarted._publish("test.marker", {}, session_id=session_id)  # noqa: SLF001
+        assert published.seq_no > highest
+
+    asyncio.run(run())
+
+
+def test_canvas_run_history_outlives_the_runtime() -> None:
+    """Reopening a flow shows what it did last, not an empty canvas."""
+
+    async def run() -> None:
+        from agentevolver.canvas.server import canvas_manager
+        from agentevolver.paths import P, path_manager
+
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        session_id = created.result["session_id"]
+        owner = gateway._sessions[session_id].owner  # noqa: SLF001
+
+        flows = path_manager.get(P.SESSION_FLOWS, owner=owner, session_id=session_id)
+        runs = path_manager.get(P.SESSION_RUNS, owner=owner, session_id=session_id)
+        graph = canvas_manager.save_flow(
+            FlowGraph(name="history", nodes=[GraphNode(id="a", type="step", step_type="tool", target="bash_tool")]),
+            flows,
+        )
+        canvas_manager.record_run(graph.id, "run-one", runs)
+        canvas_manager.record_run(graph.id, "run-two", runs)
+
+        listed = await gateway.handle(GatewayCommand(
+            id="l", method="canvas.run.list", params={"session_id": session_id, "flow_id": graph.id}))
+        assert listed.ok
+        # Newest first, and a run whose record is gone is reported, not hidden.
+        assert [item["run_id"] for item in listed.result["runs"]] == ["run-two", "run-one"]
+        assert {item["state"] for item in listed.result["runs"]} == {"unknown"}
+
+    asyncio.run(run())
+
+
+def test_canvas_traces_are_not_mistaken_for_the_conversation() -> None:
+    """A canvas run shares the session, so its traces must say where they came from.
+
+    The Chat view renders every trace event it sees; without an origin it showed
+    a flow's internal steps as if the user had asked for them.
+    """
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        session_id = created.result["session_id"]
+        queue = await gateway.subscribe()
+
+        gateway._canvas_runs.append("run-from-canvas")  # noqa: SLF001
+
+        for task_id in ("run-from-canvas", "task-from-chat"):
+            await gateway._on_trace_event(SimpleNamespace(  # noqa: SLF001
+                to_dict=lambda: {"event_type": "agent_start", "agent_name": "a"},
+                session_id=session_id, task_id=task_id,
+            ))
+
+        origins = {}
+        while len(origins) < 2:
+            event = await queue.get()
+            if event.type == "trace.event":
+                origins[event.task_id] = event.payload["origin"]
+        assert origins == {"run-from-canvas": "canvas", "task-from-chat": "chat"}
+        gateway.unsubscribe(queue)
+
+    asyncio.run(run())

@@ -26,6 +26,7 @@ from agentevolver.canvas.catalog import catalog
 from agentevolver.canvas.compiler import canvas_compiler
 from agentevolver.canvas.types import FlowGraph, NodeSpec, workflow_name_for
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import make_id
 
 PUBLISHED_PREFIX = "wf:"
@@ -223,11 +224,78 @@ class CanvasManagerServer:
         return workflow_runtime.start(definition, input=input or {}, ctx=ctx)
 
     def run_status(self, run_id: str) -> Dict[str, Any]:
+        """The full record of one run, live or finished.
+
+        The runtime keeps runs in memory, so reopening a flow after a restart
+        used to raise for every past run. The runtime also checkpoints each run
+        to disk, which is the same record — so fall back to that file, and a
+        history entry stays readable for as long as its checkpoint exists.
+        """
         from agentevolver.workflow import workflow_manager
+
         run = workflow_manager.get_run(run_id)
-        if run is None:
-            raise ValueError(f"Unknown canvas run: {run_id}")
-        return run.model_dump(mode="json")
+        if run is not None:
+            return run.model_dump(mode="json")
+        checkpoint = path_manager.get(P.CHECKPOINTS) / f"{run_id}.json"
+        if checkpoint.is_file():
+            try:
+                return json.loads(checkpoint.read_text(encoding="utf-8"))
+            except Exception as exc:  # noqa: BLE001 — a truncated checkpoint is not fatal
+                logger.warning(f"| ⚠️ Canvas: unreadable checkpoint for run {run_id}: {exc}")
+        raise ValueError(f"Unknown canvas run: {run_id}")
+
+    # ------------------------------------------------------------------
+    # Run history — one append-only index per flow, so reopening a flow can
+    # show what it did last instead of an empty canvas.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _runs_path(runs_dir: Path, flow_id: str) -> Path:
+        safe = "".join(char for char in flow_id if char.isalnum() or char in "-_:")
+        if not safe or safe != flow_id:
+            raise ValueError(f"Invalid flow id: {flow_id!r}")
+        return runs_dir / f"{safe}.jsonl"
+
+    def record_run(self, flow_id: str, run_id: str, runs_dir: Path) -> None:
+        """Note that ``flow_id`` produced ``run_id``. Appended when the run starts."""
+        if not flow_id:
+            return
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        entry = {"run_id": run_id, "started_at": datetime.now(timezone.utc).isoformat()}
+        with self._runs_path(runs_dir, flow_id).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def list_runs(self, flow_id: str, runs_dir: Path, limit: int = 50) -> List[Dict[str, Any]]:
+        """This flow's runs, newest first, each with its current state.
+
+        The index holds only ids; the state is read back from the run itself, so
+        a run that finished after the gateway restarted still reports correctly.
+        """
+        path = self._runs_path(runs_dir, flow_id)
+        if not path.is_file():
+            return []
+        out: List[Dict[str, Any]] = []
+        for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:  # noqa: BLE001 — one bad line must not hide the rest
+                continue
+            try:
+                record = self.run_status(entry["run_id"])
+                entry.update({
+                    "state": record.get("state"),
+                    "started_at": record.get("started_at") or entry.get("started_at"),
+                    "finished_at": record.get("finished_at"),
+                    "error": record.get("error"),
+                })
+            except ValueError:
+                entry["state"] = "unknown"  # checkpoint gone; the id is all we have
+            out.append(entry)
+            if len(out) >= limit:
+                break
+        return out
 
     def cancel_run(self, run_id: str) -> bool:
         from agentevolver.workflow import workflow_manager

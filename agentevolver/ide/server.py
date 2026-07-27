@@ -79,7 +79,11 @@ class IdeManagerServer:
 
             workspace = Path(workspace_root).expanduser().resolve()
             extensions = path_manager.get(P.IDE_EXTENSIONS, owner=owner)
-            user_data = path_manager.get(P.IDE_USER_DATA, owner=owner)
+            # Editor state — open tabs, layout, per-workspace history — belongs
+            # to the session, so reopening one finds the files it left open
+            # rather than another session's. Extensions and the agent logins
+            # beside them stay owner-wide: those are worth installing once.
+            user_data = path_manager.get(P.SESSION_IDE_USER_DATA, owner=owner, session_id=session_id)
             home = path_manager.get(P.IDE_HOME, owner=owner)
             for directory in (workspace, extensions, user_data, home):
                 directory.mkdir(parents=True, exist_ok=True)
