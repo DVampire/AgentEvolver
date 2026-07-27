@@ -1,6 +1,20 @@
-"""Registration hub for the `codeagents` bundle."""
+"""Code Agents plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "codeagents"
-BUNDLE_LABEL = 'Code Agents'
+from .tools.codeact_agent_smolagents import CodeagentsCodeactAgentSmolagentsTool
+from .tools.open_ds_star_agent import CodeagentsOpenDsStarAgentTool
+
+
+@PLUGIN.register_module(force=True)
+class CodeagentsPlugin(Plugin):
+    """Code Agents tools."""
+
+    tools = (CodeagentsCodeactAgentSmolagentsTool, CodeagentsOpenDsStarAgentTool,)
+
+    name: str = 'codeagents'
+    display_name: str = 'Code Agents'
+    description: str = 'Code Agents tools.'
+    category: str = 'agent'
+    type: str = 'tool'

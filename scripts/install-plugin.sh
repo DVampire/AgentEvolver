@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# install-bundle.sh — set up the optional provider dependencies for migrated
-# Langflow *bundle* plugins.
+# install-plugin.sh — set up a plugin's optional third-party dependencies.
 #
-# Each bundle plugin declares its third-party pip packages in the
-# `requirements:` field of its PLUGIN.md frontmatter
-#   agentevolver/plugins/default/<bundle>/PLUGIN.md
-# Provider libraries are imported lazily, so a bundle registers and shows up on
-# the canvas even without them; install them here to actually run the bundle.
+# Each plugin declares the pip packages its tools import in the `requirements:`
+# field of its manifest
+#   agentevolver/plugins/default/<plugin>/PLUGIN.md
+# Those libraries are imported lazily, so a plugin registers and shows up on the
+# canvas without them; install them here to actually run its tools.
 #
 # Usage:
-#   scripts/install-bundle.sh <bundle> [<bundle> ...]   # install those bundles' deps
-#   scripts/install-bundle.sh --all                     # install every bundle's deps
-#   scripts/install-bundle.sh --list [<bundle>]         # print deps, install nothing
-#   scripts/install-bundle.sh --names                   # list all bundle names
+#   scripts/install-plugin.sh <plugin> [<plugin> ...]   # install those plugins' deps
+#   scripts/install-plugin.sh --all                     # install every plugin's deps
+#   scripts/install-plugin.sh --list [<plugin>]         # print deps, install nothing
+#   scripts/install-plugin.sh --names                   # list all plugin names
 #
 # Honors $PIP (default: "pip") so you can use "uv pip", "pip3", etc.
 set -euo pipefail
@@ -20,8 +19,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_DIR="$ROOT/agentevolver/plugins/default"
 PIP="${PIP:-pip}"
 
-# Read the `requirements: [a, b, c]` list from a bundle's PLUGIN.md → space-separated.
-bundle_reqs() {
+# Read the `requirements: [a, b, c]` list from a plugin's PLUGIN.md → space-separated.
+plugin_reqs() {
   local md="$DEFAULT_DIR/$1/PLUGIN.md"
   [ -f "$md" ] || return 0
   grep -m1 -E '^requirements:' "$md" 2>/dev/null \
@@ -29,7 +28,7 @@ bundle_reqs() {
     | tr -s ' '
 }
 
-all_bundles() {
+all_plugins() {
   find "$DEFAULT_DIR" -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/PLUGIN.md' ';' -print \
     | xargs -n1 basename | sort
 }
@@ -38,23 +37,23 @@ all_bundles() {
 
 case "$1" in
   --names)
-    all_bundles; exit 0 ;;
+    all_plugins; exit 0 ;;
   --list)
     shift
-    targets=("$@"); [ ${#targets[@]} -gt 0 ] || mapfile -t targets < <(all_bundles)
-    for b in "${targets[@]}"; do printf '%-18s %s\n' "$b" "$(bundle_reqs "$b")"; done
+    targets=("$@"); [ ${#targets[@]} -gt 0 ] || mapfile -t targets < <(all_plugins)
+    for b in "${targets[@]}"; do printf '%-18s %s\n' "$b" "$(plugin_reqs "$b")"; done
     exit 0 ;;
   --all)
-    mapfile -t targets < <(all_bundles) ;;
+    mapfile -t targets < <(all_plugins) ;;
   *)
     targets=("$@") ;;
 esac
 
-# Collect the union of requirements across the selected bundles.
+# Collect the union of requirements across the selected plugins.
 declare -A seen; pkgs=()
 for b in "${targets[@]}"; do
-  [ -d "$DEFAULT_DIR/$b" ] || { echo "⚠️  unknown bundle: $b (see --names)"; continue; }
-  for p in $(bundle_reqs "$b"); do
+  [ -d "$DEFAULT_DIR/$b" ] || { echo "⚠️  unknown plugin: $b (see --names)"; continue; }
+  for p in $(plugin_reqs "$b"); do
     [ -n "${seen[$p]:-}" ] || { seen[$p]=1; pkgs+=("$p"); }
   done
 done
@@ -64,6 +63,6 @@ if [ ${#pkgs[@]} -eq 0 ]; then
   exit 0
 fi
 
-echo "Installing ${#pkgs[@]} package(s) for bundle(s) '${targets[*]}':"
+echo "Installing ${#pkgs[@]} package(s) for plugin(s) '${targets[*]}':"
 printf '  %s\n' "${pkgs[@]}"
 exec $PIP install "${pkgs[@]}"

@@ -1,23 +1,17 @@
-"""List Home Assistant States — from the Langflow `homeassistant` bundle (ported)."""
+"""List Home Assistant States."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class HomeassistantListHomeAssistantStatesPlugin(BundlePlugin):
-    name: str = "homeassistant.list_home_assistant_states"
+class HomeassistantListHomeAssistantStatesTool(PluginTool):
+    """List Home Assistant States."""
+
+    name: str = 'list_home_assistant_states'
     display_name: str = 'List Home Assistant States'
     description: str = ''
-    kind: str = "tool"
-    bundle: str = "homeassistant"
-    bundle_label: str = 'Home Assistant'
-    category: str = "data"
-    source: str = "langflow/bundles/homeassistant"
-    status: str = "complete"
 
     async def __call__(self, ha_url: str = "", ha_token: str = "", filter_domain: str = "", **kwargs) -> Response:
         import httpx

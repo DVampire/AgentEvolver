@@ -12,7 +12,7 @@ export function Transcript({ entries }: { entries: TimelineEntry[] }) {
     <Box flexDirection="column" paddingX={1}>
       {entries.slice(-80).map((entry) => (
         <Box key={entry.id} flexDirection="column" marginBottom={1}>
-          <Text color={colors[entry.kind]} bold>{entry.pending ? '◌ ' : '• '}{entry.title}</Text>
+          <Text color={colors[entry.type]} bold>{entry.pending ? '◌ ' : '• '}{entry.title}</Text>
           {entry.body ? <Text wrap="wrap">{truncate(entry.body, 1_500)}</Text> : null}
         </Box>
       ))}

@@ -1,36 +1,30 @@
 ---
 id: amazon
-name: Amazon
-kind: bundle
+name: Amazon Bedrock
 category: data
-icon: lucide:Amazon
-source: langflow/bundles/amazon
-status: complete
-version: "1.0.0"
+type: model
+icon: resources/icon.svg
 tools: 4
-requirements: [boto3, langchain-aws, langchain-openai]
+implemented: 4
+credentials: [AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY]
+requirements: [boto3, langchain_aws, langchain_openai]
+version: "1.0.0"
 ---
+# Amazon Bedrock
 
-# Amazon
-
-Migrated from the Langflow **amazon** bundle. This package is in the
-**structure** phase: all 4 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Amazon Bedrock tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `amazon.amazon_bedrock_converse` | Amazon Bedrock Converse |  | structure |
-| `amazon.amazon_bedrock_embedding` | Amazon Bedrock Embeddings | Generate embeddings using Amazon Bedrock models. | structure |
-| `amazon.amazon_bedrock_model` | Amazon Bedrock |  | structure |
-| `amazon.s3_bucket_uploader` | S3 Bucket Uploader | Uploads files to S3 bucket. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `amazon.amazon_bedrock_converse` | Amazon Bedrock Converse | ✅ | Amazon Bedrock Converse |
+| `amazon.amazon_bedrock_embedding` | Amazon Bedrock Embeddings | ✅ | Generate embeddings using Amazon Bedrock models. |
+| `amazon.amazon_bedrock_model` | Amazon Bedrock | ✅ | Amazon Bedrock |
+| `amazon.s3_bucket_uploader` | S3 Bucket Uploader | ✅ | Uploads files to S3 bucket. |
 
-## Icon
+All 4 tools are implemented.
 
-Uses lucide glyph `Amazon` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/amazon/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`AWS_ACCESS_KEY_ID`, `AWS_REGION`, `AWS_SECRET_ACCESS_KEY`, an `api_key` argument on the call, or a `amazon_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

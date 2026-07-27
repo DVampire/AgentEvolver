@@ -1,21 +1,15 @@
-"""DuckDuckGo Search — from the Langflow `duckduckgo` bundle (ported)."""
+"""DuckDuckGo Search."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DuckduckgoDuckDuckGoSearchRunPlugin(BundlePlugin):
-    name: str = "duckduckgo.duck_duck_go_search_run"
+class DuckduckgoDuckDuckGoSearchRunTool(PluginTool):
+    """DuckDuckGo Search."""
+
+    name: str = 'duck_duck_go_search_run'
     display_name: str = 'DuckDuckGo Search'
     description: str = 'Search the web using DuckDuckGo with customizable result limits'
-    kind: str = "tool"
-    bundle: str = "duckduckgo"
-    bundle_label: str = 'DuckDuckGo'
-    category: str = "data"
-    source: str = "langflow/bundles/duckduckgo"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", max_results: int = 5, max_snippet_length: int = 100, **kwargs) -> Response:
         query = str(input_value or "").strip()

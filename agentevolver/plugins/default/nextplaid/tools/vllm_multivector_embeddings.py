@@ -1,23 +1,18 @@
-"""vLLM Multivector Embeddings — from the Langflow `nextplaid` bundle (ported)."""
+"""vLLM Multivector Embeddings."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NextplaidVllmMultivectorEmbeddingsPlugin(BundlePlugin):
-    name: str = "nextplaid.vllm_multivector_embeddings"
+class NextplaidVllmMultivectorEmbeddingsTool(PluginTool):
+    """vLLM Multivector Embeddings."""
+
+    name: str = 'vllm_multivector_embeddings'
     display_name: str = 'vLLM Multivector Embeddings'
     description: str = ''
-    kind: str = "tool"
-    bundle: str = "nextplaid"
-    bundle_label: str = 'NextPlaid'
-    category: str = "knowledge"
-    source: str = "langflow/bundles/nextplaid"
-    status: str = "complete"
+    category: str = 'knowledge'
 
     async def __call__(self, text: str = "", base_url: str = "http://localhost:8000/v1", model_name: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx

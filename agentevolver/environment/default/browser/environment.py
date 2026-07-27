@@ -342,7 +342,7 @@ class BrowserEnvironment(Environment):
         url = await self._service.vnc_ws_url()
         if not url:
             return None
-        return EnvironmentView(env_name=self.name, kind="vnc", url=url, label="Browser (live)")
+        return EnvironmentView(env_name=self.name, type="vnc", url=url, label="Browser (live)")
 
     async def get_state(self, ctx=None, **kwargs) -> Dict[str, Any]:
         try:

@@ -1,6 +1,19 @@
-"""Registration hub for the `vlmrun` bundle."""
+"""VLM Run plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "vlmrun"
-BUNDLE_LABEL = 'VLM Run'
+from .tools.transcription import VlmrunTranscriptionTool
+
+
+@PLUGIN.register_module(force=True)
+class VlmrunPlugin(Plugin):
+    """VLM Run tools."""
+
+    tools = (VlmrunTranscriptionTool,)
+
+    name: str = 'vlmrun'
+    display_name: str = 'VLM Run'
+    description: str = 'VLM Run tools.'
+    category: str = 'data'
+    type: str = 'tool'

@@ -1,17 +1,12 @@
-"""Digicert (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Digicert (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioDigicertComposioPlugin(ComposioPlugin):
-    name: str = "composio.digicert_composio"
+class ComposioDigicertComposioTool(ComposioPluginTool):
+    """Digicert."""
+
+    name: str = 'digicert_composio'
     display_name: str = 'Digicert'
     description: str = 'Execute Digicert actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "digicert"
+    app_name: str = 'digicert'

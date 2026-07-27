@@ -1,22 +1,17 @@
-"""Valkey — from the Langflow `valkey` vector-store bundle (ported)."""
+"""Valkey."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ValkeyValkeyPlugin(VectorStorePlugin):
-    name: str = "valkey.valkey"
+class ValkeyTool(VectorStorePluginTool):
+    """Valkey."""
+
+    name: str = 'valkey'
     display_name: str = 'Valkey'
     description: str = 'Implementation of Vector Store using Valkey'
-    kind: str = "vectorstore"
-    bundle: str = "valkey"
-    bundle_label: str = 'Valkey'
-    source: str = "langflow/bundles/valkey"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

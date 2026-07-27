@@ -1,35 +1,29 @@
 ---
 id: elastic
-name: Elastic
-kind: bundle
+name: Elasticsearch
 category: data
+type: vectorstore
 icon: resources/icon.svg
-source: langflow/bundles/elastic
-status: complete
-version: "1.0.0"
 tools: 3
-requirements: [langchain-community, langchain-elasticsearch, langchain-openai]
+implemented: 3
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_elasticsearch, langchain_openai]
+version: "1.0.0"
 ---
+# Elasticsearch
 
-# Elastic
-
-Migrated from the Langflow **elastic** bundle. This package is in the
-**structure** phase: all 3 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Elasticsearch tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `elastic.elasticsearch` | Elasticsearch | Elasticsearch Vector Store with with advanced, customizable  | structure |
-| `elastic.opensearch` | OpenSearch |  | structure |
-| `elastic.opensearch_multimodal` | OpenSearch (Multi-Model Multi-Embedding) |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `elastic.elasticsearch` | Elasticsearch | ✅ | Elasticsearch Vector Store with with advanced, customizable search capabilities. |
+| `elastic.opensearch` | OpenSearch | ✅ | OpenSearch |
+| `elastic.opensearch_multimodal` | OpenSearch (Multi-Model Multi-Embedding) | ✅ | OpenSearch (Multi-Model Multi-Embedding) |
 
-## Icon
+All 3 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/elastic/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `elastic_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

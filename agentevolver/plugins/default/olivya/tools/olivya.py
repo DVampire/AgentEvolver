@@ -1,23 +1,17 @@
-"""Place Call — from the Langflow `olivya` bundle (ported)."""
+"""Place Call."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OlivyaOlivyaPlugin(BundlePlugin):
-    name: str = "olivya.olivya"
+class OlivyaTool(PluginTool):
+    """Place Call."""
+
+    name: str = 'olivya'
     display_name: str = 'Place Call'
     description: str = 'A component to create an outbound call request from Olivya'
-    kind: str = "tool"
-    bundle: str = "olivya"
-    bundle_label: str = 'Olivya'
-    category: str = "data"
-    source: str = "langflow/bundles/olivya"
-    status: str = "complete"
 
     async def __call__(self, from_number: str = "", to_number: str = "", first_message: str = "", system_prompt: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx

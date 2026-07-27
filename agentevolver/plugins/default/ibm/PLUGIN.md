@@ -1,35 +1,28 @@
 ---
 id: ibm
-name: IBM watsonx
-kind: bundle
+name: IBM DB2
 category: data
-icon: lucide:DB2
-source: langflow/bundles/ibm
-status: complete
-version: "1.0.0"
+type: vectorstore
 tools: 3
-requirements: [ibm-db, langchain-db2, langchain-ibm, langchain-openai]
+implemented: 3
+credentials: [OPENAI_API_KEY, WATSONX_PROJECT_ID, WATSONX_URL]
+requirements: [ibm_db_dbi, langchain_db2, langchain_ibm, langchain_openai]
+version: "1.0.0"
 ---
+# IBM DB2
 
-# IBM watsonx
-
-Migrated from the Langflow **ibm** bundle. This package is in the
-**structure** phase: all 3 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+IBM DB2 tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `ibm.db2_vector` | IBM Db2 Vector Store |  | structure |
-| `ibm.watsonx` | IBM watsonx.ai | Generate text using IBM watsonx.ai foundation models. | structure |
-| `ibm.watsonx_embeddings` | IBM watsonx.ai Embeddings | Generate embeddings using IBM watsonx.ai models. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `ibm.db2_vector` | IBM Db2 Vector Store | ✅ | IBM Db2 Vector Store |
+| `ibm.watsonx` | IBM watsonx.ai | ✅ | Generate text using IBM watsonx.ai foundation models. |
+| `ibm.watsonx_embeddings` | IBM watsonx.ai Embeddings | ✅ | Generate embeddings using IBM watsonx.ai models. |
 
-## Icon
+All 3 tools are implemented.
 
-Uses lucide glyph `DB2` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/ibm/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, `WATSONX_PROJECT_ID`, `WATSONX_URL`, an `api_key` argument on the call, or a `ibm_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

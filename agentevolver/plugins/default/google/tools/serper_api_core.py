@@ -1,23 +1,17 @@
-"""Google Serper API — from the Langflow `google` bundle (ported)."""
+"""Google Serper API."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GoogleGoogleSerperApiCorePlugin(BundlePlugin):
-    name: str = "google.google_serper_api_core"
+class GoogleSerperApiCoreTool(PluginTool):
+    """Google Serper API."""
+
+    name: str = 'google_serper_api_core'
     display_name: str = 'Google Serper API'
     description: str = 'Call the Serper.dev Google Search API.'
-    kind: str = "tool"
-    bundle: str = "google"
-    bundle_label: str = 'Google'
-    category: str = "data"
-    source: str = "langflow/bundles/google"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", serper_api_key: str = "", k: int = 4, **kwargs) -> Response:
         q = str(input_value or "").strip()

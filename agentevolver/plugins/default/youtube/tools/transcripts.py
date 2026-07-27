@@ -1,21 +1,15 @@
 """YouTube Transcripts — extract spoken content, chunked (ported from Langflow)."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.youtube._base import YouTubePlugin
+from agentevolver.plugins.default.youtube._base import YoutubeToolBase
 
 
-@PLUGIN.register_module(force=True)
-class YoutubeYoutubeTranscriptsPlugin(YouTubePlugin):
-    name: str = "youtube.transcripts"
-    display_name: str = "YouTube Transcripts"
-    description: str = "Extracts spoken content from YouTube videos with multiple output options."
-    kind: str = "data_source"
-    bundle: str = "youtube"
-    bundle_label: str = "YouTube"
-    category: str = "data"
-    source: str = "langflow/bundles/youtube"
-    status: str = "complete"
+class YoutubeTranscriptsTool(YoutubeToolBase):
+    """YouTube Transcripts."""
+
+    name: str = 'transcripts'
+    display_name: str = 'YouTube Transcripts'
+    description: str = 'Extracts spoken content from YouTube videos with multiple output options.'
 
     async def __call__(self, url: str = "", chunk_size_seconds: int = 60,
                        translation: str = "", **kwargs) -> Response:

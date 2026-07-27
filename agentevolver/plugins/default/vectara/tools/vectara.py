@@ -1,22 +1,17 @@
-"""Vectara — from the Langflow `vectara` vector-store bundle (ported)."""
+"""Vectara."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class VectaraVectaraPlugin(VectorStorePlugin):
-    name: str = "vectara.vectara"
+class VectaraTool(VectorStorePluginTool):
+    """Vectara."""
+
+    name: str = 'vectara'
     display_name: str = 'Vectara'
     description: str = 'Vectara Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "vectara"
-    bundle_label: str = 'Vectara'
-    source: str = "langflow/bundles/vectara"
-    status: str = "complete"
     needs_embedding: bool = False
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

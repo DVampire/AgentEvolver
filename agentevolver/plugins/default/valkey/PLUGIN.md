@@ -1,34 +1,28 @@
 ---
 id: valkey
 name: Valkey
-kind: bundle
 category: data
+type: vectorstore
 icon: resources/icon.svg
-source: langflow/bundles/valkey
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-community, langchain-openai]
+implemented: 2
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
-
 # Valkey
 
-Migrated from the Langflow **valkey** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Valkey tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `valkey.valkey` | Valkey | Implementation of Vector Store using Valkey | structure |
-| `valkey.valkey_chat` | Valkey Chat Memory | Retrieves and stores chat messages from Valkey. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `valkey.valkey` | Valkey | ✅ | Implementation of Vector Store using Valkey |
+| `valkey.valkey_chat` | Valkey Chat Memory | ✅ | Retrieves and stores chat messages from Valkey. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/valkey/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `valkey_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

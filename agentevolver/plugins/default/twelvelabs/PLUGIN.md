@@ -1,39 +1,33 @@
 ---
 id: twelvelabs
 name: TwelveLabs
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/twelvelabs
-status: complete
-version: "1.0.0"
 tools: 7
+implemented: 7
+credentials: [TWELVELABS_API_KEY, TWELVE_LABS_API_KEY]
 requirements: [twelvelabs]
+version: "1.0.0"
 ---
-
 # TwelveLabs
 
-Migrated from the Langflow **twelvelabs** bundle. This package is in the
-**structure** phase: all 7 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+TwelveLabs tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `twelvelabs.convert_astra_results` | Convert Astra DB to Pegasus Input | Converts Astra DB search results to inputs compatible with T | structure |
-| `twelvelabs.pegasus_index` | TwelveLabs Pegasus Index Video | Index videos using TwelveLabs and add the video_id to metada | structure |
-| `twelvelabs.split_video` | Split Video | Split a video into multiple clips of specified duration. | structure |
-| `twelvelabs.text_embeddings` | TwelveLabs Text Embeddings | Generate embeddings using TwelveLabs text embedding models. | structure |
-| `twelvelabs.twelvelabs_pegasus` | TwelveLabs Pegasus | Chat with videos using TwelveLabs Pegasus API. | structure |
-| `twelvelabs.video_embeddings` | TwelveLabs Video Embeddings | Generate embeddings from videos using TwelveLabs video embed | structure |
-| `twelvelabs.video_file` | Video File | Load a video file in common video formats. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `twelvelabs.convert_astra_results` | Convert Astra DB to Pegasus Input | ✅ | Converts Astra DB search results to inputs compatible with TwelveLabs Pegasus. |
+| `twelvelabs.pegasus_index` | TwelveLabs Pegasus Index Video | ✅ | Index videos using TwelveLabs and add the video_id to metadata. |
+| `twelvelabs.split_video` | Split Video | ✅ | Split a video into multiple clips of specified duration. |
+| `twelvelabs.text_embeddings` | TwelveLabs Text Embeddings | ✅ | Generate embeddings using TwelveLabs text embedding models. |
+| `twelvelabs.twelvelabs_pegasus` | TwelveLabs Pegasus | ✅ | Chat with videos using TwelveLabs Pegasus API. |
+| `twelvelabs.video_embeddings` | TwelveLabs Video Embeddings | ✅ | Generate embeddings from videos using TwelveLabs video embedding models. |
+| `twelvelabs.video_file` | Video File | ✅ | Load a video file in common video formats. |
 
-## Icon
+All 7 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/twelvelabs/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`TWELVELABS_API_KEY`, `TWELVE_LABS_API_KEY`, an `api_key` argument on the call, or a `twelvelabs_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

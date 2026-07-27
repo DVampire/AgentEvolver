@@ -1,4 +1,4 @@
-"""The data-pipeline capability kinds: plugins (datasource) + process + benchmark.
+"""The data-pipeline capability types: plugins (datasource) + process + benchmark.
 
 A ``plugin`` is a packaging unit surfaced on the canvas as a semantic
 ``datasource`` node; a ``process`` node is a pure transform; a ``benchmark`` node
@@ -35,7 +35,7 @@ class _StubSource(Plugin):
 
     name: str = "stub_source"
     description: str = "Fixed records for tests."
-    kind: str = "data_source"
+    type: str = "data_source"
 
     async def __call__(self, **kwargs) -> Response:
         return Response(
@@ -93,9 +93,9 @@ async def test_frozen_node_is_inlined_and_not_run() -> None:
     await process_manager.initialize()
     frozen = {"message": "f", "data": {"records": [{"close": 1.0}, {"close": 2.0}]}, "files": None}
     graph = FlowGraph(name="F", nodes=[
-        GraphNode(id="src", kind="step", step_type="datasource", target="yahoo",
+        GraphNode(id="src", type="step", step_type="datasource", target="yahoo",
                   frozen=True, frozen_output=frozen, position=Position()),
-        GraphNode(id="clean", kind="step", step_type="process", target="select_fields",
+        GraphNode(id="clean", type="step", step_type="process", target="select_fields",
                   args={"fields": '["close"]'}, position=Position(y=100)),
     ], edges=[GraphEdge(id="e1", source="src", target="clean", param="arg:records", source_port="data")])
 
@@ -225,7 +225,7 @@ class _PredSource(Plugin):
     """A source of prediction/ground-truth records for the eval pipeline."""
 
     name: str = "pred_source"
-    kind: str = "data_source"
+    type: str = "data_source"
 
     async def __call__(self, **kwargs) -> Response:
         return Response(type=ResponseType.TOOL, success=True, message="2 preds",

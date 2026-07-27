@@ -1,22 +1,17 @@
-"""Needle Retriever — from the Langflow `needle` vector-store bundle (ported)."""
+"""Needle Retriever."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NeedleNeedlePlugin(VectorStorePlugin):
-    name: str = "needle.needle"
+class NeedleTool(VectorStorePluginTool):
+    """Needle Retriever."""
+
+    name: str = 'needle'
     display_name: str = 'Needle Retriever'
     description: str = 'A retriever that uses the Needle API to search collections.'
-    kind: str = "vectorstore"
-    bundle: str = "needle"
-    bundle_label: str = 'Needle'
-    source: str = "langflow/bundles/needle"
-    status: str = "complete"
     needs_embedding: bool = False
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

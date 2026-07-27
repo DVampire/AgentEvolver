@@ -1,34 +1,27 @@
 ---
 id: azure
-name: Azure
-kind: bundle
+name: Azure OpenAI
 category: data
-icon: lucide:Azure
-source: langflow/bundles/azure
-status: complete
-version: "1.0.0"
+type: model
 tools: 2
-requirements: [langchain-openai]
+implemented: 2
+credentials: [AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
+# Azure OpenAI
 
-# Azure
-
-Migrated from the Langflow **azure** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Azure OpenAI tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `azure.azure_openai` | Azure OpenAI | Generate text using Azure OpenAI LLMs. | structure |
-| `azure.azure_openai_embeddings` | Azure OpenAI Embeddings | Generate embeddings using Azure OpenAI models. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `azure.azure_openai` | Azure OpenAI | ✅ | Generate text using Azure OpenAI LLMs. |
+| `azure.azure_openai_embeddings` | Azure OpenAI Embeddings | ✅ | Generate embeddings using Azure OpenAI models. |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `Azure` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/azure/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, an `api_key` argument on the call, or a `azure_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

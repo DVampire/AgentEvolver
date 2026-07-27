@@ -1,17 +1,12 @@
-"""Firecrawl (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Firecrawl (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioFirecrawlComposioPlugin(ComposioPlugin):
-    name: str = "composio.firecrawl_composio"
+class ComposioFirecrawlComposioTool(ComposioPluginTool):
+    """Firecrawl."""
+
+    name: str = 'firecrawl_composio'
     display_name: str = 'Firecrawl'
     description: str = 'Execute Firecrawl actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "firecrawl"
+    app_name: str = 'firecrawl'

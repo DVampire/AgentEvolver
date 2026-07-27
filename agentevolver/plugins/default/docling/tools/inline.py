@@ -1,23 +1,17 @@
-"""Docling — from the Langflow `docling` bundle (ported)."""
+"""Docling."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DoclingDoclingInlinePlugin(BundlePlugin):
-    name: str = "docling.docling_inline"
+class DoclingInlineTool(PluginTool):
+    """Docling."""
+
+    name: str = 'docling_inline'
     display_name: str = 'Docling'
     description: str = 'Uses Docling to process input documents running the Docling models locally.'
-    kind: str = "tool"
-    bundle: str = "docling"
-    bundle_label: str = 'Docling'
-    category: str = "files"
-    source: str = "langflow/bundles/docling"
-    status: str = "complete"
 
     async def __call__(self, source: str = "", **kwargs) -> Response:
         src = str(source or "").strip()

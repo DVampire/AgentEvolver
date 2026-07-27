@@ -1,23 +1,17 @@
-"""Confluence — from the Langflow `confluence` bundle (ported)."""
+"""Confluence."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ConfluenceConfluencePlugin(BundlePlugin):
-    name: str = "confluence.confluence"
+class ConfluenceTool(PluginTool):
+    """Confluence."""
+
+    name: str = 'confluence'
     display_name: str = 'Confluence'
     description: str = 'Confluence wiki collaboration platform'
-    kind: str = "tool"
-    bundle: str = "confluence"
-    bundle_label: str = 'Confluence'
-    category: str = "data"
-    source: str = "langflow/bundles/confluence"
-    status: str = "complete"
 
     async def __call__(self, url: str = "", username: str = "", api_key: str = "", space_key: str = "", cloud: bool = True, max_pages: int = 50, **kwargs) -> Response:
         key = self._secret(api_key, "CONFLUENCE_API_KEY")

@@ -1,17 +1,12 @@
-"""SerpAPI (Composio) — from the Langflow `composio` bundle (ported)."""
+"""SerpAPI (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioSerpapiComposioPlugin(ComposioPlugin):
-    name: str = "composio.serpapi_composio"
+class ComposioSerpapiComposioTool(ComposioPluginTool):
+    """SerpAPI."""
+
+    name: str = 'serpapi_composio'
     display_name: str = 'SerpAPI'
     description: str = 'Execute SerpAPI actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "serpapi"
+    app_name: str = 'serpapi'

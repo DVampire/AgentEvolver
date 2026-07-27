@@ -1,17 +1,12 @@
-"""Figma (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Figma (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioFigmaComposioPlugin(ComposioPlugin):
-    name: str = "composio.figma_composio"
+class ComposioFigmaComposioTool(ComposioPluginTool):
+    """Figma."""
+
+    name: str = 'figma_composio'
     display_name: str = 'Figma'
     description: str = 'Execute Figma actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "figma"
+    app_name: str = 'figma'

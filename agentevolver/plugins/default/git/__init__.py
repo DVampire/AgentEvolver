@@ -1,5 +1,5 @@
-"""`Git` bundle plugin (migrated from Langflow)."""
+"""Git plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import GitPlugin
 
-__all__: list = []
+__all__ = ["GitPlugin"]

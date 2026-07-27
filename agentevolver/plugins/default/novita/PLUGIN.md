@@ -1,33 +1,27 @@
 ---
 id: novita
-name: Novita
-kind: bundle
+name: Novita AI
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/novita
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-openai]
+implemented: 1
+credentials: [NOVITA_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
+# Novita AI
 
-# Novita
-
-Migrated from the Langflow **novita** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Novita AI tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `novita.novita` | Novita AI | Generates text using Novita AI LLMs (OpenAI compatible). | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `novita.novita` | Novita AI | ✅ | Generates text using Novita AI LLMs (OpenAI compatible). |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/novita/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`NOVITA_API_KEY`, an `api_key` argument on the call, or a `novita_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

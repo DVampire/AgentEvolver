@@ -1,6 +1,19 @@
-"""Registration hub for the `unstructured` bundle."""
+"""Unstructured plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "unstructured"
-BUNDLE_LABEL = 'Unstructured'
+from .tools.unstructured import UnstructuredTool
+
+
+@PLUGIN.register_module(force=True)
+class UnstructuredPlugin(Plugin):
+    """Unstructured tools."""
+
+    tools = (UnstructuredTool,)
+
+    name: str = 'unstructured'
+    display_name: str = 'Unstructured'
+    description: str = 'Unstructured tools.'
+    category: str = 'files'
+    type: str = 'tool'

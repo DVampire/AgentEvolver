@@ -1,24 +1,19 @@
-"""Ollama — from the Langflow `ollama` LLM bundle (ported)."""
+"""Ollama."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OllamaOllamaPlugin(LLMPlugin):
-    name: str = "ollama.ollama"
+class OllamaTool(LLMPluginTool):
+    """Ollama."""
+
+    name: str = 'ollama'
     display_name: str = 'Ollama'
     description: str = 'Generate text using Ollama Local LLMs.'
-    kind: str = "model"
-    bundle: str = "ollama"
-    bundle_label: str = 'Ollama'
-    source: str = "langflow/bundles/ollama"
-    status: str = "complete"
-    default_base_url: str = "http://localhost:11434"
-    key_env: str = ""
+    default_base_url: str = 'http://localhost:11434'
+    key_env: str = ''
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_ollama import ChatOllama

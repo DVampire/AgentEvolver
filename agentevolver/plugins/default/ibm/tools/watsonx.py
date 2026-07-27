@@ -1,22 +1,18 @@
-"""IBM watsonx.ai — from the Langflow `ibm` LLM bundle (ported)."""
+"""IBM watsonx.ai."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class IbmWatsonxPlugin(LLMPlugin):
-    name: str = "ibm.watsonx"
+class IbmWatsonxTool(LLMPluginTool):
+    """IBM watsonx.ai."""
+
+    name: str = 'watsonx'
     display_name: str = 'IBM watsonx.ai'
     description: str = 'Generate text using IBM watsonx.ai foundation models.'
-    kind: str = "model"
-    bundle: str = "ibm"
-    bundle_label: str = 'IBM watsonx'
-    source: str = "langflow/bundles/ibm"
-    status: str = "complete"
+    type: str = 'model'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_ibm import ChatWatsonx

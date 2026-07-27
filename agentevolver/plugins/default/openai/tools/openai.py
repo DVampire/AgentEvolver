@@ -1,24 +1,19 @@
-"""OpenAI Embeddings — from the Langflow `openai` embeddings bundle (ported)."""
+"""OpenAI Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OpenaiOpenaiPlugin(EmbeddingPlugin):
-    name: str = "openai.openai"
+class OpenaiTool(EmbeddingPluginTool):
+    """OpenAI Embeddings."""
+
+    name: str = 'openai'
     display_name: str = 'OpenAI Embeddings'
     description: str = 'Generate embeddings using OpenAI models.'
-    kind: str = "embedding"
-    bundle: str = "openai"
-    bundle_label: str = 'OpenAI'
-    source: str = "langflow/bundles/openai"
-    status: str = "complete"
-    key_env: str = "OPENAI_API_KEY"
-    default_base_url: str = ""
+    key_env: str = 'OPENAI_API_KEY'
+    default_base_url: str = ''
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_openai import OpenAIEmbeddings

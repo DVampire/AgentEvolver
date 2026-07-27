@@ -1,21 +1,15 @@
 """YouTube Search — search videos by query (ported from Langflow)."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.youtube._base import YouTubePlugin
+from agentevolver.plugins.default.youtube._base import YoutubeToolBase
 
 
-@PLUGIN.register_module(force=True)
-class YoutubeSearchPlugin(YouTubePlugin):
-    name: str = "youtube.search"
-    display_name: str = "YouTube Search"
-    description: str = "Searches YouTube videos based on query."
-    kind: str = "data_source"
-    bundle: str = "youtube"
-    bundle_label: str = "YouTube"
-    category: str = "data"
-    source: str = "langflow/bundles/youtube"
-    status: str = "complete"
+class YoutubeSearchTool(YoutubeToolBase):
+    """YouTube Search."""
+
+    name: str = 'search'
+    display_name: str = 'YouTube Search'
+    description: str = 'Searches YouTube videos based on query.'
 
     async def __call__(self, query: str = "", api_key: str = "", max_results: int = 10,
                        order: str = "relevance", include_metadata: bool = True, **kwargs) -> Response:

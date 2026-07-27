@@ -1,5 +1,5 @@
-"""`Redis` bundle plugin (migrated from Langflow)."""
+"""Redis plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import RedisPlugin
 
-__all__: list = []
+__all__ = ["RedisPlugin"]

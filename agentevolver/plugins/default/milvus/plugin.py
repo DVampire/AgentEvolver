@@ -1,6 +1,19 @@
-"""Registration hub for the `milvus` bundle."""
+"""Milvus plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "milvus"
-BUNDLE_LABEL = 'Milvus'
+from .tools.milvus import MilvusTool
+
+
+@PLUGIN.register_module(force=True)
+class MilvusPlugin(Plugin):
+    """Milvus tools."""
+
+    tools = (MilvusTool,)
+
+    name: str = 'milvus'
+    display_name: str = 'Milvus'
+    description: str = 'Milvus tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

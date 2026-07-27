@@ -1,17 +1,12 @@
-"""GoogleSheets (Composio) — from the Langflow `composio` bundle (ported)."""
+"""GoogleSheets (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioGooglesheetsComposioPlugin(ComposioPlugin):
-    name: str = "composio.googlesheets_composio"
+class ComposioGooglesheetsComposioTool(ComposioPluginTool):
+    """GoogleSheets."""
+
+    name: str = 'googlesheets_composio'
     display_name: str = 'GoogleSheets'
     description: str = 'Execute GoogleSheets actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "googlesheets"
+    app_name: str = 'googlesheets'

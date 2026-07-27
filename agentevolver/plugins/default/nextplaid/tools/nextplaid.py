@@ -1,23 +1,17 @@
-"""NextPlaid — from the Langflow `nextplaid` bundle (ported)."""
+"""NextPlaid."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NextplaidNextplaidPlugin(BundlePlugin):
-    name: str = "nextplaid.nextplaid"
+class NextplaidTool(PluginTool):
+    """NextPlaid."""
+
+    name: str = 'nextplaid'
     display_name: str = 'NextPlaid'
     description: str = ''
-    kind: str = "tool"
-    bundle: str = "nextplaid"
-    bundle_label: str = 'NextPlaid'
-    category: str = "data"
-    source: str = "langflow/bundles/nextplaid"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx

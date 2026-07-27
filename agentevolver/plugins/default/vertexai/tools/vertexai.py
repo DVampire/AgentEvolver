@@ -1,22 +1,17 @@
-"""Vertex AI — from the Langflow `vertexai` LLM bundle (ported)."""
+"""Vertex AI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class VertexaiVertexaiPlugin(LLMPlugin):
-    name: str = "vertexai.vertexai"
+class VertexaiTool(LLMPluginTool):
+    """Vertex AI."""
+
+    name: str = 'vertexai'
     display_name: str = 'Vertex AI'
     description: str = 'Generate text using Vertex AI LLMs.'
-    kind: str = "model"
-    bundle: str = "vertexai"
-    bundle_label: str = 'Vertex AI'
-    source: str = "langflow/bundles/vertexai"
-    status: str = "complete"
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_google_vertexai import ChatVertexAI

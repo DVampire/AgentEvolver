@@ -1,23 +1,18 @@
-"""NVIDIA Retriever Extraction — from the Langflow `nvidia` bundle (ported)."""
+"""NVIDIA Retriever Extraction."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NvidiaNvidiaIngestPlugin(BundlePlugin):
-    name: str = "nvidia.nvidia_ingest"
+class NvidiaIngestTool(PluginTool):
+    """NVIDIA Retriever Extraction."""
+
+    name: str = 'nvidia_ingest'
     display_name: str = 'NVIDIA Retriever Extraction'
     description: str = 'Multi-modal data extraction from documents using NVIDIA'
-    kind: str = "tool"
-    bundle: str = "nvidia"
-    bundle_label: str = 'NVIDIA'
-    category: str = "data"
-    source: str = "langflow/bundles/nvidia"
-    status: str = "complete"
+    category: str = 'data'
 
     async def __call__(self, file_path: str = "", base_url: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "NVIDIA_API_KEY")

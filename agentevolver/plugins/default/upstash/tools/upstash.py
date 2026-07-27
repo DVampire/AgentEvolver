@@ -1,22 +1,17 @@
-"""Upstash — from the Langflow `upstash` vector-store bundle (ported)."""
+"""Upstash."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class UpstashUpstashPlugin(VectorStorePlugin):
-    name: str = "upstash.upstash"
+class UpstashTool(VectorStorePluginTool):
+    """Upstash."""
+
+    name: str = 'upstash'
     display_name: str = 'Upstash'
     description: str = 'Upstash Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "upstash"
-    bundle_label: str = 'Upstash'
-    source: str = "langflow/bundles/upstash"
-    status: str = "complete"
     needs_embedding: bool = False
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

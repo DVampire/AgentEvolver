@@ -1,33 +1,27 @@
 ---
 id: vlmrun
 name: VLM Run
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/vlmrun
-status: complete
-version: "1.0.0"
 tools: 1
+implemented: 1
+credentials: [VLMRUN_API_KEY]
 requirements: [vlmrun]
+version: "1.0.0"
 ---
-
 # VLM Run
 
-Migrated from the Langflow **vlmrun** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+VLM Run tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `vlmrun.vlmrun_transcription` | VLM Run Transcription | Extract structured data from audio and video using [VLM Run  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `vlmrun.vlmrun_transcription` | VLM Run Transcription | ✅ | Extract structured data from audio and video using [VLM Run AI](https://app.vlm.run) |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/vlmrun/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`VLMRUN_API_KEY`, an `api_key` argument on the call, or a `vlmrun_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

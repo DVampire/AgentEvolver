@@ -1,6 +1,19 @@
-"""Registration hub for the `upstash` bundle."""
+"""Upstash plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "upstash"
-BUNDLE_LABEL = 'Upstash'
+from .tools.upstash import UpstashTool
+
+
+@PLUGIN.register_module(force=True)
+class UpstashPlugin(Plugin):
+    """Upstash tools."""
+
+    tools = (UpstashTool,)
+
+    name: str = 'upstash'
+    display_name: str = 'Upstash'
+    description: str = 'Upstash tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

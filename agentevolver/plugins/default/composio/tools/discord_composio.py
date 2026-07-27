@@ -1,17 +1,12 @@
-"""Discord (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Discord (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioDiscordComposioPlugin(ComposioPlugin):
-    name: str = "composio.discord_composio"
+class ComposioDiscordComposioTool(ComposioPluginTool):
+    """Discord."""
+
+    name: str = 'discord_composio'
     display_name: str = 'Discord'
     description: str = 'Execute Discord actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "discord"
+    app_name: str = 'discord'

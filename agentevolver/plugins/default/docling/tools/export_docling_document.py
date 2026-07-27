@@ -1,23 +1,17 @@
-"""Export DoclingDocument — from the Langflow `docling` bundle (ported)."""
+"""Export DoclingDocument."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DoclingExportDoclingDocumentPlugin(BundlePlugin):
-    name: str = "docling.export_docling_document"
+class DoclingExportDoclingDocumentTool(PluginTool):
+    """Export DoclingDocument."""
+
+    name: str = 'export_docling_document'
     display_name: str = 'Export DoclingDocument'
     description: str = 'Export DoclingDocument to markdown, html or other formats.'
-    kind: str = "tool"
-    bundle: str = "docling"
-    bundle_label: str = 'Docling'
-    category: str = "files"
-    source: str = "langflow/bundles/docling"
-    status: str = "complete"
 
     async def __call__(self, source: str = "", export_format: str = "markdown", **kwargs) -> Response:
         src = str(source or "").strip()

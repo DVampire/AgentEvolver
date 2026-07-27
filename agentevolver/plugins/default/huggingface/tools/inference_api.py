@@ -1,24 +1,20 @@
-"""Hugging Face Embeddings Inference — from the Langflow `huggingface` embeddings bundle (ported)."""
+"""Hugging Face Embeddings Inference."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class HuggingfaceHuggingfaceInferenceApiPlugin(EmbeddingPlugin):
-    name: str = "huggingface.huggingface_inference_api"
+class HuggingfaceInferenceApiTool(EmbeddingPluginTool):
+    """Hugging Face Embeddings Inference."""
+
+    name: str = 'huggingface_inference_api'
     display_name: str = 'Hugging Face Embeddings Inference'
     description: str = 'Generate embeddings using Hugging Face Text Embeddings Inference (TEI)'
-    kind: str = "embedding"
-    bundle: str = "huggingface"
-    bundle_label: str = 'Hugging Face'
-    source: str = "langflow/bundles/huggingface"
-    status: str = "complete"
-    key_env: str = "HUGGINGFACEHUB_API_TOKEN"
-    default_base_url: str = ""
+    type: str = 'embedding'
+    key_env: str = 'HUGGINGFACEHUB_API_TOKEN'
+    default_base_url: str = ''
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings

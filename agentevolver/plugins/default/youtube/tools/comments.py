@@ -1,23 +1,17 @@
 """YouTube Comments — fetch a video's comment threads (ported from Langflow)."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.youtube._base import YouTubePlugin
+from agentevolver.plugins.default.youtube._base import YoutubeToolBase
 
 _API_MAX = 100
 
 
-@PLUGIN.register_module(force=True)
-class YoutubeCommentsPlugin(YouTubePlugin):
-    name: str = "youtube.comments"
-    display_name: str = "YouTube Comments"
-    description: str = "Retrieves and analyzes comments from YouTube videos."
-    kind: str = "data_source"
-    bundle: str = "youtube"
-    bundle_label: str = "YouTube"
-    category: str = "data"
-    source: str = "langflow/bundles/youtube"
-    status: str = "complete"
+class YoutubeCommentsTool(YoutubeToolBase):
+    """YouTube Comments."""
+
+    name: str = 'comments'
+    display_name: str = 'YouTube Comments'
+    description: str = 'Retrieves and analyzes comments from YouTube videos.'
 
     @staticmethod
     def _process(item: dict, *, include_metrics: bool, include_replies: bool) -> list[dict]:

@@ -1,22 +1,17 @@
-"""Supabase — from the Langflow `supabase` vector-store bundle (ported)."""
+"""Supabase."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class SupabaseSupabasePlugin(VectorStorePlugin):
-    name: str = "supabase.supabase"
+class SupabaseTool(VectorStorePluginTool):
+    """Supabase."""
+
+    name: str = 'supabase'
     display_name: str = 'Supabase'
     description: str = 'Supabase Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "supabase"
-    bundle_label: str = 'Supabase'
-    source: str = "langflow/bundles/supabase"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

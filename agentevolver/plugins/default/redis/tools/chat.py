@@ -1,23 +1,19 @@
-"""Redis Chat Memory — from the Langflow `redis` bundle (ported)."""
+"""Redis Chat Memory."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import MemoryPlugin
+from agentevolver.plugins.types import MemoryPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class RedisRedisChatPlugin(MemoryPlugin):
-    name: str = "redis.redis_chat"
+class RedisChatTool(MemoryPluginTool):
+    """Redis Chat Memory."""
+
+    name: str = 'redis_chat'
     display_name: str = 'Redis Chat Memory'
     description: str = 'Retrieves and store chat messages from Redis.'
-    kind: str = "memory"
-    bundle: str = "redis"
-    bundle_label: str = 'Redis'
-    category: str = "agent"
-    source: str = "langflow/bundles/redis"
-    status: str = "complete"
+    category: str = 'agent'
+    type: str = 'memory'
 
     def _history(self, session_id: str, **cfg: Any) -> Any:
         from langchain_community.chat_message_histories import RedisChatMessageHistory

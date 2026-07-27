@@ -1,20 +1,15 @@
-"""AssemblyAI Start Transcript — from the Langflow `assemblyai` bundle (ported)."""
+"""AssemblyAI Start Transcript."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.assemblyai._base import AssemblyAIPlugin
+from agentevolver.plugins.default.assemblyai._base import AssemblyaiToolBase
 
 
-@PLUGIN.register_module(force=True)
-class AssemblyaiAssemblyaiStartTranscriptPlugin(AssemblyAIPlugin):
-    name: str = "assemblyai.assemblyai_start_transcript"
+class AssemblyaiStartTranscriptTool(AssemblyaiToolBase):
+    """AssemblyAI Start Transcript."""
+
+    name: str = 'assemblyai_start_transcript'
     display_name: str = 'AssemblyAI Start Transcript'
     description: str = 'Create a transcription job for an audio file using AssemblyAI with advanced options'
-    kind: str = "tool"
-    bundle: str = "assemblyai"
-    bundle_label: str = "AssemblyAI"
-    source: str = "langflow/bundles/assemblyai"
-    status: str = "complete"
 
     async def __call__(self, audio_url: str = "", speech_model: str = "best", api_key: str = "", **kwargs) -> Response:
         try:

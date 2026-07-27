@@ -1,34 +1,28 @@
 ---
 id: ollama
 name: Ollama
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/ollama
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-ollama, langchain-openai]
+implemented: 2
+credentials: []
+requirements: [langchain_ollama, langchain_openai]
+version: "1.0.0"
 ---
-
 # Ollama
 
-Migrated from the Langflow **ollama** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Ollama tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `ollama.ollama` | Ollama | Generate text using Ollama Local LLMs. | structure |
-| `ollama.ollama_embeddings` | Ollama Embeddings | Generate embeddings using Ollama models. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `ollama.ollama` | Ollama | ✅ | Generate text using Ollama Local LLMs. |
+| `ollama.ollama_embeddings` | Ollama Embeddings | ✅ | Generate embeddings using Ollama models. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/ollama/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

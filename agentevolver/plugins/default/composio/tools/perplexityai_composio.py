@@ -1,17 +1,12 @@
-"""PerplexityAI (Composio) — from the Langflow `composio` bundle (ported)."""
+"""PerplexityAI (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioPerplexityaiComposioPlugin(ComposioPlugin):
-    name: str = "composio.perplexityai_composio"
+class ComposioPerplexityaiComposioTool(ComposioPluginTool):
+    """PerplexityAI."""
+
+    name: str = 'perplexityai_composio'
     display_name: str = 'PerplexityAI'
     description: str = 'Execute PerplexityAI actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "perplexityai"
+    app_name: str = 'perplexityai'

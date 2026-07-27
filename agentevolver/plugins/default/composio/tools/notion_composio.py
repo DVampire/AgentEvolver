@@ -1,17 +1,12 @@
-"""Notion (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Notion (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioNotionComposioPlugin(ComposioPlugin):
-    name: str = "composio.notion_composio"
+class ComposioNotionComposioTool(ComposioPluginTool):
+    """Notion."""
+
+    name: str = 'notion_composio'
     display_name: str = 'Notion'
     description: str = 'Execute Notion actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "notion"
+    app_name: str = 'notion'

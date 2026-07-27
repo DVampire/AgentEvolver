@@ -1,21 +1,15 @@
-"""Spider Web Crawler & Scraper — from the Langflow `spider` bundle (ported)."""
+"""Spider Web Crawler & Scraper."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class SpiderSpiderPlugin(BundlePlugin):
-    name: str = "spider.spider"
+class SpiderTool(PluginTool):
+    """Spider Web Crawler & Scraper."""
+
+    name: str = 'spider'
     display_name: str = 'Spider Web Crawler & Scraper'
     description: str = 'Spider API for web crawling and scraping.'
-    kind: str = "tool"
-    bundle: str = "spider"
-    bundle_label: str = 'Spider'
-    category: str = "data"
-    source: str = "langflow/bundles/spider"
-    status: str = "complete"
 
     async def __call__(self, url: str = "", spider_api_key: str = "", mode: str = "scrape", limit: int = 0, **kwargs) -> Response:
         key = self._secret(spider_api_key, "SPIDER_API_KEY")

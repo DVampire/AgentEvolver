@@ -1,6 +1,21 @@
-"""Registration hub for the `cleanlab` bundle."""
+"""Cleanlab plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "cleanlab"
-BUNDLE_LABEL = 'Cleanlab'
+from .tools.evaluator import CleanlabEvaluatorTool
+from .tools.rag_evaluator import CleanlabRagEvaluatorTool
+from .tools.remediator import CleanlabRemediatorTool
+
+
+@PLUGIN.register_module(force=True)
+class CleanlabPlugin(Plugin):
+    """Cleanlab tools."""
+
+    tools = (CleanlabEvaluatorTool, CleanlabRagEvaluatorTool, CleanlabRemediatorTool,)
+
+    name: str = 'cleanlab'
+    display_name: str = 'Cleanlab'
+    description: str = 'Cleanlab tools.'
+    category: str = 'evaluation'
+    type: str = 'tool'

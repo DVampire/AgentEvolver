@@ -1,34 +1,27 @@
 ---
 id: codeagents
 name: Code Agents
-kind: bundle
-category: data
-icon: lucide:bot
-source: langflow/bundles/codeagents
-status: complete
-version: "1.0.0"
+category: agent
+type: tool
 tools: 2
+implemented: 2
+credentials: []
 requirements: []
+version: "1.0.0"
 ---
-
 # Code Agents
 
-Migrated from the Langflow **codeagents** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Code Agents tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `codeagents.codeact_agent_smolagents` | CodeAct Agent (Smolagents) | A code-based agent using smolagents CodeAgent for complex ta | structure |
-| `codeagents.open_ds_star_agent` | OpenDsStar Agent | A tool-based DS-Star agent using LangGraph for complex data  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `codeagents.codeact_agent_smolagents` | CodeAct Agent (Smolagents) | ✅ | A code-based agent using smolagents CodeAgent for complex tasks. |
+| `codeagents.open_ds_star_agent` | OpenDsStar Agent | ✅ | A tool-based DS-Star agent using LangGraph for complex data science tasks. |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `bot` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/codeagents/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

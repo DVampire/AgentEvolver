@@ -1,6 +1,20 @@
-"""Registration hub for the `valkey` bundle."""
+"""Valkey plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "valkey"
-BUNDLE_LABEL = 'Valkey'
+from .tools.chat import ValkeyChatTool
+from .tools.valkey import ValkeyTool
+
+
+@PLUGIN.register_module(force=True)
+class ValkeyPlugin(Plugin):
+    """Valkey tools."""
+
+    tools = (ValkeyTool, ValkeyChatTool,)
+
+    name: str = 'valkey'
+    display_name: str = 'Valkey'
+    description: str = 'Valkey tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

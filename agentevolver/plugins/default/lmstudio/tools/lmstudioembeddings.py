@@ -1,24 +1,19 @@
-"""LM Studio Embeddings — from the Langflow `lmstudio` embeddings bundle (ported)."""
+"""LM Studio Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class LmstudioLmstudioembeddingsPlugin(EmbeddingPlugin):
-    name: str = "lmstudio.lmstudioembeddings"
+class LmstudioembeddingsTool(EmbeddingPluginTool):
+    """LM Studio Embeddings."""
+
+    name: str = 'lmstudioembeddings'
     display_name: str = 'LM Studio Embeddings'
     description: str = 'Generate embeddings using LM Studio.'
-    kind: str = "embedding"
-    bundle: str = "lmstudio"
-    bundle_label: str = 'LM Studio'
-    source: str = "langflow/bundles/lmstudio"
-    status: str = "complete"
-    key_env: str = "LMSTUDIO_API_KEY"
-    default_base_url: str = "http://localhost:1234/v1"
+    key_env: str = 'LMSTUDIO_API_KEY'
+    default_base_url: str = 'http://localhost:1234/v1'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_openai import OpenAIEmbeddings

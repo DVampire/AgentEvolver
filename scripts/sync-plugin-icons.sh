@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Sync migrated-bundle glyphs into the frontend so the palette can render them.
+# Sync plugin glyphs into the frontend so the palette can render them.
 #
-# Each bundle plugin keeps its preserved Langflow SVG as the source of truth at
-#   agentevolver/plugins/default/<bundle>/resources/icon.svg
-# The frontend resolves NodeSpec.icon "bundle:<bundle>" to
-#   frontend/src/icons/bundles/<bundle>.svg
-# Re-run this after adding or updating any bundle icon.
+# Each plugin keeps its own SVG as the source of truth at
+#   agentevolver/plugins/default/<plugin>/resources/icon.svg
+# The frontend resolves NodeSpec.icon "plugin:<plugin>" to
+#   frontend/src/icons/plugins/<plugin>.svg
+# Re-run this after adding or updating any plugin icon.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/agentevolver/plugins/default"
-DST="$ROOT/frontend/src/icons/bundles"
+DST="$ROOT/frontend/src/icons/plugins"
 mkdir -p "$DST"
 n=0
 for f in "$SRC"/*/resources/icon.svg; do
@@ -18,4 +18,4 @@ for f in "$SRC"/*/resources/icon.svg; do
   cp "$f" "$DST/$b.svg"
   n=$((n + 1))
 done
-echo "Synced $n bundle icons -> $DST"
+echo "Synced $n plugin icons -> $DST"

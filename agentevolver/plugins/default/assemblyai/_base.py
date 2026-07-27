@@ -1,4 +1,4 @@
-"""Shared base for the AssemblyAI bundle tools (ported from Langflow).
+"""Shared base for the AssemblyAI provider tools (ported from Langflow).
 
 Every component sets ``aai.settings.api_key`` then uses the ``assemblyai`` SDK.
 Key resolves from the arg, ``assemblyai_plugin`` config, or ``ASSEMBLYAI_API_KEY``.
@@ -6,10 +6,10 @@ Key resolves from the arg, ``assemblyai_plugin`` config, or ``ASSEMBLYAI_API_KEY
 
 from __future__ import annotations
 
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-class AssemblyAIPlugin(BundlePlugin):
+class AssemblyaiToolBase(PluginTool):
     """Base for AssemblyAI tools — configure the SDK api key."""
 
     category: str = "data"

@@ -1,5 +1,5 @@
-"""`DataStax` bundle plugin (migrated from Langflow)."""
+"""Astra DB plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import DatastaxPlugin
 
-__all__: list = []
+__all__ = ["DatastaxPlugin"]

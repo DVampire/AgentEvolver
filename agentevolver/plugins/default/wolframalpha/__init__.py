@@ -1,5 +1,5 @@
-"""`WolframAlpha` bundle plugin (migrated from Langflow)."""
+"""WolframAlpha plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import WolframalphaPlugin
 
-__all__: list = []
+__all__ = ["WolframalphaPlugin"]

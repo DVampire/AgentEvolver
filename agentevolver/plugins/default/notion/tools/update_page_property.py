@@ -1,22 +1,17 @@
-"""Update Page Property  — from the Langflow `notion` bundle (ported)."""
+"""Update Page Property ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionUpdatePagePropertyPlugin(NotionPlugin):
-    name: str = "notion.update_page_property"
+class NotionUpdatePagePropertyTool(NotionToolBase):
+    """Update Page Property ."""
+
+    name: str = 'update_page_property'
     display_name: str = 'Update Page Property '
     description: str = 'Update the properties of a Notion page.'
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", page_id: str = "", properties_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

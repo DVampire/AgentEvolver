@@ -1,6 +1,19 @@
-"""Registration hub for the `altk` bundle."""
+"""ALTK plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "altk"
-BUNDLE_LABEL = 'Altk'
+from .tools.agent import AltkAgentTool
+
+
+@PLUGIN.register_module(force=True)
+class AltkPlugin(Plugin):
+    """ALTK tools."""
+
+    tools = (AltkAgentTool,)
+
+    name: str = 'altk'
+    display_name: str = 'ALTK'
+    description: str = 'ALTK tools.'
+    category: str = 'agent'
+    type: str = 'tool'

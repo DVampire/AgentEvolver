@@ -1,6 +1,19 @@
-"""Registration hub for the `notdiamond` bundle."""
+"""Not Diamond plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "notdiamond"
-BUNDLE_LABEL = 'Not Diamond'
+from .tools.notdiamond import NotdiamondTool
+
+
+@PLUGIN.register_module(force=True)
+class NotdiamondPlugin(Plugin):
+    """Not Diamond tools."""
+
+    tools = (NotdiamondTool,)
+
+    name: str = 'notdiamond'
+    display_name: str = 'Not Diamond'
+    description: str = 'Not Diamond tools.'
+    category: str = 'agent'
+    type: str = 'tool'

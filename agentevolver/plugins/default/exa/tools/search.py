@@ -1,23 +1,17 @@
-"""Exa Search — from the Langflow `exa` bundle (ported)."""
+"""Exa Search."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ExaExaSearchPlugin(BundlePlugin):
-    name: str = "exa.exa_search"
+class ExaSearchTool(PluginTool):
+    """Exa Search."""
+
+    name: str = 'exa_search'
     display_name: str = 'Exa Search'
     description: str = 'Exa search and contents tools for agents and MCP clients.'
-    kind: str = "tool"
-    bundle: str = "exa"
-    bundle_label: str = 'Exa'
-    category: str = "data"
-    source: str = "langflow/bundles/exa"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", api_key: str = "", num_results: int = 5, **kwargs) -> Response:
         q = str(query or "").strip()

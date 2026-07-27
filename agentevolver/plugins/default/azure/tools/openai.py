@@ -1,24 +1,19 @@
-"""Azure OpenAI — from the Langflow `azure` LLM bundle (ported)."""
+"""Azure OpenAI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AzureAzureOpenaiPlugin(LLMPlugin):
-    name: str = "azure.azure_openai"
+class AzureOpenaiTool(LLMPluginTool):
+    """Azure OpenAI."""
+
+    name: str = 'azure_openai'
     display_name: str = 'Azure OpenAI'
     description: str = 'Generate text using Azure OpenAI LLMs.'
-    kind: str = "model"
-    bundle: str = "azure"
-    bundle_label: str = 'Azure OpenAI'
-    source: str = "langflow/bundles/azure"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "AZURE_OPENAI_API_KEY"
+    default_base_url: str = ''
+    key_env: str = 'AZURE_OPENAI_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_openai import AzureChatOpenAI

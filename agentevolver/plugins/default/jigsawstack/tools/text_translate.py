@@ -1,20 +1,15 @@
-"""Text Translate — from the Langflow `jigsawstack` bundle (ported)."""
+"""Text Translate."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.jigsawstack._base import JigsawStackPlugin
+from agentevolver.plugins.default.jigsawstack._base import JigsawstackToolBase
 
 
-@PLUGIN.register_module(force=True)
-class JigsawstackTextTranslatePlugin(JigsawStackPlugin):
-    name: str = "jigsawstack.text_translate"
+class JigsawstackTextTranslateTool(JigsawstackToolBase):
+    """Text Translate."""
+
+    name: str = 'text_translate'
     display_name: str = 'Text Translate'
     description: str = 'Translate text from one language to another with support for multiple text formats.'
-    kind: str = "tool"
-    bundle: str = "jigsawstack"
-    bundle_label: str = "JigsawStack"
-    source: str = "langflow/bundles/jigsawstack"
-    status: str = "complete"
 
     async def __call__(self, text: str = "", target_language: str = "en", api_key: str = "", **kwargs) -> Response:
         params = {"text": text, "target_language": target_language}

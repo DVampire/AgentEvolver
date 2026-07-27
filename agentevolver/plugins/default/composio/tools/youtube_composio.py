@@ -1,17 +1,12 @@
-"""YouTube (Composio) — from the Langflow `composio` bundle (ported)."""
+"""YouTube (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioYoutubeComposioPlugin(ComposioPlugin):
-    name: str = "composio.youtube_composio"
+class ComposioYoutubeComposioTool(ComposioPluginTool):
+    """YouTube."""
+
+    name: str = 'youtube_composio'
     display_name: str = 'YouTube'
     description: str = 'Execute YouTube actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "youtube"
+    app_name: str = 'youtube'

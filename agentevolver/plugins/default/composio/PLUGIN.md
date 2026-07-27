@@ -1,95 +1,89 @@
 ---
 id: composio
 name: Composio
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/composio
-status: complete
-version: "1.0.0"
 tools: 63
+implemented: 63
+credentials: [COMPOSIO_API_KEY]
 requirements: [composio]
+version: "1.0.0"
 ---
-
 # Composio
 
-Migrated from the Langflow **composio** bundle. This package is in the
-**structure** phase: all 63 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Composio tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `composio.agentql_composio` | AgentQL |  | structure |
-| `composio.agiled_composio` | Agiled |  | structure |
-| `composio.airtable_composio` | Airtable |  | structure |
-| `composio.apollo_composio` | Apollo |  | structure |
-| `composio.asana_composio` | Asana |  | structure |
-| `composio.attio_composio` | Attio |  | structure |
-| `composio.bitbucket_composio` | Bitbucket |  | structure |
-| `composio.bolna_composio` | Bolna |  | structure |
-| `composio.brightdata_composio` | Brightdata |  | structure |
-| `composio.calendly_composio` | Calendly |  | structure |
-| `composio.canva_composio` | Canva |  | structure |
-| `composio.canvas_composio` | Canvas |  | structure |
-| `composio.coda_composio` | Coda |  | structure |
-| `composio.composio_api` | Composio Tools | Use Composio toolset to run actions with your agent | structure |
-| `composio.contentful_composio` | Contentful |  | structure |
-| `composio.digicert_composio` | Digicert |  | structure |
-| `composio.discord_composio` | Discord |  | structure |
-| `composio.dropbox_compnent` | Dropbox |  | structure |
-| `composio.elevenlabs_composio` | ElevenLabs |  | structure |
-| `composio.exa_composio` | Exa |  | structure |
-| `composio.figma_composio` | Figma |  | structure |
-| `composio.finage_composio` | Finage |  | structure |
-| `composio.firecrawl_composio` | Firecrawl |  | structure |
-| `composio.fireflies_composio` | Fireflies |  | structure |
-| `composio.fixer_composio` | Fixer |  | structure |
-| `composio.flexisign_composio` | Flexisign |  | structure |
-| `composio.freshdesk_composio` | Freshdesk |  | structure |
-| `composio.github_composio` | GitHub |  | structure |
-| `composio.gmail_composio` | Gmail |  | structure |
-| `composio.googlebigquery_composio` | GoogleBigQuery |  | structure |
-| `composio.googlecalendar_composio` | GoogleCalendar |  | structure |
-| `composio.googleclassroom_composio` | Google Classroom |  | structure |
-| `composio.googledocs_composio` | GoogleDocs |  | structure |
-| `composio.googlemeet_composio` | GoogleMeet |  | structure |
-| `composio.googlesheets_composio` | GoogleSheets |  | structure |
-| `composio.googletasks_composio` | GoogleTasks |  | structure |
-| `composio.heygen_composio` | Heygen |  | structure |
-| `composio.instagram_composio` | Instagram |  | structure |
-| `composio.jira_composio` | Jira |  | structure |
-| `composio.jotform_composio` | Jotform |  | structure |
-| `composio.klaviyo_composio` | Klaviyo |  | structure |
-| `composio.linear_composio` | Linear |  | structure |
-| `composio.listennotes_composio` | Listennotes |  | structure |
-| `composio.mem0_composio` | Mem0 |  | structure |
-| `composio.miro_composio` | Miro |  | structure |
-| `composio.missive_composio` | Missive |  | structure |
-| `composio.notion_composio` | Notion |  | structure |
-| `composio.onedrive_composio` | OneDrive |  | structure |
-| `composio.outlook_composio` | Outlook |  | structure |
-| `composio.pandadoc_composio` | Pandadoc |  | structure |
-| `composio.peopledatalabs_composio` | PeopleDataLabs |  | structure |
-| `composio.perplexityai_composio` | PerplexityAI |  | structure |
-| `composio.reddit_composio` | Reddit |  | structure |
-| `composio.serpapi_composio` | SerpAPI |  | structure |
-| `composio.slack_composio` | Slack |  | structure |
-| `composio.slackbot_composio` | Slackbot |  | structure |
-| `composio.snowflake_composio` | Snowflake |  | structure |
-| `composio.supabase_composio` | Supabase |  | structure |
-| `composio.tavily_composio` | Tavily |  | structure |
-| `composio.timelinesai_composio` | TimelinesAI |  | structure |
-| `composio.todoist_composio` | Todoist |  | structure |
-| `composio.wrike_composio` | Wrike |  | structure |
-| `composio.youtube_composio` | YouTube |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `composio.agentql_composio` | AgentQL | ✅ | Execute AgentQL actions via Composio. |
+| `composio.agiled_composio` | Agiled | ✅ | Execute Agiled actions via Composio. |
+| `composio.airtable_composio` | Airtable | ✅ | Execute Airtable actions via Composio. |
+| `composio.apollo_composio` | Apollo | ✅ | Execute Apollo actions via Composio. |
+| `composio.asana_composio` | Asana | ✅ | Execute Asana actions via Composio. |
+| `composio.attio_composio` | Attio | ✅ | Execute Attio actions via Composio. |
+| `composio.bitbucket_composio` | Bitbucket | ✅ | Execute Bitbucket actions via Composio. |
+| `composio.bolna_composio` | Bolna | ✅ | Execute Bolna actions via Composio. |
+| `composio.brightdata_composio` | Brightdata | ✅ | Execute Brightdata actions via Composio. |
+| `composio.calendly_composio` | Calendly | ✅ | Execute Calendly actions via Composio. |
+| `composio.canva_composio` | Canva | ✅ | Execute Canva actions via Composio. |
+| `composio.canvas_composio` | Canvas | ✅ | Execute Canvas actions via Composio. |
+| `composio.coda_composio` | Coda | ✅ | Execute Coda actions via Composio. |
+| `composio.composio_api` | Composio API | ✅ | Execute any Composio action across connected apps. |
+| `composio.contentful_composio` | Contentful | ✅ | Execute Contentful actions via Composio. |
+| `composio.digicert_composio` | Digicert | ✅ | Execute Digicert actions via Composio. |
+| `composio.discord_composio` | Discord | ✅ | Execute Discord actions via Composio. |
+| `composio.dropbox_compnent` | Dropbox | ✅ | Execute Dropbox actions via Composio. |
+| `composio.elevenlabs_composio` | ElevenLabs | ✅ | Execute ElevenLabs actions via Composio. |
+| `composio.exa_composio` | Exa | ✅ | Execute Exa actions via Composio. |
+| `composio.figma_composio` | Figma | ✅ | Execute Figma actions via Composio. |
+| `composio.finage_composio` | Finage | ✅ | Execute Finage actions via Composio. |
+| `composio.firecrawl_composio` | Firecrawl | ✅ | Execute Firecrawl actions via Composio. |
+| `composio.fireflies_composio` | Fireflies | ✅ | Execute Fireflies actions via Composio. |
+| `composio.fixer_composio` | Fixer | ✅ | Execute Fixer actions via Composio. |
+| `composio.flexisign_composio` | Flexisign | ✅ | Execute Flexisign actions via Composio. |
+| `composio.freshdesk_composio` | Freshdesk | ✅ | Execute Freshdesk actions via Composio. |
+| `composio.github_composio` | GitHub | ✅ | Execute GitHub actions via Composio. |
+| `composio.gmail_composio` | Gmail | ✅ | Execute Gmail actions via Composio. |
+| `composio.googlebigquery_composio` | GoogleBigQuery | ✅ | Execute GoogleBigQuery actions via Composio. |
+| `composio.googlecalendar_composio` | GoogleCalendar | ✅ | Execute GoogleCalendar actions via Composio. |
+| `composio.googleclassroom_composio` | Google Classroom | ✅ | Execute Google Classroom actions via Composio. |
+| `composio.googledocs_composio` | GoogleDocs | ✅ | Execute GoogleDocs actions via Composio. |
+| `composio.googlemeet_composio` | GoogleMeet | ✅ | Execute GoogleMeet actions via Composio. |
+| `composio.googlesheets_composio` | GoogleSheets | ✅ | Execute GoogleSheets actions via Composio. |
+| `composio.googletasks_composio` | GoogleTasks | ✅ | Execute GoogleTasks actions via Composio. |
+| `composio.heygen_composio` | Heygen | ✅ | Execute Heygen actions via Composio. |
+| `composio.instagram_composio` | Instagram | ✅ | Execute Instagram actions via Composio. |
+| `composio.jira_composio` | Jira | ✅ | Execute Jira actions via Composio. |
+| `composio.jotform_composio` | Jotform | ✅ | Execute Jotform actions via Composio. |
+| `composio.klaviyo_composio` | Klaviyo | ✅ | Execute Klaviyo actions via Composio. |
+| `composio.linear_composio` | Linear | ✅ | Execute Linear actions via Composio. |
+| `composio.listennotes_composio` | Listennotes | ✅ | Execute Listennotes actions via Composio. |
+| `composio.mem0_composio` | Mem0 | ✅ | Execute Mem0 actions via Composio. |
+| `composio.miro_composio` | Miro | ✅ | Execute Miro actions via Composio. |
+| `composio.missive_composio` | Missive | ✅ | Execute Missive actions via Composio. |
+| `composio.notion_composio` | Notion | ✅ | Execute Notion actions via Composio. |
+| `composio.onedrive_composio` | OneDrive | ✅ | Execute OneDrive actions via Composio. |
+| `composio.outlook_composio` | Outlook | ✅ | Execute Outlook actions via Composio. |
+| `composio.pandadoc_composio` | Pandadoc | ✅ | Execute Pandadoc actions via Composio. |
+| `composio.peopledatalabs_composio` | PeopleDataLabs | ✅ | Execute PeopleDataLabs actions via Composio. |
+| `composio.perplexityai_composio` | PerplexityAI | ✅ | Execute PerplexityAI actions via Composio. |
+| `composio.reddit_composio` | Reddit | ✅ | Execute Reddit actions via Composio. |
+| `composio.serpapi_composio` | SerpAPI | ✅ | Execute SerpAPI actions via Composio. |
+| `composio.slack_composio` | Slack | ✅ | Execute Slack actions via Composio. |
+| `composio.slackbot_composio` | Slackbot | ✅ | Execute Slackbot actions via Composio. |
+| `composio.snowflake_composio` | Snowflake | ✅ | Execute Snowflake actions via Composio. |
+| `composio.supabase_composio` | Supabase | ✅ | Execute Supabase actions via Composio. |
+| `composio.tavily_composio` | Tavily | ✅ | Execute Tavily actions via Composio. |
+| `composio.timelinesai_composio` | TimelinesAI | ✅ | Execute TimelinesAI actions via Composio. |
+| `composio.todoist_composio` | Todoist | ✅ | Execute Todoist actions via Composio. |
+| `composio.wrike_composio` | Wrike | ✅ | Execute Wrike actions via Composio. |
+| `composio.youtube_composio` | YouTube | ✅ | Execute YouTube actions via Composio. |
 
-## Icon
+All 63 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/composio/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`COMPOSIO_API_KEY`, an `api_key` argument on the call, or a `composio_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

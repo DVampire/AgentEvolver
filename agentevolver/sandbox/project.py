@@ -172,7 +172,7 @@ class ProjectSandbox:
                 "module": module,
                 "path": str(entry),
                 "relative_path": str(entry.relative_to(self.extension_root)),
-                "kind": "directory" if entry.is_dir() else "file",
+                "type": "directory" if entry.is_dir() else "file",
             })
         return components
 

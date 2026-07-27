@@ -1,6 +1,19 @@
-"""Registration hub for the `mongodb` bundle."""
+"""MongoDB Atlas plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "mongodb"
-BUNDLE_LABEL = 'MongoDB'
+from .tools.atlas import MongodbAtlasTool
+
+
+@PLUGIN.register_module(force=True)
+class MongodbPlugin(Plugin):
+    """MongoDB Atlas tools."""
+
+    tools = (MongodbAtlasTool,)
+
+    name: str = 'mongodb'
+    display_name: str = 'MongoDB Atlas'
+    description: str = 'MongoDB Atlas tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

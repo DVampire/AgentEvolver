@@ -1,17 +1,12 @@
-"""Mem0 (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Mem0 (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioMem0ComposioPlugin(ComposioPlugin):
-    name: str = "composio.mem0_composio"
+class ComposioMem0ComposioTool(ComposioPluginTool):
+    """Mem0."""
+
+    name: str = 'mem0_composio'
     display_name: str = 'Mem0'
     description: str = 'Execute Mem0 actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "mem0"
+    app_name: str = 'mem0'

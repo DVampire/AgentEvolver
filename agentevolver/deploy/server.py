@@ -146,7 +146,7 @@ class DeploymentManagerServer(BaseModel):
         own isolated port space.
         """
         from agentevolver.port import port_manager
-        return port_manager.register(f"deploy:{site_id}", preferred=preferred, kind="host")["port"]
+        return port_manager.register(f"deploy:{site_id}", preferred=preferred, type="host")["port"]
 
     async def _reconcile_on_start(self) -> None:
         """Re-probe recorded sites at startup to recover ones still serving.

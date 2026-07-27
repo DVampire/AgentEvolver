@@ -1,17 +1,12 @@
-"""Listennotes (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Listennotes (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioListennotesComposioPlugin(ComposioPlugin):
-    name: str = "composio.listennotes_composio"
+class ComposioListennotesComposioTool(ComposioPluginTool):
+    """Listennotes."""
+
+    name: str = 'listennotes_composio'
     display_name: str = 'Listennotes'
     description: str = 'Execute Listennotes actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "listennotes"
+    app_name: str = 'listennotes'

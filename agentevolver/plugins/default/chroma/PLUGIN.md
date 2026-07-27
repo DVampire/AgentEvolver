@@ -1,34 +1,28 @@
 ---
 id: chroma
 name: Chroma
-kind: bundle
 category: data
-icon: lucide:Chroma
-source: langflow/bundles/chroma
-status: complete
-version: "1.0.0"
+type: vectorstore
+icon: resources/icon.svg
 tools: 2
-requirements: [chromadb, langchain-chroma, langchain-openai]
+implemented: 2
+credentials: [OPENAI_API_KEY]
+requirements: [chromadb, langchain_chroma, langchain_openai]
+version: "1.0.0"
 ---
-
 # Chroma
 
-Migrated from the Langflow **chroma** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Chroma tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `chroma.chroma` | Chroma DB | Chroma Vector Store with search capabilities | structure |
-| `chroma.local_db` | Local DB | Local Vector Store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `chroma.chroma` | Chroma DB | ✅ | Chroma Vector Store with search capabilities |
+| `chroma.local_db` | Local DB | ✅ | Local Vector Store with search capabilities |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `Chroma` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/chroma/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `chroma_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

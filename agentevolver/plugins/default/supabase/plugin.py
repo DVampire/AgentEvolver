@@ -1,6 +1,19 @@
-"""Registration hub for the `supabase` bundle."""
+"""Supabase plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "supabase"
-BUNDLE_LABEL = 'Supabase'
+from .tools.supabase import SupabaseTool
+
+
+@PLUGIN.register_module(force=True)
+class SupabasePlugin(Plugin):
+    """Supabase tools."""
+
+    tools = (SupabaseTool,)
+
+    name: str = 'supabase'
+    display_name: str = 'Supabase'
+    description: str = 'Supabase tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

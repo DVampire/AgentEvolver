@@ -1,6 +1,20 @@
-"""Registration hub for the `homeassistant` bundle."""
+"""Home Assistant plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "homeassistant"
-BUNDLE_LABEL = 'Home Assistant'
+from .tools.home_assistant_control import HomeassistantHomeAssistantControlTool
+from .tools.list_home_assistant_states import HomeassistantListHomeAssistantStatesTool
+
+
+@PLUGIN.register_module(force=True)
+class HomeassistantPlugin(Plugin):
+    """Home Assistant tools."""
+
+    tools = (HomeassistantHomeAssistantControlTool, HomeassistantListHomeAssistantStatesTool,)
+
+    name: str = 'homeassistant'
+    display_name: str = 'Home Assistant'
+    description: str = 'Home Assistant tools.'
+    category: str = 'data'
+    type: str = 'tool'

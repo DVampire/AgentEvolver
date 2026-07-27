@@ -1,23 +1,17 @@
-"""BigQuery — from the Langflow `google` bundle (ported)."""
+"""BigQuery."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GoogleGoogleBqSqlExecutorPlugin(BundlePlugin):
-    name: str = "google.google_bq_sql_executor"
+class GoogleBqSqlExecutorTool(PluginTool):
+    """BigQuery."""
+
+    name: str = 'google_bq_sql_executor'
     display_name: str = 'BigQuery'
     description: str = 'Execute SQL queries on Google BigQuery.'
-    kind: str = "tool"
-    bundle: str = "google"
-    bundle_label: str = 'Google'
-    category: str = "data"
-    source: str = "langflow/bundles/google"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", project: str = "", credentials_json: str = "", **kwargs) -> Response:
         if not query:

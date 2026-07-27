@@ -1,33 +1,27 @@
 ---
 id: agentql
 name: AgentQL
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/agentql
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: []
+implemented: 1
+credentials: [AGENTQL_API_KEY]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # AgentQL
 
-Migrated from the Langflow **agentql** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+AgentQL tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `agentql.agentql_api` | Extract Web Data | Extracts structured data from a web page using an AgentQL qu | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `agentql.agentql_api` | Extract Web Data | ✅ | Extracts structured data from a web page using an AgentQL query or a Natural Language description. |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/agentql/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`AGENTQL_API_KEY`, an `api_key` argument on the call, or a `agentql_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

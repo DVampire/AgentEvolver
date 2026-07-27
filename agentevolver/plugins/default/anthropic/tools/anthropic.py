@@ -1,24 +1,19 @@
-"""Anthropic — from the Langflow `anthropic` LLM bundle (ported)."""
+"""Anthropic."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AnthropicAnthropicPlugin(LLMPlugin):
-    name: str = "anthropic.anthropic"
+class AnthropicTool(LLMPluginTool):
+    """Anthropic."""
+
+    name: str = 'anthropic'
     display_name: str = 'Anthropic'
     description: str = 'Generate text using Anthropic'
-    kind: str = "model"
-    bundle: str = "anthropic"
-    bundle_label: str = 'Anthropic'
-    source: str = "langflow/bundles/anthropic"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "ANTHROPIC_API_KEY"
+    default_base_url: str = ''
+    key_env: str = 'ANTHROPIC_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_anthropic import ChatAnthropic

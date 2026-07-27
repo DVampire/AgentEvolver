@@ -202,7 +202,7 @@ def default_domain() -> str:
     global _default_domain
     if _default_domain is None:
         from agentevolver.port import port_manager, OPENSANDBOX
-        rec = port_manager.register("opensandbox", preferred=OPENSANDBOX, kind="host")
+        rec = port_manager.register("opensandbox", preferred=OPENSANDBOX, type="host")
         _default_domain = f"localhost:{rec['port']}"
     return _default_domain
 

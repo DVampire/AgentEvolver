@@ -1,22 +1,18 @@
-"""Google Generative AI — from the Langflow `google` LLM bundle (ported)."""
+"""Google Generative AI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GoogleGoogleGenerativeAiPlugin(LLMPlugin):
-    name: str = "google.google_generative_ai"
+class GoogleGenerativeAiTool(LLMPluginTool):
+    """Google Generative AI."""
+
+    name: str = 'google_generative_ai'
     display_name: str = 'Google Generative AI'
     description: str = 'Generate text using Google Generative AI.'
-    kind: str = "model"
-    bundle: str = "google"
-    bundle_label: str = 'Google'
-    source: str = "langflow/bundles/google"
-    status: str = "complete"
+    type: str = 'model'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_google_genai import ChatGoogleGenerativeAI

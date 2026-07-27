@@ -1,5 +1,5 @@
-"""`AssemblyAI` bundle plugin (migrated from Langflow)."""
+"""AssemblyAI plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import AssemblyaiPlugin
 
-__all__: list = []
+__all__ = ["AssemblyaiPlugin"]

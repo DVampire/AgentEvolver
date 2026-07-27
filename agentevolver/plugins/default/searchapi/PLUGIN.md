@@ -1,33 +1,26 @@
 ---
 id: searchapi
-name: SearchAPI
-kind: bundle
+name: SearchApi
 category: data
-icon: resources/icon.svg
-source: langflow/bundles/searchapi
-status: complete
-version: "1.0.0"
+type: tool
 tools: 1
-requirements: [langchain-community]
+implemented: 1
+credentials: [SEARCHAPI_API_KEY]
+requirements: [langchain_community]
+version: "1.0.0"
 ---
+# SearchApi
 
-# SearchAPI
-
-Migrated from the Langflow **searchapi** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+SearchApi tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `searchapi.search` | SearchApi | Calls the SearchApi API with result limiting. Supports Googl | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `searchapi.search` | SearchApi | ✅ | Calls the SearchApi API with result limiting. Supports Google, Bing and DuckDuckGo. |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/searchapi/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`SEARCHAPI_API_KEY`, an `api_key` argument on the call, or a `searchapi_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

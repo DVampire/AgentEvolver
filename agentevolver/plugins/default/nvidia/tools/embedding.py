@@ -1,24 +1,20 @@
-"""NVIDIA Embeddings — from the Langflow `nvidia` embeddings bundle (ported)."""
+"""NVIDIA Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NvidiaNvidiaEmbeddingPlugin(EmbeddingPlugin):
-    name: str = "nvidia.nvidia_embedding"
+class NvidiaEmbeddingTool(EmbeddingPluginTool):
+    """NVIDIA Embeddings."""
+
+    name: str = 'nvidia_embedding'
     display_name: str = 'NVIDIA Embeddings'
     description: str = 'Generate embeddings using NVIDIA models.'
-    kind: str = "embedding"
-    bundle: str = "nvidia"
-    bundle_label: str = 'NVIDIA'
-    source: str = "langflow/bundles/nvidia"
-    status: str = "complete"
-    key_env: str = "NVIDIA_API_KEY"
-    default_base_url: str = ""
+    type: str = 'embedding'
+    key_env: str = 'NVIDIA_API_KEY'
+    default_base_url: str = ''
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings

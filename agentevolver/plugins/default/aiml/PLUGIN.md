@@ -1,34 +1,28 @@
 ---
 id: aiml
 name: AI/ML API
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/aiml
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-openai]
+implemented: 2
+credentials: [AIML_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
-
 # AI/ML API
 
-Migrated from the Langflow **aiml** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+AI/ML API tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `aiml.aiml` | AI/ML API | Generates text using AI/ML API LLMs. | structure |
-| `aiml.aiml_embeddings` | AI/ML API Embeddings | Generate embeddings using the AI/ML API. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `aiml.aiml` | AI/ML API | ✅ | Generates text using AI/ML API LLMs. |
+| `aiml.aiml_embeddings` | AI/ML API Embeddings | ✅ | Generate embeddings using the AI/ML API. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/aiml/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`AIML_API_KEY`, an `api_key` argument on the call, or a `aiml_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

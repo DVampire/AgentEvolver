@@ -1,33 +1,27 @@
 ---
 id: apify
 name: Apify
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/apify
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [apify-client]
+implemented: 1
+credentials: [APIFY_API_TOKEN, APIFY_TOKEN]
+requirements: [apify_client]
+version: "1.0.0"
 ---
-
 # Apify
 
-Migrated from the Langflow **apify** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Apify tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `apify.apify_actor` | Apify Actors |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `apify.apify_actor` | Apify Actors | ✅ | Apify Actors |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/apify/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`APIFY_API_TOKEN`, `APIFY_TOKEN`, an `api_key` argument on the call, or a `apify_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

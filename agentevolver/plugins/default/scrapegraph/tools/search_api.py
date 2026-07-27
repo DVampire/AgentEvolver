@@ -1,21 +1,15 @@
-"""ScrapeGraph Search API — from the Langflow `scrapegraph` bundle (ported)."""
+"""ScrapeGraph Search API."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ScrapegraphScrapegraphSearchApiPlugin(BundlePlugin):
-    name: str = "scrapegraph.scrapegraph_search_api"
+class ScrapegraphSearchApiTool(PluginTool):
+    """ScrapeGraph Search API."""
+
+    name: str = 'scrapegraph_search_api'
     display_name: str = 'ScrapeGraph Search API'
     description: str = 'Given a search prompt, it will return search results using ScrapeGraph'
-    kind: str = "tool"
-    bundle: str = "scrapegraph"
-    bundle_label: str = 'ScrapeGraph'
-    category: str = "data"
-    source: str = "langflow/bundles/scrapegraph"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", api_key: str = "", url: str = "", prompt: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "SGAI_API_KEY", "SCRAPEGRAPH_API_KEY")

@@ -1,6 +1,19 @@
-"""Registration hub for the `arxiv` bundle."""
+"""arXiv plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "arxiv"
-BUNDLE_LABEL = 'Arxiv'
+from .tools.arxiv import ArxivTool
+
+
+@PLUGIN.register_module(force=True)
+class ArxivPlugin(Plugin):
+    """arXiv tools."""
+
+    tools = (ArxivTool,)
+
+    name: str = 'arxiv'
+    display_name: str = 'arXiv'
+    description: str = 'arXiv tools.'
+    category: str = 'data'
+    type: str = 'tool'

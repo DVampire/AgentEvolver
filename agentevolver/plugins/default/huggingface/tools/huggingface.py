@@ -1,22 +1,17 @@
-"""Hugging Face — from the Langflow `huggingface` LLM bundle (ported)."""
+"""Hugging Face."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class HuggingfaceHuggingfacePlugin(LLMPlugin):
-    name: str = "huggingface.huggingface"
+class HuggingfaceTool(LLMPluginTool):
+    """Hugging Face."""
+
+    name: str = 'huggingface'
     display_name: str = 'Hugging Face'
     description: str = 'Generate text using Hugging Face Inference APIs.'
-    kind: str = "model"
-    bundle: str = "huggingface"
-    bundle_label: str = 'Hugging Face'
-    source: str = "langflow/bundles/huggingface"
-    status: str = "complete"
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint

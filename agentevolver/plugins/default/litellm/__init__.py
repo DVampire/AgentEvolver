@@ -1,5 +1,5 @@
-"""`LiteLLM` bundle plugin (migrated from Langflow)."""
+"""LiteLLM Proxy plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import LitellmPlugin
 
-__all__: list = []
+__all__ = ["LitellmPlugin"]

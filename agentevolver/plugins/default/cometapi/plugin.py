@@ -1,6 +1,19 @@
-"""Registration hub for the `cometapi` bundle."""
+"""CometAPI plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "cometapi"
-BUNDLE_LABEL = 'CometAPI'
+from .tools.cometapi import CometapiTool
+
+
+@PLUGIN.register_module(force=True)
+class CometapiPlugin(Plugin):
+    """CometAPI tools."""
+
+    tools = (CometapiTool,)
+
+    name: str = 'cometapi'
+    display_name: str = 'CometAPI'
+    description: str = 'CometAPI tools.'
+    category: str = 'data'
+    type: str = 'model'

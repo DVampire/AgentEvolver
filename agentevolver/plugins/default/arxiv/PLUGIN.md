@@ -1,33 +1,27 @@
 ---
 id: arxiv
-name: Arxiv
-kind: bundle
+name: arXiv
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/arxiv
-status: complete
-version: "1.0.0"
 tools: 1
+implemented: 1
+credentials: []
 requirements: []
+version: "1.0.0"
 ---
+# arXiv
 
-# Arxiv
-
-Migrated from the Langflow **arxiv** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+arXiv tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `arxiv.arxiv` | arXiv | Search and retrieve papers from arXiv.org. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `arxiv.arxiv` | arXiv | ✅ | Search and retrieve papers from arXiv.org. |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/arxiv/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

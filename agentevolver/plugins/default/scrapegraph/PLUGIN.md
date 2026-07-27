@@ -1,35 +1,29 @@
 ---
 id: scrapegraph
 name: ScrapeGraph
-kind: bundle
 category: data
-icon: lucide:ScrapeGraph
-source: langflow/bundles/scrapegraph
-status: complete
-version: "1.0.0"
+type: tool
+icon: resources/icon.svg
 tools: 3
-requirements: [scrapegraph-py]
+implemented: 3
+credentials: [SCRAPEGRAPH_API_KEY, SGAI_API_KEY]
+requirements: [scrapegraph_py]
+version: "1.0.0"
 ---
-
 # ScrapeGraph
 
-Migrated from the Langflow **scrapegraph** bundle. This package is in the
-**structure** phase: all 3 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+ScrapeGraph tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `scrapegraph.scrapegraph_markdownify_api` | ScrapeGraph Markdownify API | Given a URL, it will return the markdownified content of the | structure |
-| `scrapegraph.scrapegraph_search_api` | ScrapeGraph Search API | Given a search prompt, it will return search results using S | structure |
-| `scrapegraph.scrapegraph_smart_scraper_api` | ScrapeGraph Smart Scraper API | Given a URL, it will return the structured data of the websi | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `scrapegraph.scrapegraph_markdownify_api` | ScrapeGraph Markdownify API | ✅ | Given a URL, it will return the markdownified content of the website. |
+| `scrapegraph.scrapegraph_search_api` | ScrapeGraph Search API | ✅ | Given a search prompt, it will return search results using ScrapeGraph |
+| `scrapegraph.scrapegraph_smart_scraper_api` | ScrapeGraph Smart Scraper API | ✅ | Given a URL, it will return the structured data of the website. |
 
-## Icon
+All 3 tools are implemented.
 
-Uses lucide glyph `ScrapeGraph` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/scrapegraph/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`SCRAPEGRAPH_API_KEY`, `SGAI_API_KEY`, an `api_key` argument on the call, or a `scrapegraph_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

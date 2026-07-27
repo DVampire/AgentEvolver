@@ -1,23 +1,18 @@
-"""TwelveLabs Text Embeddings — from the Langflow `twelvelabs` bundle (ported)."""
+"""TwelveLabs Text Embeddings."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class TwelvelabsTextEmbeddingsPlugin(BundlePlugin):
-    name: str = "twelvelabs.text_embeddings"
+class TwelvelabsTextEmbeddingsTool(PluginTool):
+    """TwelveLabs Text Embeddings."""
+
+    name: str = 'text_embeddings'
     display_name: str = 'TwelveLabs Text Embeddings'
     description: str = 'Generate embeddings using TwelveLabs text embedding models.'
-    kind: str = "tool"
-    bundle: str = "twelvelabs"
-    bundle_label: str = 'TwelveLabs'
-    category: str = "knowledge"
-    source: str = "langflow/bundles/twelvelabs"
-    status: str = "complete"
+    category: str = 'knowledge'
 
     async def __call__(self, text: str = "", api_key: str = "", model_name: str = "Marengo-retrieval-2.7", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY")

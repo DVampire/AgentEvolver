@@ -173,7 +173,7 @@ class GatewayLauncher:
             allowed_origins=set(self._allow_origins) if self._allow_origins else None,
         )
         app.router.lifespan_context = lifespan
-        port_manager.register("gateway", self._port, kind="host")
+        port_manager.register("gateway", self._port, type="host")
         uvicorn.run(app, host=self._host, port=self._port, log_level="info")
         return 0
 

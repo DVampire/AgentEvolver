@@ -1,23 +1,17 @@
-"""Cloudflare Workers AI Embeddings — from the Langflow `cloudflare` bundle (ported)."""
+"""Cloudflare Workers AI Embeddings."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CloudflareCloudflarePlugin(EmbeddingPlugin):
-    name: str = "cloudflare.cloudflare"
+class CloudflareTool(EmbeddingPluginTool):
+    """Cloudflare Workers AI Embeddings."""
+
+    name: str = 'cloudflare'
     display_name: str = 'Cloudflare Workers AI Embeddings'
     description: str = 'Generate embeddings using Cloudflare Workers AI models.'
-    kind: str = "embedding"
-    bundle: str = "cloudflare"
-    bundle_label: str = 'Cloudflare'
-    category: str = "knowledge"
-    source: str = "langflow/bundles/cloudflare"
-    status: str = "complete"
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_community.embeddings.cloudflare_workersai import CloudflareWorkersAIEmbeddings
         key = self._secret(cfg.get("api_key"), "CLOUDFLARE_API_TOKEN")

@@ -1,20 +1,15 @@
-"""Text to SQL — from the Langflow `jigsawstack` bundle (ported)."""
+"""Text to SQL."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.jigsawstack._base import JigsawStackPlugin
+from agentevolver.plugins.default.jigsawstack._base import JigsawstackToolBase
 
 
-@PLUGIN.register_module(force=True)
-class JigsawstackTextToSqlPlugin(JigsawStackPlugin):
-    name: str = "jigsawstack.text_to_sql"
+class JigsawstackTextToSqlTool(JigsawstackToolBase):
+    """Text to SQL."""
+
+    name: str = 'text_to_sql'
     display_name: str = 'Text to SQL'
     description: str = 'Convert natural language to SQL queries using JigsawStack AI'
-    kind: str = "tool"
-    bundle: str = "jigsawstack"
-    bundle_label: str = "JigsawStack"
-    source: str = "langflow/bundles/jigsawstack"
-    status: str = "complete"
 
     async def __call__(self, prompt: str = "", sql_schema: str = "", api_key: str = "", **kwargs) -> Response:
         params = {"prompt": prompt, "sql_schema": sql_schema}

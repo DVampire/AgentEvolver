@@ -1,17 +1,12 @@
-"""AgentQL (Composio) — from the Langflow `composio` bundle (ported)."""
+"""AgentQL (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioAgentqlComposioPlugin(ComposioPlugin):
-    name: str = "composio.agentql_composio"
+class ComposioAgentqlComposioTool(ComposioPluginTool):
+    """AgentQL."""
+
+    name: str = 'agentql_composio'
     display_name: str = 'AgentQL'
     description: str = 'Execute AgentQL actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "agentql"
+    app_name: str = 'agentql'

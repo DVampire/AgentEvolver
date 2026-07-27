@@ -1,21 +1,15 @@
-"""SearchApi — from the Langflow `searchapi` bundle (ported)."""
+"""SearchApi."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class SearchapiSearchPlugin(BundlePlugin):
-    name: str = "searchapi.search"
+class SearchapiSearchTool(PluginTool):
+    """SearchApi."""
+
+    name: str = 'search'
     display_name: str = 'SearchApi'
     description: str = 'Calls the SearchApi API with result limiting. Supports Google, Bing and DuckDuckGo.'
-    kind: str = "tool"
-    bundle: str = "searchapi"
-    bundle_label: str = 'SearchApi'
-    category: str = "data"
-    source: str = "langflow/bundles/searchapi"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", api_key: str = "", engine: str = "google", max_results: int = 5, max_snippet_length: int = 100, **kwargs) -> Response:
         query = str(input_value or "").strip()

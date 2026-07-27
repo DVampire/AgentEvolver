@@ -1,17 +1,12 @@
-"""Airtable (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Airtable (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioAirtableComposioPlugin(ComposioPlugin):
-    name: str = "composio.airtable_composio"
+class ComposioAirtableComposioTool(ComposioPluginTool):
+    """Airtable."""
+
+    name: str = 'airtable_composio'
     display_name: str = 'Airtable'
     description: str = 'Execute Airtable actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "airtable"
+    app_name: str = 'airtable'

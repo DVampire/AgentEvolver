@@ -1,22 +1,17 @@
-"""List Database Properties  — from the Langflow `notion` bundle (ported)."""
+"""List Database Properties ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionListDatabasePropertiesPlugin(NotionPlugin):
-    name: str = "notion.list_database_properties"
+class NotionListDatabasePropertiesTool(NotionToolBase):
+    """List Database Properties ."""
+
+    name: str = 'list_database_properties'
     display_name: str = 'List Database Properties '
     description: str = 'Retrieve properties of a Notion database.'
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", database_id: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

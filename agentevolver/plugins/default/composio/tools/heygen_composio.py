@@ -1,17 +1,12 @@
-"""Heygen (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Heygen (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioHeygenComposioPlugin(ComposioPlugin):
-    name: str = "composio.heygen_composio"
+class ComposioHeygenComposioTool(ComposioPluginTool):
+    """Heygen."""
+
+    name: str = 'heygen_composio'
     display_name: str = 'Heygen'
     description: str = 'Execute Heygen actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "heygen"
+    app_name: str = 'heygen'

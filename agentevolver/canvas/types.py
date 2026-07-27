@@ -24,7 +24,7 @@ CALLABLE_STEPS = {"tool", "agent", "skill", "workflow", "datasource", "process",
 STRUCTURAL_STEPS = {"map", "branch", "loop", "reduce", "verify", "checkpoint"}
 STEP_TYPES = CALLABLE_STEPS | STRUCTURAL_STEPS
 
-NodeKind = Literal["step", "input", "output"]
+NodeType = Literal["step", "input", "output"]
 Slot = Literal["body", "then", "else"]
 ParamType = Literal["string", "number", "boolean", "select", "json"]
 
@@ -99,16 +99,16 @@ class NodeSpec(BaseModel):
     outputs: List[PortSpec] = Field(default_factory=list)
     # For agent specs: which capability rosters can be mounted (scoped) on this
     # agent — one of tools/skills/connectors/agents/environments. The frontend
-    # renders a search+select picker per kind; the selection compiles to the
-    # agent step's ``<arg name="<kind>">`` allowlist.
-    mount_kinds: List[str] = Field(default_factory=list)
-    # For migrated Langflow *bundle* tools: the bundle this node belongs to, so
-    # the palette can nest tools under a collapsible bundle group (Langflow's
-    # "Bundles" sidebar section). ``bundle`` is the id (e.g. ``youtube``),
-    # ``bundle_label`` the display name (e.g. ``YouTube``). Empty for non-bundle
+    # renders a search+select picker per capability type; the selection compiles to the
+    # agent step's ``<arg name="<type>">`` allowlist.
+    mount_types: List[str] = Field(default_factory=list)
+    # For migrated Langflow *plugin* tools: the plugin this node belongs to, so
+    # the palette can nest tools under a collapsible plugin group (Langflow's
+    # "Bundles" sidebar section). ``plugin`` is the id (e.g. ``youtube``),
+    # ``plugin_label`` the display name (e.g. ``YouTube``). Empty for non-plugin
     # nodes.
-    bundle: str = ""
-    bundle_label: str = ""
+    plugin: str = ""
+    plugin_label: str = ""
 
 
 class GraphNode(BaseModel):
@@ -122,7 +122,7 @@ class GraphNode(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str
-    kind: NodeKind = "step"
+    type: NodeType = "step"
     step_type: Optional[str] = None
     target: Optional[str] = None
     task: str = ""
@@ -130,7 +130,7 @@ class GraphNode(BaseModel):
     items: str = ""
     attrs: Dict[str, Any] = Field(default_factory=dict)
     # For agent steps: capability names mounted (scoped) on this agent, keyed by
-    # kind (tools/skills/connectors/agents/environments). Compiles to the agent
+    # type (tools/skills/connectors/agents/environments). Compiles to the agent
     # step's allowlist args; an empty/absent list means "use the agent's defaults".
     mounts: Dict[str, List[str]] = Field(default_factory=dict)
     # Freeze: when frozen and a captured output is present, the compiler drops
@@ -203,7 +203,7 @@ class FlowGraph(BaseModel):
             "version": self.version,
             "published": self.published,
             "updated_at": self.updated_at,
-            "node_count": len([node for node in self.nodes if node.kind == "step"]),
+            "node_count": len([node for node in self.nodes if node.type == "step"]),
         }
 
 

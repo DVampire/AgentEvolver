@@ -1,20 +1,15 @@
-"""AI Scraper — from the Langflow `jigsawstack` bundle (ported)."""
+"""AI Scraper."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.jigsawstack._base import JigsawStackPlugin
+from agentevolver.plugins.default.jigsawstack._base import JigsawstackToolBase
 
 
-@PLUGIN.register_module(force=True)
-class JigsawstackAiScrapePlugin(JigsawStackPlugin):
-    name: str = "jigsawstack.ai_scrape"
+class JigsawstackAiScrapeTool(JigsawstackToolBase):
+    """AI Scraper."""
+
+    name: str = 'ai_scrape'
     display_name: str = 'AI Scraper'
-    description: str = 'Scrape any website instantly and get consistent structured data \\\\\\n        in seconds without writing any css selector code'
-    kind: str = "tool"
-    bundle: str = "jigsawstack"
-    bundle_label: str = "JigsawStack"
-    source: str = "langflow/bundles/jigsawstack"
-    status: str = "complete"
+    description: str = 'Scrape any website instantly and get consistent structured data \\\\\\\\\\\\n        in seconds without writing any css selector code'
 
     async def __call__(self, url: str = "", element_prompts: list = None, api_key: str = "", **kwargs) -> Response:
         params = {"url": url, "element_prompts": element_prompts or []}

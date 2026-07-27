@@ -1,5 +1,5 @@
-"""`VLM Run` bundle plugin (migrated from Langflow)."""
+"""VLM Run plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import VlmrunPlugin
 
-__all__: list = []
+__all__ = ["VlmrunPlugin"]

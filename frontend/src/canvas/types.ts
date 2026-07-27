@@ -49,11 +49,11 @@ export interface NodeSpec {
   container: boolean;
   inputs?: PortSpec[];
   outputs?: PortSpec[];
-  mount_kinds?: string[];
-  // Migrated Langflow bundle grouping (category === 'bundle'): the palette nests
-  // this node under a collapsible bundle sub-group.
-  bundle?: string;
-  bundle_label?: string;
+  mount_types?: string[];
+  // Plugin grouping (category === 'plugin'): the palette nests this node under
+  // a collapsible sub-group for its plugin.
+  plugin?: string;
+  plugin_label?: string;
 }
 
 export interface MountItem { name: string; description: string; }
@@ -68,7 +68,7 @@ export interface FlowStatus { name: string; in_library: boolean; }
 
 export interface GraphNodeDoc {
   id: string;
-  kind: 'step' | 'input' | 'output';
+  type: 'step' | 'input' | 'output';
   step_type?: string | null;
   target?: string | null;
   task?: string;
@@ -124,7 +124,7 @@ export interface NoteData { text: string; color: NoteColor; }
 
 export interface CanvasData extends Record<string, unknown> {
   spec?: NodeSpec;
-  kind: 'step' | 'input' | 'output';
+  type: 'step' | 'input' | 'output';
   // Present only on sticky-note nodes (type 'noteNode'); excluded from the graph.
   note?: NoteData;
   // Editable display name (Langflow display_name). Distinct from the node id
@@ -137,7 +137,7 @@ export interface CanvasData extends Record<string, unknown> {
   items: string;
   attrs: Record<string, string>;
   io: { name: string; input_type: string; required: boolean; default: string; description: string; value: string };
-  // Agent capability mounts, keyed by kind (tools/skills/connectors/...).
+  // Agent capability mounts, keyed by type (tools/skills/connectors/...).
   mounts: Record<string, string[]>;
   runState?: FrameState;
   runCount?: number;
@@ -161,7 +161,7 @@ export function nextPlacement(): number { placedCounter += 1; return placedCount
 export function freshId(): string { return `n${Date.now().toString(36)}${nextPlacement()}`; }
 
 export function specKeyFor(doc: GraphNodeDoc): string {
-  if (doc.kind !== 'step') return `io/${doc.kind}`;
+  if (doc.type !== 'step') return `io/${doc.type}`;
   return ['tool', 'agent', 'workflow'].includes(doc.step_type ?? '')
     ? `${doc.step_type}/${doc.target ?? ''}`
     : `step/${doc.step_type}`;

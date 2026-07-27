@@ -1,17 +1,12 @@
-"""Jotform (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Jotform (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioJotformComposioPlugin(ComposioPlugin):
-    name: str = "composio.jotform_composio"
+class ComposioJotformComposioTool(ComposioPluginTool):
+    """Jotform."""
+
+    name: str = 'jotform_composio'
     display_name: str = 'Jotform'
     description: str = 'Execute Jotform actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "jotform"
+    app_name: str = 'jotform'

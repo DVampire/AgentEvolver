@@ -1,5 +1,5 @@
-"""`SerpAPI` bundle plugin (migrated from Langflow)."""
+"""SerpAPI plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import SerpapiPlugin
 
-__all__: list = []
+__all__ = ["SerpapiPlugin"]

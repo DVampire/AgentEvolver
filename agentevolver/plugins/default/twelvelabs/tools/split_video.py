@@ -1,23 +1,18 @@
-"""Split Video — from the Langflow `twelvelabs` bundle (ported)."""
+"""Split Video."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class TwelvelabsSplitVideoPlugin(BundlePlugin):
-    name: str = "twelvelabs.split_video"
+class TwelvelabsSplitVideoTool(PluginTool):
+    """Split Video."""
+
+    name: str = 'split_video'
     display_name: str = 'Split Video'
     description: str = 'Split a video into multiple clips of specified duration.'
-    kind: str = "tool"
-    bundle: str = "twelvelabs"
-    bundle_label: str = 'TwelveLabs'
-    category: str = "files"
-    source: str = "langflow/bundles/twelvelabs"
-    status: str = "complete"
+    category: str = 'files'
 
     async def __call__(self, file_path: str = "", clip_length: int = 30, **kwargs) -> Response:
         import os as _os, subprocess

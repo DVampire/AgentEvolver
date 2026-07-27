@@ -1,22 +1,17 @@
-"""Oracle Embeddings — from the Langflow `oracle` embeddings bundle (ported)."""
+"""Oracle Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OracleOracledbEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "oracle.oracledb_embeddings"
+class OracledbEmbeddingsTool(EmbeddingPluginTool):
+    """Oracle Embeddings."""
+
+    name: str = 'oracledb_embeddings'
     display_name: str = 'Oracle Embeddings'
     description: str = 'Generate embeddings using Oracle AI Vector Search.'
-    kind: str = "embedding"
-    bundle: str = "oracle"
-    bundle_label: str = "Oracle"
-    source: str = "langflow/bundles/oracle"
-    status: str = "complete"
 
     def _embeddings(self, **cfg: Any) -> Any:
         import oracledb

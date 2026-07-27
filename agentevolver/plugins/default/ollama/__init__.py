@@ -1,5 +1,5 @@
-"""`Ollama` bundle plugin (migrated from Langflow)."""
+"""Ollama plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import OllamaPlugin
 
-__all__: list = []
+__all__ = ["OllamaPlugin"]

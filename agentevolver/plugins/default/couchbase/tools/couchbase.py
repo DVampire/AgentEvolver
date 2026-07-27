@@ -1,22 +1,17 @@
-"""Couchbase — from the Langflow `couchbase` vector-store bundle (ported)."""
+"""Couchbase."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CouchbaseCouchbasePlugin(VectorStorePlugin):
-    name: str = "couchbase.couchbase"
+class CouchbaseTool(VectorStorePluginTool):
+    """Couchbase."""
+
+    name: str = 'couchbase'
     display_name: str = 'Couchbase'
     description: str = 'Couchbase Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "couchbase"
-    bundle_label: str = 'Couchbase'
-    source: str = "langflow/bundles/couchbase"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

@@ -1,6 +1,19 @@
-"""Registration hub for the `agentql` bundle."""
+"""AgentQL plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "agentql"
-BUNDLE_LABEL = 'AgentQL'
+from .tools.api import AgentqlApiTool
+
+
+@PLUGIN.register_module(force=True)
+class AgentqlPlugin(Plugin):
+    """AgentQL tools."""
+
+    tools = (AgentqlApiTool,)
+
+    name: str = 'agentql'
+    display_name: str = 'AgentQL'
+    description: str = 'AgentQL tools.'
+    category: str = 'data'
+    type: str = 'tool'

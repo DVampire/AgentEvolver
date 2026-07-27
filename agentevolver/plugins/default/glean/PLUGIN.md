@@ -1,33 +1,27 @@
 ---
 id: glean
 name: Glean
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/glean
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: []
+implemented: 1
+credentials: [GLEAN_ACCESS_TOKEN]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # Glean
 
-Migrated from the Langflow **glean** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Glean tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `glean.glean_search_api` | Glean Search API | Search using Glean | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `glean.glean_search_api` | Glean Search API | ✅ | Search using Glean |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/glean/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`GLEAN_ACCESS_TOKEN`, an `api_key` argument on the call, or a `glean_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

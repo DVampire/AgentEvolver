@@ -1,6 +1,20 @@
-"""Registration hub for the `lmstudio` bundle."""
+"""LM Studio plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "lmstudio"
-BUNDLE_LABEL = 'LM Studio'
+from .tools.lmstudioembeddings import LmstudioembeddingsTool
+from .tools.lmstudiomodel import LmstudiomodelTool
+
+
+@PLUGIN.register_module(force=True)
+class LmstudioPlugin(Plugin):
+    """LM Studio tools."""
+
+    tools = (LmstudioembeddingsTool, LmstudiomodelTool,)
+
+    name: str = 'lmstudio'
+    display_name: str = 'LM Studio'
+    description: str = 'LM Studio tools.'
+    category: str = 'data'
+    type: str = 'embedding'

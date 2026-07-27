@@ -1,11 +1,11 @@
 import type { GatewayEvent } from './protocol.js';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
-export type TimelineKind = 'user' | 'agent' | 'tool' | 'system' | 'error';
+export type TimelineType = 'user' | 'agent' | 'tool' | 'system' | 'error';
 
 export interface TimelineEntry {
   id: string;
-  kind: TimelineKind;
+  type: TimelineType;
   title: string;
   body?: string;
   timestamp: string;
@@ -73,22 +73,22 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 function eventToEntry(event: GatewayEvent): TimelineEntry | undefined {
   const base = { id: `${event.session_id ?? 'gateway'}:${event.seq_no}:${event.type}`, timestamp: event.timestamp };
   if (event.type === 'task.submitted') {
-    return { ...base, kind: 'user', title: 'You', body: String(event.payload.content ?? '') };
+    return { ...base, type: 'user', title: 'You', body: String(event.payload.content ?? '') };
   }
   if (event.type === 'task.completed') {
-    return { ...base, kind: 'agent', title: 'AgentEvolver', body: String(event.payload.message ?? event.payload.result ?? 'Task completed') };
+    return { ...base, type: 'agent', title: 'AgentEvolver', body: String(event.payload.message ?? event.payload.result ?? 'Task completed') };
   }
   if (event.type === 'task.failed') {
-    return { ...base, kind: 'error', title: 'Task failed', body: String(event.payload.error ?? 'Unknown error') };
+    return { ...base, type: 'error', title: 'Task failed', body: String(event.payload.error ?? 'Unknown error') };
   }
-  if (event.type === 'task.cancelled') return { ...base, kind: 'system', title: 'Task cancelled' };
-  if (event.type === 'gateway.log') return { ...base, kind: 'system', title: 'Gateway', body: String(event.payload.message ?? '') };
+  if (event.type === 'task.cancelled') return { ...base, type: 'system', title: 'Task cancelled' };
+  if (event.type === 'gateway.log') return { ...base, type: 'system', title: 'Gateway', body: String(event.payload.message ?? '') };
   if (event.type !== 'trace.event') return undefined;
 
   const trace = event.payload;
   const traceType = String(trace.event_type ?? 'event');
   const title = String(trace.agent_name ?? trace.action_name ?? trace.label ?? 'Agent');
   const body = trace.message ?? trace.error ?? (trace.input ? JSON.stringify(trace.input) : undefined);
-  const kind: TimelineKind = traceType.startsWith('tool') || traceType.startsWith('skill') ? 'tool' : 'agent';
-  return { ...base, kind, title: `${title} · ${traceType}`, body: body ? String(body) : undefined, pending: traceType.endsWith('start') };
+  const entryType: TimelineType = traceType.startsWith('tool') || traceType.startsWith('skill') ? 'tool' : 'agent';
+  return { ...base, type: entryType, title: `${title} · ${traceType}`, body: body ? String(body) : undefined, pending: traceType.endsWith('start') };
 }

@@ -1,22 +1,18 @@
-"""Astra DB — from the Langflow `datastax` vector-store bundle (ported)."""
+"""Astra DB."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DatastaxAstradbVectorstorePlugin(VectorStorePlugin):
-    name: str = "datastax.astradb_vectorstore"
+class DatastaxAstradbVectorstoreTool(VectorStorePluginTool):
+    """Astra DB."""
+
+    name: str = 'astradb_vectorstore'
     display_name: str = 'Astra DB'
     description: str = 'Ingest and search documents in Astra DB'
-    kind: str = "vectorstore"
-    bundle: str = "datastax"
-    bundle_label: str = 'Astra DB'
-    source: str = "langflow/bundles/datastax"
-    status: str = "complete"
+    type: str = 'vectorstore'
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

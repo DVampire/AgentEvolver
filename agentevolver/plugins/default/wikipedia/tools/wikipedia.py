@@ -1,21 +1,15 @@
-"""Wikipedia — from the Langflow `wikipedia` bundle (ported)."""
+"""Wikipedia."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class WikipediaWikipediaPlugin(BundlePlugin):
-    name: str = "wikipedia.wikipedia"
+class WikipediaTool(PluginTool):
+    """Wikipedia."""
+
+    name: str = 'wikipedia'
     display_name: str = 'Wikipedia'
     description: str = 'Call Wikipedia API.'
-    kind: str = "tool"
-    bundle: str = "wikipedia"
-    bundle_label: str = 'Wikipedia'
-    category: str = "data"
-    source: str = "langflow/bundles/wikipedia"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", k: int = 4, lang: str = "en", load_all_available_meta: bool = False, doc_content_chars_max: int = 4000, **kwargs) -> Response:
         query = str(input_value or "").strip()

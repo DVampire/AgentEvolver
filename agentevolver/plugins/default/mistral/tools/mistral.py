@@ -1,24 +1,19 @@
-"""MistralAI — from the Langflow `mistral` LLM bundle (ported)."""
+"""MistralAI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class MistralMistralPlugin(LLMPlugin):
-    name: str = "mistral.mistral"
+class MistralTool(LLMPluginTool):
+    """MistralAI."""
+
+    name: str = 'mistral'
     display_name: str = 'MistralAI'
     description: str = 'Generates text using MistralAI LLMs.'
-    kind: str = "model"
-    bundle: str = "mistral"
-    bundle_label: str = 'MistralAI'
-    source: str = "langflow/bundles/mistral"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "MISTRAL_API_KEY"
+    default_base_url: str = ''
+    key_env: str = 'MISTRAL_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_mistralai import ChatMistralAI

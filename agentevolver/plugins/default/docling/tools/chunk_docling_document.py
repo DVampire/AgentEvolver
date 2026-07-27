@@ -1,23 +1,17 @@
-"""Chunk DoclingDocument — from the Langflow `docling` bundle (ported)."""
+"""Chunk DoclingDocument."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DoclingChunkDoclingDocumentPlugin(BundlePlugin):
-    name: str = "docling.chunk_docling_document"
+class DoclingChunkDoclingDocumentTool(PluginTool):
+    """Chunk DoclingDocument."""
+
+    name: str = 'chunk_docling_document'
     display_name: str = 'Chunk DoclingDocument'
     description: str = 'Use DoclingDocument chunkers to split the document into chunks.'
-    kind: str = "tool"
-    bundle: str = "docling"
-    bundle_label: str = 'Docling'
-    category: str = "files"
-    source: str = "langflow/bundles/docling"
-    status: str = "complete"
 
     async def __call__(self, source: str = "", max_tokens: int = 512, **kwargs) -> Response:
         src = str(source or "").strip()

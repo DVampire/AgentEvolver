@@ -1,23 +1,17 @@
-"""Extract Web Data — from the Langflow `agentql` bundle (ported)."""
+"""Extract Web Data."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AgentqlAgentqlApiPlugin(BundlePlugin):
-    name: str = "agentql.agentql_api"
+class AgentqlApiTool(PluginTool):
+    """Extract Web Data."""
+
+    name: str = 'agentql_api'
     display_name: str = 'Extract Web Data'
     description: str = 'Extracts structured data from a web page using an AgentQL query or a Natural Language description.'
-    kind: str = "tool"
-    bundle: str = "agentql"
-    bundle_label: str = 'AgentQL'
-    category: str = "data"
-    source: str = "langflow/bundles/agentql"
-    status: str = "complete"
 
     async def __call__(self, url: str = "", query: str = "", prompt: str = "", api_key: str = "", mode: str = "fast", **kwargs) -> Response:
         import httpx

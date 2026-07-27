@@ -1,36 +1,29 @@
 ---
 id: docling
 name: Docling
-kind: bundle
-category: data
-icon: resources/icon.svg
-source: langflow/bundles/docling
-status: complete
-version: "1.0.0"
+category: files
+type: tool
 tools: 4
+implemented: 4
+credentials: []
 requirements: [docling]
+version: "1.0.0"
 ---
-
 # Docling
 
-Migrated from the Langflow **docling** bundle. This package is in the
-**structure** phase: all 4 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Docling tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `docling.chunk_docling_document` | Chunk DoclingDocument | Use DoclingDocument chunkers to split the document into chun | structure |
-| `docling.docling_inline` | Docling | Uses Docling to process input documents running the Docling  | structure |
-| `docling.docling_remote` | Docling Serve | Uses Docling to process input documents connecting to your i | structure |
-| `docling.export_docling_document` | Export DoclingDocument | Export DoclingDocument to markdown, html or other formats. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `docling.chunk_docling_document` | Chunk DoclingDocument | ✅ | Use DoclingDocument chunkers to split the document into chunks. |
+| `docling.docling_inline` | Docling | ✅ | Uses Docling to process input documents running the Docling models locally. |
+| `docling.docling_remote` | Docling Serve | ✅ | Uses Docling to process input documents connecting to your instance of Docling Serve. |
+| `docling.export_docling_document` | Export DoclingDocument | ✅ | Export DoclingDocument to markdown, html or other formats. |
 
-## Icon
+All 4 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/docling/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

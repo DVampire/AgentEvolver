@@ -1,24 +1,20 @@
-"""AI/ML API Embeddings — from the Langflow `aiml` embeddings bundle (ported)."""
+"""AI/ML API Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AimlAimlEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "aiml.aiml_embeddings"
+class AimlEmbeddingsTool(EmbeddingPluginTool):
+    """AI/ML API Embeddings."""
+
+    name: str = 'aiml_embeddings'
     display_name: str = 'AI/ML API Embeddings'
     description: str = 'Generate embeddings using the AI/ML API.'
-    kind: str = "embedding"
-    bundle: str = "aiml"
-    bundle_label: str = 'AI/ML API'
-    source: str = "langflow/bundles/aiml"
-    status: str = "complete"
-    key_env: str = "AIML_API_KEY"
-    default_base_url: str = "https://api.aimlapi.com/v1"
+    type: str = 'embedding'
+    key_env: str = 'AIML_API_KEY'
+    default_base_url: str = 'https://api.aimlapi.com/v1'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_openai import OpenAIEmbeddings

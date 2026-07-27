@@ -1,22 +1,17 @@
-"""Milvus — from the Langflow `milvus` vector-store bundle (ported)."""
+"""Milvus."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class MilvusMilvusPlugin(VectorStorePlugin):
-    name: str = "milvus.milvus"
+class MilvusTool(VectorStorePluginTool):
+    """Milvus."""
+
+    name: str = 'milvus'
     display_name: str = 'Milvus'
     description: str = 'Milvus vector store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "milvus"
-    bundle_label: str = 'Milvus'
-    source: str = "langflow/bundles/milvus"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         from langchain_milvus.vectorstores import Milvus as LCMilvus

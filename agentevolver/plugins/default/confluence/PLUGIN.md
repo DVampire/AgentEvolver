@@ -1,33 +1,27 @@
 ---
 id: confluence
 name: Confluence
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/confluence
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-community]
+implemented: 1
+credentials: [CONFLUENCE_API_KEY]
+requirements: [langchain_community]
+version: "1.0.0"
 ---
-
 # Confluence
 
-Migrated from the Langflow **confluence** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Confluence tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `confluence.confluence` | Confluence | Confluence wiki collaboration platform | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `confluence.confluence` | Confluence | ✅ | Confluence wiki collaboration platform |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/confluence/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`CONFLUENCE_API_KEY`, an `api_key` argument on the call, or a `confluence_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

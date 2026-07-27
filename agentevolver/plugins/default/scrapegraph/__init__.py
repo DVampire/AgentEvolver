@@ -1,5 +1,5 @@
-"""`ScrapeGraph` bundle plugin (migrated from Langflow)."""
+"""ScrapeGraph plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import ScrapegraphPlugin
 
-__all__: list = []
+__all__ = ["ScrapegraphPlugin"]

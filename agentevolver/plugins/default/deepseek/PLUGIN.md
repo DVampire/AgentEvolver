@@ -1,33 +1,27 @@
 ---
 id: deepseek
 name: DeepSeek
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/deepseek
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-openai]
+implemented: 1
+credentials: [DEEPSEEK_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
-
 # DeepSeek
 
-Migrated from the Langflow **deepseek** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+DeepSeek tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `deepseek.deepseek` | DeepSeek | Generate text using DeepSeek LLMs. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `deepseek.deepseek` | DeepSeek | ✅ | Generate text using DeepSeek LLMs. |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/deepseek/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`DEEPSEEK_API_KEY`, an `api_key` argument on the call, or a `deepseek_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

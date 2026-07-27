@@ -1,22 +1,17 @@
-"""Amazon Bedrock — from the Langflow `amazon` LLM bundle (ported)."""
+"""Amazon Bedrock."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AmazonAmazonBedrockModelPlugin(LLMPlugin):
-    name: str = "amazon.amazon_bedrock_model"
+class AmazonBedrockModelTool(LLMPluginTool):
+    """Amazon Bedrock."""
+
+    name: str = 'amazon_bedrock_model'
     display_name: str = 'Amazon Bedrock'
     description: str = 'Amazon Bedrock'
-    kind: str = "model"
-    bundle: str = "amazon"
-    bundle_label: str = 'Amazon Bedrock'
-    source: str = "langflow/bundles/amazon"
-    status: str = "complete"
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_aws import ChatBedrock

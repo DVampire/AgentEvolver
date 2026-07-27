@@ -1,5 +1,5 @@
-"""`Weaviate` bundle plugin (migrated from Langflow)."""
+"""Weaviate plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import WeaviatePlugin
 
-__all__: list = []
+__all__ = ["WeaviatePlugin"]

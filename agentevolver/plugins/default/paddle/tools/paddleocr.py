@@ -1,23 +1,17 @@
-"""PaddleOCR — from the Langflow `paddle` bundle (ported)."""
+"""PaddleOCR."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class PaddlePaddleocrPlugin(BundlePlugin):
-    name: str = "paddle.paddleocr"
+class PaddleocrTool(PluginTool):
+    """PaddleOCR."""
+
+    name: str = 'paddleocr'
     display_name: str = 'PaddleOCR'
     description: str = 'Use PaddleOCR for either layout-aware document parsing into Markdown or plain OCR text recognition.'
-    kind: str = "tool"
-    bundle: str = "paddle"
-    bundle_label: str = 'PaddleOCR'
-    category: str = "data"
-    source: str = "langflow/bundles/paddle"
-    status: str = "complete"
 
     async def __call__(self, image_path: str = "", lang: str = "en", **kwargs) -> Response:
         import os as _os

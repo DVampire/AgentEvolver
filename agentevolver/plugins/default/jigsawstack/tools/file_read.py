@@ -1,20 +1,15 @@
-"""File Read — from the Langflow `jigsawstack` bundle (ported)."""
+"""File Read."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.jigsawstack._base import JigsawStackPlugin
+from agentevolver.plugins.default.jigsawstack._base import JigsawstackToolBase
 
 
-@PLUGIN.register_module(force=True)
-class JigsawstackFileReadPlugin(JigsawStackPlugin):
-    name: str = "jigsawstack.file_read"
+class JigsawstackFileReadTool(JigsawstackToolBase):
+    """File Read."""
+
+    name: str = 'file_read'
     display_name: str = 'File Read'
-    description: str = 'Read any previously uploaded file seamlessly from \\\\\\n        JigsawStack File Storage and use it in your AI applications.'
-    kind: str = "tool"
-    bundle: str = "jigsawstack"
-    bundle_label: str = "JigsawStack"
-    source: str = "langflow/bundles/jigsawstack"
-    status: str = "complete"
+    description: str = 'Read any previously uploaded file seamlessly from \\\\\\\\\\\\n        JigsawStack File Storage and use it in your AI applications.'
 
     async def __call__(self, key: str = "", api_key: str = "", **kwargs) -> Response:
         params = {"key": key}

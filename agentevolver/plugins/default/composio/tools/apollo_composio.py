@@ -1,17 +1,12 @@
-"""Apollo (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Apollo (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioApolloComposioPlugin(ComposioPlugin):
-    name: str = "composio.apollo_composio"
+class ComposioApolloComposioTool(ComposioPluginTool):
+    """Apollo."""
+
+    name: str = 'apollo_composio'
     display_name: str = 'Apollo'
     description: str = 'Execute Apollo actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "apollo"
+    app_name: str = 'apollo'

@@ -1,5 +1,5 @@
-"""`NVIDIA` bundle plugin (migrated from Langflow)."""
+"""NVIDIA plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import NvidiaPlugin
 
-__all__: list = []
+__all__ = ["NvidiaPlugin"]

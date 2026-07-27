@@ -1,24 +1,19 @@
-"""Groq — from the Langflow `groq` LLM bundle (ported)."""
+"""Groq."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GroqGroqPlugin(LLMPlugin):
-    name: str = "groq.groq"
+class GroqTool(LLMPluginTool):
+    """Groq."""
+
+    name: str = 'groq'
     display_name: str = 'Groq'
     description: str = 'Generate text using Groq.'
-    kind: str = "model"
-    bundle: str = "groq"
-    bundle_label: str = 'Groq'
-    source: str = "langflow/bundles/groq"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "GROQ_API_KEY"
+    default_base_url: str = ''
+    key_env: str = 'GROQ_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_groq import ChatGroq

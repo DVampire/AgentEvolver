@@ -1,33 +1,27 @@
 ---
 id: cometapi
 name: CometAPI
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/cometapi
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-openai]
+implemented: 1
+credentials: [COMETAPI_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
-
 # CometAPI
 
-Migrated from the Langflow **cometapi** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+CometAPI tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `cometapi.cometapi` | CometAPI | All AI Models in One API 500+ AI Models | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `cometapi.cometapi` | CometAPI | ✅ | All AI Models in One API 500+ AI Models |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/cometapi/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`COMETAPI_API_KEY`, an `api_key` argument on the call, or a `cometapi_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

@@ -1,20 +1,15 @@
-"""AssemblyAI LeMUR — from the Langflow `assemblyai` bundle (ported)."""
+"""AssemblyAI LeMUR."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.assemblyai._base import AssemblyAIPlugin
+from agentevolver.plugins.default.assemblyai._base import AssemblyaiToolBase
 
 
-@PLUGIN.register_module(force=True)
-class AssemblyaiAssemblyaiLemurPlugin(AssemblyAIPlugin):
-    name: str = "assemblyai.assemblyai_lemur"
+class AssemblyaiLemurTool(AssemblyaiToolBase):
+    """AssemblyAI LeMUR."""
+
+    name: str = 'assemblyai_lemur'
     display_name: str = 'AssemblyAI LeMUR'
     description: str = 'Apply Large Language Models to spoken data using the AssemblyAI LeMUR framework'
-    kind: str = "tool"
-    bundle: str = "assemblyai"
-    bundle_label: str = "AssemblyAI"
-    source: str = "langflow/bundles/assemblyai"
-    status: str = "complete"
 
     async def __call__(self, transcript_ids: list = None, prompt: str = "", final_model: str = "default", api_key: str = "", **kwargs) -> Response:
         try:

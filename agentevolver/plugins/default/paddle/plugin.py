@@ -1,6 +1,19 @@
-"""Registration hub for the `paddle` bundle."""
+"""PaddleOCR plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "paddle"
-BUNDLE_LABEL = 'Paddle'
+from .tools.paddleocr import PaddleocrTool
+
+
+@PLUGIN.register_module(force=True)
+class PaddlePlugin(Plugin):
+    """PaddleOCR tools."""
+
+    tools = (PaddleocrTool,)
+
+    name: str = 'paddle'
+    display_name: str = 'PaddleOCR'
+    description: str = 'PaddleOCR tools.'
+    category: str = 'data'
+    type: str = 'tool'

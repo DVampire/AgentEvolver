@@ -1,5 +1,5 @@
-"""`Wikipedia` bundle plugin (migrated from Langflow)."""
+"""Wikipedia plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import WikipediaPlugin
 
-__all__: list = []
+__all__ = ["WikipediaPlugin"]

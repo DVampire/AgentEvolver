@@ -1,24 +1,19 @@
-"""Novita AI — from the Langflow `novita` LLM bundle (ported)."""
+"""Novita AI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NovitaNovitaPlugin(LLMPlugin):
-    name: str = "novita.novita"
+class NovitaTool(LLMPluginTool):
+    """Novita AI."""
+
+    name: str = 'novita'
     display_name: str = 'Novita AI'
     description: str = 'Generates text using Novita AI LLMs (OpenAI compatible).'
-    kind: str = "model"
-    bundle: str = "novita"
-    bundle_label: str = 'Novita AI'
-    source: str = "langflow/bundles/novita"
-    status: str = "complete"
-    default_base_url: str = "https://api.novita.ai/v3/openai"
-    key_env: str = "NOVITA_API_KEY"
+    default_base_url: str = 'https://api.novita.ai/v3/openai'
+    key_env: str = 'NOVITA_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         return self._openai_compatible(cfg.get("model_name"), cfg.get("api_key", ""),

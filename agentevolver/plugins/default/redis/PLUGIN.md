@@ -1,34 +1,27 @@
 ---
 id: redis
 name: Redis
-kind: bundle
 category: data
-icon: resources/icon.svg
-source: langflow/bundles/redis
-status: complete
-version: "1.0.0"
+type: vectorstore
 tools: 2
-requirements: [langchain-community, langchain-openai]
+implemented: 2
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
-
 # Redis
 
-Migrated from the Langflow **redis** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Redis tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `redis.redis` | Redis | Implementation of Vector Store using Redis | structure |
-| `redis.redis_chat` | Redis Chat Memory | Retrieves and store chat messages from Redis. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `redis.redis` | Redis | ✅ | Implementation of Vector Store using Redis |
+| `redis.redis_chat` | Redis Chat Memory | ✅ | Retrieves and store chat messages from Redis. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/redis/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `redis_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

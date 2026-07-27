@@ -92,7 +92,7 @@ class PortManager:
         port: Optional[int] = None,
         *,
         preferred: Optional[int] = None,
-        kind: str = "host",
+        type: str = "host",
         override: bool = False,
     ) -> dict:
         """Register a port under ``name`` and persist it. Returns the record.
@@ -106,7 +106,7 @@ class PortManager:
         - ``port`` omitted: allocate one — ``preferred`` if free, else an
           OS-assigned free port. Idempotent per ``name`` (reused across calls and
           runs) unless ``override`` is set.
-        - ``kind`` labels the entry (``host`` | ``env`` | …) for readability.
+        - ``type`` labels the entry (``host`` | ``env`` | …) for readability.
         """
         with self._lock:
             self._ensure_loaded()
@@ -119,13 +119,13 @@ class PortManager:
                 "name": name,
                 "port": port,
                 "preferred": preferred if preferred is not None else port,
-                "kind": kind,
+                "type": type,
                 "pid": os.getpid(),
                 "updated_at": _now(),
             }
             self._registry[name] = record
             self._save()
-            logger.info(f"| 🔌 Port registered: {name} -> {port} ({kind})")
+            logger.info(f"| 🔌 Port registered: {name} -> {port} ({type})")
             return record
 
     def unregister(self, name: str) -> bool:

@@ -1,6 +1,20 @@
-"""Registration hub for the `redis` bundle."""
+"""Redis plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "redis"
-BUNDLE_LABEL = 'Redis'
+from .tools.chat import RedisChatTool
+from .tools.redis import RedisTool
+
+
+@PLUGIN.register_module(force=True)
+class RedisPlugin(Plugin):
+    """Redis tools."""
+
+    tools = (RedisTool, RedisChatTool,)
+
+    name: str = 'redis'
+    display_name: str = 'Redis'
+    description: str = 'Redis tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

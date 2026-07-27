@@ -1,6 +1,20 @@
-"""Registration hub for the `mistral` bundle."""
+"""MistralAI plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "mistral"
-BUNDLE_LABEL = 'Mistral'
+from .tools.embeddings import MistralEmbeddingsTool
+from .tools.mistral import MistralTool
+
+
+@PLUGIN.register_module(force=True)
+class MistralPlugin(Plugin):
+    """MistralAI tools."""
+
+    tools = (MistralTool, MistralEmbeddingsTool,)
+
+    name: str = 'mistral'
+    display_name: str = 'MistralAI'
+    description: str = 'MistralAI tools.'
+    category: str = 'data'
+    type: str = 'model'

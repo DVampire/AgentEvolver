@@ -1,5 +1,5 @@
-"""`Code Agents` bundle plugin (migrated from Langflow)."""
+"""Code Agents plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import CodeagentsPlugin
 
-__all__: list = []
+__all__ = ["CodeagentsPlugin"]

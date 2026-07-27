@@ -39,10 +39,10 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
   const [search, setSearch] = useState('');
   const [railed, setRailed] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(['agent', 'workflow']));
-  // The whole Bundles super-section + each bundle sub-group start collapsed
-  // (Langflow's Bundles section is closed by default given its size).
-  const [bundlesOpen, setBundlesOpen] = useState(false);
-  const [openBundles, setOpenBundles] = useState<Set<string>>(() => new Set());
+  // The Plugins super-section and each plugin sub-group start collapsed: there
+  // are 88 plugins, and expanded by default they would bury everything else.
+  const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [openPlugins, setOpenPlugins] = useState<Set<string>>(() => new Set());
   const query = useDebounce(search, 150).trim().toLowerCase();
 
   // Categories that actually have components — for the collapsed icon rail.
@@ -53,28 +53,28 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
 
   const matches = (spec: NodeSpec) =>
     !query || spec.label.toLowerCase().includes(query) || spec.id.toLowerCase().includes(query)
-    || (spec.bundle_label ?? '').toLowerCase().includes(query);
+    || (spec.plugin_label ?? '').toLowerCase().includes(query);
 
-  // Normal (non-bundle) categories.
+  // Normal (non-plugin) categories.
   const grouped = useMemo(() => {
-    const filtered = specs.filter((spec) => spec.category !== 'bundle' && matches(spec));
+    const filtered = specs.filter((spec) => spec.category !== 'plugin' && matches(spec));
     return CATEGORY_ORDER.map((category) => ({ category, items: filtered.filter((spec) => spec.category === category) })).filter((group) => group.items.length);
   }, [specs, query]);
 
-  // Migrated Langflow bundles: category === 'bundle', nested one level deeper
-  // (bundle → its tools). Sorted by bundle label; a search matches on the bundle
-  // name too, so typing "notion" reveals the whole Notion group.
-  const bundleGroups = useMemo(() => {
-    const byBundle = new Map<string, { label: string; icon: string; items: NodeSpec[] }>();
+  // Plugin tools: category === 'plugin', nested one level deeper (plugin → its
+  // tools). Sorted by plugin label; a search matches the plugin name too, so
+  // typing "notion" reveals the whole Notion group.
+  const pluginGroups = useMemo(() => {
+    const byPlugin = new Map<string, { label: string; icon: string; items: NodeSpec[] }>();
     for (const spec of specs) {
-      if (spec.category !== 'bundle' || !spec.bundle) continue;
-      const bundleMatch = !query || (spec.bundle_label ?? spec.bundle).toLowerCase().includes(query);
-      if (!bundleMatch && !matches(spec)) continue;
-      const group = byBundle.get(spec.bundle) ?? { label: spec.bundle_label || spec.bundle, icon: spec.icon || `bundle:${spec.bundle}`, items: [] };
+      if (spec.category !== 'plugin' || !spec.plugin) continue;
+      const pluginMatch = !query || (spec.plugin_label ?? spec.plugin).toLowerCase().includes(query);
+      if (!pluginMatch && !matches(spec)) continue;
+      const group = byPlugin.get(spec.plugin) ?? { label: spec.plugin_label || spec.plugin, icon: spec.icon || `plugin:${spec.plugin}`, items: [] };
       group.items.push(spec);
-      byBundle.set(spec.bundle, group);
+      byPlugin.set(spec.plugin, group);
     }
-    return [...byBundle.entries()]
+    return [...byPlugin.entries()]
       .map(([id, g]) => ({ id, ...g }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [specs, query]);
@@ -110,7 +110,7 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
     next.has(category) ? next.delete(category) : next.add(category);
     return next;
   });
-  const toggleBundle = (id: string) => setOpenBundles((current) => {
+  const togglePlugin = (id: string) => setOpenPlugins((current) => {
     const next = new Set(current);
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
@@ -146,26 +146,26 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
           );
         })}
 
-        {/* Bundles — migrated Langflow integrations, nested two levels deep. */}
-        {bundleGroups.length ? (
-          <section className="lf-bundles">
-            <button className="canvas-cat-head" onClick={() => setBundlesOpen((open) => !open)} aria-expanded={bundlesOpen || !!query}>
+        {/* Plugins — one sub-group per service, its tools nested inside. */}
+        {pluginGroups.length ? (
+          <section className="lf-plugins">
+            <button className="canvas-cat-head" onClick={() => setPluginsOpen((open) => !open)} aria-expanded={pluginsOpen || !!query}>
               <Boxes className="lf-cat-icon" size={16} />
               <strong>Plugins</strong>
-              <span className="lf-cat-count">{bundleGroups.length}</span>
+              <span className="lf-cat-count">{pluginGroups.length}</span>
               <em className="lf-cat-chevron"><ChevronRight size={14} /></em>
             </button>
-            {(bundlesOpen || query) ? bundleGroups.map((bundle) => {
-              const open = openBundles.has(bundle.id) || !!query;
+            {(pluginsOpen || query) ? pluginGroups.map((plugin) => {
+              const open = openPlugins.has(plugin.id) || !!query;
               return (
-                <div key={bundle.id} className="lf-bundle">
-                  <button className="canvas-cat-head lf-bundle-head" onClick={() => toggleBundle(bundle.id)} aria-expanded={open}>
-                    <NodeIcon name={bundle.icon} category="bundle" size={16} className="lf-cat-icon" />
-                    <strong>{bundle.label}</strong>
-                    <span className="lf-cat-count">{bundle.items.length}</span>
+                <div key={plugin.id} className="lf-plugin">
+                  <button className="canvas-cat-head lf-plugin-head" onClick={() => togglePlugin(plugin.id)} aria-expanded={open}>
+                    <NodeIcon name={plugin.icon} category="plugin" size={16} className="lf-cat-icon" />
+                    <strong>{plugin.label}</strong>
+                    <span className="lf-cat-count">{plugin.items.length}</span>
                     <em className="lf-cat-chevron"><ChevronRight size={13} /></em>
                   </button>
-                  {open ? bundle.items.map((spec) => (
+                  {open ? plugin.items.map((spec) => (
                     <DraggableRow key={spec.id} spec={spec} onAdd={onAdd} />
                   )) : null}
                 </div>
@@ -174,7 +174,7 @@ export function Palette({ specs, connected, onAdd }: { specs: NodeSpec[]; connec
           </section>
         ) : null}
 
-        {!grouped.length && !bundleGroups.length ? <p className="empty">{connected ? 'No components match this search.' : 'Connecting…'}</p> : null}
+        {!grouped.length && !pluginGroups.length ? <p className="empty">{connected ? 'No components match this search.' : 'Connecting…'}</p> : null}
       </div>
     </aside>
   );

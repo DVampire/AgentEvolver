@@ -1,22 +1,17 @@
-"""Local DB — from the Langflow `chroma` vector-store bundle (ported)."""
+"""Local DB."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ChromaLocalDbPlugin(VectorStorePlugin):
-    name: str = "chroma.local_db"
+class ChromaLocalDbTool(VectorStorePluginTool):
+    """Local DB."""
+
+    name: str = 'local_db'
     display_name: str = 'Local DB'
     description: str = 'Local Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "chroma"
-    bundle_label: str = 'Chroma'
-    source: str = "langflow/bundles/chroma"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

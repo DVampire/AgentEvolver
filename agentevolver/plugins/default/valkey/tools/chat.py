@@ -1,23 +1,19 @@
-"""Valkey Chat Memory — from the Langflow `valkey` bundle (ported)."""
+"""Valkey Chat Memory."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import MemoryPlugin
+from agentevolver.plugins.types import MemoryPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ValkeyValkeyChatPlugin(MemoryPlugin):
-    name: str = "valkey.valkey_chat"
+class ValkeyChatTool(MemoryPluginTool):
+    """Valkey Chat Memory."""
+
+    name: str = 'valkey_chat'
     display_name: str = 'Valkey Chat Memory'
     description: str = 'Retrieves and stores chat messages from Valkey.'
-    kind: str = "memory"
-    bundle: str = "valkey"
-    bundle_label: str = 'Valkey'
-    category: str = "agent"
-    source: str = "langflow/bundles/valkey"
-    status: str = "complete"
+    category: str = 'agent'
+    type: str = 'memory'
 
     def _history(self, session_id: str, **cfg: Any) -> Any:
         from langchain_community.chat_message_histories import RedisChatMessageHistory

@@ -1,4 +1,4 @@
-"""Canvas module: graph→HTML compilation, extension publishing, drafts, runs."""
+"""Canvas module: graph compilation, the reuse library, drafts, runs."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import pytest
 from agentevolver.canvas.compiler import CanvasCompileError, canvas_compiler
 from agentevolver.canvas.server import CanvasManagerServer
 from agentevolver.canvas.types import FlowGraph, GraphEdge, GraphNode, Position, workflow_name_for
-from agentevolver.workflow import workflow_manager
 from agentevolver.workflow.types import StepType
 
 
@@ -23,15 +22,15 @@ def _review_graph(name: str = "Canvas review") -> FlowGraph:
     return FlowGraph(
         name=name,
         nodes=[
-            _node("task_in", kind="input", name="task", required=True, description="What to review."),
-            _node("angles", kind="input", name="angles", input_type="array", required=True),
+            _node("task_in", type="input", name="task", required=True, description="What to review."),
+            _node("angles", type="input", name="angles", input_type="array", required=True),
             _node("reviews", step_type="map", attrs={"item_name": "angle", "concurrency": 4},
                   position=Position(x=0, y=100)),
             _node("review", step_type="agent", target="general_agent",
                   task="Review from the ${angle} angle: ${inputs.task}", parent="reviews"),
             _node("report", step_type="reduce", target="general_agent",
                   task="Merge the findings into one report.", position=Position(x=0, y=300)),
-            _node("out", kind="output", name="report", position=Position(x=0, y=400)),
+            _node("out", type="output", name="report", position=Position(x=0, y=400)),
         ],
         edges=[
             GraphEdge(id="e1", source="angles", target="reviews", param="items"),
@@ -58,19 +57,6 @@ def test_compile_produces_valid_registered_workflow_shape() -> None:
     assert 'generated-by" content="canvas"' in html
 
 
-def test_embedded_source_roundtrip() -> None:
-    graph = _review_graph(name="Embed me")
-    html, _ = canvas_compiler.compile(graph, embed_source=True)
-    recovered = canvas_compiler.extract_source(html)
-    assert recovered is not None
-    assert recovered.name == "Embed me"
-    assert {node.id for node in recovered.nodes} == {node.id for node in graph.nodes}
-    assert recovered.nodes[2].position == graph.nodes[2].position  # layout survives
-
-    plain, _ = canvas_compiler.compile(graph)  # without embedding: not canvas-editable
-    assert canvas_compiler.extract_source(plain) is None
-
-
 def test_catalog_ports_are_typed() -> None:
     from agentevolver.canvas.catalog import catalog
 
@@ -80,7 +66,8 @@ def test_catalog_ports_are_typed() -> None:
     map_spec = specs["step/map"]
     assert [port.name for port in map_spec.inputs] == ["items"]
     assert map_spec.inputs[0].type == "list"
-    assert [port.name for port in map_spec.outputs] == ["out"] and map_spec.outputs[0].type == "list"
+    # map fans out on ``item`` and collects on ``done``.
+    assert [port.name for port in map_spec.outputs] == ["item", "done"]
 
 
 def test_capability_nodes_expose_message_data_files_ports() -> None:
@@ -98,7 +85,7 @@ def test_typed_edge_compiles_to_sub_path() -> None:
         name="typed",
         nodes=[
             _node("ag", step_type="agent", target="general_agent", task="Answer"),
-            _node("out", kind="output", name="answer"),
+            _node("out", type="output", name="answer"),
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="message")],
     )
@@ -112,7 +99,7 @@ def test_out_port_compiles_to_whole_value() -> None:
         name="whole",
         nodes=[
             _node("ag", step_type="agent", target="general_agent", task="Answer"),
-            _node("out", kind="output", name="answer"),
+            _node("out", type="output", name="answer"),
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="out")],
     )
@@ -124,10 +111,10 @@ def test_agent_mounts_compile_to_allowlist_args() -> None:
     graph = FlowGraph(
         name="mounted",
         nodes=[
-            _node("q", kind="input", name="q", required=True),
+            _node("q", type="input", name="q", required=True),
             _node("ag", step_type="agent", target="general_agent", task="Answer: ${inputs.q}",
                   mounts={"tools": ["bash_tool", "web_searcher_tool"], "skills": ["debug"], "connectors": []}),
-            _node("out", kind="output", name="answer"),
+            _node("out", type="output", name="answer"),
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value")],
     )
@@ -192,7 +179,7 @@ def test_compile_rejects_broken_graphs() -> None:
     with pytest.raises(CanvasCompileError, match="no capability"):
         canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("a", step_type="tool")]))
     with pytest.raises(CanvasCompileError, match="no steps"):
-        canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("i", kind="input", name="q")]))
+        canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("i", type="input", name="q")]))
     with pytest.raises(CanvasCompileError, match="both connected and set"):
         canvas_compiler.compile(FlowGraph(
             name="x",
@@ -216,66 +203,31 @@ def test_draft_persistence_is_session_scoped(tmp_path) -> None:
     assert asyncio.run(manager.delete_flow(saved.id, session_a)) is True
 
 
-def test_publish_promotes_through_extension_manager(tmp_path, monkeypatch) -> None:
-    async def run() -> None:
-        from agentevolver.extension import extension_manager
-        from agentevolver.version import version_manager
+def test_export_to_library_roundtrip(tmp_path, monkeypatch) -> None:
+    """A draft exported to the library comes back as a fresh, unbound draft."""
+    monkeypatch.setenv("AGENTEVOLVER_EXTENSION_ROOT", str(tmp_path / "extension"))
+    manager = CanvasManagerServer()
+    flows = tmp_path / "session" / "canvas"
+    graph = manager.save_flow(_review_graph(name="library roundtrip"), flows)
+    name = workflow_name_for(graph)
 
-        await version_manager.initialize()
-        extension_manager.set_base_dir(str(tmp_path / "extension"))
-        manager = CanvasManagerServer()
-        flows = tmp_path / "session" / "canvas"
-        graph = manager.save_flow(_review_graph(name="publish roundtrip"), flows)
-        name = workflow_name_for(graph)
-        try:
-            published = await manager.publish_flow(graph.id, flows)
-            assert published["workflow_name"] == name
-            artifact = Path(published["artifact"])
-            assert artifact == tmp_path / "extension" / "workflow" / f"{name}.html"
-            assert artifact.is_file()
-            assert workflow_manager.get(name) is not None
-            # The artifact alone is enough to reopen the flow in the canvas.
-            assert canvas_compiler.extract_source(artifact.read_text(encoding="utf-8")) is not None
-            # It shows up as a published (editable) flow in any session.
-            listed = manager.list_flows(tmp_path / "elsewhere")
-            assert any(item["id"] == f"wf:{name}" for item in listed)
-            opened = manager.get_flow(f"wf:{name}", tmp_path / "elsewhere")
-            assert opened.published and opened.name == "publish roundtrip"
+    exported = asyncio.run(manager.export_to_library(graph.id, flows))
+    assert exported["name"] == name and exported["in_library"]
+    assert Path(exported["artifact"]) == tmp_path / "extension" / "canvas" / f"{name}.json"
+    assert Path(exported["artifact"]).is_file()
+    assert name in manager.list_library_names()
+    assert any(item["name"] == "library roundtrip" for item in manager.list_library())
 
-            # Republishing evolves the version through the extension system.
-            first_version = published["version"]
-            graph2 = manager.get_flow(graph.id, flows)
-            for node in graph2.nodes:
-                if node.id == "report":
-                    node.task = "Merge and rank the findings."
-            manager.save_flow(graph2, flows)
-            republished = await manager.publish_flow(graph2.id, flows)
-            assert republished["version"] != first_version
-        finally:
-            await extension_manager.unload("workflow", name)
+    reopened = manager.import_from_library(name)
+    assert reopened.name == "library roundtrip"
+    assert {node.id for node in reopened.nodes} == {node.id for node in graph.nodes}
+    assert reopened.nodes[2].position == graph.nodes[2].position  # layout survives
+    # Importing starts a new draft rather than aliasing the library copy.
+    assert not reopened.id
+    assert manager.save_flow(reopened, flows).id != graph.id
 
-    asyncio.run(run())
-
-
-def test_publish_refuses_to_clobber_handwritten_workflow(tmp_path) -> None:
-    async def run() -> None:
-        manager = CanvasManagerServer()
-        flows = tmp_path / "session" / "canvas"
-        graph = manager.save_flow(_review_graph(name="parallel review"), flows)
-        assert workflow_name_for(graph) == "parallel_review"  # collides with the built-in
-        registered_here = workflow_manager.get("parallel_review") is None
-        if registered_here:
-            workflow_manager.register(
-                Path("agentevolver/workflow/default/parallel_review.html"), override=True,
-            )
-        try:
-            with pytest.raises(ValueError, match="hand-written"):
-                await manager.publish_flow(graph.id, flows)
-        finally:
-            if registered_here:
-                workflow_manager.unregister("parallel_review")
-
-    asyncio.run(run())
+    assert asyncio.run(manager.delete_from_library(name)) is True
+    assert name not in manager.list_library_names()
 
 
 def test_draft_run_executes_on_workflow_runtime(tmp_path) -> None:
@@ -288,7 +240,7 @@ def test_draft_run_executes_on_workflow_runtime(tmp_path) -> None:
             name="draft run",
             nodes=[
                 _node("say", step_type="tool", target="bash_tool", args={"command": "echo canvas-ok"}),
-                _node("out", kind="output", name="said"),
+                _node("out", type="output", name="said"),
             ],
             edges=[GraphEdge(id="e", source="say", target="out", param="value")],
         )

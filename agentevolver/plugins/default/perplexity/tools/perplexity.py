@@ -1,24 +1,19 @@
-"""Perplexity — from the Langflow `perplexity` LLM bundle (ported)."""
+"""Perplexity."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class PerplexityPerplexityPlugin(LLMPlugin):
-    name: str = "perplexity.perplexity"
+class PerplexityTool(LLMPluginTool):
+    """Perplexity."""
+
+    name: str = 'perplexity'
     display_name: str = 'Perplexity'
     description: str = 'Generate text using Perplexity LLMs.'
-    kind: str = "model"
-    bundle: str = "perplexity"
-    bundle_label: str = 'Perplexity'
-    source: str = "langflow/bundles/perplexity"
-    status: str = "complete"
-    default_base_url: str = "https://api.perplexity.ai"
-    key_env: str = "PERPLEXITY_API_KEY"
+    default_base_url: str = 'https://api.perplexity.ai'
+    key_env: str = 'PERPLEXITY_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         return self._openai_compatible(cfg.get("model_name"), cfg.get("api_key", ""),

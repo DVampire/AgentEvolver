@@ -1,33 +1,27 @@
 ---
 id: cloudflare
 name: Cloudflare
-kind: bundle
-category: data
+category: knowledge
+type: embedding
 icon: resources/icon.svg
-source: langflow/bundles/cloudflare
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-community, langchain-openai]
+implemented: 1
+credentials: [CLOUDFLARE_ACCOUNT_ID]
+requirements: [langchain_community]
+version: "1.0.0"
 ---
-
 # Cloudflare
 
-Migrated from the Langflow **cloudflare** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Cloudflare tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `cloudflare.cloudflare` | Cloudflare Workers AI Embeddings | Generate embeddings using Cloudflare Workers AI models. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `cloudflare.cloudflare` | Cloudflare Workers AI Embeddings | ✅ | Generate embeddings using Cloudflare Workers AI models. |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/cloudflare/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`CLOUDFLARE_ACCOUNT_ID`, an `api_key` argument on the call, or a `cloudflare_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

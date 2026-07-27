@@ -1,6 +1,19 @@
-"""Registration hub for the `serpapi` bundle."""
+"""SerpAPI plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "serpapi"
-BUNDLE_LABEL = 'SerpAPI'
+from .tools.serp import SerpapiSerpTool
+
+
+@PLUGIN.register_module(force=True)
+class SerpapiPlugin(Plugin):
+    """SerpAPI tools."""
+
+    tools = (SerpapiSerpTool,)
+
+    name: str = 'serpapi'
+    display_name: str = 'SerpAPI'
+    description: str = 'SerpAPI tools.'
+    category: str = 'data'
+    type: str = 'tool'

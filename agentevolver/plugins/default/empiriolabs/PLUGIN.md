@@ -1,34 +1,28 @@
 ---
 id: empiriolabs
 name: EmpirioLabs
-kind: bundle
-category: data
+category: agent
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/empiriolabs
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-openai]
+implemented: 2
+credentials: [EMPIRIOLABS_API_KEY]
+requirements: [httpx, langchain_openai]
+version: "1.0.0"
 ---
-
 # EmpirioLabs
 
-Migrated from the Langflow **empiriolabs** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+EmpirioLabs tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `empiriolabs.empiriolabs` | EmpirioLabs AI | Generates text using EmpirioLabs AI LLMs (OpenAI compatible) | structure |
-| `empiriolabs.empiriolabs_image_generation` | EmpirioLabs AI Image Generation | Generate an image from a text prompt using EmpirioLabs AI im | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `empiriolabs.empiriolabs` | EmpirioLabs AI | ✅ | Generates text using EmpirioLabs AI LLMs (OpenAI compatible). |
+| `empiriolabs.empiriolabs_image_generation` | EmpirioLabs AI Image Generation | ✅ | Generate an image from a text prompt using EmpirioLabs AI image models such as Seedream, \\\\\\n        Qwen-Image, FLUX, Nova Canvas, and HunyuanImage. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/empiriolabs/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`EMPIRIOLABS_API_KEY`, an `api_key` argument on the call, or a `empiriolabs_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

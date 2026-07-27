@@ -1,21 +1,15 @@
-"""arXiv — from the Langflow `arxiv` bundle (ported)."""
+"""arXiv."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ArxivArxivPlugin(BundlePlugin):
-    name: str = "arxiv.arxiv"
+class ArxivTool(PluginTool):
+    """arXiv."""
+
+    name: str = 'arxiv'
     display_name: str = 'arXiv'
     description: str = 'Search and retrieve papers from arXiv.org.'
-    kind: str = "tool"
-    bundle: str = "arxiv"
-    bundle_label: str = 'arXiv'
-    category: str = "data"
-    source: str = "langflow/bundles/arxiv"
-    status: str = "complete"
 
     async def __call__(self, search_query: str = "", search_type: str = "all", max_results: int = 10, **kwargs) -> Response:
         import urllib.parse, urllib.request

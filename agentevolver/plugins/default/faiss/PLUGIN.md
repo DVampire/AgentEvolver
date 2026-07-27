@@ -1,33 +1,26 @@
 ---
 id: faiss
-name: Faiss
-kind: bundle
+name: FAISS
 category: data
-icon: lucide:FAISS
-source: langflow/bundles/faiss
-status: complete
-version: "1.0.0"
+type: vectorstore
 tools: 1
-requirements: [langchain-community, langchain-openai]
+implemented: 1
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
+# FAISS
 
-# Faiss
-
-Migrated from the Langflow **faiss** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+FAISS tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `faiss.faiss` | FAISS | FAISS Vector Store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `faiss.faiss` | FAISS | ✅ | FAISS Vector Store with search capabilities |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `FAISS` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/faiss/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `faiss_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

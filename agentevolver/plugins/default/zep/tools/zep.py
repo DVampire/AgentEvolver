@@ -1,23 +1,17 @@
-"""Zep Chat Memory — from the Langflow `zep` bundle (ported)."""
+"""Zep Chat Memory."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import MemoryPlugin
+from agentevolver.plugins.types import MemoryPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ZepZepPlugin(MemoryPlugin):
-    name: str = "zep.zep"
+class ZepTool(MemoryPluginTool):
+    """Zep Chat Memory."""
+
+    name: str = 'zep'
     display_name: str = 'Zep Chat Memory'
     description: str = 'Retrieves and store chat messages from Zep.'
-    kind: str = "memory"
-    bundle: str = "zep"
-    bundle_label: str = 'Zep'
-    category: str = "agent"
-    source: str = "langflow/bundles/zep"
-    status: str = "complete"
 
     def _history(self, session_id: str, **cfg: Any) -> Any:
         from langchain_community.chat_message_histories import ZepChatMessageHistory

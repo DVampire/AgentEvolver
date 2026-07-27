@@ -1,24 +1,20 @@
-"""Ollama Embeddings — from the Langflow `ollama` embeddings bundle (ported)."""
+"""Ollama Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OllamaOllamaEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "ollama.ollama_embeddings"
+class OllamaEmbeddingsTool(EmbeddingPluginTool):
+    """Ollama Embeddings."""
+
+    name: str = 'ollama_embeddings'
     display_name: str = 'Ollama Embeddings'
     description: str = 'Generate embeddings using Ollama models.'
-    kind: str = "embedding"
-    bundle: str = "ollama"
-    bundle_label: str = 'Ollama'
-    source: str = "langflow/bundles/ollama"
-    status: str = "complete"
-    key_env: str = ""
-    default_base_url: str = "http://localhost:11434"
+    type: str = 'embedding'
+    key_env: str = ''
+    default_base_url: str = 'http://localhost:11434'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_ollama import OllamaEmbeddings

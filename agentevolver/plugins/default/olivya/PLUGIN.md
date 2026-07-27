@@ -1,33 +1,27 @@
 ---
 id: olivya
 name: Olivya
-kind: bundle
 category: data
-icon: lucide:Olivya
-source: langflow/bundles/olivya
-status: complete
-version: "1.0.0"
+type: tool
+icon: resources/icon.svg
 tools: 1
-requirements: []
+implemented: 1
+credentials: [OLIVYA_API_KEY]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # Olivya
 
-Migrated from the Langflow **olivya** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Olivya tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `olivya.olivya` | Place Call | A component to create an outbound call request from Olivya | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `olivya.olivya` | Place Call | ✅ | A component to create an outbound call request from Olivya |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `Olivya` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/olivya/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OLIVYA_API_KEY`, an `api_key` argument on the call, or a `olivya_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

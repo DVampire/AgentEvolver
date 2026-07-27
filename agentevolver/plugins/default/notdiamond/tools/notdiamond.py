@@ -1,23 +1,17 @@
-"""Not Diamond Router — from the Langflow `notdiamond` bundle (ported)."""
+"""Not Diamond Router."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NotdiamondNotdiamondPlugin(BundlePlugin):
-    name: str = "notdiamond.notdiamond"
+class NotdiamondTool(PluginTool):
+    """Not Diamond Router."""
+
+    name: str = 'notdiamond'
     display_name: str = 'Not Diamond Router'
     description: str = 'Call the right model at the right time with the world'
-    kind: str = "tool"
-    bundle: str = "notdiamond"
-    bundle_label: str = 'Not Diamond'
-    category: str = "agent"
-    source: str = "langflow/bundles/notdiamond"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", models: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx

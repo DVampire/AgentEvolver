@@ -1,22 +1,18 @@
-"""Google Generative AI Embeddings — from the Langflow `google` embeddings bundle (ported)."""
+"""Google Generative AI Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GoogleGoogleGenerativeAiEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "google.google_generative_ai_embeddings"
+class GoogleGenerativeAiEmbeddingsTool(EmbeddingPluginTool):
+    """Google Generative AI Embeddings."""
+
+    name: str = 'google_generative_ai_embeddings'
     display_name: str = 'Google Generative AI Embeddings'
     description: str = 'Google Generative AI Embeddings'
-    kind: str = "embedding"
-    bundle: str = "google"
-    bundle_label: str = 'Google'
-    source: str = "langflow/bundles/google"
-    status: str = "complete"
+    type: str = 'embedding'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_google_genai import GoogleGenerativeAIEmbeddings

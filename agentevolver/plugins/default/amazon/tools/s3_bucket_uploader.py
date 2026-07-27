@@ -1,23 +1,19 @@
-"""S3 Bucket Uploader — from the Langflow `amazon` bundle (ported)."""
+"""S3 Bucket Uploader."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AmazonS3BucketUploaderPlugin(BundlePlugin):
-    name: str = "amazon.s3_bucket_uploader"
+class AmazonS3BucketUploaderTool(PluginTool):
+    """S3 Bucket Uploader."""
+
+    name: str = 's3_bucket_uploader'
     display_name: str = 'S3 Bucket Uploader'
     description: str = 'Uploads files to S3 bucket.'
-    kind: str = "tool"
-    bundle: str = "amazon"
-    bundle_label: str = 'Amazon'
-    category: str = "files"
-    source: str = "langflow/bundles/amazon"
-    status: str = "complete"
+    category: str = 'files'
+    type: str = 'tool'
 
     async def __call__(self, bucket_name: str = "", file_path: str = "", s3_key: str = "", aws_access_key_id: str = "", aws_secret_access_key: str = "", **kwargs) -> Response:
         if not bucket_name or not file_path:

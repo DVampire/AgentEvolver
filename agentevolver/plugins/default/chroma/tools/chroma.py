@@ -1,22 +1,17 @@
-"""Chroma DB — from the Langflow `chroma` vector-store bundle (ported)."""
+"""Chroma DB."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ChromaChromaPlugin(VectorStorePlugin):
-    name: str = "chroma.chroma"
+class ChromaTool(VectorStorePluginTool):
+    """Chroma DB."""
+
+    name: str = 'chroma'
     display_name: str = 'Chroma DB'
     description: str = 'Chroma Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "chroma"
-    bundle_label: str = 'Chroma'
-    source: str = "langflow/bundles/chroma"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         from langchain_chroma import Chroma

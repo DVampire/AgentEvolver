@@ -1,6 +1,6 @@
 """Process Manager — a lightweight registry-backed manager for pure processors.
 
-Mirrors :class:`agentevolver.plugins.server.PluginManager`: build processor
+Mirrors :class:`agentevolver.plugins.server.PluginManagerServer`: build processor
 instances once from the :data:`PROCESS` registry and invoke by name. ``__call__``
 returns a :class:`Response` the workflow runtime normalizes to
 ``{message, data, files}``.

@@ -1,23 +1,17 @@
-"""Git — from the Langflow `git` bundle (ported)."""
+"""Git."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GitGitPlugin(BundlePlugin):
-    name: str = "git.git"
+class GitTool(PluginTool):
+    """Git."""
+
+    name: str = 'git'
     display_name: str = 'Git'
     description: str = ''
-    kind: str = "tool"
-    bundle: str = "git"
-    bundle_label: str = 'Git'
-    category: str = "data"
-    source: str = "langflow/bundles/git"
-    status: str = "complete"
 
     async def __call__(self, clone_url: str = "", repo_path: str = "", branch: str = "main", file_filter: str = "", **kwargs) -> Response:
         import tempfile

@@ -1,5 +1,5 @@
-"""`Cohere` bundle plugin (migrated from Langflow)."""
+"""Cohere plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import CoherePlugin
 
-__all__: list = []
+__all__ = ["CoherePlugin"]

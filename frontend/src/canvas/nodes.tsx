@@ -321,7 +321,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
 
 /** Capability mounts folded into one collapsible "Capabilities" section so the
  * agent node stays compact. Collapsed shows a header + summary (how many kinds
- * are mounted, "Defaults" if none); expanded reveals one box per kind — wire
+ * are mounted, "Defaults" if none); expanded reveals one box per type — wire
  * capability nodes into the handle, OR click the box to multi-select from the
  * roster. Every agent can mount tools/skills/connectors/workflows/environments/
  * agents. Collapsed hides the mount handles entirely (folded away); it opens by
@@ -332,8 +332,8 @@ function AgentMountsSection({ id, spec, mounts, boundParams, update }: {
 }) {
   const ports = (spec?.inputs ?? []).filter((port) => port.name.startsWith('mount:'));
   const active = ports.reduce((sum, port) => {
-    const kind = port.name.slice('mount:'.length);
-    return sum + (boundParams.has(port.name) || (mounts[kind]?.length ?? 0) > 0 ? 1 : 0);
+    const mountType = port.name.slice('mount:'.length);
+    return sum + (boundParams.has(port.name) || (mounts[mountType]?.length ?? 0) > 0 ? 1 : 0);
   }, 0);
   const [open, setOpen] = useState(active > 0);
   if (!ports.length) return null;
@@ -347,15 +347,15 @@ function AgentMountsSection({ id, spec, mounts, boundParams, update }: {
       {open ? (
         <div className="lf-mounts-body">
           {ports.map((port) => {
-            const kind = port.name.slice('mount:'.length);
+            const mountType = port.name.slice('mount:'.length);
             return (
               <FieldShell key={port.name} label={port.label}
                 hint={`Wire ${port.label.toLowerCase()} nodes in, or click to pick`}
                 handle={<InHandle id={port.name} type={inputPortType(spec, port.name)} />}>
-                <MountPicker kind={kind} label={port.label}
-                  selected={mounts[kind] ?? []}
+                <MountPicker type={mountType} label={port.label}
+                  selected={mounts[mountType] ?? []}
                   connected={boundParams.has(port.name)}
-                  onChange={(next) => update(id, (current) => ({ mounts: { ...current.mounts, [kind]: next } }))} />
+                  onChange={(next) => update(id, (current) => ({ mounts: { ...current.mounts, [mountType]: next } }))} />
               </FieldShell>
             );
           })}
@@ -383,7 +383,7 @@ function MinimizedHandles({ inputs }: { inputs?: PortSpec[] }) {
 }
 
 function IoNodeCard({ id, data, selected }: NodeProps<CanvasNode>) {
-  const isInput = data.kind === 'input';
+  const isInput = data.type === 'input';
   const io = data.io;
   const set = (patch: Partial<CanvasData['io']>) => data.update(id, (current) => ({ io: { ...current.io, ...patch } }));
   return (

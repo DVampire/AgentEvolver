@@ -1,24 +1,19 @@
-"""Qianfan — from the Langflow `baidu` LLM bundle (ported)."""
+"""Qianfan."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class BaiduBaiduQianfanChatPlugin(LLMPlugin):
-    name: str = "baidu.baidu_qianfan_chat"
+class BaiduQianfanChatTool(LLMPluginTool):
+    """Qianfan."""
+
+    name: str = 'baidu_qianfan_chat'
     display_name: str = 'Qianfan'
     description: str = 'Generate text using Baidu Qianfan LLMs.'
-    kind: str = "model"
-    bundle: str = "baidu"
-    bundle_label: str = 'Qianfan'
-    source: str = "langflow/bundles/baidu"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "QIANFAN_AK"
+    default_base_url: str = ''
+    key_env: str = 'QIANFAN_AK'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_community.chat_models import QianfanChatEndpoint

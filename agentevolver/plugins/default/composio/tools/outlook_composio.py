@@ -1,17 +1,12 @@
-"""Outlook (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Outlook (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioOutlookComposioPlugin(ComposioPlugin):
-    name: str = "composio.outlook_composio"
+class ComposioOutlookComposioTool(ComposioPluginTool):
+    """Outlook."""
+
+    name: str = 'outlook_composio'
     display_name: str = 'Outlook'
     description: str = 'Execute Outlook actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "outlook"
+    app_name: str = 'outlook'

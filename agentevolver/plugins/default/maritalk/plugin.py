@@ -1,6 +1,19 @@
-"""Registration hub for the `maritalk` bundle."""
+"""MariTalk plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "maritalk"
-BUNDLE_LABEL = 'Maritalk'
+from .tools.maritalk import MaritalkTool
+
+
+@PLUGIN.register_module(force=True)
+class MaritalkPlugin(Plugin):
+    """MariTalk tools."""
+
+    tools = (MaritalkTool,)
+
+    name: str = 'maritalk'
+    display_name: str = 'MariTalk'
+    description: str = 'MariTalk tools.'
+    category: str = 'data'
+    type: str = 'model'

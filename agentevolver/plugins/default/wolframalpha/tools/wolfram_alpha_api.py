@@ -1,23 +1,17 @@
-"""WolframAlpha API — from the Langflow `wolframalpha` bundle (ported)."""
+"""WolframAlpha API."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class WolframalphaWolframAlphaApiPlugin(BundlePlugin):
-    name: str = "wolframalpha.wolfram_alpha_api"
+class WolframalphaWolframAlphaApiTool(PluginTool):
+    """WolframAlpha API."""
+
+    name: str = 'wolfram_alpha_api'
     display_name: str = 'WolframAlpha API'
     description: str = 'WolframAlpha API'
-    kind: str = "tool"
-    bundle: str = "wolframalpha"
-    bundle_label: str = 'WolframAlpha'
-    category: str = "data"
-    source: str = "langflow/bundles/wolframalpha"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", app_id: str = "", **kwargs) -> Response:
         q = str(input_value or "").strip()

@@ -1,17 +1,12 @@
-"""Bolna (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Bolna (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioBolnaComposioPlugin(ComposioPlugin):
-    name: str = "composio.bolna_composio"
+class ComposioBolnaComposioTool(ComposioPluginTool):
+    """Bolna."""
+
+    name: str = 'bolna_composio'
     display_name: str = 'Bolna'
     description: str = 'Execute Bolna actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "bolna"
+    app_name: str = 'bolna'

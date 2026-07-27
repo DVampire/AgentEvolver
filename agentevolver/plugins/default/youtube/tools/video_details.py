@@ -1,21 +1,15 @@
 """YouTube Video Details — info + statistics for a video (ported from Langflow)."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.youtube._base import YouTubePlugin
+from agentevolver.plugins.default.youtube._base import YoutubeToolBase
 
 
-@PLUGIN.register_module(force=True)
-class YoutubeVideoDetailsPlugin(YouTubePlugin):
-    name: str = "youtube.video_details"
-    display_name: str = "YouTube Video Details"
-    description: str = "Retrieves detailed information and statistics about YouTube videos."
-    kind: str = "data_source"
-    bundle: str = "youtube"
-    bundle_label: str = "YouTube"
-    category: str = "data"
-    source: str = "langflow/bundles/youtube"
-    status: str = "complete"
+class YoutubeVideoDetailsTool(YoutubeToolBase):
+    """YouTube Video Details."""
+
+    name: str = 'video_details'
+    display_name: str = 'YouTube Video Details'
+    description: str = 'Retrieves detailed information and statistics about YouTube videos.'
 
     async def __call__(self, video_url: str = "", api_key: str = "", include_statistics: bool = True,
                        include_content_details: bool = True, include_tags: bool = False, **kwargs) -> Response:

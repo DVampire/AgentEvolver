@@ -1,6 +1,19 @@
-"""Registration hub for the `couchbase` bundle."""
+"""Couchbase plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "couchbase"
-BUNDLE_LABEL = 'Couchbase'
+from .tools.couchbase import CouchbaseTool
+
+
+@PLUGIN.register_module(force=True)
+class CouchbasePlugin(Plugin):
+    """Couchbase tools."""
+
+    tools = (CouchbaseTool,)
+
+    name: str = 'couchbase'
+    display_name: str = 'Couchbase'
+    description: str = 'Couchbase tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

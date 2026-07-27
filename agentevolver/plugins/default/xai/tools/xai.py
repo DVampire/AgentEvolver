@@ -1,24 +1,19 @@
-"""xAI — from the Langflow `xai` LLM bundle (ported)."""
+"""xAI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class XaiXaiPlugin(LLMPlugin):
-    name: str = "xai.xai"
+class XaiTool(LLMPluginTool):
+    """xAI."""
+
+    name: str = 'xai'
     display_name: str = 'xAI'
     description: str = 'Generates text using xAI models like Grok.'
-    kind: str = "model"
-    bundle: str = "xai"
-    bundle_label: str = 'xAI'
-    source: str = "langflow/bundles/xai"
-    status: str = "complete"
-    default_base_url: str = "https://api.x.ai/v1"
-    key_env: str = "XAI_API_KEY"
+    default_base_url: str = 'https://api.x.ai/v1'
+    key_env: str = 'XAI_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         return self._openai_compatible(cfg.get("model_name"), cfg.get("api_key", ""),

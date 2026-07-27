@@ -1,17 +1,12 @@
-"""TimelinesAI (Composio) — from the Langflow `composio` bundle (ported)."""
+"""TimelinesAI (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioTimelinesaiComposioPlugin(ComposioPlugin):
-    name: str = "composio.timelinesai_composio"
+class ComposioTimelinesaiComposioTool(ComposioPluginTool):
+    """TimelinesAI."""
+
+    name: str = 'timelinesai_composio'
     display_name: str = 'TimelinesAI'
     description: str = 'Execute TimelinesAI actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "timelinesai"
+    app_name: str = 'timelinesai'

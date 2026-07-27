@@ -1,6 +1,19 @@
-"""Registration hub for the `litellm` bundle."""
+"""LiteLLM Proxy plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "litellm"
-BUNDLE_LABEL = 'LiteLLM'
+from .tools.proxy import LitellmProxyTool
+
+
+@PLUGIN.register_module(force=True)
+class LitellmPlugin(Plugin):
+    """LiteLLM Proxy tools."""
+
+    tools = (LitellmProxyTool,)
+
+    name: str = 'litellm'
+    display_name: str = 'LiteLLM Proxy'
+    description: str = 'LiteLLM Proxy tools.'
+    category: str = 'data'
+    type: str = 'model'

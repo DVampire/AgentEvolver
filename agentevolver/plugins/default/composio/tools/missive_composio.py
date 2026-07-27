@@ -1,17 +1,12 @@
-"""Missive (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Missive (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioMissiveComposioPlugin(ComposioPlugin):
-    name: str = "composio.missive_composio"
+class ComposioMissiveComposioTool(ComposioPluginTool):
+    """Missive."""
+
+    name: str = 'missive_composio'
     display_name: str = 'Missive'
     description: str = 'Execute Missive actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "missive"
+    app_name: str = 'missive'

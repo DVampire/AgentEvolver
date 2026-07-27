@@ -1,17 +1,12 @@
-"""Bitbucket (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Bitbucket (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioBitbucketComposioPlugin(ComposioPlugin):
-    name: str = "composio.bitbucket_composio"
+class ComposioBitbucketComposioTool(ComposioPluginTool):
+    """Bitbucket."""
+
+    name: str = 'bitbucket_composio'
     display_name: str = 'Bitbucket'
     description: str = 'Execute Bitbucket actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "bitbucket"
+    app_name: str = 'bitbucket'

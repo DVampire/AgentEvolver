@@ -1,33 +1,26 @@
 ---
 id: litellm
-name: LiteLLM
-kind: bundle
+name: LiteLLM Proxy
 category: data
-icon: lucide:LiteLLM
-source: langflow/bundles/litellm
-status: complete
-version: "1.0.0"
+type: model
 tools: 1
-requirements: [langchain-openai]
+implemented: 1
+credentials: [LITELLM_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
+# LiteLLM Proxy
 
-# LiteLLM
-
-Migrated from the Langflow **litellm** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+LiteLLM Proxy tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `litellm.litellm_proxy` | LiteLLM Proxy | Generate text using any LLM provider via a LiteLLM proxy wit | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `litellm.litellm_proxy` | LiteLLM Proxy | ✅ | Generate text using any LLM provider via a LiteLLM proxy with virtual key authentication. |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `LiteLLM` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/litellm/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`LITELLM_API_KEY`, an `api_key` argument on the call, or a `litellm_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

@@ -1,6 +1,19 @@
-"""Registration hub for the `needle` bundle."""
+"""Needle plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "needle"
-BUNDLE_LABEL = 'Needle'
+from .tools.needle import NeedleTool
+
+
+@PLUGIN.register_module(force=True)
+class NeedlePlugin(Plugin):
+    """Needle tools."""
+
+    tools = (NeedleTool,)
+
+    name: str = 'needle'
+    display_name: str = 'Needle'
+    description: str = 'Needle tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

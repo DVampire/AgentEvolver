@@ -1,23 +1,17 @@
-"""Mem0 Chat Memory — from the Langflow `mem0` bundle (ported)."""
+"""Mem0 Chat Memory."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import MemoryPlugin
+from agentevolver.plugins.types import MemoryPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class Mem0Mem0ChatMemoryPlugin(MemoryPlugin):
-    name: str = "mem0.mem0_chat_memory"
+class Mem0ChatMemoryTool(MemoryPluginTool):
+    """Mem0 Chat Memory."""
+
+    name: str = 'mem0_chat_memory'
     display_name: str = 'Mem0 Chat Memory'
     description: str = 'Retrieves and stores chat messages using Mem0 memory storage.'
-    kind: str = "memory"
-    bundle: str = "mem0"
-    bundle_label: str = 'Mem0'
-    category: str = "agent"
-    source: str = "langflow/bundles/mem0"
-    status: str = "complete"
 
     def _history(self, session_id: str, **cfg: Any) -> Any:
         from mem0 import MemoryClient

@@ -1,42 +1,36 @@
 ---
 id: datastax
-name: DataStax
-kind: bundle
+name: Astra DB
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/datastax
-status: complete
-version: "1.0.0"
 tools: 10
-requirements: [astrapy, cassio, langchain-astradb, langchain-openai, python-dotenv]
+implemented: 10
+credentials: [ASTRA_DB_API_ENDPOINT, ASTRA_DB_APPLICATION_TOKEN, ASTRA_DB_ID, HCD_API_ENDPOINT, OPENAI_API_KEY]
+requirements: [astrapy, cassio, dotenv, langchain_astradb, langchain_openai]
+version: "1.0.0"
 ---
+# Astra DB
 
-# DataStax
-
-Migrated from the Langflow **datastax** bundle. This package is in the
-**structure** phase: all 10 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Astra DB tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `datastax.astradb_chatmemory` | Astra DB Chat Memory | Retrieves and stores chat messages from Astra DB. | structure |
-| `datastax.astradb_cql` | Astra DB CQL | Create a tool to get transactional data from DataStax Astra  | structure |
-| `datastax.astradb_data_api` | Astra DB Data API |  | structure |
-| `datastax.astradb_graph` | Astra DB Graph | Implementation of Graph Vector Store using Astra DB | structure |
-| `datastax.astradb_tool` | Astra DB Tool | Tool to run hybrid vector and metadata search on DataStax As | structure |
-| `datastax.astradb_vectorize` | Astra Vectorize | Configuration options for Astra Vectorize server-side embedd | structure |
-| `datastax.astradb_vectorstore` | Astra DB | Ingest and search documents in Astra DB | structure |
-| `datastax.dotenv` | Dotenv | Load .env file into env vars | structure |
-| `datastax.graph_rag` | Graph RAG | Graph RAG traversal for vector store. | structure |
-| `datastax.hcd` | Hyper-Converged Database | Implementation of Vector Store using Hyper-Converged Databas | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `datastax.astradb_chatmemory` | Astra DB Chat Memory | ✅ | Retrieves and stores chat messages from Astra DB. |
+| `datastax.astradb_cql` | Astra DB CQL | ✅ | Create a tool to get transactional data from DataStax Astra DB CQL Table |
+| `datastax.astradb_data_api` | Astra DB Data API | ✅ | Astra DB Data API |
+| `datastax.astradb_graph` | Astra DB Graph | ✅ | Implementation of Graph Vector Store using Astra DB |
+| `datastax.astradb_tool` | Astra DB Tool | ✅ | Tool to run hybrid vector and metadata search on DataStax Astra DB Collection |
+| `datastax.astradb_vectorize` | Astra Vectorize | ✅ | Configuration options for Astra Vectorize server-side embeddings. |
+| `datastax.astradb_vectorstore` | Astra DB | ✅ | Ingest and search documents in Astra DB |
+| `datastax.dotenv` | Dotenv | ✅ | Load .env file into env vars |
+| `datastax.graph_rag` | Graph RAG | ✅ | Graph RAG traversal for vector store. |
+| `datastax.hcd` | Hyper-Converged Database | ✅ | Implementation of Vector Store using Hyper-Converged Database (HCD) with search capabilities |
 
-## Icon
+All 10 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/datastax/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`ASTRA_DB_API_ENDPOINT`, `ASTRA_DB_APPLICATION_TOKEN`, `ASTRA_DB_ID`, `HCD_API_ENDPOINT`, `OPENAI_API_KEY`, an `api_key` argument on the call, or a `datastax_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

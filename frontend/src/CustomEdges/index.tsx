@@ -7,7 +7,7 @@ import { PORT_COLORS, type CanvasData, type PortType } from '../canvas/types';
 const IO_INPUT_PORT: Record<string, PortType> = { string: 'text', array: 'list', object: 'object', number: 'text', boolean: 'text' };
 function sourceOutputType(data?: CanvasData): PortType {
   if (!data) return 'any';
-  if (data.kind === 'input') return IO_INPUT_PORT[data.io?.input_type] ?? 'any';
+  if (data.type === 'input') return IO_INPUT_PORT[data.io?.input_type] ?? 'any';
   const spec = data.spec;
   return (spec?.outputs?.length ?? 0) > 1 ? 'any' : (spec?.outputs?.[0]?.type ?? 'any');
 }

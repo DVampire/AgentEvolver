@@ -1,22 +1,17 @@
-"""OpenSearch — from the Langflow `elastic` vector-store bundle (ported)."""
+"""OpenSearch."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ElasticOpensearchPlugin(VectorStorePlugin):
-    name: str = "elastic.opensearch"
+class ElasticOpensearchTool(VectorStorePluginTool):
+    """OpenSearch."""
+
+    name: str = 'opensearch'
     display_name: str = 'OpenSearch'
     description: str = 'OpenSearch'
-    kind: str = "vectorstore"
-    bundle: str = "elastic"
-    bundle_label: str = 'OpenSearch'
-    source: str = "langflow/bundles/elastic"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

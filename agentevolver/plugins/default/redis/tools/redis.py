@@ -1,22 +1,17 @@
-"""Redis — from the Langflow `redis` vector-store bundle (ported)."""
+"""Redis."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class RedisRedisPlugin(VectorStorePlugin):
-    name: str = "redis.redis"
+class RedisTool(VectorStorePluginTool):
+    """Redis."""
+
+    name: str = 'redis'
     display_name: str = 'Redis'
     description: str = 'Implementation of Vector Store using Redis'
-    kind: str = "vectorstore"
-    bundle: str = "redis"
-    bundle_label: str = 'Redis'
-    source: str = "langflow/bundles/redis"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

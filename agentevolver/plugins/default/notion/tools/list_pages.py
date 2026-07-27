@@ -1,22 +1,17 @@
-"""List Pages  — from the Langflow `notion` bundle (ported)."""
+"""List Pages ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionListPagesPlugin(NotionPlugin):
-    name: str = "notion.list_pages"
+class NotionListPagesTool(NotionToolBase):
+    """List Pages ."""
+
+    name: str = 'list_pages'
     display_name: str = 'List Pages '
     description: str = 'List Pages '
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", database_id: str = "", query_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

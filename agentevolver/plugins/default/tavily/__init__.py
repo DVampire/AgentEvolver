@@ -1,5 +1,5 @@
-"""`Tavily` bundle plugin (migrated from Langflow)."""
+"""Tavily plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import TavilyPlugin
 
-__all__: list = []
+__all__ = ["TavilyPlugin"]

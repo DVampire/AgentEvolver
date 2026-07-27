@@ -1,5 +1,5 @@
-"""`Amazon` bundle plugin (migrated from Langflow)."""
+"""Amazon Bedrock plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import AmazonPlugin
 
-__all__: list = []
+__all__ = ["AmazonPlugin"]

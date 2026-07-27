@@ -1,104 +1,97 @@
-"""Plugin Manager — a lightweight registry-backed manager for provider plugins.
+"""Plugin Manager Server
 
-Deliberately lean (no versioning / dynamic-code machinery): plugins are provider
-adapters that are built once from the :data:`PLUGIN` registry and invoked by
-name. ``__call__`` returns a :class:`Response`, which the workflow runtime's
-``_normalize`` unwraps to the canonical ``{message, data, files}`` shape.
+Server implementation for plugin management with lazy loading support.
 """
 
+import os
 from typing import Any, Dict, List, Optional
 
-import inflection
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.config import config
 from agentevolver.logger import logger
-from agentevolver.registry import PLUGIN
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.plugins.types import Plugin, PluginContext
+from agentevolver.plugins.context import PluginContextManager
+from agentevolver.plugins.types import Plugin, PluginConfig, PluginContext, PluginTool
+from agentevolver.response.types import Response
+from agentevolver.utils import assemble_workspace_path
 
 
-class PluginManager(BaseModel):
-    """Manages provider-plugin registration and invocation."""
+class PluginManagerServer(BaseModel):
+    """Plugin manager server for registration and tool invocation."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    base_dir: str = Field(default=None, description="The base directory to use for the plugins")
 
-    def __init__(self, **kwargs):
+    def __init__(self, base_dir: Optional[str] = None, **kwargs):
+        """Initialize the plugin manager server."""
         super().__init__(**kwargs)
-        self._plugins: Dict[str, Plugin] = {}
+        # Created lazily: config may not be loaded at import time. initialize()
+        # reconfigures it with the proper base_dir.
+        self.plugin_context_manager: Optional[PluginContextManager] = None
+
+    def _ensure_context_manager(self) -> PluginContextManager:
+        """Lazily create the context manager so methods work before initialize()."""
+        if self.plugin_context_manager is None:
+            self.plugin_context_manager = PluginContextManager()
+        return self.plugin_context_manager
 
     async def initialize(self, plugin_names: Optional[List[str]] = None) -> None:
         """Build plugin instances from the PLUGIN registry.
 
-        ``plugin_names`` selects a subset (None = all). Each class is
-        instantiated with its per-name config block (``config.get(<snake>)``),
-        given a default name from its class if unset, and ``initialize()``-d.
+        Args:
+            plugin_names: Plugins to build. None builds every registered plugin.
         """
-        import agentevolver.plugins  # noqa: F401 — ensure default plugins register
+        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "plugin"))
+        logger.info(f"| 📁 Plugin manager server base directory: {self.base_dir}")
 
-        for cls in list(PLUGIN._module_dict.values()):
-            try:
-                name_key = inflection.underscore(cls.__name__)
-                cfg = config.get(name_key, {}) or {}
-                instance: Plugin = cls(**cfg) if cfg else cls()
-                if not instance.name:
-                    instance.name = name_key
-                if plugin_names is not None and instance.name not in plugin_names:
-                    continue
-                await instance.initialize()
-                self._plugins[instance.name] = instance
-                logger.info(f"| 🔌 Registered plugin: {instance.name} ({instance.kind})")
-            except Exception as e:  # noqa: BLE001 — a broken plugin must not abort startup
-                logger.error(f"| ❌ Failed to initialize plugin {cls.__name__}: {e}")
-        logger.info("| ✅ Plugins initialization completed")
+        self.plugin_context_manager = PluginContextManager(base_dir=self.base_dir)
+        await self._ensure_context_manager().initialize(plugin_names=plugin_names)
 
+    # ---------------------------------------------------------------- lookup
     async def list(self) -> List[str]:
         """List registered plugin names."""
-        return list(self._plugins.keys())
+        return await self._ensure_context_manager().list()
 
-    async def list_infos(self) -> List[Plugin]:
-        """Return every registered plugin instance (for catalog/roster building)."""
-        return list(self._plugins.values())
+    async def list_infos(self) -> List[PluginConfig]:
+        """Every registered plugin config (for catalog/roster building)."""
+        return await self._ensure_context_manager().list_infos()
+
+    async def list_tools(self) -> List[PluginTool]:
+        """Every tool of every plugin — one canvas node each."""
+        return await self._ensure_context_manager().list_tools()
 
     async def get(self, name: str) -> Optional[Plugin]:
-        """Get a plugin instance by name."""
-        return self._plugins.get(name)
+        """Get a plugin instance by name (accepts a ``<plugin>.<tool>`` address)."""
+        return await self._ensure_context_manager().get(name)
 
-    async def get_info(self, name: str) -> Optional[Plugin]:
-        """Get a plugin's descriptor (the instance doubles as its info)."""
-        return self._plugins.get(name)
+    async def get_info(self, name: str) -> Optional[Any]:
+        """Descriptor for whatever ``name`` addresses: a plugin, or one of its tools."""
+        return await self._ensure_context_manager().get_info(name)
 
     async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
         """Plugins accept free-form provider params; no strict call schema (yet)."""
         return None
 
-    async def register(self, plugin: Plugin, override: bool = False) -> Plugin:
-        """Register a plugin instance directly (used by tests/extensions)."""
-        if plugin.name in self._plugins and not override:
-            raise ValueError(f"Plugin '{plugin.name}' already registered. Use override=True.")
-        await plugin.initialize()
-        self._plugins[plugin.name] = plugin
-        return plugin
+    # -------------------------------------------------------------- lifecycle
+    async def register(self, plugin: Plugin, override: bool = False) -> PluginConfig:
+        """Register a plugin instance directly (used by tests and extensions)."""
+        return await self._ensure_context_manager().register(plugin, override=override)
 
-    async def __call__(self, name: str, input: Dict[str, Any], ctx: PluginContext = None, **kwargs) -> Response:
-        """Invoke a plugin by name; failures come back as an unsuccessful Response."""
-        plugin = self._plugins.get(name)
-        if plugin is None:
-            return Response(type=ResponseType.TOOL, success=False, message=f"Unknown plugin: {name}")
-        try:
-            return await plugin(**(input or {}))
-        except Exception as e:  # noqa: BLE001 — provider/network errors are a failed result
-            logger.error(f"| ❌ Plugin {name} failed: {e}")
-            return Response(type=ResponseType.TOOL, success=False, message=f"Plugin {name} failed: {e}")
+    async def unregister(self, name: str) -> bool:
+        """Drop a plugin. True if one was registered."""
+        return await self._ensure_context_manager().unregister(name)
+
+    async def __call__(self, name: str, input: Dict[str, Any] = None,
+                       ctx: PluginContext = None, **kwargs) -> Response:
+        """Invoke ``<plugin>.<tool>``; failures come back as an unsuccessful Response."""
+        return await self._ensure_context_manager()(name, input=input, ctx=ctx, **kwargs)
 
     async def cleanup(self) -> None:
         """Tear down every plugin's provider resources."""
-        for plugin in self._plugins.values():
-            try:
-                await plugin.cleanup()
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"| ⚠️ Error during plugin {plugin.name} cleanup: {e}")
-        self._plugins.clear()
+        await self._ensure_context_manager().cleanup()
 
 
-plugin_manager = PluginManager()
+# Global plugin manager instance
+plugin_manager = PluginManagerServer()
+
+__all__ = ["PluginManagerServer", "plugin_manager"]

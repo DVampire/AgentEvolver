@@ -1,5 +1,5 @@
-"""`PGVector` bundle plugin (migrated from Langflow)."""
+"""PGVector plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import PgvectorPlugin
 
-__all__: list = []
+__all__ = ["PgvectorPlugin"]

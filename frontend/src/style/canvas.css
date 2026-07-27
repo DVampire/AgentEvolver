@@ -41,11 +41,11 @@
 /* Bundles: a super-section whose sub-groups (one per migrated Langflow bundle)
    nest one level deeper — indented, with a small count chip. */
 .lf-cat-count { margin-right: 2px; color: hsl(var(--muted-foreground)); font-size: 11px; font-variant-numeric: tabular-nums; }
-.lf-bundle { margin-left: 10px; border-left: 1px solid hsl(var(--border)); padding-left: 6px; }
-.lf-bundle-head { margin-top: 2px; padding: 6px 8px; }
-.lf-bundle-head strong { font-size: 12.5px; font-weight: 500; }
-.lf-bundle-head[aria-expanded='true'] strong { font-weight: 620; }
-.lf-bundle-head img { border-radius: 4px; }
+.lf-plugin { margin-left: 10px; border-left: 1px solid hsl(var(--border)); padding-left: 6px; }
+.lf-plugin-head { margin-top: 2px; padding: 6px 8px; }
+.lf-plugin-head strong { font-size: 12.5px; font-weight: 500; }
+.lf-plugin-head[aria-expanded='true'] strong { font-weight: 620; }
+.lf-plugin-head img { border-radius: 4px; }
 /* Langflow component row: muted pill + colored LEFT border (set inline per
    category), a plain monochrome glyph, and a grip handle. */
 .canvas-palette-item { display: flex; align-items: center; gap: 9px; margin: 4px 2px 4px 6px; border: 1px solid hsl(var(--border)); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; color: hsl(var(--foreground)); background: hsl(var(--muted)); cursor: grab; transition: background .12s ease; }

@@ -1,22 +1,17 @@
-"""MongoDB Atlas — from the Langflow `mongodb` vector-store bundle (ported)."""
+"""MongoDB Atlas."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class MongodbMongodbAtlasPlugin(VectorStorePlugin):
-    name: str = "mongodb.mongodb_atlas"
+class MongodbAtlasTool(VectorStorePluginTool):
+    """MongoDB Atlas."""
+
+    name: str = 'mongodb_atlas'
     display_name: str = 'MongoDB Atlas'
     description: str = 'MongoDB Atlas Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "mongodb"
-    bundle_label: str = 'MongoDB Atlas'
-    source: str = "langflow/bundles/mongodb"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

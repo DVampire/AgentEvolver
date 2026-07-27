@@ -1,6 +1,21 @@
-"""Registration hub for the `elastic` bundle."""
+"""Elasticsearch plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "elastic"
-BUNDLE_LABEL = 'Elastic'
+from .tools.elasticsearch import ElasticsearchTool
+from .tools.opensearch import ElasticOpensearchTool
+from .tools.opensearch_multimodal import ElasticOpensearchMultimodalTool
+
+
+@PLUGIN.register_module(force=True)
+class ElasticPlugin(Plugin):
+    """Elasticsearch tools."""
+
+    tools = (ElasticsearchTool, ElasticOpensearchTool, ElasticOpensearchMultimodalTool,)
+
+    name: str = 'elastic'
+    display_name: str = 'Elasticsearch'
+    description: str = 'Elasticsearch tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

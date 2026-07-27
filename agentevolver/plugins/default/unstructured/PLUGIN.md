@@ -1,33 +1,27 @@
 ---
 id: unstructured
 name: Unstructured
-kind: bundle
-category: data
+category: files
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/unstructured
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-unstructured]
+implemented: 1
+credentials: [UNSTRUCTURED_API_KEY]
+requirements: [langchain_unstructured]
+version: "1.0.0"
 ---
-
 # Unstructured
 
-Migrated from the Langflow **unstructured** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Unstructured tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `unstructured.unstructured` | Unstructured API |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `unstructured.unstructured` | Unstructured API | ✅ | Unstructured API |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/unstructured/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`UNSTRUCTURED_API_KEY`, an `api_key` argument on the call, or a `unstructured_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

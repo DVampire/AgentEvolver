@@ -1,17 +1,12 @@
-"""Slack (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Slack (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioSlackComposioPlugin(ComposioPlugin):
-    name: str = "composio.slack_composio"
+class ComposioSlackComposioTool(ComposioPluginTool):
+    """Slack."""
+
+    name: str = 'slack_composio'
     display_name: str = 'Slack'
     description: str = 'Execute Slack actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "slack"
+    app_name: str = 'slack'

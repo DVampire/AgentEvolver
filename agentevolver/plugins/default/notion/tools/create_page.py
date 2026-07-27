@@ -1,22 +1,17 @@
-"""Create Page  — from the Langflow `notion` bundle (ported)."""
+"""Create Page ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionCreatePagePlugin(NotionPlugin):
-    name: str = "notion.create_page"
+class NotionCreatePageTool(NotionToolBase):
+    """Create Page ."""
+
+    name: str = 'create_page'
     display_name: str = 'Create Page '
     description: str = 'A component for creating Notion pages.'
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", database_id: str = "", properties_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

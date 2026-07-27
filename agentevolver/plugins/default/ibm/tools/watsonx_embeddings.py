@@ -1,22 +1,18 @@
-"""IBM watsonx.ai Embeddings — from the Langflow `ibm` embeddings bundle (ported)."""
+"""IBM watsonx.ai Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class IbmWatsonxEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "ibm.watsonx_embeddings"
+class IbmWatsonxEmbeddingsTool(EmbeddingPluginTool):
+    """IBM watsonx.ai Embeddings."""
+
+    name: str = 'watsonx_embeddings'
     display_name: str = 'IBM watsonx.ai Embeddings'
     description: str = 'Generate embeddings using IBM watsonx.ai models.'
-    kind: str = "embedding"
-    bundle: str = "ibm"
-    bundle_label: str = 'IBM watsonx'
-    source: str = "langflow/bundles/ibm"
-    status: str = "complete"
+    type: str = 'embedding'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_ibm import WatsonxEmbeddings

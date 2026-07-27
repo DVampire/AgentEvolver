@@ -1,23 +1,17 @@
-"""Docling Serve — from the Langflow `docling` bundle (ported)."""
+"""Docling Serve."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DoclingDoclingRemotePlugin(BundlePlugin):
-    name: str = "docling.docling_remote"
+class DoclingRemoteTool(PluginTool):
+    """Docling Serve."""
+
+    name: str = 'docling_remote'
     display_name: str = 'Docling Serve'
     description: str = 'Uses Docling to process input documents connecting to your instance of Docling Serve.'
-    kind: str = "tool"
-    bundle: str = "docling"
-    bundle_label: str = 'Docling'
-    category: str = "files"
-    source: str = "langflow/bundles/docling"
-    status: str = "complete"
 
     async def __call__(self, source: str = "", **kwargs) -> Response:
         src = str(source or "").strip()

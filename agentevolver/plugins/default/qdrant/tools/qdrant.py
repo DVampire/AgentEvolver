@@ -1,22 +1,17 @@
-"""Qdrant — from the Langflow `qdrant` vector-store bundle (ported)."""
+"""Qdrant."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class QdrantQdrantPlugin(VectorStorePlugin):
-    name: str = "qdrant.qdrant"
+class QdrantTool(VectorStorePluginTool):
+    """Qdrant."""
+
+    name: str = 'qdrant'
     display_name: str = 'Qdrant'
     description: str = 'Qdrant Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "qdrant"
-    bundle_label: str = 'Qdrant'
-    source: str = "langflow/bundles/qdrant"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         from langchain_qdrant import QdrantVectorStore

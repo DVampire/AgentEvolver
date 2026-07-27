@@ -1,33 +1,27 @@
 ---
 id: bing
 name: Bing
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/bing
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-community]
+implemented: 1
+credentials: [BING_API_KEY, BING_SUBSCRIPTION_KEY]
+requirements: [langchain_community]
+version: "1.0.0"
 ---
-
 # Bing
 
-Migrated from the Langflow **bing** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Bing tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `bing.bing_search_api` | Bing Search API | Call the Bing Search API. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `bing.bing_search_api` | Bing Search API | ✅ | Call the Bing Search API. |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/bing/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`BING_API_KEY`, `BING_SUBSCRIPTION_KEY`, an `api_key` argument on the call, or a `bing_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

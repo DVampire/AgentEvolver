@@ -1,23 +1,17 @@
-"""Astra DB CQL — from the Langflow `datastax` bundle (ported)."""
+"""Astra DB CQL."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DatastaxAstradbCqlPlugin(BundlePlugin):
-    name: str = "datastax.astradb_cql"
+class DatastaxAstradbCqlTool(PluginTool):
+    """Astra DB CQL."""
+
+    name: str = 'astradb_cql'
     display_name: str = 'Astra DB CQL'
     description: str = 'Create a tool to get transactional data from DataStax Astra DB CQL Table'
-    kind: str = "tool"
-    bundle: str = "datastax"
-    bundle_label: str = 'Astra DB'
-    category: str = "data"
-    source: str = "langflow/bundles/datastax"
-    status: str = "complete"
 
     async def __call__(self, keyspace: str = "", query: str = "", token: str = "", api_endpoint: str = "", **kwargs) -> Response:
         token = self._secret(token, "ASTRA_DB_APPLICATION_TOKEN")

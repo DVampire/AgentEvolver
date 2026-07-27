@@ -1,23 +1,17 @@
-"""Yahoo! Finance — from the Langflow `yahoosearch` bundle (ported)."""
+"""Yahoo! Finance."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class YahoosearchYahooPlugin(BundlePlugin):
-    name: str = "yahoosearch.yahoo"
+class YahoosearchYahooTool(PluginTool):
+    """Yahoo! Finance."""
+
+    name: str = 'yahoo'
     display_name: str = 'Yahoo! Finance'
     description: str = 'Yahoo! Finance'
-    kind: str = "tool"
-    bundle: str = "yahoosearch"
-    bundle_label: str = 'Yahoo Search'
-    category: str = "data"
-    source: str = "langflow/bundles/yahoosearch"
-    status: str = "complete"
 
     async def __call__(self, symbol: str = "", method: str = "news", **kwargs) -> Response:
         sym = str(symbol or "").strip().upper()

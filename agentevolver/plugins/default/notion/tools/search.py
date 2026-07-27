@@ -1,22 +1,17 @@
-"""Search  — from the Langflow `notion` bundle (ported)."""
+"""Search ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionSearchPlugin(NotionPlugin):
-    name: str = "notion.search"
+class NotionSearchTool(NotionToolBase):
+    """Search ."""
+
+    name: str = 'search'
     display_name: str = 'Search '
     description: str = 'Searches all pages and databases that have been shared with an integration.'
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", query: str = "", filter_type: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

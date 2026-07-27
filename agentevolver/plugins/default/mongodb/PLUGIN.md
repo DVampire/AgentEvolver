@@ -1,33 +1,27 @@
 ---
 id: mongodb
-name: MongoDB
-kind: bundle
+name: MongoDB Atlas
 category: data
+type: vectorstore
 icon: resources/icon.svg
-source: langflow/bundles/mongodb
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-mongodb, langchain-openai, pymongo]
+implemented: 1
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_mongodb, langchain_openai, pymongo]
+version: "1.0.0"
 ---
+# MongoDB Atlas
 
-# MongoDB
-
-Migrated from the Langflow **mongodb** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+MongoDB Atlas tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `mongodb.mongodb_atlas` | MongoDB Atlas | MongoDB Atlas Vector Store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `mongodb.mongodb_atlas` | MongoDB Atlas | ✅ | MongoDB Atlas Vector Store with search capabilities |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/mongodb/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `mongodb_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

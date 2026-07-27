@@ -1,22 +1,17 @@
-"""Pinecone — from the Langflow `pinecone` vector-store bundle (ported)."""
+"""Pinecone."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class PineconePineconePlugin(VectorStorePlugin):
-    name: str = "pinecone.pinecone"
+class PineconeTool(VectorStorePluginTool):
+    """Pinecone."""
+
+    name: str = 'pinecone'
     display_name: str = 'Pinecone'
     description: str = 'Pinecone Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "pinecone"
-    bundle_label: str = 'Pinecone'
-    source: str = "langflow/bundles/pinecone"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         from langchain_pinecone import PineconeVectorStore

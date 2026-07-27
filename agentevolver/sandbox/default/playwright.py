@@ -80,4 +80,4 @@ class PlaywrightSandbox(OpenSandbox):
         except (ValueError, IndexError):
             return
         from agentevolver.port import port_manager
-        port_manager.register(f"{self.name}:{purpose}", port, kind="env")
+        port_manager.register(f"{self.name}:{purpose}", port, type="env")

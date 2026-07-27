@@ -1,23 +1,17 @@
-"""Apify Actors — from the Langflow `apify` bundle (ported)."""
+"""Apify Actors."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ApifyApifyActorPlugin(BundlePlugin):
-    name: str = "apify.apify_actor"
+class ApifyActorTool(PluginTool):
+    """Apify Actors."""
+
+    name: str = 'apify_actor'
     display_name: str = 'Apify Actors'
     description: str = 'Apify Actors'
-    kind: str = "tool"
-    bundle: str = "apify"
-    bundle_label: str = 'Apify'
-    category: str = "data"
-    source: str = "langflow/bundles/apify"
-    status: str = "complete"
 
     async def __call__(self, actor_id: str = "", run_input: Optional[dict] = None, api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "APIFY_API_TOKEN", "APIFY_TOKEN")

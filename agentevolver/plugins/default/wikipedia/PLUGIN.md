@@ -1,34 +1,28 @@
 ---
 id: wikipedia
 name: Wikipedia
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/wikipedia
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-community]
+implemented: 2
+credentials: []
+requirements: [httpx, langchain_community]
+version: "1.0.0"
 ---
-
 # Wikipedia
 
-Migrated from the Langflow **wikipedia** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Wikipedia tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `wikipedia.wikidata` | Wikidata | Performs a search using the Wikidata API. | structure |
-| `wikipedia.wikipedia` | Wikipedia | Call Wikipedia API. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `wikipedia.wikidata` | Wikidata | ✅ | Performs a search using the Wikidata API. |
+| `wikipedia.wikipedia` | Wikipedia | ✅ | Call Wikipedia API. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/wikipedia/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

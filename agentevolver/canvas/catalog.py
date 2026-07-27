@@ -21,7 +21,7 @@ from agentevolver.logger import logger
 
 # Which capability rosters an agent node can mount (scope). All are optional:
 # leaving a picker empty means the agent uses its configured defaults.
-AGENT_MOUNT_KINDS = ["tools", "skills", "connectors", "agents", "environments", "workflows"]
+AGENT_MOUNT_TYPES = ["tools", "skills", "connectors", "agents", "environments", "workflows"]
 
 # A capability result normalizes to {message, data, files} — so callable nodes
 # expose these three typed output ports (each compiles to ${node.<name>}), plus
@@ -112,22 +112,20 @@ class Catalog:
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"| ⚠️ Canvas palette: tool registry unavailable: {exc}")
 
-        # Data-pipeline nodes: datasource (provider plugins) → process (pure
-        # transforms) → benchmark (evaluation). A plugin is a packaging unit; its
-        # data_source kind surfaces here as a semantic ``datasource`` node.
+        # Data-pipeline nodes: datasource (plugin tools) → process (pure
+        # transforms) → benchmark (evaluation). A plugin is a container, so what
+        # lands on the canvas is each of its *tools*, as a semantic
+        # ``datasource`` node.
         try:
             from agentevolver.plugins import plugin_manager
             for plugin in await plugin_manager.list_infos():
-                metadata = getattr(plugin, "metadata", None) or {}
-                bundle = metadata.get("bundle") if isinstance(metadata, dict) else None
-                if bundle:
-                    # A migrated Langflow bundle tool — surfaced under the palette's
-                    # nested "Bundles" group (category="bundle"), invoked through the
-                    # same datasource → plugin_manager path as any provider plugin.
-                    specs.append(self._bundle_node_spec(plugin, metadata))
-                elif getattr(plugin, "kind", "data_source") == "data_source":
+                if plugin.tools:
+                    specs.extend(self._plugin_tool_spec(tool) for tool in plugin.tools.values())
+                elif getattr(plugin.instance, "type", "") == "data_source":
+                    # A plugin that is its own single capability, with no tools.
                     specs.append(self._capability_node_spec(
-                        plugin.name, plugin, category="data", step_type="datasource", skip=("timeout",)))
+                        plugin.name, plugin.instance, category="data",
+                        step_type="datasource", skip=("timeout",)))
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"| ⚠️ Canvas palette: plugin registry unavailable: {exc}")
 
@@ -173,28 +171,28 @@ class Catalog:
 
     async def build_mounts(self) -> Dict[str, List[Dict[str, str]]]:
         """Global capability rosters the agent capability picker selects from."""
-        return {kind: await self._roster(kind) for kind in AGENT_MOUNT_KINDS}
+        return {name: await self._roster(name) for name in AGENT_MOUNT_TYPES}
 
-    async def _roster(self, kind: str) -> List[Dict[str, str]]:
-        """Selectable capabilities of one kind: [{name, description}]. Agents are
+    async def _roster(self, mount_type: str) -> List[Dict[str, str]]:
+        """Selectable capabilities of one type: [{name, description}]. Agents are
         restricted to actors (the same set the palette shows)."""
         try:
-            if kind == "tools":
+            if mount_type == "tools":
                 from agentevolver.tool import tool_manager
                 names, get_info = await tool_manager.list(), tool_manager.get_info
-            elif kind == "skills":
+            elif mount_type == "skills":
                 from agentevolver.skill import skill_manager
                 names, get_info = await skill_manager.list(), skill_manager.get_info
-            elif kind == "connectors":
+            elif mount_type == "connectors":
                 from agentevolver.connector import connector_manager
                 names, get_info = await connector_manager.list(), connector_manager.get_info
-            elif kind == "environments":
+            elif mount_type == "environments":
                 from agentevolver.environment import environment_manager
                 names, get_info = await environment_manager.list(), environment_manager.get_info
-            elif kind == "agents":
+            elif mount_type == "agents":
                 from agentevolver.agent import agent_manager
                 names, get_info = await agent_manager.list(), agent_manager.get_info
-            elif kind == "workflows":
+            elif mount_type == "workflows":
                 # Published canvas flows / registered workflows an agent can call
                 # as a tool — the agent-centric equivalent of Langflow's Tool Mode.
                 from agentevolver.workflow import workflow_manager
@@ -202,7 +200,7 @@ class Catalog:
             else:
                 return []
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"| ⚠️ Canvas roster: {kind} unavailable: {exc}")
+            logger.warning(f"| ⚠️ Canvas roster: {mount_type} unavailable: {exc}")
             return []
 
         out: List[Dict[str, str]] = []
@@ -211,7 +209,7 @@ class Catalog:
                 info = await get_info(name) if inspect.iscoroutinefunction(get_info) else get_info(name)
             except Exception:  # noqa: BLE001
                 info = None
-            if kind == "agents" and not self._is_actor_agent(info):
+            if mount_type == "agents" and not self._is_actor_agent(info):
                 continue
             out.append({"name": name, "description": str(getattr(info, "description", "") or "")})
         return sorted(out, key=lambda item: item["name"])
@@ -338,23 +336,26 @@ class Catalog:
             params=self._signature_params(info, skip=skip),
         )
 
-    def _bundle_node_spec(self, plugin: Any, metadata: Dict[str, Any]) -> NodeSpec:
-        """A migrated Langflow bundle tool node.
+    def _plugin_tool_spec(self, tool: Any) -> NodeSpec:
+        """One tool of a plugin, as a canvas node.
 
-        Grouped in the palette's nested ``bundle`` section (by ``bundle`` /
-        ``bundle_label``), carrying the preserved bundle glyph (``icon`` =
-        ``bundle:<id>``, resolved to ``resources/icon.svg`` on the frontend).
-        Executes via the shared datasource → ``plugin_manager`` path.
+        Nested in the palette's ``plugin`` section under its plugin (by
+        ``plugin`` / ``plugin_label``) and carrying that plugin's glyph
+        (``icon`` = ``plugin:<id>``, resolved to ``resources/icon.svg`` on the
+        frontend). Addressed as ``<plugin>.<tool>``, and executed through the
+        shared datasource → ``plugin_manager`` path, which splits the two halves
+        and dispatches via the plugin.
         """
-        name = plugin.name
+        info = tool.public()
         return NodeSpec(
-            id=f"datasource/{name}", category="bundle", step_type="datasource", target=name,
-            label=str(metadata.get("display_name") or name),
-            description=str(getattr(plugin, "description", "") or ""),
-            icon=str(metadata.get("icon") or ""),
-            bundle=str(metadata.get("bundle") or ""),
-            bundle_label=str(metadata.get("bundle_label") or metadata.get("bundle") or ""),
-            params=self._signature_params(plugin, skip=("timeout",)),
+            id=f"datasource/{info['id']}", category="plugin", step_type="datasource",
+            target=info["id"],
+            label=info["display_name"],
+            description=info["description"],
+            icon=info["icon"],
+            plugin=info["plugin"],
+            plugin_label=info["plugin_label"],
+            params=self._signature_params(tool, skip=("timeout",)),
         )
 
     @staticmethod
@@ -452,9 +453,9 @@ class Catalog:
         # Agent capability mount ports (Langflow-style): every agent can mount all
         # six capability kinds — wire nodes into the handle OR multi-select in the
         # box. Each accepts many edges; the compiler folds them into the allowlist.
-        for kind in AGENT_MOUNT_KINDS:
-            if kind in (spec.mount_kinds or []):
-                inputs.append(PortSpec(name=f"mount:{kind}", label=kind.capitalize(), type="any"))
+        for mount_type in AGENT_MOUNT_TYPES:
+            if mount_type in (spec.mount_types or []):
+                inputs.append(PortSpec(name=f"mount:{mount_type}", label=mount_type.capitalize(), type="any"))
         for param in spec.params:
             if param.connectable:
                 inputs.append(PortSpec(name=f"arg:{param.name}", label=param.label, type=self._param_port_type(param.type)))
@@ -489,7 +490,7 @@ class Catalog:
             label=name.removesuffix("_agent").replace("_", " ").capitalize(),
             description=str(getattr(info, "description", "") or ""),
             has_task=True,
-            mount_kinds=list(AGENT_MOUNT_KINDS),
+            mount_types=list(AGENT_MOUNT_TYPES),
         )
 
     @staticmethod
@@ -603,4 +604,4 @@ class Catalog:
 
 catalog = Catalog()
 
-__all__ = ["AGENT_MOUNT_KINDS", "Catalog", "catalog"]
+__all__ = ["AGENT_MOUNT_TYPES", "Catalog", "catalog"]

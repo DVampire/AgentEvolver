@@ -1,22 +1,17 @@
-"""FAISS — from the Langflow `faiss` vector-store bundle (ported)."""
+"""FAISS."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class FaissFaissPlugin(VectorStorePlugin):
-    name: str = "faiss.faiss"
+class FaissTool(VectorStorePluginTool):
+    """FAISS."""
+
+    name: str = 'faiss'
     display_name: str = 'FAISS'
     description: str = 'FAISS Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "faiss"
-    bundle_label: str = 'FAISS'
-    source: str = "langflow/bundles/faiss"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         from langchain_community.vectorstores import FAISS

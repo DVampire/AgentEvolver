@@ -1,40 +1,34 @@
 ---
 id: notion
 name: Notion
-kind: bundle
 category: data
-icon: lucide:NotionDirectoryLoader
-source: langflow/bundles/notion
-status: complete
-version: "1.0.0"
+type: tool
+icon: resources/icon.svg
 tools: 8
-requirements: []
+implemented: 8
+credentials: [NOTION_API_KEY, NOTION_INTEGRATION_TOKEN, NOTION_TOKEN]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # Notion
 
-Migrated from the Langflow **notion** bundle. This package is in the
-**structure** phase: all 8 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Notion tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `notion.add_content_to_page` | Add Content to Page  | Convert markdown text to Notion blocks and append them to a  | structure |
-| `notion.create_page` | Create Page  | A component for creating Notion pages. | structure |
-| `notion.list_database_properties` | List Database Properties  | Retrieve properties of a Notion database. | structure |
-| `notion.list_pages` | List Pages  |  | structure |
-| `notion.list_users` | List Users  | Retrieve users from Notion. | structure |
-| `notion.page_content_viewer` | Page Content Viewer  | Retrieve the content of a Notion page as plain text. | structure |
-| `notion.search` | Search  | Searches all pages and databases that have been shared with  | structure |
-| `notion.update_page_property` | Update Page Property  | Update the properties of a Notion page. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `notion.add_content_to_page` | Add Content to Page  | ✅ | Convert markdown text to Notion blocks and append them to a Notion page. |
+| `notion.create_page` | Create Page  | ✅ | A component for creating Notion pages. |
+| `notion.list_database_properties` | List Database Properties  | ✅ | Retrieve properties of a Notion database. |
+| `notion.list_pages` | List Pages  | ✅ | List Pages |
+| `notion.list_users` | List Users  | ✅ | Retrieve users from Notion. |
+| `notion.page_content_viewer` | Page Content Viewer  | ✅ | Retrieve the content of a Notion page as plain text. |
+| `notion.search` | Search  | ✅ | Searches all pages and databases that have been shared with an integration. |
+| `notion.update_page_property` | Update Page Property  | ✅ | Update the properties of a Notion page. |
 
-## Icon
+All 8 tools are implemented.
 
-Uses lucide glyph `NotionDirectoryLoader` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/notion/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`NOTION_API_KEY`, `NOTION_INTEGRATION_TOKEN`, `NOTION_TOKEN`, an `api_key` argument on the call, or a `notion_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

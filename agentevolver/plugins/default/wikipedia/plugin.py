@@ -1,6 +1,20 @@
-"""Registration hub for the `wikipedia` bundle."""
+"""Wikipedia plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "wikipedia"
-BUNDLE_LABEL = 'Wikipedia'
+from .tools.wikidata import WikipediaWikidataTool
+from .tools.wikipedia import WikipediaTool
+
+
+@PLUGIN.register_module(force=True)
+class WikipediaPlugin(Plugin):
+    """Wikipedia tools."""
+
+    tools = (WikipediaWikidataTool, WikipediaTool,)
+
+    name: str = 'wikipedia'
+    display_name: str = 'Wikipedia'
+    description: str = 'Wikipedia tools.'
+    category: str = 'data'
+    type: str = 'tool'

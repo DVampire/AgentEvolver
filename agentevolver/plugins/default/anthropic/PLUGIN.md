@@ -1,33 +1,27 @@
 ---
 id: anthropic
 name: Anthropic
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/anthropic
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-anthropic]
+implemented: 1
+credentials: [ANTHROPIC_API_KEY]
+requirements: [langchain_anthropic, langchain_openai]
+version: "1.0.0"
 ---
-
 # Anthropic
 
-Migrated from the Langflow **anthropic** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Anthropic tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `anthropic.anthropic` | Anthropic | Generate text using Anthropic | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `anthropic.anthropic` | Anthropic | ✅ | Generate text using Anthropic |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/anthropic/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`ANTHROPIC_API_KEY`, an `api_key` argument on the call, or a `anthropic_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

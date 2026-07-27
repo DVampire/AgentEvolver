@@ -2,9 +2,8 @@
 
 import re
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.youtube._base import YouTubePlugin
+from agentevolver.plugins.default.youtube._base import YoutubeToolBase
 
 _URL_PATTERNS = {
     "custom_url": r"youtube\.com\/c\/([^\/\n?]+)",
@@ -14,17 +13,12 @@ _URL_PATTERNS = {
 }
 
 
-@PLUGIN.register_module(force=True)
-class YoutubeChannelPlugin(YouTubePlugin):
-    name: str = "youtube.channel"
-    display_name: str = "YouTube Channel"
-    description: str = "Retrieves detailed information and statistics about YouTube channels."
-    kind: str = "data_source"
-    bundle: str = "youtube"
-    bundle_label: str = "YouTube"
-    category: str = "data"
-    source: str = "langflow/bundles/youtube"
-    status: str = "complete"
+class YoutubeChannelTool(YoutubeToolBase):
+    """YouTube Channel."""
+
+    name: str = 'channel'
+    display_name: str = 'YouTube Channel'
+    description: str = 'Retrieves detailed information and statistics about YouTube channels.'
 
     def _channel_id(self, youtube, channel_url: str) -> str:
         if channel_url.startswith("UC") and len(channel_url) == 24:

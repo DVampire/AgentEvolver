@@ -1,22 +1,17 @@
-"""Add Content to Page  — from the Langflow `notion` bundle (ported)."""
+"""Add Content to Page ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionAddContentToPagePlugin(NotionPlugin):
-    name: str = "notion.add_content_to_page"
+class NotionAddContentToPageTool(NotionToolBase):
+    """Add Content to Page ."""
+
+    name: str = 'add_content_to_page'
     display_name: str = 'Add Content to Page '
     description: str = 'Convert markdown text to Notion blocks and append them to a Notion page.'
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", page_id: str = "", content_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

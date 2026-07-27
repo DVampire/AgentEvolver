@@ -1,6 +1,27 @@
-"""Registration hub for the `docling` bundle."""
+"""Docling plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "docling"
-BUNDLE_LABEL = 'Docling'
+from .tools.chunk_docling_document import DoclingChunkDoclingDocumentTool
+from .tools.export_docling_document import DoclingExportDoclingDocumentTool
+from .tools.inline import DoclingInlineTool
+from .tools.remote import DoclingRemoteTool
+
+
+@PLUGIN.register_module(force=True)
+class DoclingPlugin(Plugin):
+    """Docling tools."""
+
+    tools = (
+        DoclingChunkDoclingDocumentTool,
+        DoclingInlineTool,
+        DoclingRemoteTool,
+        DoclingExportDoclingDocumentTool,
+    )
+
+    name: str = 'docling'
+    display_name: str = 'Docling'
+    description: str = 'Docling tools.'
+    category: str = 'files'
+    type: str = 'tool'

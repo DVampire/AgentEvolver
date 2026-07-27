@@ -1,23 +1,17 @@
-"""EmpirioLabs AI — from the Langflow `empiriolabs` bundle (ported)."""
+"""EmpirioLabs AI."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class EmpiriolabsEmpiriolabsPlugin(BundlePlugin):
-    name: str = "empiriolabs.empiriolabs"
+class EmpiriolabsTool(PluginTool):
+    """EmpirioLabs AI."""
+
+    name: str = 'empiriolabs'
     display_name: str = 'EmpirioLabs AI'
     description: str = 'Generates text using EmpirioLabs AI LLMs (OpenAI compatible).'
-    kind: str = "tool"
-    bundle: str = "empiriolabs"
-    bundle_label: str = 'EmpirioLabs'
-    category: str = "agent"
-    source: str = "langflow/bundles/empiriolabs"
-    status: str = "complete"
 
     async def __call__(self, prompt: str = "", model: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "EMPIRIOLABS_API_KEY")

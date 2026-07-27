@@ -1,5 +1,5 @@
-"""`Home Assistant` bundle plugin (migrated from Langflow)."""
+"""Home Assistant plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import HomeassistantPlugin
 
-__all__: list = []
+__all__ = ["HomeassistantPlugin"]

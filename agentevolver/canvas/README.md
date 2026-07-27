@@ -1,7 +1,7 @@
 ---
 name: canvas
 description: "Visual flow editor. Flow graphs are JSON (the source of truth), run ephemerally on the shared workflow runtime, and are reused via a JSON library under extension/canvas/. Isolated from the agent system's HTML workflows."
-version: 2.0.0
+version: 1.0.0
 type: module
 category: orchestration
 requirements: []

@@ -1,23 +1,18 @@
-"""Astra DB Tool — from the Langflow `datastax` bundle (ported)."""
+"""Astra DB Tool."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DatastaxAstradbToolPlugin(BundlePlugin):
-    name: str = "datastax.astradb_tool"
+class DatastaxAstradbToolTool(PluginTool):
+    """Astra DB Tool."""
+
+    name: str = 'astradb_tool'
     display_name: str = 'Astra DB Tool'
     description: str = 'Tool to run hybrid vector and metadata search on DataStax Astra DB Collection'
-    kind: str = "tool"
-    bundle: str = "datastax"
-    bundle_label: str = 'Astra DB'
-    category: str = "tool"
-    source: str = "langflow/bundles/datastax"
-    status: str = "complete"
+    category: str = 'tool'
 
     async def __call__(self, tool_name: str = "", token: str = "", api_endpoint: str = "", **kwargs) -> Response:
         return self._fail("datastax.tool: this exposes an Astra DB collection AS an agent tool; use it as a "

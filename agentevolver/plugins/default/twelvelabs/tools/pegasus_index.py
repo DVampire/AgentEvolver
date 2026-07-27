@@ -1,23 +1,17 @@
-"""TwelveLabs Pegasus Index Video — from the Langflow `twelvelabs` bundle (ported)."""
+"""TwelveLabs Pegasus Index Video."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class TwelvelabsPegasusIndexPlugin(BundlePlugin):
-    name: str = "twelvelabs.pegasus_index"
+class TwelvelabsPegasusIndexTool(PluginTool):
+    """TwelveLabs Pegasus Index Video."""
+
+    name: str = 'pegasus_index'
     display_name: str = 'TwelveLabs Pegasus Index Video'
     description: str = 'Index videos using TwelveLabs and add the video_id to metadata.'
-    kind: str = "tool"
-    bundle: str = "twelvelabs"
-    bundle_label: str = 'TwelveLabs'
-    category: str = "data"
-    source: str = "langflow/bundles/twelvelabs"
-    status: str = "complete"
 
     async def __call__(self, index_name: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY")

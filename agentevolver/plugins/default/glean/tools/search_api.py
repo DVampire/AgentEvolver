@@ -1,21 +1,15 @@
-"""Glean Search API — from the Langflow `glean` bundle (ported)."""
+"""Glean Search API."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GleanGleanSearchApiPlugin(BundlePlugin):
-    name: str = "glean.glean_search_api"
+class GleanSearchApiTool(PluginTool):
+    """Glean Search API."""
+
+    name: str = 'glean_search_api'
     display_name: str = 'Glean Search API'
     description: str = 'Search using Glean'
-    kind: str = "tool"
-    bundle: str = "glean"
-    bundle_label: str = 'Glean'
-    category: str = "data"
-    source: str = "langflow/bundles/glean"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", glean_api_url: str = "", glean_access_token: str = "", page_size: int = 10, **kwargs) -> Response:
         import httpx
@@ -30,7 +24,7 @@ class GleanGleanSearchApiPlugin(BundlePlugin):
             resp = httpx.post(
                 api_url + "search",
                 headers={"Authorization": f"Bearer {token}",
-                         "X-Scio-ActAs": "agentevolver@bundle"},
+                         "X-Scio-ActAs": "agentevolver@provider"},
                 json={"query": query, "pageSize": int(page_size)}, timeout=60.0)
             resp.raise_for_status()
             results = resp.json().get("results", [])

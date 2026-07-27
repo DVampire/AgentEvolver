@@ -1,23 +1,17 @@
-"""Google Search API — from the Langflow `google` bundle (ported)."""
+"""Google Search API."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GoogleGoogleSearchApiCorePlugin(BundlePlugin):
-    name: str = "google.google_search_api_core"
+class GoogleSearchApiCoreTool(PluginTool):
+    """Google Search API."""
+
+    name: str = 'google_search_api_core'
     display_name: str = 'Google Search API'
     description: str = 'Call Google Search API and return results as a DataFrame.'
-    kind: str = "tool"
-    bundle: str = "google"
-    bundle_label: str = 'Google'
-    category: str = "data"
-    source: str = "langflow/bundles/google"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", google_api_key: str = "", google_cse_id: str = "", k: int = 4, **kwargs) -> Response:
         q = str(input_value or "").strip()

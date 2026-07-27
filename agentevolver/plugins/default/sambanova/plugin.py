@@ -1,6 +1,19 @@
-"""Registration hub for the `sambanova` bundle."""
+"""SambaNova plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "sambanova"
-BUNDLE_LABEL = 'SambaNova'
+from .tools.sambanova import SambanovaTool
+
+
+@PLUGIN.register_module(force=True)
+class SambanovaPlugin(Plugin):
+    """SambaNova tools."""
+
+    tools = (SambanovaTool,)
+
+    name: str = 'sambanova'
+    display_name: str = 'SambaNova'
+    description: str = 'SambaNova tools.'
+    category: str = 'data'
+    type: str = 'model'

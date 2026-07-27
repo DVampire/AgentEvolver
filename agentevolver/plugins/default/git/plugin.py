@@ -1,6 +1,20 @@
-"""Registration hub for the `git` bundle."""
+"""Git plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "git"
-BUNDLE_LABEL = 'Git'
+from .tools.git import GitTool
+from .tools.gitextractor import GitextractorTool
+
+
+@PLUGIN.register_module(force=True)
+class GitPlugin(Plugin):
+    """Git tools."""
+
+    tools = (GitTool, GitextractorTool,)
+
+    name: str = 'git'
+    display_name: str = 'Git'
+    description: str = 'Git tools.'
+    category: str = 'data'
+    type: str = 'tool'

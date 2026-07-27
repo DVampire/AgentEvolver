@@ -1,23 +1,18 @@
-"""Video File — from the Langflow `twelvelabs` bundle (ported)."""
+"""Video File."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class TwelvelabsVideoFilePlugin(BundlePlugin):
-    name: str = "twelvelabs.video_file"
+class TwelvelabsVideoFileTool(PluginTool):
+    """Video File."""
+
+    name: str = 'video_file'
     display_name: str = 'Video File'
     description: str = 'Load a video file in common video formats.'
-    kind: str = "tool"
-    bundle: str = "twelvelabs"
-    bundle_label: str = 'TwelveLabs'
-    category: str = "files"
-    source: str = "langflow/bundles/twelvelabs"
-    status: str = "complete"
+    category: str = 'files'
 
     async def __call__(self, file_path: str = "", **kwargs) -> Response:
         import os as _os

@@ -1,33 +1,27 @@
 ---
 id: openrouter
 name: OpenRouter
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/openrouter
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-openai]
+implemented: 1
+credentials: [OPENROUTER_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
-
 # OpenRouter
 
-Migrated from the Langflow **openrouter** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+OpenRouter tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `openrouter.openrouter` | OpenRouter |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `openrouter.openrouter` | OpenRouter | ✅ | OpenRouter |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/openrouter/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENROUTER_API_KEY`, an `api_key` argument on the call, or a `openrouter_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

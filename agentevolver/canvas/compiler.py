@@ -64,9 +64,9 @@ class CanvasCompiler:
         if len(nodes) != len(graph.nodes):
             errors.append("Duplicate node ids")
 
-        steps = [node for node in graph.nodes if node.kind == "step"]
-        inputs = [node for node in graph.nodes if node.kind == "input"]
-        outputs = [node for node in graph.nodes if node.kind == "output"]
+        steps = [node for node in graph.nodes if node.type == "step"]
+        inputs = [node for node in graph.nodes if node.type == "input"]
+        outputs = [node for node in graph.nodes if node.type == "output"]
         if not steps:
             errors.append("The flow has no steps")
         for node in steps:
@@ -89,10 +89,10 @@ class CanvasCompiler:
             if source is None or target is None:
                 errors.append(f"Edge {edge.id} references a missing node")
                 continue
-            if source.kind == "output":
+            if source.type == "output":
                 errors.append(f"Edge {edge.id} starts at an output node")
                 continue
-            # Agent capability mounts (mount:<kind>) accept MANY capability edges
+            # Agent capability mounts (mount:<type>) accept MANY capability edges
             # and are collected into allowlist args below, not as data bindings.
             if edge.param.startswith("mount:"):
                 continue
@@ -161,8 +161,8 @@ class CanvasCompiler:
         into the capability's ``{message, data, files}`` result); ``out`` (or an
         input node, which has no sub-ports) compiles to the whole ``${node}``.
         """
-        base = f"inputs.{node.name}" if node.kind == "input" else node.id
-        if source_port and source_port != "out" and node.kind != "input":
+        base = f"inputs.{node.name}" if node.type == "input" else node.id
+        if source_port and source_port != "out" and node.type != "input":
             return f"${{{base}.{source_port}}}"
         return f"${{{base}}}"
 
@@ -184,7 +184,7 @@ class CanvasCompiler:
         the smallest body). Reference-only ``${id}`` bodies still work because the
         connected canvas uses real edges from the control node's output ports.
         """
-        step_ids = {node.id for node in graph.nodes if node.kind == "step"}
+        step_ids = {node.id for node in graph.nodes if node.type == "step"}
         nodes_by_id = {node.id: node for node in graph.nodes}
         out_edges: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
         for edge in graph.edges:
@@ -206,7 +206,7 @@ class CanvasCompiler:
         reachable_all = reach(set())
         claims: Dict[str, List[Tuple[int, str, str]]] = defaultdict(list)
         for cf in graph.nodes:
-            if cf.kind != "step" or cf.step_type not in self._CF_PORTS:
+            if cf.type != "step" or cf.step_type not in self._CF_PORTS:
                 continue
             for port, slot in self._CF_PORTS[cf.step_type]:
                 body = ((reachable_all - reach({(cf.id, port)})) - {cf.id}) & step_ids
@@ -225,7 +225,7 @@ class CanvasCompiler:
         (bindings + inline ``${id}`` text refs), position as the tiebreaker."""
         children = [
             node for node in graph.nodes
-            if node.kind == "step" and node.parent == parent and (parent is None or node.slot == slot)
+            if node.type == "step" and node.parent == parent and (parent is None or node.slot == slot)
         ]
         ids = {node.id for node in children}
         incoming: Dict[str, Set[str]] = defaultdict(set)
@@ -295,24 +295,24 @@ class CanvasCompiler:
             # Agent capability mounts → allowlist args (tools/skills/connectors/...).
             # A non-empty selection scopes the agent to exactly those; an empty one
             # is omitted so the agent keeps its defaults. The runtime lifts these
-            # args into ctx.extra["<kind>_allowlist"].
+            # args into ctx.extra["<type>_allowlist"].
             if tag == "agent":
                 # Two ways to mount a capability, merged: the node's picker
                 # selection (node.mounts) AND edges wired into the agent's
-                # mount:<kind> input ports (Langflow-style — connect a tool node
+                # mount:<type> input ports (Langflow-style — connect a tool node
                 # to the agent). Each edge contributes its source capability name.
                 mounted: Dict[str, List[str]] = {k: list(v) for k, v in (node.mounts or {}).items()}
                 nodes_by_id = {other.id: other for other in graph.nodes}
                 for edge in graph.edges:
                     if edge.target == node.id and edge.param.startswith("mount:"):
-                        kind = edge.param[len("mount:"):]
+                        mount_type = edge.param[len("mount:"):]
                         src = nodes_by_id.get(edge.source)
                         cap = (src.target if src and src.target else edge.source) if src else edge.source
-                        mounted.setdefault(kind, []).append(cap)
-                for kind, names in mounted.items():
+                        mounted.setdefault(mount_type, []).append(cap)
+                for mount_type, names in mounted.items():
                     selected = [str(n) for n in names if str(n).strip()]
                     if selected:
-                        args[kind] = ",".join(dict.fromkeys(selected))
+                        args[mount_type] = ",".join(dict.fromkeys(selected))
 
             children_then = self._ordered_children(graph, parent=node.id, slot="then" if tag == "branch" else "body")
             children_else = self._ordered_children(graph, parent=node.id, slot="else") if tag == "branch" else []

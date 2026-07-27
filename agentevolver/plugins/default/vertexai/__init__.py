@@ -1,5 +1,5 @@
-"""`Vertex AI` bundle plugin (migrated from Langflow)."""
+"""Vertex AI plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import VertexaiPlugin
 
-__all__: list = []
+__all__ = ["VertexaiPlugin"]

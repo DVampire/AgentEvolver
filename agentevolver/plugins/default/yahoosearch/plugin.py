@@ -1,6 +1,19 @@
-"""Registration hub for the `yahoosearch` bundle."""
+"""Yahoo Search plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "yahoosearch"
-BUNDLE_LABEL = 'Yahoo Search'
+from .tools.yahoo import YahoosearchYahooTool
+
+
+@PLUGIN.register_module(force=True)
+class YahoosearchPlugin(Plugin):
+    """Yahoo Search tools."""
+
+    tools = (YahoosearchYahooTool,)
+
+    name: str = 'yahoosearch'
+    display_name: str = 'Yahoo Search'
+    description: str = 'Yahoo Search tools.'
+    category: str = 'data'
+    type: str = 'tool'

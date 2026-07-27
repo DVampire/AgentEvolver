@@ -39,7 +39,7 @@ import { type ConnectionStatus, type GatewayEvent, GatewaySocket } from './contr
 import useAlertStore from './stores/alertStore';
 
 type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'commands' | 'canvas';
-type MessageKind = 'user' | 'assistant' | 'system' | 'error';
+type MessageType = 'user' | 'assistant' | 'system' | 'error';
 type ActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 type Theme = 'dark' | 'light';
 
@@ -52,17 +52,17 @@ type CapabilitySelection = Record<CapabilityKind, string[]>;
 interface ModelSummary { name: string; id: string; type: string; streaming: boolean; functions: boolean; vision: boolean; }
 interface ProviderSummary { name: string; models: ModelSummary[]; }
 interface ModelEditorState { originalName?: string; configuration: Record<string, unknown>; hasApiKey: boolean; }
-interface Message { id: string; kind: MessageKind; title: string; content?: string; detail?: string; attachments?: string[]; timestamp: string; }
+interface Message { id: string; type: MessageType; title: string; content?: string; detail?: string; attachments?: string[]; timestamp: string; }
 interface ActivityStep { id: string; title: string; content?: string; detail?: string; trace?: Record<string, unknown>; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
 interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
 interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; task_ids: string[]; }
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
-interface WorkspaceEntry { name: string; path: string; kind: 'directory' | 'file'; size?: number | null; modified_at: number; }
+interface WorkspaceEntry { name: string; path: string; type: 'directory' | 'file'; size?: number | null; modified_at: number; }
 interface WorkspaceFile { name: string; path: string; content: string; encoding?: 'utf-8' | 'base64'; size: number; modified_at: number; etag: string; mime_type: string; language: string; }
 interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
-interface EnvironmentViewInfo { env_name: string; kind: string; url: string; label?: string; password?: string | null; }
+interface EnvironmentViewInfo { env_name: string; type: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
 type MainView = 'chat' | 'canvas' | 'code';
 const WorkspaceEditor = lazy(() => import('./workspace/WorkspaceEditor'));
@@ -342,7 +342,7 @@ export function App() {
       }
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
-      setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
+      setMessages([{ id: 'welcome', type: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
       await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
@@ -405,7 +405,7 @@ export function App() {
     }
     if (event.type === 'task.submitted') {
         const files = Array.isArray(event.payload.files) ? event.payload.files.filter((file): file is string => typeof file === 'string').map(fileName) : [];
-        setMessages((items) => [...items, { id: `${event.task_id}:user`, kind: 'user', title: 'You', content: String(event.payload.content ?? ''), attachments: files, timestamp: event.timestamp }]);
+        setMessages((items) => [...items, { id: `${event.task_id}:user`, type: 'user', title: 'You', content: String(event.payload.content ?? ''), attachments: files, timestamp: event.timestamp }]);
       appendActivityStep(event, activityStep(event), 'running');
       return;
     }
@@ -413,7 +413,7 @@ export function App() {
       if (event.session_id === sessionRef.current) {
         setMessages((items) => [...items, {
           id: `command:${event.seq_no}`,
-          kind: event.payload.success === false ? 'error' : 'system',
+          type: event.payload.success === false ? 'error' : 'system',
           title: String(event.payload.raw ?? 'Command'),
           content: String(event.payload.message ?? ''),
           detail: event.payload.data ? JSON.stringify(event.payload.data, null, 2) : undefined,
@@ -528,7 +528,7 @@ export function App() {
       if (!response.ok || typeof response.result.session_id !== 'string') throw new Error(response.error?.message ?? 'Could not create a session');
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
-      setMessages([{ id: 'welcome', kind: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
+      setMessages([{ id: 'welcome', type: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
       await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
@@ -998,7 +998,7 @@ function WorkspaceWorkbench({ tab, onTab, entries, expanded, selectedFile, loadi
 function WorkspaceTree({ path, entries, expanded, selectedPath, onToggle, onOpen, depth = 0 }: { path: string; entries: Record<string, WorkspaceEntry[]>; expanded: Set<string>; selectedPath?: string; onToggle: (path: string) => void; onOpen: (path: string) => void; depth?: number }) {
   const children = entries[path] ?? [];
   if (!children.length && depth === 0) return <p className="workspace-empty">Workspace is empty.</p>;
-  return <>{children.map((entry) => entry.kind === 'directory' ? <div key={entry.path} role="treeitem" aria-expanded={expanded.has(entry.path)}>
+  return <>{children.map((entry) => entry.type === 'directory' ? <div key={entry.path} role="treeitem" aria-expanded={expanded.has(entry.path)}>
     <button className="tree-row directory" style={{ paddingLeft: 10 + depth * 14 }} onClick={() => onToggle(entry.path)}><span>{expanded.has(entry.path) ? '⌄' : '›'}</span><i>▱</i><strong>{entry.name}</strong></button>
     {expanded.has(entry.path) ? <WorkspaceTree path={entry.path} entries={entries} expanded={expanded} selectedPath={selectedPath} onToggle={onToggle} onOpen={onOpen} depth={depth + 1} /> : null}
   </div> : <button key={entry.path} role="treeitem" className={`tree-row file ${selectedPath === entry.path ? 'selected' : ''}`} style={{ paddingLeft: 10 + depth * 14 }} onClick={() => onOpen(entry.path)}><span /><i>{fileIcon(entry.name)}</i><strong>{entry.name}</strong></button>)}</>;
@@ -1058,20 +1058,20 @@ function StructuredTrace({ trace, compact = false }: { trace: Record<string, unk
   const inputWithoutCommand = input ? Object.fromEntries(Object.entries(input).filter(([key]) => !['command', 'cmd', 'script'].includes(key))) : undefined;
   return <div className={`trace-sections ${compact ? 'compact' : ''}`}>
     <div className="trace-facts">{typeof trace.step_number === 'number' ? <span>Step {trace.step_number}</span> : null}{typeof trace.action_index === 'number' ? <span>Action {trace.action_index + 1}</span> : null}{typeof trace.duration_ms === 'number' ? <span>{formatDuration(trace.duration_ms)}</span> : null}{typeof trace.success === 'boolean' ? <span className={trace.success ? 'success' : 'failure'}>{trace.success ? 'Success' : 'Failed'}</span> : null}</div>
-    {reasoning ? <TraceSection label="Reasoning" value={reasoning} kind="reasoning" /> : null}
-    {command !== undefined ? <TraceSection label="Command" value={command} kind="command" /> : null}
+    {reasoning ? <TraceSection label="Reasoning" value={reasoning} type="reasoning" /> : null}
+    {command !== undefined ? <TraceSection label="Command" value={command} type="command" /> : null}
     {inputWithoutCommand && Object.keys(inputWithoutCommand).length ? <TraceSection label={trace.action_name ? 'Arguments' : 'Input'} value={inputWithoutCommand} /> : null}
-    {output !== undefined && output !== null && output !== '' ? <TraceSection label="Output" value={output} kind="output" /> : null}
-    {trace.error ? <TraceSection label="Error" value={trace.error} kind="error" /> : null}
+    {output !== undefined && output !== null && output !== '' ? <TraceSection label="Output" value={output} type="output" /> : null}
+    {trace.error ? <TraceSection label="Error" value={trace.error} type="error" /> : null}
     {metadata && Object.keys(metadata).some((key) => key !== 'success') ? <TraceSection label="Metadata" value={metadata} /> : null}
     {!compact ? <details className="raw-event"><summary>Raw event</summary><pre><code>{JSON.stringify(trace, null, 2)}</code></pre></details> : null}
   </div>;
 }
 
-function TraceSection({ label, value, kind = 'data' }: { label: string; value: unknown; kind?: 'data' | 'reasoning' | 'command' | 'output' | 'error' }) {
+function TraceSection({ label, value, type = 'data' }: { label: string; value: unknown; type?: 'data' | 'reasoning' | 'command' | 'output' | 'error' }) {
   if (value === undefined || value === null || value === '') return null;
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-  return <section className={`trace-section ${kind}`}><header><span>{traceIcon(kind)}</span><strong>{label}</strong><button onClick={() => navigator.clipboard?.writeText(text)}>Copy</button></header>{kind === 'reasoning' ? <div className="trace-reasoning"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div> : <pre><code>{text}</code></pre>}</section>;
+  return <section className={`trace-section ${type}`}><header><span>{traceIcon(type)}</span><strong>{label}</strong><button onClick={() => navigator.clipboard?.writeText(text)}>Copy</button></header>{type === 'reasoning' ? <div className="trace-reasoning"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div> : <pre><code>{text}</code></pre>}</section>;
 }
 
 function traceReasoning(trace: Record<string, unknown>): string | undefined {
@@ -1081,7 +1081,7 @@ function traceReasoning(trace: Record<string, unknown>): string | undefined {
   return legacy?.[1]?.replaceAll("\\n", "\n").replaceAll("\\'", "'") ?? trace.message;
 }
 
-function traceIcon(kind: string): string { return kind === 'reasoning' ? '✦' : kind === 'command' ? '›_' : kind === 'output' ? '↳' : kind === 'error' ? '!' : '{}'; }
+function traceIcon(type: string): string { return type === 'reasoning' ? '✦' : type === 'command' ? '›_' : type === 'output' ? '↳' : type === 'error' ? '!' : '{}'; }
 function formatDuration(value: number): string { return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`; }
 
 function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
@@ -1185,7 +1185,7 @@ function EnvironmentLive({ view, onClose }: { view: EnvironmentViewInfo; onClose
         <button className="live-close" onClick={onClose} aria-label="Hide live view">×</button>
       </header>
       <div className="environment-live-body">
-        {view.kind === 'vnc'
+        {view.type === 'vnc'
           ? <Suspense fallback={<div className="vnc-overlay">Loading live view…</div>}><VncView url={view.url} password={view.password} /></Suspense>
           : <iframe title={view.label || 'Live environment'} src={view.url} />}
       </div>
@@ -1250,7 +1250,7 @@ function asEnvironmentView(value: unknown): EnvironmentViewInfo | undefined {
   if (!isRecord(value) || typeof value.url !== 'string' || !value.url) return undefined;
   return {
     env_name: typeof value.env_name === 'string' ? value.env_name : 'environment',
-    kind: typeof value.kind === 'string' ? value.kind : 'vnc',
+    type: typeof value.type === 'string' ? value.type : 'vnc',
     url: resolveViewUrl(value.url),
     label: typeof value.label === 'string' ? value.label : undefined,
     password: typeof value.password === 'string' ? value.password : undefined,
@@ -1338,7 +1338,7 @@ function isWorkspaceEntry(value: unknown): value is WorkspaceEntry {
   return isRecord(value)
     && typeof value.name === 'string'
     && typeof value.path === 'string'
-    && (value.kind === 'directory' || value.kind === 'file')
+    && (value.type === 'directory' || value.type === 'file')
     && typeof value.modified_at === 'number';
 }
 
@@ -1394,10 +1394,10 @@ function traceSummary(trace: Record<string, unknown>): string | undefined {
   return typeof trace.label === 'string' ? trace.label : undefined;
 }
 
-function finalMessage(event: GatewayEvent, kind: Extract<MessageKind, 'assistant' | 'error' | 'system'>): Message {
-  if (kind === 'assistant') return { id: `${event.task_id}:final`, kind, title: 'AgentEvolver', content: String(event.payload.message ?? event.payload.result ?? 'Task completed'), detail: JSON.stringify(event.payload, null, 2), timestamp: event.timestamp };
-  if (kind === 'error') return { id: `${event.task_id}:error`, kind, title: 'Task failed', content: String(event.payload.error ?? 'Unknown error'), detail: JSON.stringify(event.payload, null, 2), timestamp: event.timestamp };
-  return { id: `${event.task_id}:cancelled`, kind, title: 'Task cancelled', timestamp: event.timestamp };
+function finalMessage(event: GatewayEvent, type: Extract<MessageType, 'assistant' | 'error' | 'system'>): Message {
+  if (type === 'assistant') return { id: `${event.task_id}:final`, type, title: 'AgentEvolver', content: String(event.payload.message ?? event.payload.result ?? 'Task completed'), detail: JSON.stringify(event.payload, null, 2), timestamp: event.timestamp };
+  if (type === 'error') return { id: `${event.task_id}:error`, type, title: 'Task failed', content: String(event.payload.error ?? 'Unknown error'), detail: JSON.stringify(event.payload, null, 2), timestamp: event.timestamp };
+  return { id: `${event.task_id}:cancelled`, type, title: 'Task cancelled', timestamp: event.timestamp };
 }
 
 function formatTime(timestamp: string): string { return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }

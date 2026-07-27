@@ -1,5 +1,5 @@
-"""`MongoDB` bundle plugin (migrated from Langflow)."""
+"""MongoDB Atlas plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import MongodbPlugin
 
-__all__: list = []
+__all__ = ["MongodbPlugin"]

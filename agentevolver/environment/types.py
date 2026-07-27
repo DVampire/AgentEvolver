@@ -31,7 +31,7 @@ class EnvironmentView(BaseModel):
     The heavy media stream flows browser ↔ endpoint (e.g. a websockify VNC socket),
     never through the agent/gateway — this descriptor only advertises where to look.
 
-    ``kind``:
+    ``type``:
       ``vnc``    — ``url`` is a websockify WebSocket a noVNC client renders on a canvas.
       ``iframe`` — ``url`` is an http(s) page embedded directly in an iframe.
     New environments implement :meth:`Environment.live_view` to return one of these.
@@ -41,7 +41,7 @@ class EnvironmentView(BaseModel):
 
     session_id: str = Field(default="", description="Session this view belongs to (set by the manager).")
     env_name: str = Field(default="", description="Environment that owns this view.")
-    kind: str = Field(default="vnc", description="vnc | iframe")
+    type: str = Field(default="vnc", description="vnc | iframe")
     url: str = Field(description="Endpoint the frontend connects to / embeds.")
     label: str = Field(default="", description="Human-readable label for the view.")
     password: Optional[str] = Field(default=None, description="VNC password, when the RFB server requires one.")

@@ -1,34 +1,28 @@
 ---
 id: vertexai
 name: Vertex AI
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/vertexai
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-google-vertexai, langchain-openai]
+implemented: 2
+credentials: []
+requirements: [langchain_google_vertexai, langchain_openai]
+version: "1.0.0"
 ---
-
 # Vertex AI
 
-Migrated from the Langflow **vertexai** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Vertex AI tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `vertexai.vertexai` | Vertex AI | Generate text using Vertex AI LLMs. | structure |
-| `vertexai.vertexai_embeddings` | Vertex AI Embeddings | Generate embeddings using Google Cloud Vertex AI models. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `vertexai.vertexai` | Vertex AI | ✅ | Generate text using Vertex AI LLMs. |
+| `vertexai.vertexai_embeddings` | Vertex AI Embeddings | ✅ | Generate embeddings using Google Cloud Vertex AI models. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/vertexai/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

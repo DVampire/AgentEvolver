@@ -1,6 +1,19 @@
-"""Registration hub for the `perplexity` bundle."""
+"""Perplexity plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "perplexity"
-BUNDLE_LABEL = 'Perplexity'
+from .tools.perplexity import PerplexityTool
+
+
+@PLUGIN.register_module(force=True)
+class PerplexityPlugin(Plugin):
+    """Perplexity tools."""
+
+    tools = (PerplexityTool,)
+
+    name: str = 'perplexity'
+    display_name: str = 'Perplexity'
+    description: str = 'Perplexity tools.'
+    category: str = 'data'
+    type: str = 'model'

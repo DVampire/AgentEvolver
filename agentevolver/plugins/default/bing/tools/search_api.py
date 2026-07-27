@@ -1,21 +1,15 @@
-"""Bing Search API — from the Langflow `bing` bundle (ported)."""
+"""Bing Search API."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class BingBingSearchApiPlugin(BundlePlugin):
-    name: str = "bing.bing_search_api"
+class BingSearchApiTool(PluginTool):
+    """Bing Search API."""
+
+    name: str = 'bing_search_api'
     display_name: str = 'Bing Search API'
     description: str = 'Call the Bing Search API.'
-    kind: str = "tool"
-    bundle: str = "bing"
-    bundle_label: str = 'Bing'
-    category: str = "data"
-    source: str = "langflow/bundles/bing"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", bing_subscription_key: str = "", bing_search_url: str = "", k: int = 4, **kwargs) -> Response:
         query = str(input_value or "").strip()

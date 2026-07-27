@@ -1,34 +1,27 @@
 ---
 id: vectara
 name: Vectara
-kind: bundle
 category: data
-icon: lucide:Vectara
-source: langflow/bundles/vectara
-status: complete
-version: "1.0.0"
+type: vectorstore
 tools: 2
-requirements: [langchain-community, langchain-openai]
+implemented: 2
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
-
 # Vectara
 
-Migrated from the Langflow **vectara** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Vectara tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `vectara.vectara` | Vectara | Vectara Vector Store with search capabilities | structure |
-| `vectara.vectara_rag` | Vectara RAG | Vectara | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `vectara.vectara` | Vectara | ✅ | Vectara Vector Store with search capabilities |
+| `vectara.vectara_rag` | Vectara RAG | ✅ | Vectara |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `Vectara` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/vectara/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `vectara_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

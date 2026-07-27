@@ -1,20 +1,15 @@
-"""AssemblyAI Get Subtitles — from the Langflow `assemblyai` bundle (ported)."""
+"""AssemblyAI Get Subtitles."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.assemblyai._base import AssemblyAIPlugin
+from agentevolver.plugins.default.assemblyai._base import AssemblyaiToolBase
 
 
-@PLUGIN.register_module(force=True)
-class AssemblyaiAssemblyaiGetSubtitlesPlugin(AssemblyAIPlugin):
-    name: str = "assemblyai.assemblyai_get_subtitles"
+class AssemblyaiGetSubtitlesTool(AssemblyaiToolBase):
+    """AssemblyAI Get Subtitles."""
+
+    name: str = 'assemblyai_get_subtitles'
     display_name: str = 'AssemblyAI Get Subtitles'
     description: str = 'Export your transcript in SRT or VTT format for subtitles and closed captions'
-    kind: str = "tool"
-    bundle: str = "assemblyai"
-    bundle_label: str = "AssemblyAI"
-    source: str = "langflow/bundles/assemblyai"
-    status: str = "complete"
 
     async def __call__(self, transcript_id: str = "", subtitle_format: str = "srt", chars_per_caption: int = 0, api_key: str = "", **kwargs) -> Response:
         try:

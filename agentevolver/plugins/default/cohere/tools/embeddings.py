@@ -1,24 +1,19 @@
-"""Cohere Embeddings — from the Langflow `cohere` embeddings bundle (ported)."""
+"""Cohere Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CohereCohereEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "cohere.cohere_embeddings"
+class CohereEmbeddingsTool(EmbeddingPluginTool):
+    """Cohere Embeddings."""
+
+    name: str = 'cohere_embeddings'
     display_name: str = 'Cohere Embeddings'
     description: str = 'Generate embeddings using Cohere models.'
-    kind: str = "embedding"
-    bundle: str = "cohere"
-    bundle_label: str = 'Cohere'
-    source: str = "langflow/bundles/cohere"
-    status: str = "complete"
-    key_env: str = "COHERE_API_KEY"
-    default_base_url: str = ""
+    key_env: str = 'COHERE_API_KEY'
+    default_base_url: str = ''
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_cohere import CohereEmbeddings

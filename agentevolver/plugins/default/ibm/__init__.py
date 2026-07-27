@@ -1,5 +1,5 @@
-"""`IBM watsonx` bundle plugin (migrated from Langflow)."""
+"""IBM DB2 plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import IbmPlugin
 
-__all__: list = []
+__all__ = ["IbmPlugin"]

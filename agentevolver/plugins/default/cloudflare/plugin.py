@@ -1,6 +1,19 @@
-"""Registration hub for the `cloudflare` bundle."""
+"""Cloudflare plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "cloudflare"
-BUNDLE_LABEL = 'Cloudflare'
+from .tools.cloudflare import CloudflareTool
+
+
+@PLUGIN.register_module(force=True)
+class CloudflarePlugin(Plugin):
+    """Cloudflare tools."""
+
+    tools = (CloudflareTool,)
+
+    name: str = 'cloudflare'
+    display_name: str = 'Cloudflare'
+    description: str = 'Cloudflare tools.'
+    category: str = 'knowledge'
+    type: str = 'embedding'

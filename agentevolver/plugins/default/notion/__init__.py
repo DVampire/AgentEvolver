@@ -1,5 +1,5 @@
-"""`Notion` bundle plugin (migrated from Langflow)."""
+"""Notion plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import NotionPlugin
 
-__all__: list = []
+__all__ = ["NotionPlugin"]

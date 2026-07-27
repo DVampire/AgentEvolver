@@ -1,35 +1,29 @@
 ---
 id: oracle
 name: Oracle
-kind: bundle
 category: data
+type: embedding
 icon: resources/icon.svg
-source: langflow/bundles/oracle
-status: complete
-version: "1.0.0"
 tools: 3
-requirements: [langchain-community, langchain-openai, oracledb]
+implemented: 3
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai, oracledb]
+version: "1.0.0"
 ---
-
 # Oracle
 
-Migrated from the Langflow **oracle** bundle. This package is in the
-**structure** phase: all 3 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Oracle tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `oracle.oracledb_embeddings` | Oracle Embeddings | Generate embeddings using Oracle AI Vector Search. | structure |
-| `oracle.oracledb_loaders` | Oracle Doc Loader | Read documents from Oracle Database using OracleDocLoader. | structure |
-| `oracle.oraclevs` | Oracle Vector Store | Oracle vector store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `oracle.oracledb_embeddings` | Oracle Embeddings | ✅ | Generate embeddings using Oracle AI Vector Search. |
+| `oracle.oracledb_loaders` | Oracle Doc Loader | ✅ | Read documents from Oracle Database using OracleDocLoader. |
+| `oracle.oraclevs` | Oracle Vector Store | ✅ | Oracle vector store with search capabilities |
 
-## Icon
+All 3 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/oracle/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `oracle_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

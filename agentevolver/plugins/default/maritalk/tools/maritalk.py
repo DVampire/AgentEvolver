@@ -1,24 +1,19 @@
-"""MariTalk — from the Langflow `maritalk` LLM bundle (ported)."""
+"""MariTalk."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class MaritalkMaritalkPlugin(LLMPlugin):
-    name: str = "maritalk.maritalk"
+class MaritalkTool(LLMPluginTool):
+    """MariTalk."""
+
+    name: str = 'maritalk'
     display_name: str = 'MariTalk'
     description: str = 'Generates text using MariTalk LLMs.'
-    kind: str = "model"
-    bundle: str = "maritalk"
-    bundle_label: str = 'MariTalk'
-    source: str = "langflow/bundles/maritalk"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "MARITALK_API_KEY"
+    default_base_url: str = ''
+    key_env: str = 'MARITALK_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_community.chat_models import ChatMaritalk

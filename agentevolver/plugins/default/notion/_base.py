@@ -1,4 +1,4 @@
-"""Shared base for the Notion bundle tools (ported from Langflow).
+"""Shared base for the Notion provider tools (ported from Langflow).
 
 All Notion components call ``api.notion.com`` with an integration token and the
 ``Notion-Version`` header. The token resolves from the call arg, the
@@ -10,13 +10,13 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 NOTION_VERSION = "2022-06-28"
 BASE = "https://api.notion.com/v1"
 
 
-class NotionPlugin(BundlePlugin):
+class NotionToolBase(PluginTool):
     """Base for Notion tools — token resolution + a REST helper."""
 
     category: str = "data"

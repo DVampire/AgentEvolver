@@ -1,23 +1,18 @@
-"""EmpirioLabs AI Image Generation — from the Langflow `empiriolabs` bundle (ported)."""
+"""EmpirioLabs AI Image Generation."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class EmpiriolabsEmpiriolabsImageGenerationPlugin(BundlePlugin):
-    name: str = "empiriolabs.empiriolabs_image_generation"
+class EmpiriolabsImageGenerationTool(PluginTool):
+    """EmpirioLabs AI Image Generation."""
+
+    name: str = 'empiriolabs_image_generation'
     display_name: str = 'EmpirioLabs AI Image Generation'
-    description: str = 'Generate an image from a text prompt using EmpirioLabs AI image models such as Seedream, \\\\\\n        Qwen-Image, FLUX, Nova Canvas, and HunyuanImage.'
-    kind: str = "tool"
-    bundle: str = "empiriolabs"
-    bundle_label: str = 'EmpirioLabs'
-    category: str = "data"
-    source: str = "langflow/bundles/empiriolabs"
-    status: str = "complete"
+    description: str = 'Generate an image from a text prompt using EmpirioLabs AI image models such as Seedream, \\\\\\\\\\\\n        Qwen-Image, FLUX, Nova Canvas, and HunyuanImage.'
+    category: str = 'data'
 
     async def __call__(self, prompt: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx

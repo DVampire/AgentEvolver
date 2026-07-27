@@ -1,24 +1,19 @@
-"""OpenRouter — from the Langflow `openrouter` LLM bundle (ported)."""
+"""OpenRouter."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OpenrouterOpenrouterPlugin(LLMPlugin):
-    name: str = "openrouter.openrouter"
+class OpenrouterTool(LLMPluginTool):
+    """OpenRouter."""
+
+    name: str = 'openrouter'
     display_name: str = 'OpenRouter'
     description: str = 'OpenRouter'
-    kind: str = "model"
-    bundle: str = "openrouter"
-    bundle_label: str = 'OpenRouter'
-    source: str = "langflow/bundles/openrouter"
-    status: str = "complete"
-    default_base_url: str = "https://openrouter.ai/api/v1"
-    key_env: str = "OPENROUTER_API_KEY"
+    default_base_url: str = 'https://openrouter.ai/api/v1'
+    key_env: str = 'OPENROUTER_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         return self._openai_compatible(cfg.get("model_name"), cfg.get("api_key", ""),

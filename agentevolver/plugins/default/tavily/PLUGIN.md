@@ -1,34 +1,28 @@
 ---
 id: tavily
 name: Tavily
-kind: bundle
 category: data
-icon: lucide:TavilyIcon
-source: langflow/bundles/tavily
-status: complete
-version: "1.0.0"
+type: tool
+icon: resources/icon.svg
 tools: 2
-requirements: []
+implemented: 2
+credentials: [TAVILY_API_KEY]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # Tavily
 
-Migrated from the Langflow **tavily** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Web search and page extraction, tuned for LLM retrieval.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `tavily.tavily_extract` | Tavily Extract API |  | structure |
-| `tavily.tavily_search` | Tavily Search API |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `tavily.tavily_extract` | Tavily Extract | ✅ | Fetch one or more URLs and return their readable text content. |
+| `tavily.tavily_search` | Tavily Search | ✅ | Search the web and return ranked results, optionally with a synthesised answer. |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `TavilyIcon` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/tavily/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`TAVILY_API_KEY`, an `api_key` argument on the call, or a `tavily_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

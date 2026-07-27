@@ -1,33 +1,27 @@
 ---
 id: spider
 name: Spider
-kind: bundle
 category: data
-icon: lucide:puzzle
-source: langflow/bundles/spider
-status: complete
-version: "1.0.0"
+type: tool
+icon: resources/icon.svg
 tools: 1
-requirements: [spider-client]
+implemented: 1
+credentials: [SPIDER_API_KEY]
+requirements: [spider]
+version: "1.0.0"
 ---
-
 # Spider
 
-Migrated from the Langflow **spider** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Spider tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `spider.spider` | Spider Web Crawler & Scraper | Spider API for web crawling and scraping. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `spider.spider` | Spider Web Crawler & Scraper | ✅ | Spider API for web crawling and scraping. |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `puzzle` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/spider/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`SPIDER_API_KEY`, an `api_key` argument on the call, or a `spider_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

@@ -57,7 +57,7 @@ export function NodePanel({ node, runData, onClose }: { node: CanvasNode; runDat
         <Button variant="ghost" size="iconMd" className="ml-auto shrink-0" onClick={onClose} aria-label="Close panel"><X /></Button>
       </header>
       <div className="node-panel-body">
-        {data.kind === 'step' ? <>
+        {data.type === 'step' ? <>
           {(spec?.params ?? []).map((param) => (
             <div className="panel-field" key={param.name} title={param.description}>
               <span className="panel-field-label">{param.label}{param.required ? ' *' : ''}</span>

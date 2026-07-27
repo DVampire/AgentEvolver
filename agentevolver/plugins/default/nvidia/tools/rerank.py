@@ -1,23 +1,19 @@
-"""NVIDIA Rerank — from the Langflow `nvidia` rerank bundle (ported)."""
+"""NVIDIA Rerank."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import RerankPlugin
+from agentevolver.plugins.types import RerankPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NvidiaNvidiaRerankPlugin(RerankPlugin):
-    name: str = "nvidia.nvidia_rerank"
+class NvidiaRerankTool(RerankPluginTool):
+    """NVIDIA Rerank."""
+
+    name: str = 'nvidia_rerank'
     display_name: str = 'NVIDIA Rerank'
     description: str = 'Rerank documents using the NVIDIA API.'
-    kind: str = "rerank"
-    bundle: str = "nvidia"
-    bundle_label: str = 'NVIDIA'
-    source: str = "langflow/bundles/nvidia"
-    status: str = "complete"
-    key_env: str = "NVIDIA_API_KEY"
+    type: str = 'rerank'
+    key_env: str = 'NVIDIA_API_KEY'
 
     def _reranker(self, **cfg: Any) -> Any:
         from langchain_nvidia_ai_endpoints import NVIDIARerank

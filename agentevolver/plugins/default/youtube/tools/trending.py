@@ -1,8 +1,7 @@
 """YouTube Trending — most-popular videos by region/category (ported from Langflow)."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.youtube._base import YouTubePlugin
+from agentevolver.plugins.default.youtube._base import YoutubeToolBase
 
 _COUNTRY = {
     "Global": "US", "United States": "US", "Brazil": "BR", "United Kingdom": "GB",
@@ -19,17 +18,12 @@ _CATEGORY = {
 _MAX = 50
 
 
-@PLUGIN.register_module(force=True)
-class YoutubeTrendingPlugin(YouTubePlugin):
-    name: str = "youtube.trending"
-    display_name: str = "YouTube Trending"
-    description: str = "Retrieves trending videos from YouTube with filtering options."
-    kind: str = "data_source"
-    bundle: str = "youtube"
-    bundle_label: str = "YouTube"
-    category: str = "data"
-    source: str = "langflow/bundles/youtube"
-    status: str = "complete"
+class YoutubeTrendingTool(YoutubeToolBase):
+    """YouTube Trending."""
+
+    name: str = 'trending'
+    display_name: str = 'YouTube Trending'
+    description: str = 'Retrieves trending videos from YouTube with filtering options.'
 
     async def __call__(self, api_key: str = "", region: str = "Global", category: str = "All",
                        max_results: int = 10, include_statistics: bool = True, **kwargs) -> Response:

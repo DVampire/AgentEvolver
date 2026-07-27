@@ -67,7 +67,7 @@ const IO_INPUT_PORT: Record<string, PortType> = { string: 'text', array: 'list',
  * everything else reads the spec's inputs/outputs. */
 function portTypeOf(node: CanvasNode, portName: string | null | undefined, side: 'in' | 'out'): PortType {
   if (!portName) return 'any';
-  if (side === 'out' && node.data.kind === 'input') return IO_INPUT_PORT[node.data.io.input_type] ?? 'any';
+  if (side === 'out' && node.data.type === 'input') return IO_INPUT_PORT[node.data.io.input_type] ?? 'any';
   const ports = side === 'in' ? node.data.spec?.inputs : node.data.spec?.outputs;
   return ports?.find((port) => port.name === portName)?.type ?? 'any';
 }
@@ -158,7 +158,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     const id = freshId();
     const data: CanvasData = {
       spec,
-      kind: spec.category === 'io' ? (spec.id === 'io/input' ? 'input' : 'output') : 'step',
+      type: spec.category === 'io' ? (spec.id === 'io/input' ? 'input' : 'output') : 'step',
       stepType: spec.step_type ?? undefined,
       target: spec.target ?? (spec.category === 'structural' ? '' : undefined),
       task: '', args: {}, items: '', attrs: {},
@@ -194,7 +194,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   const addNote = useCallback(() => {
     const id = freshId();
     const data: CanvasData = {
-      kind: 'step', task: '', args: {}, items: '', attrs: {},
+      type: 'step', task: '', args: {}, items: '', attrs: {},
       io: { name: '', input_type: 'string', required: false, default: '', description: '', value: '' },
       mounts: {}, boundParams: new Set(), update: updateNodeData,
       note: { text: '', color: 'amber' },
@@ -344,7 +344,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     const d = node.data;
     const payload = {
       id: node.id, type: node.type, position: node.position,
-      data: { kind: d.kind, stepType: d.stepType, target: d.target, task: d.task,
+      data: { type: d.type, stepType: d.stepType, target: d.target, task: d.task,
         args: d.args, items: d.items, attrs: d.attrs, mounts: d.mounts, io: d.io },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -402,11 +402,11 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
         // Control-flow bodies are derived from the output edges at compile time
         // (backend _assign_bodies); nodes are never parented on the canvas.
         const doc: GraphNodeDoc = {
-          id: node.id, kind: data.kind,
+          id: node.id, type: data.type,
           position: { x: node.position.x, y: node.position.y },
           parent: null, slot: 'body',
         };
-        if (data.kind === 'step') {
+        if (data.type === 'step') {
           if (data.name?.trim()) doc.name = data.name.trim();
           doc.step_type = data.stepType;
           doc.target = data.target || null;
@@ -444,8 +444,8 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       const spec = specIndexRef.current.get(specKeyFor(item));
       const data: CanvasData = {
         spec,
-        kind: item.kind,
-        name: item.kind === 'step' ? (item.name ?? undefined) : undefined,
+        type: item.type,
+        name: item.type === 'step' ? (item.name ?? undefined) : undefined,
         stepType: item.step_type ?? spec?.step_type ?? undefined,
         target: item.target ?? spec?.target ?? undefined,
         task: item.task ?? '',
@@ -462,7 +462,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       restored.push({
         id: item.id,
         // Control flow (map/branch/loop) is edge-wired, never a container.
-        type: item.kind !== 'step' ? 'ioNode' : 'stepNode',
+        type: item.type !== 'step' ? 'ioNode' : 'stepNode',
         position: item.position,
         data,
       });
@@ -476,7 +476,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
         width: note.width,
         height: note.height,
         data: {
-          kind: 'step', task: '', args: {}, items: '', attrs: {},
+          type: 'step', task: '', args: {}, items: '', attrs: {},
           io: { name: '', input_type: 'string', required: false, default: '', description: '', value: '' },
           mounts: {}, boundParams: new Set(), update: updateNodeData,
           note: { text: note.text, color: note.color },
@@ -734,7 +734,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   };
 
   const runFlow = () => {
-    const inputFields: RunInputField[] = nodes.filter((node) => node.data.kind === 'input' && node.data.io.name).map((node) => ({
+    const inputFields: RunInputField[] = nodes.filter((node) => node.data.type === 'input' && node.data.io.name).map((node) => ({
       name: node.data.io.name, type: node.data.io.input_type, required: node.data.io.required, value: node.data.io.default,
     }));
     if (inputFields.length) setRunDialog({ fields: inputFields });
@@ -938,7 +938,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
               connected={connected}
               onNotice={onNotice}
               onClose={() => setPlaygroundOpen(false)}
-              inputNodes={nodes.filter((node) => node.data.kind === 'input' && node.data.io.name).map((node) => ({
+              inputNodes={nodes.filter((node) => node.data.type === 'input' && node.data.io.name).map((node) => ({
                 name: node.data.io.name, input_type: node.data.io.input_type, required: node.data.io.required, default: node.data.io.default,
               }))}
               startRun={startRun}

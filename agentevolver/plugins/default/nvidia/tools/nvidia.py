@@ -1,24 +1,20 @@
-"""NVIDIA — from the Langflow `nvidia` LLM bundle (ported)."""
+"""NVIDIA."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class NvidiaNvidiaPlugin(LLMPlugin):
-    name: str = "nvidia.nvidia"
+class NvidiaTool(LLMPluginTool):
+    """NVIDIA."""
+
+    name: str = 'nvidia'
     display_name: str = 'NVIDIA'
     description: str = 'Generates text using NVIDIA LLMs.'
-    kind: str = "model"
-    bundle: str = "nvidia"
-    bundle_label: str = 'NVIDIA'
-    source: str = "langflow/bundles/nvidia"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "NVIDIA_API_KEY"
+    type: str = 'model'
+    default_base_url: str = ''
+    key_env: str = 'NVIDIA_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_nvidia_ai_endpoints import ChatNVIDIA

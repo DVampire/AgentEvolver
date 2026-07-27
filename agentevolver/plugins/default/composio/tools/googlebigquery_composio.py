@@ -1,17 +1,12 @@
-"""GoogleBigQuery (Composio) — from the Langflow `composio` bundle (ported)."""
+"""GoogleBigQuery (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioGooglebigqueryComposioPlugin(ComposioPlugin):
-    name: str = "composio.googlebigquery_composio"
+class ComposioGooglebigqueryComposioTool(ComposioPluginTool):
+    """GoogleBigQuery."""
+
+    name: str = 'googlebigquery_composio'
     display_name: str = 'GoogleBigQuery'
     description: str = 'Execute GoogleBigQuery actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "googlebigquery"
+    app_name: str = 'googlebigquery'

@@ -1,23 +1,19 @@
-"""Astra DB Chat Memory — from the Langflow `datastax` bundle (ported)."""
+"""Astra DB Chat Memory."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import MemoryPlugin
+from agentevolver.plugins.types import MemoryPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DatastaxAstradbChatmemoryPlugin(MemoryPlugin):
-    name: str = "datastax.astradb_chatmemory"
+class DatastaxAstradbChatmemoryTool(MemoryPluginTool):
+    """Astra DB Chat Memory."""
+
+    name: str = 'astradb_chatmemory'
     display_name: str = 'Astra DB Chat Memory'
     description: str = 'Retrieves and stores chat messages from Astra DB.'
-    kind: str = "memory"
-    bundle: str = "datastax"
-    bundle_label: str = 'Astra DB'
-    category: str = "agent"
-    source: str = "langflow/bundles/datastax"
-    status: str = "complete"
+    category: str = 'agent'
+    type: str = 'memory'
 
     def _history(self, session_id: str, **cfg: Any) -> Any:
         from langchain_astradb import AstraDBChatMessageHistory

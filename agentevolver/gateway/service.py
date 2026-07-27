@@ -573,7 +573,7 @@ class AgentGateway:
             entries.append({
                 "name": child.name,
                 "path": child_relative,
-                "kind": "directory" if child.is_dir() else "file",
+                "type": "directory" if child.is_dir() else "file",
                 "size": stat.st_size if child.is_file() else None,
                 "modified_at": stat.st_mtime,
             })

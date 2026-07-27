@@ -1,21 +1,15 @@
-"""ScrapeGraph Smart Scraper API — from the Langflow `scrapegraph` bundle (ported)."""
+"""ScrapeGraph Smart Scraper API."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ScrapegraphScrapegraphSmartScraperApiPlugin(BundlePlugin):
-    name: str = "scrapegraph.scrapegraph_smart_scraper_api"
+class ScrapegraphSmartScraperApiTool(PluginTool):
+    """ScrapeGraph Smart Scraper API."""
+
+    name: str = 'scrapegraph_smart_scraper_api'
     display_name: str = 'ScrapeGraph Smart Scraper API'
     description: str = 'Given a URL, it will return the structured data of the website.'
-    kind: str = "tool"
-    bundle: str = "scrapegraph"
-    bundle_label: str = 'ScrapeGraph'
-    category: str = "data"
-    source: str = "langflow/bundles/scrapegraph"
-    status: str = "complete"
 
     async def __call__(self, url: str = "", prompt: str = "", api_key: str = "", query: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "SGAI_API_KEY", "SCRAPEGRAPH_API_KEY")

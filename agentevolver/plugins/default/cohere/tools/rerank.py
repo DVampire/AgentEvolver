@@ -1,23 +1,19 @@
-"""Cohere Rerank — from the Langflow `cohere` rerank bundle (ported)."""
+"""Cohere Rerank."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import RerankPlugin
+from agentevolver.plugins.types import RerankPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CohereCohereRerankPlugin(RerankPlugin):
-    name: str = "cohere.cohere_rerank"
+class CohereRerankTool(RerankPluginTool):
+    """Cohere Rerank."""
+
+    name: str = 'cohere_rerank'
     display_name: str = 'Cohere Rerank'
     description: str = 'Rerank documents using the Cohere API.'
-    kind: str = "rerank"
-    bundle: str = "cohere"
-    bundle_label: str = 'Cohere'
-    source: str = "langflow/bundles/cohere"
-    status: str = "complete"
-    key_env: str = "COHERE_API_KEY"
+    type: str = 'rerank'
+    key_env: str = 'COHERE_API_KEY'
 
     def _reranker(self, **cfg: Any) -> Any:
         from langchain_cohere import CohereRerank

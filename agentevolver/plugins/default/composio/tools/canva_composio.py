@@ -1,17 +1,12 @@
-"""Canva (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Canva (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioCanvaComposioPlugin(ComposioPlugin):
-    name: str = "composio.canva_composio"
+class ComposioCanvaComposioTool(ComposioPluginTool):
+    """Canva."""
+
+    name: str = 'canva_composio'
     display_name: str = 'Canva'
     description: str = 'Execute Canva actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "canva"
+    app_name: str = 'canva'

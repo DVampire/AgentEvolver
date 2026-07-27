@@ -8,7 +8,7 @@ becomes an agent workflow and is never registered/callable by an agent.
   the caller (the Gateway passes ``<session project root>/canvas``).
 - **Library** flows are the reuse store: ``export_to_library`` saves a flow as
   ``extension/canvas/<name>.json``; ``import_from_library`` loads it back as a
-  fresh draft. The library surfaces as the ``canvas`` capability kind (a
+  fresh draft. The library surfaces as the ``canvas`` capability type (a
   human-facing library — not agent-callable).
 - **Runs** compile in memory and start the shared workflow runtime as EPHEMERAL
   definitions; the canvas owns no executor and registers nothing.
@@ -63,7 +63,7 @@ class CanvasManagerServer:
         return flows_dir / f"{safe}.json"
 
     def list_flows(self, flows_dir: Path) -> List[Dict[str, Any]]:
-        """Current session's drafts plus every published canvas workflow."""
+        """Summaries of this session's drafts. The reuse library is listed separately."""
         summaries: List[Dict[str, Any]] = []
         if flows_dir.is_dir():
             for path in sorted(flows_dir.glob("*.json")):
@@ -139,7 +139,7 @@ class CanvasManagerServer:
         return out
 
     def list_library_names(self) -> List[str]:
-        """Library flow names — the ``canvas`` capability kind draws from this."""
+        """Library flow names — the ``canvas`` capability type draws from this."""
         return [path.stem for path in sorted(self._library_dir().glob("*.json"))]
 
     def library_path(self, name: str) -> Path:

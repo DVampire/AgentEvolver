@@ -1,6 +1,19 @@
-"""Registration hub for the `icosacomputing` bundle."""
+"""Icosa plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "icosacomputing"
-BUNDLE_LABEL = 'Icosa Computing'
+from .tools.combinatorial_reasoner import IcosacomputingCombinatorialReasonerTool
+
+
+@PLUGIN.register_module(force=True)
+class IcosacomputingPlugin(Plugin):
+    """Icosa tools."""
+
+    tools = (IcosacomputingCombinatorialReasonerTool,)
+
+    name: str = 'icosacomputing'
+    display_name: str = 'Icosa'
+    description: str = 'Icosa tools.'
+    category: str = 'agent'
+    type: str = 'tool'

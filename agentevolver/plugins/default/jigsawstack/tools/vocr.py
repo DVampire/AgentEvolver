@@ -1,20 +1,15 @@
-"""VOCR — from the Langflow `jigsawstack` bundle (ported)."""
+"""VOCR."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.jigsawstack._base import JigsawStackPlugin
+from agentevolver.plugins.default.jigsawstack._base import JigsawstackToolBase
 
 
-@PLUGIN.register_module(force=True)
-class JigsawstackVocrPlugin(JigsawStackPlugin):
-    name: str = "jigsawstack.vocr"
+class JigsawstackVocrTool(JigsawstackToolBase):
+    """VOCR."""
+
+    name: str = 'vocr'
     display_name: str = 'VOCR'
-    description: str = 'Extract data from any document type in a consistent structure with fine-tuned \\\\\\n        vLLMs for the highest accuracy'
-    kind: str = "tool"
-    bundle: str = "jigsawstack"
-    bundle_label: str = "JigsawStack"
-    source: str = "langflow/bundles/jigsawstack"
-    status: str = "complete"
+    description: str = 'Extract data from any document type in a consistent structure with fine-tuned \\\\\\\\\\\\n        vLLMs for the highest accuracy'
 
     async def __call__(self, url: str = "", prompts: list = None, api_key: str = "", **kwargs) -> Response:
         params = {"url": url, "prompts": prompts or []}

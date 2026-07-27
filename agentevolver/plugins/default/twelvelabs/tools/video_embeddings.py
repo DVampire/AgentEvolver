@@ -1,23 +1,18 @@
-"""TwelveLabs Video Embeddings — from the Langflow `twelvelabs` bundle (ported)."""
+"""TwelveLabs Video Embeddings."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class TwelvelabsVideoEmbeddingsPlugin(BundlePlugin):
-    name: str = "twelvelabs.video_embeddings"
+class TwelvelabsVideoEmbeddingsTool(PluginTool):
+    """TwelveLabs Video Embeddings."""
+
+    name: str = 'video_embeddings'
     display_name: str = 'TwelveLabs Video Embeddings'
     description: str = 'Generate embeddings from videos using TwelveLabs video embedding models.'
-    kind: str = "tool"
-    bundle: str = "twelvelabs"
-    bundle_label: str = 'TwelveLabs'
-    category: str = "knowledge"
-    source: str = "langflow/bundles/twelvelabs"
-    status: str = "complete"
+    category: str = 'knowledge'
 
     async def __call__(self, video_url: str = "", api_key: str = "", model_name: str = "Marengo-retrieval-2.7", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY")

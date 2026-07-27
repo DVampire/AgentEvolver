@@ -1,23 +1,17 @@
-"""Cleanlab RAG Evaluator — from the Langflow `cleanlab` bundle (ported)."""
+"""Cleanlab RAG Evaluator."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CleanlabCleanlabRagEvaluatorPlugin(BundlePlugin):
-    name: str = "cleanlab.cleanlab_rag_evaluator"
+class CleanlabRagEvaluatorTool(PluginTool):
+    """Cleanlab RAG Evaluator."""
+
+    name: str = 'cleanlab_rag_evaluator'
     display_name: str = 'Cleanlab RAG Evaluator'
     description: str = 'Evaluates context, query, and response from a RAG pipeline using Cleanlab and outputs trust metrics.'
-    kind: str = "tool"
-    bundle: str = "cleanlab"
-    bundle_label: str = 'Cleanlab'
-    category: str = "evaluation"
-    source: str = "langflow/bundles/cleanlab"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", context: str = "", response: str = "", api_key: str = "", model: str = "gpt-4o-mini", **kwargs) -> Response:
         key = self._secret(api_key, "CLEANLAB_TLM_API_KEY", "CLEANLAB_API_KEY")

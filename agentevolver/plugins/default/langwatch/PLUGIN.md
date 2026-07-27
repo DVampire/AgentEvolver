@@ -1,33 +1,27 @@
 ---
 id: langwatch
 name: LangWatch
-kind: bundle
-category: data
+category: evaluation
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/langwatch
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: []
+implemented: 1
+credentials: [LANGWATCH_API_KEY]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # LangWatch
 
-Migrated from the Langflow **langwatch** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+LangWatch tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `langwatch.langwatch` | LangWatch Evaluator | Evaluates various aspects of language models using LangWatch | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `langwatch.langwatch` | LangWatch Evaluator | ✅ | Evaluates various aspects of language models using LangWatch |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/langwatch/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`LANGWATCH_API_KEY`, an `api_key` argument on the call, or a `langwatch_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

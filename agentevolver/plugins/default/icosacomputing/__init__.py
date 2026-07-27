@@ -1,5 +1,5 @@
-"""`Icosa Computing` bundle plugin (migrated from Langflow)."""
+"""Icosa plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import IcosacomputingPlugin
 
-__all__: list = []
+__all__ = ["IcosacomputingPlugin"]

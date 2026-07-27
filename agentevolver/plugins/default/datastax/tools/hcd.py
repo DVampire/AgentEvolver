@@ -1,22 +1,18 @@
-"""Hyper-Converged Database — from the Langflow `datastax` vector-store bundle (ported)."""
+"""Hyper-Converged Database."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class DatastaxHcdPlugin(VectorStorePlugin):
-    name: str = "datastax.hcd"
+class DatastaxHcdTool(VectorStorePluginTool):
+    """Hyper-Converged Database."""
+
+    name: str = 'hcd'
     display_name: str = 'Hyper-Converged Database'
     description: str = 'Implementation of Vector Store using Hyper-Converged Database (HCD) with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "datastax"
-    bundle_label: str = 'HCD'
-    source: str = "langflow/bundles/datastax"
-    status: str = "complete"
+    type: str = 'vectorstore'
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

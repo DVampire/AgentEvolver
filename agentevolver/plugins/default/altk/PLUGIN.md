@@ -1,33 +1,26 @@
 ---
 id: altk
-name: Altk
-kind: bundle
-category: data
-icon: lucide:zap
-source: langflow/bundles/altk
-status: complete
-version: "1.0.0"
+name: ALTK
+category: agent
+type: tool
 tools: 1
+implemented: 1
+credentials: []
 requirements: []
+version: "1.0.0"
 ---
+# ALTK
 
-# Altk
-
-Migrated from the Langflow **altk** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+ALTK tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `altk.altk_agent` | ALTK Agent | Advanced agent with both pre-tool validation and post-tool p | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `altk.altk_agent` | ALTK Agent | ✅ | Advanced agent with both pre-tool validation and post-tool processing capabilities. |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `zap` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/altk/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

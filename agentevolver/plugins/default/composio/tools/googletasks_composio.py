@@ -1,17 +1,12 @@
-"""GoogleTasks (Composio) — from the Langflow `composio` bundle (ported)."""
+"""GoogleTasks (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioGoogletasksComposioPlugin(ComposioPlugin):
-    name: str = "composio.googletasks_composio"
+class ComposioGoogletasksComposioTool(ComposioPluginTool):
+    """GoogleTasks."""
+
+    name: str = 'googletasks_composio'
     display_name: str = 'GoogleTasks'
     description: str = 'Execute GoogleTasks actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "googletasks"
+    app_name: str = 'googletasks'

@@ -1,34 +1,28 @@
 ---
 id: openai
-name: Openai
-kind: bundle
+name: OpenAI
 category: data
+type: embedding
 icon: resources/icon.svg
-source: langflow/bundles/openai
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-openai]
+implemented: 2
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
+# OpenAI
 
-# Openai
-
-Migrated from the Langflow **openai** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+OpenAI tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `openai.openai` | OpenAI Embeddings | Generate embeddings using OpenAI models. | structure |
-| `openai.openai_chat_model` | OpenAI | Generates text using OpenAI LLMs. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `openai.openai` | OpenAI Embeddings | ✅ | Generate embeddings using OpenAI models. |
+| `openai.openai_chat_model` | OpenAI | ✅ | Generates text using OpenAI LLMs. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/openai/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `openai_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

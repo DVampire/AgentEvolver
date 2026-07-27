@@ -1,22 +1,17 @@
-"""ClickHouse — from the Langflow `clickhouse` vector-store bundle (ported)."""
+"""ClickHouse."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ClickhouseClickhousePlugin(VectorStorePlugin):
-    name: str = "clickhouse.clickhouse"
+class ClickhouseTool(VectorStorePluginTool):
+    """ClickHouse."""
+
+    name: str = 'clickhouse'
     display_name: str = 'ClickHouse'
     description: str = 'ClickHouse Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "clickhouse"
-    bundle_label: str = 'ClickHouse'
-    source: str = "langflow/bundles/clickhouse"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

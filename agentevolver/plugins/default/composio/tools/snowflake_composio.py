@@ -1,17 +1,12 @@
-"""Snowflake (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Snowflake (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioSnowflakeComposioPlugin(ComposioPlugin):
-    name: str = "composio.snowflake_composio"
+class ComposioSnowflakeComposioTool(ComposioPluginTool):
+    """Snowflake."""
+
+    name: str = 'snowflake_composio'
     display_name: str = 'Snowflake'
     description: str = 'Execute Snowflake actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "snowflake"
+    app_name: str = 'snowflake'

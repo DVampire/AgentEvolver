@@ -1,5 +1,5 @@
-"""`DeepSeek` bundle plugin (migrated from Langflow)."""
+"""DeepSeek plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import DeepseekPlugin
 
-__all__: list = []
+__all__ = ["DeepseekPlugin"]

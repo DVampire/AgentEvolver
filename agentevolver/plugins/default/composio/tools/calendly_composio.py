@@ -1,17 +1,12 @@
-"""Calendly (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Calendly (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioCalendlyComposioPlugin(ComposioPlugin):
-    name: str = "composio.calendly_composio"
+class ComposioCalendlyComposioTool(ComposioPluginTool):
+    """Calendly."""
+
+    name: str = 'calendly_composio'
     display_name: str = 'Calendly'
     description: str = 'Execute Calendly actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "calendly"
+    app_name: str = 'calendly'

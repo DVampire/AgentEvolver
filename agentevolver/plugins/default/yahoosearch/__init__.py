@@ -1,5 +1,5 @@
-"""`Yahoo Search` bundle plugin (migrated from Langflow)."""
+"""Yahoo Search plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import YahoosearchPlugin
 
-__all__: list = []
+__all__ = ["YahoosearchPlugin"]

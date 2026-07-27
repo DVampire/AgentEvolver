@@ -1,6 +1,19 @@
-"""Registration hub for the `apify` bundle."""
+"""Apify plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "apify"
-BUNDLE_LABEL = 'Apify'
+from .tools.actor import ApifyActorTool
+
+
+@PLUGIN.register_module(force=True)
+class ApifyPlugin(Plugin):
+    """Apify tools."""
+
+    tools = (ApifyActorTool,)
+
+    name: str = 'apify'
+    display_name: str = 'Apify'
+    description: str = 'Apify tools.'
+    category: str = 'data'
+    type: str = 'tool'

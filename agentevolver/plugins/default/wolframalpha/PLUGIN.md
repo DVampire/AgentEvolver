@@ -1,33 +1,27 @@
 ---
 id: wolframalpha
 name: WolframAlpha
-kind: bundle
 category: data
-icon: lucide:WolframAlphaAPI
-source: langflow/bundles/wolframalpha
-status: complete
-version: "1.0.0"
+type: tool
+icon: resources/icon.svg
 tools: 1
-requirements: [langchain-community]
+implemented: 1
+credentials: [WOLFRAM_ALPHA_APPID]
+requirements: [langchain_community]
+version: "1.0.0"
 ---
-
 # WolframAlpha
 
-Migrated from the Langflow **wolframalpha** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+WolframAlpha tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `wolframalpha.wolfram_alpha_api` | WolframAlpha API |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `wolframalpha.wolfram_alpha_api` | WolframAlpha API | ✅ | WolframAlpha API |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `WolframAlphaAPI` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/wolframalpha/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`WOLFRAM_ALPHA_APPID`, an `api_key` argument on the call, or a `wolframalpha_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

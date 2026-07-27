@@ -1,22 +1,17 @@
-"""IBM Db2 Vector Store — from the Langflow `ibm` vector-store bundle (ported)."""
+"""IBM Db2 Vector Store."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class IbmDb2VectorPlugin(VectorStorePlugin):
-    name: str = "ibm.db2_vector"
+class IbmDb2VectorTool(VectorStorePluginTool):
+    """IBM Db2 Vector Store."""
+
+    name: str = 'db2_vector'
     display_name: str = 'IBM Db2 Vector Store'
     description: str = ''
-    kind: str = "vectorstore"
-    bundle: str = "ibm"
-    bundle_label: str = 'IBM DB2'
-    source: str = "langflow/bundles/ibm"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

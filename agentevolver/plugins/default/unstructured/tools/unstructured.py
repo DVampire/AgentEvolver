@@ -1,23 +1,17 @@
-"""Unstructured API — from the Langflow `unstructured` bundle (ported)."""
+"""Unstructured API."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class UnstructuredUnstructuredPlugin(BundlePlugin):
-    name: str = "unstructured.unstructured"
+class UnstructuredTool(PluginTool):
+    """Unstructured API."""
+
+    name: str = 'unstructured'
     display_name: str = 'Unstructured API'
     description: str = ''
-    kind: str = "tool"
-    bundle: str = "unstructured"
-    bundle_label: str = 'Unstructured'
-    category: str = "files"
-    source: str = "langflow/bundles/unstructured"
-    status: str = "complete"
 
     async def __call__(self, file_path: str = "", api_key: str = "", api_url: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "UNSTRUCTURED_API_KEY")

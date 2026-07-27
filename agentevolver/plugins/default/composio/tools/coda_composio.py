@@ -1,17 +1,12 @@
-"""Coda (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Coda (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioCodaComposioPlugin(ComposioPlugin):
-    name: str = "composio.coda_composio"
+class ComposioCodaComposioTool(ComposioPluginTool):
+    """Coda."""
+
+    name: str = 'coda_composio'
     display_name: str = 'Coda'
     description: str = 'Execute Coda actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "coda"
+    app_name: str = 'coda'

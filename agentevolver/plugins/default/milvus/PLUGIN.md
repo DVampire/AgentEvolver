@@ -1,33 +1,27 @@
 ---
 id: milvus
 name: Milvus
-kind: bundle
 category: data
-icon: lucide:Milvus
-source: langflow/bundles/milvus
-status: complete
-version: "1.0.0"
+type: vectorstore
+icon: resources/icon.svg
 tools: 1
-requirements: [langchain-milvus, langchain-openai]
+implemented: 1
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_milvus, langchain_openai]
+version: "1.0.0"
 ---
-
 # Milvus
 
-Migrated from the Langflow **milvus** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Milvus tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `milvus.milvus` | Milvus | Milvus vector store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `milvus.milvus` | Milvus | ✅ | Milvus vector store with search capabilities |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `Milvus` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/milvus/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `milvus_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

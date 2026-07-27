@@ -33,6 +33,7 @@ class VersionManagerServer(BaseModel):
             "skill": {},
             "connector": {},
             "environment": {},
+            "plugin": {},
             "action": {},
             "constraint": {},
             "workflow": {},

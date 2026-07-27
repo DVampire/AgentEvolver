@@ -1,5 +1,5 @@
-"""`Cloudflare` bundle plugin (migrated from Langflow)."""
+"""Cloudflare plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import CloudflarePlugin
 
-__all__: list = []
+__all__ = ["CloudflarePlugin"]

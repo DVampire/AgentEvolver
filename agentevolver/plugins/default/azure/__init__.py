@@ -1,5 +1,5 @@
-"""`Azure` bundle plugin (migrated from Langflow)."""
+"""Azure OpenAI plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import AzurePlugin
 
-__all__: list = []
+__all__ = ["AzurePlugin"]

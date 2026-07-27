@@ -1,5 +1,5 @@
-"""`CometAPI` bundle plugin (migrated from Langflow)."""
+"""CometAPI plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import CometapiPlugin
 
-__all__: list = []
+__all__ = ["CometapiPlugin"]

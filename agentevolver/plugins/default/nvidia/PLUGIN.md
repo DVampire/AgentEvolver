@@ -1,37 +1,31 @@
 ---
 id: nvidia
 name: NVIDIA
-kind: bundle
 category: data
+type: tool
 icon: resources/icon.svg
-source: langflow/bundles/nvidia
-status: complete
-version: "1.0.0"
 tools: 5
-requirements: [langchain-nvidia-ai-endpoints, langchain-openai, nv-ingest-client]
+implemented: 5
+credentials: [NVIDIA_API_KEY]
+requirements: [langchain_core, langchain_nvidia_ai_endpoints, langchain_openai, nv_ingest_client]
+version: "1.0.0"
 ---
-
 # NVIDIA
 
-Migrated from the Langflow **nvidia** bundle. This package is in the
-**structure** phase: all 5 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+NVIDIA tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `nvidia.nvidia` | NVIDIA | Generates text using NVIDIA LLMs. | structure |
-| `nvidia.nvidia_embedding` | NVIDIA Embeddings | Generate embeddings using NVIDIA models. | structure |
-| `nvidia.nvidia_ingest` | NVIDIA Retriever Extraction | Multi-modal data extraction from documents using NVIDIA | structure |
-| `nvidia.nvidia_rerank` | NVIDIA Rerank | Rerank documents using the NVIDIA API. | structure |
-| `nvidia.system_assist` | NVIDIA System-Assist |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `nvidia.nvidia` | NVIDIA | ✅ | Generates text using NVIDIA LLMs. |
+| `nvidia.nvidia_embedding` | NVIDIA Embeddings | ✅ | Generate embeddings using NVIDIA models. |
+| `nvidia.nvidia_ingest` | NVIDIA Retriever Extraction | ✅ | Multi-modal data extraction from documents using NVIDIA |
+| `nvidia.nvidia_rerank` | NVIDIA Rerank | ✅ | Rerank documents using the NVIDIA API. |
+| `nvidia.system_assist` | NVIDIA System-Assist | ✅ | NVIDIA System-Assist |
 
-## Icon
+All 5 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/nvidia/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`NVIDIA_API_KEY`, an `api_key` argument on the call, or a `nvidia_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

@@ -1,5 +1,5 @@
-"""`AI/ML API` bundle plugin (migrated from Langflow)."""
+"""AI/ML API plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import AimlPlugin
 
-__all__: list = []
+__all__ = ["AimlPlugin"]

@@ -1,33 +1,27 @@
 ---
 id: clickhouse
-name: Clickhouse
-kind: bundle
+name: ClickHouse
 category: data
+type: vectorstore
 icon: resources/icon.svg
-source: langflow/bundles/clickhouse
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [langchain-community, langchain-openai]
+implemented: 1
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
+# ClickHouse
 
-# Clickhouse
-
-Migrated from the Langflow **clickhouse** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+ClickHouse tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `clickhouse.clickhouse` | ClickHouse | ClickHouse Vector Store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `clickhouse.clickhouse` | ClickHouse | ✅ | ClickHouse Vector Store with search capabilities |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/clickhouse/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `clickhouse_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

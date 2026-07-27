@@ -1,23 +1,17 @@
-"""TwelveLabs Pegasus — from the Langflow `twelvelabs` bundle (ported)."""
+"""TwelveLabs Pegasus."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class TwelvelabsTwelvelabsPegasusPlugin(BundlePlugin):
-    name: str = "twelvelabs.twelvelabs_pegasus"
+class TwelvelabsPegasusTool(PluginTool):
+    """TwelveLabs Pegasus."""
+
+    name: str = 'twelvelabs_pegasus'
     display_name: str = 'TwelveLabs Pegasus'
     description: str = 'Chat with videos using TwelveLabs Pegasus API.'
-    kind: str = "tool"
-    bundle: str = "twelvelabs"
-    bundle_label: str = 'TwelveLabs'
-    category: str = "data"
-    source: str = "langflow/bundles/twelvelabs"
-    status: str = "complete"
 
     async def __call__(self, video_id: str = "", index_id: str = "", prompt: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY", "TWELVE_LABS_API_KEY")

@@ -1,20 +1,15 @@
-"""Image Generation — from the Langflow `jigsawstack` bundle (ported)."""
+"""Image Generation."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.jigsawstack._base import JigsawStackPlugin
+from agentevolver.plugins.default.jigsawstack._base import JigsawstackToolBase
 
 
-@PLUGIN.register_module(force=True)
-class JigsawstackImageGenerationPlugin(JigsawStackPlugin):
-    name: str = "jigsawstack.image_generation"
+class JigsawstackImageGenerationTool(JigsawstackToolBase):
+    """Image Generation."""
+
+    name: str = 'image_generation'
     display_name: str = 'Image Generation'
-    description: str = 'Generate an image based on the given text by employing AI models like Flux, \\\\\\n        Stable Diffusion, and other top models.'
-    kind: str = "tool"
-    bundle: str = "jigsawstack"
-    bundle_label: str = "JigsawStack"
-    source: str = "langflow/bundles/jigsawstack"
-    status: str = "complete"
+    description: str = 'Generate an image based on the given text by employing AI models like Flux, \\\\\\\\\\\\n        Stable Diffusion, and other top models.'
 
     async def __call__(self, prompt: str = "", aspect_ratio: str = "1:1", api_key: str = "", **kwargs) -> Response:
         params = {"prompt": prompt, "aspect_ratio": aspect_ratio}

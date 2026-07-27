@@ -1,17 +1,12 @@
-"""Supabase (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Supabase (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioSupabaseComposioPlugin(ComposioPlugin):
-    name: str = "composio.supabase_composio"
+class ComposioSupabaseComposioTool(ComposioPluginTool):
+    """Supabase."""
+
+    name: str = 'supabase_composio'
     display_name: str = 'Supabase'
     description: str = 'Execute Supabase actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "supabase"
+    app_name: str = 'supabase'

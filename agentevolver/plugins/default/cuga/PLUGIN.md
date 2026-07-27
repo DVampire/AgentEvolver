@@ -1,33 +1,26 @@
 ---
 id: cuga
-name: Cuga
-kind: bundle
-category: data
-icon: lucide:bot
-source: langflow/bundles/cuga
-status: complete
-version: "1.0.0"
+name: CUGA
+category: agent
+type: tool
 tools: 1
+implemented: 1
+credentials: []
 requirements: []
+version: "1.0.0"
 ---
+# CUGA
 
-# Cuga
-
-Migrated from the Langflow **cuga** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+CUGA tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `cuga.cuga_agent` | Cuga | Define the Cuga agent | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `cuga.cuga_agent` | Cuga | ✅ | Define the Cuga agent |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `bot` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/cuga/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

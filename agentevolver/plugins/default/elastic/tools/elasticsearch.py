@@ -1,22 +1,17 @@
-"""Elasticsearch — from the Langflow `elastic` vector-store bundle (ported)."""
+"""Elasticsearch."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ElasticElasticsearchPlugin(VectorStorePlugin):
-    name: str = "elastic.elasticsearch"
+class ElasticsearchTool(VectorStorePluginTool):
+    """Elasticsearch."""
+
+    name: str = 'elasticsearch'
     display_name: str = 'Elasticsearch'
     description: str = 'Elasticsearch Vector Store with with advanced, customizable search capabilities.'
-    kind: str = "vectorstore"
-    bundle: str = "elastic"
-    bundle_label: str = 'Elasticsearch'
-    source: str = "langflow/bundles/elastic"
-    status: str = "complete"
     needs_embedding: bool = True
 
     def _build(self, embedding: Any, **conn: Any) -> Any:

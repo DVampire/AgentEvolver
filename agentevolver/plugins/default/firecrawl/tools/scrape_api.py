@@ -1,21 +1,15 @@
-"""Firecrawl Scrape API — from the Langflow `firecrawl` bundle (ported)."""
+"""Firecrawl Scrape API."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class FirecrawlFirecrawlScrapeApiPlugin(BundlePlugin):
-    name: str = "firecrawl.firecrawl_scrape_api"
+class FirecrawlScrapeApiTool(PluginTool):
+    """Firecrawl Scrape API."""
+
+    name: str = 'firecrawl_scrape_api'
     display_name: str = 'Firecrawl Scrape API'
     description: str = 'Scrapes a URL and returns the results.'
-    kind: str = "tool"
-    bundle: str = "firecrawl"
-    bundle_label: str = 'Firecrawl'
-    category: str = "data"
-    source: str = "langflow/bundles/firecrawl"
-    status: str = "complete"
 
     async def __call__(self, url: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "FIRECRAWL_API_KEY")

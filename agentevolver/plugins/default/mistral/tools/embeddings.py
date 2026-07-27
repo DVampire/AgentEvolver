@@ -1,24 +1,20 @@
-"""MistralAI Embeddings — from the Langflow `mistral` embeddings bundle (ported)."""
+"""MistralAI Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class MistralMistralEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "mistral.mistral_embeddings"
+class MistralEmbeddingsTool(EmbeddingPluginTool):
+    """MistralAI Embeddings."""
+
+    name: str = 'mistral_embeddings'
     display_name: str = 'MistralAI Embeddings'
     description: str = 'Generate embeddings using MistralAI models.'
-    kind: str = "embedding"
-    bundle: str = "mistral"
-    bundle_label: str = 'MistralAI'
-    source: str = "langflow/bundles/mistral"
-    status: str = "complete"
-    key_env: str = "MISTRAL_API_KEY"
-    default_base_url: str = ""
+    type: str = 'embedding'
+    key_env: str = 'MISTRAL_API_KEY'
+    default_base_url: str = ''
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_mistralai import MistralAIEmbeddings

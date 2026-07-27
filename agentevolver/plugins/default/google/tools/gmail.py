@@ -1,23 +1,17 @@
-"""Gmail Loader — from the Langflow `google` bundle (ported)."""
+"""Gmail Loader."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class GoogleGmailPlugin(BundlePlugin):
-    name: str = "google.gmail"
+class GoogleGmailTool(PluginTool):
+    """Gmail Loader."""
+
+    name: str = 'gmail'
     display_name: str = 'Gmail Loader'
     description: str = 'Loads emails from Gmail using provided credentials.'
-    kind: str = "tool"
-    bundle: str = "google"
-    bundle_label: str = 'Google'
-    category: str = "data"
-    source: str = "langflow/bundles/google"
-    status: str = "complete"
 
     async def __call__(self, query: str = "", credentials_json: str = "", **kwargs) -> Response:
         try:

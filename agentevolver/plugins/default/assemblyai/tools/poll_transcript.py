@@ -1,20 +1,15 @@
-"""AssemblyAI Poll Transcript — from the Langflow `assemblyai` bundle (ported)."""
+"""AssemblyAI Poll Transcript."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.assemblyai._base import AssemblyAIPlugin
+from agentevolver.plugins.default.assemblyai._base import AssemblyaiToolBase
 
 
-@PLUGIN.register_module(force=True)
-class AssemblyaiAssemblyaiPollTranscriptPlugin(AssemblyAIPlugin):
-    name: str = "assemblyai.assemblyai_poll_transcript"
+class AssemblyaiPollTranscriptTool(AssemblyaiToolBase):
+    """AssemblyAI Poll Transcript."""
+
+    name: str = 'assemblyai_poll_transcript'
     display_name: str = 'AssemblyAI Poll Transcript'
     description: str = 'Poll for the status of a transcription job using AssemblyAI'
-    kind: str = "tool"
-    bundle: str = "assemblyai"
-    bundle_label: str = "AssemblyAI"
-    source: str = "langflow/bundles/assemblyai"
-    status: str = "complete"
 
     async def __call__(self, transcript_id: str = "", api_key: str = "", **kwargs) -> Response:
         try:

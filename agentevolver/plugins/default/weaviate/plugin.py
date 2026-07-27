@@ -1,6 +1,19 @@
-"""Registration hub for the `weaviate` bundle."""
+"""Weaviate plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "weaviate"
-BUNDLE_LABEL = 'Weaviate'
+from .tools.weaviate import WeaviateTool
+
+
+@PLUGIN.register_module(force=True)
+class WeaviatePlugin(Plugin):
+    """Weaviate tools."""
+
+    tools = (WeaviateTool,)
+
+    name: str = 'weaviate'
+    display_name: str = 'Weaviate'
+    description: str = 'Weaviate tools.'
+    category: str = 'data'
+    type: str = 'vectorstore'

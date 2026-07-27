@@ -1,6 +1,19 @@
-"""Registration hub for the `deepseek` bundle."""
+"""DeepSeek plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "deepseek"
-BUNDLE_LABEL = 'DeepSeek'
+from .tools.deepseek import DeepseekTool
+
+
+@PLUGIN.register_module(force=True)
+class DeepseekPlugin(Plugin):
+    """DeepSeek tools."""
+
+    tools = (DeepseekTool,)
+
+    name: str = 'deepseek'
+    display_name: str = 'DeepSeek'
+    description: str = 'DeepSeek tools.'
+    category: str = 'data'
+    type: str = 'model'

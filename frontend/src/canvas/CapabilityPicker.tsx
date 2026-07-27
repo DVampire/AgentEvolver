@@ -7,19 +7,19 @@ import { MOUNT_LABELS, type MountRosters } from './types';
 /** Global capability rosters (from canvas.catalog) shared with every agent node. */
 export const MountRosterContext = createContext<MountRosters>({});
 
-/** The inline control for one agent mount kind (Tools / Skills / Connectors /
+/** The inline control for one agent mount type (Tools / Skills / Connectors /
  * Workflows / Environments / Agents). Rendered as the body of a FieldShell (the
  * shell supplies the wire handle + label). Click the box to multi-select from
  * the roster; selected items show as chips. Empty = the agent's defaults. Wiring
  * a node into the handle also grants access, so an edge takes precedence. */
-export function MountPicker({ kind, label, selected, connected, onChange }: {
-  kind: string; label: string; selected: string[]; connected: boolean; onChange: (next: string[]) => void;
+export function MountPicker({ type, label, selected, connected, onChange }: {
+  type: string; label: string; selected: string[]; connected: boolean; onChange: (next: string[]) => void;
 }) {
   const rosters = useContext(MountRosterContext);
-  const roster = rosters[kind] ?? [];
+  const roster = rosters[type] ?? [];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const nice = MOUNT_LABELS[kind] ?? label;
+  const nice = MOUNT_LABELS[type] ?? label;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

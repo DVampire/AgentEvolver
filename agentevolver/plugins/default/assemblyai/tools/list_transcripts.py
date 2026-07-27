@@ -1,20 +1,15 @@
-"""AssemblyAI List Transcripts — from the Langflow `assemblyai` bundle (ported)."""
+"""AssemblyAI List Transcripts."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.assemblyai._base import AssemblyAIPlugin
+from agentevolver.plugins.default.assemblyai._base import AssemblyaiToolBase
 
 
-@PLUGIN.register_module(force=True)
-class AssemblyaiAssemblyaiListTranscriptsPlugin(AssemblyAIPlugin):
-    name: str = "assemblyai.assemblyai_list_transcripts"
+class AssemblyaiListTranscriptsTool(AssemblyaiToolBase):
+    """AssemblyAI List Transcripts."""
+
+    name: str = 'assemblyai_list_transcripts'
     display_name: str = 'AssemblyAI List Transcripts'
     description: str = 'Retrieve a list of transcripts from AssemblyAI with filtering options'
-    kind: str = "tool"
-    bundle: str = "assemblyai"
-    bundle_label: str = "AssemblyAI"
-    source: str = "langflow/bundles/assemblyai"
-    status: str = "complete"
 
     async def __call__(self, limit: int = 20, api_key: str = "", **kwargs) -> Response:
         try:

@@ -1,22 +1,18 @@
-"""Vertex AI Embeddings — from the Langflow `vertexai` embeddings bundle (ported)."""
+"""Vertex AI Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class VertexaiVertexaiEmbeddingsPlugin(EmbeddingPlugin):
-    name: str = "vertexai.vertexai_embeddings"
+class VertexaiEmbeddingsTool(EmbeddingPluginTool):
+    """Vertex AI Embeddings."""
+
+    name: str = 'vertexai_embeddings'
     display_name: str = 'Vertex AI Embeddings'
     description: str = 'Generate embeddings using Google Cloud Vertex AI models.'
-    kind: str = "embedding"
-    bundle: str = "vertexai"
-    bundle_label: str = 'Vertex AI'
-    source: str = "langflow/bundles/vertexai"
-    status: str = "complete"
+    type: str = 'embedding'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_google_vertexai import VertexAIEmbeddings

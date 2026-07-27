@@ -1,34 +1,27 @@
 ---
 id: nextplaid
 name: NextPlaid
-kind: bundle
 category: data
-icon: lucide:NextPlaid
-source: langflow/bundles/nextplaid
-status: complete
-version: "1.0.0"
+type: tool
 tools: 2
-requirements: []
+implemented: 2
+credentials: [NEXTPLAID_API_KEY, VLLM_API_KEY]
+requirements: [httpx]
+version: "1.0.0"
 ---
-
 # NextPlaid
 
-Migrated from the Langflow **nextplaid** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+NextPlaid tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `nextplaid.nextplaid` | NextPlaid |  | structure |
-| `nextplaid.vllm_multivector_embeddings` | vLLM Multivector Embeddings |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `nextplaid.nextplaid` | NextPlaid | ✅ | NextPlaid |
+| `nextplaid.vllm_multivector_embeddings` | vLLM Multivector Embeddings | ✅ | vLLM Multivector Embeddings |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `NextPlaid` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/nextplaid/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`NEXTPLAID_API_KEY`, `VLLM_API_KEY`, an `api_key` argument on the call, or a `nextplaid_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

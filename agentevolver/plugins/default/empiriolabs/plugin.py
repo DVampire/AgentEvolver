@@ -1,6 +1,20 @@
-"""Registration hub for the `empiriolabs` bundle."""
+"""EmpirioLabs plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "empiriolabs"
-BUNDLE_LABEL = 'EmpirioLabs'
+from .tools.empiriolabs import EmpiriolabsTool
+from .tools.image_generation import EmpiriolabsImageGenerationTool
+
+
+@PLUGIN.register_module(force=True)
+class EmpiriolabsPlugin(Plugin):
+    """EmpirioLabs tools."""
+
+    tools = (EmpiriolabsTool, EmpiriolabsImageGenerationTool,)
+
+    name: str = 'empiriolabs'
+    display_name: str = 'EmpirioLabs'
+    description: str = 'EmpirioLabs tools.'
+    category: str = 'agent'
+    type: str = 'tool'

@@ -1,6 +1,19 @@
-"""Registration hub for the `glean` bundle."""
+"""Glean plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "glean"
-BUNDLE_LABEL = 'Glean'
+from .tools.search_api import GleanSearchApiTool
+
+
+@PLUGIN.register_module(force=True)
+class GleanPlugin(Plugin):
+    """Glean tools."""
+
+    tools = (GleanSearchApiTool,)
+
+    name: str = 'glean'
+    display_name: str = 'Glean'
+    description: str = 'Glean tools.'
+    category: str = 'data'
+    type: str = 'tool'

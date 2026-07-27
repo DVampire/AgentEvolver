@@ -1,33 +1,26 @@
 ---
 id: mem0
 name: Mem0
-kind: bundle
-category: data
-icon: lucide:Mem0
-source: langflow/bundles/mem0
-status: complete
-version: "1.0.0"
+category: agent
+type: memory
 tools: 1
-requirements: []
+implemented: 1
+credentials: []
+requirements: [mem0]
+version: "1.0.0"
 ---
-
 # Mem0
 
-Migrated from the Langflow **mem0** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Mem0 tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `mem0.mem0_chat_memory` | Mem0 Chat Memory | Retrieves and stores chat messages using Mem0 memory storage | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `mem0.mem0_chat_memory` | Mem0 Chat Memory | ✅ | Retrieves and stores chat messages using Mem0 memory storage. |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `Mem0` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/mem0/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+None — these tools need no credential.

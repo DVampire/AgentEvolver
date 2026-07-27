@@ -1,35 +1,29 @@
 ---
 id: cohere
 name: Cohere
-kind: bundle
 category: data
+type: embedding
 icon: resources/icon.svg
-source: langflow/bundles/cohere
-status: complete
-version: "1.0.0"
 tools: 3
-requirements: [langchain-cohere, langchain-openai]
+implemented: 3
+credentials: [COHERE_API_KEY]
+requirements: [langchain_cohere, langchain_core, langchain_openai]
+version: "1.0.0"
 ---
-
 # Cohere
 
-Migrated from the Langflow **cohere** bundle. This package is in the
-**structure** phase: all 3 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Cohere tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `cohere.cohere_embeddings` | Cohere Embeddings | Generate embeddings using Cohere models. | structure |
-| `cohere.cohere_models` | Cohere Language Models | Generate text using Cohere LLMs. | structure |
-| `cohere.cohere_rerank` | Cohere Rerank | Rerank documents using the Cohere API. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `cohere.cohere_embeddings` | Cohere Embeddings | ✅ | Generate embeddings using Cohere models. |
+| `cohere.cohere_models` | Cohere Language Models | ✅ | Generate text using Cohere LLMs. |
+| `cohere.cohere_rerank` | Cohere Rerank | ✅ | Rerank documents using the Cohere API. |
 
-## Icon
+All 3 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/cohere/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`COHERE_API_KEY`, an `api_key` argument on the call, or a `cohere_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

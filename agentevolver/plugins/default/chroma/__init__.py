@@ -1,5 +1,5 @@
-"""`Chroma` bundle plugin (migrated from Langflow)."""
+"""Chroma plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import ChromaPlugin
 
-__all__: list = []
+__all__ = ["ChromaPlugin"]

@@ -1,24 +1,19 @@
-"""CometAPI — from the Langflow `cometapi` LLM bundle (ported)."""
+"""CometAPI."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CometapiCometapiPlugin(LLMPlugin):
-    name: str = "cometapi.cometapi"
+class CometapiTool(LLMPluginTool):
+    """CometAPI."""
+
+    name: str = 'cometapi'
     display_name: str = 'CometAPI'
     description: str = 'All AI Models in One API 500+ AI Models'
-    kind: str = "model"
-    bundle: str = "cometapi"
-    bundle_label: str = 'CometAPI'
-    source: str = "langflow/bundles/cometapi"
-    status: str = "complete"
-    default_base_url: str = "https://api.cometapi.com/v1"
-    key_env: str = "COMETAPI_API_KEY"
+    default_base_url: str = 'https://api.cometapi.com/v1'
+    key_env: str = 'COMETAPI_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         return self._openai_compatible(cfg.get("model_name"), cfg.get("api_key", ""),

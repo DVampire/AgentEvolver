@@ -1,33 +1,27 @@
 ---
 id: couchbase
 name: Couchbase
-kind: bundle
 category: data
+type: vectorstore
 icon: resources/icon.svg
-source: langflow/bundles/couchbase
-status: complete
-version: "1.0.0"
 tools: 1
-requirements: [couchbase, langchain-couchbase, langchain-openai]
+implemented: 1
+credentials: [OPENAI_API_KEY]
+requirements: [couchbase, langchain_couchbase, langchain_openai]
+version: "1.0.0"
 ---
-
 # Couchbase
 
-Migrated from the Langflow **couchbase** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Couchbase tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `couchbase.couchbase` | Couchbase | Couchbase Vector Store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `couchbase.couchbase` | Couchbase | ✅ | Couchbase Vector Store with search capabilities |
 
-## Icon
+All 1 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/couchbase/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `couchbase_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

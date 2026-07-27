@@ -1,6 +1,19 @@
-"""Registration hub for the `anthropic` bundle."""
+"""Anthropic plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "anthropic"
-BUNDLE_LABEL = 'Anthropic'
+from .tools.anthropic import AnthropicTool
+
+
+@PLUGIN.register_module(force=True)
+class AnthropicPlugin(Plugin):
+    """Anthropic tools."""
+
+    tools = (AnthropicTool,)
+
+    name: str = 'anthropic'
+    display_name: str = 'Anthropic'
+    description: str = 'Anthropic tools.'
+    category: str = 'data'
+    type: str = 'model'

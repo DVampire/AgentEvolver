@@ -1,6 +1,19 @@
-"""Registration hub for the `xai` bundle."""
+"""xAI plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "xai"
-BUNDLE_LABEL = 'xAI'
+from .tools.xai import XaiTool
+
+
+@PLUGIN.register_module(force=True)
+class XaiPlugin(Plugin):
+    """xAI tools."""
+
+    tools = (XaiTool,)
+
+    name: str = 'xai'
+    display_name: str = 'xAI'
+    description: str = 'xAI tools.'
+    category: str = 'data'
+    type: str = 'model'

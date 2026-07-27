@@ -1,4 +1,4 @@
-"""Shared base for the JigsawStack bundle tools (ported from Langflow).
+"""Shared base for the JigsawStack provider tools (ported from Langflow).
 
 Every JigsawStack component calls the ``jigsawstack`` SDK:
 ``JigsawStack(api_key).<path>(params)``. The base resolves the client + the
@@ -11,10 +11,10 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-class JigsawStackPlugin(BundlePlugin):
+class JigsawstackToolBase(PluginTool):
     """Base for JigsawStack tools — SDK client + dotted-path dispatch."""
 
     category: str = "data"
@@ -32,4 +32,4 @@ class JigsawStackPlugin(BundlePlugin):
             result = target(params)
         except Exception as exc:  # noqa: BLE001 — missing SDK / API error
             return self._fail(f"{self.name}: {type(exc).__name__}: {exc}")
-        return self._ok(f"{self.bundle_label}: {method_path} completed.", result=result)
+        return self._ok(f"{self.plugin_label}: {method_path} completed.", result=result)

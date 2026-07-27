@@ -1,6 +1,20 @@
-"""Registration hub for the `huggingface` bundle."""
+"""Hugging Face plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "huggingface"
-BUNDLE_LABEL = 'Hugging Face'
+from .tools.huggingface import HuggingfaceTool
+from .tools.inference_api import HuggingfaceInferenceApiTool
+
+
+@PLUGIN.register_module(force=True)
+class HuggingfacePlugin(Plugin):
+    """Hugging Face tools."""
+
+    tools = (HuggingfaceTool, HuggingfaceInferenceApiTool,)
+
+    name: str = 'huggingface'
+    display_name: str = 'Hugging Face'
+    description: str = 'Hugging Face tools.'
+    category: str = 'data'
+    type: str = 'model'

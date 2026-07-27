@@ -1,23 +1,17 @@
-"""Combinatorial Reasoner — from the Langflow `icosacomputing` bundle (ported)."""
+"""Combinatorial Reasoner."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class IcosacomputingCombinatorialReasonerPlugin(BundlePlugin):
-    name: str = "icosacomputing.combinatorial_reasoner"
+class IcosacomputingCombinatorialReasonerTool(PluginTool):
+    """Combinatorial Reasoner."""
+
+    name: str = 'combinatorial_reasoner'
     display_name: str = 'Combinatorial Reasoner'
-    description: str = 'Uses Combinatorial Optimization to construct an optimal prompt with embedded reasons. Sign up here:\\\\nhttps://forms.gle/oWNv2NKjBNaqqvCx6'
-    kind: str = "tool"
-    bundle: str = "icosacomputing"
-    bundle_label: str = 'Icosa'
-    category: str = "agent"
-    source: str = "langflow/bundles/icosacomputing"
-    status: str = "complete"
+    description: str = 'Uses Combinatorial Optimization to construct an optimal prompt with embedded reasons. Sign up here:\\\\\\\\nhttps://forms.gle/oWNv2NKjBNaqqvCx6'
 
     async def __call__(self, prompt: str = "", api_key: str = "", username: str = "", **kwargs) -> Response:
         import httpx

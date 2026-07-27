@@ -1,34 +1,28 @@
 ---
 id: lmstudio
 name: LM Studio
-kind: bundle
 category: data
+type: embedding
 icon: resources/icon.svg
-source: langflow/bundles/lmstudio
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-openai]
+implemented: 2
+credentials: [LMSTUDIO_API_KEY]
+requirements: [langchain_openai]
+version: "1.0.0"
 ---
-
 # LM Studio
 
-Migrated from the Langflow **lmstudio** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+LM Studio tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `lmstudio.lmstudioembeddings` | LM Studio Embeddings | Generate embeddings using LM Studio. | structure |
-| `lmstudio.lmstudiomodel` | LM Studio | Generate text using LM Studio Local LLMs. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `lmstudio.lmstudioembeddings` | LM Studio Embeddings | ✅ | Generate embeddings using LM Studio. |
+| `lmstudio.lmstudiomodel` | LM Studio | ✅ | Generate text using LM Studio Local LLMs. |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/lmstudio/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`LMSTUDIO_API_KEY`, an `api_key` argument on the call, or a `lmstudio_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

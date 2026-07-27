@@ -1,35 +1,28 @@
 ---
 id: cleanlab
 name: Cleanlab
-kind: bundle
-category: data
-icon: lucide:Cleanlab
-source: langflow/bundles/cleanlab
-status: complete
-version: "1.0.0"
+category: evaluation
+type: tool
 tools: 3
-requirements: [cleanlab-tlm]
+implemented: 3
+credentials: [CLEANLAB_API_KEY, CLEANLAB_TLM_API_KEY]
+requirements: [cleanlab_tlm]
+version: "1.0.0"
 ---
-
 # Cleanlab
 
-Migrated from the Langflow **cleanlab** bundle. This package is in the
-**structure** phase: all 3 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Cleanlab tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `cleanlab.cleanlab_evaluator` | Cleanlab Evaluator | Evaluates any LLM response using Cleanlab and outputs trust  | structure |
-| `cleanlab.cleanlab_rag_evaluator` | Cleanlab RAG Evaluator | Evaluates context, query, and response from a RAG pipeline u | structure |
-| `cleanlab.cleanlab_remediator` | Cleanlab Remediator |  | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `cleanlab.cleanlab_evaluator` | Cleanlab Evaluator | ✅ | Evaluates any LLM response using Cleanlab and outputs trust score and explanation. |
+| `cleanlab.cleanlab_rag_evaluator` | Cleanlab RAG Evaluator | ✅ | Evaluates context, query, and response from a RAG pipeline using Cleanlab and outputs trust metrics. |
+| `cleanlab.cleanlab_remediator` | Cleanlab Remediator | ✅ | Cleanlab Remediator |
 
-## Icon
+All 3 tools are implemented.
 
-Uses lucide glyph `Cleanlab` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/cleanlab/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`CLEANLAB_API_KEY`, `CLEANLAB_TLM_API_KEY`, an `api_key` argument on the call, or a `cleanlab_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

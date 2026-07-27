@@ -1,17 +1,12 @@
-"""Miro (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Miro (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioMiroComposioPlugin(ComposioPlugin):
-    name: str = "composio.miro_composio"
+class ComposioMiroComposioTool(ComposioPluginTool):
+    """Miro."""
+
+    name: str = 'miro_composio'
     display_name: str = 'Miro'
     description: str = 'Execute Miro actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "miro"
+    app_name: str = 'miro'

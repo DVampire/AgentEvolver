@@ -1,33 +1,26 @@
 ---
 id: baidu
-name: Baidu
-kind: bundle
+name: Qianfan
 category: data
-icon: lucide:BaiduQianfan
-source: langflow/bundles/baidu
-status: complete
-version: "1.0.0"
+type: model
 tools: 1
-requirements: [langchain-community]
+implemented: 1
+credentials: [QIANFAN_AK, QIANFAN_SK]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
+# Qianfan
 
-# Baidu
-
-Migrated from the Langflow **baidu** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Qianfan tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `baidu.baidu_qianfan_chat` | Qianfan | Generate text using Baidu Qianfan LLMs. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `baidu.baidu_qianfan_chat` | Qianfan | ✅ | Generate text using Baidu Qianfan LLMs. |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `BaiduQianfan` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/baidu/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`QIANFAN_AK`, `QIANFAN_SK`, an `api_key` argument on the call, or a `baidu_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

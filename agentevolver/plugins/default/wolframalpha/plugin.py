@@ -1,6 +1,19 @@
-"""Registration hub for the `wolframalpha` bundle."""
+"""WolframAlpha plugin."""
 
-from . import tools  # noqa: F401  (imports register every BundlePlugin)
+from agentevolver.plugins.types import Plugin
+from agentevolver.registry import PLUGIN
 
-BUNDLE = "wolframalpha"
-BUNDLE_LABEL = 'WolframAlpha'
+from .tools.wolfram_alpha_api import WolframalphaWolframAlphaApiTool
+
+
+@PLUGIN.register_module(force=True)
+class WolframalphaPlugin(Plugin):
+    """WolframAlpha tools."""
+
+    tools = (WolframalphaWolframAlphaApiTool,)
+
+    name: str = 'wolframalpha'
+    display_name: str = 'WolframAlpha'
+    description: str = 'WolframAlpha tools.'
+    category: str = 'data'
+    type: str = 'tool'

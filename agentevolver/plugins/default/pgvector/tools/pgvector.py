@@ -1,22 +1,17 @@
-"""PGVector — from the Langflow `pgvector` vector-store bundle (ported)."""
+"""PGVector."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class PgvectorPgvectorPlugin(VectorStorePlugin):
-    name: str = "pgvector.pgvector"
+class PgvectorTool(VectorStorePluginTool):
+    """PGVector."""
+
+    name: str = 'pgvector'
     display_name: str = 'PGVector'
     description: str = 'PGVector Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "pgvector"
-    bundle_label: str = 'PGVector'
-    source: str = "langflow/bundles/pgvector"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         from langchain_community.vectorstores import PGVector

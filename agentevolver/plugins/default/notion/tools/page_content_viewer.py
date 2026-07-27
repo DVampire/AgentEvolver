@@ -1,22 +1,17 @@
-"""Page Content Viewer  — from the Langflow `notion` bundle (ported)."""
+"""Page Content Viewer ."""
 
 from typing import Any, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.default.notion._base import NotionPlugin
+from agentevolver.plugins.default.notion._base import NotionToolBase
 
 
-@PLUGIN.register_module(force=True)
-class NotionPageContentViewerPlugin(NotionPlugin):
-    name: str = "notion.page_content_viewer"
+class NotionPageContentViewerTool(NotionToolBase):
+    """Page Content Viewer ."""
+
+    name: str = 'page_content_viewer'
     display_name: str = 'Page Content Viewer '
     description: str = 'Retrieve the content of a Notion page as plain text.'
-    kind: str = "tool"
-    bundle: str = "notion"
-    bundle_label: str = "Notion"
-    source: str = "langflow/bundles/notion"
-    status: str = "complete"
 
     async def __call__(self, api_key: str = "", page_id: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)

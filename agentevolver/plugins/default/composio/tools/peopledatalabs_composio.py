@@ -1,17 +1,12 @@
-"""PeopleDataLabs (Composio) — from the Langflow `composio` bundle (ported)."""
+"""PeopleDataLabs (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioPeopledatalabsComposioPlugin(ComposioPlugin):
-    name: str = "composio.peopledatalabs_composio"
+class ComposioPeopledatalabsComposioTool(ComposioPluginTool):
+    """PeopleDataLabs."""
+
+    name: str = 'peopledatalabs_composio'
     display_name: str = 'PeopleDataLabs'
     description: str = 'Execute PeopleDataLabs actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "peopledatalabs"
+    app_name: str = 'peopledatalabs'

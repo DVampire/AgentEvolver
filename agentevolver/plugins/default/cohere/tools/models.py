@@ -1,24 +1,20 @@
-"""Cohere Language Models — from the Langflow `cohere` LLM bundle (ported)."""
+"""Cohere Language Models."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class CohereCohereModelsPlugin(LLMPlugin):
-    name: str = "cohere.cohere_models"
+class CohereModelsTool(LLMPluginTool):
+    """Cohere Language Models."""
+
+    name: str = 'cohere_models'
     display_name: str = 'Cohere Language Models'
     description: str = 'Generate text using Cohere LLMs.'
-    kind: str = "model"
-    bundle: str = "cohere"
-    bundle_label: str = 'Cohere'
-    source: str = "langflow/bundles/cohere"
-    status: str = "complete"
-    default_base_url: str = ""
-    key_env: str = "COHERE_API_KEY"
+    type: str = 'model'
+    default_base_url: str = ''
+    key_env: str = 'COHERE_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         from langchain_cohere import ChatCohere

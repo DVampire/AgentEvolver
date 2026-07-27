@@ -1,34 +1,28 @@
 ---
 id: huggingface
 name: Hugging Face
-kind: bundle
 category: data
+type: model
 icon: resources/icon.svg
-source: langflow/bundles/huggingface
-status: complete
-version: "1.0.0"
 tools: 2
-requirements: [langchain-community, langchain-huggingface, langchain-openai]
+implemented: 2
+credentials: [HUGGINGFACEHUB_API_TOKEN]
+requirements: [langchain_community, langchain_huggingface, langchain_openai]
+version: "1.0.0"
 ---
-
 # Hugging Face
 
-Migrated from the Langflow **huggingface** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+Hugging Face tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `huggingface.huggingface` | Hugging Face | Generate text using Hugging Face Inference APIs. | structure |
-| `huggingface.huggingface_inference_api` | Hugging Face Embeddings Inference | Generate embeddings using Hugging Face Text Embeddings Infer | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `huggingface.huggingface` | Hugging Face | ✅ | Generate text using Hugging Face Inference APIs. |
+| `huggingface.huggingface_inference_api` | Hugging Face Embeddings Inference | ✅ | Generate embeddings using Hugging Face Text Embeddings Inference (TEI) |
 
-## Icon
+All 2 tools are implemented.
 
-Preserved verbatim from Langflow at `resources/icon.svg`.
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/huggingface/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`HUGGINGFACEHUB_API_TOKEN`, an `api_key` argument on the call, or a `huggingface_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

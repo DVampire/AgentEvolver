@@ -29,7 +29,7 @@ from typing import Literal
 class TaskDocument:
     content: str                       # clean text for the agent's task.content
     html_body: str                     # renderable HTML (inner body) for visualization
-    kind: Literal["html", "md"]
+    type: Literal["html", "md"]
     source_path: str
     title: str
 
@@ -161,7 +161,7 @@ def load_task_document(path: str) -> TaskDocument:
         return TaskDocument(
             content=_strip_html(body),   # agent: clean markdown text (section labels reconstructed)
             html_body=body,              # view: markdown stays in the tags; task.js renders it client-side
-            kind="html",
+            type="html",
             source_path=os.path.abspath(path),
             title=_extract_title(raw, fallback_title),
         )
@@ -169,7 +169,7 @@ def load_task_document(path: str) -> TaskDocument:
         return TaskDocument(
             content=raw.strip(),
             html_body=f'<div class="task-doc">{_md_to_html(raw)}</div>',
-            kind="md",
+            type="md",
             source_path=os.path.abspath(path),
             title=_md_title(raw, fallback_title),
         )

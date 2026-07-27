@@ -1,22 +1,17 @@
-"""Weaviate — from the Langflow `weaviate` vector-store bundle (ported)."""
+"""Weaviate."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import VectorStorePlugin
+from agentevolver.plugins.types import VectorStorePluginTool
 
 
-@PLUGIN.register_module(force=True)
-class WeaviateWeaviatePlugin(VectorStorePlugin):
-    name: str = "weaviate.weaviate"
+class WeaviateTool(VectorStorePluginTool):
+    """Weaviate."""
+
+    name: str = 'weaviate'
     display_name: str = 'Weaviate'
     description: str = 'Weaviate Vector Store with search capabilities'
-    kind: str = "vectorstore"
-    bundle: str = "weaviate"
-    bundle_label: str = 'Weaviate'
-    source: str = "langflow/bundles/weaviate"
-    status: str = "complete"
 
     def _build(self, embedding: Any, **conn: Any) -> Any:
         import weaviate as weaviate_client

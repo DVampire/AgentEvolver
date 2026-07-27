@@ -1,33 +1,26 @@
 ---
 id: pgvector
 name: PGVector
-kind: bundle
 category: data
-icon: lucide:cpu
-source: langflow/bundles/pgvector
-status: complete
-version: "1.0.0"
+type: vectorstore
 tools: 1
-requirements: [langchain-community, langchain-openai]
+implemented: 1
+credentials: [OPENAI_API_KEY]
+requirements: [langchain_community, langchain_openai]
+version: "1.0.0"
 ---
-
 # PGVector
 
-Migrated from the Langflow **pgvector** bundle. This package is in the
-**structure** phase: all 1 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+PGVector tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `pgvector.pgvector` | PGVector | PGVector Vector Store with search capabilities | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `pgvector.pgvector` | PGVector | ✅ | PGVector Vector Store with search capabilities |
 
-## Icon
+All 1 tools are implemented.
 
-Uses lucide glyph `cpu` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/pgvector/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`OPENAI_API_KEY`, an `api_key` argument on the call, or a `pgvector_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

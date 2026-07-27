@@ -78,10 +78,12 @@ def test_session_capability_selection_is_persisted() -> None:
 
         catalog = await gateway.handle(GatewayCommand(id="catalog", method="capability.list"))
         assert catalog.ok
+        # capability.list returns descriptors ({type, name, source, evolving});
+        # a selection is just the names.
         selection = {
-            kind: names[:1]
-            for kind, names in catalog.result.items()
-            if isinstance(names, list)
+            roster: [item["name"] for item in items[:1]]
+            for roster, items in catalog.result.items()
+            if isinstance(items, list)
         }
         updated = await gateway.handle(
             GatewayCommand(
@@ -177,7 +179,7 @@ def test_commands_are_exposed_and_execute_in_a_gateway_session() -> None:
         assert catalog.ok
         assert "commands" in catalog.result
         assert "environments" in catalog.result
-        assert "inspect" in catalog.result["commands"]
+        assert "inspect" in [item["name"] for item in catalog.result["commands"]]
 
         detail = await gateway.handle(
             GatewayCommand(id="detail", method="capability.get", params={"kind": "commands", "name": "inspect"})

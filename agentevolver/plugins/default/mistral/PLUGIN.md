@@ -1,34 +1,27 @@
 ---
 id: mistral
-name: Mistral
-kind: bundle
+name: MistralAI
 category: data
-icon: lucide:MistralAI
-source: langflow/bundles/mistral
-status: complete
-version: "1.0.0"
+type: model
 tools: 2
-requirements: [langchain-mistralai, langchain-openai]
+implemented: 2
+credentials: [MISTRAL_API_KEY]
+requirements: [langchain_mistralai, langchain_openai]
+version: "1.0.0"
 ---
+# MistralAI
 
-# Mistral
-
-Migrated from the Langflow **mistral** bundle. This package is in the
-**structure** phase: all 2 tools are registered as
-`BundleTool` stubs and are being implemented one by one.
+MistralAI tools.
 
 ## Tools
 
-| id | name | description | status |
-|----|------|-------------|--------|
-| `mistral.mistral` | MistralAI | Generates text using MistralAI LLMs. | structure |
-| `mistral.mistral_embeddings` | MistralAI Embeddings | Generate embeddings using MistralAI models. | structure |
+| id | name | status | what it does |
+|----|------|--------|--------------|
+| `mistral.mistral` | MistralAI | ✅ | Generates text using MistralAI LLMs. |
+| `mistral.mistral_embeddings` | MistralAI Embeddings | ✅ | Generate embeddings using MistralAI models. |
 
-## Icon
+All 2 tools are implemented.
 
-Uses lucide glyph `MistralAI` (no custom SVG in Langflow).
+## Credentials
 
-## Provenance
-
-- Langflow bundle: `src/bundles/lfx-bundles/src/lfx_bundles/mistral/`
-- Migration mold: `agentevolver/plugins/bundle.py` (`BundleTool`)
+`MISTRAL_API_KEY`, an `api_key` argument on the call, or a `mistral_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

@@ -1,21 +1,15 @@
-"""Serp Search API — from the Langflow `serpapi` bundle (ported)."""
+"""Serp Search API."""
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class SerpapiSerpPlugin(BundlePlugin):
-    name: str = "serpapi.serp"
+class SerpapiSerpTool(PluginTool):
+    """Serp Search API."""
+
+    name: str = 'serp'
     display_name: str = 'Serp Search API'
     description: str = 'Call Serp Search API with result limiting'
-    kind: str = "tool"
-    bundle: str = "serpapi"
-    bundle_label: str = 'SerpAPI'
-    category: str = "data"
-    source: str = "langflow/bundles/serpapi"
-    status: str = "complete"
 
     async def __call__(self, input_value: str = "", api_key: str = "", max_results: int = 5, max_snippet_length: int = 100, **kwargs) -> Response:
         query = str(input_value or "").strip()

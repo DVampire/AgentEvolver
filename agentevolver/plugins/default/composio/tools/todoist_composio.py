@@ -1,17 +1,12 @@
-"""Todoist (Composio) — from the Langflow `composio` bundle (ported)."""
+"""Todoist (Composio)."""
 
-from agentevolver.registry import PLUGIN
-from agentevolver.plugins.types import ComposioPlugin
+from agentevolver.plugins.types import ComposioPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class ComposioTodoistComposioPlugin(ComposioPlugin):
-    name: str = "composio.todoist_composio"
+class ComposioTodoistComposioTool(ComposioPluginTool):
+    """Todoist."""
+
+    name: str = 'todoist_composio'
     display_name: str = 'Todoist'
     description: str = 'Execute Todoist actions via Composio.'
-    kind: str = "tool"
-    bundle: str = "composio"
-    bundle_label: str = "Composio"
-    source: str = "langflow/bundles/composio"
-    status: str = "complete"
-    app_name: str = "todoist"
+    app_name: str = 'todoist'

@@ -1,23 +1,17 @@
-"""LangWatch Evaluator — from the Langflow `langwatch` bundle (ported)."""
+"""LangWatch Evaluator."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class LangwatchLangwatchPlugin(BundlePlugin):
-    name: str = "langwatch.langwatch"
+class LangwatchTool(PluginTool):
+    """LangWatch Evaluator."""
+
+    name: str = 'langwatch'
     display_name: str = 'LangWatch Evaluator'
     description: str = 'Evaluates various aspects of language models using LangWatch'
-    kind: str = "tool"
-    bundle: str = "langwatch"
-    bundle_label: str = 'LangWatch'
-    category: str = "evaluation"
-    source: str = "langflow/bundles/langwatch"
-    status: str = "complete"
 
     async def __call__(self, evaluator: str = "", input_value: str = "", output_value: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx

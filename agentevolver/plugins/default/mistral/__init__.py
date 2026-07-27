@@ -1,5 +1,5 @@
-"""`Mistral` bundle plugin (migrated from Langflow)."""
+"""MistralAI plugin."""
 
-from . import plugin  # noqa: F401
+from .plugin import MistralPlugin
 
-__all__: list = []
+__all__ = ["MistralPlugin"]

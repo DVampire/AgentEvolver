@@ -1,24 +1,19 @@
-"""AI/ML API — from the Langflow `aiml` LLM bundle (ported)."""
+"""AI/ML API."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import LLMPlugin
+from agentevolver.plugins.types import LLMPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AimlAimlPlugin(LLMPlugin):
-    name: str = "aiml.aiml"
+class AimlTool(LLMPluginTool):
+    """AI/ML API."""
+
+    name: str = 'aiml'
     display_name: str = 'AI/ML API'
     description: str = 'Generates text using AI/ML API LLMs.'
-    kind: str = "model"
-    bundle: str = "aiml"
-    bundle_label: str = 'AI/ML API'
-    source: str = "langflow/bundles/aiml"
-    status: str = "complete"
-    default_base_url: str = "https://api.aimlapi.com/v1"
-    key_env: str = "AIML_API_KEY"
+    default_base_url: str = 'https://api.aimlapi.com/v1'
+    key_env: str = 'AIML_API_KEY'
 
     def _model(self, **cfg: Any) -> Any:
         return self._openai_compatible(cfg.get("model_name"), cfg.get("api_key", ""),

@@ -1,23 +1,19 @@
-"""Oracle Doc Loader — from the Langflow `oracle` bundle (ported)."""
+"""Oracle Doc Loader."""
 
 from typing import Any, List, Optional
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import BundlePlugin
+from agentevolver.plugins.types import PluginTool
 
 
-@PLUGIN.register_module(force=True)
-class OracleOracledbLoadersPlugin(BundlePlugin):
-    name: str = "oracle.oracledb_loaders"
+class OracledbLoadersTool(PluginTool):
+    """Oracle Doc Loader."""
+
+    name: str = 'oracledb_loaders'
     display_name: str = 'Oracle Doc Loader'
     description: str = 'Read documents from Oracle Database using OracleDocLoader.'
-    kind: str = "tool"
-    bundle: str = "oracle"
-    bundle_label: str = 'Oracle'
-    category: str = "data"
-    source: str = "langflow/bundles/oracle"
-    status: str = "complete"
+    category: str = 'data'
+    type: str = 'tool'
 
     async def __call__(self, user: str = "", password: str = "", dsn: str = "", query: str = "", **kwargs) -> Response:
         for r in ("user", "password", "dsn"):

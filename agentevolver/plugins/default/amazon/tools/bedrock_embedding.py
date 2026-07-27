@@ -1,22 +1,18 @@
-"""Amazon Bedrock Embeddings — from the Langflow `amazon` embeddings bundle (ported)."""
+"""Amazon Bedrock Embeddings."""
 
 from typing import Any
 
-from agentevolver.registry import PLUGIN
 from agentevolver.response.types import Response
-from agentevolver.plugins.types import EmbeddingPlugin
+from agentevolver.plugins.types import EmbeddingPluginTool
 
 
-@PLUGIN.register_module(force=True)
-class AmazonAmazonBedrockEmbeddingPlugin(EmbeddingPlugin):
-    name: str = "amazon.amazon_bedrock_embedding"
+class AmazonBedrockEmbeddingTool(EmbeddingPluginTool):
+    """Amazon Bedrock Embeddings."""
+
+    name: str = 'amazon_bedrock_embedding'
     display_name: str = 'Amazon Bedrock Embeddings'
     description: str = 'Generate embeddings using Amazon Bedrock models.'
-    kind: str = "embedding"
-    bundle: str = "amazon"
-    bundle_label: str = 'Amazon Bedrock'
-    source: str = "langflow/bundles/amazon"
-    status: str = "complete"
+    type: str = 'embedding'
 
     def _embeddings(self, **cfg: Any) -> Any:
         from langchain_aws import BedrockEmbeddings
