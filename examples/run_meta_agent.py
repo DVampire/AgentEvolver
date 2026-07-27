@@ -87,9 +87,9 @@ async def main():
     # initialize, so no tag-level log/workspace directories are created.
     session_id = make_id()
     ctx = SessionContext(id=session_id, name="main_entrypoint")
+    # Same directory the gateway would use for this session — see agentevolver/paths.
     sandbox = ensure_session_sandbox(
         ctx,
-        config.project_root,
         shared_extension_root=config.extension_root,
     )
     bind_session_roots(config, sandbox)

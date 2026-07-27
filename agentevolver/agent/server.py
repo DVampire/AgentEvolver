@@ -276,9 +276,11 @@ class AgentManagerServer(BaseModel):
         # Direct Python entry points historically supplied only an id. Attach those
         # contexts to a session sandbox just as Gateway and CLI invocations are.
         from agentevolver.session.project import ensure_session_sandbox, stage_input_files
+        # No explicit root: the layout puts this exactly where the gateway puts
+        # a session, so a locally-started task and a browser-started one share
+        # output/<owner>/sessions/<id> rather than diverging.
         ensure_session_sandbox(
             ctx,
-            config.project_root,
             shared_extension_root=config.extension_root,
         )
         input = stage_input_files(ctx, input)

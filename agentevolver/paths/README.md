@@ -66,6 +66,22 @@ placeholders: asking for `SESSION_WORKSPACE` with only `owner` raises
 `session_workspace needs ['session_id']` instead of creating a directory called
 `{session_id}` that is painful to trace back later.
 
+## One task, one directory — however it was started
+
+A task started from a local config and the same task started from the browser
+resolve to the *same* place. Both build their sandbox from `P.SESSION`:
+
+| Entry point | Sandbox root |
+|---|---|
+| `examples/run_*`, `agent_manager` | `ensure_session_sandbox(ctx)` → `output/<owner>/sessions/<id>` |
+| Gateway (`session.create`) | `path_manager.get(P.SESSION, ...)` → `output/<owner>/sessions/<id>` |
+
+This used to diverge: the local path took `config.project_root / <id>` while the
+gateway used its own join, so the two produced different trees for identical
+work. `ensure_session_sandbox` now defaults to the layout, and passing an
+explicit root remains available for callers that deliberately want a separate
+tree (the ProgramBench harness) and for tests.
+
 ## `tag` is a label, not a directory
 
 Configs used to set `project_root = output/<tag>`, which put `output/meta_agent/`

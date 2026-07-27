@@ -6,28 +6,40 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict
 
+from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.config import config
 
 
 def ensure_session_sandbox(
     ctx: Any,
-    project_root: str | Path,
+    project_root: str | Path | None = None,
     *,
+    owner: str = "local",
     shared_extension_root: str | Path | None = None,
 ) -> ProjectSandbox | None:
     """Attach ``ctx`` to a deterministic per-session project if it has no roots.
 
     Gateway and CLI contexts already carry these roots.  This fallback brings the
     direct ``examples/run_*`` entry points under the same workspace boundary.
+
+    With ``project_root`` omitted the session lands exactly where the gateway
+    puts one — ``output/<owner>/sessions/<id>`` from the layout table — so a task
+    started from a local config and the same task started from the browser use
+    the same directory. Passing an explicit root stays available for tests and
+    for callers that deliberately want their own tree.
     """
     extra = dict(getattr(ctx, "extra", {}) or {})
     if extra.get("project_root") and extra.get("workspace_root") and extra.get("extension_root"):
         return None
 
     session_id = str(getattr(ctx, "id", "") or "direct")
+    root = (
+        Path(project_root) / session_id if project_root is not None
+        else path_manager.get(P.SESSION, owner=owner, session_id=session_id)
+    )
     sandbox = ProjectSandbox.create(
-        Path(project_root) / session_id,
+        root,
         shared_extension_root=shared_extension_root,
     )
     ctx.extra = {**extra, **sandbox.describe()}
