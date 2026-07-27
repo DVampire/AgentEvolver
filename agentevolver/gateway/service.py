@@ -202,6 +202,9 @@ class AgentGateway:
         task_dir = os.path.join(config.log_root, "gateway", "tasks")
         await task_manager.initialize(log_root=task_dir, handler=self._run_task)
         await task_manager.start(num_workers=1)
+        # Bring back sessions that already have work on disk, so a restart does
+        # not strand their workspaces with no way to reopen them.
+        await self._restore_sessions()
         self._initialized = True
         await self._publish("gateway.ready", {"protocol_version": PROTOCOL_VERSION})
 
@@ -273,13 +276,6 @@ class AgentGateway:
         # for runtime; output/<owner>/state/ for the owner's durable library
         # (flows/files/settings). owner = the connection's user (default "local").
         owner = self._owner_for(params)
-        project_root = self._output_base() / owner / "sessions" / session_id
-        # Clients open a session as soon as they connect; most never run anything.
-        # Only describe the sandbox here — it is created on first real use so idle
-        # sessions leave no empty directory behind.
-        sandbox = ProjectSandbox.create(
-            project_root, shared_extension_root=Path(config.extension_root), materialize=False,
-        )
         requested_workspace = params.get("workspace")
         requested_source = Path(requested_workspace).expanduser().resolve() if requested_workspace else None
         if requested_source and (
@@ -287,9 +283,93 @@ class AgentGateway:
         ):
             raise ValueError("workspace must match the server-controlled workspace source")
         source_workspace = str(self._workspace_source) if self._workspace_source else None
+        # Clients open a session as soon as they connect; most never run anything.
+        # The sandbox is only described here — it is created, and the manifest
+        # written, on first real use, so idle sessions leave nothing behind.
+        session = self._build_session(
+            session_id=session_id, owner=owner,
+            name=params.get("name") or "interactive",
+            source_workspace=source_workspace,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            capabilities=await self._available_capabilities(),
+        )
+        sandbox, context = session.sandbox, session.context
+        self._sync_session_capabilities(session)
+        self._sessions[session_id] = session
+        payload = {"workspace": str(sandbox.workspace_root), "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "source_workspace": source_workspace}
+        await self._publish("session.created", payload, session_id=session_id)
+        return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
+
+    #: Written into each session's project root once it has real work in it, so
+    #: the session survives a gateway restart. Deliberately small: identity and
+    #: where its files are. Conversation history is NOT persisted — the event log
+    #: is a bounded in-memory ring, so a "restored" transcript would be a partial
+    #: one pretending to be complete.
+    SESSION_MANIFEST = "session.json"
+
+    def _write_session_manifest(self, session: "GatewaySession") -> None:
+        """Record identity + roots so this session can be reopened after a restart."""
+        path = Path(session.sandbox.project_root) / self.SESSION_MANIFEST
+        try:
+            path.write_text(json.dumps({
+                "session_id": session.context.id,
+                "name": session.context.name,
+                "owner": session.owner,
+                "created_at": session.created_at,
+                "source_workspace": session.context.extra.get("source_workspace"),
+            }, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.warning(f"| ⚠️ Could not write session manifest for {session.context.id}: {exc}")
+
+    async def _restore_sessions(self) -> None:
+        """Rebuild sessions that have a manifest on disk, so their workspaces stay reachable.
+
+        Without this the session registry is purely in-memory: a restart leaves
+        every workspace on disk with no way to open it from the UI. Restored
+        sessions carry no event history by design (see SESSION_MANIFEST), so they
+        reopen as an empty conversation over their existing files.
+        """
+        base = self._output_base()
+        if not base.is_dir():
+            return
+        restored = 0
+        for manifest in sorted(base.glob(f"*/sessions/*/{self.SESSION_MANIFEST}")):
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                session_id = str(data["session_id"])
+                if session_id in self._sessions:
+                    continue
+                self._sessions[session_id] = self._build_session(
+                    session_id=session_id,
+                    owner=str(data.get("owner") or "local"),
+                    name=str(data.get("name") or "interactive"),
+                    source_workspace=data.get("source_workspace"),
+                    created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+                    capabilities=await self._available_capabilities(),
+                )
+                restored += 1
+            except Exception as exc:  # noqa: BLE001 — one bad manifest must not block startup
+                logger.warning(f"| ⚠️ Skipping unreadable session manifest {manifest}: {exc}")
+        if restored:
+            logger.info(f"| ♻️ Restored {restored} session(s) from disk")
+
+    def _build_session(
+        self, *, session_id: str, owner: str, name: str,
+        source_workspace: Optional[str], created_at: str, capabilities: Dict[str, list],
+    ) -> "GatewaySession":
+        """Construct a session over ``output/<owner>/sessions/<id>``.
+
+        Shared by session.create and restore so both produce the same object; the
+        sandbox is described but not materialized, which keeps an untouched
+        session free of directories and lets a restored one reuse what is there.
+        """
+        project_root = self._output_base() / owner / "sessions" / session_id
+        sandbox = ProjectSandbox.create(
+            project_root, shared_extension_root=Path(config.extension_root), materialize=False,
+        )
         context = SessionContext(
             id=session_id,
-            name=params.get("name") or "interactive",
+            name=name,
             workspace_root=str(sandbox.workspace_root),
             extra={
                 "workspace": str(sandbox.workspace_root),
@@ -299,18 +379,10 @@ class AgentGateway:
                 "source_workspace": source_workspace,
             },
         )
-        session = GatewaySession(
-            context=context,
-            created_at=datetime.now(timezone.utc).isoformat(),
-            sandbox=sandbox,
-            owner=owner,
-            capabilities=await self._available_capabilities(),
+        return GatewaySession(
+            context=context, created_at=created_at, sandbox=sandbox,
+            owner=owner, capabilities=capabilities,
         )
-        self._sync_session_capabilities(session)
-        self._sessions[session_id] = session
-        payload = {"workspace": str(sandbox.workspace_root), "project_root": str(sandbox.project_root), "extension_root": str(sandbox.extension_root), "name": context.name, "source_workspace": source_workspace}
-        await self._publish("session.created", payload, session_id=session_id)
-        return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
 
     async def _command_session_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -1552,6 +1624,11 @@ class AgentGateway:
             return
         # Work is about to happen in this session — create its roots now.
         session.sandbox.materialize()
+        # …and record enough to find this session again after a restart. Written
+        # here rather than at session.create so an idle session that never ran
+        # anything still leaves no directory behind, and so what is restorable is
+        # exactly what has real work in it.
+        self._write_session_manifest(session)
         bind_session_roots(config, session.sandbox)
         # Managers cached their base_dir at initialize(); re-point the ones that
         # persist per-run output. Writers that read config at write time (the

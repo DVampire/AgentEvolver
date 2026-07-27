@@ -14,14 +14,21 @@ def package_root() -> Path:
 
 
 def home_dir() -> Path:
-    """Stable user-writable base for user-level config and state.
+    """Machine-level runtime state, inside the project's output tree.
 
-    Defaults to ``.agentevolver`` in the current project directory (like ``.git``),
-    so user-level state lives inside the project rather than the OS home directory.
-    ``AGENTEVOLVER_HOME`` overrides it (e.g. to share one home across projects).
+    Everything the framework writes belongs in one of exactly two places:
+    ``output/`` for generated, machine- and user-specific state, and
+    ``extension/`` for shared, durable components. This used to default to a
+    third location, ``./.agentevolver`` — which the container created as **root**,
+    and which ``scripts/serve-ui.sh``'s chown loop (it only walks ``output/``)
+    never handed back, so the host user could not delete or edit it.
+
+    ``.runtime`` holds state that belongs to the machine rather than to any one
+    user: the port registry and the sandbox ledger. Per-user state lives under
+    ``output/<owner>/`` instead. ``AGENTEVOLVER_HOME`` still overrides.
     """
     override = os.environ.get("AGENTEVOLVER_HOME")
-    root = Path(override).expanduser() if override else Path.cwd() / ".agentevolver"
+    root = Path(override).expanduser() if override else Path.cwd() / "output" / ".runtime"
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 
