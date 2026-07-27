@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Settings,
   Sparkles,
+  Code2,
   SquareTerminal,
   Sun,
   Waypoints,
@@ -61,10 +62,11 @@ interface WorkspaceFile { name: string; path: string; content: string; encoding?
 interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
 interface EnvironmentViewInfo { env_name: string; kind: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
-type MainView = 'chat' | 'canvas';
+type MainView = 'chat' | 'canvas' | 'code';
 const WorkspaceEditor = lazy(() => import('./workspace/WorkspaceEditor'));
 const VncView = lazy(() => import('./vnc/VncView'));
 const CanvasView = lazy(() => import('./canvas'));
+const IdeView = lazy(() => import('./ide/IdeView').then((module) => ({ default: module.IdeView })));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 // Same-origin by default: the page is served by the Vite dev server, which
@@ -592,7 +594,7 @@ export function App() {
     await socketRef.current?.request('task.cancel', { task_id: activeTaskId });
   };
 
-  const canvasRequest = useCallback((method: string, params: Record<string, unknown> = {}) => {
+  const gatewayRequest = useCallback((method: string, params: Record<string, unknown> = {}) => {
     const socket = socketRef.current;
     if (!socket) return Promise.reject(new Error('Gateway is not connected'));
     return socket.request(method, params);
@@ -837,6 +839,7 @@ export function App() {
           <p className="eyebrow">Views</p>
           <button className={mainView === 'chat' ? 'view-active' : ''} onClick={() => setMainView('chat')}><span><MessageSquare size={16} strokeWidth={1.9} /></span><strong>Chat</strong></button>
           <button className={mainView === 'canvas' ? 'view-active' : ''} onClick={() => setMainView('canvas')}><span><Waypoints size={16} strokeWidth={1.9} /></span><strong>Canvas</strong></button>
+          <button className={mainView === 'code' ? 'view-active' : ''} onClick={() => setMainView('code')}><span><Code2 size={16} strokeWidth={1.9} /></span><strong>Code</strong></button>
         </nav>
         <nav className="sidebar-section capability-nav" aria-label="Capabilities">
           <p className="eyebrow">Capabilities</p>
@@ -865,13 +868,21 @@ export function App() {
         <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button></div>
       </aside>
 
-      {mainView === 'canvas' ? <section className="conversation canvas-mode">
+      {mainView === 'code' ? <section className="conversation canvas-mode">
+        <header className="topbar">
+          <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Workspace editor</p><h1>Code</h1></div></div>
+          <div className="connection"><span className={`connection-dot ${status}`} />{statusText}</div>
+        </header>
+        <Suspense fallback={<div className="workspace-placeholder">Loading editor…</div>}>
+          <IdeView request={gatewayRequest} sessionId={sessionId} connected={status === 'connected'} />
+        </Suspense>
+      </section> : mainView === 'canvas' ? <section className="conversation canvas-mode">
         <header className="topbar">
           <div className="header-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">☰</button><div><p className="eyebrow">Visual orchestration</p><h1>Canvas</h1></div></div>
           <div className="connection"><span className={`connection-dot ${status}`} />{statusText}</div>
         </header>
         <Suspense fallback={<div className="workspace-placeholder">Loading canvas…</div>}>
-          <CanvasView request={canvasRequest} subscribe={subscribeEvents} sessionId={sessionId} connected={status === 'connected'} theme={theme} onNotice={setNotice} />
+          <CanvasView request={gatewayRequest} subscribe={subscribeEvents} sessionId={sessionId} connected={status === 'connected'} theme={theme} onNotice={setNotice} />
         </Suspense>
       </section> : <section className="conversation">
         <header className="topbar">

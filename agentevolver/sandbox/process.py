@@ -20,6 +20,22 @@ from typing import Optional
 import httpx
 
 from agentevolver.logger import logger
+from pathlib import Path
+
+
+def _host_repo_root() -> str:
+    """The repo root as the HOST sees it — the bind-mount allowlist prefix.
+
+    Inside the repo container the tree is at /AgentEvolver, but the daemon binds
+    mounts against the host's filesystem, so the allowlist has to name the host
+    path. ``scripts/run-in-sandbox.sh`` exports it; running directly on the host
+    the local repo root is already correct.
+    """
+    host_root = os.environ.get("AGENTEVOLVER_HOST_ROOT")
+    if host_root:
+        return host_root
+    # .../agentevolver/sandbox/process.py -> repo root
+    return str(Path(__file__).resolve().parents[2])
 
 
 class SandboxServerManager:
@@ -117,6 +133,15 @@ class SandboxServerManager:
         content = _replace_or_append(content, "drop_capabilities", "[]")
         content = _replace_or_append(content, "no_new_privileges", "false")
         content = re.sub(r"^pids_limit\s*=.*\n?", "", content, flags=re.MULTILINE)
+
+        # Bind mounts are refused unless their source sits under an allowed
+        # prefix, and the shipped default is an empty list — which denies every
+        # path despite the config comment claiming empty means "allow all".
+        # Permit exactly the repo tree, since that is where every mount we make
+        # lives (session workspaces and durable state, both under output/).
+        content = _replace_or_append(
+            content, "allowed_host_paths", f'["{_host_repo_root()}"]'
+        )
 
         port = self.domain.rsplit(":", 1)[-1]
         if port.isdigit():

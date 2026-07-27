@@ -1,0 +1,90 @@
+---
+name: ide
+description: "Full VS Code (openvscode-server) in the browser, one container per gateway session, editing the same workspace the agent edits. Human-facing: not an agent capability."
+version: 1.0.0
+type: module
+category: interface
+requirements: []
+metadata:
+  document_version: 1
+---
+# IDE
+
+A real **VS Code in the browser** — extensions, integrated terminal, search,
+git — editing the *same* workspace files the agent works on. One container per
+gateway session, started on demand and reaped when idle.
+
+Like the [canvas](../canvas/README.md), this is **human-facing**: the agent
+never calls into it, and the IDE is not registered as a capability the meta
+agent can see.
+
+## Why it is served at a root path
+
+VS Code emits **absolute** asset paths (`/stable-<commit>/static/...`). Served
+under a sub-path they bypass the prefix and 404, and openvscode-server has no
+base-path option. So the IDE gets the **root** of its own host instead:
+
+```
+localhost:5173                → AgentEvolver SPA
+<session>.ide.localhost:5173  → that session's IDE, at "/"
+```
+
+Routing keys on the **Host** header, not the path, so every absolute asset URL
+lands on the same rule for free. This is Gitpod's per-workspace-subdomain trick
+narrowed to one port — `*.localhost` resolves to `127.0.0.1` without any DNS or
+`/etc/hosts` entry, so remote access still forwards a **single** port.
+
+## The chain
+
+```
+browser  <sid>.ide.localhost:5173/stable-…/static/x.js
+   │  vite plugin matches the Host, prepends the proxy prefix
+   ▼
+gateway-resolved upstream  127.0.0.1:<ephemeral>/proxy/3000/stable-…/static/x.js
+   │  the opensandbox proxy strips /proxy/3000
+   ▼
+openvscode-server :3000    /stable-…/static/x.js      ← always sees root
+```
+
+Both hops cancel out, so VS Code is never aware it is proxied and needs no
+patching. The workbench WebSocket rides the same path and port.
+
+## Lifecycle
+
+Lazy start on first open; a heartbeat plus every proxied request refresh the
+idle clock; a reaper destroys containers idle past `idle_timeout_seconds`
+(default 30 min). The gateway has no `session.close`, so **time** — not session
+teardown — is what frees these. `max_instances` caps concurrent IDEs and evicts
+the least recently used.
+
+## State
+
+| What | Scope | Why |
+|---|---|---|
+| `/workspace` | **per session** | the files the agent edits — same bytes, no copy |
+| extensions | **per owner** | installed plugins survive new sessions |
+| user data | **per owner** | settings and keybindings persist |
+
+Per-session containers with per-owner plugin state: a new session is isolated
+but never makes you reinstall your extensions.
+
+## Boundaries
+
+- The container **never mounts the Docker socket**, so its terminal cannot reach
+  the host daemon.
+- That terminal is still a real shell inside the container, and it does not pass
+  through the permission manager — its reach is the container plus the mounts
+  above.
+- Extensions come from **Open VSX**; Microsoft-licensed ones (Pylance, official
+  C#/Remote packs) are not published there.
+
+## Pieces
+
+| Piece | Where |
+|---|---|
+| Image | [`docker/vscode/`](../../docker/vscode/) |
+| Container handle | `agentevolver/sandbox/default/vscode.py` (`VscodeSandbox`) |
+| Lifecycle | `server.py` (`ide_manager`) |
+| Commands + resolve | `agentevolver/gateway/` (`ide.start` / `ide.status` / `ide.stop`) |
+| Host routing | `frontend/vite.config.ts` |
+| View | `frontend/src/ide/` |

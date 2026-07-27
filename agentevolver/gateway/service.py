@@ -32,6 +32,7 @@ from agentevolver.connector import connector_manager
 from agentevolver.data import data_manager
 from agentevolver.environment import environment_manager
 from agentevolver.extension import extension_manager
+from agentevolver.ide import ide_manager
 from agentevolver.gateway.protocol import (
     PROTOCOL_VERSION,
     GatewayCommand,
@@ -217,6 +218,7 @@ class AgentGateway:
         await asyncio.gather(*self._chat_tasks.values(), return_exceptions=True)
         self._chat_tasks.clear()
         await task_manager.stop()
+        await ide_manager.stop_all()
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
         environment_stream.unsubscribe(self._on_environment_view)
@@ -1065,6 +1067,43 @@ class AgentGateway:
         if not run_id:
             raise ValueError("run_id is required")
         return {"run_id": run_id, "cancelled": canvas_manager.cancel_run(run_id)}
+
+    # ------------------------------------------------------------------ ide
+    async def _command_ide_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start (or reuse) this session's VS Code container and say where to embed it.
+
+        The returned origin is a per-session host on the UI's own port, so the
+        IDE occupies the ROOT path there — see agentevolver/ide/README.md.
+        """
+        session_id = self._require_session_id(params)
+        session = self._sessions[session_id]
+        await ide_manager.start(
+            session_id,
+            workspace_root=session.sandbox.workspace_root,
+            owner=session.owner,
+            state_dir=self._owner_state_dir(session.owner),
+        )
+        return {**ide_manager.status(session_id), "origin": self._ide_origin(session_id)}
+
+    async def _command_ide_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        # Doubles as the keep-alive: an open Code view pings this.
+        ide_manager.touch(session_id)
+        return {**ide_manager.status(session_id), "origin": self._ide_origin(session_id)}
+
+    async def _command_ide_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        return {"session_id": session_id, "stopped": await ide_manager.stop(session_id)}
+
+    @staticmethod
+    def _ide_origin(session_id: str) -> str:
+        """``<session>.ide.localhost:<ui port>`` — the IDE's own host on the UI port.
+
+        ``*.localhost`` resolves to 127.0.0.1 without DNS or /etc/hosts, so this
+        costs no extra forwarded port.
+        """
+        from agentevolver.port import UI, port_manager
+        return f"{session_id}.ide.localhost:{port_manager.get('ui') or UI}"
 
     @staticmethod
     def _workflow_preview_document(source: str) -> str:

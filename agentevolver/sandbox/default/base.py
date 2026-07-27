@@ -7,6 +7,7 @@ contract: shell commands, files, and port exposure. Code execution lives in the
 
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Union
 
@@ -14,6 +15,34 @@ from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
 from agentevolver.sandbox.process import ensure_server
 from agentevolver.sandbox.types import ExecResult, Sandbox, SandboxConfig
+
+#: Where scripts/run-in-sandbox.sh bind-mounts the repo inside the container.
+CONTAINER_REPO_ROOT = "/AgentEvolver"
+
+
+def to_host_path(path: str) -> str:
+    """Translate an in-container path to the host path a bind mount needs.
+
+    The opensandbox daemon reaches the HOST Docker daemon over a mounted socket,
+    so bind-mount sources are resolved in the host's mount namespace — not ours.
+    When the framework is itself running inside the repo container, a path like
+    ``/AgentEvolver/output/...`` does not exist on the host and Docker would
+    silently create an empty directory there instead of sharing the real one.
+
+    ``scripts/run-in-sandbox.sh`` exports ``AGENTEVOLVER_HOST_ROOT`` with the
+    host path it mounted at ``/AgentEvolver``; that mapping cannot be derived
+    reliably from /proc/self/mountinfo, which reports the source relative to its
+    filesystem root rather than the host's mount namespace. Unset (running
+    directly on the host) means paths are already host paths.
+    """
+    host_root = os.environ.get("AGENTEVOLVER_HOST_ROOT")
+    if not host_root:
+        return path
+    if path == CONTAINER_REPO_ROOT:
+        return host_root
+    if path.startswith(f"{CONTAINER_REPO_ROOT}/"):
+        return host_root.rstrip("/") + path[len(CONTAINER_REPO_ROOT):]
+    return path
 
 
 def _logs_to_str(logs_field: Any, *, sep: str = "") -> str:
@@ -119,10 +148,11 @@ class OpenSandbox(Sandbox):
         if entrypoint:
             create_kwargs["entrypoint"] = entrypoint
         # Bind-mount host dirs (e.g. the repo at /AgentEvolver) so files stay consistent
-        # between the base container and this peer.
+        # between the base container and this peer. Sources are rewritten to host
+        # paths because the daemon binds them in the host's mount namespace.
         if self.config.mounts:
             create_kwargs["volumes"] = [
-                Volume(name=f"mount{i}", host=Host(path=host_path), mount_path=container_path)
+                Volume(name=f"mount{i}", host=Host(path=to_host_path(host_path)), mount_path=container_path)
                 for i, (host_path, container_path) in enumerate(self.config.mounts.items())
             ]
         if not self.config.network:

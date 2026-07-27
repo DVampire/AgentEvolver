@@ -87,6 +87,11 @@ exec docker run --rm "${TTY_ARG[@]}" \
   -v "${DOCKER_SOCK}:${DOCKER_SOCK}" \
   -v "${REPO_ROOT}:/AgentEvolver" \
   -w /AgentEvolver \
+  `# Peer containers are created against the HOST Docker daemon, so their bind` \
+  `# mounts resolve in the host's mount namespace. Pass the host path we mounted` \
+  `# at /AgentEvolver so those sources can be translated back (see` \
+  `# agentevolver/sandbox/default/base.py:to_host_path).` \
+  -e AGENTEVOLVER_HOST_ROOT="${REPO_ROOT}" \
   "${GPU_ARG[@]}" \
   "${IMAGE}" \
   "$@"

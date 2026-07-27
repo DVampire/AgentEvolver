@@ -61,6 +61,22 @@ def create_websocket_app(
     async def health():
         return JSONResponse({"ok": True, "protocol_version": 1})
 
+    @app.get("/ide/resolve/{session_id}")
+    async def ide_resolve(session_id: str):
+        """Tell the UI's host-routing proxy where a session's IDE container lives.
+
+        The IDE is reached at ``<session>.ide.localhost:<ui port>``; the Vite dev
+        server matches that Host and asks here for the upstream to forward to.
+        Bound to loopback like the rest of the gateway, and it returns nothing
+        for an unknown session, so it cannot be used to probe other sessions.
+        """
+        from agentevolver.ide import ide_manager
+
+        upstream = ide_manager.upstream(session_id)
+        if not upstream:
+            return JSONResponse({"ok": False, "error": "no IDE for this session"}, status_code=404)
+        return JSONResponse({"ok": True, "upstream": upstream})
+
     def _authorize(websocket: WebSocket) -> bool:
         supplied_token = websocket.query_params.get("token") or websocket.headers.get("authorization", "").removeprefix("Bearer ")
         supplied_token = supplied_token or ""
