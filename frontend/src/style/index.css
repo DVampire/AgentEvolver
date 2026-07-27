@@ -168,3 +168,10 @@ button { cursor: pointer; }
 .brand .sidebar-collapse:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
 .sidebar-reopen { position: fixed; left: 10px; top: 12px; z-index: 20; display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid hsl(var(--border)); border-radius: 8px; color: hsl(var(--muted-foreground)); background: hsl(var(--background)); cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / .08); }
 .sidebar-reopen:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+/* The reopen button is fixed at the viewport's top-left corner, so it floats
+   over whatever header is up there — it was sitting on the first characters of
+   the title in all three views. Make the header start clear of it. Kept here
+   rather than in ide.css because that sheet loads with the lazy Code view,
+   while the collapsed state applies from the first paint. */
+.app-shell.sidebar-collapsed .topbar,
+.app-shell.sidebar-collapsed .ide-toolbar { padding-left: 52px; }
