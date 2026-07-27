@@ -1,0 +1,113 @@
+"""A run is its own unit of work — its state must not be the session's.
+
+``ctx.id`` scopes everything an agent accumulates: memory, token/step/time
+budgets, its todo list. It deliberately scopes nothing on disk (that is
+``config.workspace_root``/``log_root``, owned by the bound session), which is
+what makes it safe to give a run its own.
+
+Before this, a canvas flow ran under the session's context and so read the
+conversation's memory into its prompt and spent its token budget.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+
+import pytest
+
+from agentevolver.constraint.default.token_constraint import TokenConstraint
+from agentevolver.session.types import SessionContext
+from agentevolver.workflow.runtime import WorkflowRuntime
+
+
+def test_a_top_level_run_gets_its_own_scope() -> None:
+    session = SessionContext(id="session-1", name="chat")
+    scoped = WorkflowRuntime._run_context(session, "run-1", depth=0)
+
+    assert scoped.id == "run-1", "a run must not accumulate state under the session"
+    assert session.id == "session-1", "the caller's context must not be mutated"
+    # Everything else rides along: the sandbox handle lives in extra, and steps
+    # would lose their peer container without it.
+    assert scoped.extra == session.extra
+    assert scoped.name == session.name
+
+
+def test_a_nested_run_stays_in_its_parents_scope() -> None:
+    """A sub-workflow is part of the same unit of work, not a new one."""
+    parent = SessionContext(id="run-1", name="flow")
+    assert WorkflowRuntime._run_context(parent, "run-2", depth=1).id == "run-1"
+
+
+def test_rescoping_is_idempotent() -> None:
+    """start() derives, then run() derives again with the same id."""
+    ctx = SessionContext(id="session-1")
+    once = WorkflowRuntime._run_context(ctx, "run-1", depth=0)
+    assert WorkflowRuntime._run_context(once, "run-1", depth=0) is once
+
+
+def test_a_duck_typed_context_is_left_alone() -> None:
+    """Callers pass anything carrying what the steps need; only re-scope a real one."""
+    ctx = SimpleNamespace(workspace_root="/tmp/x")
+    assert WorkflowRuntime._run_context(ctx, "run-1", depth=0) is ctx
+
+
+def test_memory_does_not_cross_between_a_conversation_and_a_run() -> None:
+    """The prompt-injected memory of one must not contain the other's steps."""
+    from agentevolver.memory.default.tiered import TieredMemory
+    from agentevolver.trace.types import TraceEvent, TraceEventType
+
+    async def run() -> None:
+        memory = TieredMemory()
+        session, run_scope = "session-1", "run-1"
+
+        async def note(scope: str, agent: str) -> None:
+            await memory.emit(TraceEvent(
+                event_type=TraceEventType.AGENT_START, agent_name=agent,
+                session_id=scope, input={"task": f"work for {agent}"},
+            ), session_id=scope)
+
+        await note(session, "meta_agent")     # the conversation
+        await note(run_scope, "general_agent")  # a flow step
+
+        conversation = await memory.get(session_id=session) or ""
+        flow = await memory.get(session_id=run_scope) or ""
+        assert "meta_agent" in conversation and "general_agent" not in conversation
+        assert "general_agent" in flow and "meta_agent" not in flow
+
+    asyncio.run(run())
+
+
+@pytest.mark.asyncio
+async def test_a_run_does_not_spend_the_conversations_budget() -> None:
+    constraint = TokenConstraint(max_token=100)
+
+    async def spend(scope: str, tokens: int):
+        return await constraint({"token": tokens}, ctx=SimpleNamespace(id=scope))
+
+    await spend("session-1", 90)
+    # The same 90 tokens under a run's own scope must not push it over.
+    response = await spend("run-1", 90)
+    assert response.success, "a run inherited the conversation's spend"
+
+    # …while the conversation itself still hits its own cap.
+    response = await spend("session-1", 20)
+    assert not response.success
+
+
+@pytest.mark.asyncio
+async def test_a_constraint_frees_the_key_it_counts_under() -> None:
+    """The constraint side of the contract the caller was breaking.
+
+    ``_cleanup`` releases whatever ``__call__`` counted under; the agent passed
+    it a per-invocation uuid the constraint never sees, so nothing was ever
+    released and a session's budget only went up. This pins the two halves to
+    the same key — the caller now passes ``ctx.id``.
+    """
+    constraint = TokenConstraint(max_token=100)
+    ctx = SimpleNamespace(id="scope-1")
+
+    await constraint({"token": 90}, ctx=ctx)
+    constraint._cleanup(ctx.id)
+    response = await constraint({"token": 90}, ctx=ctx)
+    assert response.success, "the released budget was not actually released"

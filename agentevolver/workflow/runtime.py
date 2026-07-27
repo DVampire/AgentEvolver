@@ -133,6 +133,7 @@ class WorkflowRuntime:
             The terminal WorkflowRun (succeeded, failed, cancelled, or rejected).
         """
         run = _run or self._new_run(definition, input, ctx, run_id)
+        ctx = self._run_context(ctx, run.id, depth)
         budget = _budget or _WorkflowBudget(
             definition.max_agents, definition.max_depth, root_run=run,
         )
@@ -266,9 +267,32 @@ class WorkflowRuntime:
             self._prune_runs()
         return run
 
+    @staticmethod
+    def _run_context(ctx, run_id: str, depth: int):
+        """A top-level run executes under its own context.
+
+        ``ctx.id`` is the scope of everything an agent accumulates — its memory,
+        its token/step/time budgets, its todo list. It is *not* where anything is
+        written: that comes from ``config.workspace_root``/``log_root``, which a
+        bound session owns. So a run borrowing the session's context inherited
+        the conversation's memory and spent its budget, and its traces were
+        broadcast on the conversation's channel.
+
+        A run is a self-contained program, so it gets its own scope and stays
+        reproducible. Nested runs (``depth > 0``) keep the parent's: a
+        sub-workflow is part of the same unit of work, not a new one.
+        """
+        if ctx is None or depth > 0 or getattr(ctx, "id", run_id) == run_id:
+            return ctx
+        derive = getattr(ctx, "model_copy", None)
+        # ``ctx`` is duck-typed here — callers pass anything carrying what the
+        # steps need. Only a real context can be re-scoped; leave the rest alone.
+        return derive(update={"id": run_id}) if derive else ctx
+
     def start(self, definition: WorkflowDefinition, *, input=None, ctx=None, depth=0) -> str:
         """Start a workflow in the background and return a stable run id immediately."""
         run_id = make_id()
+        ctx = self._run_context(ctx, run_id, depth)
         run = self._new_run(definition, input, ctx, run_id)
         task = asyncio.create_task(
             self.run(definition, input=input, ctx=ctx, depth=depth, run_id=run_id, _run=run),

@@ -422,11 +422,6 @@ export function App() {
       }
       return;
     }
-    // A canvas flow runs in this same session, so its traces arrive here too.
-    // Show only the conversation's own: the flow's internal steps are not
-    // something the user asked this chat for. Checked positively so an
-    // unattributed trace stays out rather than leaking in.
-    if (event.type === 'trace.event' && event.payload.origin !== 'chat') return;
     if (event.type === 'task.started' || event.type === 'trace.event') {
       const step = activityStep(event);
       if (step) appendActivityStep(event, step);

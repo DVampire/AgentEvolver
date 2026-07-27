@@ -688,7 +688,11 @@ class Agent(BaseModel):
         )
         if result.decision == HookDecision.BLOCK:
             for c in self.constraints:
-                c._cleanup(task_id)
+                # Freed by the key the constraint actually counts under (ctx.id).
+                # This passed task_id — a per-invocation uuid the constraint never
+                # sees — so nothing was ever released and a session's budget only
+                # ever went up.
+                c._cleanup(ctx.id)
             self._pending_step_tokens.pop(task_id, None)
             return result.reason, []
         return None, result.constraint_status or []
@@ -782,7 +786,7 @@ class Agent(BaseModel):
         self._pending_step_tokens[task_id] = step_tokens
         if done and self.constraints:
             for c in self.constraints:
-                c._cleanup(task_id)
+                c._cleanup(ctx.id)  # the key it counts under; see _constraint_check
             self._pending_step_tokens.pop(task_id, None)
 
     # ------------------------------------------------------------------
