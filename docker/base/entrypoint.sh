@@ -9,8 +9,20 @@
 # inspectable and deletable on the host.
 set -o pipefail
 
-"$@"
-status=$?
+# Run the command as a child and forward termination to it. `docker stop` signals
+# PID 1 only, and a shell defers signals until its foreground command returns —
+# so a plain `"$@"` swallowed SIGTERM and the command was SIGKILLed at the end of
+# the grace period. Anything it tears down on shutdown (the Gateway destroys the
+# per-session IDE containers it started) never got the chance, and the orphans
+# piled up until they exhausted the host's file descriptors.
+"$@" &
+child=$!
+trap 'kill -TERM "${child}" 2>/dev/null || true' TERM INT
+# `wait` returns as soon as a trap fires, so keep waiting for the real exit.
+while kill -0 "${child}" 2>/dev/null; do
+    wait "${child}"
+    status=$?
+done
 
 proj="/AgentEvolver"
 owner="$(stat -c '%u:%g' "${proj}" 2>/dev/null || true)"

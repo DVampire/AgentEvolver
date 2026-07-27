@@ -26,9 +26,25 @@ UI_PORT="${UI_PORT:-$(python -c 'from agentevolver.port import UI; print(UI)')}"
 python -c "from agentevolver.port import port_manager; port_manager.register('ui', ${UI_PORT}, kind='host', override=True)" || true
 
 GW_PID=""
+UI_PID=""
 CHOWN_PID=""
+# Give the Gateway time to shut down properly: it destroys the per-session IDE
+# containers there. Signalling it and leaving immediately orphaned every one of
+# them — they outlived the run, and enough of them exhausted the host's file
+# descriptors (openvscode-server's file watchers gave EMFILE and the editor
+# never finished loading).
+GW_STOP_TIMEOUT="${GW_STOP_TIMEOUT:-25}"
 cleanup() {
-  [[ -n "${GW_PID}" ]] && kill "${GW_PID}" 2>/dev/null || true
+  trap - EXIT INT TERM   # a second Ctrl-C should not re-enter this
+  if [[ -n "${GW_PID}" ]] && kill -0 "${GW_PID}" 2>/dev/null; then
+    kill "${GW_PID}" 2>/dev/null || true
+    for _ in $(seq "${GW_STOP_TIMEOUT}"); do
+      kill -0 "${GW_PID}" 2>/dev/null || break
+      sleep 1
+    done
+    kill -9 "${GW_PID}" 2>/dev/null || true
+  fi
+  [[ -n "${UI_PID}" ]] && kill "${UI_PID}" 2>/dev/null || true
   [[ -n "${CHOWN_PID}" ]] && kill "${CHOWN_PID}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -69,5 +85,11 @@ fi
 # EMFILE. Bump toward the hard limit; fall back gracefully if not permitted.
 ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn 2>/dev/null || echo 8192)" 2>/dev/null || true
 
-# Vite dev server in the foreground; Ctrl-C stops it and the trap kills the Gateway.
-exec npm run dev -- --port "${UI_PORT}"
+# Vite in the background, then wait. Two shell details decide whether the
+# cleanup above ever runs: `exec` would replace this shell (and its trap) with
+# npm, and a *foreground* command makes bash defer every trap until it returns —
+# either way SIGTERM would be queued forever while the Gateway is killed
+# unclean, orphaning the IDE containers it started. Only `wait` is interruptible.
+npm run dev -- --port "${UI_PORT}" &
+UI_PID=$!
+wait "${UI_PID}"

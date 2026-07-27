@@ -84,6 +84,10 @@ echo "  command : $*"
 
 exec docker run --rm "${TTY_ARG[@]}" \
   --network host \
+  `# docker stop allows 10s by default, then SIGKILLs. That is not enough for a` \
+  `# run that tears peer containers down on shutdown (the Gateway destroys the` \
+  `# per-session IDE containers), and killing it mid-shutdown orphans them.` \
+  --stop-timeout 60 \
   -v "${DOCKER_SOCK}:${DOCKER_SOCK}" \
   -v "${REPO_ROOT}:/AgentEvolver" \
   -w /AgentEvolver \
