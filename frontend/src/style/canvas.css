@@ -3,12 +3,9 @@
    inherits the same light/dark theme as every shadcn component — no hardcoded
    colors, no per-theme overrides. Layout/structure only below; color = token. */
 
-.view-nav { margin-bottom: 4px; }
-.view-nav button.view-active { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
-.app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); height: 100vh; overflow: hidden; }
-/* Canvas fills exactly one viewport: the sidebar scrolls inside itself instead
-   of growing the shell past 100vh (which left dead space below the canvas). */
-.app-shell.canvas-wide .sidebar { min-height: 0; overflow-y: auto; }
+/* .view-nav and .app-shell.canvas-wide moved to index.css — they style the app
+   shell, which exists in every view, and this file only loads when the canvas
+   module does. */
 /* Fixed to the viewport (Langflow's h-screen), not min-height — otherwise the
    canvas can grow past one screen and push the bottom-center controls pill off
    the visible area. overflow-hidden keeps the flow pane clipped so the pill (a

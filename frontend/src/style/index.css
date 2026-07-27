@@ -46,6 +46,17 @@ button { cursor: pointer; }
 .app-shell[data-theme='light'] .deploy-meta small { color: #667085; }
 .app-shell[data-theme='light'] .deploy-action { color: #425a83; background: #e7ecf4; }.empty { color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.5; margin: 0; }.sidebar-footer { display: grid; gap: 4px; padding-top: 18px; border-top: 1px solid hsl(var(--border)); }.text-button, .connection button { background: transparent; border: 0; color: #aab2cc; padding: 6px 2px; text-align: left; }
 .conversation { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }.topbar { display: flex; justify-content: space-between; align-items: center; padding: 23px 32px 19px; border-bottom: 1px solid hsl(var(--border)); }.topbar h1 { font-size: 20px; margin: 0; letter-spacing: -.025em; }.topbar .eyebrow { margin-bottom: 5px; }.connection { display: flex; align-items: center; gap: 8px; color: #b8bdcb; font-size: 13px; }.connection button { margin-left: 8px; }
+
+/* App-shell chrome shared by every view. These used to live in canvas.css,
+   which only loads when the lazy canvas module does — so refreshing straight
+   into Chat or Code left the shell on its default 3-column grid and painted a
+   400px empty inspector column on the right. Shell layout belongs here. */
+.view-nav { margin-bottom: 4px; }
+.view-nav button.view-active { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+/* Canvas/Code fill exactly one viewport: the sidebar scrolls inside itself
+   instead of growing the shell past 100vh. */
+.app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); height: 100vh; overflow: hidden; }
+.app-shell.canvas-wide .sidebar { min-height: 0; overflow-y: auto; }
 /* Compact page header. The eyebrow ("WORKSPACE AGENT", "VISUAL ORCHESTRATION")
    is decorative — the title already names the view — and with the generous
    padding it cost ~85px at the top of every view. Hiding it and tightening the
