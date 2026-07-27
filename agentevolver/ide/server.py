@@ -85,6 +85,7 @@ class IdeManagerServer:
                 timeout_minutes=self.container_timeout_minutes,
                 # Extensions install from the Open VSX registry over the network.
                 network=True,
+                env=self._agent_credentials(),
                 mounts={
                     str(workspace): CONTAINER_WORKSPACE,
                     str(extensions): CONTAINER_EXTENSIONS,
@@ -150,6 +151,28 @@ class IdeManagerServer:
         return instance.public() if instance else {"session_id": session_id, "running": False}
 
     # ------------------------------------------------------------ internals
+    #: Credentials the bundled coding agents look for. Forwarded from the
+    #: gateway's own environment so Claude Code and Codex are signed in instead
+    #: of opening to a "No authentication found" panel.
+    CREDENTIAL_VARS = (
+        "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_API_BASE",
+        "OPENAI_API_KEY", "OPENAI_BASE_URL",
+    )
+
+    @classmethod
+    def _agent_credentials(cls) -> Dict[str, str]:
+        """Pass the host's agent credentials into the container.
+
+        Only variables that are actually set are forwarded. This does put the
+        keys inside the container, where the integrated terminal can read them —
+        acceptable because it is the user's own key in their own session, and
+        the extensions cannot authenticate any other way, but it is the reason
+        the container never also gets the Docker socket.
+        """
+        import os
+
+        return {name: os.environ[name] for name in cls.CREDENTIAL_VARS if os.environ.get(name)}
+
     async def _wait_ready(self, upstream: str) -> bool:
         """Poll until openvscode-server answers, so the iframe never races it."""
         import aiohttp

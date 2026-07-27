@@ -3,6 +3,15 @@
    inherits the same light/dark theme as every shadcn component — no hardcoded
    colors, no per-theme overrides. Layout/structure only below; color = token. */
 
+/* Compact page header. The eyebrow ("WORKSPACE AGENT", "VISUAL ORCHESTRATION")
+   is decorative — the title already says which view you are in — and together
+   with the generous padding it cost ~85px at the top of every view. Hiding it
+   and tightening the row reclaims ~50px for the canvas/conversation itself.
+   Scoped to .topbar so the sidebar and dialog eyebrows are untouched. */
+.topbar { padding: 10px 24px; }
+.topbar h1 { font-size: 16px; }
+.topbar .eyebrow { display: none; }
+
 .view-nav { margin-bottom: 4px; }
 .view-nav button.view-active { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
 .app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); height: 100vh; overflow: hidden; }
