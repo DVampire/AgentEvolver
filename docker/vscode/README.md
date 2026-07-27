@@ -8,11 +8,18 @@ gateway session; the frontend embeds it in an iframe.
 - **root user** — the stock image runs as uid 1000, but workspace files belong
   to the host user. Running as root keeps them writable; `scripts/serve-ui.sh`
   already chowns `output/` back to the host owner periodically.
-- **nothing else** — no apt layer, so the build needs no network beyond the
-  base pull. The stock image already carries `git`/`curl`/`bash`, and VS Code
-  bundles its own ripgrep for search. Heavy project toolchains stay in the base
-  container; this image is an editor, not the agent's execution environment, so
-  the integrated terminal is a plain shell without the project's Python env.
+- **the agent's own environment** — the image is built on `agentevolver/base`,
+  so the integrated terminal has the same miniconda3 at `/opt/conda` and the
+  same project the agent runs with. `PATH` puts it first and
+  `python.defaultInterpreterPath` points at it, so a terminal opens straight
+  into the project's Python. Layers are shared with a base image already on the
+  host, so this costs ~200MB rather than a second ~10GB copy of conda.
+- **openvscode-server, copied from the upstream image** rather than downloaded,
+  so the build needs no network beyond the two base pulls. It ships its own
+  node, so nothing else is required.
+- **`ide-open`** wired up as `$BROWSER` (and `xdg-open`): rewrites a loopback
+  OAuth `redirect_uri` onto this container's forwarded origin, so a browser
+  sign-in started in the terminal can actually return here.
 - **entrypoint-vscode** — starts openvscode-server on `:3000` against the
   mounted directories below. OpenSandbox ignores the image ENTRYPOINT, so
   `VscodeSandbox` passes this script explicitly (same as chrome-vnc).

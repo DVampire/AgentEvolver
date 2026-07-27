@@ -21,6 +21,17 @@ DEFAULT_EXTENSIONS="${IDE_DEFAULT_EXTENSIONS-anthropic.claude-code openai.chatgp
 
 mkdir -p "$EXT_DIR" "$DATA_DIR" "$DATA_DIR/User" "$DATA_DIR/server" "$FOLDER"
 
+# Any CLI that opens a browser goes through the shim, which repoints a loopback
+# OAuth callback at this container's forwarded origin. xdg-open is aliased too,
+# since some tools reach for it directly instead of honouring $BROWSER.
+export BROWSER=/usr/local/bin/ide-open
+
+# The image is built on agentevolver/base, so the agent's conda environment is
+# right here — put it first on PATH so the integrated terminal opens in the same
+# Python the agent uses, not a bare system one.
+export PATH="/opt/conda/bin:${PATH}"
+ln -sf /usr/local/bin/ide-open /usr/local/bin/xdg-open 2>/dev/null || true
+
 # Seed user settings on first run only — the directory is mounted per owner, so
 # after this the file belongs to the user and is never rewritten.
 #
@@ -34,7 +45,9 @@ if [ ! -f "$SETTINGS" ]; then
     cat > "$SETTINGS" <<'JSON'
 {
   "security.workspace.trust.enabled": false,
-  "telemetry.telemetryLevel": "off"
+  "telemetry.telemetryLevel": "off",
+  "python.defaultInterpreterPath": "/opt/conda/bin/python",
+  "terminal.integrated.env.linux": { "PATH": "/opt/conda/bin:${env:PATH}" }
 }
 JSON
 fi
