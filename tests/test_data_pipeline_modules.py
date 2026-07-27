@@ -109,10 +109,11 @@ async def test_frozen_node_is_inlined_and_not_run() -> None:
 
 
 @pytest.mark.asyncio
-async def test_knowledge_ingest_then_retrieve() -> None:
+async def test_knowledge_ingest_then_retrieve(tmp_path) -> None:
     from agentevolver.knowledge import knowledge_manager
 
-    await knowledge_manager.initialize()
+    # Keep the ingested base out of the project tree.
+    await knowledge_manager.initialize(base_dir=str(tmp_path / "knowledge"))
     assert set(await knowledge_manager.list_types()) >= {"bm25", "tfidf"}
     docs = [{"text": "The cat sat on the mat."}, {"text": "Python is a programming language."}]
     ingested = await knowledge_manager(name="knowledge_ingest",
@@ -181,10 +182,10 @@ async def test_runtime_runs_datasource_to_process() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_saves_and_loads_dataset() -> None:
+async def test_pipeline_saves_and_loads_dataset(tmp_path) -> None:
     await plugin_manager.initialize()
     await process_manager.initialize()
-    await data_manager.initialize()
+    await data_manager.initialize(base_dir=str(tmp_path / "datasets"))
     await plugin_manager.register(_StubSource(), override=True)
 
     # datasource → process → data(dataset_save, local), each edge over ${node.data}.

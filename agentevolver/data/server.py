@@ -84,9 +84,15 @@ class DataManager(BaseModel):
 
     base_dir: Optional[str] = Field(default=None, description="Directory for locally-saved datasets.")
 
-    async def initialize(self, data_names: Optional[List[str]] = None) -> None:
-        """Resolve the local datasets directory (created lazily on first save)."""
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "datasets"))
+    async def initialize(self, data_names: Optional[List[str]] = None,
+                         base_dir: Optional[str] = None) -> None:
+        """Resolve the local datasets directory (created lazily on first save).
+
+        ``base_dir`` overrides it; without one it follows ``config.log_root``,
+        which a bound session repoints at its own directory.
+        """
+        self.base_dir = assemble_workspace_path(
+            base_dir or self.base_dir or os.path.join(config.log_root, "datasets"))
         logger.info(f"| 🗂️ Data manager datasets directory: {self.base_dir}")
         logger.info("| ✅ Data manager initialization completed")
 

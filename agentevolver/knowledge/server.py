@@ -71,11 +71,18 @@ class KnowledgeManager(BaseModel):
         super().__init__(**kwargs)
         self._backends: Dict[str, RagBackend] = {}
 
-    async def initialize(self, knowledge_names: Optional[List[str]] = None) -> None:
-        """Build RAG-type backends from the KNOWLEDGE registry."""
+    async def initialize(self, knowledge_names: Optional[List[str]] = None,
+                         base_dir: Optional[str] = None) -> None:
+        """Build RAG-type backends from the KNOWLEDGE registry.
+
+        ``base_dir`` overrides where knowledge bases are stored; without it they
+        follow ``config.log_root``, which a bound session repoints at its own
+        directory.
+        """
         import agentevolver.knowledge  # noqa: F401 — ensure default rankers register
 
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "knowledge"))
+        self.base_dir = assemble_workspace_path(
+            base_dir or self.base_dir or os.path.join(config.log_root, "knowledge"))
         for cls in list(KNOWLEDGE._module_dict.values()):
             try:
                 instance: RagBackend = cls()

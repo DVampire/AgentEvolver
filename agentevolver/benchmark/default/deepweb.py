@@ -38,9 +38,12 @@ class DeepWebBenchmark(Benchmark):
 
     def __init__(self, base_dir: Optional[str] = None, start: Optional[int] = None, end: Optional[int] = None, **kwargs):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
-        os.makedirs(self.base_dir, exist_ok=True)
 
     async def initialize(self):
+        # Created on first use, not at construction: the registry builds every
+        # benchmark at startup, before any session is bound, so doing it in
+        # __init__ scaffolded empty directories under the unbound root.
+        os.makedirs(self.base_dir, exist_ok=True)
         from agentevolver.benchmark.utils import ensure_dataset
         from agentevolver.data.deepweb import DeepWebDataset
         local_dir = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
