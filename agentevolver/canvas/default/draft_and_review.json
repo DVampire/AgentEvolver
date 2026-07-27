@@ -7,7 +7,7 @@
   "nodes": [
     {
       "id": "in_t",
-      "kind": "input",
+      "type": "input",
       "step_type": null,
       "target": null,
       "task": "",
@@ -32,7 +32,7 @@
     },
     {
       "id": "draft",
-      "kind": "step",
+      "type": "step",
       "step_type": "agent",
       "target": "general_agent",
       "task": "",
@@ -57,7 +57,7 @@
     },
     {
       "id": "review",
-      "kind": "step",
+      "type": "step",
       "step_type": "agent",
       "target": "reviewer_agent",
       "task": "",
@@ -82,7 +82,7 @@
     },
     {
       "id": "out_r",
-      "kind": "output",
+      "type": "output",
       "step_type": null,
       "target": null,
       "task": "",

@@ -7,7 +7,7 @@
   "nodes": [
     {
       "id": "in_q",
-      "kind": "input",
+      "type": "input",
       "step_type": null,
       "target": null,
       "task": "",
@@ -32,7 +32,7 @@
     },
     {
       "id": "ag",
-      "kind": "step",
+      "type": "step",
       "step_type": "agent",
       "target": "general_agent",
       "task": "",
@@ -57,7 +57,7 @@
     },
     {
       "id": "out_a",
-      "kind": "output",
+      "type": "output",
       "step_type": null,
       "target": null,
       "task": "",

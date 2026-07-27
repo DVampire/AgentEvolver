@@ -7,7 +7,7 @@
   "nodes": [
     {
       "id": "in_q",
-      "kind": "input",
+      "type": "input",
       "step_type": null,
       "target": null,
       "task": "",
@@ -32,7 +32,7 @@
     },
     {
       "id": "br",
-      "kind": "step",
+      "type": "step",
       "step_type": "branch",
       "target": null,
       "task": "",
@@ -59,7 +59,7 @@
     },
     {
       "id": "a",
-      "kind": "step",
+      "type": "step",
       "step_type": "agent",
       "target": "general_agent",
       "task": "Handle this request: ${query}",
@@ -84,7 +84,7 @@
     },
     {
       "id": "b",
-      "kind": "step",
+      "type": "step",
       "step_type": "agent",
       "target": "code_agent",
       "task": "Write code for: ${query}",
@@ -109,7 +109,7 @@
     },
     {
       "id": "out_r",
-      "kind": "output",
+      "type": "output",
       "step_type": null,
       "target": null,
       "task": "",
