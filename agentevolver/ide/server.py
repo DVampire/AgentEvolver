@@ -21,6 +21,11 @@ from agentevolver.sandbox.types import SandboxConfig
 CONTAINER_WORKSPACE = "/workspace"
 CONTAINER_EXTENSIONS = "/ide/extensions"
 CONTAINER_USER_DATA = "/ide/user-data"
+#: $HOME inside the image (empty there, so mounting over it shadows nothing).
+#: The coding agents keep their credentials in it — ~/.codex, ~/.claude — so
+#: without a mount every `codex login` would be lost the next time the container
+#: is reaped.
+CONTAINER_HOME = "/home/workspace"
 
 
 class IdeManagerServer:
@@ -76,7 +81,8 @@ class IdeManagerServer:
             ide_state = Path(state_dir).expanduser().resolve() / "ide"
             extensions = ide_state / "extensions"
             user_data = ide_state / "user-data"
-            for directory in (workspace, extensions, user_data):
+            home = ide_state / "home"
+            for directory in (workspace, extensions, user_data, home):
                 directory.mkdir(parents=True, exist_ok=True)
 
             from agentevolver.sandbox.default.vscode import VscodeSandbox
@@ -90,6 +96,7 @@ class IdeManagerServer:
                     str(workspace): CONTAINER_WORKSPACE,
                     str(extensions): CONTAINER_EXTENSIONS,
                     str(user_data): CONTAINER_USER_DATA,
+                    str(home): CONTAINER_HOME,
                 },
             ))
             logger.info(f"| 🟢 IDE starting for session {session_id} ({workspace})")

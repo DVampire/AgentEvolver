@@ -23,6 +23,7 @@ gateway session; the frontend embeds it in an iframe.
 | `/workspace` | `session.sandbox.workspace_root` | **per session** — the same files the agent edits |
 | `/ide/extensions` | `output/<owner>/state/ide/extensions` | **per owner** — installed plugins survive new sessions |
 | `/ide/user-data` | `output/<owner>/state/ide/user-data` | **per owner** — settings and keybindings |
+| `/home/workspace` | `output/<owner>/state/ide/home` | **per owner** — `$HOME`, so `~/.codex` and `~/.claude` logins survive a reaped container. Empty in the image, so nothing is shadowed. |
 
 The container never mounts the Docker socket, so its integrated terminal cannot
 reach the host daemon.

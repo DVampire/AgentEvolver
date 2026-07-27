@@ -64,6 +64,7 @@ the least recently used.
 | `/workspace` | **per session** | the files the agent edits — same bytes, no copy |
 | extensions | **per owner** | installed plugins survive new sessions |
 | user data | **per owner** | settings and keybindings persist |
+| `$HOME` | **per owner** | `~/.codex` and `~/.claude` live here, so an agent sign-in outlives the container |
 
 Per-session containers with per-owner plugin state: a new session is isolated
 but never makes you reinstall your extensions.
