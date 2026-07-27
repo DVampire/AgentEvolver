@@ -760,7 +760,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
   // Fetch a run's status once and apply it: mirror per-node run state, and when
   // the run is terminal, resolve it (clear runId, capture output/error). Shared
   // by the poll and the push listener below.
-  const syncRunStatus = useCallback(async (id: string) => {
+  const syncRunStatus = useCallback(async (id: string, options?: { replay?: boolean }) => {
     let response;
     try {
       response = await request('canvas.run.status', { run_id: id });
@@ -788,6 +788,10 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
     }));
     if (['succeeded', 'failed', 'cancelled'].includes(run.state)) {
       setRunId(undefined);
+      // Replaying a past run repaints the nodes so you can see what it did.
+      // The result panel belongs to a run you just started, though — popping it
+      // open with a raw JSON dump every time a flow is opened is noise.
+      if (options?.replay) return;
       if (run.state === 'succeeded') setRunOutput(run.output ?? null);
       else setRunError(run.error || `Run ${run.state}`);
     }
@@ -823,7 +827,7 @@ export default function CanvasView({ request, subscribe, sessionId, connected, t
       const response = await request('canvas.run.list', { session_id: sessionId, flow_id: flowId, limit: 1 });
       if (cancelled || !response.ok) return;
       const last = (response.result.runs as Array<{ run_id?: string; state?: string }> | undefined)?.[0];
-      if (last?.run_id && last.state && last.state !== 'unknown') void syncRunStatus(last.run_id);
+      if (last?.run_id && last.state && last.state !== 'unknown') void syncRunStatus(last.run_id, { replay: true });
     })();
     return () => { cancelled = true; };
   }, [flowId, sessionId, request, syncRunStatus]);

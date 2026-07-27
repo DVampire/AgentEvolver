@@ -120,13 +120,6 @@ class AgentGateway:
         )
         self._sequence: Dict[str, int] = defaultdict(int)
         self._active_agent_tasks: Dict[str, asyncio.Task] = {}
-        # Run ids started from the canvas. A canvas run executes in the same
-        # session as the conversation, so its traces carry the same session_id
-        # and the Chat view — which renders every trace event — showed a flow's
-        # internals as if the user had asked for them. Traces are stamped with
-        # their origin so each view can take only its own. Bounded: this is a
-        # display hint, and an old run's traces are long since delivered.
-        self._canvas_runs: Deque[str] = deque(maxlen=512)
         # Session whose roots the shared runtime is currently bound to (see
         # _bind_runtime_to_session); None until the first task runs.
         self._bound_session_id: Optional[str] = None
@@ -1210,7 +1203,6 @@ class AgentGateway:
         # Steps write run output under the session's own roots.
         self._bind_runtime_to_session(session)
         run_id = await canvas_manager.run_flow(graph, input=run_input, ctx=session.context)
-        self._canvas_runs.append(run_id)  # so its traces are not mistaken for the conversation's
         canvas_manager.record_run(graph.id, run_id, self._canvas_runs_dir(session_id))
         await self._publish("canvas.flow.saved", {"flow_id": graph.id}, session_id=session_id)
         return {"run_id": run_id, "flow_id": graph.id, "flow": graph.model_dump(mode="json")}
@@ -1777,10 +1769,17 @@ class AgentGateway:
 
     async def _on_trace_event(self, event) -> None:
         payload = event.to_dict()
-        # Say where this trace came from. A canvas run shares the session with
-        # the conversation, so without this the Chat view rendered a flow's
-        # internal steps as if they were its own task's.
-        payload["origin"] = "canvas" if event.task_id in self._canvas_runs else "chat"
+        # Say where this trace came from, so a view can take only its own.
+        #
+        # A canvas run executes in the session that started it, so its traces
+        # carry the same session_id and the Chat view — which renders every
+        # trace event — showed a flow's internal steps as if the user had asked
+        # for them. Attribution is by the session's own submitted tasks rather
+        # than by run id: a flow's steps each get their own task id, so the
+        # workflow's run id never appears on the traces underneath it.
+        session = self._sessions.get(event.session_id or "")
+        conversational = bool(session and event.task_id in session.task_ids)
+        payload["origin"] = "chat" if conversational else "flow"
         await self._publish("trace.event", payload, session_id=event.session_id, task_id=event.task_id)
         # A workflow run (canvas draft run) just finished. Push an explicit
         # terminal so canvas clients resolve immediately instead of discovering

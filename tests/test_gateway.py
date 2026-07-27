@@ -575,9 +575,13 @@ def test_canvas_traces_are_not_mistaken_for_the_conversation() -> None:
         session_id = created.result["session_id"]
         queue = await gateway.subscribe()
 
-        gateway._canvas_runs.append("run-from-canvas")  # noqa: SLF001
+        # A trace belongs to the conversation only if it is one of the tasks the
+        # session submitted. A flow's steps each get their own task id, so the
+        # workflow's run id never appears on the traces underneath it — which is
+        # exactly why attributing by run id did not work.
+        gateway._sessions[session_id].task_ids.append("task-from-chat")  # noqa: SLF001
 
-        for task_id in ("run-from-canvas", "task-from-chat"):
+        for task_id in ("step-inside-a-flow", "task-from-chat"):
             await gateway._on_trace_event(SimpleNamespace(  # noqa: SLF001
                 to_dict=lambda: {"event_type": "agent_start", "agent_name": "a"},
                 session_id=session_id, task_id=task_id,
@@ -588,7 +592,7 @@ def test_canvas_traces_are_not_mistaken_for_the_conversation() -> None:
             event = await queue.get()
             if event.type == "trace.event":
                 origins[event.task_id] = event.payload["origin"]
-        assert origins == {"run-from-canvas": "canvas", "task-from-chat": "chat"}
+        assert origins == {"step-inside-a-flow": "flow", "task-from-chat": "chat"}
         gateway.unsubscribe(queue)
 
     asyncio.run(run())
