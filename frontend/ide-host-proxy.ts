@@ -20,27 +20,36 @@ import type { Plugin } from 'vite';
 // proxy strips that prefix again, so VS Code only ever sees root paths and
 // never learns it is proxied.
 
-const HOST_RE = /^([A-Za-z0-9_-]+)\.ide\.localhost(?::\d+)?$/;
+// `<session>.ide.localhost` reaches the IDE; `<port>-<session>.ide.localhost`
+// reaches any other port in that container — a dev server, a preview, an OAuth
+// callback listener. Generic on purpose: no tool needs to know about us.
+const HOST_RE = /^(?:(\d+)-)?([A-Za-z0-9_-]+)\.ide\.localhost(?::\d+)?$/;
 const UPSTREAM_TTL_MS = 10_000;
 
 const cache = new Map<string, { upstream: string; expires: number }>();
 
-function sessionOf(host: string | undefined): string | null {
+interface Target { sessionId: string; port: number }
+
+/** Parse the Host header into the session and container port it addresses.
+ *  Port 0 means "the IDE's own port", which the gateway resolves. */
+function targetOf(host: string | undefined): Target | null {
   const match = HOST_RE.exec(host ?? '');
-  return match ? match[1] : null;
+  return match ? { sessionId: match[2], port: match[1] ? Number(match[1]) : 0 } : null;
 }
 
 /** Ask the gateway which container serves this session, memoised briefly so a
  *  page load of ~100 assets does not trigger ~100 lookups. */
-async function resolveUpstream(gatewayPort: string, sessionId: string): Promise<string | null> {
-  const hit = cache.get(sessionId);
+async function resolveUpstream(gatewayPort: string, target: Target): Promise<string | null> {
+  const key = `${target.sessionId}:${target.port}`;
+  const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return hit.upstream;
   try {
-    const response = await fetch(`http://127.0.0.1:${gatewayPort}/ide/resolve/${sessionId}`);
-    if (!response.ok) { cache.delete(sessionId); return null; }
+    const query = target.port ? `?port=${target.port}` : '';
+    const response = await fetch(`http://127.0.0.1:${gatewayPort}/ide/resolve/${target.sessionId}${query}`);
+    if (!response.ok) { cache.delete(key); return null; }
     const body = await response.json() as { upstream?: string };
     if (!body.upstream) return null;
-    cache.set(sessionId, { upstream: body.upstream, expires: Date.now() + UPSTREAM_TTL_MS });
+    cache.set(key, { upstream: body.upstream, expires: Date.now() + UPSTREAM_TTL_MS });
     return body.upstream;
   } catch {
     return null;
@@ -66,14 +75,16 @@ export function ideHostProxy(gatewayPort: string): Plugin {
       // own middlewares — including the host check, which would otherwise
       // reject these hosts before we ever see them.
       server.middlewares.use((req, res, next) => {
-        const sessionId = sessionOf(req.headers.host);
-        if (!sessionId) return next();
+        const target = targetOf(req.headers.host);
+        if (!target) return next();
         void (async () => {
-          const upstream = await resolveUpstream(gatewayPort, sessionId);
+          const upstream = await resolveUpstream(gatewayPort, target);
           if (!upstream) {
             res.statusCode = 503;
             res.setHeader('content-type', 'text/plain');
-            res.end('IDE is not running for this session.');
+            res.end(target.port
+              ? `Nothing is listening on port ${target.port} in this session's container.`
+              : 'IDE is not running for this session.');
             return;
           }
           const { host, port, prefix } = parseUpstream(upstream);
@@ -97,10 +108,10 @@ export function ideHostProxy(gatewayPort: string): Plugin {
       // upgrade needs the same routing. Vite has its own HMR upgrade listener,
       // so only claim sockets whose Host is an IDE host and leave the rest.
       server.httpServer?.on('upgrade', (req, socket: net.Socket, head) => {
-        const sessionId = sessionOf(req.headers.host);
-        if (!sessionId) return;
+        const target = targetOf(req.headers.host);
+        if (!target) return;
         void (async () => {
-          const upstream = await resolveUpstream(gatewayPort, sessionId);
+          const upstream = await resolveUpstream(gatewayPort, target);
           if (!upstream) { socket.destroy(); return; }
           const { host, port, prefix } = parseUpstream(upstream);
           const proxyReq = http.request({

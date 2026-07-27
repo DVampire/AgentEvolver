@@ -71,17 +71,24 @@ class VscodeSandbox(OpenSandbox):
         proc = await asyncio.create_subprocess_exec("docker", *args, stdout=sink, stderr=sink)
         return await proc.wait()
 
-    async def code_url(self) -> str:
-        """Base URL of the opensandbox proxy path that serves the IDE.
+    async def port_url(self, port: int) -> str:
+        """Base URL of the opensandbox proxy path for any port in this container.
 
-        Shaped ``http://127.0.0.1:<ephemeral>/proxy/3000``. The opensandbox proxy
-        strips the ``/proxy/3000`` prefix before forwarding, so openvscode-server
-        always sees root-relative paths — which is what lets the frontend serve it
-        at the root of a per-session host without patching VS Code's absolute
-        asset URLs.
+        Shaped ``http://127.0.0.1:<ephemeral>/proxy/<port>``. The opensandbox
+        proxy strips that prefix before forwarding, so the service inside always
+        sees root-relative paths — which is what lets the frontend serve it at
+        the root of a per-session host without the service knowing it is proxied.
+
+        Generic on purpose: the IDE is only ever port 3000, but anything a user
+        starts in the integrated terminal (a dev server, a preview, an OAuth
+        callback listener) becomes reachable the same way, with no per-tool work.
         """
         sb = self._require()
-        endpoint = await sb.get_endpoint(CODE_PORT)
+        endpoint = await sb.get_endpoint(port)
         host = getattr(endpoint, "endpoint", str(endpoint))  # e.g. 127.0.0.1:PORT/proxy/3000
         proxy_host = host.split("/proxy/")[0]
-        return f"http://{proxy_host}/proxy/{CODE_PORT}"
+        return f"http://{proxy_host}/proxy/{port}"
+
+    async def code_url(self) -> str:
+        """Base URL serving openvscode-server itself."""
+        return await self.port_url(CODE_PORT)

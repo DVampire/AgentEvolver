@@ -49,6 +49,37 @@ openvscode-server :3000    /stable-…/static/x.js      ← always sees root
 Both hops cancel out, so VS Code is never aware it is proxied and needs no
 patching. The workbench WebSocket rides the same path and port.
 
+## Port forwarding
+
+The Host rule is general, not IDE-specific — prefix a port to reach **anything**
+listening in that session's container:
+
+```
+<session>.ide.localhost:5173          → the IDE (port 3000)
+<port>-<session>.ide.localhost:5173   → any other port in the same container
+```
+
+A dev server, a preview, a notebook, an OAuth callback listener — all reachable
+with no per-tool support. Ports resolve on first use (exposing one is a round
+trip to opensandbox) and are cached for the container's life.
+
+**What this cannot do**, and why it is not a gap we can close: it exposes a
+container port at a *URL*, not at `localhost:<port>` **on your machine**. Only a
+native process on your machine can bind your loopback — that is exactly how VS
+Code Remote-SSH does it, and a browser tab cannot bind ports at all. Codespaces
+and Gitpod hand out URLs for the same reason.
+
+So a tool whose OAuth `redirect_uri` is hard-coded to `localhost:<random port>`
+still cannot complete its browser login in here: the browser resolves that on
+your machine, where nothing is listening. That is a property of the OAuth
+public-client flow in any remote environment, not of this setup — which is why
+the remote-friendly alternatives exist and are the supported path:
+
+| Tool | Callback-free sign-in |
+|---|---|
+| Claude Code | `CLAUDE_CODE_OAUTH_TOKEN` (mint once elsewhere with `claude setup-token`) — forwarded by `ide_manager` |
+| Codex | `codex login --device-auth` (RFC 8628 device code) |
+
 ## Lifecycle
 
 Lazy start on first open; a heartbeat plus every proxied request refresh the

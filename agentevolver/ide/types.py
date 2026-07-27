@@ -22,6 +22,10 @@ class IdeInstance(BaseModel):
 
     #: The live VscodeSandbox handle. Excluded from serialisation.
     sandbox: Optional[Any] = Field(default=None, exclude=True)
+    #: Proxy base URL per container port, resolved on first use. Asking
+    #: opensandbox to expose a port is a round trip, and a single page load can
+    #: fetch dozens of assets, so the mapping is cached for the container's life.
+    port_upstreams: Dict[int, str] = Field(default_factory=dict, exclude=True)
 
     def public(self) -> Dict[str, Any]:
         """Client-visible status (never leaks the internal upstream URL)."""

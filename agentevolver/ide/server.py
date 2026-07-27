@@ -145,6 +145,34 @@ class IdeManagerServer:
         instance.last_seen = time.time()
         return instance.upstream
 
+    async def upstream_for_port(self, session_id: str, port: int) -> Optional[str]:
+        """Proxy target for an arbitrary port inside the session's container.
+
+        This is the general form of :meth:`upstream` (which is the IDE's own
+        port). Anything the user starts in the integrated terminal — a dev
+        server, a preview, an OAuth callback listener — becomes reachable at
+        ``<port>-<session>.ide.localhost`` without a line of per-tool code.
+
+        Resolution is cached per port: exposing a port is a round trip to
+        opensandbox, and one page load can pull dozens of assets through it.
+        """
+        instance = self._instances.get(session_id)
+        if instance is None:
+            return None
+        instance.last_seen = time.time()
+        cached = instance.port_upstreams.get(port)
+        if cached is not None:
+            return cached
+        if instance.sandbox is None:
+            return None
+        try:
+            resolved = await instance.sandbox.port_url(port)
+        except Exception as exc:  # noqa: BLE001 — nothing is listening there yet
+            logger.warning(f"| ⚠️ IDE port {port} not exposable for {session_id}: {exc}")
+            return None
+        instance.port_upstreams[port] = resolved
+        return resolved
+
     def touch(self, session_id: str) -> bool:
         """Heartbeat from the frontend. True if an IDE is running."""
         instance = self._instances.get(session_id)
