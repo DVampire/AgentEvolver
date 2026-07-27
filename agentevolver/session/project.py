@@ -6,9 +6,53 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict
 
+import json
+from datetime import datetime, timezone
+from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.config import config
+
+
+#: Written into a session's project root once it exists, so the session can be
+#: found again after a restart — and so a session started from a local config is
+#: as visible to the browser as one the gateway created.
+SESSION_MANIFEST = "session.json"
+
+
+def write_session_manifest(
+    sandbox: ProjectSandbox,
+    *,
+    session_id: str,
+    owner: str = "local",
+    name: str = "interactive",
+    created_at: str | None = None,
+    source_workspace: str | None = None,
+) -> None:
+    """Record a session's identity next to its files.
+
+    Lives here rather than in the gateway so *whoever* creates a session writes
+    the same manifest. When only the gateway did it, a locally-started run
+    produced a directory the gateway could neither list nor restore — the same
+    work, silently second-class depending on how it was launched.
+
+    Deliberately small: identity and roots, no conversation history. The event
+    log is a bounded in-memory ring, so a restored transcript would be a partial
+    one pretending to be complete.
+    """
+    path = Path(sandbox.project_root) / SESSION_MANIFEST
+    payload = {
+        "session_id": session_id,
+        "name": name,
+        "owner": owner,
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+        "source_workspace": source_workspace,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as exc:  # noqa: BLE001 — never fail a run over bookkeeping
+        logger.warning(f"| ⚠️ Could not write session manifest for {session_id}: {exc}")
 
 
 def ensure_session_sandbox(
@@ -41,6 +85,12 @@ def ensure_session_sandbox(
     sandbox = ProjectSandbox.create(
         root,
         shared_extension_root=shared_extension_root,
+    )
+    write_session_manifest(
+        sandbox,
+        session_id=session_id,
+        owner=owner,
+        name=str(getattr(ctx, "name", "") or "interactive"),
     )
     ctx.extra = {**extra, **sandbox.describe()}
     return sandbox

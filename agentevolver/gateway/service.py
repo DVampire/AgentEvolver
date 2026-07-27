@@ -42,6 +42,7 @@ from agentevolver.gateway.protocol import (
 )
 from agentevolver.hook import hook_manager
 from agentevolver.paths import P, path_manager
+from agentevolver.session import project as session_project
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
 from agentevolver.knowledge import knowledge_manager
@@ -301,26 +302,20 @@ class AgentGateway:
         await self._publish("session.created", payload, session_id=session_id)
         return {"session_id": session_id, **payload, "sandbox": sandbox.describe(), "mounts": sandbox.mounts()}
 
-    #: Written into each session's project root once it has real work in it, so
-    #: the session survives a gateway restart. Deliberately small: identity and
-    #: where its files are. Conversation history is NOT persisted — the event log
-    #: is a bounded in-memory ring, so a "restored" transcript would be a partial
-    #: one pretending to be complete.
-    SESSION_MANIFEST = "session.json"
+    #: Session identity is written by the shared session layer, so a session
+    #: created here and one created by a local run are equally discoverable.
+    SESSION_MANIFEST = session_project.SESSION_MANIFEST
 
     def _write_session_manifest(self, session: "GatewaySession") -> None:
         """Record identity + roots so this session can be reopened after a restart."""
-        path = Path(session.sandbox.project_root) / self.SESSION_MANIFEST
-        try:
-            path.write_text(json.dumps({
-                "session_id": session.context.id,
-                "name": session.context.name,
-                "owner": session.owner,
-                "created_at": session.created_at,
-                "source_workspace": session.context.extra.get("source_workspace"),
-            }, indent=2), encoding="utf-8")
-        except OSError as exc:
-            logger.warning(f"| ⚠️ Could not write session manifest for {session.context.id}: {exc}")
+        session_project.write_session_manifest(
+            session.sandbox,
+            session_id=session.context.id,
+            owner=session.owner,
+            name=session.context.name,
+            created_at=session.created_at,
+            source_workspace=session.context.extra.get("source_workspace"),
+        )
 
     async def _restore_sessions(self) -> None:
         """Rebuild sessions that have a manifest on disk, so their workspaces stay reachable.
