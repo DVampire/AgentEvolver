@@ -775,3 +775,40 @@ def test_an_untouched_session_is_listed_but_marked_as_having_no_work() -> None:
         assert empty not in restored
 
     asyncio.run(run())
+
+
+def test_a_follow_up_stays_in_the_same_state_scope() -> None:
+    """Otherwise "make it subtract instead" has no "it".
+
+    ctx.id is the conversation, and memory is keyed by it. A client that omits
+    conversation_id gets a fresh one per message — so the agent answering the
+    second question cannot see the first. That is what the Chat view did.
+    """
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        session_id = created.result["session_id"]
+
+        first = await gateway.handle(GatewayCommand(id="t1", method="task.submit", params={
+            "session_id": session_id, "view": "chat", "content": "write an add function"}))
+        conversation = first.result["conversation_id"]
+
+        second = await gateway.handle(GatewayCommand(id="t2", method="task.submit", params={
+            "session_id": session_id, "view": "chat", "content": "make it subtract instead",
+            "conversation_id": conversation}))
+        assert second.result["conversation_id"] == conversation
+
+        listed = await gateway.handle(GatewayCommand(
+            id="l", method="conversation.list", params={"session_id": session_id, "view": "chat"}))
+        assert len(listed.result["conversations"]) == 1, "one thread, not one per message"
+        assert listed.result["conversations"][0]["task_count"] == 2
+
+        # Both turns are in one transcript, so a reload shows the exchange.
+        events = await gateway.handle(GatewayCommand(
+            id="e", method="conversation.events",
+            params={"session_id": session_id, "conversation_id": conversation}))
+        assert [item["payload"]["content"] for item in events.result["events"]] == \
+            ["write an add function", "make it subtract instead"]
+
+    asyncio.run(run())

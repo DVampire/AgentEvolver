@@ -153,6 +153,11 @@ export function App() {
   const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mainView, setMainView] = useState<MainView>('chat');
+  // Chat's own transcript. Without it every message opened a NEW conversation,
+  // and ctx.id — which is what memory is keyed by — was a fresh id each time:
+  // the agent could not see what you had just asked it, so "make it subtract
+  // instead" had no "it".
+  const chatConversation = useRef<string | undefined>(undefined);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('files');
   const [workspaceEntries, setWorkspaceEntries] = useState<Record<string, WorkspaceEntry[]>>({});
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
@@ -280,6 +285,22 @@ export function App() {
     if (sessionId) void loadWorkspaceDirectory().catch((error) => setNotice(error instanceof Error ? error.message : String(error)));
   }, [sessionId, loadWorkspaceDirectory]);
 
+  /** This project's chat transcript, resumed rather than restarted.
+   *
+   * A refresh used to leave chatConversation empty, so the next message opened
+   * a new one and the agent lost the thread — the same amnesia the per-message
+   * conversation caused, just once per reload. Returns the events to replay. */
+  const resumeChat = useCallback(async (socket: GatewaySocket, sessionId: string): Promise<GatewayEvent[]> => {
+    const listed = await socket.request('conversation.list', { session_id: sessionId, view: 'chat' });
+    const conversations = listed.ok
+      ? (listed.result as { conversations?: Array<{ conversation_id: string }> }).conversations ?? [] : [];
+    const latest = conversations[0]?.conversation_id;
+    chatConversation.current = latest;
+    if (!latest) return [];
+    const replay = await socket.request('conversation.events', { session_id: sessionId, conversation_id: latest });
+    return replay.ok ? (replay.result as { events?: GatewayEvent[] }).events ?? [] : [];
+  }, []);
+
   const startSession = useCallback(async (socket: GatewaySocket) => {
     try {
       const hello = await socket.request('hello');
@@ -300,13 +321,12 @@ export function App() {
         sessionRef.current = resume.session_id;
         setSessionId(resume.session_id);
         await Promise.all([hydrateCapabilities(socket, resume.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, resume.session_id), loadExtensionStage(socket, resume.session_id)]);
-        // Rebuild the conversation/activity for the resumed project from its log.
-        const replay = await socket.request('session.events', { session_id: resume.session_id, after_seq: 0 });
+        // Rebuild the transcript from this project's CHAT conversation, and
+        // keep hold of it so the next message continues rather than restarts.
+        const events = await resumeChat(socket, resume.session_id);
         setMessages([]);
         setActivities([]);
-        if (replay.ok && Array.isArray(replay.result.events)) {
-          for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
-        }
+        for (const event of events) handleGatewayEvent(event);
         return;
       }
 
@@ -325,6 +345,7 @@ export function App() {
         throw new Error(response.error?.message ?? 'Could not create a session');
       }
       sessionRef.current = response.result.session_id;
+      chatConversation.current = undefined;
       setSessionId(response.result.session_id);
       setMessages([{ id: 'welcome', type: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
       await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
@@ -332,7 +353,7 @@ export function App() {
       setNotice(error instanceof Error ? error.message : String(error));
       setStatus('error');
     }
-  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, loadDeploys, refreshSessions]);
+  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, loadDeploys, refreshSessions, resumeChat]);
 
   const updateAgent = useCallback((name: string, nextStatus: AgentState['status']) => {
     setAgents((current) => {
@@ -591,8 +612,13 @@ export function App() {
         if (!renamed.ok) throw new Error(renamed.error?.message ?? 'Could not rename the session');
         setSessions((current) => current.map((session) => session.session_id === sessionRef.current ? { ...session, name } : session));
       }
-      const response = await socket.request('task.submit', { session_id: sessionRef.current, content, files: readyAttachments.map((attachment) => attachment.path) });
+      const response = await socket.request('task.submit', {
+        session_id: sessionRef.current, content, view: 'chat',
+        files: readyAttachments.map((attachment) => attachment.path),
+        ...(chatConversation.current ? { conversation_id: chatConversation.current } : {}),
+      });
       if (!response?.ok || typeof response.result.task_id !== 'string') throw new Error(response?.error?.message ?? 'Task submission failed');
+      if (typeof response.result.conversation_id === 'string') chatConversation.current = response.result.conversation_id;
       setActiveTaskId(response.result.task_id);
       setAttachments([]);
     } catch (error) {
