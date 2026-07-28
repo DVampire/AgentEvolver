@@ -3,6 +3,8 @@ import { Cpu, FlaskConical, HardDrive, Loader2, MemoryStick, Plus, RefreshCw, Sq
 
 import { Button } from '../components/ui/button';
 import type { RequestFn } from '../canvas/types';
+import type { GatewayEvent } from '../controllers/gateway';
+import { NotebookEditor } from './Notebook';
 // Owned here rather than in canvas.css: both are lazy modules, so parking these
 // styles there would leave this view unstyled until the canvas had been opened.
 import '../style/science.css';
@@ -32,8 +34,9 @@ interface NotebookEntry { path: string; title: string; size_bytes: number; modif
  * `--ServerApp.base_url` so its absolute asset URLs match; see
  * agentevolver/science/README.md. The container starts lazily on first open and
  * is reaped once idle, so mounting this view is what boots it. */
-export function ScienceView({ request, sessionId, connected, status, statusText, onOpenNav }: {
+export function ScienceView({ request, subscribe, sessionId, connected, status, statusText, onOpenNav }: {
   request: RequestFn;
+  subscribe: (listener: (event: GatewayEvent) => void) => () => void;
   sessionId?: string;
   connected: boolean;
   status?: string;
@@ -46,6 +49,7 @@ export function ScienceView({ request, sessionId, connected, status, statusText,
   const [reloadKey, setReloadKey] = useState(0);
   const [compute, setCompute] = useState<Compute>();
   const [notebooks, setNotebooks] = useState<NotebookEntry[]>([]);
+  const [open, setOpen] = useState<string>();
 
   const start = useCallback(async () => {
     if (!sessionId || !connected) return;
@@ -103,7 +107,7 @@ export function ScienceView({ request, sessionId, connected, status, statusText,
     if (response.ok) {
       await loadNotebooks();
       const created = (response.result as { notebook?: NotebookEntry }).notebook;
-      if (created && path) window.open(`${path}/lab/tree/${created.path}`, '_blank', 'noopener');
+      if (created) setOpen(created.path);
     }
   };
 
@@ -134,7 +138,11 @@ export function ScienceView({ request, sessionId, connected, status, statusText,
         <code className="science-origin" title="This project's workstation path">{path}</code>
         <span className="science-toolbar-spacer" />
         {statusText ? <span className="science-status"><span className={`connection-dot ${status ?? ''}`} />{statusText}</span> : null}
-        <Button variant="ghost" size="sm" className="font-normal" onClick={() => window.open(`${path}/lab`, '_blank', 'noopener')}>
+        {/* The full Lab, for what these cells deliberately do not do: interactive
+            widgets, the debugger, extensions. Same server, same kernels — it is
+            the other client of this workstation, not a different workstation. */}
+        <Button variant="ghost" size="sm" className="font-normal"
+                onClick={() => window.open(open ? `${path}/lab/tree/${open}` : `${path}/lab`, '_blank', 'noopener')}>
           <SquareArrowOutUpRight /> JupyterLab
         </Button>
         <Button variant="ghost" size="sm" className="font-normal" onClick={() => setReloadKey((key) => key + 1)}>
@@ -142,20 +150,22 @@ export function ScienceView({ request, sessionId, connected, status, statusText,
         </Button>
       </header>
       <div className="science-body">
-        <iframe
-          key={reloadKey}
-          className="science-frame"
-          title="JupyterLab"
-          src={`${path}/lab`}
-          // No sandbox attribute: the Lab needs same-origin scripting for its
-          // kernel WebSocket and service worker, and this frame is our own
-          // trusted container.
-          allow="clipboard-read; clipboard-write"
-        />
+        <div className="science-main" key={reloadKey}>
+          {open ? (
+            <NotebookEditor request={request} subscribe={subscribe} sessionId={sessionId} path={open} />
+          ) : (
+            <div className="science-empty">
+              <FlaskConical size={20} strokeWidth={1.6} />
+              <strong>Open a notebook</strong>
+              <p>Cells run in this project's kernel — the same one JupyterLab attaches
+                 to, so a variable defined here is defined there.</p>
+            </div>
+          )}
+        </div>
         <aside className="science-rail">
           <ComputePanel compute={compute} />
-          <NotebookPanel notebooks={notebooks} onCreate={() => void createNotebook()}
-                         onOpen={(item) => window.open(`${path}/lab/tree/${item.path}`, '_blank', 'noopener')}
+          <NotebookPanel notebooks={notebooks} open={open} onCreate={() => void createNotebook()}
+                         onOpen={(item) => setOpen(item.path)}
                          onRefresh={() => void loadNotebooks()} />
         </aside>
       </div>
@@ -194,8 +204,8 @@ function ComputePanel({ compute }: { compute?: Compute }) {
   );
 }
 
-function NotebookPanel({ notebooks, onCreate, onOpen, onRefresh }: {
-  notebooks: NotebookEntry[]; onCreate: () => void;
+function NotebookPanel({ notebooks, open, onCreate, onOpen, onRefresh }: {
+  notebooks: NotebookEntry[]; open?: string; onCreate: () => void;
   onOpen: (item: NotebookEntry) => void; onRefresh: () => void;
 }) {
   return (
@@ -208,7 +218,8 @@ function NotebookPanel({ notebooks, onCreate, onOpen, onRefresh }: {
         <Plus /> New notebook
       </Button>
       {notebooks.length ? notebooks.map((item) => (
-        <button className="notebook-row" key={item.path} onClick={() => onOpen(item)} title={item.path}>
+        <button className={`notebook-row${item.path === open ? ' selected' : ''}`} key={item.path}
+                onClick={() => onOpen(item)} title={item.path}>
           <strong>{item.title}</strong>
           <em>{item.cell_count} cell{item.cell_count === 1 ? '' : 's'}</em>
         </button>

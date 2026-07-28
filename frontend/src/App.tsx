@@ -378,7 +378,7 @@ export function App() {
   }, []);
 
   const handleGatewayEvent = useCallback((event: GatewayEvent) => {
-    if (event.type.startsWith('canvas.') || event.type.startsWith('model.chat.')) return; // panels handle these themselves
+    if (event.type.startsWith('canvas.') || event.type.startsWith('science.') || event.type.startsWith('model.chat.')) return; // panels handle these themselves
     // The Gateway broadcasts every event to every client and expects each to
     // keep its own. Without this, work that is not this conversation's — a
     // canvas flow, which runs under its own scope — was rendered as if the user
@@ -908,7 +908,7 @@ export function App() {
           own slim toolbar carries the title, status and controls instead. */}
       {mainView === 'science' ? <section className="conversation science-mode">
         <Suspense fallback={<div className="workspace-placeholder">Loading workstation…</div>}>
-          <ScienceView request={gatewayRequest} sessionId={sessionId} connected={status === 'connected'}
+          <ScienceView request={gatewayRequest} subscribe={subscribeEvents} sessionId={sessionId} connected={status === 'connected'}
             status={status} statusText={statusText} onOpenNav={() => setMobileNavOpen(true)} />
         </Suspense>
       </section> : mainView === 'code' ? <section className="conversation ide-mode">

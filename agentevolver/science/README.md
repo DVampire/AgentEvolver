@@ -1,6 +1,6 @@
 ---
 name: science
-description: "A GPU-backed JupyterLab workstation, one container per project, working in the same workspace the agent works in. Human-facing: not an agent capability."
+description: "A GPU-backed workstation, one container per project: notebook cells over a live kernel, with JupyterLab beside them for what they do not do. Human-facing: not an agent capability."
 version: 1.0.0
 type: module
 category: interface
@@ -68,14 +68,44 @@ background tab for a while and killing the container kills the run with it.
 At most two run at once. They are expensive; the least recently used is
 evicted rather than starting a third.
 
-## Notebooks are workspace files
+## The cells are ours; the document is not
 
-A notebook is a real `.ipynb` under the project's workspace, not a private
-format in a database. The same document therefore opens in the embedded
-JupyterLab, in the Code view's editor, and in anything the user later runs over
-the workspace — and `science_manager.notebooks()` can list them *before* the
-container exists and *after* it has been reaped, because the notebook is a
-workspace file and the container is not.
+The Science view renders its own cells — read a run, nudge it, re-run it —
+but it does **not** own the notebook. The Jupyter Server inside the container
+does, and this view is one of its clients exactly like the embedded Lab is:
+
+- **execution** goes to that server's kernel, over its WebSocket, through a
+  Jupyter *session* keyed by the notebook's path. Open the same file in the Lab
+  and it attaches to that very kernel — a variable defined in one is defined in
+  the other;
+- **reads and saves** go through its `/api/contents/` API, never through our own
+  file I/O. Two writers of one file is how edits get silently lost: whoever
+  saves last wins and neither side knows.
+
+A save carries the `last_modified` the read returned, and is refused if the file
+moved on beneath it. Jupyter's server does not check this — JupyterLab does it
+client-side, and so do we, so both clients behave the same way. There is no
+live sync between them: for simultaneous editing you would need
+`jupyter-collaboration` and a Y.js client, which is a different project.
+
+Cell outputs come back as `KernelResult`, the same model
+`code_interpreter_tool` returns — one shape for "what a cell produced", so a
+notebook cell and a tool call render from the same fields. They are converted
+to and from nbformat at the edge, and *merged* into the document Jupyter hands
+back rather than rebuilt from our model, so per-cell metadata, attachments and
+notebook-level settings this view has no field for survive a save.
+
+The **list** of notebooks is the one thing still read straight off disk. It is
+a pure read, and it has to answer before the container has booted — otherwise
+opening the view would show nothing until 24GB of image had started.
+
+### JupyterLab is a button, not a fallback
+
+The toolbar opens the full Lab on the same server, same kernels. It is there
+for what these cells deliberately do not do: interactive widgets, the debugger,
+extensions. Kernel output is rendered here with scripts off — a `text/html`
+output lands in a fully sandboxed iframe, because a DataFrame can contain
+whatever a dataset contains and this page holds the gateway connection.
 
 ## Served on the UI's own origin
 

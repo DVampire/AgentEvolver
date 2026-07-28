@@ -48,6 +48,34 @@ class Notebook(BaseModel):
     cell_count: int = 0
 
 
+class Cell(BaseModel):
+    """One cell of a notebook, as the Science view edits it.
+
+    A projection of what Jupyter's contents API returns — the gateway never
+    writes the ``.ipynb`` itself. The Jupyter Server in the workstation owns the
+    document; this view is one of its clients, exactly like the embedded Lab is.
+    Two writers of the same file is how edits get silently lost.
+
+    Normalised rather than passed through raw because nbformat spells the same
+    things differently: ``source`` is a string *or* a list of lines, and an
+    output is ``{output_type, text}`` where the rest of this codebase says
+    ``{type, data}``. Converting at the edge means one renderer serves a Science
+    cell and a ``code_interpreter_tool`` result alike.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    #: ``code`` or ``markdown``. nbformat also has ``raw``; it round-trips
+    #: untouched rather than being offered for editing.
+    type: str = "code"
+    source: str = ""
+    #: What the kernel produced, in MIME-bundle form — the same shape
+    #: ``code_interpreter_tool`` returns, so one renderer serves both.
+    outputs: List[Dict[str, Any]] = Field(default_factory=list)
+    execution_count: Optional[int] = None
+
+
 class ScienceInstance(BaseModel):
     """One running workstation container, bound to a single project."""
 

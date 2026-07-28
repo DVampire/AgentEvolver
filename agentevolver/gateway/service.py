@@ -1411,8 +1411,91 @@ class AgentGateway:
         session_id = self._require_session_id(params)
         owner = self._sessions[session_id].owner
         name = str(params.get("name") or "untitled")
-        notebook = science_manager.create_notebook(session_id, name, owner=owner)
+        notebook = await science_manager.create_notebook(session_id, name, owner=owner)
         return {"session_id": session_id, "notebook": notebook.model_dump(mode="json")}
+
+    async def _command_science_notebook_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """A notebook's cells, read through the workstation's Jupyter Server.
+
+        Not off disk: that server owns the document, and reading around it would
+        miss unsaved state the Lab is holding.
+        """
+        session_id = self._require_session_id(params)
+        return await science_manager.read_notebook(session_id, self._notebook_path(params))
+
+    async def _command_science_notebook_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Write the cells back, refusing if the file moved on beneath us.
+
+        ``last_modified`` is the handshake: hand back what the last read
+        returned, and a save that would clobber someone else's edit fails
+        instead. JupyterLab runs the same check, so both clients behave alike.
+        """
+        from agentevolver.science.notebook import NotebookConflict
+
+        session_id = self._require_session_id(params)
+        cells = params.get("cells")
+        if not isinstance(cells, list):
+            raise ValueError("cells must be a list")
+        try:
+            modified = await science_manager.save_notebook(
+                session_id, self._notebook_path(params), cells,
+                str(params.get("last_modified") or ""))
+        except NotebookConflict as conflict:
+            return {"saved": False, "conflict": True, "message": str(conflict)}
+        return {"saved": True, "conflict": False, "last_modified": modified}
+
+    async def _command_science_cell_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute one cell in the notebook's kernel, streaming what it prints.
+
+        The kernel is the workstation's own — the same one the embedded Lab
+        attaches to for this path — so a variable defined here is defined there.
+        """
+        session_id = self._require_session_id(params)
+        path = self._notebook_path(params)
+        code = str(params.get("code") or "")
+        cell_id = str(params.get("cell_id") or "")
+
+        kernel = science_manager.kernel_for(session_id, path)
+
+        async def stream(output) -> None:
+            # Published as it arrives so a long cell shows its prints while it
+            # runs, instead of everything landing when the call returns.
+            await self._publish("science.cell.output", {
+                "path": path, "cell_id": cell_id,
+                "output": output.model_dump(mode="json"),
+            }, session_id=session_id)
+
+        result = await kernel.execute(code, on_output=stream)
+        return {
+            "path": path, "cell_id": cell_id,
+            "success": result.success, "error": result.error,
+            "execution_count": result.execution_count,
+            "outputs": [output.model_dump(mode="json") for output in result.outputs],
+        }
+
+    async def _command_science_kernel_interrupt(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        kernel = science_manager.kernel_for(session_id, self._notebook_path(params))
+        return {"interrupted": await kernel.interrupt()}
+
+    async def _command_science_kernel_restart(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        kernel = science_manager.kernel_for(session_id, self._notebook_path(params))
+        return {"restarted": await kernel.restart()}
+
+    @staticmethod
+    def _notebook_path(params: Dict[str, Any]) -> str:
+        """The notebook this command addresses, confined to the workspace.
+
+        Jupyter resolves contents paths against its own root, so a ``..`` here
+        would reach outside the project — the server would happily serve it.
+        """
+        path = str(params.get("path") or "").strip().lstrip("/")
+        if not path:
+            raise ValueError("A notebook path is required")
+        if ".." in Path(path).parts:
+            raise ValueError("Notebook paths must stay inside the workspace")
+        return path
 
     @staticmethod
     def _workflow_preview_document(source: str) -> str:

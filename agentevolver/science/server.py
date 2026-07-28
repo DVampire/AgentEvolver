@@ -16,12 +16,15 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.types import SandboxConfig
 from agentevolver.science.types import ComputeStatus, Notebook, ScienceInstance
+
+if TYPE_CHECKING:  # avoids importing aiohttp at module load
+    from agentevolver.science.kernel import NotebookKernel
 
 #: Container paths the entrypoint reads. Mirrored in docker/science/.
 CONTAINER_WORKSPACE = "/workspace"
@@ -58,6 +61,8 @@ class ScienceManagerServer:
     def __init__(self) -> None:
         self._instances: Dict[str, ScienceInstance] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
+        #: One kernel handle per (project, notebook path).
+        self._kernels: Dict[str, "NotebookKernel"] = {}
         self._reaper: Optional[asyncio.Task] = None
 
     # ----------------------------------------------------------- lifecycle
@@ -118,6 +123,7 @@ class ScienceManagerServer:
         if instance is None:
             return False
         logger.info(f"| ⚫ Science workstation stopping for {session_id}")
+        self.forget_kernels(session_id)
         try:
             if instance.sandbox is not None:
                 await asyncio.wait_for(instance.sandbox.destroy(), timeout=30)
@@ -214,28 +220,96 @@ class ScienceManagerServer:
             ))
         return sorted(found, key=lambda item: item.modified_at, reverse=True)
 
-    @staticmethod
-    def create_notebook(session_id: str, name: str, *, owner: str = "local") -> Notebook:
-        """Write an empty notebook into the project's ``notebooks/`` directory."""
+    async def create_notebook(self, session_id: str, name: str, *, owner: str = "local") -> Notebook:
+        """Add an empty notebook to the project's ``notebooks/`` directory.
+
+        Through the workstation's Jupyter Server when one is running, so its
+        file watchers and the open Lab see the new file immediately; straight to
+        disk otherwise, because a project should not have to boot a 24GB
+        container to gain an empty notebook. Safe either way: this only ever
+        creates a file that does not exist yet, so there is no second writer to
+        race with.
+        """
         directory = path_manager.get(P.SESSION_NOTEBOOKS, owner=owner, session_id=session_id, create=True)
+        workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
         stem = "".join(char for char in (name or "untitled") if char.isalnum() or char in " -_").strip() or "untitled"
         path = directory / f"{stem}.ipynb"
         counter = 2
         while path.exists():
             path = directory / f"{stem}-{counter}.ipynb"
             counter += 1
-        # nbformat 4.5's minimum viable document. Written as JSON rather than
-        # through nbformat so this works in the gateway's environment, which
-        # does not carry the science image's dependencies.
-        path.write_text(json.dumps({
-            "cells": [], "metadata": {
-                "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-            }, "nbformat": 4, "nbformat_minor": 5,
-        }, indent=1), encoding="utf-8")
-        workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
-        return Notebook(path=str(path.relative_to(workspace)), title=path.stem,
-                        size_bytes=path.stat().st_size, cell_count=0,
+        relative = str(path.relative_to(workspace))
+
+        if session_id in self._instances:
+            from agentevolver.science.notebook import NotebookClient
+
+            await NotebookClient(self._lab(session_id)).create(relative)
+        else:
+            # nbformat 4.5's minimum viable document, written as JSON rather
+            # than through nbformat: the gateway's environment does not carry
+            # the science image's dependencies.
+            path.write_text(json.dumps({
+                "cells": [], "metadata": {
+                    "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+                }, "nbformat": 4, "nbformat_minor": 5,
+            }, indent=1), encoding="utf-8")
+
+        return Notebook(path=relative, title=path.stem,
+                        size_bytes=path.stat().st_size if path.exists() else 0, cell_count=0,
                         modified_at=datetime.now(timezone.utc).isoformat())
+
+    # ------------------------------------------------------- notebook editing
+    def _lab(self, session_id: str) -> str:
+        """Base URL of this project's Jupyter Server, including its base_url.
+
+        Everything below is a client of that server rather than of the disk: it
+        owns the document and the kernels, and a second writer is how edits get
+        silently lost.
+        """
+        instance = self._instances.get(session_id)
+        if instance is None:
+            raise RuntimeError("The Science workstation is not running for this project")
+        instance.last_seen = time.time()
+        return instance.upstream + instance.base_path
+
+    async def read_notebook(self, session_id: str, path: str) -> Dict[str, Any]:
+        from agentevolver.science.notebook import NotebookClient
+
+        cells, last_modified, _ = await NotebookClient(self._lab(session_id)).get(path)
+        return {"path": path, "last_modified": last_modified,
+                "cells": [cell.model_dump(mode="json") for cell in cells]}
+
+    async def save_notebook(self, session_id: str, path: str,
+                            cells: List[Dict[str, Any]], last_modified: str = "") -> str:
+        from agentevolver.science.notebook import NotebookClient
+
+        return await NotebookClient(self._lab(session_id)).save(path, cells, last_modified)
+
+    def kernel_for(self, session_id: str, path: str) -> "NotebookKernel":
+        """The kernel serving one notebook, opened on first use.
+
+        Keyed by (project, notebook) so two browser tabs on the same notebook
+        share a kernel — which is what makes the state feel like the notebook's
+        rather than the tab's — and so the embedded Lab, which asks the server
+        for the same path's session, attaches to that very kernel.
+        """
+        from agentevolver.science.kernel import NotebookKernel
+
+        key = f"{session_id}:{path}"
+        kernel = self._kernels.get(key)
+        if kernel is None:
+            kernel = NotebookKernel(self._lab(session_id), path)
+            self._kernels[key] = kernel
+        return kernel
+
+    def forget_kernels(self, session_id: str) -> None:
+        """Drop the handles for a project whose container is gone.
+
+        The kernels died with it; a stale handle would point at a port that now
+        belongs to somebody else's container.
+        """
+        for key in [key for key in self._kernels if key.startswith(f"{session_id}:")]:
+            self._kernels.pop(key, None)
 
     # ------------------------------------------------------------ internals
     async def _wait_ready(self, upstream: str) -> bool:

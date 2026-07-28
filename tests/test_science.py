@@ -35,7 +35,7 @@ def test_notebooks_are_workspace_files_not_container_state() -> None:
 
         assert science_manager.notebooks(session_id) == []
 
-        created_nb = science_manager.create_notebook(session_id, "revenue analysis")
+        created_nb = await science_manager.create_notebook(session_id, "revenue analysis")
         assert created_nb.path == "notebooks/revenue analysis.ipynb"
         assert created_nb.cell_count == 0
 
@@ -60,8 +60,8 @@ def test_a_second_notebook_of_the_same_name_does_not_overwrite_the_first() -> No
         session_id = created.result["session_id"]
         gateway._sessions[session_id].sandbox.materialize()  # noqa: SLF001
 
-        first = science_manager.create_notebook(session_id, "untitled")
-        second = science_manager.create_notebook(session_id, "untitled")
+        first = await science_manager.create_notebook(session_id, "untitled")
+        second = await science_manager.create_notebook(session_id, "untitled")
         assert first.path != second.path
         assert len(science_manager.notebooks(session_id)) == 2
 
@@ -129,3 +129,79 @@ def test_the_lab_is_served_under_the_projects_own_path() -> None:
     from agentevolver.science import base_path
 
     assert base_path("abc123") == "/science/abc123"
+
+
+def test_editing_a_cell_keeps_everything_the_view_does_not_model() -> None:
+    """Rebuilding the document from our own model would silently delete it.
+
+    nbformat carries per-cell metadata, attachments and notebook-level settings
+    the Science view has no field for. A merge preserves them; a rebuild loses
+    the user's collapsed outputs, tags and slide settings without a word.
+    """
+    from agentevolver.science.notebook import cells_from_nbformat, merge_cells
+
+    document = {
+        "cells": [
+            {"id": "a", "cell_type": "code", "source": ["import torch\n", "torch.cuda.is_available()"],
+             "outputs": [{"output_type": "stream", "name": "stdout", "text": "True\n"}],
+             "execution_count": 1,
+             "metadata": {"tags": ["setup"], "jupyter": {"outputs_hidden": True}}},
+            {"id": "b", "cell_type": "markdown", "source": "# Results",
+             "metadata": {"slideshow": {"slide_type": "slide"}}},
+        ],
+        "metadata": {"kernelspec": {"name": "python3"}, "authors": [{"name": "someone"}]},
+        "nbformat": 4, "nbformat_minor": 5,
+    }
+
+    cells = cells_from_nbformat(document)
+    # nbformat's source is a list of lines OR a string; the view sees text.
+    assert cells[0].source == "import torch\ntorch.cuda.is_available()"
+    assert cells[1].source == "# Results"
+    assert cells[0].outputs[0]["data"]["text/plain"] == "True\n"
+
+    edited = [cell.model_dump(mode="json") for cell in cells]
+    edited[0]["source"] = "import torch\ntorch.cuda.device_count()"
+    merged = merge_cells(document, edited)
+
+    assert merged["cells"][0]["metadata"]["tags"] == ["setup"]
+    assert merged["cells"][0]["metadata"]["jupyter"]["outputs_hidden"] is True
+    assert merged["cells"][1]["metadata"]["slideshow"]["slide_type"] == "slide"
+    assert merged["metadata"]["authors"] == [{"name": "someone"}]
+    assert merged["cells"][0]["source"] == "import torch\ntorch.cuda.device_count()"
+    # A markdown cell carrying outputs is not a valid notebook.
+    assert "outputs" not in merged["cells"][1]
+
+
+def test_outputs_survive_the_round_trip_to_nbformat() -> None:
+    """An image that becomes a string on save is a plot the user loses."""
+    from agentevolver.science.notebook import output_from_nbformat, output_to_nbformat
+
+    figure = {"output_type": "display_data",
+              "data": {"image/png": "iVBORw0KGgo=", "text/plain": "<Figure size 640x480>"},
+              "metadata": {}}
+    parsed = output_from_nbformat(figure)
+    assert parsed is not None and parsed.data["image/png"] == "iVBORw0KGgo="
+    back = output_to_nbformat(parsed.model_dump(mode="json"))
+    assert back["output_type"] == "display_data"
+    assert back["data"]["image/png"] == "iVBORw0KGgo="
+
+    error = {"output_type": "error", "ename": "ValueError", "evalue": "bad",
+             "traceback": ["Traceback...", "ValueError: bad"]}
+    parsed_error = output_from_nbformat(error)
+    assert parsed_error is not None and parsed_error.type == "error"
+    back_error = output_to_nbformat(parsed_error.model_dump(mode="json"))
+    assert back_error["output_type"] == "error"
+    assert back_error["ename"] == "ValueError" and back_error["evalue"] == "bad"
+
+
+def test_a_notebook_path_cannot_escape_the_workspace() -> None:
+    """Jupyter resolves contents paths against its own root and would serve it."""
+    import pytest
+
+    from agentevolver.gateway.service import AgentGateway
+
+    assert AgentGateway._notebook_path({"path": "notebooks/a.ipynb"}) == "notebooks/a.ipynb"  # noqa: SLF001
+    assert AgentGateway._notebook_path({"path": "/notebooks/a.ipynb"}) == "notebooks/a.ipynb"  # noqa: SLF001
+    for bad in ("../../etc/passwd", "notebooks/../../secret.ipynb", ""):
+        with pytest.raises(ValueError):
+            AgentGateway._notebook_path({"path": bad})  # noqa: SLF001
