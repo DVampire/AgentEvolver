@@ -85,6 +85,18 @@ a module the agent just wrote is importable at the prompt without ceremony.
 The panel is honest about its own scope: it shows what went through the kernel,
 which is the agent's `code_interpreter_tool` calls and yours.
 
+## Closed when idle, never when working
+
+The gateway has no "close this project", so time is what frees a Jupyter
+Server. Time **alone** would be wrong: a training run holds a kernel for hours
+with nobody watching, and an idle clock would read that as abandoned. The
+science container's reaper did exactly that.
+
+So the check is idle *and* not computing, and "computing" is answered by the
+server's own `execution_state` rather than by what this process happens to have
+started — a cell run from an open JupyterLab tab counts too. Two hours idle,
+checked every five minutes.
+
 ## Compute is the machine
 
 The Compute panel shows the host's own GPUs, cores, memory and disk, not a

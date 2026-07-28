@@ -207,3 +207,56 @@ def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
             await manager.stop_all()
 
     asyncio.run(run())
+
+
+def test_the_reaper_never_closes_a_server_whose_kernel_is_working() -> None:
+    """Time alone would kill a training run.
+
+    A long computation holds the kernel for hours with nobody watching, so an
+    idle clock says "gone" while the work is very much alive. The science
+    container's reaper did exactly this; the replacement asks the server what
+    its kernel is actually doing before closing anything.
+    """
+
+    async def run() -> None:
+        import time
+
+        import agentevolver.kernel.server as module
+
+        manager = module.KernelManagerServer()
+        stale = time.time() - module.IDLE_TIMEOUT_SECONDS - 60
+        quiet = module._Project(key="quiet", workspace="/tmp", kernel_id="k1",  # noqa: SLF001
+                                base_url="http://127.0.0.1:1/x", last_seen=stale)
+        working = module._Project(key="training", workspace="/tmp", kernel_id="k2",  # noqa: SLF001
+                                  base_url="http://127.0.0.1:2/x", last_seen=stale)
+        manager._projects.update({"quiet": quiet, "training": working})  # noqa: SLF001
+
+        closed: list[str] = []
+
+        async def shutdown(key):
+            closed.append(key)
+            manager._projects.pop(key, None)  # noqa: SLF001
+            return True
+
+        async def kernel_is_busy(project):
+            return project.key == "training"
+
+        # Patched on the INSTANCE, not the class: patching the class would leak
+        # into every later test in the session.
+        manager.shutdown = shutdown  # type: ignore[method-assign]
+        manager._kernel_is_busy = kernel_is_busy  # type: ignore[method-assign]  # noqa: SLF001
+        original, module.REAP_INTERVAL_SECONDS = module.REAP_INTERVAL_SECONDS, 0.01
+        try:
+            manager._ensure_reaper()  # noqa: SLF001
+            await asyncio.sleep(0.15)
+        finally:
+            module.REAP_INTERVAL_SECONDS = original
+            if manager._reaper:  # noqa: SLF001
+                manager._reaper.cancel()  # noqa: SLF001
+
+        assert closed == ["quiet"], "the working kernel must survive"
+        # And its clock moved forward, so it is not re-checked every pass for
+        # the whole length of the run.
+        assert working.last_seen > stale
+
+    asyncio.run(run())

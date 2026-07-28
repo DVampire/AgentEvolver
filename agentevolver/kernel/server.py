@@ -35,6 +35,14 @@ from agentevolver.logger import logger
 #: Callback fired with each output as it arrives, so a long cell streams.
 OnOutput = Callable[[KernelOutput], Awaitable[None]]
 
+#: Shut a project's server down after this long with nobody near it — AND only
+#: when its kernel is idle. Time alone is not enough: a training run can hold a
+#: kernel for hours without anyone watching, and reaping on the clock would kill
+#: it. That is exactly what the old science container's reaper did.
+IDLE_TIMEOUT_SECONDS = 7200.0
+#: How often the reaper looks. Cheap — one HTTP call per running server.
+REAP_INTERVAL_SECONDS = 300.0
+
 #: How many executions to remember per project. Enough to read back a session's
 #: work; old entries fall off rather than growing without bound.
 HISTORY_LIMIT = 500
@@ -53,6 +61,9 @@ class _Project(BaseModel):
     session_id: str = ""
     process: Optional[object] = Field(default=None, exclude=True)
     busy: bool = False
+    #: Last time anyone executed, watched or proxied through this server. What
+    #: the reaper measures; refreshed by every path a live user takes.
+    last_seen: float = Field(default_factory=time.time)
     history: List[Execution] = Field(default_factory=list)
 
 
@@ -74,6 +85,7 @@ class KernelManagerServer(BaseModel):
         self._projects: Dict[str, _Project] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
         self._starting: Dict[str, asyncio.Lock] = {}
+        self._reaper: Optional[asyncio.Task] = None
 
     # ---------------------------------------------------------------- server
     def base_url(self, key: str) -> Optional[str]:
@@ -83,7 +95,12 @@ class KernelManagerServer(BaseModel):
         Lab on the UI's own origin rather than a port of its own.
         """
         project = self._projects.get(key)
-        return project.base_url if project else None
+        if project is None:
+            return None
+        # Every proxied JupyterLab request comes through here, so an open Lab
+        # keeps itself alive without depending on the panel's heartbeat.
+        project.last_seen = time.time()
+        return project.base_url
 
     def lab_path(self, key: str) -> str:
         """Sub-path the server is served under, e.g. ``/science/<project>``.
@@ -134,6 +151,7 @@ class KernelManagerServer(BaseModel):
                 process.kill()
                 raise RuntimeError(f"Jupyter Server for {key} did not start in time")
             self._projects[key] = project
+            self._ensure_reaper()
             logger.info(f"| 🐍 Jupyter Server for {key} on 127.0.0.1:{port} ({root})")
             return project
 
@@ -231,8 +249,69 @@ class KernelManagerServer(BaseModel):
                 return response.status < 400
 
     async def cleanup(self) -> None:
+        if self._reaper is not None:
+            self._reaper.cancel()
+            self._reaper = None
         for key in list(self._projects):
             await self.shutdown(key)
+
+    # ------------------------------------------------------------------ reap
+    def _ensure_reaper(self) -> None:
+        if self._reaper is None or self._reaper.done():
+            self._reaper = asyncio.create_task(self._reap_loop(), name="kernel-reaper")
+
+    async def _reap_loop(self) -> None:
+        """Close servers nobody is near — but never one still computing.
+
+        The gateway has no "close this project", so time is what frees these.
+        Time ALONE would be wrong: a training run holds a kernel for hours with
+        nobody watching, and the reaper this replaces killed exactly that.
+        """
+        while True:
+            await asyncio.sleep(REAP_INTERVAL_SECONDS)
+            cutoff = time.time() - IDLE_TIMEOUT_SECONDS
+            for key, project in list(self._projects.items()):
+                if project.last_seen >= cutoff or project.busy:
+                    continue
+                if await self._kernel_is_busy(project):
+                    # Something is running that we did not start — a cell from
+                    # JupyterLab, most likely. Push the clock forward so it is
+                    # not re-checked every interval for the life of the run.
+                    project.last_seen = time.time()
+                    continue
+                logger.info(f"| ⏲️ Kernel for {key} idle past "
+                            f"{IDLE_TIMEOUT_SECONDS:.0f}s; shutting its server down")
+                await self.shutdown(key)
+            # Deliberately never self-terminating. Clearing itself when the last
+            # project went away raced with a new one starting: _ensure_reaper
+            # could see a task that had not finished yet, decline to start
+            # another, and then that one would exit — leaving none. A task
+            # asleep for five minutes costs nothing; cleanup() cancels it.
+
+    @staticmethod
+    async def _kernel_is_busy(project: _Project) -> bool:
+        """Ask the server, not ourselves.
+
+        ``project.busy`` only covers executions WE issued. A cell run from an
+        open JupyterLab tab is invisible to it, and reaping through one would
+        lose the user's work — so the authority is the server's own
+        ``execution_state``.
+        """
+        if not project.kernel_id:
+            return False
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{project.base_url}/api/kernels/{project.kernel_id}",
+                                    timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status >= 400:
+                        return False
+                    body = await response.json()
+        except Exception as exc:  # noqa: BLE001 — unreachable is not "busy"
+            logger.warning(f"| ⚠️ Could not read kernel state for {project.key}: {exc}")
+            return False
+        return str(body.get("execution_state") or "") == "busy"
 
     def running(self) -> List[str]:
         return list(self._projects)
@@ -251,6 +330,7 @@ class KernelManagerServer(BaseModel):
         project = self._projects.get(key)
         if project is None:
             return KernelStatus(running=False)
+        project.last_seen = time.time()
         return KernelStatus(running=True, busy=project.busy, kernel_name=self.default_kernel,
                             executions=len(project.history), workspace=project.workspace)
 
@@ -277,6 +357,7 @@ class KernelManagerServer(BaseModel):
                 return KernelResult(success=False, error=f"Could not start a kernel: {exc}")
 
             project.busy = True
+            project.last_seen = time.time()
             try:
                 result = await self._run(project, kernel_id, code, on_output)
             finally:
