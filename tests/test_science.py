@@ -174,3 +174,36 @@ def test_the_history_poll_only_sends_what_is_new() -> None:
             kernel_manager._projects.pop(session_id, None)  # noqa: SLF001
 
     asyncio.run(run())
+
+
+def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
+    """nvidia-smi takes ~0.5s on a loaded machine.
+
+    Reading it inside the request made every poll wait for it, and two open tabs
+    paid for it twice — on an async gateway that half second is half a second of
+    not streaming the agent's reply.
+    """
+
+    async def run() -> None:
+        import agentevolver.science.server as module
+
+        calls = []
+
+        def counted():
+            calls.append(1)
+            return [{"index": 0, "name": "Fake", "memory_used_mb": 1,
+                     "memory_total_mb": 2, "utilization_percent": 3}]
+
+        manager = module.ScienceManagerServer()
+        original, module._gpu_status = module._gpu_status, counted  # noqa: SLF001
+        try:
+            first = await manager.gpus()
+            for _ in range(5):
+                assert await manager.gpus() == first
+            # One sample served six reads.
+            assert len(calls) == 1
+        finally:
+            module._gpu_status = original  # noqa: SLF001
+            await manager.stop_all()
+
+    asyncio.run(run())

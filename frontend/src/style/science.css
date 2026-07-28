@@ -141,3 +141,18 @@
 .kernel-caret { color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; }
 .kernel-prompt textarea { flex: 1; max-height: 180px; min-height: 20px; border: 0; color: hsl(var(--foreground)); background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; resize: none; }
 .kernel-prompt textarea:focus { outline: none; }
+
+/* --- Progress ----------------------------------------------------------
+   What the agent is doing, while it does it. Without this the pane showed a
+   bare spinner from submit to completion — the same wait the Chat view fills
+   with its activity stream, which made an identical run feel far slower here.
+   Deliberately thinner than those activity cards: this pane is for reading the
+   result, and a full trace tree would bury it. */
+.science-progress { padding: 4px 0 16px 42px; }
+.science-working { display: flex; align-items: center; gap: 8px; padding: 4px 0; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.science-steps { display: flex; max-height: 190px; flex-direction: column; gap: 2px; margin: 6px 0 0; overflow-y: auto; padding: 0; list-style: none; }
+.science-steps li { display: flex; align-items: baseline; gap: 8px; color: hsl(var(--muted-foreground)); font-size: 11.5px; line-height: 1.6; }
+.science-steps li strong { flex: 0 0 auto; color: hsl(var(--foreground)); font-weight: 550; }
+.science-steps li span { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+/* The newest line is the one you are reading; the older ones fade back. */
+.science-steps li:not(:last-child) { opacity: .62; }

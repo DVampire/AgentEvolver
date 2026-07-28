@@ -24,9 +24,14 @@ const POLL_IDLE_MS = 8000;
 /** The notebook: this project's kernel history, plus a prompt into that kernel.
  *
  * Not a document. It is the kernel's own record of what has run — the agent's
- * cells and yours, in one list, because both went through the same kernel. That
- * is why nothing has to be kept in sync: there is only one set of variables, and
- * `import torch` typed at the prompt sees what the agent imported. */
+ * cells and yours in one list, because both go through the same kernel, so
+ * nothing has to be kept in sync.
+ *
+ * What it does NOT show is work the agent did some other way. The agent picks
+ * its own tools, and for "write a function and test it" a shell is the natural
+ * choice — bash_tool spawns a fresh process that has nothing to do with this
+ * kernel. That is deliberate: the agent's behaviour is not bent to fill this
+ * panel. The bridge is the workspace, which both sides share. */
 export function KernelPanel({ request, subscribe, sessionId }: {
   request: RequestFn;
   subscribe: (listener: (event: GatewayEvent) => void) => () => void;
@@ -138,8 +143,10 @@ export function KernelPanel({ request, subscribe, sessionId }: {
         {executions.length ? executions.map((entry, index) => (
           <Cell key={`${entry.started_at}:${index}`} entry={entry} />
         )) : (
-          <p className="empty">Nothing has run yet. Ask the agent for an experiment, or type below —
-             both land in the same kernel.</p>
+          <p className="empty">Nothing has run yet. Type below to work in this project's
+             kernel — it starts in the workspace, so anything the agent has written is
+             importable straight away. The agent's own cells appear here too, on the runs
+             where it reaches for the interpreter rather than a shell.</p>
         )}
         {running ? <Cell entry={{ code: '…', language: 'python', outputs: live, success: true, origin: 'user', started_at: '' }} pending /> : null}
         <div ref={bottom} />

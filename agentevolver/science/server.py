@@ -18,9 +18,11 @@ project, and what the machine is running on.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -43,8 +45,43 @@ def base_path(session_id: str) -> str:
     return kernel_manager.lab_path(session_id)
 
 
+#: How often the background sampler re-reads the GPUs.
+GPU_SAMPLE_SECONDS = 10.0
+#: Stop sampling once nobody has asked this long — an idle gateway should not
+#: keep a subprocess running every ten seconds forever.
+GPU_IDLE_SECONDS = 120.0
+
+
 class ScienceManagerServer:
     """The project's notebooks, and the machine they run on."""
+
+    def __init__(self) -> None:
+        #: Latest GPU reading, refreshed by a background sampler rather than by
+        #: whoever happens to ask. nvidia-smi takes ~0.5s on a loaded machine:
+        #: reading it inside the request made every poll wait for it, and two
+        #: open tabs paid for it twice.
+        self._gpus: List[dict] = []
+        self._gpus_wanted_at: float = 0.0
+        self._sampler: Optional[asyncio.Task] = None
+
+    async def _sample_gpus(self) -> None:
+        """Refresh the GPU reading until nobody has looked for a while."""
+        while time.time() - self._gpus_wanted_at < GPU_IDLE_SECONDS:
+            # In a thread, so the half second nvidia-smi takes is not half a
+            # second in which the gateway cannot stream the agent's reply.
+            self._gpus = await asyncio.to_thread(_gpu_status)
+            await asyncio.sleep(GPU_SAMPLE_SECONDS)
+        self._sampler = None
+
+    async def gpus(self) -> List[dict]:
+        """The most recent GPU reading, taken without waiting for one."""
+        self._gpus_wanted_at = time.time()
+        if self._sampler is None or self._sampler.done():
+            # The very first caller waits for one sample; after that the panel
+            # is answered from the cache and the sampler keeps it fresh.
+            self._gpus = await asyncio.to_thread(_gpu_status)
+            self._sampler = asyncio.create_task(self._sample_gpus(), name="gpu-sampler")
+        return self._gpus
 
     async def start(self, session_id: str, *, workspace_root: str | Path,
                     owner: str = "local") -> dict:
@@ -69,6 +106,9 @@ class ScienceManagerServer:
         return await kernel_manager.shutdown(session_id)
 
     async def stop_all(self) -> None:
+        if self._sampler is not None:
+            self._sampler.cancel()
+            self._sampler = None
         await kernel_manager.cleanup()
 
     @staticmethod
@@ -97,14 +137,14 @@ class ScienceManagerServer:
         }
 
     # ------------------------------------------------------------- compute
-    @staticmethod
-    async def compute(session_id: str) -> ComputeStatus:
+    async def compute(self, session_id: str) -> ComputeStatus:
         """What this machine is running on.
 
         The base environment's own resources — the whole host, not a slice of
         it, because that is what the agent and the kernel actually get.
         """
         kernel = kernel_manager.status(session_id)
+        gpus = await self.gpus()
         total = used = free = None
         try:
             meminfo = dict(
@@ -120,7 +160,7 @@ class ScienceManagerServer:
             pass
 
         return ComputeStatus(
-            running=kernel.running, busy=kernel.busy, gpus=_gpu_status(),
+            running=kernel.running, busy=kernel.busy, gpus=gpus,
             cpu_count=os.cpu_count(), memory_total_mb=total, memory_used_mb=used,
             disk_free_mb=free, executions=kernel.executions,
         )

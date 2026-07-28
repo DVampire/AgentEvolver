@@ -10,9 +10,9 @@ metadata:
 ---
 # Science
 
-A **workstation**: you describe an experiment, the agent runs it, and the same
-kernel it ran in is the one you can type into afterwards. Train a model, plot
-the result, write the paper.
+A **workstation**: you describe an experiment, the agent runs it, and its
+results sit in a workspace with a live kernel already pointed at them. Train a
+model, plot the result, write the paper.
 
 Like the [canvas](../canvas/README.md) and the [IDE](../ide/README.md), this is
 **human-facing**: the agent never calls into it, and it is not registered as a
@@ -37,7 +37,8 @@ held open by [`agentevolver.kernel`](../kernel/README.md):
 - the Science view's REPL, and
 - JupyterLab.
 
-So `x` defined by the agent is `x` at the prompt. The panel labelled "Notebook"
+So when the agent runs a cell, `x` it defined is `x` at the prompt — it does not
+always run one, which the next section is about. The panel labelled "Notebook"
 is not a document anybody edits — it is **the kernel's own execution history**,
 rendered. Nothing can drift out of step with what actually ran, because there is
 only one record and one set of variables.
@@ -69,6 +70,20 @@ transformers, the scientific stack and LaTeX, so the agent can reach them too.
 If Science ever genuinely needs to diverge from base — a different CUDA, a
 domain stack that would break the agent — a container comes back. The kernel
 manager is the seam that would take it.
+
+## What the panel does not show
+
+The agent picks its own tools. For "write a function and test it" a shell is
+the natural choice, and `bash_tool` spawns a fresh process that has nothing to
+do with this kernel — so that run leaves the panel empty and the workspace full.
+
+That is deliberate. The agent's behaviour is not bent to fill a panel: the same
+task behaves the same way in Chat, in Canvas and here. The bridge between the
+two halves is the **workspace**, which both share — the kernel starts in it, so
+a module the agent just wrote is importable at the prompt without ceremony.
+
+The panel is honest about its own scope: it shows what went through the kernel,
+which is the agent's `code_interpreter_tool` calls and yours.
 
 ## Compute is the machine
 
