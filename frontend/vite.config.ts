@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite';
 
-import { ideProxy } from './ide-proxy';
+import { containerProxy } from './container-proxy';
 
 // The Vite dev server is the single reverse proxy: the browser only ever talks
 // to it (one origin for remote access). It relays the app's control socket
-// (/ws), the VNC live view (/env/vnc), the browser IDE (/ide/<session>/ — see
-// ide-proxy.ts), and the health probe (/health) to the gateway on 9876. The
+// (/ws), the VNC live view (/env/vnc), the per-session containers
+// (/ide/<session>/ and /science/<session>/ — see container-proxy.ts), and the
+// health probe (/health) to the gateway on 9876. The
 // gateway in turn relays /env/vnc to the sandbox's ephemeral websockify port,
 // so that port never needs forwarding.
 const GATEWAY = process.env.GATEWAY_PORT || '9876';
@@ -14,7 +15,7 @@ export default defineConfig({
   esbuild: { target: 'es2022' },
   build: { target: 'es2022' },
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
-  plugins: [ideProxy(GATEWAY)],
+  plugins: [containerProxy(GATEWAY)],
   server: {
     // Vite rejects unknown Host headers; the IDE deliberately uses a
     // per-session host, so allow that suffix. Tailscale (serve / funnel) forwards

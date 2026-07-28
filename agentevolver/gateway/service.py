@@ -34,6 +34,7 @@ from agentevolver.data import data_manager
 from agentevolver.environment import environment_manager
 from agentevolver.extension import extension_manager
 from agentevolver.ide import ide_manager
+from agentevolver.science import science_manager
 from agentevolver.gateway.protocol import (
     PROTOCOL_VERSION,
     GatewayCommand,
@@ -236,6 +237,7 @@ class AgentGateway:
         self._chat_tasks.clear()
         await task_manager.stop()
         await ide_manager.stop_all()
+        await science_manager.stop_all()
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
         environment_stream.unsubscribe(self._on_environment_view)
@@ -1359,6 +1361,58 @@ class AgentGateway:
     async def _command_ide_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
         return {"session_id": session_id, "stopped": await ide_manager.stop(session_id)}
+
+    # -------------------------------------------------------------- science
+    async def _command_science_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start (or reuse) this project's JupyterLab workstation.
+
+        Like the IDE, the status carries a ``path`` on the UI's OWN origin
+        rather than a host, so whatever address the browser reached the UI at
+        works — see agentevolver/science/README.md.
+        """
+        session_id = self._require_session_id(params)
+        session = self._sessions[session_id]
+        await science_manager.start(
+            session_id,
+            workspace_root=session.sandbox.workspace_root,
+            owner=session.owner,
+        )
+        return science_manager.status(session_id)
+
+    async def _command_science_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        # Doubles as the keep-alive: an open Science view pings this.
+        science_manager.touch(session_id)
+        return science_manager.status(session_id)
+
+    async def _command_science_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        return {"session_id": session_id, "stopped": await science_manager.stop(session_id)}
+
+    async def _command_science_compute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """GPUs, CPU, memory and disk, as the workstation itself sees them."""
+        session_id = self._require_session_id(params)
+        return (await science_manager.compute(session_id)).model_dump(mode="json")
+
+    async def _command_science_notebooks(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Every notebook in the project's workspace.
+
+        Read off disk, so this answers before the workstation has ever been
+        started and after it has been reaped — a notebook is a workspace file,
+        and the container is not.
+        """
+        session_id = self._require_session_id(params)
+        owner = self._sessions[session_id].owner
+        return {"session_id": session_id,
+                "notebooks": [item.model_dump(mode="json")
+                              for item in science_manager.notebooks(session_id, owner=owner)]}
+
+    async def _command_science_notebook_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        owner = self._sessions[session_id].owner
+        name = str(params.get("name") or "untitled")
+        notebook = science_manager.create_notebook(session_id, name, owner=owner)
+        return {"session_id": session_id, "notebook": notebook.model_dump(mode="json")}
 
     @staticmethod
     def _workflow_preview_document(source: str) -> str:

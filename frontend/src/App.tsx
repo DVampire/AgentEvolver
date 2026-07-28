@@ -23,6 +23,7 @@ import {
   Settings,
   Sparkles,
   Code2,
+  FlaskConical,
   PanelLeftClose,
   PanelLeftOpen,
   SquareTerminal,
@@ -64,11 +65,12 @@ interface WorkspaceFile { name: string; path: string; content: string; encoding?
 interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
 interface EnvironmentViewInfo { env_name: string; type: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
-type MainView = 'chat' | 'canvas' | 'code';
+type MainView = 'chat' | 'canvas' | 'code' | 'science';
 const WorkspaceEditor = lazy(() => import('./workspace/WorkspaceEditor'));
 const VncView = lazy(() => import('./vnc/VncView'));
 const CanvasView = lazy(() => import('./canvas'));
 const IdeView = lazy(() => import('./ide/IdeView').then((module) => ({ default: module.IdeView })));
+const ScienceView = lazy(() => import('./science/ScienceView').then((module) => ({ default: module.ScienceView })));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 // Same-origin by default: the page is served by the Vite dev server, which
@@ -872,6 +874,7 @@ export function App() {
           <button className={mainView === 'chat' ? 'view-active' : ''} onClick={() => setMainView('chat')}><span><MessageSquare size={16} strokeWidth={1.9} /></span><strong>Chat</strong></button>
           <button className={mainView === 'canvas' ? 'view-active' : ''} onClick={() => setMainView('canvas')}><span><Waypoints size={16} strokeWidth={1.9} /></span><strong>Canvas</strong></button>
           <button className={mainView === 'code' ? 'view-active' : ''} onClick={() => setMainView('code')}><span><Code2 size={16} strokeWidth={1.9} /></span><strong>Code</strong></button>
+          <button className={mainView === 'science' ? 'view-active' : ''} onClick={() => setMainView('science')}><span><FlaskConical size={16} strokeWidth={1.9} /></span><strong>Science</strong></button>
         </nav>
         <nav className="sidebar-section capability-nav" aria-label="Capabilities">
           <p className="eyebrow">Capabilities</p>
@@ -903,7 +906,12 @@ export function App() {
       {/* No page header here: VS Code brings its own full chrome, so the usual
           eyebrow+title bar would be a second wasted strip above it. IdeView's
           own slim toolbar carries the title, status and controls instead. */}
-      {mainView === 'code' ? <section className="conversation ide-mode">
+      {mainView === 'science' ? <section className="conversation science-mode">
+        <Suspense fallback={<div className="workspace-placeholder">Loading workstation…</div>}>
+          <ScienceView request={gatewayRequest} sessionId={sessionId} connected={status === 'connected'}
+            status={status} statusText={statusText} onOpenNav={() => setMobileNavOpen(true)} />
+        </Suspense>
+      </section> : mainView === 'code' ? <section className="conversation ide-mode">
         <Suspense fallback={<div className="workspace-placeholder">Loading editor…</div>}>
           <IdeView request={gatewayRequest} sessionId={sessionId} connected={status === 'connected'}
             status={status} statusText={statusText} onOpenNav={() => setMobileNavOpen(true)} />

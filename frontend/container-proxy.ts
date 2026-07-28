@@ -2,30 +2,28 @@ import http from 'node:http';
 import net from 'node:net';
 import type { Plugin } from 'vite';
 
-// Routing for the browser IDE, by PATH for the editor and by HOST for the
-// other ports of its container.
+// Routing for the per-session containers, by PATH for the service itself and by
+// HOST for the other ports of the IDE's container.
 //
 //   /                       -> the AgentEvolver SPA
-//   /ide/<session>/         -> that session's IDE
+//   /ide/<session>/         -> that session's VS Code
+//   /science/<session>/     -> that project's JupyterLab
 //
-// VS Code emits ABSOLUTE asset paths, so a sub-path only works if the server
-// knows about it: openvscode-server is started with
-// `--server-base-path /ide/<session>` (see docker/vscode/entrypoint-vscode.sh),
-// which prefixes every URL it emits. Both sides then agree and this proxy has
-// nothing to rewrite.
+// Both services emit ABSOLUTE asset paths, so a sub-path only works if the
+// server knows about it: openvscode-server is started with
+// `--server-base-path /ide/<session>` and JupyterLab with
+// `--ServerApp.base_url /science/<session>/`, which prefixes every URL each
+// emits. Both sides then agree and this proxy has nothing to rewrite.
 //
-// The editor deliberately lives on the UI's OWN origin. The previous scheme
-// gave it a host of its own, `<session>.ide.localhost:5173`, which is resolved
+// They deliberately live on the UI's OWN origin. The previous scheme gave the
+// editor a host of its own, `<session>.ide.localhost:5173`, which is resolved
 // by the BROWSER — so it only ever worked when the browser ran on the machine
 // serving the UI. Through any tunnel (Tailscale, an SSH -L to a different port,
 // a reverse proxy) the iframe silently pointed at the user's own laptop.
-//
-// Requests are forwarded to `<upstream>/proxy/<port><path>`; the opensandbox
-// proxy strips that prefix again, so the container sees exactly the path the
-// browser asked for and never learns it is proxied.
 
-// `/ide/<session>/…` — the editor, which knows this prefix and emits it itself.
-const PATH_RE = /^\/ide\/([A-Za-z0-9_-]+)(?=[/?#]|$)/;
+// `/ide/<session>/…` and `/science/<session>/…` — each service knows its own
+// prefix and emits it itself, so the capture is only used to pick the session.
+const PATH_RE = /^\/(ide|science)\/([A-Za-z0-9_-]+)(?=[/?#]|$)/;
 // `<port>-<session>.ide.localhost` reaches any OTHER port in that container — a
 // dev server, a preview, an OAuth callback listener. Those services do not know
 // they are proxied and have no base path to configure, so a host of their own is
@@ -37,27 +35,30 @@ const UPSTREAM_TTL_MS = 10_000;
 
 const cache = new Map<string, { upstream: string; expires: number }>();
 
-interface Target { sessionId: string; port: number }
+interface Target { service: 'ide' | 'science'; sessionId: string; port: number }
 
 /** Parse a request into the session and container port it addresses — the URL
  *  path first (the editor), then the Host header (any other container port).
  *  Port 0 means "the IDE's own port", which the gateway resolves. */
 function targetOf(req: { url?: string; headers: { host?: string } }): Target | null {
   const byPath = PATH_RE.exec(req.url ?? '');
-  if (byPath) return { sessionId: byPath[1], port: 0 };
+  if (byPath) return { service: byPath[1] as 'ide' | 'science', sessionId: byPath[2], port: 0 };
+  // The host form addresses the IDE container only: the science container
+  // publishes exactly one port, and anything a notebook starts is reached
+  // through jupyter-server-proxy on that same port.
   const byHost = HOST_RE.exec(req.headers.host ?? '');
-  return byHost ? { sessionId: byHost[2], port: byHost[1] ? Number(byHost[1]) : 0 } : null;
+  return byHost ? { service: 'ide', sessionId: byHost[2], port: byHost[1] ? Number(byHost[1]) : 0 } : null;
 }
 
 /** Ask the gateway which container serves this session, memoised briefly so a
  *  page load of ~100 assets does not trigger ~100 lookups. */
 async function resolveUpstream(gatewayPort: string, target: Target): Promise<string | null> {
-  const key = `${target.sessionId}:${target.port}`;
+  const key = `${target.service}:${target.sessionId}:${target.port}`;
   const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return hit.upstream;
   try {
-    const query = target.port ? `?port=${target.port}` : '';
-    const response = await fetch(`http://127.0.0.1:${gatewayPort}/ide/resolve/${target.sessionId}${query}`);
+    const query = target.port ? `?port=${target.port}` : '';  // science takes no port
+    const response = await fetch(`http://127.0.0.1:${gatewayPort}/${target.service}/resolve/${target.sessionId}${query}`);
     if (!response.ok) { cache.delete(key); return null; }
     const body = await response.json() as { upstream?: string };
     if (!body.upstream) return null;
@@ -79,9 +80,9 @@ function parseUpstream(upstream: string): { host: string; port: number; prefix: 
   };
 }
 
-export function ideProxy(gatewayPort: string): Plugin {
+export function containerProxy(gatewayPort: string): Plugin {
   return {
-    name: 'agentevolver-ide-proxy',
+    name: 'agentevolver-container-proxy',
     configureServer(server) {
       // Registered directly (not in a returned thunk) so it runs BEFORE Vite's
       // own middlewares — including the host check, which would otherwise
@@ -96,7 +97,9 @@ export function ideProxy(gatewayPort: string): Plugin {
             res.setHeader('content-type', 'text/plain');
             res.end(target.port
               ? `Nothing is listening on port ${target.port} in this session's container.`
-              : 'IDE is not running for this session.');
+              : target.service === 'science'
+                ? 'The Science workstation is not running for this project.'
+                : 'IDE is not running for this session.');
             return;
           }
           const { host, port, prefix } = parseUpstream(upstream);
@@ -110,15 +113,16 @@ export function ideProxy(gatewayPort: string): Plugin {
           });
           proxyReq.on('error', () => {
             if (!res.headersSent) res.statusCode = 502;
-            res.end('IDE upstream unreachable.');
+            res.end(`${target.service === 'science' ? 'Science' : 'IDE'} upstream unreachable.`);
           });
           req.pipe(proxyReq);
         })();
       });
 
-      // The workbench rides a WebSocket on the same origin and path, so the
-      // upgrade needs the same routing. Vite has its own HMR upgrade listener,
-      // so only claim sockets that address an IDE and leave the rest.
+      // Both services ride a WebSocket on the same origin and path — the VS Code
+      // workbench, and Jupyter's kernel channels — so the upgrade needs the same
+      // routing. Vite has its own HMR upgrade listener, so only claim sockets
+      // that address a container and leave the rest.
       server.httpServer?.on('upgrade', (req, socket: net.Socket, head) => {
         const target = targetOf(req);
         if (!target) return;

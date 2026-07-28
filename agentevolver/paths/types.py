@@ -41,6 +41,9 @@ class P(str, Enum):
     OWNER_IDE = "owner_ide"
     IDE_EXTENSIONS = "ide_extensions"
     IDE_HOME = "ide_home"
+    #: $HOME for the Science workstation: pip installs, wandb logins and
+    #: Jupyter settings, kept per owner so they outlive a reaped container.
+    SCIENCE_HOME = "science_home"
 
     # --- per session / per run (disposable) ------------------------------
     SESSIONS = "sessions"
@@ -63,6 +66,10 @@ class P(str, Enum):
     #: Editor state — open tabs, layout. Per session, unlike the extensions and
     #: agent logins beside it, which are worth sharing across all of them.
     SESSION_IDE_USER_DATA = "session_ide_user_data"
+    #: Notebooks the Science view writes. Under the workspace, not beside it, so
+    #: bash and code_interpreter — which start in the workspace — can open the
+    #: same files the notebook wrote, and the files pane lists them.
+    SESSION_NOTEBOOKS = "session_notebooks"
     RUN = "run"
 
 
@@ -89,6 +96,7 @@ LAYOUT: Dict[P, str] = {
     P.OWNER_IDE: "output/{owner}/state/ide",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
     P.IDE_HOME: "output/{owner}/state/ide/home",
+    P.SCIENCE_HOME: "output/{owner}/state/science/home",
 
     P.SESSIONS: "output/{owner}/sessions",
     P.SESSION: "output/{owner}/sessions/{session_id}",
@@ -100,6 +108,7 @@ LAYOUT: Dict[P, str] = {
     P.CONVERSATION_EVENTS: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.jsonl",
     P.CONVERSATION_META: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.json",
     P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
+    P.SESSION_NOTEBOOKS: "output/{owner}/sessions/{session_id}/workspace/notebooks",
     P.RUN: "output/{owner}/runs/{run_id}",
 }
 

@@ -40,6 +40,13 @@ class SandboxConfig(BaseModel):
     # de-conflicted rather than hard-coded to 8080.
     domain: Optional[str] = Field(default=None, description="opensandbox-server domain; None resolves via the port manager.")
     api_key: Optional[str] = Field(default=None, description="opensandbox-server API key, if any.")
+    # Honoured ONLY by sandboxes that drive Docker themselves (ScienceSandbox).
+    # opensandbox's [docker] config has no device option, so a sandbox that goes
+    # through it cannot be given GPUs at all — which is precisely why the science
+    # workstation launches its container directly. Setting this on an
+    # opensandbox-backed sandbox does nothing; it is not silently degraded
+    # elsewhere because nothing else reads it.
+    gpus: Optional[str] = Field(default=None, description="Docker --gpus value ('all', 'device=0,1'). Direct-Docker sandboxes only.")
 
 
 class ExecResult(BaseModel):

@@ -84,6 +84,21 @@ def create_websocket_app(
             return JSONResponse({"ok": False, "error": "no IDE for this session"}, status_code=404)
         return JSONResponse({"ok": True, "upstream": upstream})
 
+    @app.get("/science/resolve/{session_id}")
+    async def science_resolve(session_id: str):
+        """Tell the UI's proxy where a project's JupyterLab lives.
+
+        The Lab's own port is the only one published — anything a notebook
+        starts is reached through jupyter-server-proxy on that same port — so
+        unlike the IDE route this takes no ``port``.
+        """
+        from agentevolver.science import science_manager
+
+        upstream = science_manager.upstream(session_id)
+        if not upstream:
+            return JSONResponse({"ok": False, "error": "no workstation for this project"}, status_code=404)
+        return JSONResponse({"ok": True, "upstream": upstream})
+
     def _authorize(websocket: WebSocket) -> bool:
         supplied_token = websocket.query_params.get("token") or websocket.headers.get("authorization", "").removeprefix("Bearer ")
         supplied_token = supplied_token or ""
