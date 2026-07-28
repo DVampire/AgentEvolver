@@ -85,6 +85,15 @@ a module the agent just wrote is importable at the prompt without ceremony.
 The panel is honest about its own scope: it shows what went through the kernel,
 which is the agent's `code_interpreter_tool` calls and yours.
 
+## Nothing waits for the workstation but the workstation
+
+A cold Jupyter Server takes about ten seconds to answer (the kernel inside it,
+a tenth of one; every cell after that, milliseconds). The Science view is not
+gated on it: the conversation needs no kernel, and the Compute panel reads the
+machine, so both are up immediately while the server boots behind them. Only
+the Notebook tab and the JupyterLab button wait, because those are the two
+things that genuinely need it.
+
 ## Closed when idle, never when working
 
 The gateway has no "close this project", so time is what frees a Jupyter

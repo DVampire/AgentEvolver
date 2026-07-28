@@ -156,3 +156,9 @@
 .science-steps li span { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 /* The newest line is the one you are reading; the older ones fade back. */
 .science-steps li:not(:last-child) { opacity: .62; }
+
+/* The rail's own waiting/error state. The conversation never waits for the
+   workstation — only the Notebook tab genuinely needs a kernel. */
+.science-rail-notice { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 18px 16px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.6; }
+.science-rail-notice button { flex: 0 0 auto; border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 2px 8px; color: inherit; background: transparent; font-size: 11px; cursor: pointer; }
+.science-spinner.inline { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 2px; }

@@ -47,7 +47,6 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
 }) {
   const [path, setPath] = useState<string>();
   const [error, setError] = useState<string>();
-  const [starting, setStarting] = useState(false);
   const [compute, setCompute] = useState<Compute>();
   // Compute and Notebook are alternatives, not a stack: both stacked meant
   // neither had room, and only one of them answers any given question.
@@ -55,7 +54,6 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
 
   const start = useCallback(async () => {
     if (!sessionId || !connected) return;
-    setStarting(true);
     setError(undefined);
     try {
       const response = await request('science.start', { session_id: sessionId });
@@ -65,8 +63,6 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
       setPath(result.path);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setStarting(false);
     }
   }, [request, sessionId, connected]);
 
@@ -82,8 +78,10 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
     return () => window.clearInterval(beat);
   }, [request, sessionId, connected]);
 
+  // Not gated on the workstation: CPU, memory, disk and GPUs are the machine's,
+  // readable the moment the view opens rather than half a minute later.
   useEffect(() => {
-    if (!sessionId || !connected || !path) return;
+    if (!sessionId || !connected) return;
     let cancelled = false;
     const poll = async () => {
       const response = await request('science.compute', { session_id: sessionId });
@@ -92,25 +90,9 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
     void poll();
     const timer = window.setInterval(() => void poll(), COMPUTE_MS);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [request, sessionId, connected, path]);
+  }, [request, sessionId, connected]);
 
   if (!sessionId) return <ScienceNotice title="No project" detail="Open or create a project to use the workstation." />;
-  if (error) {
-    return (
-      <ScienceNotice title="The workstation could not start" detail={error}>
-        <Button size="md" className="font-normal" onClick={() => void start()}>Try again</Button>
-      </ScienceNotice>
-    );
-  }
-  if (!path || starting) {
-    return (
-      <ScienceNotice
-        title="Opening the workstation…"
-        detail="Opening this project's kernel. The first one also starts a Jupyter Server, which takes a few seconds; after that the agent and this view share it."
-        spinning
-      />
-    );
-  }
 
   return (
     <div className="science-view">
@@ -118,21 +100,23 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
         {onOpenNav ? <button className="mobile-menu" onClick={onOpenNav} aria-label="Open navigation">☰</button> : null}
         <FlaskConical size={14} strokeWidth={1.9} />
         <strong>Science</strong>
-        <code className="science-origin" title="This project's workstation path">{path}</code>
+        {path ? <code className="science-origin" title="This project's workstation path">{path}</code> : null}
         <span className="science-toolbar-spacer" />
         {statusText ? <span className="science-status"><span className={`connection-dot ${status ?? ''}`} />{statusText}</span> : null}
         {/* The full Lab, for what these cells deliberately do not do: interactive
             widgets, the debugger, extensions. Same server, same kernels — it is
             the other client of this workstation, not a different workstation. */}
-        <Button variant="ghost" size="sm" className="font-normal"
+        <Button variant="ghost" size="sm" className="font-normal" disabled={!path}
+                title={path ? 'Open the full JupyterLab' : 'Starting the kernel…'}
                 onClick={() => window.open(`${path}/lab`, '_blank', 'noopener')}>
           <SquareArrowOutUpRight /> JupyterLab
         </Button>
       </header>
       <div className="science-body">
-        {/* The conversation is the surface: you describe an experiment, the
-            agent runs it in this project's kernel. What it computes stays live,
-            which is what the Notebook tab is for. */}
+        {/* The conversation is the surface, and it is available immediately —
+            it needs no kernel. Gating the whole view on the workstation meant
+            staring at a spinner for the ~11s a cold Jupyter Server takes before
+            you could type a word. */}
         <ScienceConversation request={request} subscribe={subscribe}
                              sessionId={sessionId} connected={connected} />
         <aside className="science-rail">
@@ -142,9 +126,15 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
             <button role="tab" aria-selected={tab === 'notebook'} className={tab === 'notebook' ? 'active' : ''}
                     onClick={() => setTab('notebook')}><NotebookPen size={13} strokeWidth={1.9} /> Notebook</button>
           </div>
-          {tab === 'compute' ? <ComputePanel compute={compute} /> : (
-            <KernelPanel request={request} subscribe={subscribe} sessionId={sessionId} />
-          )}
+          {tab === 'compute' ? <ComputePanel compute={compute} /> :
+            error ? <p className="science-rail-notice">{error} <button onClick={() => void start()}>Try again</button></p> :
+            path ? <KernelPanel request={request} subscribe={subscribe} sessionId={sessionId} /> : (
+              <p className="science-rail-notice">
+                <Loader2 className="science-spinner inline" /> Starting this project's kernel.
+                The first one boots a Jupyter Server — about ten seconds; after that a cell
+                runs in milliseconds. You can talk to the agent meanwhile.
+              </p>
+            )}
         </aside>
       </div>
     </div>
