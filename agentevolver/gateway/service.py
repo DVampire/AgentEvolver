@@ -24,6 +24,7 @@ from lxml import etree, html as lxml_html
 from agentevolver.agent import agent_manager
 from agentevolver.benchmark import benchmark_manager
 from agentevolver.canvas import canvas_manager
+from agentevolver.conversation import Conversation, conversation_manager, title_from
 from agentevolver.canvas.types import FlowGraph
 from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
@@ -125,6 +126,9 @@ class AgentGateway:
         # so its events do not carry the watching session's id and have to be
         # routed back by hand.
         self._run_sessions: Dict[str, str] = {}
+        # Which conversation each running task belongs to, so the traces coming
+        # out of it can be attributed. Cleared when the task ends.
+        self._run_conversations: Dict[str, str] = {}
         # Session whose roots the shared runtime is currently bound to (see
         # _bind_runtime_to_session); None until the first task runs.
         self._bound_session_id: Optional[str] = None
@@ -322,72 +326,64 @@ class AgentGateway:
             source_workspace=session.context.extra.get("source_workspace"),
         )
 
-    def _event_log_path(self, session_id: str) -> Optional[Path]:
-        """This session's append-only event log, or None if it is not a real session."""
-        session = self._sessions.get(session_id)
-        if session is None:
-            return None
-        return path_manager.get(P.SESSION_EVENTS, owner=session.owner, session_id=session_id)
+    def _seed_sequence(self, conversation_id: str, owner: str, session_id: str) -> None:
+        """Continue a conversation's numbering after a restart.
 
-    def _append_event_log(self, session_id: Optional[str], event: GatewayEvent) -> None:
-        """Persist one event so the transcript survives the gateway process.
-
-        The in-memory buffer is bounded and dies with the process, so a restored
-        session used to reopen as an empty conversation over its own files. The
-        log is unbounded on purpose: it is the record of what happened.
-
-        Nothing is created here. Clients open a session the moment they connect
-        and most never run anything, so — like the manifest beside it — the log
-        only begins once the session has real work in it (:meth:`_flush_event_log`).
+        The counter lives in memory and dies with the process, so a restored
+        conversation would restart at 1 and its new events would collide with
+        the replayed ones. Seeded from the transcript the first time the
+        conversation is touched in this process.
         """
-        if not session_id:
-            return  # gateway-wide events belong to no session
-        path = self._event_log_path(session_id)
-        if path is None or not path.parent.is_dir():
-            return
-        self._write_events(path, [event], mode="a")
-
-    def _flush_event_log(self, session_id: str) -> None:
-        """Start this session's log, writing everything buffered so far.
-
-        Called when the session materializes, so the events leading up to it —
-        the session being created, its capabilities settling — are in the record
-        rather than only what came after.
-        """
-        path = self._event_log_path(session_id)
-        if path is None or path.exists():
-            return
-        self._write_events(path, list(self._events.get(session_id, ())), mode="w")
-
-    @staticmethod
-    def _write_events(path: Path, events: List[GatewayEvent], *, mode: str) -> None:
-        try:
-            with path.open(mode, encoding="utf-8") as handle:
-                for event in events:
-                    handle.write(json.dumps(event.model_dump(mode="json"), ensure_ascii=False) + "\n")
-        except Exception as exc:  # noqa: BLE001 — logging must never break the run
-            logger.warning(f"| ⚠️ Gateway: could not write the event log {path}: {exc}")
-
-    def _load_event_log(self, session_id: str) -> None:
-        """Rehydrate a restored session's transcript from disk.
-
-        Only the tail fits the bounded buffer, but ``_sequence`` continues from
-        the highest id on disk so new events never collide with replayed ones.
-        """
-        path = self._event_log_path(session_id)
-        if path is None or not path.is_file():
+        if conversation_id in self._sequence:
             return
         highest = 0
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                event = GatewayEvent.model_validate_json(line)
-            except Exception:  # noqa: BLE001 — one bad line must not hide the rest
-                continue
-            self._events[session_id].append(event)
-            highest = max(highest, event.seq_no)
-        self._sequence[session_id] = max(self._sequence[session_id], highest)
+        for event in conversation_manager.events(owner, session_id, conversation_id):
+            highest = max(highest, int(event.get("seq_no") or 0))
+        self._sequence[conversation_id] = highest
+
+    def _append_event_log(self, event: GatewayEvent) -> None:
+        """Record one event in its conversation's transcript.
+
+        Only conversational events are kept: a project opening or its
+        capabilities settling belongs to no line of dialogue, and replaying it
+        into one would put it in a transcript nobody wrote. The file is the
+        source of truth — the in-memory buffer only serves live clients — so a
+        reopened conversation reads back the same way after a restart.
+        """
+        if not event.conversation_id or not event.session_id:
+            return
+        session = self._sessions.get(event.session_id)
+        if session is None:
+            return
+        conversation_manager.append(session.owner, event.session_id, event.conversation_id,
+                                    event.model_dump(mode="json"))
+
+    def _adopt_legacy_transcript(self, session_id: str) -> None:
+        """Fold a pre-conversation transcript into one, so history is not lost.
+
+        Projects written before conversations existed kept a single
+        ``events.jsonl``. Left alone it would simply stop being read — the
+        transcript would still be on disk with nothing able to open it. It
+        becomes the project's first conversation instead, marked as migrated so
+        the rewrite is visible rather than silent.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return
+        legacy = path_manager.get(P.SESSION, owner=session.owner, session_id=session_id) / "events.jsonl"
+        if not legacy.is_file():
+            return
+        if conversation_manager.list(session.owner, session_id):
+            return  # already migrated, or the project moved on without it
+        conversation = Conversation(session_id=session_id, view="chat",
+                                    title="Earlier conversation", migrated=True)
+        conversation_manager.save(session.owner, conversation)
+        target = path_manager.get(P.CONVERSATION_EVENTS, owner=session.owner,
+                                  session_id=session_id, conversation_id=conversation.id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+        legacy.rename(legacy.with_suffix(".jsonl.migrated"))
+        logger.info(f"| ♻️ Adopted the pre-conversation transcript of {session_id} as {conversation.id}")
 
     async def _restore_sessions(self) -> None:
         """Rebuild sessions that have a manifest on disk, so their workspaces stay reachable.
@@ -414,7 +410,7 @@ class AgentGateway:
                     created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
                     capabilities=await self._available_capabilities(),
                 )
-                self._load_event_log(session_id)
+                self._adopt_legacy_transcript(session_id)
                 restored += 1
             except Exception as exc:  # noqa: BLE001 — one bad manifest must not block startup
                 logger.warning(f"| ⚠️ Skipping unreadable session manifest {manifest}: {exc}")
@@ -445,6 +441,11 @@ class AgentGateway:
                 "gateway_session": True,
                 "sandbox_mounts": sandbox.mounts(),
                 "source_workspace": source_workspace,
+                # The project this context belongs to. ctx.id follows the
+                # conversation (memory, budgets, todos), so anything that costs
+                # a container has to be keyed off this instead — otherwise a
+                # second line of dialogue silently starts a second container.
+                "project_id": session_id,
             },
         )
         return GatewaySession(
@@ -563,6 +564,57 @@ class AgentGateway:
                 task_id=task_id,
             )
 
+    # ------------------------------------------------------------------
+    # Conversations — the lines of dialogue inside a project. A project holds
+    # several (one per investigation, per view); each owns its transcript and,
+    # through ctx.id, the agent memory and budgets spent in it.
+    # ------------------------------------------------------------------
+
+    async def _command_conversation_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        conversation = conversation_manager.create(
+            session.owner, session.context.id,
+            view=str(params.get("view") or "chat"), title=str(params.get("title") or ""))
+        return {"conversation": conversation.summary()}
+
+    async def _command_conversation_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        view = params.get("view")
+        items = conversation_manager.list(session.owner, session.context.id,
+                                          view=str(view) if view else None)
+        return {"conversations": [item.summary() for item in items]}
+
+    async def _command_conversation_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """One conversation's transcript, for opening or reconnecting to it.
+
+        Read from the transcript on disk rather than the in-memory buffer: the
+        buffer is bounded and dies with the process, so this is what lets a
+        conversation reopen intact after a restart.
+        """
+        session = self._sessions[self._require_session_id(params)]
+        conversation_id = str(params.get("conversation_id") or "")
+        if not conversation_id:
+            raise ValueError("conversation_id is required")
+        after_seq = int(params.get("after_seq", 0))
+        events = [event for event in conversation_manager.events(session.owner, session.context.id, conversation_id)
+                  if int(event.get("seq_no") or 0) > after_seq]
+        return {"events": events}
+
+    async def _command_conversation_rename(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        conversation = conversation_manager.rename(
+            session.owner, session.context.id,
+            str(params.get("conversation_id") or ""), str(params.get("title") or "").strip())
+        if conversation is None:
+            raise ValueError("Unknown conversation")
+        return {"conversation": conversation.summary()}
+
+    async def _command_conversation_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session = self._sessions[self._require_session_id(params)]
+        conversation_id = str(params.get("conversation_id") or "")
+        deleted = conversation_manager.delete(session.owner, session.context.id, conversation_id)
+        return {"conversation_id": conversation_id, "deleted": deleted}
+
     async def _command_session_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
         after_seq = int(params.get("after_seq", 0))
@@ -585,19 +637,43 @@ class AgentGateway:
                 Path(path).expanduser().resolve().relative_to(workspace)
             except ValueError as exc:
                 raise ValueError("Task files must be located inside the session workspace") from exc
+        session = self._sessions[session_id]
         # Bind before submitting so the queue persists this task under the session.
-        self._bind_runtime_to_session(self._sessions[session_id])
+        self._bind_runtime_to_session(session)
+        conversation = self._resolve_conversation(session, params)
         task_id = await task_manager.submit(
             content=content,
             category=TaskCategory.USER,
             priority=TaskPriority.HIGH,
             files=files,
-            metadata={"source": "gateway"},
+            metadata={"source": "gateway", "conversation_id": conversation.id},
             session_id=session_id,
         )
-        self._sessions[session_id].task_ids.append(task_id)
-        await self._publish("task.submitted", {"content": content, "files": files}, session_id=session_id, task_id=task_id)
-        return {"task_id": task_id}
+        session.task_ids.append(task_id)
+        # The conversation names itself from its opening message, and remembers
+        # which submissions were made in it.
+        conversation_manager.note_task(session.owner, session_id, conversation.id, task_id, content)
+        await self._publish("task.submitted", {"content": content, "files": files},
+                            session_id=session_id, conversation_id=conversation.id, task_id=task_id)
+        return {"task_id": task_id, "conversation_id": conversation.id}
+
+    def _resolve_conversation(self, session: "GatewaySession", params: Dict[str, Any]):
+        """The conversation this request belongs to, opening one if needed.
+
+        Clients name it; a client that does not gets a fresh one rather than an
+        implicit shared default, so two views never end up writing into each
+        other's transcript.
+        """
+        conversation_id = str(params.get("conversation_id") or "")
+        view = str(params.get("view") or "chat")
+        if conversation_id:
+            existing = conversation_manager.get(session.owner, session.context.id, conversation_id)
+            if existing is not None:
+                self._seed_sequence(existing.id, session.owner, session.context.id)
+                return existing
+        conversation = conversation_manager.create(session.owner, session.context.id, view=view)
+        self._seed_sequence(conversation.id, session.owner, session.context.id)
+        return conversation
 
     async def _command_file_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session = self._sessions[self._require_session_id(params)]
@@ -1713,7 +1789,6 @@ class AgentGateway:
         # anything still leaves no directory behind, and so what is restorable is
         # exactly what has real work in it.
         self._write_session_manifest(session)
-        self._flush_event_log(session.context.id)
         bind_session_roots(config, session.sandbox)
         # Managers cached their base_dir at initialize(); re-point the ones that
         # persist per-run output. Writers that read config at write time (the
@@ -1735,7 +1810,15 @@ class AgentGateway:
         session = self._sessions[session_id]
         self._bind_runtime_to_session(session)
         self._sync_session_capabilities(session)
-        await self._publish("task.started", {"content": record.task.content}, session_id=session_id, task_id=record.task.id)
+        conversation_id = str((record.task.metadata or {}).get("conversation_id") or "")
+        # The agent runs under its conversation, not its project: ctx.id is the
+        # scope of memory, token budget and todos, and two lines of dialogue in
+        # one project must not inherit each other's. Resources keyed elsewhere
+        # (the workspace, any container) stay shared — they hang off config.
+        ctx = session.context.model_copy(update={"id": conversation_id}) if conversation_id else session.context
+        self._run_conversations[record.task.id] = conversation_id
+        await self._publish("task.started", {"content": record.task.content},
+                            session_id=session_id, conversation_id=conversation_id, task_id=record.task.id)
         agent_task = asyncio.create_task(
             agent_manager(
                 name="meta_agent",
@@ -1745,7 +1828,7 @@ class AgentGateway:
                     "capabilities": session.capabilities,
                     "task_id": record.task.id,
                 },
-                ctx=session.context,
+                ctx=ctx,
             ),
             name=f"gateway-agent-{record.task.id}",
         )
@@ -1753,20 +1836,29 @@ class AgentGateway:
         try:
             response = await agent_task
             payload = response.model_dump(mode="json") if hasattr(response, "model_dump") else {"result": str(response)}
-            await self._publish("task.completed", payload, session_id=session_id, task_id=record.task.id)
+            await self._publish("task.completed", payload, session_id=session_id,
+                                conversation_id=conversation_id, task_id=record.task.id)
             return response
         except asyncio.CancelledError:
-            await self._publish("task.cancelled", {}, session_id=session_id, task_id=record.task.id)
+            await self._publish("task.cancelled", {}, session_id=session_id,
+                                conversation_id=conversation_id, task_id=record.task.id)
             raise
         except Exception as exc:
-            await self._publish("task.failed", {"error": str(exc)}, session_id=session_id, task_id=record.task.id)
+            await self._publish("task.failed", {"error": str(exc)}, session_id=session_id,
+                                conversation_id=conversation_id, task_id=record.task.id)
             raise
         finally:
             self._active_agent_tasks.pop(record.task.id, None)
+            self._run_conversations.pop(record.task.id, None)
 
     async def _on_trace_event(self, event) -> None:
         payload = event.to_dict()
-        await self._publish("trace.event", payload, session_id=event.session_id, task_id=event.task_id)
+        # A trace belongs to whichever conversation submitted the task that
+        # produced it. Work with no conversation (a canvas flow) carries none,
+        # which is what keeps it out of the chat transcript.
+        await self._publish("trace.event", payload, session_id=event.session_id,
+                            conversation_id=self._run_conversations.get(event.task_id or ""),
+                            task_id=event.task_id)
         # A workflow run (canvas draft run) just finished. Push an explicit
         # terminal so canvas clients resolve immediately instead of discovering
         # it by polling canvas.run.status (which can be missed/dropped). The
@@ -1852,19 +1944,24 @@ class AgentGateway:
         payload: Dict[str, Any],
         *,
         session_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
         task_id: Optional[str] = None,
     ) -> GatewayEvent:
-        key = session_id or "_gateway"
+        # Sequence per conversation where there is one: two dialogues in the
+        # same project run independently, so a shared counter would make each
+        # one's replay depend on how busy the other had been.
+        key = conversation_id or session_id or "_gateway"
         self._sequence[key] += 1
         event = GatewayEvent(
             type=event_type,
             payload=payload,
             session_id=session_id,
+            conversation_id=conversation_id,
             task_id=task_id,
             seq_no=self._sequence[key],
         )
         self._events[key].append(event)
-        self._append_event_log(session_id, event)
+        self._append_event_log(event)
         for queue in tuple(self._subscribers):
             try:
                 queue.put_nowait(event)

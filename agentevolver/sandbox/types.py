@@ -132,7 +132,8 @@ class Sandbox:
         """Execute code via a code-interpreter kernel. Backends without an
         interpreter raise NotImplementedError."""
         raise NotImplementedError(
-            f"{type(self).__name__} does not support run_code; use the 'code_interpreter' sandbox."
+            f"{type(self).__name__} does not support run_code; code runs in the project kernel "
+            f"(agentevolver.kernel), not in a sandbox."
         )
 
     # ------------------------------------------------------------- files

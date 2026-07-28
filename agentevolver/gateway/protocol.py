@@ -46,6 +46,11 @@ class GatewayEvent(BaseModel):
     type: str
     payload: Dict[str, Any] = Field(default_factory=dict)
     session_id: Optional[str] = None
+    #: Which line of dialogue this belongs to. A project holds several, and the
+    #: Gateway broadcasts every event to every client, so without this a client
+    #: cannot tell its own conversation's work from the one in the next tab.
+    #: Absent on project-wide events (a session opening, capabilities changing).
+    conversation_id: Optional[str] = None
     task_id: Optional[str] = None
     seq_no: int
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

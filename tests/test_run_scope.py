@@ -111,3 +111,51 @@ async def test_a_constraint_frees_the_key_it_counts_under() -> None:
     constraint._cleanup(ctx.id)
     response = await constraint({"token": 90}, ctx=ctx)
     assert response.success, "the released budget was not actually released"
+
+
+def test_the_interpreter_is_keyed_by_project_not_by_state_scope() -> None:
+    """Resources are shared; state is not. They cannot use the same key.
+
+    ``ctx.id`` is the state scope — one per conversation, one per workflow run.
+    Keying the interpreter off it would hand every new line of dialogue a blank
+    one, losing exactly the persistence the tool exists to provide.
+    """
+    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
+    import agentevolver.tool.default.code_interpreter as module
+    from agentevolver.kernel.types import KernelResult
+
+    tool = CodeInterpreterTool()
+    captured: list[str] = []
+
+    class _Recorder:
+        async def execute(self, code, *, key="default", kernel_name=None):
+            captured.append(key)
+            return KernelResult()
+
+    original, module.kernel_manager = module.kernel_manager, _Recorder()
+    try:
+        for scope in ("conversation-1", "conversation-2", "workflow-run-3"):
+            ctx = SimpleNamespace(id=scope, extra={"project_id": "project-1"})
+            asyncio.run(tool(code="1+1", ctx=ctx))
+    finally:
+        module.kernel_manager = original
+
+    assert captured == ["project-1"] * 3, "one interpreter per project, whatever the state scope"
+
+
+def test_a_figure_survives_as_an_image() -> None:
+    """The whole point of carrying MIME bundles: a plot must not become a string.
+
+    The previous pipeline kept only ``text/plain``, so every figure arrived as
+    ``<Figure size 640x480 with 1 Axes>``.
+    """
+    from agentevolver.kernel.types import KernelOutput, KernelResult
+
+    figure = KernelOutput(type="display", data={
+        "image/png": "iVBORw0KGgo=", "text/plain": "<Figure size 640x480 with 1 Axes>"})
+    result = KernelResult(outputs=[figure])
+
+    assert result.rich() == [figure]
+    assert "image/png" in result.as_message()
+    # Named, not inlined — base64 in a transcript helps nobody.
+    assert "iVBORw0KGgo=" not in result.as_message()

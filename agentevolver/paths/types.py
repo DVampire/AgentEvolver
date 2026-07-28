@@ -52,10 +52,14 @@ class P(str, Enum):
     SESSION_FLOWS = "session_flows"
     #: One append-only index per flow: every run it has had, newest last.
     SESSION_RUNS = "session_runs"
-    #: Every gateway event this session emitted, append-only. The in-memory
-    #: buffer is bounded and dies with the process; this is what lets a restored
-    #: session reopen with its conversation instead of an empty transcript.
-    SESSION_EVENTS = "session_events"
+    #: One conversation's transcript, append-only. The in-memory buffer is
+    #: bounded and dies with the process; this is what lets a restored project
+    #: reopen with its conversations instead of an empty transcript.
+    CONVERSATION_EVENTS = "conversation_events"
+    #: A conversation's identity: title, which view it belongs to, timestamps.
+    CONVERSATION_META = "conversation_meta"
+    #: All conversations of one project.
+    CONVERSATIONS = "conversations"
     #: Editor state — open tabs, layout. Per session, unlike the extensions and
     #: agent logins beside it, which are worth sharing across all of them.
     SESSION_IDE_USER_DATA = "session_ide_user_data"
@@ -92,7 +96,9 @@ LAYOUT: Dict[P, str] = {
     P.SESSION_MANIFEST: "output/{owner}/sessions/{session_id}/session.json",
     P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",
     P.SESSION_RUNS: "output/{owner}/sessions/{session_id}/runs",
-    P.SESSION_EVENTS: "output/{owner}/sessions/{session_id}/events.jsonl",
+    P.CONVERSATIONS: "output/{owner}/sessions/{session_id}/conversations",
+    P.CONVERSATION_EVENTS: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.jsonl",
+    P.CONVERSATION_META: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.json",
     P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
     P.RUN: "output/{owner}/runs/{run_id}",
 }

@@ -41,6 +41,23 @@ RUN conda install -y -c conda-forge nodejs r-base \
 RUN pip install --no-cache-dir \
         numpy pandas scipy scikit-learn matplotlib seaborn lightgbm xgboost
 
+# The interpreter behind code_interpreter_tool: a Jupyter *kernel*, not the
+# Jupyter web app. The tool is part of the agent system, so it runs here like
+# every other tool — the kernel is what makes its state persist across calls and
+# what carries figures back as images instead of "<Figure ...>". JupyterLab, the
+# browser application, belongs to the science sandbox, not to this image.
+#
+# One kernelspec per language this image can actually run: Python, Bash, R and
+# JS/TS (node is here). Go and Java have no toolchain in this image, so they get
+# no kernelspec rather than one that fails at first use — code_interpreter passes
+# an unknown language straight through, so adding a toolchain here is all it
+# takes to reach it.
+RUN pip install --no-cache-dir jupyter_client ipykernel ipywidgets matplotlib-inline bash_kernel \
+    && python -m ipykernel install --name python3 --display-name "Python 3" --prefix /opt/conda \
+    && python -m bash_kernel.install --prefix /opt/conda \
+    && npm install -g tslab && tslab install --prefix /opt/conda \
+    && R -e "install.packages('IRkernel', repos='https://cloud.r-project.org'); IRkernel::installspec(prefix='/opt/conda')"
+
 # GPU deep-learning: torch built for CUDA 12.6. The default PyPI wheel targets
 # CUDA 13, which is too new for the host driver (575 / CUDA 12.9) and would report
 # cuda_available=False; the cu126 wheel matches. Only the host driver is required —

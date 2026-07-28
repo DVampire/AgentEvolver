@@ -487,11 +487,10 @@ def test_tool_and_agent_details_are_human_readable_guides() -> None:
 
 
 def test_a_restarted_gateway_reopens_the_conversation() -> None:
-    """The transcript is the record of what happened; a restart must not eat it.
+    """A transcript is the record of what happened; a restart must not eat it.
 
-    The in-memory event buffer is bounded and dies with the process, so a
-    restored session used to come back as an empty conversation over its own
-    files. It is replayed from the session's event log now.
+    The in-memory buffer is bounded and dies with the process, so the
+    conversation is read back from its file on disk instead.
     """
 
     async def run() -> None:
@@ -499,34 +498,81 @@ def test_a_restarted_gateway_reopens_the_conversation() -> None:
         created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
         assert created.ok
         session_id = created.result["session_id"]
-        # The session becomes real — the point at which it starts leaving a
+
+        # The project becomes real — the point at which it starts leaving a
         # record, the same rule the manifest beside it follows.
         session = gateway._sessions[session_id]  # noqa: SLF001
         session.sandbox.materialize()
         gateway._write_session_manifest(session)  # noqa: SLF001
-        gateway._flush_event_log(session_id)  # noqa: SLF001
-        await gateway._publish("test.after", {"n": 1}, session_id=session_id)  # noqa: SLF001
 
-        before = await gateway.handle(
-            GatewayCommand(id="e1", method="session.events", params={"session_id": session_id, "after_seq": 0})
-        )
-        assert before.ok and before.result["events"], "the session emitted nothing to replay"
+        conversation = gateway._resolve_conversation(session, {"view": "chat"})  # noqa: SLF001
+        await gateway._publish("task.submitted", {"content": "hi"},  # noqa: SLF001
+                               session_id=session_id, conversation_id=conversation.id)
+
+        before = await gateway.handle(GatewayCommand(
+            id="e1", method="conversation.events",
+            params={"session_id": session_id, "conversation_id": conversation.id}))
+        assert before.ok and before.result["events"], "the conversation recorded nothing"
 
         # A fresh gateway over the same tree — the restart.
         restarted = AgentGateway()
-        await restarted._restore_sessions()  # noqa: SLF001 — this is the behaviour under test
+        await restarted._restore_sessions()  # noqa: SLF001
         assert session_id in restarted._sessions  # noqa: SLF001
 
-        after = await restarted.handle(
-            GatewayCommand(id="e2", method="session.events", params={"session_id": session_id, "after_seq": 0})
-        )
-        assert after.ok
+        listed = await restarted.handle(GatewayCommand(
+            id="l", method="conversation.list", params={"session_id": session_id}))
+        assert [item["conversation_id"] for item in listed.result["conversations"]] == [conversation.id]
+
+        after = await restarted.handle(GatewayCommand(
+            id="e2", method="conversation.events",
+            params={"session_id": session_id, "conversation_id": conversation.id}))
         assert [event["type"] for event in after.result["events"]] == \
                [event["type"] for event in before.result["events"]]
+
         # New events continue the numbering rather than colliding with replayed ones.
         highest = max(event["seq_no"] for event in after.result["events"])
-        published = await restarted._publish("test.marker", {}, session_id=session_id)  # noqa: SLF001
+        restored_session = restarted._sessions[session_id]  # noqa: SLF001
+        restarted._resolve_conversation(restored_session, {"conversation_id": conversation.id})  # noqa: SLF001
+        published = await restarted._publish("test.marker", {}, session_id=session_id,  # noqa: SLF001
+                                             conversation_id=conversation.id)
         assert published.seq_no > highest
+
+    asyncio.run(run())
+
+
+def test_two_conversations_in_one_project_stay_apart() -> None:
+    """Their transcripts are separate, and so is the state keyed by ctx.id."""
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        session_id = created.result["session_id"]
+        session = gateway._sessions[session_id]  # noqa: SLF001
+        session.sandbox.materialize()
+        gateway._write_session_manifest(session)  # noqa: SLF001
+
+        first = gateway._resolve_conversation(session, {"view": "chat"})  # noqa: SLF001
+        second = gateway._resolve_conversation(session, {"view": "science"})  # noqa: SLF001
+        assert first.id != second.id
+
+        await gateway._publish("task.submitted", {"content": "one"},  # noqa: SLF001
+                               session_id=session_id, conversation_id=first.id)
+        await gateway._publish("task.submitted", {"content": "two"},  # noqa: SLF001
+                               session_id=session_id, conversation_id=second.id)
+
+        async def transcript(cid):
+            response = await gateway.handle(GatewayCommand(
+                id=f"e{cid}", method="conversation.events",
+                params={"session_id": session_id, "conversation_id": cid}))
+            return [event["payload"]["content"] for event in response.result["events"]]
+
+        assert await transcript(first.id) == ["one"]
+        assert await transcript(second.id) == ["two"]
+
+        # A view can list only its own.
+        science = await gateway.handle(GatewayCommand(
+            id="ls", method="conversation.list", params={"session_id": session_id, "view": "science"}))
+        assert [item["conversation_id"] for item in science.result["conversations"]] == [second.id]
 
     asyncio.run(run())
 
@@ -558,5 +604,45 @@ def test_canvas_run_history_outlives_the_runtime() -> None:
         # Newest first, and a run whose record is gone is reported, not hidden.
         assert [item["run_id"] for item in listed.result["runs"]] == ["run-two", "run-one"]
         assert {item["state"] for item in listed.result["runs"]} == {"unknown"}
+
+    asyncio.run(run())
+
+
+def test_an_older_project_keeps_its_transcript() -> None:
+    """A project written before conversations existed must not lose its history.
+
+    Its single events.jsonl would otherwise just stop being read — still on
+    disk, with nothing able to open it.
+    """
+
+    async def run() -> None:
+        from agentevolver.paths import P, path_manager
+
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        session_id = created.result["session_id"]
+        session = gateway._sessions[session_id]  # noqa: SLF001
+        session.sandbox.materialize()
+        gateway._write_session_manifest(session)  # noqa: SLF001
+
+        # A transcript in the old shape, beside the manifest.
+        legacy = path_manager.get(P.SESSION, owner=session.owner, session_id=session_id) / "events.jsonl"
+        legacy.write_text('{"type": "task.submitted", "seq_no": 1, "payload": {"content": "old work"}}\n',
+                          encoding="utf-8")
+
+        restarted = AgentGateway()
+        await restarted._restore_sessions()  # noqa: SLF001
+
+        listed = await restarted.handle(GatewayCommand(
+            id="l", method="conversation.list", params={"session_id": session_id}))
+        assert len(listed.result["conversations"]) == 1
+        adopted = listed.result["conversations"][0]["conversation_id"]
+
+        events = await restarted.handle(GatewayCommand(
+            id="e", method="conversation.events",
+            params={"session_id": session_id, "conversation_id": adopted}))
+        assert [event["payload"]["content"] for event in events.result["events"]] == ["old work"]
+        # The original is kept, renamed, so the rewrite is visible.
+        assert not legacy.exists() and legacy.with_suffix(".jsonl.migrated").is_file()
 
     asyncio.run(run())

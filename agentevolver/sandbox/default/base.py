@@ -2,7 +2,7 @@
 
 Wraps ``opensandbox.Sandbox`` and implements the :class:`~agentevolver.sandbox.types.Sandbox`
 contract: shell commands, files, and port exposure. Code execution lives in the
-``code_interpreter`` subclass; browser/CDP in the ``playwright`` subclass.
+``playwright`` subclass for browser/CDP.
 """
 
 from __future__ import annotations

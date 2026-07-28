@@ -6,7 +6,7 @@ machinery — a sandbox is infrastructure, not an evolvable component. It:
 
   * lazily ensures the opensandbox-server daemon is running (via the handles),
   * hands out started :class:`~agentevolver.sandbox.types.Sandbox` handles by *kind*
-    (``"code_interpreter"``, ``"playwright"``, ``"opensandbox"``, ...),
+    (``"opensandbox"``, ``"playwright"``, ``"vscode"``, ...),
   * optionally caches a handle per ``reuse_key`` (e.g. a session id) so callers
     can keep a warm container across calls instead of paying cold-start each time,
   * tears everything down on cleanup.
@@ -64,7 +64,7 @@ class SandboxManagerServer(BaseModel):
     # ------------------------------------------------------------- handles
     async def acquire(
         self,
-        kind: str = "code_interpreter",
+        kind: str = "opensandbox",
         *,
         reuse_key: Optional[str] = None,
         start: bool = True,
@@ -73,7 +73,7 @@ class SandboxManagerServer(BaseModel):
         """Create (or reuse) a started sandbox handle of the given kind.
 
         Args:
-            kind: registered sandbox kind (``code_interpreter`` / ``playwright`` / ``opensandbox``).
+            kind: registered sandbox kind (``opensandbox`` / ``playwright`` / ``vscode``).
             reuse_key: if given, the handle is cached and reused for this key
                 (e.g. a session id) so the container stays warm across calls.
             start: whether to ``await handle.start()`` before returning.
@@ -95,7 +95,7 @@ class SandboxManagerServer(BaseModel):
             self._handles[cache_key] = handle
         return handle
 
-    async def release(self, kind: str = "code_interpreter", *, reuse_key: Optional[str] = None) -> None:
+    async def release(self, kind: str = "opensandbox", *, reuse_key: Optional[str] = None) -> None:
         """Destroy a cached handle for a reuse_key."""
         cache_key = f"{kind}:{reuse_key}" if reuse_key else None
         if cache_key and cache_key in self._handles:

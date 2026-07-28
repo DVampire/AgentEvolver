@@ -73,7 +73,7 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
     monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
     output, extension = path_manager.writable_roots()
     sample = {"owner": "someone", "session_id": "sid", "run_id": "rid",
-              "project_key": "key", "module": "skill"}
+              "project_key": "key", "module": "skill", "conversation_id": "cid"}
 
     for key in P:
         resolved = path_manager.get(key, **{p: sample[p] for p in path_manager.params_for(key)})
