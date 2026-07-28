@@ -16,6 +16,7 @@ class IdeInstance(BaseModel):
     session_id: str = Field(description="Gateway session this IDE edits.")
     owner: str = Field(default="local", description="Owner whose extensions/settings are mounted.")
     upstream: str = Field(description="Base URL of the opensandbox proxy path serving the IDE.")
+    base_path: str = Field(default="", description="Sub-path the editor is served under on the UI origin, e.g. /ide/<session>.")
     workspace_root: str = Field(description="Host directory mounted at /workspace.")
     started_at: float = Field(default_factory=time.time)
     last_seen: float = Field(default_factory=time.time, description="Last heartbeat/proxy touch, for idle reaping.")
@@ -32,6 +33,9 @@ class IdeInstance(BaseModel):
         return {
             "session_id": self.session_id,
             "running": True,
+            # Where the UI embeds this editor, relative to its own origin — the
+            # frontend needs no host of its own, so it works over any tunnel.
+            "path": f"{self.base_path}/",
             "started_at": self.started_at,
             "idle_seconds": round(time.time() - self.last_seen, 1),
             "workspace_root": self.workspace_root,

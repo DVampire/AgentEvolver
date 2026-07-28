@@ -11,14 +11,16 @@ import '../style/ide.css';
  *  proxied request, so this only matters while the IDE sits untouched. */
 const HEARTBEAT_MS = 60_000;
 
-interface IdeStatus { running: boolean; origin?: string }
+interface IdeStatus { running: boolean; path?: string }
 
 /** Full VS Code for the current session, embedded in an iframe.
  *
- * The IDE is served at the ROOT of its own per-session host
- * (`<session>.ide.localhost:<ui port>`) because VS Code emits absolute asset
- * paths — see agentevolver/ide/README.md. The container starts lazily on first
- * open and is reaped once idle, so mounting this view is what boots it. */
+ * The IDE is served under a path on THIS origin (`/ide/<session>/`), so it is
+ * reachable at whatever address the browser reached the UI at — a tunnel, a
+ * reverse proxy, or plain localhost. openvscode-server is started with that
+ * path as its base so its absolute asset URLs match; see
+ * agentevolver/ide/README.md. The container starts lazily on first open and is
+ * reaped once idle, so mounting this view is what boots it. */
 export function IdeView({ request, sessionId, connected, status, statusText, onOpenNav }: {
   request: RequestFn;
   sessionId?: string;
@@ -27,7 +29,7 @@ export function IdeView({ request, sessionId, connected, status, statusText, onO
   statusText?: string;
   onOpenNav?: () => void;
 }) {
-  const [origin, setOrigin] = useState<string>();
+  const [path, setPath] = useState<string>();
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -40,8 +42,8 @@ export function IdeView({ request, sessionId, connected, status, statusText, onO
       const response = await request('ide.start', { session_id: sessionId });
       if (!response.ok) throw new Error(response.error?.message ?? 'Could not start the IDE');
       const status = response.result as unknown as IdeStatus;
-      if (!status.origin) throw new Error('The gateway did not return an IDE address');
-      setOrigin(status.origin);
+      if (!status.path) throw new Error('The gateway did not return an IDE address');
+      setPath(status.path);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -51,15 +53,15 @@ export function IdeView({ request, sessionId, connected, status, statusText, onO
 
   // Boot on mount / session switch. The first call pulls or builds a ~600MB
   // image, so this can take a while before the iframe appears.
-  useEffect(() => { setOrigin(undefined); void start(); }, [start]);
+  useEffect(() => { setPath(undefined); void start(); }, [start]);
 
   // Heartbeat so an open-but-idle IDE is not reaped underneath the user.
-  const originRef = useRef<string | undefined>(undefined);
-  originRef.current = origin;
+  const pathRef = useRef<string | undefined>(undefined);
+  pathRef.current = path;
   useEffect(() => {
     if (!sessionId || !connected) return;
     const timer = window.setInterval(() => {
-      if (originRef.current) void request('ide.status', { session_id: sessionId });
+      if (pathRef.current) void request('ide.status', { session_id: sessionId });
     }, HEARTBEAT_MS);
     return () => window.clearInterval(timer);
   }, [request, sessionId, connected]);
@@ -72,7 +74,7 @@ export function IdeView({ request, sessionId, connected, status, statusText, onO
       </IdeNotice>
     );
   }
-  if (!origin || starting) {
+  if (!path || starting) {
     return (
       <IdeNotice
         title="Starting VS Code…"
@@ -82,8 +84,10 @@ export function IdeView({ request, sessionId, connected, status, statusText, onO
     );
   }
 
-  // ?folder= opens the mounted workspace — the same files the agent edits.
-  const src = `${window.location.protocol}//${origin}/?folder=/workspace`;
+  // Same-origin and relative: whatever address this page was loaded from is the
+  // one the iframe uses. ?folder= opens the mounted workspace — the same files
+  // the agent edits.
+  const src = `${path}?folder=/workspace`;
   return (
     <div className="ide-view">
       {/* The only chrome above the editor — VS Code supplies the rest, so this
@@ -92,7 +96,7 @@ export function IdeView({ request, sessionId, connected, status, statusText, onO
         {onOpenNav ? <button className="mobile-menu" onClick={onOpenNav} aria-label="Open navigation">☰</button> : null}
         <SquareTerminal size={14} strokeWidth={1.9} />
         <strong>Code</strong>
-        <code className="ide-origin" title="This session's IDE host">{origin}</code>
+        <code className="ide-origin" title="This session's IDE path">{path}</code>
         <span className="ide-toolbar-spacer" />
         {statusText ? <span className="ide-status"><span className={`connection-dot ${status ?? ''}`} />{statusText}</span> : null}
         <Button variant="ghost" size="sm" className="font-normal" onClick={() => setReloadKey((key) => key + 1)}>

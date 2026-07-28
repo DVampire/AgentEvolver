@@ -1,26 +1,26 @@
 import { defineConfig } from 'vite';
 
-import { ideHostProxy } from './ide-host-proxy';
+import { ideProxy } from './ide-proxy';
 
 // The Vite dev server is the single reverse proxy: the browser only ever talks
-// to it (one forwarded port for remote access). It relays the app's control
-// socket (/ws), the VNC live view (/env/vnc), and the health probe (/health) to
-// the gateway on 9876. The gateway in turn relays /env/vnc to the sandbox's
-// ephemeral websockify port, so that port never needs forwarding.
-//
-// The browser IDE is routed by HOST rather than path — see ide-host-proxy.ts —
-// so it keeps that single-port property too.
+// to it (one origin for remote access). It relays the app's control socket
+// (/ws), the VNC live view (/env/vnc), the browser IDE (/ide/<session>/ — see
+// ide-proxy.ts), and the health probe (/health) to the gateway on 9876. The
+// gateway in turn relays /env/vnc to the sandbox's ephemeral websockify port,
+// so that port never needs forwarding.
 const GATEWAY = process.env.GATEWAY_PORT || '9876';
 
 export default defineConfig({
   esbuild: { target: 'es2022' },
   build: { target: 'es2022' },
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
-  plugins: [ideHostProxy(GATEWAY)],
+  plugins: [ideProxy(GATEWAY)],
   server: {
     // Vite rejects unknown Host headers; the IDE deliberately uses a
-    // per-session host, so allow that suffix.
-    allowedHosts: ['.ide.localhost'],
+    // per-session host, so allow that suffix. Tailscale (serve / funnel) forwards
+    // the tailnet hostname verbatim, so allow that suffix too — otherwise remote
+    // access gets "Blocked request" instead of the app.
+    allowedHosts: ['.ide.localhost', '.ts.net'],
     // This shared host's inotify instance limit (fs.inotify.max_user_instances,
     // 128) is exhausted by other containers, so native fs.watch throws EMFILE.
     // Poll instead (no inotify), and ignore trees the UI never imports so polling

@@ -14,6 +14,11 @@ EXT_DIR="${IDE_EXTENSIONS_DIR:-/ide/extensions}"
 DATA_DIR="${IDE_USER_DATA_DIR:-/ide/user-data}"
 FOLDER="${IDE_FOLDER:-/workspace}"
 PORT="${IDE_PORT:-3000}"
+# Sub-path this editor is served under, e.g. /ide/<session>. openvscode-server
+# then emits its absolute asset paths already prefixed, which is what lets the
+# UI host the IDE on its OWN origin instead of a per-session *.ide.localhost
+# name that only resolves when the browser sits on the server. Empty = root.
+BASE_PATH="${IDE_BASE_PATH:-}"
 # Coding agents, installed on first use. Both ship their CLI as a bundled
 # native binary, so neither needs npm — which matters where registry egress is
 # restricted. Set to "" to opt out.
@@ -72,9 +77,13 @@ done
 # --without-connection-token: the port is bound to loopback by the opensandbox
 # proxy and only reachable through the gateway-authorised route, so VS Code's
 # own token would be a second, redundant secret in every asset URL.
+BASE_PATH_ARG=()
+[ -n "$BASE_PATH" ] && BASE_PATH_ARG=(--server-base-path "$BASE_PATH")
+
 exec "${OPENVSCODE_SERVER_ROOT}/bin/openvscode-server" \
     --host 0.0.0.0 \
     --port "$PORT" \
+    "${BASE_PATH_ARG[@]}" \
     --without-connection-token \
     --telemetry-level off \
     --extensions-dir "$EXT_DIR" \

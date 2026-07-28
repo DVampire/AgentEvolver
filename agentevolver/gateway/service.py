@@ -1238,8 +1238,9 @@ class AgentGateway:
     async def _command_ide_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Start (or reuse) this session's VS Code container and say where to embed it.
 
-        The returned origin is a per-session host on the UI's own port, so the
-        IDE occupies the ROOT path there — see agentevolver/ide/README.md.
+        The status carries a ``path`` (``/ide/<session>/``) rather than a host:
+        the editor lives on the UI's OWN origin, so whatever address the browser
+        reached the UI at works — see agentevolver/ide/README.md.
         """
         session_id = self._require_session_id(params)
         session = self._sessions[session_id]
@@ -1248,27 +1249,17 @@ class AgentGateway:
             workspace_root=session.sandbox.workspace_root,
             owner=session.owner,
         )
-        return {**ide_manager.status(session_id), "origin": self._ide_origin(session_id)}
+        return ide_manager.status(session_id)
 
     async def _command_ide_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
         # Doubles as the keep-alive: an open Code view pings this.
         ide_manager.touch(session_id)
-        return {**ide_manager.status(session_id), "origin": self._ide_origin(session_id)}
+        return ide_manager.status(session_id)
 
     async def _command_ide_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
         return {"session_id": session_id, "stopped": await ide_manager.stop(session_id)}
-
-    @staticmethod
-    def _ide_origin(session_id: str) -> str:
-        """``<session>.ide.localhost:<ui port>`` — the IDE's own host on the UI port.
-
-        ``*.localhost`` resolves to 127.0.0.1 without DNS or /etc/hosts, so this
-        costs no extra forwarded port.
-        """
-        from agentevolver.port import UI, port_manager
-        return f"{session_id}.ide.localhost:{port_manager.get('ui') or UI}"
 
     @staticmethod
     def _workflow_preview_document(source: str) -> str:

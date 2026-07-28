@@ -63,13 +63,13 @@ def create_websocket_app(
 
     @app.get("/ide/resolve/{session_id}")
     async def ide_resolve(session_id: str, port: int = 0):
-        """Tell the UI's host-routing proxy where a session's container port lives.
+        """Tell the UI's IDE proxy where a session's container port lives.
 
-        ``<session>.ide.localhost:<ui port>`` reaches the IDE itself; the general
-        form ``<port>-<session>.ide.localhost`` reaches any port inside that
-        container, so a dev server or an OAuth callback listener started in the
-        integrated terminal is reachable with no per-tool support. The Vite dev
-        server matches the Host and asks here for the upstream to forward to.
+        ``/ide/<session>/`` on the UI's origin reaches the editor itself; the
+        host form ``<port>-<session>.ide.localhost`` reaches any other port in
+        that container, so a dev server or an OAuth callback listener started in
+        the integrated terminal is reachable with no per-tool support. The Vite
+        dev server matches either and asks here for the upstream to forward to.
 
         Bound to loopback like the rest of the gateway, and it returns nothing
         for an unknown session, so it cannot be used to probe other sessions.

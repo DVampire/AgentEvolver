@@ -39,10 +39,11 @@ reach the host daemon.
 ## Ports
 - `3000` — openvscode-server: HTTP **and** the workbench WebSocket, same port.
 
-Served at the **root path** of a per-session host (`<sid>.ide.localhost`) so VS
-Code's absolute asset paths (`/stable-<commit>/static/...`) resolve untouched.
-See [`agentevolver/ide/README.md`](../../agentevolver/ide/README.md) for the
-full routing chain.
+Served under `/ide/<session>/` on the UI's own origin. `entrypoint-vscode` passes
+that as `--server-base-path` (from `IDE_BASE_PATH`), so VS Code's absolute asset
+paths carry the prefix and resolve untouched. See
+[`agentevolver/ide/README.md`](../../agentevolver/ide/README.md) for the full
+routing chain.
 
 ## Extensions
 openvscode-server uses the **Open VSX** registry, not the Microsoft

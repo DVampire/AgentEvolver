@@ -29,6 +29,19 @@ CONTAINER_USER_DATA = "/ide/user-data"
 CONTAINER_HOME = "/home/workspace"
 
 
+def base_path(session_id: str) -> str:
+    """Sub-path the session's IDE is served under, on the UI's own origin.
+
+    openvscode-server is started with this as ``--server-base-path``, so the
+    absolute asset URLs it emits already carry the prefix and the UI can host
+    the editor at ``<whatever origin the browser used>/ide/<session>/``. That
+    origin is the one thing every deployment agrees on — a per-session
+    ``*.ide.localhost`` host, which this used to rely on, is resolved by the
+    BROWSER, so it only ever worked when the browser ran on the server itself.
+    """
+    return f"/ide/{session_id}"
+
+
 class IdeManagerServer:
     """Start, track, and reap per-session VS Code containers."""
 
@@ -94,7 +107,7 @@ class IdeManagerServer:
                 timeout_minutes=self.container_timeout_minutes,
                 # Extensions install from the Open VSX registry over the network.
                 network=True,
-                env=self._agent_credentials(),
+                env={**self._agent_credentials(), "IDE_BASE_PATH": base_path(session_id)},
                 mounts={
                     str(workspace): CONTAINER_WORKSPACE,
                     str(extensions): CONTAINER_EXTENSIONS,
@@ -108,12 +121,13 @@ class IdeManagerServer:
 
             instance = IdeInstance(
                 session_id=session_id, owner=owner, upstream=upstream,
+                base_path=base_path(session_id),
                 workspace_root=str(workspace), sandbox=sandbox,
             )
             self._instances[session_id] = instance
             self._ensure_reaper()
 
-            if not await self._wait_ready(upstream):
+            if not await self._wait_ready(upstream + instance.base_path):
                 logger.warning(f"| ⚠️ IDE for {session_id} did not answer in time; serving anyway")
             logger.info(f"| ✅ IDE ready for session {session_id}")
             return instance

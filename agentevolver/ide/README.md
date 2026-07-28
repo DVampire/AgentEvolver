@@ -18,46 +18,56 @@ Like the [canvas](../canvas/README.md), this is **human-facing**: the agent
 never calls into it, and the IDE is not registered as a capability the meta
 agent can see.
 
-## Why it is served at a root path
+## Why it is served under a path on the UI's own origin
 
-VS Code emits **absolute** asset paths (`/stable-<commit>/static/...`). Served
-under a sub-path they bypass the prefix and 404, and openvscode-server has no
-base-path option. So the IDE gets the **root** of its own host instead:
+VS Code emits **absolute** asset paths (`/stable-<commit>/static/...`), so a
+sub-path works only if the server knows about it. openvscode-server does:
+`--server-base-path /ide/<session>` prefixes every URL it emits, so both sides
+agree and nothing has to be rewritten.
 
 ```
-localhost:5173                → AgentEvolver SPA
-<session>.ide.localhost:5173  → that session's IDE, at "/"
+<ui origin>/                 → AgentEvolver SPA
+<ui origin>/ide/<session>/   → that session's IDE
 ```
 
-Routing keys on the **Host** header, not the path, so every absolute asset URL
-lands on the same rule for free. This is Gitpod's per-workspace-subdomain trick
-narrowed to one port — `*.localhost` resolves to `127.0.0.1` without any DNS or
-`/etc/hosts` entry, so remote access still forwards a **single** port.
+The UI's own origin is the one address every deployment agrees on — whatever the
+browser reached the app at works, including through a tunnel or a reverse proxy.
+
+> This used to be a per-session **host** instead (`<session>.ide.localhost`).
+> That name is resolved by the **browser**, where `*.localhost` is loopback — so
+> it only ever worked with the browser running on the machine serving the UI.
+> Reached through a tunnel, the iframe pointed at the user's own laptop and came
+> up blank. A wildcard host cannot be fixed by forwarding either: it needs DNS
+> and a certificate per session.
 
 ## The chain
 
 ```
-browser  <sid>.ide.localhost:5173/stable-…/static/x.js
-   │  vite plugin matches the Host, prepends the proxy prefix
+browser  <ui origin>/ide/<sid>/stable-…/static/x.js
+   │  vite plugin matches the path, prepends the proxy prefix
    ▼
-gateway-resolved upstream  127.0.0.1:<ephemeral>/proxy/3000/stable-…/static/x.js
+gateway-resolved upstream  127.0.0.1:<ephemeral>/proxy/3000/ide/<sid>/stable-…/static/x.js
    │  the opensandbox proxy strips /proxy/3000
    ▼
-openvscode-server :3000    /stable-…/static/x.js      ← always sees root
+openvscode-server :3000    /ide/<sid>/stable-…/static/x.js   ← its own base path
 ```
 
-Both hops cancel out, so VS Code is never aware it is proxied and needs no
-patching. The workbench WebSocket rides the same path and port.
+Each hop strips exactly the prefix it added, so VS Code is never aware it is
+proxied and needs no patching. The workbench WebSocket rides the same path.
 
 ## Port forwarding
 
-The Host rule is general, not IDE-specific — prefix a port to reach **anything**
-listening in that session's container:
+Other ports in the session's container get a **host** rather than a path: a dev
+server or an OAuth callback listener does not know it is proxied and has no base
+path to configure, so only a root of its own keeps its absolute URLs working.
 
 ```
-<session>.ide.localhost:5173          → the IDE (port 3000)
 <port>-<session>.ide.localhost:5173   → any other port in the same container
 ```
+
+Same caveat as the note above — `*.localhost` is loopback on the *browser's*
+machine, so this form needs a browser on the server, or the UI port forwarded to
+where the browser runs (`ssh -L 5173:127.0.0.1:5173 <host>`).
 
 A dev server, a preview, a notebook, an OAuth callback listener — all reachable
 with no per-tool support. Ports resolve on first use (exposing one is a round

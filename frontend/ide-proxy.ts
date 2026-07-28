@@ -2,27 +2,36 @@ import http from 'node:http';
 import net from 'node:net';
 import type { Plugin } from 'vite';
 
-// Host-based routing for the browser IDE.
+// Routing for the browser IDE, by PATH for the editor and by HOST for the
+// other ports of its container.
 //
-// VS Code emits ABSOLUTE asset paths (/stable-<commit>/static/...), and
-// openvscode-server has no base-path option, so it cannot live under a
-// sub-path. It gets the ROOT of its own host instead:
+//   /                       -> the AgentEvolver SPA
+//   /ide/<session>/         -> that session's IDE
 //
-//   localhost:5173               -> the AgentEvolver SPA
-//   <session>.ide.localhost:5173 -> that session's IDE, at "/"
+// VS Code emits ABSOLUTE asset paths, so a sub-path only works if the server
+// knows about it: openvscode-server is started with
+// `--server-base-path /ide/<session>` (see docker/vscode/entrypoint-vscode.sh),
+// which prefixes every URL it emits. Both sides then agree and this proxy has
+// nothing to rewrite.
 //
-// Matching on Host rather than path means every absolute asset URL hits this
-// rule for free. `*.localhost` resolves to 127.0.0.1 with no DNS or /etc/hosts
-// entry, so this costs no extra forwarded port — remote access still forwards
-// only the UI port.
+// The editor deliberately lives on the UI's OWN origin. The previous scheme
+// gave it a host of its own, `<session>.ide.localhost:5173`, which is resolved
+// by the BROWSER — so it only ever worked when the browser ran on the machine
+// serving the UI. Through any tunnel (Tailscale, an SSH -L to a different port,
+// a reverse proxy) the iframe silently pointed at the user's own laptop.
 //
-// Requests are forwarded to `<upstream>/proxy/3000<path>`; the opensandbox
-// proxy strips that prefix again, so VS Code only ever sees root paths and
-// never learns it is proxied.
+// Requests are forwarded to `<upstream>/proxy/<port><path>`; the opensandbox
+// proxy strips that prefix again, so the container sees exactly the path the
+// browser asked for and never learns it is proxied.
 
-// `<session>.ide.localhost` reaches the IDE; `<port>-<session>.ide.localhost`
-// reaches any other port in that container — a dev server, a preview, an OAuth
-// callback listener. Generic on purpose: no tool needs to know about us.
+// `/ide/<session>/…` — the editor, which knows this prefix and emits it itself.
+const PATH_RE = /^\/ide\/([A-Za-z0-9_-]+)(?=[/?#]|$)/;
+// `<port>-<session>.ide.localhost` reaches any OTHER port in that container — a
+// dev server, a preview, an OAuth callback listener. Those services do not know
+// they are proxied and have no base path to configure, so a host of their own is
+// the only thing that keeps their absolute URLs working. Same caveat as above:
+// `*.localhost` is loopback on the browser's machine, so this form is reachable
+// only from a browser on the server (or through a forward of the UI port).
 const HOST_RE = /^(?:(\d+)-)?([A-Za-z0-9_-]+)\.ide\.localhost(?::\d+)?$/;
 const UPSTREAM_TTL_MS = 10_000;
 
@@ -30,11 +39,14 @@ const cache = new Map<string, { upstream: string; expires: number }>();
 
 interface Target { sessionId: string; port: number }
 
-/** Parse the Host header into the session and container port it addresses.
+/** Parse a request into the session and container port it addresses — the URL
+ *  path first (the editor), then the Host header (any other container port).
  *  Port 0 means "the IDE's own port", which the gateway resolves. */
-function targetOf(host: string | undefined): Target | null {
-  const match = HOST_RE.exec(host ?? '');
-  return match ? { sessionId: match[2], port: match[1] ? Number(match[1]) : 0 } : null;
+function targetOf(req: { url?: string; headers: { host?: string } }): Target | null {
+  const byPath = PATH_RE.exec(req.url ?? '');
+  if (byPath) return { sessionId: byPath[1], port: 0 };
+  const byHost = HOST_RE.exec(req.headers.host ?? '');
+  return byHost ? { sessionId: byHost[2], port: byHost[1] ? Number(byHost[1]) : 0 } : null;
 }
 
 /** Ask the gateway which container serves this session, memoised briefly so a
@@ -67,15 +79,15 @@ function parseUpstream(upstream: string): { host: string; port: number; prefix: 
   };
 }
 
-export function ideHostProxy(gatewayPort: string): Plugin {
+export function ideProxy(gatewayPort: string): Plugin {
   return {
-    name: 'agentevolver-ide-host-proxy',
+    name: 'agentevolver-ide-proxy',
     configureServer(server) {
       // Registered directly (not in a returned thunk) so it runs BEFORE Vite's
       // own middlewares — including the host check, which would otherwise
       // reject these hosts before we ever see them.
       server.middlewares.use((req, res, next) => {
-        const target = targetOf(req.headers.host);
+        const target = targetOf(req);
         if (!target) return next();
         void (async () => {
           const upstream = await resolveUpstream(gatewayPort, target);
@@ -104,11 +116,11 @@ export function ideHostProxy(gatewayPort: string): Plugin {
         })();
       });
 
-      // The workbench rides a WebSocket on the same host and port, so the
+      // The workbench rides a WebSocket on the same origin and path, so the
       // upgrade needs the same routing. Vite has its own HMR upgrade listener,
-      // so only claim sockets whose Host is an IDE host and leave the rest.
+      // so only claim sockets that address an IDE and leave the rest.
       server.httpServer?.on('upgrade', (req, socket: net.Socket, head) => {
-        const target = targetOf(req.headers.host);
+        const target = targetOf(req);
         if (!target) return;
         void (async () => {
           const upstream = await resolveUpstream(gatewayPort, target);
