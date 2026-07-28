@@ -1,18 +1,18 @@
 ---
 name: science
-description: "A GPU-backed workstation, one container per project: notebook cells over a live kernel, with JupyterLab beside them for what they do not do. Human-facing: not an agent capability."
+description: "The workstation half of a project: a conversation with the agent, over one kernel the agent, the REPL and JupyterLab all share. Human-facing: not an agent capability."
 version: 1.0.0
 type: module
 category: interface
 requirements: []
 metadata:
-  document_version: 1
+  document_version: 2
 ---
 # Science
 
-A **workstation**: JupyterLab with the host's GPUs attached, a full scientific
-stack, and LaTeX — for the open-ended half of the work. Train a model, run a
-sweep, plot the result, write the paper.
+A **workstation**: you describe an experiment, the agent runs it, and the same
+kernel it ran in is the one you can type into afterwards. Train a model, plot
+the result, write the paper.
 
 Like the [canvas](../canvas/README.md) and the [IDE](../ide/README.md), this is
 **human-facing**: the agent never calls into it, and it is not registered as a
@@ -21,97 +21,77 @@ capability the meta agent can see.
 ```python
 from agentevolver.science import science_manager
 
-instance = await science_manager.start(session_id, workspace_root=workspace)
-instance.public()["path"]        # /science/<session>/lab — where the UI embeds it
-await science_manager.compute(session_id)   # GPUs, CPU, memory, disk
+await science_manager.start(session_id, workspace_root=workspace)
+await science_manager.compute(session_id)          # GPUs, CPU, memory, disk
+science_manager.notebooks(session_id)              # .ipynb files in the workspace
 ```
 
-## Why it is not the base environment
+## One kernel, so there is nothing to synchronise
 
-The agent and its tools — `bash_tool`, `code_interpreter_tool` — run in the
-base container. They ship *with* the agent system, so there is nothing to route
-anywhere, and base stays deliberately lean.
+This is the whole design, and it took two wrong turns to reach.
 
-Science is the opposite kind of thing. It is expected to keep growing: today
-PyTorch, transformers and TeX Live; tomorrow whatever a project needs. Putting
-that in base would make every agent run carry the weight of a workstation
-nobody asked for. So it is a **peer container**, one per project, exactly like
-the Code view's VS Code container.
+Everything that runs code in a project goes through the *same* Jupyter Server,
+held open by [`agentevolver.kernel`](../kernel/README.md):
 
-The image is still built `FROM agentevolver/base`, so the ~21GB of conda, CUDA
-torch, kernels and the project itself are *shared layers already on the host* —
-only the delta costs disk. It also means `import agentevolver` works in a
-notebook, and the Lab's terminals open in the same Python the agent uses.
+- the agent's `code_interpreter_tool`,
+- the Science view's REPL, and
+- JupyterLab.
 
-## Why it bypasses opensandbox
+So `x` defined by the agent is `x` at the prompt. The panel labelled "Notebook"
+is not a document anybody edits — it is **the kernel's own execution history**,
+rendered. Nothing can drift out of step with what actually ran, because there is
+only one record and one set of variables.
 
-Every other sandbox goes through opensandbox. This one calls `docker run`
-itself, because opensandbox's `[docker]` configuration has **no device
-option** — a container it starts cannot be given GPUs at all, and a workstation
-that cannot reach a GPU is not a workstation.
+The two wrong turns are worth keeping written down:
 
-What opensandbox was doing for the others turns out to be small: a `docker run`
-with an ephemeral loopback port, a `docker rm -f`, and an idle deadline this
-manager enforces. See `agentevolver/sandbox/default/science.py`.
+1. **The agent writes a notebook file, the view reads it.** Two writers of one
+   document, and edits made in JupyterLab silently lost.
+2. **A separate "science" peer container with its own kernel.** Then the agent's
+   variables were not the notebook's variables, and "keeping them in sync"
+   became a problem with no good answer — invented entirely by the design.
 
-`SandboxConfig.gpus` exists for this and is read by nothing else — it is not
-silently degraded elsewhere, because no opensandbox-backed sandbox looks at it.
+## Why there is no science container
 
-## One per project, reaped on idle
+There was one. It ran JupyterLab and the heavy stack, and it was deleted.
 
-There is no `session.close` in the gateway, so time is what frees these. A
-workstation is started when the Science view first opens, kept alive by
-heartbeats and by any proxied request, and reaped after two hours idle —
-longer than the IDE's thirty minutes, because a training run can hold a
-background tab for a while and killing the container kills the run with it.
+It bought isolation that was already thin — `bash_tool` runs in the base
+environment as root, on the same GPUs and the same disk — while costing:
 
-At most two run at once. They are expensive; the least recently used is
-evicted rather than starting a third.
+- a second kernel the agent's state never reached;
+- a routing decision for every execution ("which kernel does this go to?");
+- a reaper that could kill a container, and a training run with it;
+- a copy of the agent system baked in at image build time, going stale.
 
-## The cells are ours; the document is not
+Merging its stack into `docker/base` cost **+2.8GB on a 21.6GB image** and made
+all four stop existing. The base environment now carries CUDA PyTorch,
+transformers, the scientific stack and LaTeX, so the agent can reach them too.
 
-The Science view renders its own cells — read a run, nudge it, re-run it —
-but it does **not** own the notebook. The Jupyter Server inside the container
-does, and this view is one of its clients exactly like the embedded Lab is:
+If Science ever genuinely needs to diverge from base — a different CUDA, a
+domain stack that would break the agent — a container comes back. The kernel
+manager is the seam that would take it.
 
-- **execution** goes to that server's kernel, over its WebSocket, through a
-  Jupyter *session* keyed by the notebook's path. Open the same file in the Lab
-  and it attaches to that very kernel — a variable defined in one is defined in
-  the other;
-- **reads and saves** go through its `/api/contents/` API, never through our own
-  file I/O. Two writers of one file is how edits get silently lost: whoever
-  saves last wins and neither side knows.
+## Compute is the machine
 
-A save carries the `last_modified` the read returned, and is refused if the file
-moved on beneath it. Jupyter's server does not check this — JupyterLab does it
-client-side, and so do we, so both clients behave the same way. There is no
-live sync between them: for simultaneous editing you would need
-`jupyter-collaboration` and a Y.js client, which is a different project.
+The Compute panel shows the host's own GPUs, cores, memory and disk, not a
+per-project slice, because that is exactly what the kernel gets. GPUs are
+detected: a machine without an NVIDIA card is ordinary, and the panel says
+"No GPU detected" rather than rendering a meter with nothing behind it.
 
-Cell outputs come back as `KernelResult`, the same model
-`code_interpreter_tool` returns — one shape for "what a cell produced", so a
-notebook cell and a tool call render from the same fields. They are converted
-to and from nbformat at the edge, and *merged* into the document Jupyter hands
-back rather than rebuilt from our model, so per-cell metadata, attachments and
-notebook-level settings this view has no field for survive a save.
+## Notebooks are workspace files
 
-The **list** of notebooks is the one thing still read straight off disk. It is
-a pure read, and it has to answer before the container has booted — otherwise
-opening the view would show nothing until 24GB of image had started.
+`science_manager.notebooks()` reads `.ipynb` files off disk, so it answers
+before a kernel has started and after it has stopped — a notebook is a workspace
+file, and the server is not.
 
-### JupyterLab is a button, not a fallback
-
-The toolbar opens the full Lab on the same server, same kernels. It is there
-for what these cells deliberately do not do: interactive widgets, the debugger,
-extensions. Kernel output is rendered here with scripts off — a `text/html`
-output lands in a fully sandboxed iframe, because a DataFrame can contain
-whatever a dataset contains and this page holds the gateway connection.
+The live history is not one of them until you ask: `science.save` writes what
+has run out as a real notebook, openable in the JupyterLab one button away, in
+the Code view, or anywhere else.
 
 ## Served on the UI's own origin
 
 JupyterLab starts with `--ServerApp.base_url=/science/<session>/`, so every
-absolute URL it emits already carries the prefix and the UI hosts the Lab at
+absolute URL it emits already carries the prefix and the UI hosts it at
 `<whatever origin the browser used>/science/<session>/`.
 
-This is the same fix the IDE needed. A per-session hostname is resolved by the
-BROWSER, so it only ever worked when the browser ran on the server itself.
+Same fix the IDE needed: a per-session hostname is resolved by the BROWSER, so
+it only ever worked when the browser ran on the server itself.

@@ -84,7 +84,11 @@ class CodeInterpreterTool(Tool):
         extra = getattr(ctx, "extra", None) or {}
         key = extra.get("project_id") or getattr(ctx, "id", None) or "default"
 
-        result = await kernel_manager.execute(code, key=key, kernel_name=kernel_for(language))
+        result = await kernel_manager.execute(
+            code, key=key, kernel_name=kernel_for(language), language=language,
+            # The project's workspace, so the kernel starts where bash starts and
+            # relative paths mean the same thing to both.
+            workspace=getattr(ctx, "workspace_root", None), origin="agent")
         logger.info(f"| {'✅' if result.success else '⚠️'} code_interpreter ran {language} code")
         return Response(
             type=ResponseType.TOOL,

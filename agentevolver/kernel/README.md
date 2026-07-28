@@ -1,6 +1,6 @@
 ---
 name: kernel
-description: "One live interpreter per project, held open so state persists across calls. Runs in the base environment beside the workspace, and carries rich output — figures, tables, HTML — back instead of flattening it to text."
+description: "One Jupyter Server per project, and one kernel the agent, the Science REPL and JupyterLab all share. Keeps the execution history, so what ran is a fact rather than a mirror."
 version: 1.0.0
 type: module
 category: infrastructure
@@ -29,20 +29,33 @@ That is deliberate. `ctx.id` — the scope of memory, budgets and todos — is a
 of dialogue a blank interpreter, and every workflow run another one. Resources
 key off the project; state keys off `ctx.id`. They are not the same axis.
 
-## It runs here, not in a container
+## One kernel, everything
 
-The agent system and its tools ship together, so `code_interpreter` runs in the
-base environment like every other tool. It used to start a peer container of
-its own, which:
+The agent's `code_interpreter_tool`, the Science view's REPL and JupyterLab all
+execute through the same Jupyter Server. That is why a variable the agent
+defined is a variable you can print, and why the execution **history** below is
+complete rather than a mirror somebody has to keep up to date.
 
-- bought no isolation the agent did not already have — `bash_tool` runs here
-  too, so anything the interpreter could do was already reachable; and
-- **mounted nothing**, so code could not read the files the agent had just
-  written. A `pd.read_csv("data.csv")` after a `bash` that wrote `data.csv`
-  raised `FileNotFoundError`, because the two ran in different filesystems.
+The server is a subprocess of this container — the same one the agent runs in —
+bound to loopback on an ephemeral port with no token, reachable only from here
+and from the gateway's authorised proxy route.
 
-The kernel now starts in `config.workspace_root`, so relative paths mean the
-same thing to it, to bash, and to the files pane.
+It used to be a raw kernel here plus a second kernel in a "science" peer
+container. That container:
+
+- gave no isolation the agent did not already have — `bash_tool` runs here as
+  root, on the same GPUs and disk; and
+- held **different variables**, so the notebook you were reading and the agent
+  that produced it disagreed about what existed.
+
+## History
+
+Every execution is recorded: the code, its outputs, the kernel's `[n]`, how long
+it took, and whether it came from the agent or from you.
+
+The Science view renders this list. It is not a document, so there is nothing to
+save, reconcile or lose — `science.save` copies it out as an `.ipynb` when you
+want a file.
 
 ## Rich output
 

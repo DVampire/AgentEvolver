@@ -1,9 +1,8 @@
-"""The Science workstation: what it does without a container running.
+"""The Science workstation: notebooks, compute, and the shared kernel.
 
-Container-dependent behaviour (a real GPU, a real Lab) is verified by hand
-against the built image; what is worth pinning here is everything the manager
-answers *off disk*, plus the argument construction that decides whether the
-container gets GPUs at all.
+Kernel execution itself needs a live Jupyter Server, so it is verified by hand
+against the built image. What is pinned here is everything that answers without
+one, plus the conversions that quietly lose data when they are wrong.
 """
 
 from __future__ import annotations
@@ -13,18 +12,17 @@ import json
 
 from agentevolver.gateway.protocol import GatewayCommand
 from agentevolver.gateway.service import AgentGateway
+from agentevolver.kernel import Execution, KernelOutput, kernel_manager
 from agentevolver.paths import P, path_manager
-from agentevolver.sandbox.default.science import ScienceSandbox
-from agentevolver.sandbox.types import SandboxConfig
 from agentevolver.science import science_manager
 
 
-def test_notebooks_are_workspace_files_not_container_state() -> None:
-    """They list before the workstation exists and after it is reaped.
+def test_notebooks_are_workspace_files_not_kernel_state() -> None:
+    """They list before a kernel exists and after it is gone.
 
-    A notebook is a file in the project's workspace; the container is not. If
-    this read went through the container, opening the Science view would show
-    an empty list until a ~25GB image had finished booting.
+    A notebook is a file in the project's workspace; the Jupyter Server is not.
+    If this read went through the server, opening the Science view would show an
+    empty list until one had booted.
     """
 
     async def run() -> None:
@@ -33,93 +31,94 @@ def test_notebooks_are_workspace_files_not_container_state() -> None:
         session_id = created.result["session_id"]
         gateway._sessions[session_id].sandbox.materialize()  # noqa: SLF001
 
-        assert science_manager.notebooks(session_id) == []
-
-        created_nb = await science_manager.create_notebook(session_id, "revenue analysis")
-        assert created_nb.path == "notebooks/revenue analysis.ipynb"
-        assert created_nb.cell_count == 0
-
-        # No container was ever started.
         listed = await gateway.handle(GatewayCommand(
             id="n", method="science.notebooks", params={"session_id": session_id}))
-        assert [item["title"] for item in listed.result["notebooks"]] == ["revenue analysis"]
+        assert listed.result["notebooks"] == []
 
-        # It is a real notebook, openable by JupyterLab and by the Code view.
         workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id=session_id)
-        document = json.loads((workspace / created_nb.path).read_text(encoding="utf-8"))
-        assert document["nbformat"] == 4 and document["cells"] == []
-        assert document["metadata"]["kernelspec"]["name"] == "python3"
+        (workspace / "analysis.ipynb").write_text(json.dumps({
+            "cells": [{"cell_type": "code", "source": "1+1", "outputs": []}],
+            "nbformat": 4, "nbformat_minor": 5, "metadata": {},
+        }), encoding="utf-8")
+
+        listed = await gateway.handle(GatewayCommand(
+            id="n2", method="science.notebooks", params={"session_id": session_id}))
+        assert [(item["title"], item["cell_count"]) for item in listed.result["notebooks"]] == [("analysis", 1)]
 
     asyncio.run(run())
 
 
-def test_a_second_notebook_of_the_same_name_does_not_overwrite_the_first() -> None:
+def test_the_history_is_saved_as_a_real_notebook() -> None:
+    """The panel is the kernel's live history; this is how a run is kept.
+
+    It has to come out as valid nbformat, or the thing you saved does not open
+    in the JupyterLab sitting one button away.
+    """
+
     async def run() -> None:
         gateway = AgentGateway()
         created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
         session_id = created.result["session_id"]
         gateway._sessions[session_id].sandbox.materialize()  # noqa: SLF001
 
-        first = await science_manager.create_notebook(session_id, "untitled")
-        second = await science_manager.create_notebook(session_id, "untitled")
-        assert first.path != second.path
-        assert len(science_manager.notebooks(session_id)) == 2
+        # Stands in for a live kernel: what is under test is the conversion, not
+        # the execution that produced it.
+        kernel_manager._projects[session_id] = _FakeProject([  # noqa: SLF001
+            Execution(execution_count=1, code="import torch", origin="agent",
+                      outputs=[KernelOutput(type="stream", name="stdout", data={"text/plain": "ok\n"})]),
+            Execution(execution_count=2, code="plt.plot(xs)", origin="user",
+                      outputs=[KernelOutput(type="display", data={
+                          "image/png": "iVBORw0KGgo=", "text/plain": "<Figure>"})]),
+            Execution(execution_count=3, code="1/0", origin="agent", success=False,
+                      error="Traceback...\nZeroDivisionError: division by zero",
+                      outputs=[KernelOutput(type="error", data={
+                          "text/plain": "Traceback...\nZeroDivisionError: division by zero"})]),
+        ])
+        try:
+            saved = await gateway.handle(GatewayCommand(
+                id="s", method="science.save", params={"session_id": session_id, "name": "run"}))
+            path = saved.result["notebook"]["path"]
+            workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id=session_id)
+            document = json.loads((workspace / path).read_text(encoding="utf-8"))
+        finally:
+            kernel_manager._projects.pop(session_id, None)  # noqa: SLF001
+
+        assert document["nbformat"] == 4 and len(document["cells"]) == 3
+        kinds = [output["output_type"] for cell in document["cells"] for output in cell["outputs"]]
+        assert kinds == ["stream", "display_data", "error"]
+        # The figure survives: a plot that becomes a string on save is a plot lost.
+        assert document["cells"][1]["outputs"][0]["data"]["image/png"] == "iVBORw0KGgo="
+        # nbformat needs all three error fields; only a traceback was carried.
+        error = document["cells"][2]["outputs"][0]
+        assert error["ename"] == "ZeroDivisionError" and error["evalue"] == "division by zero"
+        # Who ran what is kept — seeing what the AGENT ran is most of the point.
+        assert [cell["metadata"]["agentevolver"]["origin"] for cell in document["cells"]] == \
+            ["agent", "user", "agent"]
 
     asyncio.run(run())
 
 
-def test_a_daemon_without_gpus_gets_a_workstation_anyway() -> None:
-    """Asking a daemon with no nvidia runtime makes the container fail to start,
-    and a CPU workstation beats no workstation."""
+def test_a_machine_without_gpus_reports_none_rather_than_failing() -> None:
+    """Plenty of hosts have no NVIDIA card, so the panel says so instead of
+    showing a meter with nothing behind it."""
+    import agentevolver.science.server as module
 
-    class FakeDaemon:
-        def __init__(self, runtimes):
-            self._runtimes = runtimes
-
-        def info(self):
-            return {"Runtimes": self._runtimes}
-
-    with_gpu, without = FakeDaemon({"runc": {}, "nvidia": {}}), FakeDaemon({"runc": {}})
-    assert ScienceSandbox(SandboxConfig())._requested_gpus(without) is None  # noqa: SLF001
-    assert ScienceSandbox(SandboxConfig())._requested_gpus(with_gpu) == "all"  # noqa: SLF001
-    # An explicit opt-out is honoured even where GPUs exist, and never asks.
-    assert ScienceSandbox(SandboxConfig(gpus="none"))._requested_gpus(with_gpu) is None  # noqa: SLF001
-    assert ScienceSandbox(SandboxConfig(gpus="device=0"))._requested_gpus(with_gpu) == "device=0"  # noqa: SLF001
-
-
-def test_gpu_selection_becomes_the_right_device_request() -> None:
-    """The SDK's equivalent of --gpus; the reason this sandbox bypasses opensandbox."""
-    assert ScienceSandbox._device_request("all").get("Count") == -1  # noqa: SLF001
-    assert ScienceSandbox._device_request("device=0,2").get("DeviceIDs") == ["0", "2"]  # noqa: SLF001
-    assert ScienceSandbox._device_request("2").get("Count") == 2  # noqa: SLF001
-
-
-def test_bind_mounts_are_translated_into_host_paths() -> None:
-    """The daemon is the HOST's, reached over a mounted socket, so a path from
-    inside our own container would have Docker silently create an empty
-    directory — and the Lab would open on an empty workspace."""
-    import os
-
-    from agentevolver.sandbox.default.base import to_host_path
-
-    original = os.environ.get("AGENTEVOLVER_HOST_ROOT")
-    os.environ["AGENTEVOLVER_HOST_ROOT"] = "/mnt/raid/project"
+    original = module.shutil.which
     try:
-        assert to_host_path("/AgentEvolver/output/local/sessions/a/workspace") == \
-            "/mnt/raid/project/output/local/sessions/a/workspace"
+        module.shutil.which = lambda name: None if name == "nvidia-smi" else original(name)
+        assert module._gpu_status() == []  # noqa: SLF001
     finally:
-        if original is None:
-            del os.environ["AGENTEVOLVER_HOST_ROOT"]
-        else:
-            os.environ["AGENTEVOLVER_HOST_ROOT"] = original
+        module.shutil.which = original
 
 
-def test_compute_reports_nothing_when_no_workstation_is_running() -> None:
-    """The panel shows "not running" rather than raising into the view."""
+def test_compute_answers_before_a_kernel_has_started() -> None:
+    """Opening the view must not depend on having run something first."""
 
     async def run() -> None:
         status = await science_manager.compute("no-such-project")
-        assert status.running is False and status.gpus == []
+        assert status.running is False and status.executions == 0
+        # The machine's own numbers are readable regardless.
+        assert status.cpu_count and status.cpu_count > 0
 
     asyncio.run(run())
 
@@ -131,77 +130,47 @@ def test_the_lab_is_served_under_the_projects_own_path() -> None:
     assert base_path("abc123") == "/science/abc123"
 
 
-def test_editing_a_cell_keeps_everything_the_view_does_not_model() -> None:
-    """Rebuilding the document from our own model would silently delete it.
+class _FakeProject:
+    """Just enough of a kernel project for the history conversions."""
 
-    nbformat carries per-cell metadata, attachments and notebook-level settings
-    the Science view has no field for. A merge preserves them; a rebuild loses
-    the user's collapsed outputs, tags and slide settings without a word.
+    def __init__(self, history) -> None:
+        self.history = history
+        self.busy = False
+        self.workspace = ""
+
+
+def test_the_history_poll_only_sends_what_is_new() -> None:
+    """A history holding a few figures is megabytes of base64.
+
+    The panel polls while the agent works, so resending all of it every few
+    seconds would be pure waste — ``after`` is the client's cursor.
     """
-    from agentevolver.science.notebook import cells_from_nbformat, merge_cells
 
-    document = {
-        "cells": [
-            {"id": "a", "cell_type": "code", "source": ["import torch\n", "torch.cuda.is_available()"],
-             "outputs": [{"output_type": "stream", "name": "stdout", "text": "True\n"}],
-             "execution_count": 1,
-             "metadata": {"tags": ["setup"], "jupyter": {"outputs_hidden": True}}},
-            {"id": "b", "cell_type": "markdown", "source": "# Results",
-             "metadata": {"slideshow": {"slide_type": "slide"}}},
-        ],
-        "metadata": {"kernelspec": {"name": "python3"}, "authors": [{"name": "someone"}]},
-        "nbformat": 4, "nbformat_minor": 5,
-    }
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
+        session_id = created.result["session_id"]
 
-    cells = cells_from_nbformat(document)
-    # nbformat's source is a list of lines OR a string; the view sees text.
-    assert cells[0].source == "import torch\ntorch.cuda.is_available()"
-    assert cells[1].source == "# Results"
-    assert cells[0].outputs[0]["data"]["text/plain"] == "True\n"
+        kernel_manager._projects[session_id] = _FakeProject([  # noqa: SLF001
+            Execution(execution_count=n, code=f"step {n}", origin="agent") for n in (1, 2, 3)
+        ])
+        try:
+            first = await gateway.handle(GatewayCommand(
+                id="h1", method="science.history", params={"session_id": session_id}))
+            assert first.result["total"] == 3
+            assert [item["code"] for item in first.result["executions"]] == ["step 1", "step 2", "step 3"]
 
-    edited = [cell.model_dump(mode="json") for cell in cells]
-    edited[0]["source"] = "import torch\ntorch.cuda.device_count()"
-    merged = merge_cells(document, edited)
+            # Nothing new: the poll costs a status, not the whole transcript.
+            second = await gateway.handle(GatewayCommand(
+                id="h2", method="science.history", params={"session_id": session_id, "after": 3}))
+            assert second.result["executions"] == [] and second.result["total"] == 3
 
-    assert merged["cells"][0]["metadata"]["tags"] == ["setup"]
-    assert merged["cells"][0]["metadata"]["jupyter"]["outputs_hidden"] is True
-    assert merged["cells"][1]["metadata"]["slideshow"]["slide_type"] == "slide"
-    assert merged["metadata"]["authors"] == [{"name": "someone"}]
-    assert merged["cells"][0]["source"] == "import torch\ntorch.cuda.device_count()"
-    # A markdown cell carrying outputs is not a valid notebook.
-    assert "outputs" not in merged["cells"][1]
+            kernel_manager._projects[session_id].history.append(  # noqa: SLF001
+                Execution(execution_count=4, code="step 4", origin="user"))
+            third = await gateway.handle(GatewayCommand(
+                id="h3", method="science.history", params={"session_id": session_id, "after": 3}))
+            assert [item["code"] for item in third.result["executions"]] == ["step 4"]
+        finally:
+            kernel_manager._projects.pop(session_id, None)  # noqa: SLF001
 
-
-def test_outputs_survive_the_round_trip_to_nbformat() -> None:
-    """An image that becomes a string on save is a plot the user loses."""
-    from agentevolver.science.notebook import output_from_nbformat, output_to_nbformat
-
-    figure = {"output_type": "display_data",
-              "data": {"image/png": "iVBORw0KGgo=", "text/plain": "<Figure size 640x480>"},
-              "metadata": {}}
-    parsed = output_from_nbformat(figure)
-    assert parsed is not None and parsed.data["image/png"] == "iVBORw0KGgo="
-    back = output_to_nbformat(parsed.model_dump(mode="json"))
-    assert back["output_type"] == "display_data"
-    assert back["data"]["image/png"] == "iVBORw0KGgo="
-
-    error = {"output_type": "error", "ename": "ValueError", "evalue": "bad",
-             "traceback": ["Traceback...", "ValueError: bad"]}
-    parsed_error = output_from_nbformat(error)
-    assert parsed_error is not None and parsed_error.type == "error"
-    back_error = output_to_nbformat(parsed_error.model_dump(mode="json"))
-    assert back_error["output_type"] == "error"
-    assert back_error["ename"] == "ValueError" and back_error["evalue"] == "bad"
-
-
-def test_a_notebook_path_cannot_escape_the_workspace() -> None:
-    """Jupyter resolves contents paths against its own root and would serve it."""
-    import pytest
-
-    from agentevolver.gateway.service import AgentGateway
-
-    assert AgentGateway._notebook_path({"path": "notebooks/a.ipynb"}) == "notebooks/a.ipynb"  # noqa: SLF001
-    assert AgentGateway._notebook_path({"path": "/notebooks/a.ipynb"}) == "notebooks/a.ipynb"  # noqa: SLF001
-    for bad in ("../../etc/passwd", "notebooks/../../secret.ipynb", ""):
-        with pytest.raises(ValueError):
-            AgentGateway._notebook_path({"path": bad})  # noqa: SLF001
+    asyncio.run(run())

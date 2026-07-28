@@ -1,206 +1,134 @@
-"""Science manager: one JupyterLab workstation container per project.
+"""Science manager: the workstation half of a project.
 
-Lifecycle mirrors the IDE manager — lazy start, heartbeat while the view is on
-screen, idle reaping — because the constraint is the same: the gateway has no
-``session.close``, so time, not teardown, is what frees these.
+There is no science container. Everything runs in the base environment, where
+the agent already runs — the agent's ``code_interpreter_tool``, the Science
+view's REPL, and JupyterLab all go through the one Jupyter Server that
+:mod:`agentevolver.kernel` holds open per project.
 
-What differs is the container. This one is launched straight through Docker so
-it can be given ``--gpus``; opensandbox has no device option, and a workstation
-that cannot reach a GPU is not a workstation.
+That is the whole reason the container went away. A peer container gave
+isolation that was already thin (``bash_tool`` runs here as root) while costing
+a second kernel the agent's variables never reached, a routing decision for
+every execution, and a reaper that could kill a training run. With one
+environment none of those exist, and the panel showing "what ran" is simply the
+kernel's own history.
+
+What is left here is the workstation's *furniture*: the notebooks in the
+project, and what the machine is running on.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import time
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import List, Optional
 
+from agentevolver.kernel import kernel_manager
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
-from agentevolver.sandbox.types import SandboxConfig
-from agentevolver.science.types import ComputeStatus, Notebook, ScienceInstance
-
-if TYPE_CHECKING:  # avoids importing aiohttp at module load
-    from agentevolver.science.kernel import NotebookKernel
-
-#: Container paths the entrypoint reads. Mirrored in docker/science/.
-CONTAINER_WORKSPACE = "/workspace"
-#: $HOME inside the container. Mounted per owner so pip installs, wandb logins
-#: and Jupyter's own settings survive the container being reaped.
-CONTAINER_HOME = "/home/science"
+from agentevolver.science.types import ComputeStatus, Notebook
 
 
 def base_path(session_id: str) -> str:
-    """Sub-path this project's Lab is served under, on the UI's own origin.
+    """Sub-path this project's JupyterLab is served under, on the UI's own origin.
 
-    JupyterLab is started with this as ``--ServerApp.base_url``, so every
-    absolute URL it emits already carries the prefix and the UI can host the Lab
-    at ``<whatever origin the browser used>/science/<session>/``. The same
-    reasoning as the Code view: a per-session hostname is resolved by the
-    BROWSER, so it only ever works when the browser runs on the server.
+    Jupyter is started with this as ``--ServerApp.base_url``, so every absolute
+    URL it emits already carries the prefix and the UI can host the Lab at
+    whatever address the browser reached the UI at. A per-session hostname is
+    resolved by the BROWSER, so it only ever works when the browser runs on the
+    server itself — the same fix the Code view needed.
     """
-    return f"/science/{session_id}"
+    return kernel_manager.lab_path(session_id)
 
 
 class ScienceManagerServer:
-    """Start, track, and reap per-project JupyterLab workstations."""
+    """The project's notebooks, and the machine they run on."""
 
-    #: Reap a container after this long with no heartbeat or proxied request.
-    #: Longer than the IDE's: a training run can hold the tab in the background
-    #: for a while, and killing the container kills the run with it.
-    idle_timeout_seconds: float = 7200.0
-    reap_interval_seconds: float = 120.0
-    #: Workstations are expensive (GPUs, memory), so fewer than IDEs.
-    max_instances: int = 2
-    #: How long to wait for JupyterLab to accept connections.
-    ready_timeout_seconds: float = 300.0
-
-    def __init__(self) -> None:
-        self._instances: Dict[str, ScienceInstance] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
-        #: One kernel handle per (project, notebook path).
-        self._kernels: Dict[str, "NotebookKernel"] = {}
-        self._reaper: Optional[asyncio.Task] = None
-
-    # ----------------------------------------------------------- lifecycle
     async def start(self, session_id: str, *, workspace_root: str | Path,
-                    owner: str = "local") -> ScienceInstance:
-        """Return the running workstation for ``session_id``, starting one if needed."""
-        lock = self._locks.setdefault(session_id, asyncio.Lock())
-        async with lock:
-            existing = self._instances.get(session_id)
-            if existing is not None:
-                existing.last_seen = time.time()
-                return existing
+                    owner: str = "local") -> dict:
+        """Make sure this project's Jupyter Server is up, and say where it is.
 
-            await self._evict_if_full()
-
-            workspace = Path(workspace_root).expanduser().resolve()
-            home = path_manager.get(P.SCIENCE_HOME, owner=owner)
-            notebooks = path_manager.get(P.SESSION_NOTEBOOKS, owner=owner, session_id=session_id)
-            for directory in (workspace, home, notebooks):
-                directory.mkdir(parents=True, exist_ok=True)
-
-            from agentevolver.sandbox.default.science import ScienceSandbox
-
-            sandbox = ScienceSandbox(SandboxConfig(
-                # Notebooks install packages and pull datasets.
-                network=True,
-                entrypoint=["/usr/local/bin/entrypoint-science"],
-                env={
-                    "SCIENCE_BASE_URL": base_path(session_id) + "/",
-                    "SCIENCE_WORKSPACE": CONTAINER_WORKSPACE,
-                    "HOME": CONTAINER_HOME,
-                },
-                mounts={
-                    str(workspace): CONTAINER_WORKSPACE,
-                    str(home): CONTAINER_HOME,
-                },
-            ))
-            logger.info(f"| 🔬 Science workstation starting for {session_id} ({workspace})")
-            await sandbox.start()
-            upstream = await sandbox.lab_url()
-
-            instance = ScienceInstance(
-                session_id=session_id, owner=owner, upstream=upstream,
-                base_path=base_path(session_id), workspace_root=str(workspace),
-                sandbox=sandbox, gpus=sandbox._requested_gpus() or "",  # noqa: SLF001
-            )
-            self._instances[session_id] = instance
-            self._ensure_reaper()
-
-            if not await self._wait_ready(upstream + instance.base_path):
-                logger.warning(f"| ⚠️ JupyterLab for {session_id} did not answer in time; serving anyway")
-            logger.info(f"| ✅ Science workstation ready for {session_id}")
-            return instance
+        Starting it is the kernel manager's job — the same call the agent's
+        first ``code_interpreter_tool`` would make — so opening the Science view
+        and the agent running a cell converge on one server either way round.
+        """
+        workspace = Path(workspace_root).expanduser().resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        path_manager.get(P.SESSION_NOTEBOOKS, owner=owner, session_id=session_id, create=True)
+        # An empty cell rather than a bespoke "start" call: it takes the same
+        # path every other execution takes, so there is one way a server comes
+        # up and one place it can go wrong.
+        await kernel_manager.execute("", key=session_id, workspace=str(workspace), origin="user")
+        logger.info(f"| 🔬 Science workstation ready for {session_id} ({workspace})")
+        return self.status(session_id)
 
     async def stop(self, session_id: str) -> bool:
-        """Destroy the project's workstation. True if one was running."""
-        instance = self._instances.pop(session_id, None)
-        if instance is None:
-            return False
-        logger.info(f"| ⚫ Science workstation stopping for {session_id}")
-        self.forget_kernels(session_id)
-        try:
-            if instance.sandbox is not None:
-                await asyncio.wait_for(instance.sandbox.destroy(), timeout=30)
-        except Exception as exc:  # noqa: BLE001 — teardown must not raise
-            logger.warning(f"| ⚠️ Science teardown failed for {session_id}: {exc}")
-        return True
+        """Shut this project's Jupyter Server down. True if one was running."""
+        return await kernel_manager.shutdown(session_id)
 
     async def stop_all(self) -> None:
-        if self._reaper is not None:
-            self._reaper.cancel()
-            self._reaper = None
-        for session_id in list(self._instances):
-            await self.stop(session_id)
+        await kernel_manager.cleanup()
 
-    # -------------------------------------------------------------- lookup
+    @staticmethod
+    def touch(session_id: str) -> bool:
+        return session_id in kernel_manager.running()
+
     def upstream(self, session_id: str) -> Optional[str]:
-        """Proxy target, refreshing the idle clock so an open Lab stays alive."""
-        instance = self._instances.get(session_id)
-        if instance is None:
-            return None
-        instance.last_seen = time.time()
-        return instance.upstream
+        """Proxy target for this project's JupyterLab, or None if not started."""
+        base = kernel_manager.base_url(session_id)
+        # base_url already carries the /science/<id> prefix; the proxy forwards
+        # the browser's path verbatim, so it needs the origin without it.
+        return base.removesuffix(base_path(session_id)) if base else None
 
-    def touch(self, session_id: str) -> bool:
-        instance = self._instances.get(session_id)
-        if instance is None:
-            return False
-        instance.last_seen = time.time()
-        return True
-
-    def status(self, session_id: str) -> dict:
-        instance = self._instances.get(session_id)
-        return instance.public() if instance else {"session_id": session_id, "running": False}
+    @staticmethod
+    def status(session_id: str) -> dict:
+        kernel = kernel_manager.status(session_id)
+        return {
+            "session_id": session_id,
+            "running": kernel.running,
+            # Where the UI embeds the Lab, relative to its own origin, so it
+            # works over any tunnel without a hostname of its own.
+            "path": base_path(session_id),
+            "busy": kernel.busy,
+            "executions": kernel.executions,
+            "workspace_root": kernel.workspace,
+        }
 
     # ------------------------------------------------------------- compute
-    async def compute(self, session_id: str) -> ComputeStatus:
-        """What the workstation is running on — GPUs, CPU, memory, disk.
+    @staticmethod
+    async def compute(session_id: str) -> ComputeStatus:
+        """What this machine is running on.
 
-        Everything is read from *inside* the container: the point is what this
-        workstation can use, not what the host happens to own.
+        The base environment's own resources — the whole host, not a slice of
+        it, because that is what the agent and the kernel actually get.
         """
-        instance = self._instances.get(session_id)
-        if instance is None or instance.sandbox is None:
-            return ComputeStatus(running=False)
-
-        gpus = await instance.sandbox.gpu_status()
-        probe = await instance.sandbox.run_command(
-            "python -c \"import json,os,shutil;"
-            "mem=dict(l.split(':') for l in open('/proc/meminfo').read().strip().split(chr(10)));"
-            "total=int(mem['MemTotal'].split()[0]);avail=int(mem['MemAvailable'].split()[0]);"
-            "d=shutil.disk_usage('/workspace');"
-            "print(json.dumps({'cpu':os.cpu_count(),'total':total//1024,"
-            "'used':(total-avail)//1024,'disk':d.free//(1024*1024)}))\"", timeout=20)
-        stats = {}
-        if probe.success:
-            try:
-                stats = json.loads(probe.stdout.strip().splitlines()[-1])
-            except (ValueError, IndexError):
-                logger.warning(f"| ⚠️ Could not parse compute stats for {session_id}")
+        kernel = kernel_manager.status(session_id)
+        total = used = free = None
+        try:
+            meminfo = dict(
+                line.split(":", 1) for line in
+                Path("/proc/meminfo").read_text(encoding="utf-8").strip().splitlines())
+            total = int(meminfo["MemTotal"].split()[0]) // 1024
+            used = total - int(meminfo["MemAvailable"].split()[0]) // 1024
+        except (OSError, KeyError, ValueError, IndexError):
+            logger.warning("| ⚠️ Could not read /proc/meminfo")
+        try:
+            free = shutil.disk_usage(kernel.workspace or "/").free // (1024 * 1024)
+        except OSError:
+            pass
 
         return ComputeStatus(
-            running=True, gpus=gpus,
-            cpu_count=stats.get("cpu"),
-            memory_total_mb=stats.get("total"), memory_used_mb=stats.get("used"),
-            disk_free_mb=stats.get("disk"),
-            uptime_seconds=round(time.time() - instance.started_at, 1),
+            running=kernel.running, busy=kernel.busy, gpus=_gpu_status(),
+            cpu_count=os.cpu_count(), memory_total_mb=total, memory_used_mb=used,
+            disk_free_mb=free, executions=kernel.executions,
         )
 
     # ----------------------------------------------------------- notebooks
     @staticmethod
     def notebooks(session_id: str, *, owner: str = "local") -> List[Notebook]:
-        """Every ``.ipynb`` in the project's workspace, newest first.
-
-        Read off disk rather than from the container, so the list is there
-        before the workstation has been started — and stays there after it is
-        reaped. The notebook is a workspace file; the container is not.
-        """
+        """Every ``.ipynb`` in the project's workspace, newest first."""
         workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
         if not workspace.is_dir():
             return []
@@ -220,132 +148,92 @@ class ScienceManagerServer:
             ))
         return sorted(found, key=lambda item: item.modified_at, reverse=True)
 
-    async def create_notebook(self, session_id: str, name: str, *, owner: str = "local") -> Notebook:
-        """Add an empty notebook to the project's ``notebooks/`` directory.
+    @staticmethod
+    def save_history_as_notebook(session_id: str, name: str, *, owner: str = "local") -> Notebook:
+        """Write what has run in this project's kernel out as a real ``.ipynb``.
 
-        Through the workstation's Jupyter Server when one is running, so its
-        file watchers and the open Lab see the new file immediately; straight to
-        disk otherwise, because a project should not have to boot a 24GB
-        container to gain an empty notebook. Safe either way: this only ever
-        creates a file that does not exist yet, so there is no second writer to
-        race with.
+        The panel is the kernel's live history, not a document; this is how you
+        keep a copy — openable in JupyterLab, in the Code view, or by anything
+        else that reads notebooks.
         """
         directory = path_manager.get(P.SESSION_NOTEBOOKS, owner=owner, session_id=session_id, create=True)
-        workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
-        stem = "".join(char for char in (name or "untitled") if char.isalnum() or char in " -_").strip() or "untitled"
+        stem = "".join(c for c in (name or "session") if c.isalnum() or c in " -_").strip() or "session"
         path = directory / f"{stem}.ipynb"
         counter = 2
         while path.exists():
             path = directory / f"{stem}-{counter}.ipynb"
             counter += 1
-        relative = str(path.relative_to(workspace))
 
-        if session_id in self._instances:
-            from agentevolver.science.notebook import NotebookClient
+        cells = [{
+            "cell_type": "code", "id": f"c{index}",
+            "source": entry.code,
+            "execution_count": entry.execution_count,
+            "metadata": {"agentevolver": {"origin": entry.origin, "started_at": entry.started_at}},
+            "outputs": [_to_nbformat(output) for output in entry.outputs],
+        } for index, entry in enumerate(kernel_manager.history(session_id, limit=1000))]
 
-            await NotebookClient(self._lab(session_id)).create(relative)
-        else:
-            # nbformat 4.5's minimum viable document, written as JSON rather
-            # than through nbformat: the gateway's environment does not carry
-            # the science image's dependencies.
-            path.write_text(json.dumps({
-                "cells": [], "metadata": {
-                    "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-                }, "nbformat": 4, "nbformat_minor": 5,
-            }, indent=1), encoding="utf-8")
-
-        return Notebook(path=relative, title=path.stem,
-                        size_bytes=path.stat().st_size if path.exists() else 0, cell_count=0,
+        path.write_text(json.dumps({
+            "cells": cells, "nbformat": 4, "nbformat_minor": 5, "metadata": {
+                "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            },
+        }, indent=1), encoding="utf-8")
+        workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
+        return Notebook(path=str(path.relative_to(workspace)), title=path.stem,
+                        size_bytes=path.stat().st_size, cell_count=len(cells),
                         modified_at=datetime.now(timezone.utc).isoformat())
 
-    # ------------------------------------------------------- notebook editing
-    def _lab(self, session_id: str) -> str:
-        """Base URL of this project's Jupyter Server, including its base_url.
 
-        Everything below is a client of that server rather than of the disk: it
-        owns the document and the kernels, and a second writer is how edits get
-        silently lost.
-        """
-        instance = self._instances.get(session_id)
-        if instance is None:
-            raise RuntimeError("The Science workstation is not running for this project")
-        instance.last_seen = time.time()
-        return instance.upstream + instance.base_path
+def _to_nbformat(output) -> dict:
+    """One KernelOutput as nbformat, so the saved file is a valid notebook."""
+    data = dict(output.data or {})
+    if output.type == "stream":
+        return {"output_type": "stream", "name": output.name or "stdout",
+                "text": data.get("text/plain", "")}
+    if output.type == "error":
+        text = data.get("text/plain", "")
+        # nbformat requires all three; only the traceback was carried, so the
+        # name and value are derived from its last line rather than invented.
+        last = text.strip().splitlines()[-1] if text.strip() else "Error"
+        ename, _, evalue = last.partition(":")
+        return {"output_type": "error", "ename": ename.strip() or "Error",
+                "evalue": evalue.strip(), "traceback": text.splitlines()}
+    if output.type == "result":
+        return {"output_type": "execute_result", "data": data, "metadata": {}, "execution_count": None}
+    return {"output_type": "display_data", "data": data, "metadata": {}}
 
-    async def read_notebook(self, session_id: str, path: str) -> Dict[str, Any]:
-        from agentevolver.science.notebook import NotebookClient
 
-        cells, last_modified, _ = await NotebookClient(self._lab(session_id)).get(path)
-        return {"path": path, "last_modified": last_modified,
-                "cells": [cell.model_dump(mode="json") for cell in cells]}
+def _gpu_status() -> List[dict]:
+    """What nvidia-smi reports, or an empty list on a machine without GPUs.
 
-    async def save_notebook(self, session_id: str, path: str,
-                            cells: List[Dict[str, Any]], last_modified: str = "") -> str:
-        from agentevolver.science.notebook import NotebookClient
+    Empty is not an error — plenty of hosts have no NVIDIA card — so the panel
+    says "no GPU detected" rather than showing a broken meter.
+    """
+    import subprocess
 
-        return await NotebookClient(self._lab(session_id)).save(path, cells, last_modified)
-
-    def kernel_for(self, session_id: str, path: str) -> "NotebookKernel":
-        """The kernel serving one notebook, opened on first use.
-
-        Keyed by (project, notebook) so two browser tabs on the same notebook
-        share a kernel — which is what makes the state feel like the notebook's
-        rather than the tab's — and so the embedded Lab, which asks the server
-        for the same path's session, attaches to that very kernel.
-        """
-        from agentevolver.science.kernel import NotebookKernel
-
-        key = f"{session_id}:{path}"
-        kernel = self._kernels.get(key)
-        if kernel is None:
-            kernel = NotebookKernel(self._lab(session_id), path)
-            self._kernels[key] = kernel
-        return kernel
-
-    def forget_kernels(self, session_id: str) -> None:
-        """Drop the handles for a project whose container is gone.
-
-        The kernels died with it; a stale handle would point at a port that now
-        belongs to somebody else's container.
-        """
-        for key in [key for key in self._kernels if key.startswith(f"{session_id}:")]:
-            self._kernels.pop(key, None)
-
-    # ------------------------------------------------------------ internals
-    async def _wait_ready(self, upstream: str) -> bool:
-        """Poll until JupyterLab answers, so the iframe never races it."""
-        import aiohttp
-
-        deadline = time.time() + self.ready_timeout_seconds
-        async with aiohttp.ClientSession() as session:
-            while time.time() < deadline:
-                try:
-                    async with session.get(f"{upstream}/lab", timeout=aiohttp.ClientTimeout(total=5)) as response:
-                        if response.status < 500:
-                            return True
-                except Exception:  # noqa: BLE001 — not up yet
-                    pass
-                await asyncio.sleep(1.0)
-        return False
-
-    async def _evict_if_full(self) -> None:
-        while len(self._instances) >= self.max_instances:
-            oldest = min(self._instances.values(), key=lambda item: item.last_seen)
-            logger.info(f"| ♻️ Science cap reached; evicting least-recently-used {oldest.session_id}")
-            await self.stop(oldest.session_id)
-
-    def _ensure_reaper(self) -> None:
-        if self._reaper is None or self._reaper.done():
-            self._reaper = asyncio.create_task(self._reap_loop(), name="science-reaper")
-
-    async def _reap_loop(self) -> None:
-        while True:
-            await asyncio.sleep(self.reap_interval_seconds)
-            cutoff = time.time() - self.idle_timeout_seconds
-            for session_id, instance in list(self._instances.items()):
-                if instance.last_seen < cutoff:
-                    logger.info(f"| ⏲️ Science idle past {self.idle_timeout_seconds:.0f}s; reaping {session_id}")
-                    await self.stop(session_id)
+    binary = shutil.which("nvidia-smi")
+    if not binary:
+        return []
+    try:
+        completed = subprocess.run(  # noqa: S603 — fixed argv, no shell
+            [binary, "--query-gpu=index,name,memory.used,memory.total,utilization.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning(f"| ⚠️ nvidia-smi did not answer: {exc}")
+        return []
+    if completed.returncode != 0:
+        return []
+    gpus: List[dict] = []
+    for line in completed.stdout.strip().splitlines():
+        fields = [part.strip() for part in line.split(",")]
+        if len(fields) != 5 or not fields[0].isdigit():
+            continue
+        gpus.append({
+            "index": int(fields[0]), "name": fields[1],
+            "memory_used_mb": int(fields[2]), "memory_total_mb": int(fields[3]),
+            "utilization_percent": int(fields[4]),
+        })
+    return gpus
 
 
 # Global science manager instance

@@ -12,7 +12,19 @@ button { cursor: pointer; }
 @media (max-width: 720px) { .topbar { padding: 14px 15px; }.topbar h1 { font-size: 18px; }.mobile-menu { display: grid; place-items: center; }.quick-start { margin-top: 24px; }.quick-start h2 { font-size: 23px; }.quick-prompts { grid-template-columns: 1fr; }.quick-prompts button { min-height: 72px; }.mobile-nav-backdrop { position: fixed; z-index: 8; inset: 0; display: block; background: rgba(0, 0, 0, .56); backdrop-filter: blur(3px); }.mobile-nav { display: flex; flex-direction: column; width: min(86vw, 330px); height: 100%; overflow-y: auto; padding: 20px 16px; border-right: 1px solid hsl(var(--border)); background: #121318; box-shadow: 18px 0 55px rgba(0,0,0,.32); }.mobile-nav .brand { padding-bottom: 20px; }.mobile-close { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; border: 0; border-radius: 7px; color: #b7bdcc; background: transparent; font-size: 25px; }.mobile-nav .projects-section { max-height: none; }.mobile-nav .agents-section { flex: 1; }.mobile-nav .sidebar-footer { margin-top: 25px; }.app-shell[data-theme='light'] .mobile-nav { border-color: #dce0e8; background: #fff; } }
 .app-shell { position: relative; min-height: 100vh; display: grid; grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr) var(--inspector-w, 400px); background: hsl(var(--background)); }.col-resizer { position: absolute; top: 0; bottom: 0; z-index: 6; width: 9px; cursor: col-resize; touch-action: none; }.col-resizer::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-.5px); background: transparent; transition: background .12s; }.col-resizer:hover::before, .col-resizer:active::before { background: #7f9be4; }.col-resizer-left { left: var(--sidebar-w, 250px); margin-left: -4px; }.col-resizer-right { right: var(--inspector-w, 400px); margin-right: -4px; }body.col-resizing { cursor: col-resize; user-select: none; }body.col-resizing iframe { pointer-events: none; }
 .sidebar, .inspector { background: hsl(var(--background)); border-color: hsl(var(--border)); }
-.sidebar { display: flex; flex-direction: column; border-right: 1px solid hsl(var(--border)); padding: 22px 16px; }
+/* A project is the level ABOVE the four views, so the sidebar is identical in
+   all of them: pinned, full height, never scrolling as a whole. Two zones —
+   .sidebar-nav holds what you navigate BY (project, view) and never shrinks;
+   .sidebar-rest holds reference material and absorbs whatever is left.
+
+   Without the split, the chat shell (min-height: 100vh, page scrolls) and the
+   canvas/code/science shell (height: 100vh, overflow hidden) behaved
+   differently: under a fixed height the flex:1 agents section won and squeezed
+   the project list to zero, so switching to Code silently took the projects
+   away. */
+.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid hsl(var(--border)); padding: 22px 16px; }
+.sidebar-nav { flex: 0 0 auto; display: flex; flex-direction: column; }
+.sidebar-rest { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; padding: 0 8px 24px; }
 .brand-mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #101114; background: linear-gradient(135deg, #b0c7ff, #8ce4cc); }
 .new-chat, .composer button, .modal button, .select-all { border: 0; border-radius: 9px; color: #101114; background: #c7d8ff; font-weight: 650; padding: 10px 12px; transition: .15s ease; }
@@ -24,7 +36,7 @@ button { cursor: pointer; }
 .session-dot, .agent-state.running, .connection-dot.connected { background: #70d7b0; box-shadow: 0 0 0 3px rgba(112, 215, 176, .1); }
 .agent-state.completed { background: #8ea9ff; }.agent-state.failed, .connection-dot.error, .connection-dot.disconnected { background: #ef7d87; }.connection-dot.connecting { background: #f2c679; }
 .capability-nav { display: grid; gap: 2px; }.capability-nav .eyebrow { margin-bottom: 6px; }.capability-nav button { display: grid; grid-template-columns: 21px 1fr auto; align-items: center; gap: 7px; width: 100%; border: 0; border-radius: 8px; padding: 8px 7px; color: #babfcb; background: transparent; text-align: left; }.capability-nav button:hover { color: hsl(var(--foreground)); background: #22252d; }.capability-nav button strong { font-size: 13px; font-weight: 550; }.capability-nav button em, .capability-menu em { color: hsl(var(--muted-foreground)); font-size: 11px; font-style: normal; }
-.projects-section { max-height: 190px; overflow: auto; padding-right: 2px; }.project-group + .project-group { margin-top: 12px; }.project-name { overflow: hidden; padding: 4px 5px 5px; color: #aeb5c5; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }.project-session { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; width: 100%; gap: 7px; border: 0; border-radius: 7px; padding: 7px 5px; color: #a9afbe; background: transparent; text-align: left; }.project-session:hover, .project-session.selected { color: #eff1f7; background: #292c35; }.project-session span:nth-child(2) { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.project-session em { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }.project-session.selected .session-dot { background: #8ea9ff; }.agents-section { flex: 1; min-height: 72px; }
+.projects-section { flex: 0 0 auto; max-height: min(34vh, 260px); overflow-y: auto; padding-right: 2px; }.project-group + .project-group { margin-top: 12px; }.project-name { overflow: hidden; padding: 4px 5px 5px; color: #aeb5c5; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }.project-session { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; width: 100%; gap: 7px; border: 0; border-radius: 7px; padding: 7px 5px; color: #a9afbe; background: transparent; text-align: left; }.project-session:hover, .project-session.selected { color: #eff1f7; background: #292c35; }.project-session span:nth-child(2) { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.project-session em { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }.project-session.selected .session-dot { background: #8ea9ff; }.agents-section { flex: 0 1 auto; min-height: 72px; }
 .deploy-section { flex: 0 1 auto; max-height: 30vh; overflow-y: auto; }
 .deploy-section .eyebrow { display: flex; align-items: center; justify-content: space-between; }
 .section-refresh { border: 0; padding: 0 4px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 12px; cursor: pointer; }
@@ -56,7 +68,6 @@ button { cursor: pointer; }
 /* Canvas/Code fill exactly one viewport: the sidebar scrolls inside itself
    instead of growing the shell past 100vh. */
 .app-shell.canvas-wide { grid-template-columns: var(--sidebar-w, 250px) minmax(0, 1fr); height: 100vh; overflow: hidden; }
-.app-shell.canvas-wide .sidebar { min-height: 0; overflow-y: auto; }
 /* Compact page header. The eyebrow ("WORKSPACE AGENT", "VISUAL ORCHESTRATION")
    is decorative — the title already names the view — and with the generous
    padding it cost ~85px at the top of every view. Hiding it and tightening the

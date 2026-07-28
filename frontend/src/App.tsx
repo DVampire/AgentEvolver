@@ -1,16 +1,8 @@
 import { isValidElement, lazy, Suspense, type FormEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import bashLanguage from 'highlight.js/lib/languages/bash';
-import cssLanguage from 'highlight.js/lib/languages/css';
-import javascriptLanguage from 'highlight.js/lib/languages/javascript';
-import jsonLanguage from 'highlight.js/lib/languages/json';
-import markdownLanguage from 'highlight.js/lib/languages/markdown';
-import pythonLanguage from 'highlight.js/lib/languages/python';
-import typescriptLanguage from 'highlight.js/lib/languages/typescript';
-import xmlLanguage from 'highlight.js/lib/languages/xml';
-import yamlLanguage from 'highlight.js/lib/languages/yaml';
 import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
+
+import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
 import {
   Boxes,
   Cable,
@@ -57,7 +49,7 @@ interface Message { id: string; type: MessageType; title: string; content?: stri
 interface ActivityStep { id: string; title: string; content?: string; detail?: string; trace?: Record<string, unknown>; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
 interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
-interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; created_at?: string; updated_at?: string; task_ids: string[]; }
+interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; created_at?: string; updated_at?: string; has_work?: boolean; task_ids: string[]; }
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
 interface WorkspaceEntry { name: string; path: string; type: 'directory' | 'file'; size?: number | null; modified_at: number; }
@@ -92,27 +84,6 @@ function readWidth(key: string, fallback: number): number {
   const raw = Number.parseInt(localStorage.getItem(key) ?? '', 10);
   return Number.isFinite(raw) ? raw : fallback;
 }
-const HIGHLIGHT_LANGUAGES = {
-  bash: bashLanguage,
-  css: cssLanguage,
-  javascript: javascriptLanguage,
-  json: jsonLanguage,
-  markdown: markdownLanguage,
-  python: pythonLanguage,
-  typescript: typescriptLanguage,
-  xml: xmlLanguage,
-  yaml: yamlLanguage,
-};
-const MARKDOWN_REHYPE_PLUGINS: Parameters<typeof ReactMarkdown>[0]['rehypePlugins'] = [
-  [rehypeHighlight, {
-    languages: HIGHLIGHT_LANGUAGES,
-    aliases: {
-      bash: ['sh', 'shell', 'zsh'], javascript: ['js', 'jsx'], markdown: ['md'],
-      python: ['py'], typescript: ['ts', 'tsx'], xml: ['html', 'svg'], yaml: ['yml'],
-    },
-    detect: false,
-  }],
-];
 const FILE_CHUNK_SIZE = 512 * 1024;
 const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [], canvas: [] };
 const EMPTY_SELECTION: CapabilitySelection = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [], canvas: [] };
@@ -313,31 +284,42 @@ export function App() {
     try {
       const hello = await socket.request('hello');
       if (!hello.ok) throw new Error(hello.error?.message ?? 'Gateway handshake failed');
-      if (sessionRef.current) {
-        const sessions = await socket.request('session.list');
-        const stillAvailable = sessions.ok
-          && Array.isArray(sessions.result.sessions)
-          && sessions.result.sessions.some((item) => item && typeof item === 'object' && (item as { session_id?: unknown }).session_id === sessionRef.current);
-        if (stillAvailable) {
-          setSessionId(sessionRef.current);
-          await Promise.all([hydrateCapabilities(socket, sessionRef.current), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, sessionRef.current), loadExtensionStage(socket, sessionRef.current)]);
-          // Rebuild the conversation/activity for the restored session from its event log.
-          const replay = await socket.request('session.events', { session_id: sessionRef.current, after_seq: 0 });
-          if (replay.ok && Array.isArray(replay.result.events)) {
-            setMessages([]);
-            setActivities([]);
-            for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
-          }
-          return;
-        }
-        socket.forgetSession(sessionRef.current);
-        sessionRef.current = undefined;
-        setSessionId(undefined);
+
+      // Resume rather than create. sessionRef is a React ref, so a page refresh
+      // arrives with nothing — and creating unconditionally minted one empty
+      // project per reload, which is what filled the sidebar with identical
+      // rows. Prefer the session this tab already had, then the most recently
+      // worked-in project, and only create when there is nothing to open.
+      const listed = await socket.request('session.list');
+      const known = listed.ok && Array.isArray(listed.result.sessions)
+        ? (listed.result.sessions as unknown as SessionSummary[]).filter(isSessionSummary) : [];
+      const resume = known.find((item) => item.session_id === sessionRef.current)
+        ?? known.find((item) => item.has_work !== false);
+
+      if (resume) {
+        sessionRef.current = resume.session_id;
+        setSessionId(resume.session_id);
+        await Promise.all([hydrateCapabilities(socket, resume.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, resume.session_id), loadExtensionStage(socket, resume.session_id)]);
+        // Rebuild the conversation/activity for the resumed project from its log.
+        const replay = await socket.request('session.events', { session_id: resume.session_id, after_seq: 0 });
         setMessages([]);
         setActivities([]);
-        setAgents([]);
-        setActiveTaskId(undefined);
+        if (replay.ok && Array.isArray(replay.result.events)) {
+          for (const event of replay.result.events as GatewayEvent[]) handleGatewayEvent(event);
+        }
+        return;
       }
+
+      if (sessionRef.current) {
+        socket.forgetSession(sessionRef.current);
+        sessionRef.current = undefined;
+      }
+      setSessionId(undefined);
+      setMessages([]);
+      setActivities([]);
+      setAgents([]);
+      setActiveTaskId(undefined);
+
       const response = await socket.request('session.create', { name: 'New project' });
       if (!response.ok || typeof response.result.session_id !== 'string') {
         throw new Error(response.error?.message ?? 'Could not create a session');
@@ -525,6 +507,15 @@ export function App() {
     if (!socket || status !== 'connected') return;
     if (attachments.some((attachment) => attachment.status === 'uploading')) {
       setNotice('Wait for file uploads to finish before creating a new project.');
+      return;
+    }
+    // Already sitting in an untouched project: that IS a new project, so make
+    // this a no-op rather than minting a second identical one. Otherwise the
+    // button appears to do nothing (both rows read "New project") while quietly
+    // leaving empty sessions behind in the gateway.
+    const current = sessions.find((item) => item.session_id === sessionRef.current);
+    if (current && current.has_work === false) {
+      setNotice('You are already in a new project — describe what you want to do.');
       return;
     }
     try {
@@ -816,13 +807,21 @@ export function App() {
   const projects = useMemo(() => {
     const groups: Array<[string, SessionSummary[]]> = [['Today', []], ['Previous 7 days', []], ['Older', []]];
     const now = Date.now();
-    for (const session of sessions) {
+    // Every project something has happened in, PLUS the one you are in right
+    // now. A page refresh creates a session before the user has typed a word,
+    // so listing them all filled the sidebar with identical "New project" rows
+    // — but hiding every empty one made the New project button look broken,
+    // since the thing it had just created was the one thing not shown. The
+    // gateway still reports all of them: a reconnecting client asks this list
+    // whether its own session still exists.
+    const visible = sessions.filter((item) => item.has_work !== false || item.session_id === sessionId);
+    for (const session of visible) {
       const age = now - new Date(session.updated_at ?? session.created_at ?? Date.now()).getTime();
       const bucket = age < 86_400_000 ? 0 : age < 604_800_000 ? 1 : 2;
       groups[bucket][1].push(session);
     }
     return groups.filter(([, items]) => items.length > 0);
-  }, [sessions]);
+  }, [sessions, sessionId]);
   const timeline = useMemo(() => [
     ...messages.map((message) => ({ id: message.id, timestamp: message.timestamp, type: 'message' as const, value: message })),
     ...activities.map((activity) => ({ id: activity.id, timestamp: activity.timestamp, type: 'activity' as const, value: activity })),
@@ -862,12 +861,15 @@ export function App() {
       )}
       {mainView === 'chat' ? <div className="col-resizer col-resizer-right" onPointerDown={startColumnDrag('inspector')} role="separator" aria-orientation="vertical" aria-label="Resize workspace panel" /> : null}
       <aside className="sidebar">
+        {/* Navigation: which project, which view. Never shrinks, and is the
+            same in all four views — a project is the level ABOVE them, so
+            switching to Code must not take the project list away. */}
+        <div className="sidebar-nav">
         <div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="sidebar-collapse" onClick={() => setSidebarCollapsed(true)} title="Hide sidebar" aria-label="Hide sidebar"><PanelLeftClose size={16} strokeWidth={1.9} /></button></div>
         <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}><Plus size={16} /> New project</button>
         <div className="sidebar-section projects-section">
           <p className="eyebrow">Projects</p>
-          {projects.length ? projects.map(([bucket, bucketSessions]) => <div className="project-group" key={bucket}><div className="project-name">{bucket}</div>{bucketSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} title={projectSession.name} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Project ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>) : <p className="empty">Projects appear once you ask for something.</p>}
-          {!projects.length ? <p className="empty">Connecting to projects…</p> : null}
+          {projects.length ? projects.map(([bucket, bucketSessions]) => <div className="project-group" key={bucket}><div className="project-name">{bucket}</div>{bucketSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} title={projectSession.name} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Project ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>) : <p className="empty">Projects appear here once you ask for something.</p>}
         </div>
         <nav className="sidebar-section capability-nav view-nav" aria-label="Views">
           <p className="eyebrow">Views</p>
@@ -876,6 +878,11 @@ export function App() {
           <button className={mainView === 'code' ? 'view-active' : ''} onClick={() => setMainView('code')}><span><Code2 size={16} strokeWidth={1.9} /></span><strong>Code</strong></button>
           <button className={mainView === 'science' ? 'view-active' : ''} onClick={() => setMainView('science')}><span><FlaskConical size={16} strokeWidth={1.9} /></span><strong>Science</strong></button>
         </nav>
+        </div>
+        {/* Everything below is reference, not navigation: it takes whatever
+            room is left and scrolls, rather than squeezing the project list to
+            nothing on a short window. */}
+        <div className="sidebar-rest">
         <nav className="sidebar-section capability-nav" aria-label="Capabilities">
           <p className="eyebrow">Capabilities</p>
           {CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }}><span><CapIcon kind={kind} /></span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}
@@ -900,6 +907,9 @@ export function App() {
               : <button className="deploy-action" title="Redeploy" onClick={() => void redeploySite(site.site_id)}>↻</button>}
           </div>) : <p className="empty">No deployed services yet.</p>}
         </div>
+        </div>
+        {/* Pinned to the bottom rather than scrolling away with the sections
+            above it: theme and connection are settings, always reachable. */}
         <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button></div>
       </aside>
 
@@ -1045,32 +1055,6 @@ function fileIcon(name: string): string {
 
 function MessageCard({ message }: { message: Message }) {
   return <article className={`message-card ${message.type}`}><div className="message-avatar">{message.type === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? message.type === 'user' ? <p>{message.content}</p> : <MessageMarkdown content={message.content} /> : null}{message.attachments?.length ? <div className="message-files">{message.attachments.map((attachment) => <span key={attachment}>⌕ {attachment}</span>)}</div> : null}</div></article>;
-}
-
-function MessageMarkdown({ content }: { content: string }) {
-  return <div className="message-markdown"><ReactMarkdown
-    remarkPlugins={[remarkGfm]}
-    rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-    components={{
-      pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-      a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
-    }}
-  >{content}</ReactMarkdown></div>;
-}
-
-function CodeBlock({ children }: { children?: ReactNode }) {
-  const child = Array.isArray(children) ? children[0] : children;
-  const className = isValidElement<{ className?: string }>(child) ? child.props.className ?? '' : '';
-  const language = className.match(/(?:language-|lang-)([\w+-]+)/)?.[1] ?? 'text';
-  const source = reactNodeText(children).replace(/\n$/, '');
-  return <div className="message-code"><header><span>{language}</span><button type="button" onClick={() => navigator.clipboard?.writeText(source)}>Copy</button></header><pre>{children}</pre></div>;
-}
-
-function reactNodeText(node: ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(reactNodeText).join('');
-  if (isValidElement<{ children?: ReactNode }>(node)) return reactNodeText(node.props.children);
-  return '';
 }
 
 function ActivityCard({ activity, expanded, onToggle, onSelect }: { activity: ActivityGroup; expanded: boolean; onToggle: () => void; onSelect: (step: ActivityStep) => void }) {

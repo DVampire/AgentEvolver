@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Cpu, FlaskConical, HardDrive, Loader2, MemoryStick, Plus, RefreshCw, SquareArrowOutUpRight, Zap } from 'lucide-react';
+import { Cpu, FlaskConical, HardDrive, Loader2, MemoryStick, NotebookPen, SquareArrowOutUpRight, Zap } from 'lucide-react';
 
 import { Button } from '../components/ui/button';
 import type { RequestFn } from '../canvas/types';
 import type { GatewayEvent } from '../controllers/gateway';
-import { NotebookEditor } from './Notebook';
+import { ScienceConversation } from './Conversation';
+import { KernelPanel } from './KernelPanel';
 // Owned here rather than in canvas.css: both are lazy modules, so parking these
 // styles there would leave this view unstyled until the canvas had been opened.
 import '../style/science.css';
@@ -20,20 +21,21 @@ const COMPUTE_MS = 15_000;
 interface ScienceStatus { running: boolean; path?: string; gpus?: string }
 interface Gpu { index: number; name: string; memory_used_mb: number; memory_total_mb: number; utilization_percent: number }
 interface Compute {
-  running: boolean; gpus: Gpu[];
+  running: boolean; busy: boolean; gpus: Gpu[];
   cpu_count?: number | null; memory_total_mb?: number | null; memory_used_mb?: number | null;
-  disk_free_mb?: number | null; uptime_seconds: number;
+  disk_free_mb?: number | null; executions: number;
 }
-interface NotebookEntry { path: string; title: string; size_bytes: number; modified_at: string; cell_count: number }
 
-/** The Science workstation: JupyterLab for this project, with what it runs on.
+/** The Science workstation: a conversation with the agent, over a shared kernel.
  *
- * The Lab is served under a path on THIS origin (`/science/<session>/`), so it
- * is reachable at whatever address the browser reached the UI at — a tunnel, a
- * reverse proxy, or plain localhost. JupyterLab is started with that path as
- * `--ServerApp.base_url` so its absolute asset URLs match; see
- * agentevolver/science/README.md. The container starts lazily on first open and
- * is reaped once idle, so mounting this view is what boots it. */
+ * There is no science container. Everything runs in the base environment, so
+ * the agent's code_interpreter_tool, the Notebook tab's REPL and JupyterLab all
+ * go through ONE kernel — a variable the agent defined is one you can print.
+ * See agentevolver/science/README.md.
+ *
+ * JupyterLab is served under a path on THIS origin (`/science/<session>/`), so
+ * it is reachable at whatever address the browser reached the UI at: a tunnel,
+ * a reverse proxy, or plain localhost. */
 export function ScienceView({ request, subscribe, sessionId, connected, status, statusText, onOpenNav }: {
   request: RequestFn;
   subscribe: (listener: (event: GatewayEvent) => void) => () => void;
@@ -46,10 +48,10 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
   const [path, setPath] = useState<string>();
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   const [compute, setCompute] = useState<Compute>();
-  const [notebooks, setNotebooks] = useState<NotebookEntry[]>([]);
-  const [open, setOpen] = useState<string>();
+  // Compute and Notebook are alternatives, not a stack: both stacked meant
+  // neither had room, and only one of them answers any given question.
+  const [tab, setTab] = useState<'compute' | 'notebook'>('notebook');
 
   const start = useCallback(async () => {
     if (!sessionId || !connected) return;
@@ -68,15 +70,6 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
     }
   }, [request, sessionId, connected]);
 
-  const loadNotebooks = useCallback(async () => {
-    if (!sessionId || !connected) return;
-    const response = await request('science.notebooks', { session_id: sessionId });
-    if (response.ok) setNotebooks((response.result as { notebooks?: NotebookEntry[] }).notebooks ?? []);
-  }, [request, sessionId, connected]);
-
-  // Notebooks are workspace files, so they can be listed before the container
-  // exists — the list is up the moment the view opens, not after the boot.
-  useEffect(() => { void loadNotebooks(); }, [loadNotebooks]);
   useEffect(() => { setPath(undefined); void start(); }, [start]);
 
   const pathRef = useRef<string | undefined>(undefined);
@@ -101,16 +94,6 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [request, sessionId, connected, path]);
 
-  const createNotebook = async () => {
-    if (!sessionId) return;
-    const response = await request('science.notebook.create', { session_id: sessionId, name: 'untitled' });
-    if (response.ok) {
-      await loadNotebooks();
-      const created = (response.result as { notebook?: NotebookEntry }).notebook;
-      if (created) setOpen(created.path);
-    }
-  };
-
   if (!sessionId) return <ScienceNotice title="No project" detail="Open or create a project to use the workstation." />;
   if (error) {
     return (
@@ -122,8 +105,8 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
   if (!path || starting) {
     return (
       <ScienceNotice
-        title="Starting the workstation…"
-        detail="Booting this project's JupyterLab container. The first launch also builds the image — CUDA PyTorch, the scientific stack and LaTeX — which takes a while; later projects reuse it."
+        title="Opening the workstation…"
+        detail="Opening this project's kernel. The first one also starts a Jupyter Server, which takes a few seconds; after that the agent and this view share it."
         spinning
       />
     );
@@ -142,46 +125,45 @@ export function ScienceView({ request, subscribe, sessionId, connected, status, 
             widgets, the debugger, extensions. Same server, same kernels — it is
             the other client of this workstation, not a different workstation. */}
         <Button variant="ghost" size="sm" className="font-normal"
-                onClick={() => window.open(open ? `${path}/lab/tree/${open}` : `${path}/lab`, '_blank', 'noopener')}>
+                onClick={() => window.open(`${path}/lab`, '_blank', 'noopener')}>
           <SquareArrowOutUpRight /> JupyterLab
-        </Button>
-        <Button variant="ghost" size="sm" className="font-normal" onClick={() => setReloadKey((key) => key + 1)}>
-          <RefreshCw /> Reload
         </Button>
       </header>
       <div className="science-body">
-        <div className="science-main" key={reloadKey}>
-          {open ? (
-            <NotebookEditor request={request} subscribe={subscribe} sessionId={sessionId} path={open} />
-          ) : (
-            <div className="science-empty">
-              <FlaskConical size={20} strokeWidth={1.6} />
-              <strong>Open a notebook</strong>
-              <p>Cells run in this project's kernel — the same one JupyterLab attaches
-                 to, so a variable defined here is defined there.</p>
-            </div>
-          )}
-        </div>
+        {/* The conversation is the surface: you describe an experiment, the
+            agent runs it in this project's kernel. What it computes stays live,
+            which is what the Notebook tab is for. */}
+        <ScienceConversation request={request} subscribe={subscribe}
+                             sessionId={sessionId} connected={connected} />
         <aside className="science-rail">
-          <ComputePanel compute={compute} />
-          <NotebookPanel notebooks={notebooks} open={open} onCreate={() => void createNotebook()}
-                         onOpen={(item) => setOpen(item.path)}
-                         onRefresh={() => void loadNotebooks()} />
+          <div className="science-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'compute'} className={tab === 'compute' ? 'active' : ''}
+                    onClick={() => setTab('compute')}><Cpu size={13} strokeWidth={1.9} /> Compute</button>
+            <button role="tab" aria-selected={tab === 'notebook'} className={tab === 'notebook' ? 'active' : ''}
+                    onClick={() => setTab('notebook')}><NotebookPen size={13} strokeWidth={1.9} /> Notebook</button>
+          </div>
+          {tab === 'compute' ? <ComputePanel compute={compute} /> : (
+            <KernelPanel request={request} subscribe={subscribe} sessionId={sessionId} />
+          )}
         </aside>
       </div>
     </div>
   );
 }
 
-/** What the workstation is running on, read from inside the container. */
+/** What the machine is running on.
+ *
+ * The base environment's own resources — the whole host, not a slice of it,
+ * because that is exactly what the agent and the kernel get. */
 function ComputePanel({ compute }: { compute?: Compute }) {
   const memoryPercent = compute?.memory_total_mb && compute?.memory_used_mb
     ? Math.round((compute.memory_used_mb / compute.memory_total_mb) * 100) : undefined;
   return (
     <section className="science-panel">
-      <p className="eyebrow">Compute</p>
-      {!compute ? <p className="empty">Reading the workstation…</p> : (
+      {!compute ? <p className="empty">Reading the machine…</p> : (
         <>
+          {/* GPUs are detected, not assumed: a host without an NVIDIA card is
+              ordinary, and says so rather than showing an empty meter. */}
           {compute.gpus.length ? compute.gpus.map((gpu) => (
             <div className="compute-gpu" key={gpu.index}>
               <div className="compute-gpu-head"><Zap size={13} strokeWidth={1.9} /><strong>{gpu.name}</strong><em>#{gpu.index}</em></div>
@@ -189,41 +171,27 @@ function ComputePanel({ compute }: { compute?: Compute }) {
               <Meter label="Utilisation" used={gpu.utilization_percent} total={100} unit="%" />
             </div>
           )) : (
-            // Not an error: the manager starts a CPU-only workstation rather
-            // than none at all when the host has no nvidia runtime.
-            <p className="empty">No GPUs attached to this workstation.</p>
+            <div className="compute-nogpu">
+              <Zap size={13} strokeWidth={1.9} />
+              <div>
+                <strong>No GPU detected</strong>
+                <p>This machine has no NVIDIA GPU available, so code runs on the CPU.</p>
+              </div>
+            </div>
           )}
           <div className="compute-row"><Cpu size={13} strokeWidth={1.9} /><span>CPU</span><em>{compute.cpu_count ?? '—'} cores</em></div>
           <div className="compute-row"><MemoryStick size={13} strokeWidth={1.9} /><span>Memory</span>
             <em>{memoryPercent === undefined ? '—' : `${gib(compute.memory_used_mb)} / ${gib(compute.memory_total_mb)} GiB`}</em></div>
           <div className="compute-row"><HardDrive size={13} strokeWidth={1.9} /><span>Disk free</span><em>{gib(compute.disk_free_mb)} GiB</em></div>
-          <div className="compute-row"><span className="compute-uptime">Up {duration(compute.uptime_seconds)}</span></div>
+          <div className="compute-row">
+            <span className="compute-uptime">
+              {compute.running
+                ? `Kernel ${compute.busy ? 'busy' : 'idle'} · ${compute.executions} cell${compute.executions === 1 ? '' : 's'} run`
+                : 'Kernel not started'}
+            </span>
+          </div>
         </>
       )}
-    </section>
-  );
-}
-
-function NotebookPanel({ notebooks, open, onCreate, onOpen, onRefresh }: {
-  notebooks: NotebookEntry[]; open?: string; onCreate: () => void;
-  onOpen: (item: NotebookEntry) => void; onRefresh: () => void;
-}) {
-  return (
-    <section className="science-panel notebook-panel">
-      <p className="eyebrow">
-        Notebooks
-        <button className="section-refresh" onClick={onRefresh} title="Refresh">↻</button>
-      </p>
-      <Button variant="ghost" size="sm" className="font-normal notebook-new" onClick={onCreate}>
-        <Plus /> New notebook
-      </Button>
-      {notebooks.length ? notebooks.map((item) => (
-        <button className={`notebook-row${item.path === open ? ' selected' : ''}`} key={item.path}
-                onClick={() => onOpen(item)} title={item.path}>
-          <strong>{item.title}</strong>
-          <em>{item.cell_count} cell{item.cell_count === 1 ? '' : 's'}</em>
-        </button>
-      )) : <p className="empty">No notebooks in this project's workspace yet.</p>}
     </section>
   );
 }
@@ -240,12 +208,6 @@ function Meter({ label, used, total, unit }: { label: string; used: number; tota
 
 function gib(megabytes?: number | null): string {
   return megabytes == null ? '—' : (megabytes / 1024).toFixed(1);
-}
-
-function duration(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${(seconds / 3600).toFixed(1)}h`;
 }
 
 function ScienceNotice({ title, detail, spinning, children }: {

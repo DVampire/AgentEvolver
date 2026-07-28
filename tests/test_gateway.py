@@ -736,3 +736,42 @@ def test_a_vnc_live_view_never_hands_the_client_the_raw_socket() -> None:
         assert published[-1][1]["url"] == "http://localhost:8080/"
 
     asyncio.run(run())
+
+
+def test_an_untouched_session_is_listed_but_marked_as_having_no_work() -> None:
+    """Both halves matter, and they are different questions.
+
+    A reconnecting client asks this list whether its session still exists, so
+    omitting empty ones would make it mint another. But a page refresh creates a
+    session before the user has typed a word, so showing them all filled the
+    sidebar with identical "New project" rows — has_work is what the display
+    filters on.
+    """
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        empty = (await gateway.handle(GatewayCommand(
+            id="c1", method="session.create", params={}))).result["session_id"]
+        used = (await gateway.handle(GatewayCommand(
+            id="c2", method="session.create", params={}))).result["session_id"]
+        await gateway.handle(GatewayCommand(id="t", method="task.submit", params={
+            "session_id": used, "content": "Fit the model"}))
+
+        listed = await gateway.handle(GatewayCommand(id="l", method="session.list", params={}))
+        by_id = {item["session_id"]: item for item in listed.result["sessions"]}
+        # Both exist…
+        assert set(by_id) == {empty, used}
+        # …but only one is a project worth showing.
+        assert by_id[empty]["has_work"] is False
+        assert by_id[used]["has_work"] is True
+
+        # And it survives a restart, where task_ids do not come back.
+        restarted = AgentGateway()
+        await restarted._restore_sessions()  # noqa: SLF001
+        reopened = await restarted.handle(GatewayCommand(id="l2", method="session.list", params={}))
+        restored = {item["session_id"]: item for item in reopened.result["sessions"]}
+        assert restored[used]["has_work"] is True and restored[used]["task_ids"] == []
+        # The empty one left no manifest, so there is nothing to restore.
+        assert empty not in restored
+
+    asyncio.run(run())

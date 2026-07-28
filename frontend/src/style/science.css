@@ -25,8 +25,10 @@
 .science-origin { overflow: hidden; border-radius: 6px; padding: 2px 6px; background: hsl(var(--muted)); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .science-toolbar-spacer { flex: 1; }
 
-.science-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 264px; }
-.science-rail { display: flex; flex-direction: column; gap: 18px; overflow-y: auto; padding: 16px 14px; border-left: 1px solid hsl(var(--border)); }
+/* Conversation | rail. The rail is wide because it holds a notebook, not a
+   summary — this is the working half of the window, not a status strip. */
+.science-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 38%); }
+.science-rail { display: flex; min-height: 0; flex-direction: column; border-left: 1px solid hsl(var(--border)); }
 
 .science-panel { display: flex; flex-direction: column; gap: 8px; }
 .science-panel .eyebrow { display: flex; align-items: center; justify-content: space-between; margin: 0; }
@@ -63,51 +65,79 @@
    have to stay readable, and the rail's contents are reachable from the Lab. */
 @media (max-width: 900px) { .science-body { grid-template-columns: minmax(0, 1fr); } .science-rail { display: none; } }
 
-/* --- Notebook editor --------------------------------------------------
-   Our own cells over the workstation's kernel. Deliberately quieter than
-   JupyterLab's chrome: this surface is for reading a run and nudging it, and
-   the Lab is one click away for everything it does not do. */
-.science-main { min-height: 0; overflow-y: auto; }
-.science-empty { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 32px; color: hsl(var(--muted-foreground)); text-align: center; }
-.science-empty strong { color: hsl(var(--foreground)); font-size: 14px; }
-.science-empty p { max-width: 380px; margin: 0; font-size: 12px; line-height: 1.55; }
+/* --- Conversation ------------------------------------------------------
+   The primary surface: describe an experiment, the agent runs it. Its own
+   transcript, keyed by (project, view), so it never mixes with Chat's. */
+.science-conversation { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.science-thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 22px 28px 8px; }
+.science-thread-empty { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 32px; color: hsl(var(--muted-foreground)); text-align: center; }
+.science-thread-empty strong { color: hsl(var(--foreground)); font-size: 15px; }
+.science-thread-empty p { max-width: 420px; margin: 0; font-size: 12.5px; line-height: 1.6; }
 
-.notebook-editor { display: flex; min-height: 100%; flex-direction: column; }
-.notebook-bar { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--background)); }
-.notebook-bar code { overflow: hidden; border-radius: 6px; padding: 2px 6px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.notebook-bar-spacer { flex: 1; }
-.notebook-dirty { color: #d8b26a; font-size: 11px; font-style: normal; }
-.notebook-notice { display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 14px; border-bottom: 1px solid hsl(var(--border)); color: #d8b26a; font-size: 12px; line-height: 1.5; }
-.notebook-notice button { border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 2px 8px; color: inherit; background: transparent; font-size: 11px; cursor: pointer; }
-.notebook-empty { padding: 24px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.science-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding: 12px 0; }
+.science-message-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 650; }
+.science-message.agent .science-message-avatar { color: #101114; background: linear-gradient(135deg, #b0c7ff, #8ce4cc); }
+.science-message-body { min-width: 0; }
+.science-message-heading strong { color: hsl(var(--foreground)); font-size: 12.5px; font-weight: 650; }
+.science-message-body p { margin: 5px 0 0; color: hsl(var(--foreground)); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
+.science-message.system .science-message-heading strong { color: #d78b95; }
+.science-working { display: flex; align-items: center; gap: 8px; padding: 8px 0 16px 42px; color: hsl(var(--muted-foreground)); font-size: 12px; }
 
-.notebook-cells { display: flex; flex: 1; flex-direction: column; gap: 6px; padding: 14px 16px 40px; }
-.notebook-cell { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; border: 1px solid transparent; border-radius: 10px; padding: 6px; transition: border-color .15s; }
-.notebook-cell:hover, .notebook-cell:focus-within { border-color: hsl(var(--border)); }
-.notebook-cell.running { border-color: #6f86c4; }
-.notebook-gutter { display: flex; flex-direction: column; align-items: center; gap: 3px; padding-top: 6px; }
-.notebook-gutter button { display: grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: 6px; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; }
-.notebook-gutter button:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
-.notebook-gutter button:disabled { opacity: .4; cursor: default; }
-.notebook-count { color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
-/* Deleting is destructive and one row from Run — keep it out of the way until
-   the cell is actually being worked on. */
-.notebook-remove { opacity: 0; transition: opacity .15s; }
-.notebook-cell:hover .notebook-remove, .notebook-cell:focus-within .notebook-remove { opacity: 1; }
+.science-composer { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px; margin: 0 24px 20px; border: 1px solid hsl(var(--border)); border-radius: 14px; padding: 10px 10px 10px 14px; background: hsl(var(--background)); }
+.science-composer textarea { flex: 1; max-height: 200px; min-height: 22px; border: 0; color: hsl(var(--foreground)); background: transparent; font: inherit; font-size: 13.5px; line-height: 1.5; resize: none; }
+.science-composer textarea:focus { outline: none; }
+.science-composer button { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border: 0; border-radius: 9px; color: #101114; background: #c7d8ff; cursor: pointer; }
+.science-composer button:disabled { opacity: .35; cursor: default; }
 
-.notebook-cell-body { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
-.notebook-source { width: 100%; min-height: 34px; overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px 10px; color: hsl(var(--foreground)); background: hsl(var(--muted)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.55; resize: none; tab-size: 4; }
-.notebook-source:focus { outline: 1px solid #6f86c4; }
-.notebook-cell.markdown .notebook-source { font-family: inherit; font-size: 13px; }
+/* --- Rail tabs --------------------------------------------------------- */
+.science-tabs { flex: 0 0 auto; display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid hsl(var(--border)); }
+.science-tabs button { display: flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; padding: 6px 11px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 12px; font-weight: 550; cursor: pointer; }
+.science-tabs button:hover { color: hsl(var(--foreground)); }
+.science-tabs button.active { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+/* Both panels own the space under the tabs, so each scrolls on its own rather
+   than the rail scrolling as one long column. */
+.science-rail > .science-panel { min-height: 0; overflow-y: auto; padding: 16px 14px; }
 
-.notebook-outputs { display: flex; flex-direction: column; gap: 6px; padding-left: 2px; }
-.notebook-output { max-width: 100%; margin: 0; overflow-x: auto; color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.notebook-output.stderr { color: #d8a06a; }
-.notebook-output.error { border-left: 2px solid #c46f7a; padding-left: 9px; color: #d78b95; }
-.notebook-output.image { max-height: 620px; border-radius: 8px; background: #fff; object-fit: contain; }
-.notebook-output.html { width: 100%; height: 260px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: #fff; }
+/* --- Compute: no-GPU state --------------------------------------------- */
+.compute-nogpu { display: flex; gap: 8px; border: 1px dashed hsl(var(--border)); border-radius: 9px; padding: 10px; color: hsl(var(--muted-foreground)); }
+.compute-nogpu strong { display: block; color: hsl(var(--foreground)); font-size: 12px; font-weight: 600; }
+.compute-nogpu p { margin: 3px 0 0; font-size: 11.5px; line-height: 1.5; }
 
-.notebook-add { display: flex; gap: 6px; padding-left: 42px; opacity: .55; transition: opacity .15s; }
-.notebook-add:hover { opacity: 1; }
+/* --- Kernel panel ------------------------------------------------------
+   The notebook is the KERNEL'S history, not a document: the agent's cells and
+   yours in one list, because both went through the same kernel. Nothing to keep
+   in sync, so nothing here writes — it reads and appends. */
+.kernel-panel { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.kernel-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 11.5px; }
+.kernel-bar-spacer { flex: 1; }
+.kernel-bar em { color: hsl(var(--muted-foreground)); font-size: 10.5px; font-style: normal; }
+.kernel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kernel-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #6b7280; }
+.kernel-dot.idle { background: #6fbf8f; }
+.kernel-dot.busy { background: #d8b26a; animation: pulse 1.1s ease-in-out infinite; }
+.kernel-notice { margin: 0; padding: 9px 12px; border-bottom: 1px solid hsl(var(--border)); color: #d8b26a; font-size: 11.5px; line-height: 1.5; cursor: pointer; }
 
-.notebook-row.selected { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+.kernel-history { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 12px 8px; }
+.kernel-history > .empty { margin: 0; padding: 16px 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.55; }
+.kernel-cell { margin-bottom: 12px; border-left: 2px solid hsl(var(--border)); padding-left: 10px; }
+/* The agent's cells are the ones you did not type; marking them is most of the
+   point of showing the history at all. */
+.kernel-cell.agent { border-left-color: #8ea9ff; }
+.kernel-cell.failed { border-left-color: #c46f7a; }
+.kernel-cell-head { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: hsl(var(--muted-foreground)); font-size: 10.5px; }
+.kernel-count { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.kernel-origin { border-radius: 5px; padding: 1px 6px; background: hsl(var(--muted)); text-transform: capitalize; }
+.kernel-cell.agent .kernel-origin { color: #101114; background: #b0c7ff; }
+.kernel-cell-head em { margin-left: auto; font-style: normal; }
+.kernel-code { margin: 0; overflow-x: auto; border-radius: 7px; padding: 8px 10px; color: hsl(var(--foreground)); background: hsl(var(--muted)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.kernel-outputs { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
+.kernel-output { max-width: 100%; margin: 0; overflow-x: auto; color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.kernel-output.stderr { color: #d8a06a; }
+.kernel-output.error { border-left: 2px solid #c46f7a; padding-left: 8px; color: #d78b95; }
+.kernel-output.image { max-height: 520px; border-radius: 7px; background: #fff; object-fit: contain; }
+.kernel-output.html { width: 100%; height: 240px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: #fff; }
+
+.kernel-prompt { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-top: 1px solid hsl(var(--border)); }
+.kernel-caret { color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; }
+.kernel-prompt textarea { flex: 1; max-height: 180px; min-height: 20px; border: 0; color: hsl(var(--foreground)); background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; resize: none; }
+.kernel-prompt textarea:focus { outline: none; }

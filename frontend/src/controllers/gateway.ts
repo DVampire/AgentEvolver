@@ -13,6 +13,10 @@ export interface GatewayEvent {
   type: string;
   payload: Record<string, unknown>;
   session_id?: string;
+  // Which transcript this belongs to. The gateway broadcasts every event to
+  // every client, so a view that owns one conversation has to filter on it —
+  // without this, a canvas run appeared in the chat.
+  conversation_id?: string;
   task_id?: string;
   seq_no: number;
   timestamp: string;

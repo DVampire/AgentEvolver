@@ -1,12 +1,11 @@
-"""Science: one GPU-backed JupyterLab workstation per project."""
+"""Science: the workstation half of a project — notebooks, and what runs them."""
 
 from agentevolver.science.server import ScienceManagerServer, base_path, science_manager
-from agentevolver.science.types import ComputeStatus, Notebook, ScienceInstance
+from agentevolver.science.types import ComputeStatus, Notebook
 
 __all__ = [
     "ComputeStatus",
     "Notebook",
-    "ScienceInstance",
     "ScienceManagerServer",
     "base_path",
     "science_manager",

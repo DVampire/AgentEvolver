@@ -127,20 +127,26 @@ def test_the_interpreter_is_keyed_by_project_not_by_state_scope() -> None:
     tool = CodeInterpreterTool()
     captured: list[str] = []
 
+    workspaces: list[str] = []
+
     class _Recorder:
-        async def execute(self, code, *, key="default", kernel_name=None):
+        async def execute(self, code, *, key="default", **kwargs):
             captured.append(key)
+            workspaces.append(kwargs.get("workspace"))
             return KernelResult()
 
     original, module.kernel_manager = module.kernel_manager, _Recorder()
     try:
         for scope in ("conversation-1", "conversation-2", "workflow-run-3"):
-            ctx = SimpleNamespace(id=scope, extra={"project_id": "project-1"})
+            ctx = SimpleNamespace(id=scope, extra={"project_id": "project-1"},
+                                  workspace_root="/projects/one/workspace")
             asyncio.run(tool(code="1+1", ctx=ctx))
     finally:
         module.kernel_manager = original
 
     assert captured == ["project-1"] * 3, "one interpreter per project, whatever the state scope"
+    # And it starts where bash starts, so a relative path means one thing.
+    assert workspaces == ["/projects/one/workspace"] * 3
 
 
 def test_a_figure_survives_as_an_image() -> None:

@@ -6,11 +6,10 @@ kernel is a *resource*, shared like the project's files, not per conversation
 and not per run — keying it off ``ctx.id`` meant a fresh interpreter for every
 line of dialogue.
 
-The kernel runs in the framework's own container, beside the workspace. It used
-to run in a peer container of its own, which gave no isolation the agent did
-not already have (``bash_tool`` runs here too) and cost it the one thing that
-mattered: that container mounted nothing, so code could not read the files the
-agent had just written.
+Everything that runs code in a project goes through the same kernel: the
+agent's ``code_interpreter_tool``, the Science view's REPL, and JupyterLab.
+That is the point. There is one set of variables, so there is nothing to keep
+in sync — a variable the agent defined is a variable you can print.
 """
 
 from __future__ import annotations
@@ -99,4 +98,42 @@ class KernelResult(BaseModel):
         return "\n".join(parts) or ("" if self.success else "Execution failed.")
 
 
-__all__ = ["KernelOutput", "KernelResult", "OutputType", "RICH_MIME"]
+class Execution(BaseModel):
+    """One entry in a kernel's history: what was run, and what came back.
+
+    The history is what the Science view renders as a notebook. It is not a
+    document anyone edits — it is the kernel's own record, which is why nothing
+    has to be synchronised: the agent running a cell and you running one both
+    append here, because both went through the same kernel.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    #: The kernel's counter, so the UI can label a cell ``[3]`` the way Jupyter does.
+    execution_count: Optional[int] = None
+    code: str = ""
+    language: str = "python"
+    outputs: List[KernelOutput] = Field(default_factory=list)
+    success: bool = True
+    error: Optional[str] = None
+    #: ``agent`` when a tool call ran it, ``user`` when the REPL did. The panel
+    #: shows both — seeing what the agent ran is most of the point.
+    origin: Literal["agent", "user"] = "agent"
+    started_at: str = ""
+    duration_ms: Optional[int] = None
+
+
+class KernelStatus(BaseModel):
+    """What the panel shows next to the prompt."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    running: bool = False
+    busy: bool = False
+    kernel_name: str = "python3"
+    #: How many executions this kernel has served, agent and user together.
+    executions: int = 0
+    workspace: str = ""
+
+
+__all__ = ["Execution", "KernelOutput", "KernelResult", "KernelStatus", "OutputType", "RICH_MIME"]

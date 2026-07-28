@@ -88,9 +88,11 @@ def create_websocket_app(
     async def science_resolve(session_id: str):
         """Tell the UI's proxy where a project's JupyterLab lives.
 
-        The Lab's own port is the only one published — anything a notebook
-        starts is reached through jupyter-server-proxy on that same port — so
-        unlike the IDE route this takes no ``port``.
+        A Jupyter Server in this container, on a loopback port of its own —
+        the same server the agent's kernel runs in, which is what makes the Lab
+        and the agent share variables. Unlike the IDE route this takes no
+        ``port``: anything a notebook starts is reached through
+        jupyter-server-proxy on that same one.
         """
         from agentevolver.science import science_manager
 

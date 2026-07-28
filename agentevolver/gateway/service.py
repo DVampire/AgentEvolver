@@ -35,6 +35,7 @@ from agentevolver.environment import environment_manager
 from agentevolver.extension import extension_manager
 from agentevolver.ide import ide_manager
 from agentevolver.science import science_manager
+from agentevolver.kernel import kernel_manager
 from agentevolver.gateway.protocol import (
     PROTOCOL_VERSION,
     GatewayCommand,
@@ -80,6 +81,12 @@ class GatewaySession:
     #: When work last happened here. Orders the project list — created_at would
     #: bury a project someone has lived in all week under one opened once.
     updated_at: str = ""
+    #: Whether anything has actually happened here. A page refresh mints a new
+    #: session before the user has typed a word, so listing every session in
+    #: memory filled the project list with identical empty rows. The manifest is
+    #: the same marker on disk: written on the first submission, which is also
+    #: what makes a project restorable.
+    has_work: bool = False
     task_ids: list[str] = field(default_factory=list)
     capabilities: Dict[str, list[str]] = field(default_factory=dict)
     uploads: Dict[str, "GatewayUpload"] = field(default_factory=dict)
@@ -323,6 +330,7 @@ class AgentGateway:
     def _write_session_manifest(self, session: "GatewaySession") -> None:
         """Record identity + roots so this session can be reopened after a restart."""
         session.updated_at = datetime.now(timezone.utc).isoformat()
+        session.has_work = True
         session_project.write_session_manifest(
             session.sandbox,
             session_id=session.context.id,
@@ -419,6 +427,9 @@ class AgentGateway:
                     updated_at=str(data.get("updated_at") or data.get("created_at") or ""),
                     capabilities=await self._available_capabilities(),
                 )
+                # It has a manifest, so it earned one: work happened here before
+                # the restart even though task_ids are not carried across.
+                self._sessions[session_id].has_work = True
                 self._adopt_legacy_transcript(session_id)
                 restored += 1
             except Exception as exc:  # noqa: BLE001 — one bad manifest must not block startup
@@ -466,6 +477,10 @@ class AgentGateway:
     async def _command_session_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         # Most recently worked in first: the list is how someone gets back to
         # what they were doing, so the thing they were doing belongs at the top.
+        # Every session, including ones nothing has happened in yet: this answers
+        # "does this session exist", which is what a reconnecting client asks.
+        # Whether a session is worth SHOWING is a display question, and travels
+        # as has_work rather than as an omission from the list.
         ordered = sorted(self._sessions.items(),
                          key=lambda item: item[1].updated_at or item[1].created_at, reverse=True)
         return {
@@ -475,6 +490,10 @@ class AgentGateway:
                     "name": session.context.name,
                     "created_at": session.created_at,
                     "updated_at": session.updated_at or session.created_at,
+                    # False until the first submission. A page refresh mints a
+                    # session before the user has typed anything, so a sidebar
+                    # that listed them all filled up with identical empty rows.
+                    "has_work": session.has_work,
                     "workspace": str(session.sandbox.workspace_root),
                     "source_workspace": session.context.extra.get("source_workspace"),
                     "project_root": str(session.sandbox.project_root),
@@ -1364,25 +1383,19 @@ class AgentGateway:
 
     # -------------------------------------------------------------- science
     async def _command_science_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Start (or reuse) this project's JupyterLab workstation.
+        """Bring this project's Jupyter Server up and say where the Lab lives.
 
-        Like the IDE, the status carries a ``path`` on the UI's OWN origin
-        rather than a host, so whatever address the browser reached the UI at
-        works — see agentevolver/science/README.md.
+        The same server the agent's code_interpreter_tool uses, so the panel,
+        the REPL, the agent and JupyterLab all share ONE kernel — there is no
+        second set of variables to keep in step.
         """
         session_id = self._require_session_id(params)
         session = self._sessions[session_id]
-        await science_manager.start(
-            session_id,
-            workspace_root=session.sandbox.workspace_root,
-            owner=session.owner,
-        )
-        return science_manager.status(session_id)
+        return await science_manager.start(
+            session_id, workspace_root=session.sandbox.workspace_root, owner=session.owner)
 
     async def _command_science_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
-        # Doubles as the keep-alive: an open Science view pings this.
-        science_manager.touch(session_id)
         return science_manager.status(session_id)
 
     async def _command_science_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1390,16 +1403,72 @@ class AgentGateway:
         return {"session_id": session_id, "stopped": await science_manager.stop(session_id)}
 
     async def _command_science_compute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """GPUs, CPU, memory and disk, as the workstation itself sees them."""
+        """GPUs, CPU, memory and disk — this machine, which is what the kernel gets."""
         session_id = self._require_session_id(params)
         return (await science_manager.compute(session_id)).model_dump(mode="json")
 
-    async def _command_science_notebooks(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Every notebook in the project's workspace.
+    async def _command_science_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """What has run in this project's kernel, agent and user alike.
 
-        Read off disk, so this answers before the workstation has ever been
-        started and after it has been reaped — a notebook is a workspace file,
-        and the container is not.
+        This is the notebook the Science view shows. It is the kernel's own
+        record rather than a document someone writes alongside it, which is why
+        nothing can drift out of sync with what actually ran.
+        """
+        session_id = self._require_session_id(params)
+        limit = max(1, min(int(params.get("limit") or 200), 1000))
+        history = kernel_manager.history(session_id, limit=limit)
+        # ``after`` is how many entries the client already holds. The panel polls
+        # while the agent works, and a history carrying a few base64 figures is
+        # megabytes — resending all of it every few seconds is pure waste. The
+        # list is append-only, so an index is a valid cursor; ``total`` lets the
+        # client notice a trim and reload instead of silently missing entries.
+        after = max(0, int(params.get("after") or 0))
+        fresh = history[after:] if after <= len(history) else history
+        return {
+            "session_id": session_id,
+            "status": kernel_manager.status(session_id).model_dump(mode="json"),
+            "total": len(history),
+            "after": after,
+            "executions": [item.model_dump(mode="json") for item in fresh],
+        }
+
+    async def _command_science_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run a cell as the user, in the same kernel the agent uses."""
+        session_id = self._require_session_id(params)
+        session = self._sessions[session_id]
+        code = str(params.get("code") or "")
+        if not code.strip():
+            raise ValueError("Nothing to run")
+
+        async def stream(output) -> None:
+            # Published as it arrives, so a long cell shows its prints while it
+            # runs instead of everything landing when the call returns.
+            await self._publish("science.output", {"output": output.model_dump(mode="json")},
+                                session_id=session_id)
+
+        result = await kernel_manager.execute(
+            code, key=session_id, workspace=str(session.sandbox.workspace_root),
+            language=str(params.get("language") or "python"), origin="user", on_output=stream)
+        return {
+            "success": result.success, "error": result.error,
+            "execution_count": result.execution_count,
+            "outputs": [output.model_dump(mode="json") for output in result.outputs],
+        }
+
+    async def _command_science_interrupt(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
+        return {"interrupted": await kernel_manager.interrupt(session_id)}
+
+    async def _command_science_restart(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Throw the variables away. The history stays — it is what ran, not what is live."""
+        session_id = self._require_session_id(params)
+        return {"restarted": await kernel_manager.restart(session_id)}
+
+    async def _command_science_notebooks(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Every notebook in the project's workspace, read off disk.
+
+        Off disk so this answers before the Jupyter Server has started and after
+        it has stopped — a notebook is a workspace file, and the server is not.
         """
         session_id = self._require_session_id(params)
         owner = self._sessions[session_id].owner
@@ -1407,95 +1476,17 @@ class AgentGateway:
                 "notebooks": [item.model_dump(mode="json")
                               for item in science_manager.notebooks(session_id, owner=owner)]}
 
-    async def _command_science_notebook_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _command_science_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Write the kernel's history out as a real .ipynb.
+
+        The panel is live history, not a document; this is how a run is kept —
+        openable in JupyterLab, in the Code view, or anywhere else.
+        """
         session_id = self._require_session_id(params)
         owner = self._sessions[session_id].owner
-        name = str(params.get("name") or "untitled")
-        notebook = await science_manager.create_notebook(session_id, name, owner=owner)
+        notebook = science_manager.save_history_as_notebook(
+            session_id, str(params.get("name") or "session"), owner=owner)
         return {"session_id": session_id, "notebook": notebook.model_dump(mode="json")}
-
-    async def _command_science_notebook_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """A notebook's cells, read through the workstation's Jupyter Server.
-
-        Not off disk: that server owns the document, and reading around it would
-        miss unsaved state the Lab is holding.
-        """
-        session_id = self._require_session_id(params)
-        return await science_manager.read_notebook(session_id, self._notebook_path(params))
-
-    async def _command_science_notebook_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Write the cells back, refusing if the file moved on beneath us.
-
-        ``last_modified`` is the handshake: hand back what the last read
-        returned, and a save that would clobber someone else's edit fails
-        instead. JupyterLab runs the same check, so both clients behave alike.
-        """
-        from agentevolver.science.notebook import NotebookConflict
-
-        session_id = self._require_session_id(params)
-        cells = params.get("cells")
-        if not isinstance(cells, list):
-            raise ValueError("cells must be a list")
-        try:
-            modified = await science_manager.save_notebook(
-                session_id, self._notebook_path(params), cells,
-                str(params.get("last_modified") or ""))
-        except NotebookConflict as conflict:
-            return {"saved": False, "conflict": True, "message": str(conflict)}
-        return {"saved": True, "conflict": False, "last_modified": modified}
-
-    async def _command_science_cell_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute one cell in the notebook's kernel, streaming what it prints.
-
-        The kernel is the workstation's own — the same one the embedded Lab
-        attaches to for this path — so a variable defined here is defined there.
-        """
-        session_id = self._require_session_id(params)
-        path = self._notebook_path(params)
-        code = str(params.get("code") or "")
-        cell_id = str(params.get("cell_id") or "")
-
-        kernel = science_manager.kernel_for(session_id, path)
-
-        async def stream(output) -> None:
-            # Published as it arrives so a long cell shows its prints while it
-            # runs, instead of everything landing when the call returns.
-            await self._publish("science.cell.output", {
-                "path": path, "cell_id": cell_id,
-                "output": output.model_dump(mode="json"),
-            }, session_id=session_id)
-
-        result = await kernel.execute(code, on_output=stream)
-        return {
-            "path": path, "cell_id": cell_id,
-            "success": result.success, "error": result.error,
-            "execution_count": result.execution_count,
-            "outputs": [output.model_dump(mode="json") for output in result.outputs],
-        }
-
-    async def _command_science_kernel_interrupt(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        session_id = self._require_session_id(params)
-        kernel = science_manager.kernel_for(session_id, self._notebook_path(params))
-        return {"interrupted": await kernel.interrupt()}
-
-    async def _command_science_kernel_restart(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        session_id = self._require_session_id(params)
-        kernel = science_manager.kernel_for(session_id, self._notebook_path(params))
-        return {"restarted": await kernel.restart()}
-
-    @staticmethod
-    def _notebook_path(params: Dict[str, Any]) -> str:
-        """The notebook this command addresses, confined to the workspace.
-
-        Jupyter resolves contents paths against its own root, so a ``..`` here
-        would reach outside the project — the server would happily serve it.
-        """
-        path = str(params.get("path") or "").strip().lstrip("/")
-        if not path:
-            raise ValueError("A notebook path is required")
-        if ".." in Path(path).parts:
-            raise ValueError("Notebook paths must stay inside the workspace")
-        return path
 
     @staticmethod
     def _workflow_preview_document(source: str) -> str:

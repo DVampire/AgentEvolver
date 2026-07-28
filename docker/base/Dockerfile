@@ -41,11 +41,14 @@ RUN conda install -y -c conda-forge nodejs r-base \
 RUN pip install --no-cache-dir \
         numpy pandas scipy scikit-learn matplotlib seaborn lightgbm xgboost
 
-# The interpreter behind code_interpreter_tool: a Jupyter *kernel*, not the
-# Jupyter web app. The tool is part of the agent system, so it runs here like
-# every other tool — the kernel is what makes its state persist across calls and
-# what carries figures back as images instead of "<Figure ...>". JupyterLab, the
-# browser application, belongs to the science sandbox, not to this image.
+# Jupyter: the kernel behind code_interpreter_tool AND the server that owns it.
+#
+# One server per project, started lazily (see agentevolver/kernel). Everything
+# that runs code goes through it — the agent's code_interpreter_tool, the
+# Science view's REPL, and JupyterLab — so all three share ONE kernel and one
+# set of variables. It used to be a raw kernel here plus a second, unrelated
+# kernel in a "science" peer container, which meant a variable the agent defined
+# was not defined in the notebook you were reading.
 #
 # One kernelspec per language this image can actually run: Python, Bash, R and
 # JS/TS (node is here). Go and Java have no toolchain in this image, so they get
@@ -53,6 +56,7 @@ RUN pip install --no-cache-dir \
 # an unknown language straight through, so adding a toolchain here is all it
 # takes to reach it.
 RUN pip install --no-cache-dir jupyter_client ipykernel ipywidgets matplotlib-inline bash_kernel \
+        jupyterlab notebook jupyter-server-proxy jupyterlab-git jupytext nbconvert nbformat \
     && python -m ipykernel install --name python3 --display-name "Python 3" --prefix /opt/conda \
     && python -m bash_kernel.install --prefix /opt/conda \
     && npm install -g tslab && tslab install --prefix /opt/conda \
@@ -63,6 +67,51 @@ RUN pip install --no-cache-dir jupyter_client ipykernel ipywidgets matplotlib-in
 # cuda_available=False; the cu126 wheel matches. Only the host driver is required —
 # the CUDA userspace ships inside the wheel. The launcher passes --gpus.
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu126
+
+# The scientific workstation stack. This used to be a separate "science" image
+# and a peer container; it is here because the container bought isolation that
+# was already thin — bash_tool runs here as root — while costing a second kernel
+# the agent's variables did not reach, a routing decision for every execution,
+# and a reaper that could kill a training run. Merged, it is +2.8GB on a 21.6GB
+# image and all of those problems stop existing.
+#
+# LaTeX + pandoc: "write the paper" has to end in a PDF. nbconvert shells out to
+# xelatex. texlive-xetex rather than texlive-full — the full distribution is
+# ~5GB, most of it fonts and languages nothing here reaches for.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pandoc \
+        texlive-xetex \
+        texlive-fonts-recommended \
+        texlive-latex-recommended \
+        texlive-plain-generic \
+        graphviz \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Deep learning around the torch installed above. Same index so the vision/audio
+# wheels match that CUDA build instead of pulling a second, conflicting torch.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu126 \
+        torchvision torchaudio
+
+RUN pip install --no-cache-dir \
+        transformers accelerate peft trl safetensors sentencepiece \
+        tokenizers evaluate timm einops
+
+# Experiment tracking and tuning — what turns a script into an experiment.
+RUN pip install --no-cache-dir \
+        tensorboard wandb mlflow optuna
+
+# Numerics, data and plotting beyond the CPU stack above.
+RUN pip install --no-cache-dir \
+        statsmodels sympy networkx numba \
+        polars pyarrow duckdb h5py zarr xarray netCDF4 \
+        plotly altair bokeh holoviews datashader \
+        scikit-image opencv-python-headless pillow \
+        tqdm rich pyyaml openpyxl xlsxwriter
+
+# Paper-writing helpers: bibliography handling, unit-aware numbers, tables.
+RUN pip install --no-cache-dir \
+        pybtex bibtexparser pint uncertainties tabulate
 
 # The agentevolver framework + sandbox extra (opensandbox / opensandbox-server /
 # docker) so the in-container agent can spawn peer containers through the mounted
