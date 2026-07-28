@@ -56,7 +56,7 @@ interface Message { id: string; type: MessageType; title: string; content?: stri
 interface ActivityStep { id: string; title: string; content?: string; detail?: string; trace?: Record<string, unknown>; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
 interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
-interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; task_ids: string[]; }
+interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; created_at?: string; updated_at?: string; task_ids: string[]; }
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
 interface WorkspaceEntry { name: string; path: string; type: 'directory' | 'file'; size?: number | null; modified_at: number; }
@@ -336,7 +336,7 @@ export function App() {
         setAgents([]);
         setActiveTaskId(undefined);
       }
-      const response = await socket.request('session.create', { name: 'web' });
+      const response = await socket.request('session.create', { name: 'New project' });
       if (!response.ok || typeof response.result.session_id !== 'string') {
         throw new Error(response.error?.message ?? 'Could not create a session');
       }
@@ -413,6 +413,10 @@ export function App() {
         const files = Array.isArray(event.payload.files) ? event.payload.files.filter((file): file is string => typeof file === 'string').map(fileName) : [];
         setMessages((items) => [...items, { id: `${event.task_id}:user`, type: 'user', title: 'You', content: String(event.payload.content ?? ''), attachments: files, timestamp: event.timestamp }]);
       appendActivityStep(event, activityStep(event), 'running');
+      // The gateway titles a project from its first message and stamps it as
+      // worked-in; both are what the sidebar orders and labels by, so re-read
+      // the list rather than leaving "New project" sitting there.
+      if (socketRef.current) void refreshSessions(socketRef.current);
       return;
     }
     if (event.type === 'command.executed') {
@@ -466,7 +470,7 @@ export function App() {
       finishActivity(event.task_id, 'cancelled');
       setMessages((items) => [...items, finalMessage(event, 'system')]);
     }
-  }, [appendActivityStep, finishActivity, loadModels, loadDeploys, loadWorkspaceDirectory, updateAgent]);
+  }, [appendActivityStep, finishActivity, loadModels, loadDeploys, loadWorkspaceDirectory, refreshSessions, updateAgent]);
 
   const connect = useCallback(() => {
     socketRef.current?.close();
@@ -518,7 +522,7 @@ export function App() {
     const socket = socketRef.current;
     if (!socket || status !== 'connected') return;
     if (attachments.some((attachment) => attachment.status === 'uploading')) {
-      setNotice('Wait for file uploads to finish before creating a new session.');
+      setNotice('Wait for file uploads to finish before creating a new project.');
       return;
     }
     try {
@@ -530,7 +534,10 @@ export function App() {
       setActiveTaskId(undefined);
       setAttachments([]);
       setEnvironmentView(undefined);
-      const response = await socket.request('session.create', { name: `Web session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` });
+      // Named "New project" only until the first message arrives — the gateway
+      // retitles it from what is actually asked. A clock-stamped placeholder
+      // told nobody which project was which.
+      const response = await socket.request('session.create', { name: 'New project' });
       if (!response.ok || typeof response.result.session_id !== 'string') throw new Error(response.error?.message ?? 'Could not create a session');
       sessionRef.current = response.result.session_id;
       setSessionId(response.result.session_id);
@@ -545,11 +552,11 @@ export function App() {
     const socket = socketRef.current;
     if (!socket || nextSession.session_id === sessionRef.current) return;
     if (activeTaskId) {
-      setNotice('Finish or stop the active task before switching sessions.');
+      setNotice('Finish or stop the active task before switching projects.');
       return;
     }
     if (attachments.some((attachment) => attachment.status === 'uploading')) {
-      setNotice('Wait for file uploads to finish before switching sessions.');
+      setNotice('Wait for file uploads to finish before switching projects.');
       return;
     }
     try {
@@ -801,11 +808,19 @@ export function App() {
 
   const statusText = useMemo(() => status === 'connected' ? 'Connected' : status[0].toUpperCase() + status.slice(1), [status]);
   const capabilityItems = catalog[activeCapability].filter((item) => item.name.toLowerCase().includes(capabilitySearch.trim().toLowerCase()));
-  const projects = useMemo(() => Object.entries(sessions.reduce<Record<string, SessionSummary[]>>((groups, session) => {
-    const project = session.source_workspace ?? session.workspace;
-    (groups[project] ??= []).push(session);
-    return groups;
-  }, {})), [sessions]);
+  // Grouped by recency, not by workspace. The workspace grouping was a level
+  // that never varied — every project lives under the same output tree, so it
+  // rendered one header over the whole list and bought nothing but a nesting.
+  const projects = useMemo(() => {
+    const groups: Array<[string, SessionSummary[]]> = [['Today', []], ['Previous 7 days', []], ['Older', []]];
+    const now = Date.now();
+    for (const session of sessions) {
+      const age = now - new Date(session.updated_at ?? session.created_at ?? Date.now()).getTime();
+      const bucket = age < 86_400_000 ? 0 : age < 604_800_000 ? 1 : 2;
+      groups[bucket][1].push(session);
+    }
+    return groups.filter(([, items]) => items.length > 0);
+  }, [sessions]);
   const timeline = useMemo(() => [
     ...messages.map((message) => ({ id: message.id, timestamp: message.timestamp, type: 'message' as const, value: message })),
     ...activities.map((activity) => ({ id: activity.id, timestamp: activity.timestamp, type: 'activity' as const, value: activity })),
@@ -846,10 +861,10 @@ export function App() {
       {mainView === 'chat' ? <div className="col-resizer col-resizer-right" onPointerDown={startColumnDrag('inspector')} role="separator" aria-orientation="vertical" aria-label="Resize workspace panel" /> : null}
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="sidebar-collapse" onClick={() => setSidebarCollapsed(true)} title="Hide sidebar" aria-label="Hide sidebar"><PanelLeftClose size={16} strokeWidth={1.9} /></button></div>
-        <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}><Plus size={16} /> New session</button>
+        <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}><Plus size={16} /> New project</button>
         <div className="sidebar-section projects-section">
           <p className="eyebrow">Projects</p>
-          {projects.map(([workspace, projectSessions]) => <div className="project-group" key={workspace}><div className="project-name" title={workspace}>⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{projectSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Session ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>)}
+          {projects.length ? projects.map(([bucket, bucketSessions]) => <div className="project-group" key={bucket}><div className="project-name">{bucket}</div>{bucketSessions.map((projectSession) => <button className={`project-session ${projectSession.session_id === sessionId ? 'selected' : ''}`} key={projectSession.session_id} title={projectSession.name} onClick={() => void selectSession(projectSession)}><span className="session-dot" /><span>{projectSession.name || `Project ${projectSession.session_id.slice(0, 8)}`}</span><em>{projectSession.task_ids.length}</em></button>)}</div>) : <p className="empty">Projects appear once you ask for something.</p>}
           {!projects.length ? <p className="empty">Connecting to projects…</p> : null}
         </div>
         <nav className="sidebar-section capability-nav view-nav" aria-label="Views">
@@ -1021,7 +1036,7 @@ function fileIcon(name: string): string {
 }
 
 function MessageCard({ message }: { message: Message }) {
-  return <article className={`message-card ${message.kind}`}><div className="message-avatar">{message.kind === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? message.kind === 'user' ? <p>{message.content}</p> : <MessageMarkdown content={message.content} /> : null}{message.attachments?.length ? <div className="message-files">{message.attachments.map((attachment) => <span key={attachment}>⌕ {attachment}</span>)}</div> : null}</div></article>;
+  return <article className={`message-card ${message.type}`}><div className="message-avatar">{message.type === 'user' ? 'You' : '✦'}</div><div className="message-content"><div className="message-heading"><strong>{message.title}</strong><time>{formatTime(message.timestamp)}</time></div>{message.content ? message.type === 'user' ? <p>{message.content}</p> : <MessageMarkdown content={message.content} /> : null}{message.attachments?.length ? <div className="message-files">{message.attachments.map((attachment) => <span key={attachment}>⌕ {attachment}</span>)}</div> : null}</div></article>;
 }
 
 function MessageMarkdown({ content }: { content: string }) {
@@ -1101,7 +1116,7 @@ function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
 }
 
 function MobileNavigation({ projects, sessionId, selection, agents, status, theme, onClose, onCreateSession, onSelectSession, onOpenCapabilities, onToggleTheme, onOpenConnection }: { projects: [string, SessionSummary[]][]; sessionId?: string; selection: CapabilitySelection; agents: AgentState[]; status: ConnectionStatus; theme: Theme; onClose: () => void; onCreateSession: () => Promise<void>; onSelectSession: (session: SessionSummary) => Promise<void>; onOpenCapabilities: (kind: CapabilityKind) => void; onToggleTheme: () => void; onOpenConnection: () => void }) {
-  return <div className="mobile-nav-backdrop" onClick={onClose}><aside className="mobile-nav" onClick={(event) => event.stopPropagation()}><div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="mobile-close" onClick={onClose} aria-label="Close navigation">×</button></div><button className="new-chat" disabled={status !== 'connected'} onClick={() => { void onCreateSession(); onClose(); }}><Plus size={16} /> New session</button><div className="sidebar-section projects-section"><p className="eyebrow">Projects</p>{projects.map(([workspace, sessions]) => <div className="project-group" key={workspace}><div className="project-name">⌁ {workspace.split('/').filter(Boolean).at(-1) ?? workspace}</div>{sessions.map((session) => <button className={`project-session ${session.session_id === sessionId ? 'selected' : ''}`} key={session.session_id} onClick={() => { void onSelectSession(session); onClose(); }}><span className="session-dot" /><span>{session.name}</span><em>{session.task_ids.length}</em></button>)}</div>)}</div><nav className="sidebar-section capability-nav"><p className="eyebrow">Capabilities</p>{CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { onOpenCapabilities(kind); onClose(); }}><span><CapIcon kind={kind} /></span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}</nav><div className="sidebar-section agents-section"><p className="eyebrow">Active agents</p>{agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}</div><div className="sidebar-footer"><button className="text-button" onClick={onToggleTheme}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => { onOpenConnection(); onClose(); }}><Settings size={14} /> Connection</button></div></aside></div>;
+  return <div className="mobile-nav-backdrop" onClick={onClose}><aside className="mobile-nav" onClick={(event) => event.stopPropagation()}><div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="mobile-close" onClick={onClose} aria-label="Close navigation">×</button></div><button className="new-chat" disabled={status !== 'connected'} onClick={() => { void onCreateSession(); onClose(); }}><Plus size={16} /> New project</button><div className="sidebar-section projects-section"><p className="eyebrow">Projects</p>{projects.map(([bucket, bucketSessions]) => <div className="project-group" key={bucket}><div className="project-name">{bucket}</div>{bucketSessions.map((session) => <button className={`project-session ${session.session_id === sessionId ? 'selected' : ''}`} key={session.session_id} onClick={() => { void onSelectSession(session); onClose(); }}><span className="session-dot" /><span>{session.name}</span><em>{session.task_ids.length}</em></button>)}</div>)}</div><nav className="sidebar-section capability-nav"><p className="eyebrow">Capabilities</p>{CAPABILITY_KINDS.map((kind) => <button key={kind} onClick={() => { onOpenCapabilities(kind); onClose(); }}><span><CapIcon kind={kind} /></span><strong>{CAPABILITY_META[kind].label}</strong><em>{selection[kind].length}</em></button>)}</nav><div className="sidebar-section agents-section"><p className="eyebrow">Active agents</p>{agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}</div><div className="sidebar-footer"><button className="text-button" onClick={onToggleTheme}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => { onOpenConnection(); onClose(); }}><Settings size={14} /> Connection</button></div></aside></div>;
 }
 
 function CapabilityDialog({ activeKind, catalog, selection, items, search, onSearch, onSelectKind, onToggle, onToggleAll, onInspect, onClose }: { activeKind: CapabilityKind; catalog: CapabilityCatalog; selection: CapabilitySelection; items: CapabilityItem[]; search: string; onSearch: (value: string) => void; onSelectKind: (kind: CapabilityKind) => void; onToggle: (kind: CapabilityKind, name: string) => void; onToggleAll: (kind: CapabilityKind) => void; onInspect: (kind: CapabilityKind, name: string) => void; onClose: () => void }) {

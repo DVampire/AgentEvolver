@@ -76,6 +76,9 @@ class GatewaySession:
     # output/<owner>/sessions/<id>/ (runtime) + output/<owner>/state/ (durable
     # flows/files/settings). Defaults to "local" for the single-user case.
     owner: str = "local"
+    #: When work last happened here. Orders the project list — created_at would
+    #: bury a project someone has lived in all week under one opened once.
+    updated_at: str = ""
     task_ids: list[str] = field(default_factory=list)
     capabilities: Dict[str, list[str]] = field(default_factory=dict)
     uploads: Dict[str, "GatewayUpload"] = field(default_factory=dict)
@@ -317,6 +320,7 @@ class AgentGateway:
 
     def _write_session_manifest(self, session: "GatewaySession") -> None:
         """Record identity + roots so this session can be reopened after a restart."""
+        session.updated_at = datetime.now(timezone.utc).isoformat()
         session_project.write_session_manifest(
             session.sandbox,
             session_id=session.context.id,
@@ -408,6 +412,9 @@ class AgentGateway:
                     name=str(data.get("name") or "interactive"),
                     source_workspace=data.get("source_workspace"),
                     created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+                    # Manifests written before this field existed fall back to
+                    # created_at, which orders them plausibly rather than first.
+                    updated_at=str(data.get("updated_at") or data.get("created_at") or ""),
                     capabilities=await self._available_capabilities(),
                 )
                 self._adopt_legacy_transcript(session_id)
@@ -420,6 +427,7 @@ class AgentGateway:
     def _build_session(
         self, *, session_id: str, owner: str, name: str,
         source_workspace: Optional[str], created_at: str, capabilities: Dict[str, list],
+        updated_at: str = "",
     ) -> "GatewaySession":
         """Construct a session over ``output/<owner>/sessions/<id>``.
 
@@ -450,22 +458,28 @@ class AgentGateway:
         )
         return GatewaySession(
             context=context, created_at=created_at, sandbox=sandbox,
-            owner=owner, capabilities=capabilities,
+            owner=owner, capabilities=capabilities, updated_at=updated_at or created_at,
         )
 
     async def _command_session_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        # Most recently worked in first: the list is how someone gets back to
+        # what they were doing, so the thing they were doing belongs at the top.
+        ordered = sorted(self._sessions.items(),
+                         key=lambda item: item[1].updated_at or item[1].created_at, reverse=True)
         return {
             "sessions": [
                 {
                     "session_id": session_id,
                     "name": session.context.name,
+                    "created_at": session.created_at,
+                    "updated_at": session.updated_at or session.created_at,
                     "workspace": str(session.sandbox.workspace_root),
                     "source_workspace": session.context.extra.get("source_workspace"),
                     "project_root": str(session.sandbox.project_root),
                     "extension_root": str(session.sandbox.extension_root),
                     "task_ids": session.task_ids,
                 }
-                for session_id, session in self._sessions.items()
+                for session_id, session in ordered
             ]
         }
 
@@ -649,7 +663,16 @@ class AgentGateway:
             metadata={"source": "gateway", "conversation_id": conversation.id},
             session_id=session_id,
         )
+        # A project is named by the first thing asked of it, the way a
+        # conversation is. Sessions were called "web" or "Web session 10:23" —
+        # machine placeholders the frontend invented, identical to each other
+        # and describing nothing, which made a list of past projects useless.
+        if not session.task_ids:
+            session.context.name = title_from(content)
         session.task_ids.append(task_id)
+        # Rewrite the manifest: it carries the new title, and its updated_at is
+        # what orders the project list by what was touched last.
+        self._write_session_manifest(session)
         # The conversation names itself from its opening message, and remembers
         # which submissions were made in it.
         conversation_manager.note_task(session.owner, session_id, conversation.id, task_id, content)
@@ -1447,7 +1470,7 @@ class AgentGateway:
             if not path.is_file():
                 raise ValueError(f"Unknown canvas flow: {name}")
             graph = FlowGraph.model_validate_json(path.read_text(encoding="utf-8"))
-            steps = len([n for n in graph.nodes if getattr(n, "kind", "") == "step"])
+            steps = len([n for n in graph.nodes if n.type == "step"])
             return {
                 "kind": kind, "name": name,
                 "description": graph.description or f"Canvas library flow · {steps} step(s).",
@@ -1891,7 +1914,7 @@ class AgentGateway:
         # and hand the client a same-origin relative path instead. The client
         # resolves it against the gateway origin and connects via /env/vnc, which
         # the gateway relays to this target — so only the UI port is ever exposed.
-        if payload.get("kind") == "vnc" and payload.get("url"):
+        if payload.get("type") == "vnc" and payload.get("url"):
             self._latest_vnc_target = payload["url"]
             payload["url"] = "/env/vnc"
         await self._publish("environment.view", payload, session_id=self._bound_session_id)

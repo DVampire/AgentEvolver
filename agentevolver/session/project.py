@@ -41,11 +41,17 @@ def write_session_manifest(
     one pretending to be complete.
     """
     path = Path(sandbox.project_root) / SESSION_MANIFEST
+    now = datetime.now(timezone.utc).isoformat()
     payload = {
         "session_id": session_id,
         "name": name,
         "owner": owner,
-        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+        "created_at": created_at or now,
+        # Rewritten every time work happens, so the project list can lead with
+        # what was touched last. ``created_at`` orders by birth, which puts a
+        # project someone has been living in all week below one opened once and
+        # abandoned.
+        "updated_at": now,
         "source_workspace": source_workspace,
     }
     try:

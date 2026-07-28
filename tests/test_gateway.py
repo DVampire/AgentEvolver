@@ -646,3 +646,93 @@ def test_an_older_project_keeps_its_transcript() -> None:
         assert not legacy.exists() and legacy.with_suffix(".jsonl.migrated").is_file()
 
     asyncio.run(run())
+
+
+def test_a_project_is_named_by_what_was_first_asked_of_it() -> None:
+    """And keeps that name — a later message must not rewrite the title.
+
+    The list of past projects is only usable if the entries differ. They all
+    used to read "web" or "Web session 10:23", which said nothing about which
+    project was which.
+    """
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(GatewayCommand(
+            id="c", method="session.create", params={"name": "New project"}))
+        session_id = created.result["session_id"]
+
+        await gateway.handle(GatewayCommand(id="t1", method="task.submit", params={
+            "session_id": session_id, "content": "Plot the revenue by quarter"}))
+        await gateway.handle(GatewayCommand(id="t2", method="task.submit", params={
+            "session_id": session_id, "content": "Now do it by region"}))
+
+        listed = await gateway.handle(GatewayCommand(id="l", method="session.list", params={}))
+        project = next(item for item in listed.result["sessions"] if item["session_id"] == session_id)
+        assert project["name"] == "Plot the revenue by quarter"
+        # The title survives a restart: it is in the manifest, not just in memory.
+        restarted = AgentGateway()
+        await restarted._restore_sessions()  # noqa: SLF001
+        reopened = await restarted.handle(GatewayCommand(id="l2", method="session.list", params={}))
+        assert next(item for item in reopened.result["sessions"]
+                    if item["session_id"] == session_id)["name"] == "Plot the revenue by quarter"
+
+    asyncio.run(run())
+
+
+def test_projects_are_listed_most_recently_worked_in_first() -> None:
+    """The list is how someone gets back to what they were doing."""
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        ids = []
+        for content in ("first project", "second project", "third project"):
+            created = await gateway.handle(GatewayCommand(id=f"c{content}", method="session.create", params={}))
+            session_id = created.result["session_id"]
+            ids.append(session_id)
+            await gateway.handle(GatewayCommand(id=f"t{content}", method="task.submit", params={
+                "session_id": session_id, "content": content}))
+
+        # Touch the oldest again; it should climb to the top.
+        await gateway.handle(GatewayCommand(id="again", method="task.submit", params={
+            "session_id": ids[0], "content": "back to the first"}))
+
+        # Asserting the whole order, not just the head: sessions are stored in
+        # creation order, so "ids[0] is first" would also hold with no sorting
+        # at all — the touched-oldest-climbs case is the one that discriminates.
+        listed = await gateway.handle(GatewayCommand(id="l", method="session.list", params={}))
+        assert [item["session_id"] for item in listed.result["sessions"]] == [ids[0], ids[2], ids[1]]
+
+    asyncio.run(run())
+
+
+def test_a_vnc_live_view_never_hands_the_client_the_raw_socket() -> None:
+    """The client gets a same-origin path; the ephemeral target stays server-side.
+
+    This broke silently once already: the field was renamed ``kind`` -> ``type``
+    and the check kept reading ``kind``, so it matched nothing and every raw
+    websockify address went straight out to the browser.
+    """
+
+    async def run() -> None:
+        from agentevolver.environment.types import EnvironmentView
+
+        gateway = AgentGateway()
+        published: list = []
+
+        async def capture(event_type, payload, **_) -> None:
+            published.append((event_type, payload))
+
+        gateway._publish = capture  # type: ignore[method-assign]  # noqa: SLF001
+
+        await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
+            env_name="browser", type="vnc", url="ws://172.17.0.5:41293/websockify"))
+        assert published[-1][1]["url"] == "/env/vnc"
+        assert gateway._latest_vnc_target == "ws://172.17.0.5:41293/websockify"  # noqa: SLF001
+
+        # An iframe view is a plain page; it is passed through untouched.
+        await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
+            env_name="ide", type="iframe", url="http://localhost:8080/"))
+        assert published[-1][1]["url"] == "http://localhost:8080/"
+
+    asyncio.run(run())
