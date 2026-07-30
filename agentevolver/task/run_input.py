@@ -27,6 +27,12 @@ def add_task_args(parser, default_task_file: Optional[str] = None) -> None:
         "--task-file", default=default_task_file,
         help="Path to a task document (.html or .md) under examples/tasks/.",
     )
+    parser.add_argument(
+        "--attach", nargs="*", default=None,
+        help="Extra input files for the task (e.g. a benchmark attachment). They "
+             "are staged into the session workspace and handed to the agent "
+             "alongside the task document.",
+    )
 
 
 def resolve_task(
@@ -40,15 +46,17 @@ def resolve_task(
     ``files``, and a styled HTML view is rendered to ``task_log_root`` (path in
     ``metadata``).
     """
+    attachments = [str(p) for p in (getattr(args, "attach", None) or [])]
+
     if getattr(args, "task", None):
-        return args.task, None, None
+        return args.task, (attachments or None), None
 
     task_file = getattr(args, "task_file", None)
     if task_file:
         doc = load_task_document(task_file)
         view_path = os.path.join(task_log_root, "task_view.html")
         render_task_page(doc.html_body, view_path, title=doc.title)
-        meta = {"task_doc": doc.source_path, "task_view": view_path, "task_kind": doc.kind}
-        return doc.content, [doc.source_path], meta
+        meta = {"task_doc": doc.source_path, "task_view": view_path, "task_kind": doc.type}
+        return doc.content, [doc.source_path, *attachments], meta
 
-    return default_text, None, None
+    return default_text, (attachments or None), None
