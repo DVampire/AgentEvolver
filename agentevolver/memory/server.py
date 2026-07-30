@@ -105,9 +105,23 @@ class MemoryManagerServer(BaseModel):
         """
         return await self.memory_context_manager.get_info(memory_name)
     
+    async def unregister(self, memory_name: str) -> bool:
+        """Unregister a memory system.
+
+        Exposed so an evolved memory component can be unloaded or rolled back
+        through ExtensionManager, the same way tools and environments are.
+
+        Args:
+            memory_name: Memory system name
+
+        Returns:
+            bool: True if unregistered successfully, False otherwise
+        """
+        return await self.memory_context_manager.unregister(memory_name)
+
     async def list(self) -> List[str]:
         """List all registered memory systems
-        
+
         Returns:
             List[str]: List of memory system names
         """

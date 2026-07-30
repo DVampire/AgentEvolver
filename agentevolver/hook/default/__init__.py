@@ -6,6 +6,7 @@ from .skill_registration import SkillRegistrationHook
 from .tool_registration import ToolRegistrationHook
 from .agent_registration import AgentRegistrationHook
 from .environment_registration import EnvironmentRegistrationHook
+from .memory_registration import MemoryRegistrationHook
 from .connector_registration import ConnectorRegistrationHook
 from .workflow_registration import WorkflowRegistrationHook
 from .snapshot_hook import SnapshotHook
@@ -21,6 +22,7 @@ __all__ = [
     "ToolRegistrationHook",
     "AgentRegistrationHook",
     "EnvironmentRegistrationHook",
+    "MemoryRegistrationHook",
     "ConnectorRegistrationHook",
     "WorkflowRegistrationHook",
     "SnapshotHook",

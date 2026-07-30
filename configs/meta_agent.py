@@ -19,6 +19,9 @@ with read_base():
     from .agents.environment_generate_agent import environment_generate_agent
     from .agents.environment_optimize_agent import environment_optimize_agent
     from .agents.environment_evaluate_agent import environment_evaluate_agent
+    from .agents.memory_generate_agent import memory_generate_agent
+    from .agents.memory_optimize_agent import memory_optimize_agent
+    from .agents.memory_evaluate_agent import memory_evaluate_agent
     from .agents.connector_generate_agent import connector_generate_agent
     from .agents.connector_optimize_agent import connector_optimize_agent
     from .agents.connector_evaluate_agent import connector_evaluate_agent
@@ -40,7 +43,7 @@ tag = "meta_agent"
 project_root = "output/.runtime/unbound"
 log_path = "agent.log"
 
-model_name = "openrouter/gemini-3.5-flash"
+model_name = "google/gemini-3.1-pro-preview"
 
 memory_names = [
     "file_system_memory",
@@ -66,6 +69,9 @@ agent_names = [
     "environment_generate_agent",
     "environment_optimize_agent",
     "environment_evaluate_agent",
+    "memory_generate_agent",
+    "memory_optimize_agent",
+    "memory_evaluate_agent",
     "connector_generate_agent",
     "connector_optimize_agent",
     "connector_evaluate_agent",
@@ -114,6 +120,7 @@ skill_names = [
     "agent_creator_skill",
     "tool_creator_skill",
     "environment_creator_skill",
+    "memory_creator_skill",
     # orchestrator skill: how to drive the skill create->evaluate->improve loop
     "skill_creator_skill",
     # orchestrator skill: how to drive the connector create->evaluate->improve loop
@@ -216,7 +223,9 @@ git_tool.update(timeout=60)
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
-    enable_evolving=False,
+    # Evolvable: a long run can expose a retention defect in the memory system
+    # itself, and the fix belongs to the memory resource rather than the agent.
+    enable_evolving=True,
 )
 
 #-----------------ACTOR AGENT CONFIGS-----------------
@@ -356,6 +365,29 @@ connector_optimize_agent.update(
 )
 
 connector_evaluate_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+
+#-----------------MEMORY TRIAD CONFIGS-----------------
+memory_generate_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+memory_optimize_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+memory_evaluate_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
