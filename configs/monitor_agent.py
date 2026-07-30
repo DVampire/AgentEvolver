@@ -25,7 +25,7 @@ tag         = "monitor_agent"
 project_root = "output/.runtime/unbound"
 log_path    = "monitor_agent.log"
 
-model_name      = "openrouter/gemini-3.5-flash"
+model_name      = "google/gemini-3.1-pro-preview"
 
 agent_names  = ["monitor_agent"]
 tool_names   = []

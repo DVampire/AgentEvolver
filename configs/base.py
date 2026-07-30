@@ -5,7 +5,7 @@ tag = "base"
 # not a directory level, so it cannot collide with an owner name.
 project_root = "output/.runtime/unbound"
 log_path = "base.log"
-model_name = "openrouter/gemini-3.5-flash"
+model_name = "google/gemini-3.1-pro-preview"
 
 # Named model roles — behavior×model orthogonality (borrowed from HarnessX ModelConfig).
 # Callers resolve a model by ROLE (`model_manager(role="judge", ...)`) instead of a
@@ -22,7 +22,7 @@ model_roles = dict(
 #---------------MEMORY CONFIG---------------
 memory_config = dict(
     type = "general_memory_system",
-    model_name = "openrouter/gemini-3.5-flash",
+    model_name = "google/gemini-3.1-pro-preview",
     max_summaries = 20,
     max_insights = 100
 )

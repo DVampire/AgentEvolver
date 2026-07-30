@@ -20,7 +20,7 @@ tag = "code_agent"
 project_root = "output/.runtime/unbound"
 log_path = "agent.log"
 
-model_name = "openrouter/gemini-3.5-flash"
+model_name = "google/gemini-3.1-pro-preview"
 
 memory_names = [
     "file_system_memory",

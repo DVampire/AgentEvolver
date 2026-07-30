@@ -15,7 +15,7 @@ tag = "connector_evaluate_agent"
 project_root = "output/.runtime/unbound"
 log_path = "connector_evaluate_agent.log"
 
-model_name = "openrouter/gemini-3.5-flash"
+model_name = "google/gemini-3.1-pro-preview"
 
 tool_names = [
     "bash_tool",

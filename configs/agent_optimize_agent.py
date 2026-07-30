@@ -17,7 +17,7 @@ tag = "agent_optimize_agent"
 project_root = "output/.runtime/unbound"
 log_path = "agent_optimize_agent.log"
 
-model_name = "openrouter/gemini-3.5-flash"
+model_name = "google/gemini-3.1-pro-preview"
 
 tool_names = [
     "bash_tool",
