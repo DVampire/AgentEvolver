@@ -41,6 +41,20 @@ class AgentRegistrationHook(Hook):
 
         py_path = self._resolve_agent_path(target_name, reasoning, extension_root)
         if not py_path:
+            # An optimizer's remit is the agent class, its HTML prompt, or both.
+            # Evolving ONLY the prompt is a complete, valid change with no .py to
+            # register, so fall back to registering the prompt on its own rather
+            # than rejecting the run for a file it never needed to write.
+            html_path = self._resolve_prompt_path(target_name, reasoning, extension_root)
+            if html_path:
+                try:
+                    from agentevolver.extension import extension_manager
+                    name = await extension_manager.add_component("prompt", html_path)
+                    logger.info(f"| 🔄 AgentRegistrationHook: prompt '{name}' registered from {html_path}")
+                    return HookResult.allow()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"| ⚠️  AgentRegistrationHook: {e}")
+                    return HookResult.block(f"[registration failed] {e}\nPlease fix the prompt and call done_tool again.")
             msg = f"Could not locate generated agent file for '{target_name}' in reasoning."
             logger.warning(f"| ⚠️  AgentRegistrationHook: {msg}")
             return HookResult.block(f"[registration failed] {msg}\nInclude the file path in done_tool reasoning and call done_tool again.")
@@ -95,5 +109,26 @@ class AgentRegistrationHook(Hook):
                     return candidate
         if target_name:
             path = extension_manager.stage_path("agent", f"{target_name}.py")
+            return path if os.path.exists(path) else None
+        return None
+
+    def _resolve_prompt_path(self, target_name: Optional[str], reasoning: str, extension_root: str) -> Optional[str]:
+        """Find the HTML prompt a prompt-only evolution wrote.
+
+        Mirrors ``_resolve_agent_path`` for the case where the optimizer changed
+        the agent's prompt and nothing else.
+
+        Returns:
+            The existing prompt file path, or ``None`` if nothing resolvable exists.
+        """
+        from agentevolver.extension import extension_manager
+        for token in reasoning.split():
+            token = token.strip(".,;:()")
+            if "extension/" in token and "/prompt/" in token and token.endswith(".html"):
+                candidate = token if token.startswith("/") else os.path.join(extension_root, token.removeprefix("extension/"))
+                if os.path.exists(candidate):
+                    return candidate
+        if target_name:
+            path = extension_manager.stage_path("prompt", f"{target_name}.html")
             return path if os.path.exists(path) else None
         return None

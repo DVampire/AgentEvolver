@@ -314,14 +314,29 @@ def check_file_write(path: str, content: str, mode: PermissionMode, workspace: s
     if workspace and mode == PermissionMode.WORKSPACE_WRITE:
         try:
             resolved = os.path.realpath(path)
-            norm_ws = os.path.realpath(workspace)
+            # The workspace holds user deliverables; the extension root is the
+            # staging tree a generator agent writes evolved capabilities into. It
+            # deliberately sits beside the workspace rather than inside it, so it
+            # has to be named here or creating any extension component is blocked.
+            roots = [os.path.realpath(workspace)]
             try:
-                inside_workspace = os.path.commonpath((resolved, norm_ws)) == norm_ws
-            except ValueError:
-                inside_workspace = False
-            if not inside_workspace:
+                from agentevolver.config import config as _config
+
+                extension_root = getattr(_config, "extension_root", "")
+                if extension_root:
+                    roots.append(os.path.realpath(str(extension_root)))
+            except Exception:  # noqa: BLE001 - config is optional here
+                pass
+
+            def _inside(target: str, root: str) -> bool:
+                try:
+                    return os.path.commonpath((target, root)) == root
+                except ValueError:
+                    return False
+
+            if not any(_inside(resolved, root) for root in roots):
                 return ValidationResult.block(
-                    f"Path {path!r} is outside the workspace {workspace!r}."
+                    f"Path {path!r} is outside the writable roots {roots!r}."
                 )
         except Exception:
             pass

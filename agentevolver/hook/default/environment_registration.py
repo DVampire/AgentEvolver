@@ -71,13 +71,26 @@ class EnvironmentRegistrationHook(Hook):
             The existing environment file path, or ``None`` if none resolves.
         """
         from agentevolver.extension import extension_manager
+        # An environment is a *directory-type* component: the loader expects the
+        # package directory and reads its fixed `environment.py` entry itself. So
+        # resolve to the directory, whether the agent named the directory or the
+        # entry file inside it (the creator skill says either is acceptable).
+        def _as_package_dir(path: str) -> Optional[str]:
+            path = path.rstrip("/")
+            if path.endswith(".py"):
+                path = os.path.dirname(path)
+            return path if os.path.isfile(os.path.join(path, "environment.py")) else None
+
         for token in reasoning.split():
             token = token.strip(".,;:()")
-            if "extension/" in token and "/environment/" in token and token.endswith(".py"):
-                candidate = token if token.startswith("/") else os.path.join(extension_root, token.removeprefix("extension/"))
-                if os.path.exists(candidate):
-                    return candidate
+            if "extension/" not in token or "/environment/" not in token:
+                continue
+            candidate = token if token.startswith("/") else os.path.join(extension_root, token.removeprefix("extension/"))
+            resolved = _as_package_dir(candidate)
+            if resolved:
+                return resolved
         if target_name:
-            path = extension_manager.stage_path("environment", f"{target_name}.py")
-            return path if os.path.exists(path) else None
+            resolved = _as_package_dir(extension_manager.stage_path("environment", target_name))
+            if resolved:
+                return resolved
         return None
