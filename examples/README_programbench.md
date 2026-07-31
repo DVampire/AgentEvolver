@@ -54,11 +54,10 @@ conda activate agentevolver
 # Run specific instances by id:
 python examples/run_programbench.py \
   --task-ids abishekvashok__cmatrix.5c082c6,wfxr__csview.8ac4de0 \
-  --cfg-options model_name=google/gemini-3.1-pro-preview \
-  --no-evolve
+  --cfg-options model_name=openrouter/gemini-3.1-pro-preview
 
 # Or run a slice of the loaded instance list:
-python examples/run_programbench.py --start 0 --end 5 --no-evolve
+python examples/run_programbench.py --start 0 --end 5 --config configs/programbench_agent_baseline.py
 ```
 
 You must pass either `--task-ids` **or** `--start/--end` (it refuses to run all 201 by default).
@@ -68,9 +67,8 @@ You must pass either `--task-ids` **or** `--start/--end` (it refuses to run all 
 | --- | --- |
 | `--task-ids a,b` | Comma-separated **instance_id** list (takes priority over `--start/--end`). |
 | `--start N --end M` | Run instances `[N, M)` by load order. |
-| `--evolve` / `--no-evolve` | Include the self-evolution roster (15 optimizer/generator/evaluator agents + evolution tools/skills) or not. Default: `--evolve` **on**. Use `--no-evolve` for a lean, cheaper "just do the task" run. |
+| `--config <path>` | Which arm to run. `configs/programbench_agent.py` (default) carries the self-evolution roster; `configs/programbench_agent_baseline.py` is the control arm without it. There is no `--evolve` flag: a flag put the roster in a command line instead of the repo, and allowed `config + --no-evolve` to produce a third state matching neither arm. |
 | `--cfg-options k=v ...` | Override config, e.g. `model_name=google/gemini-3.1-pro-preview`. The override propagates to every agent. |
-| `--config <path>` | Config file (default `configs/programbench_agent.py`). |
 | `--out <dir>` | Results JSON output dir. |
 
 ### Finding instance IDs
@@ -156,9 +154,16 @@ and writes `<out>/.../<iid>/<iid>.eval.json`. A score of `1.0` (all tests pass) 
 - **`opensandbox-server` port.** Defaults to `localhost:28080` (avoids the common `8080`
   clash). Override with `AGENTEVOLVER_OPENSANDBOX_DOMAIN=host:port`.
 
-- **Only `bash_tool` is sandbox-aware.** The ProgramBench config deliberately excludes
-  `read_file/write_file/edit_file/list_dir/git` tools — they'd operate on the host, not the
-  container. All file/git work goes through `bash_tool`.
+- **Which tools reach the container.** `bash_tool`, `read_file_tool`, `write_file_tool`,
+  `edit_file_tool`, `list_dir_tool` and `git_tool` each read `ctx.extra["sandbox"]` and route
+  their IO into the peer cleanroom, so all six are safe to include. `grep_search_tool`,
+  `glob_search_tool`, `code_interpreter_tool`, `mdify_tool` and `deploy_tool` do **not**:
+  they walk the base container's filesystem, where the task's `/workspace` does not exist.
+  Shell out to `grep`/`find` through `bash_tool` instead.
+- **Never add retrieval.** `web_searcher_tool`, `web_fetcher_tool`, `media_search_tool` and
+  `http_request_tool` would defeat the anti-cheat: runs have been observed attempting
+  `git clone` and `curl` against the upstream repository, blocked only by the peer's
+  network isolation.
 
 ---
 
@@ -172,7 +177,7 @@ docker pull "$IMG:task_cleanroom_v6"                     # avoid the cold-pull t
 
 python examples/run_programbench.py \
   --task-ids abishekvashok__cmatrix.5c082c6 \
-  --cfg-options model_name=google/gemini-3.1-pro-preview --no-evolve
+  --cfg-options model_name=openrouter/gemini-3.1-pro-preview
 
 # then score (see §3)
 programbench blob sync abishekvashok__cmatrix.5c082c6

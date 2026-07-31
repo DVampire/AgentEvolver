@@ -24,8 +24,8 @@ def test_programbench_agent_config_loads_expected_roster():
     # monitor_agent is deliberately excluded — it spawns its own bash subprocess
     # directly, bypassing the Docker sandbox bash_tool routes through.
     assert "monitor_agent" not in config.agent_names
-    # The config carries the self-evolution roster outright (like meta_agent.py);
-    # --no-evolve strips it back out via resolve_roster().
+    # This arm carries the self-evolution roster outright; the control arm is a
+    # separate config file, not a flag.
     assert "tool_optimize_agent" in config.agent_names
     assert "agent_generate_agent" in config.agent_names
     assert "skill_evaluate_agent" in config.agent_names
@@ -38,29 +38,75 @@ def test_programbench_agent_config_loads_expected_roster():
     for absent in ("environment_creator_skill", "memory_creator_skill", "connector_creator_skill"):
         assert absent not in config.skill_names
     assert "bash_tool" in config.tool_names
-    # None of these check get_current_sandbox() — they'd silently operate on the
-    # host workspace instead of the container once a sandbox is bound.
-    assert "read_file_tool" not in config.tool_names
-    assert "write_file_tool" not in config.tool_names
-    assert "edit_file_tool" not in config.tool_names
-    assert "list_dir_tool" not in config.tool_names
-    assert "git_tool" not in config.tool_names
-    # Verification methodology is not optional: an empty skill list scored 53 on
-    # cmatrix because the agent never checked its build against the reference
-    # binary. These stay loaded even under --no-evolve.
-    for required in ("verify_skill", "test_driven_development_skill",
-                     "debugging_and_error_recovery_skill"):
-        assert required in config.skill_names
-    assert not set(rp.EVOLVE_SKILL_NAMES) & {
-        "verify_skill", "test_driven_development_skill",
-        "debugging_and_error_recovery_skill", "incremental_implementation_skill",
-        "source_driven_development_skill",
-    }, "verification skills must survive --no-evolve"
+    # Retrieval would defeat the benchmark's anti-cheat: the agent has twice been
+    # observed trying to fetch the original source (`git clone`, `curl`), blocked
+    # only by network isolation.
+    for banned in ("web_searcher_tool", "web_fetcher_tool", "media_search_tool", "http_request_tool"):
+        assert banned not in config.tool_names, banned
     # Still lean — no document, science or unrelated workflow skills.
     assert "docx_skill" not in config.skill_names
     assert "observability_and_instrumentation_skill" not in config.skill_names
     assert config.connector_names == []
     assert config.env_names == []
+
+
+#: The methodology skills that must appear in *both* experiment arms — they are
+#: how an agent checks its own work, not the variable under test.
+VERIFICATION_SKILLS = (
+    "verify_skill",
+    "test_driven_development_skill",
+    "debugging_and_error_recovery_skill",
+    "incremental_implementation_skill",
+    "source_driven_development_skill",
+)
+
+EVOLUTION_AGENTS = (
+    "tool_generate_agent", "tool_optimize_agent", "tool_evaluate_agent",
+    "agent_generate_agent", "agent_optimize_agent", "agent_evaluate_agent",
+    "skill_generate_agent", "skill_optimize_agent", "skill_evaluate_agent",
+)
+
+
+def test_baseline_config_carries_no_evolution_capability():
+    """What makes the control arm a control arm.
+
+    Deliberately does NOT pin the full tool roster: that list is iterated on. What
+    must hold is that nothing in this config makes Agent._evolution_enabled() true,
+    because the derived flag is what renders meta_agent's self-evolution rules — a
+    stray `evolution_tool` here would hand a no-evolution run ~1100 tokens of
+    instructions for capabilities it does not have.
+    """
+    def load(name):
+        config.initialize(
+            config_path=os.path.join(root, "configs", name),
+            args=argparse.Namespace(), verbose=False,
+        )
+        return {k: list(getattr(config, k)) for k in
+                ("agent_names", "tool_names", "skill_names")}
+
+    baseline = load("programbench_agent_baseline.py")
+
+    for actor in ("meta_agent", "code_agent", "general_agent", "reviewer_agent"):
+        assert actor in baseline["agent_names"]
+    assert set(baseline["agent_names"]).isdisjoint(EVOLUTION_AGENTS)
+    assert "evolution_tool" not in baseline["tool_names"]
+    assert "self_evolving_skill" not in baseline["skill_names"]
+    assert not any(s.endswith("_creator_skill") for s in baseline["skill_names"])
+    assert not any(n.endswith(("_generate_agent", "_optimize_agent", "_evaluate_agent"))
+                   for n in baseline["agent_names"])
+    # Retrieval stays out of both arms — it would defeat the anti-cheat.
+    for banned in ("web_searcher_tool", "web_fetcher_tool", "media_search_tool", "http_request_tool"):
+        assert banned not in baseline["tool_names"], banned
+
+
+def test_evolving_config_does_enable_the_evolution_prompt():
+    """The mirror of the above: the evolving arm must trip the derived flag."""
+    config.initialize(
+        config_path=os.path.join(root, "configs", "programbench_agent.py"),
+        args=argparse.Namespace(), verbose=False,
+    )
+    assert "evolution_tool" in config.tool_names
+    assert set(EVOLUTION_AGENTS) <= set(config.agent_names)
 
 
 sys.path.append(str(Path(root) / "examples"))
@@ -120,59 +166,61 @@ def test_build_task_content_includes_system_prompt_and_fields():
     assert "./compile.sh" in content
 
 
-def test_resolve_roster_off_leaves_a_base_without_addons_alone():
-    agents, tools, skills = rp.resolve_roster(
-        ["meta_agent"], ["bash_tool"], [], evolve=False,
+# --- the prompt follows the roster ------------------------------------------
+# The evolution rules used to render unconditionally, so a run without the
+# evolution roster still got ~1100 tokens telling it to invoke
+# `self_evolving_skill` and roll back with `evolution_tool` — instructions for
+# capabilities that were not loaded. The flag is derived from the live roster so
+# the two can never disagree.
+
+from agentevolver.prompt.types import parse_prompt_file, _render_template  # noqa: E402
+
+_PROMPT_ROOTS = dict(
+    max_actions=5, extension_root="/e", package_root="/p", project_root="/pr",
+    workspace_root="/w", log_root="/l", python_executable="/py",
+    python_version="3.12", platform="linux", shell="bash", cwd="/w",
+)
+
+
+def _render_meta_agent(evolution_enabled):
+    cfg = parse_prompt_file(
+        os.path.join(root, "agentevolver", "prompt", "default", "meta_agent.html")
     )
-    assert agents == ["meta_agent"]
-    assert tools == ["bash_tool"]
-    assert skills == []
-
-
-def test_resolve_roster_off_strips_addons_the_config_already_lists():
-    agents, tools, skills = rp.resolve_roster(
-        ["meta_agent", "tool_optimize_agent"],
-        ["bash_tool", "evolution_tool"],
-        ["self_evolving_skill", "tool_creator_skill"],
-        evolve=False,
+    return _render_template(
+        cfg.system_template, {**_PROMPT_ROOTS, "evolution_enabled": evolution_enabled}
     )
-    assert agents == ["meta_agent"]
-    assert tools == ["bash_tool"]
-    assert skills == []
 
 
-def test_resolve_roster_on_adds_triads():
-    agents, tools, skills = rp.resolve_roster(
-        ["meta_agent"], ["bash_tool"], [], evolve=True,
-    )
-    assert "tool_optimize_agent" in agents
-    assert "skill_generate_agent" in agents
-    assert len(agents) == 1 + len(rp.EVOLVE_AGENT_NAMES)
-    assert "evolution_tool" in tools
-    assert "self_evolving_skill" in skills
-    assert "agent_creator_skill" in skills
+def test_meta_agent_prompt_gates_the_evolution_rules():
+    on = _render_meta_agent(True)
+    off = _render_meta_agent(False)
+
+    assert "<self-evolution-rules>" in on
+    assert "<self-evolution-rules>" not in off
+    # The capabilities the rules tell the agent to reach for must not be named
+    # when they are not loaded — that is the whole point of the gate.
+    for absent in ("self_evolving_skill", "evolution_tool", "tool_optimize_agent"):
+        assert absent not in off, absent
+    # The lean arm still gets dispatch guidance, just without the evolution half.
+    assert "re-dispatch with corrective guidance" in off
+    # Gating must actually remove bulk, not just the opening tag.
+    assert len(off) < len(on) * 0.85
 
 
-def test_resolve_roster_on_does_not_duplicate_what_the_config_lists():
-    agents, _, _ = rp.resolve_roster(
-        ["meta_agent"] + rp.EVOLVE_AGENT_NAMES, [], [], evolve=True,
-    )
-    assert len(agents) == 1 + len(rp.EVOLVE_AGENT_NAMES)
+def test_meta_agent_prompt_renders_with_no_leftover_template_markers():
+    for flag in (True, False):
+        out = _render_meta_agent(flag)
+        assert "{%" not in out and "{{" not in out, flag
 
 
-def test_resolve_roster_scope_excludes_environment_memory_connector():
-    for name in rp.EVOLVE_AGENT_NAMES:
-        assert not name.startswith(("environment_", "memory_", "connector_"))
-    for name in rp.EVOLVE_SKILL_NAMES:
-        assert name not in (
-            "environment_creator_skill", "memory_creator_skill", "connector_creator_skill",
-        )
+def test_evolution_markers_match_what_the_configs_declare():
+    """The derived flag keys off these names, so a rename must break loudly."""
+    from agentevolver.agent import types as agent_types
 
-
-def test_resolve_roster_does_not_mutate_input_lists():
-    base_agents = ["meta_agent"]
-    rp.resolve_roster(base_agents, [], [], evolve=True)
-    assert base_agents == ["meta_agent"]
+    assert agent_types._EVOLUTION_TOOL == "evolution_tool"
+    assert agent_types._EVOLUTION_SKILL == "self_evolving_skill"
+    for name in EVOLUTION_AGENTS:
+        assert name.endswith(agent_types._EVOLUTION_AGENT_SUFFIXES), name
 
 
 def test_parse_args_requires_a_selector():
@@ -185,24 +233,26 @@ def test_parse_args_requires_a_selector():
         sys.argv = old_argv
 
 
-def test_parse_args_evolve_defaults_to_true():
+def test_parse_args_has_no_evolve_flag():
+    """The arm is chosen by --config, so a stale --no-evolve must fail loudly
+    rather than be silently ignored and produce an evolving run."""
+    old_argv = sys.argv
+    sys.argv = ["run_programbench.py", "--start", "0", "--end", "1", "--no-evolve"]
+    try:
+        with pytest.raises(SystemExit):
+            rp.parse_args()
+    finally:
+        sys.argv = old_argv
+
+
+def test_parse_args_config_defaults_to_the_evolving_arm():
     old_argv = sys.argv
     sys.argv = ["run_programbench.py", "--start", "0", "--end", "1"]
     try:
         args = rp.parse_args()
     finally:
         sys.argv = old_argv
-    assert args.evolve is True
-
-
-def test_parse_args_no_evolve_flag():
-    old_argv = sys.argv
-    sys.argv = ["run_programbench.py", "--start", "0", "--end", "1", "--no-evolve"]
-    try:
-        args = rp.parse_args()
-    finally:
-        sys.argv = old_argv
-    assert args.evolve is False
+    assert args.config.endswith("programbench_agent.py")
 
 
 def test_parse_args_task_ids():
@@ -264,7 +314,13 @@ async def test_extract_submission_writes_tar_to_dest_dir(tmp_path):
     assert result_path == str(Path(dest_dir) / "submission.tar.gz")
     with open(result_path, "rb") as f:
         assert f.read() == tar_bytes
-    assert sandbox.commands_run == ["tar -czf /tmp/submission.tar.gz -C /workspace . 2>&1"]
+    # Asserting the intent rather than the exact string: what must hold is that the
+    # whole workspace is archived and the reference copy is left out of it.
+    assert len(sandbox.commands_run) == 1
+    tar_cmd = sandbox.commands_run[0]
+    assert tar_cmd.startswith("tar -czf /tmp/submission.tar.gz")
+    assert "-C /workspace ." in tar_cmd
+    assert f"--exclude=./{rp.REFERENCE_COPY}" in tar_cmd
     # The tarball is also unpacked into dest_dir/submission/ for direct inspection.
     unpacked = Path(dest_dir) / "submission" / "hello.txt"
     assert unpacked.read_bytes() == b"hello-tar"
@@ -357,3 +413,83 @@ def test_inherited_ambient_drops_per_delegation_keys():
 def test_inherited_ambient_tolerates_a_contextless_parent():
     assert _inherited_ambient(None) == {}
     assert _inherited_ambient(_Ctx(None)) == {}
+
+
+# --- the reference binary must survive the agent's first build ---------------
+# compile.sh has to write ./executable, which is where the provided reference
+# binary sits, so the first build silently destroys the only oracle. Observed on
+# cmatrix: gone by command 22 of 65.
+
+def test_system_prompt_tells_the_agent_to_preserve_the_reference():
+    prompt = rp.SYSTEM_PROMPT
+    assert rp.REFERENCE_COPY in prompt, "the prompt must name the file extract_submission strips"
+    assert "cp /workspace/executable" in prompt
+    # It must say *why*, or the step reads as optional housekeeping and gets skipped.
+    assert "destroys" in prompt or "overwrit" in prompt
+    # And differential testing must be spelled out — matching --help is not enough.
+    assert "diff" in prompt.lower()
+
+
+def test_extract_submission_excludes_the_reference_copy():
+    """Shipping the reference would hand the grader the original binary, and a
+    compile.sh that copied it into place would score as a real reconstruction."""
+    import inspect
+    src = inspect.getsource(rp.extract_submission)
+    assert f"--exclude=./{{REFERENCE_COPY}}" in src or "--exclude" in src
+    assert "REFERENCE_COPY" in src
+
+
+# --- Model X: the MAS belongs inside the base container ----------------------
+# A host launch still produces valid submissions, because bash and the file tools
+# route into the peer cleanroom either way. That is exactly why it needs saying
+# out loud: the divergence is invisible in the results.
+
+def test_warn_if_not_containerized_detects_both_markers(monkeypatch):
+    monkeypatch.delenv("AGENTEVOLVER_HOST_ROOT", raising=False)
+    monkeypatch.setattr(rp.os.path, "exists", lambda p: False)
+    assert rp.warn_if_not_containerized() is False
+
+    monkeypatch.setenv("AGENTEVOLVER_HOST_ROOT", "/mnt/repo")
+    assert rp.warn_if_not_containerized() is True
+
+    monkeypatch.delenv("AGENTEVOLVER_HOST_ROOT", raising=False)
+    monkeypatch.setattr(rp.os.path, "exists", lambda p: p == "/.dockerenv")
+    assert rp.warn_if_not_containerized() is True
+
+
+def test_docstring_documents_the_sandboxed_launch():
+    doc = rp.__doc__
+    assert "scripts/run-in-sandbox.sh" in doc
+    # And why the two containers exist, so nobody collapses them into one.
+    assert "anti-cheat" in doc
+    assert "network=False" in doc
+
+
+# --- the reconstructed program may not exit ----------------------------------
+# A run lost 10 minutes to `./executable -z` inside a batched comparison: the
+# reference prints usage and exits 0 on an unknown flag, the reconstruction fell
+# through into its TUI loop, and bash_tool blocked for its full 600s timeout. The
+# hang is itself the defect under test, so it wants finding in two seconds.
+#
+# Deliberately no matching cap on bash_tool.timeout: 107 of the 201 instances are
+# Rust, and a timeout short enough to bound a hang would kill a legitimate
+# `cargo build`. The prompt addresses the cause; a tool cap would punish the
+# majority case.
+
+def test_system_prompt_requires_timeout_around_either_binary():
+    prompt = rp.SYSTEM_PROMPT
+    assert "timeout" in prompt
+    # Both binaries, since either can hang once the reconstruction is wrong.
+    assert "timeout 2 ./reference_executable" in prompt
+    assert "timeout 2 ./executable" in prompt
+    # The exit code that identifies a hang, so the agent can act on it.
+    assert "124" in prompt
+    # And why it matters inside a batch — one hang stalls the whole turn.
+    assert "batch" in prompt.lower()
+
+
+def test_bash_tool_timeout_is_left_alone_for_slow_builds():
+    """Guards the decision above: don't 'fix' the hang by capping every build."""
+    from agentevolver.tool.default.bash import BashTool
+
+    assert BashTool().timeout >= 600

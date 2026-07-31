@@ -10,17 +10,14 @@ for a lean, cheaper "just do the task" run.
 Everything else meta_agent.py carries is deliberately absent, because the task
 is offline binary reconstruction inside a container:
 
-- **Only `bash_tool` for file/git work.** `bash_tool` is the ONLY tool in this
-  repo that checks `get_current_sandbox()` (agentevolver/tool/default/bash.py)
-  and routes into the bound Docker sandbox — confirmed by grepping the codebase
-  for `get_current_sandbox`. `read_file_tool`/`write_file_tool`/`edit_file_tool`/
-  `list_dir_tool`/`git_tool` only run `check_session_path`, a *host* filesystem
-  boundary check (agentevolver/sandbox/project.py), so all five would silently
-  operate on the (nearly empty) host workspace instead of the container's
-  `/workspace` — giving the agent an inconsistent view of its own environment and
-  letting writes go missing from `extract_submission()`'s tar. This matches the
-  official mini-swe-agent ProgramBench baseline, which also gives the agent one
-  bash tool and nothing else.
+- **The file/git tools are sandbox-aware, so they are included.**
+  `read_file_tool`/`write_file_tool`/`edit_file_tool`/`list_dir_tool`/`git_tool`
+  each read `ctx.extra["sandbox"]` and route their IO into the bound container.
+  They were excluded while that was not the case: a write would have landed on the
+  (nearly empty) host workspace instead of `/workspace`, giving the agent an
+  inconsistent view of its own environment and letting its source go missing from
+  `extract_submission()`'s tar. That also depends on the sandbox handle reaching
+  sub-agents at all — see `protocol_manager.delegate`, which used to drop it.
 - **No `monitor_agent`.** It spawns its own `asyncio.create_subprocess_shell`,
   bypassing the sandbox entirely.
 - **No web tools, browser agent, or browser environment.** The run is offline by
@@ -63,7 +60,13 @@ tag = "programbench_agent"
 project_root = "output/.runtime/unbound"
 log_path = "agent.log"
 
-model_name = "google/gemini-3.1-pro-preview"
+# Same model, reached through OpenRouter rather than Google directly: the
+# `google/*` route reads GOOGLE_API_KEY straight from the environment, and a
+# direct-Google key that stops working takes the whole run down silently (every
+# _think call 400s, the agent burns its step budget producing no tool calls, and
+# still reports `done`). Override per run with
+# `--cfg-options model_name=<name>`.
+model_name = "openrouter/gemini-3.1-pro-preview"
 
 memory_names = [
     "file_system_memory",
@@ -92,33 +95,18 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
-    "escalate_tool",
-    "reply_tool",
-    # self-evolution — stripped by --no-evolve
+    "read_file_tool",
+    "write_file_tool",
+    "edit_file_tool",
+    "list_dir_tool",
+    "git_tool",
+    "deploy_tool",
     "evolution_tool",
+    "escalate_tool",
+    "reply_tool"
 ]
 
-# Two groups, and only two.
-#
-# The verification group is not optional garnish: a run with an empty skill list
-# scored 53 on cmatrix because the agent wrote 5KB of source from the binary's
-# `--help` text, compiled it once, ran `git status` thirteen times and declared
-# itself done — it never once compared its own build's behavior against the
-# reference binary it was given. These are the general skills that say "drive it,
-# observe it, and don't claim done without evidence". Nothing here is specific to
-# binary reconstruction; the task-specific part (that the oracle is
-# `./executable`) belongs in the task text, not in a skill.
-#
-# The self-evolution group is what `--no-evolve` strips. The verification group
-# stays either way — how you check your work should not depend on whether the
-# agent is allowed to rewrite its own tools.
 skill_names = [
-    # verification / build methodology
-    "verify_skill",
-    "test_driven_development_skill",
-    "debugging_and_error_recovery_skill",
-    "incremental_implementation_skill",
-    "source_driven_development_skill",
     # global playbook: WHEN to evolve, the loop, and the enable_evolving gate
     "self_evolving_skill",
     # per-type creator skills (orchestrator role) — drive each triad's
@@ -152,6 +140,15 @@ code_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 general_agent.update(
@@ -159,6 +156,15 @@ general_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 reviewer_agent.update(
@@ -166,6 +172,15 @@ reviewer_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 #-----------------GENERATOR AGENT CONFIGS-----------------
@@ -174,6 +189,15 @@ tool_generate_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 agent_generate_agent.update(
@@ -181,6 +205,15 @@ agent_generate_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 skill_generate_agent.update(
@@ -188,6 +221,15 @@ skill_generate_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 #-----------------OPTIMIZER AGENT CONFIGS-----------------
@@ -196,6 +238,15 @@ tool_optimize_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 agent_optimize_agent.update(
@@ -203,6 +254,15 @@ agent_optimize_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 skill_optimize_agent.update(
@@ -210,6 +270,15 @@ skill_optimize_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 #-----------------EVALUATOR AGENT CONFIGS-----------------
@@ -218,6 +287,15 @@ tool_evaluate_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 agent_evaluate_agent.update(
@@ -225,6 +303,15 @@ agent_evaluate_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 skill_evaluate_agent.update(
@@ -232,6 +319,15 @@ skill_evaluate_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )
 
 #-----------------META AGENT CONFIG-----------------
@@ -240,5 +336,13 @@ meta_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=50,
+    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
+    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
+    # up" while it still had real work left. Steps are meant to be the binding
+    # constraint here, so the wall clock and token budget are raised to match —
+    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
+    # so 1800s would have quietly become the new limit at around step 120.
+    max_step=200,
+    timeout=5400,
+    max_token=3000000,
 )

@@ -54,6 +54,20 @@ _READ_ONLY_DENIED_TOOLS = {
     "write_file_tool", "edit_file_tool", "git_tool", "deploy_tool", "evolution_tool",
 }
 
+#: The capabilities whose presence means "this run can self-evolve". Checked
+#: against the live roster to decide whether the prompt's self-evolution rules
+#: are rendered at all — see Agent._evolution_enabled.
+_EVOLUTION_TOOL = "evolution_tool"
+_EVOLUTION_SKILL = "self_evolving_skill"
+_EVOLUTION_AGENT_SUFFIXES = ("_generate_agent", "_optimize_agent", "_evaluate_agent")
+
+#: How many blocked no-progress proposals to tolerate before terminating a run that
+#: has not yet changed anything. Higher than the post-change limit of 3 on purpose:
+#: ending such a run guarantees an empty deliverable, so a few more steps of
+#: corrective pushback is the cheaper mistake. Still bounded, so a genuinely stuck
+#: agent stops rather than burning its whole budget.
+_NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
+
 #: Stands in for a host root in the prompt when the agent's tools run inside a
 #: peer sandbox and therefore cannot reach it. A name the agent can act on is
 #: worse than none: it will try the path, get nothing, and start searching.
@@ -321,6 +335,11 @@ class _AgentRun:
         # run-local so parallel agents/sessions never suppress one another.
         self.action_evidence: Dict[str, Dict[str, Any]] = {}
         self.no_progress_rounds = 0
+        #: Whether this run has ever changed its workspace. Until it has, the
+        #: no-progress guard blocks repeats but does not terminate — see
+        #: Agent._prepare_round.
+        self.produced_change = False
+        self.baseline_fingerprint: Optional[str] = None
 
 
 class Agent(BaseModel):
@@ -605,6 +624,40 @@ class Agent(BaseModel):
         listing = "\n".join(f"- {f}" for f in existing)
         return f"{task}\n\n**Input files:**\n{listing}"
 
+    async def _evolution_enabled(self, ctx: Optional[AgentContext] = None) -> bool:
+        """Whether this run actually has self-evolution capabilities available.
+
+        Derived from the live roster rather than declared by a config flag, so the
+        prompt cannot contradict what the agent can do. A declared flag is a second
+        source of truth: set it wrong, or change the roster without it, and the
+        prompt starts teaching the agent to invoke `self_evolving_skill` and roll
+        back with `evolution_tool` when neither is loaded — instructions for tools
+        that are not there, which is how a lean run ends up reasoning about
+        capabilities it cannot reach.
+
+        Gates the `<self-evolution-rules>` block (~21% of meta_agent's template) and
+        the generator/optimizer/evaluator half of the sub-agent taxonomy.
+        """
+        from agentevolver.skill.server import skill_manager
+        from agentevolver.tool.server import tool_manager
+        from agentevolver.agent.server import agent_manager
+
+        # Any one of these is enough: the roster is assembled per run, and a
+        # partially-wired evolution setup should still get the rules rather than
+        # silently lose them.
+        try:
+            if _EVOLUTION_TOOL in set(await tool_manager.list()):
+                return True
+            if _EVOLUTION_SKILL in set(await skill_manager.list()):
+                return True
+            return any(
+                str(name).endswith(_EVOLUTION_AGENT_SUFFIXES)
+                for name in await agent_manager.list()
+            )
+        except Exception as e:  # noqa: BLE001 — never fail a render over introspection
+            logger.warning(f"| ⚠️ [{self.name}] Could not resolve evolution roster: {e}")
+            return False
+
     async def _get_messages(self,
                             task: str,
                             ctx: AgentContext,
@@ -636,6 +689,7 @@ class Agent(BaseModel):
             project_root=project_root,
             workspace_root=workspace_root,
             log_root=log_root,
+            evolution_enabled=await self._evolution_enabled(ctx=ctx),
             **_runtime_facts(),
         )
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
@@ -875,10 +929,37 @@ class Agent(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ [{self.name}] Error in _think: {e}")
 
+        tool_calls = self._cap_actions(tool_calls)
+
         logger.info(f"| 💭 [{self.name}] Reasoning: {reasoning[:200]}")
         logger.info(f"| 🔧 [{self.name}] Tool calls: {[c.name for c in tool_calls]}")
 
         return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning, "step_tokens": step_tokens}
+
+    def _cap_actions(self, tool_calls: List[Any]) -> List[Any]:
+        """Hold a turn's batch to ``max_actions``, keeping the earliest calls.
+
+        ``max_actions`` used to be advisory — it was rendered into the prompt and
+        nothing enforced it, so a model that decided to fan out could return any
+        number of calls. Observed on ProgramBench once the batching guidance landed:
+        71 turns produced 943 tool calls, one turn asking for hundreds of
+        ``readelf | grep <symbol>`` probes, and a quarter of the run's budget went
+        into static analysis the task forbids.
+
+        Truncating beats accepting. The tail of an oversized batch is speculative by
+        construction — it was planned without seeing any of the earlier results — and
+        running it crowds out the turns that would have used those observations. The
+        earliest calls are kept for the same reason.
+        """
+        if len(tool_calls) <= self.max_actions:
+            return tool_calls
+        dropped = len(tool_calls) - self.max_actions
+        logger.warning(
+            f"| ✂️ [{self.name}] {len(tool_calls)} tool calls exceeds "
+            f"max_actions={self.max_actions}; keeping the first {self.max_actions}, "
+            f"dropping {dropped}"
+        )
+        return tool_calls[: self.max_actions]
 
     async def _dispatch(
         self,
@@ -1303,7 +1384,7 @@ class Agent(BaseModel):
     async def _on_round_complete(self, run: "_AgentRun") -> None:
         """A round's whole batch has drained: record the step, then advance or conclude."""
         decision = run.decision
-        self._record_action_evidence(run)
+        await self._record_action_evidence(run)
         await self._post_step(run.task_id, run.round_step, run.ctx, run.messages,
                               reasoning=decision["reasoning"], plan=getattr(run, "step_plan", []),
                               step_tokens=decision["step_tokens"], done=run.round_done)
@@ -1342,7 +1423,17 @@ class Agent(BaseModel):
                 input={"event": HookEvent.ON_STOP, "result": run.result, "success": success, **self._lifecycle_input(run)},
                 ctx=run.ctx,
             )
-        logger.info(f"| ✅ {self.name} completed after {run.step}/{self.max_step} steps")
+        # "✅ completed" for a force-stop reads as success in the logs and hides the
+        # very runs worth looking at — a no-progress termination and a finished task
+        # looked identical while the former had written no source at all.
+        if success:
+            logger.info(f"| ✅ {self.name} completed after {run.step}/{self.max_step} steps")
+        else:
+            why = "constraint" if run.stopped_by_constraint else "stopped without finishing"
+            logger.warning(
+                f"| ❌ {self.name} ended after {run.step}/{self.max_step} steps ({why}): "
+                f"{(run.result or '')[:200]}"
+            )
 
         data = {"done": run.done, "result": run.result, "reasoning": run.reasoning,
                 "stopped_by_constraint": run.stopped_by_constraint, "task_id": run.task_id}
@@ -1412,6 +1503,12 @@ class Agent(BaseModel):
                 "signature": signature,
                 "policy": await self._progress_policy(route),
             })
+        fingerprint = await self._workspace_fingerprint(run.ctx)
+        if run.baseline_fingerprint is None:
+            run.baseline_fingerprint = fingerprint
+        elif fingerprint != run.baseline_fingerprint:
+            run.produced_change = True
+
         guard = await hook_manager(
             name="no_progress_hook",
             input={
@@ -1420,7 +1517,7 @@ class Agent(BaseModel):
                 "task_id": run.task_id,
                 "actions": actions,
                 "evidence": run.action_evidence,
-                "workspace_fingerprint": self._workspace_fingerprint(run.ctx),
+                "workspace_fingerprint": fingerprint,
             },
             ctx=run.ctx,
         )
@@ -1430,7 +1527,17 @@ class Agent(BaseModel):
 
         run.no_progress_rounds += 1
         reason = guard.reason or "No-progress guard blocked an unchanged successful action."
-        if run.no_progress_rounds >= 3:
+
+        # Terminating is the right call for an agent circling work it has already
+        # done, and the wrong one for an agent that has not produced anything yet:
+        # the deliverable is then empty by construction, which is strictly worse
+        # than spending a few more of its steps. Observed on ProgramBench — three
+        # repeated recon reads ended a 200-step run at step 8 with no source file
+        # written at all. Re-reading docs while forming a plan is normal; the guard
+        # still blocks each repeat and pushes back, it just does not pull the plug
+        # until the agent has changed something at least once.
+        strikes_allowed = 3 if run.produced_change else _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE
+        if run.no_progress_rounds >= strikes_allowed:
             run.done = False
             run.result = (
                 "Stopped after three no-progress action proposals. Existing successful "
@@ -1476,12 +1583,32 @@ class Agent(BaseModel):
         return getattr(instance, "progress_policy", None) or getattr(info, "progress_policy", None)
 
     @staticmethod
-    def _workspace_fingerprint(ctx: Optional["AgentContext"]) -> str:
+    async def _workspace_fingerprint(ctx: Optional["AgentContext"]) -> str:
         """Fingerprint observable workspace state without reading file contents.
 
         Paths, sizes, and nanosecond mtimes detect ordinary edits cheaply. Large cache
         trees are skipped and traversal is bounded to keep the guard lightweight.
+
+        With a peer sandbox bound, the workspace the agent actually changes is inside
+        that container, and walking the host session directory instead reports a
+        fingerprint that never moves. The no-progress guard blocks a repeated action
+        only when the fingerprint is unchanged, so a constant one makes every repeat
+        look unproductive: on ProgramBench that ended a 200-step run at step 8, before
+        a single source file existed. Fingerprint the container when there is one.
         """
+        sandbox = _sandbox_of(ctx)
+        if sandbox is not None:
+            try:
+                # Same three fields as the host walk — path, size, mtime — so the two
+                # paths agree on what counts as a change.
+                res = await sandbox.run_command(
+                    "find /workspace -path '*/.git' -prune -o -printf '%P\\0%s\\0%T@\\n' -print 2>/dev/null | sort"
+                )
+                if res.exit_code is not None:
+                    return hashlib.sha256((res.stdout or "").encode()).hexdigest()
+            except Exception as e:  # noqa: BLE001 — a guard must never break a run
+                logger.warning(f"| ⚠️ Could not fingerprint the sandbox workspace: {e}")
+            return ""
         root_value = config.workspace_root
         if not root_value:
             return ""
@@ -1518,10 +1645,10 @@ class Agent(BaseModel):
             return ""
         return digest.hexdigest()
 
-    def _record_action_evidence(self, run: "_AgentRun") -> None:
+    async def _record_action_evidence(self, run: "_AgentRun") -> None:
         """Remember successful results from the drained round at its final workspace state."""
         plans = {item.get("id"): item for item in run.step_plan}
-        fingerprint = self._workspace_fingerprint(run.ctx)
+        fingerprint = await self._workspace_fingerprint(run.ctx)
         for outcome in run.round_outcomes:
             if outcome.get("error") or outcome.get("is_done"):
                 continue

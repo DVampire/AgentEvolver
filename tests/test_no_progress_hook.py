@@ -88,11 +88,12 @@ async def test_base_agent_skips_repeat_and_feeds_correction(tmp_path):
         task_id="task", ctx=ctx, action_evidence={
             signature: {
                 "success": True,
-                "workspace_fingerprint": agent._workspace_fingerprint(ctx),
+                "workspace_fingerprint": await agent._workspace_fingerprint(ctx),
             }
         },
         no_progress_rounds=0, step=1, messages=[], action_errors=[],
         done=False, result=None, reasoning=None,
+        produced_change=True, baseline_fingerprint=None,
     )
     decision = {
         "tool_calls": [call],
@@ -120,11 +121,13 @@ async def test_base_agent_stops_third_no_progress_proposal(tmp_path):
         task_id="task", ctx=ctx, action_evidence={
             signature: {
                 "success": True,
-                "workspace_fingerprint": agent._workspace_fingerprint(ctx),
+                "workspace_fingerprint": await agent._workspace_fingerprint(ctx),
             }
         },
         no_progress_rounds=2, step=3, messages=[], action_errors=[],
         done=False, result=None, reasoning=None,
+        # This agent has already changed something, so the third strike is fatal.
+        produced_change=True, baseline_fingerprint=None,
     )
     decision = {
         "tool_calls": [call],
@@ -137,3 +140,78 @@ async def test_base_agent_stops_third_no_progress_proposal(tmp_path):
     assert run.done is False
     assert "three no-progress" in run.result
     assert agent.concluded == 1
+
+
+@pytest.mark.asyncio
+async def test_guard_does_not_terminate_before_the_run_changes_anything(tmp_path):
+    """Three repeated recon reads must not end a run that has produced nothing.
+
+    Regression for a ProgramBench run that died at step 8 of 200 with no source file
+    written: the agent was still reading the docs, and every repeat looked
+    unproductive because the fingerprint it was compared against pointed at the host
+    session directory while the agent was working inside a peer container.
+    """
+    await hook_manager.initialize(hook_names=["no_progress_hook"])
+    agent = _GuardAgent(base_dir=str(tmp_path), use_memory=False)
+    ctx = AgentContext(id="ctx", workspace_root=str(tmp_path))
+    call = SimpleNamespace(name="read_file_tool", input={"path": str(tmp_path / "a.py")})
+    signature = agent._action_signature("tool", call.name, call.input)
+    run = SimpleNamespace(
+        task_id="task", ctx=ctx, action_evidence={
+            signature: {
+                "success": True,
+                "workspace_fingerprint": await agent._workspace_fingerprint(ctx),
+            }
+        },
+        no_progress_rounds=2, step=3, messages=[], action_errors=[],
+        done=False, result=None, reasoning=None,
+        produced_change=False, baseline_fingerprint=None,
+    )
+    decision = {
+        "tool_calls": [call],
+        "routing": {call.name: ("tool", call.name)},
+        "reasoning": "repeat",
+        "step_tokens": 1,
+    }
+
+    assert await agent._prepare_round(run, decision) is None
+    # Blocked and corrected, but still alive.
+    assert run.no_progress_rounds == 3
+    assert run.done is False
+    assert run.result is None, "must not have concluded"
+    assert agent.advanced == 1
+    assert "No-progress guard" in run.action_errors[0]
+
+
+@pytest.mark.asyncio
+async def test_guard_still_terminates_a_stuck_run_that_never_changes_anything(tmp_path):
+    """The leniency is bounded — a genuinely stuck agent must still stop."""
+    import agentevolver.agent.types as agent_types
+
+    await hook_manager.initialize(hook_names=["no_progress_hook"])
+    agent = _GuardAgent(base_dir=str(tmp_path), use_memory=False)
+    ctx = AgentContext(id="ctx", workspace_root=str(tmp_path))
+    call = SimpleNamespace(name="read_file_tool", input={"path": str(tmp_path / "a.py")})
+    signature = agent._action_signature("tool", call.name, call.input)
+    run = SimpleNamespace(
+        task_id="task", ctx=ctx, action_evidence={
+            signature: {
+                "success": True,
+                "workspace_fingerprint": await agent._workspace_fingerprint(ctx),
+            }
+        },
+        no_progress_rounds=agent_types._NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE - 1,
+        step=9, messages=[], action_errors=[],
+        done=False, result=None, reasoning=None,
+        produced_change=False, baseline_fingerprint=None,
+    )
+    decision = {
+        "tool_calls": [call],
+        "routing": {call.name: ("tool", call.name)},
+        "reasoning": "repeat",
+        "step_tokens": 1,
+    }
+
+    assert await agent._prepare_round(run, decision) is None
+    assert run.done is False
+    assert "no-progress" in (run.result or "").lower()

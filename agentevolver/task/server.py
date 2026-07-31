@@ -23,6 +23,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, Set, Tuple
 from pydantic import BaseModel, Field
 
 from agentevolver.logger import logger
+from agentevolver.response.types import Response
 from agentevolver.task.types import Task, TaskPriority, TaskStatus
 from agentevolver.utils import Singleton, file_lock, make_id
 
@@ -362,13 +363,30 @@ class TaskManager(metaclass=Singleton):
             if handler is None:
                 raise RuntimeError("No handler registered on TaskManager")
             result = await handler(record)
+            # A handler that returns rather than raises is not automatically a
+            # success. An agent run that was force-stopped — the no-progress guard
+            # firing, a constraint tripping — returns a Response with
+            # success=False, and marking that DONE reports work that did not
+            # happen. Seen on ProgramBench: a run stopped at step 8 with no source
+            # file written was recorded as `finished as done`, and its empty
+            # submission went on to be scored like a real attempt. Only an explicit
+            # success=False downgrades; handlers that return None or a plain value
+            # keep the previous behaviour.
+            failed = isinstance(result, Response) and result.success is False
             async with self._lock:
-                record.task.mark_done()
+                if failed:
+                    record.task.mark_failed()
+                    record.error = result.message or "handler reported failure"
+                else:
+                    record.task.mark_done()
                 record.result = result
                 record.finished_at = datetime.now(timezone.utc)
                 self._clear_evolver_slot(record)
                 await self._save_unlocked()
-            logger.info(f"| ✅ Task done: {task_id}")
+            if failed:
+                logger.warning(f"| ❌ Task failed: {task_id} — {record.error}")
+            else:
+                logger.info(f"| ✅ Task done: {task_id}")
 
         except asyncio.CancelledError:
             async with self._lock:

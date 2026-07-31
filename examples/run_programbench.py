@@ -20,16 +20,40 @@ parameter.
 Requires the `benchmark`/`sandbox` extras (`pip install -e ".[benchmark,sandbox]"`)
 and a reachable Docker daemon.
 
+Launch it through ``scripts/run-in-sandbox.sh`` (Model X): the MAS itself runs in
+the base container, and the per-task cleanroom is a *sibling* container created
+through the mounted Docker socket. Running the bare ``python`` command instead
+puts the agent process on the host — everything still works, because tool calls
+route into the peer either way, but the framework is then outside the sandbox it
+is supposed to be inside.
+
+The two containers are not a redundancy: the base one has network so the agent can
+reach its model, while the peer is created with ``network=False`` so the task
+environment cannot. That is the benchmark's anti-cheat, and it is load-bearing —
+runs have been observed attempting ``git clone`` and ``curl`` against the upstream
+repository. Putting the MAS *inside* the task container would force a choice
+between "no model access" and "no anti-cheat".
+
+``programbench`` (the pip package carrying the task definitions) must be importable
+in the image; ``agentevolver/base:latest`` does not ship it, hence the install in
+the examples below.
+
 Usage
 -----
-# Run two named instances, with self-evolution on (default)
-python examples/run_programbench.py --task-ids <instance_id_1>,<instance_id_2>
+# Two named instances, self-evolution roster per the default config
+scripts/run-in-sandbox.sh -- bash -c "pip install -q programbench && \
+    python examples/run_programbench.py --task-ids <instance_id_1>,<instance_id_2>"
 
-# Run the first 5 instances (by load order), self-evolution off
-python examples/run_programbench.py --start 0 --end 5 --no-evolve
+# The control arm. It is a config, not a flag, so a result's roster is readable
+# from the repo instead of reconstructed from a command line.
+scripts/run-in-sandbox.sh -- bash -c "pip install -q programbench && \
+    python examples/run_programbench.py --start 0 --end 5 \
+    --config configs/programbench_agent_baseline.py"
 
 # Override config options
-python examples/run_programbench.py --start 0 --end 1 --cfg-options model_name=openai/o3
+scripts/run-in-sandbox.sh -- bash -c "pip install -q programbench && \
+    python examples/run_programbench.py --start 0 --end 1 \
+    --cfg-options model_name=openai/o3"
 """
 
 import argparse
@@ -75,6 +99,11 @@ from agentevolver.sandbox import sandbox_manager
 # leftover build artifacts/source (verified by pulling and inspecting two instances;
 # see the design spec §3.4). NOT ":latest" — that tag doesn't exist.
 IMAGE_TAG = "task_cleanroom_v6"
+#: Where the agent is told to stash the provided binary before its first build
+#: overwrites it (see SYSTEM_PROMPT), and what extract_submission() strips back out
+#: so the reference never reaches the graded tarball.
+REFERENCE_COPY = "reference_executable"
+
 
 # opensandbox-server's default port (8080) was found already occupied by an
 # unrelated service on this shared machine when this was tested — ensure_server()'s
@@ -104,6 +133,14 @@ SANDBOX_ISOLATE_NETWORK = os.environ.get("AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK",
 # ./executable relative to /workspace (the image's own WORKDIR), regardless of the
 # instance; docs/man pages/README sit alongside it; an empty .git repo is provided
 # for committing the solution into.
+#
+# The "preserve the reference first" step is not housekeeping. `compile.sh` must
+# produce `./executable`, which is the exact path the reference binary occupies —
+# so the agent's first build overwrites the only oracle it has. Observed on
+# cmatrix: the reference was gone by command 22 of 65, and the remaining 43
+# commands could not compare anything against it. The run that scored well had
+# happened to dump `./executable -h` to a file beforehand; the run that scored
+# 11 points lower had not, and neither run was told to.
 SYSTEM_PROMPT = dedent("""
     You are an expert software engineer. You are given only a compiled binary of a
     program together with its documentation, running inside an offline sandbox with
@@ -119,56 +156,61 @@ SYSTEM_PROMPT = dedent("""
     relative path from it). Any path under `/home/...` refers to the host machine, not
     your sandbox, and will not contain the files described above.
 
-    Work entirely from the binary and its documentation — you have no internet access
-    and no access to the original source code. Do not search the internet, clone
-    repositories, or install the project from any package manager; do not decompile,
-    disassemble, or use strace/ltrace on the provided `./executable` (only observe it
-    by running it normally). Your final deliverable must include a `./compile.sh` that
-    builds a fresh `./executable` of equivalent behavior from your own source tree, on
-    a clean checkout, with no dependency on the originally provided binary.
+    FIRST, PRESERVE THE REFERENCE. Your `compile.sh` has to write `./executable`,
+    which is where the reference binary sits — so your first build destroys the only
+    thing you can check your work against, and nothing will warn you. Before you
+    build anything, copy it aside:
+
+        cp /workspace/executable /workspace/reference_executable
+
+    From then on run `./reference_executable` for expected behavior and `./executable`
+    for yours, and compare them directly. Do not delete or commit
+    `reference_executable`; it is scaffolding, not part of your deliverable.
+
+    HOW TO REPRODUCE BEHAVIOR. Reading the docs tells you which flags exist; only
+    running the reference tells you what they do. Work flag by flag: run the
+    reference with an input, run your build with the same input, diff the two, and
+    fix the difference. Both exit status and output text matter. Getting `--help` to
+    match is the easy part and it is not the same as reproducing the program — cover
+    the behavior each flag controls, flags in combination, and how invalid input is
+    rejected.
+
+    ALWAYS PUT `timeout` IN FRONT OF EITHER BINARY. Never run `./executable` or
+    `./reference_executable` bare:
+
+        timeout 2 ./reference_executable -h; echo "exit=$?"
+        timeout 2 ./executable -h;           echo "exit=$?"
+
+    The program you are reconstructing may not exit on its own — a TUI, a REPL, a
+    server, a loop — and an unfinished reconstruction may hang on inputs the
+    reference handles instantly. That is not a rare case: it is a *defect you are
+    hunting*, because "the reference prints usage and exits 0, mine hangs" is exactly
+    the kind of difference the tests check. Discover it in two seconds via a timeout
+    exit code of 124, not by blocking your own shell until the tool kills it — one
+    hang costs more wall-clock than dozens of real experiments. This applies most to
+    the very commands you most want to batch: a batch of comparisons with no
+    `timeout` stalls on the first hang and you lose the rest of the batch with it.
+
+    WHAT YOU MAY LEARN FROM THE BINARY — a whitelist, not a blacklist. You may
+    **run** it and read what it produces: stdout, stderr, exit status, files it
+    creates, how it responds to input. That is all. Anything that inspects the binary
+    as a *file* rather than as a *program* is out of bounds — no disassembly, no
+    decompilation, no `readelf`/`nm`/`objdump`/`strings`/`xxd`/`hexdump`, no debugger,
+    no `strace`/`ltrace`. If you catch yourself grepping a symbol table, stop: you are
+    reading the compiler's output instead of reproducing the program's behavior, and
+    those symbols are mostly libc and kernel constants that tell you nothing about
+    what this program does. One run of `./reference_executable --help` is worth more
+    than every symbol in the file.
+
+    Work entirely from running the binary and reading its documentation — you have no
+    internet access and no access to the original source code. Do not search the
+    internet, clone repositories, or install the project from any package manager.
+    Your final deliverable must include a `./compile.sh` that builds a fresh
+    `./executable` of equivalent behavior from your own source tree, on a clean
+    checkout, with no dependency on the originally provided binary.
 
     Task:
 """)
-
-
-# The self-evolution roster, mirroring configs/programbench_agent.py: only the
-# tool / agent / skill triads. A reconstruction task has no environment and no
-# connector to evolve, and rewriting the memory system mid-benchmark would change
-# the measurement rather than the solution — so those three triads (and their
-# creator skills) are out of scope here, unlike in meta_agent.py.
-EVOLVE_AGENT_NAMES = [
-    "tool_generate_agent", "tool_optimize_agent", "tool_evaluate_agent",
-    "agent_generate_agent", "agent_optimize_agent", "agent_evaluate_agent",
-    "skill_generate_agent", "skill_optimize_agent", "skill_evaluate_agent",
-]
-EVOLVE_TOOL_NAMES = ["evolution_tool"]
-EVOLVE_SKILL_NAMES = [
-    "self_evolving_skill",
-    "tool_creator_skill", "agent_creator_skill", "skill_creator_skill",
-]
-
-
-def resolve_roster(agent_names, tool_names, skill_names, evolve):
-    """Return the roster with the self-evolution add-ons included or stripped.
-
-    The config already lists the evolution roster (so it reads as one complete
-    assembly, like meta_agent.py), which makes `--no-evolve` a *removal* rather
-    than the absence of an addition. Adding when missing is kept too, so the
-    switch means the same thing whichever way a config is written.
-
-    Returns fresh (agent_names, tool_names, skill_names) lists; the inputs are
-    never mutated in place.
-    """
-    def apply(base, addons):
-        if evolve:
-            return list(base) + [n for n in addons if n not in base]
-        return [n for n in base if n not in addons]
-
-    return (
-        apply(agent_names, EVOLVE_AGENT_NAMES),
-        apply(tool_names, EVOLVE_TOOL_NAMES),
-        apply(skill_names, EVOLVE_SKILL_NAMES),
-    )
 
 
 def select_instances(instances, task_ids=None, start=None, end=None):
@@ -224,10 +266,6 @@ def parse_args():
     parser.add_argument("--task-ids", default=None, help="Comma-separated ProgramBench instance_id list")
     parser.add_argument("--start", type=int, default=None, help="Start index (inclusive) into the loaded instance list")
     parser.add_argument("--end", type=int, default=None, help="End index (exclusive) into the loaded instance list")
-    parser.add_argument(
-        "--evolve", action=argparse.BooleanOptionalAction, default=True,
-        help="Include the self-evolution agent/skill/tool roster (default: on; use --no-evolve to disable).",
-    )
     parser.add_argument("--out", default=None, help="Results JSON output directory")
     parser.add_argument(
         "--cfg-options", nargs="+", action=DictAction,
@@ -276,7 +314,16 @@ async def extract_submission(sandbox, dest_dir: str) -> str:
     best-effort.
     """
     tar_path = "/tmp/submission.tar.gz"
-    result = await sandbox.run_command(f"tar -czf {tar_path} -C /workspace . 2>&1")
+    # The reference copy the agent is told to make (see SYSTEM_PROMPT) is scaffolding
+    # for differential testing, not deliverable source. It must not ride along in the
+    # tarball: the submission would then ship the original binary, which the task
+    # forbids depending on, and a `compile.sh` that quietly copied it into place would
+    # score as a solved reconstruction. Excluded here rather than trusted to the
+    # agent's housekeeping, because this tar takes the whole workspace regardless of
+    # what was committed.
+    result = await sandbox.run_command(
+        f"tar -czf {tar_path} --exclude=./{REFERENCE_COPY} -C /workspace . 2>&1"
+    )
     if not result.success:
         raise RuntimeError(f"tar failed: {result.as_message()}")
     data = await sandbox.read_bytes(tar_path)
@@ -297,6 +344,29 @@ async def extract_submission(sandbox, dest_dir: str) -> str:
             tf.extractall(extract_dir)  # older Pythons without the filter kwarg
     logger.info(f"| 📂 Submission unpacked for inspection: {extract_dir}")
     return local_path
+
+
+def warn_if_not_containerized() -> bool:
+    """Say so when the MAS is running on the host rather than in the base container.
+
+    Model X puts the whole framework inside a container; ``scripts/run-in-sandbox.sh``
+    is how that happens, and it marks the environment with AGENTEVOLVER_HOST_ROOT.
+    A bare ``python examples/run_programbench.py`` still produces valid submissions —
+    bash and the file tools route into the peer cleanroom regardless — so the
+    difference is invisible in the results and easy to not notice for a whole
+    afternoon. Hence a line in the log rather than a silent divergence.
+
+    Returns True when containerized, so callers can assert on it in tests.
+    """
+    containerized = os.path.exists("/.dockerenv") or bool(os.environ.get("AGENTEVOLVER_HOST_ROOT"))
+    if not containerized:
+        logger.warning(
+            "| ⚠️ Running on the host, not in the base container. The task cleanroom is "
+            "still isolated, so results are valid — but this is not Model X. To run the "
+            "MAS inside the sandbox: scripts/run-in-sandbox.sh -- bash -c "
+            "\"pip install -q programbench && python examples/run_programbench.py ...\""
+        )
+    return containerized
 
 
 async def teardown():
@@ -324,10 +394,6 @@ async def main():
     args = parse_args()
     config.initialize(config_path=args.config, args=args)
 
-    config.agent_names, config.tool_names, config.skill_names = resolve_roster(
-        config.agent_names, config.tool_names, config.skill_names, args.evolve,
-    )
-
     # Capture the shared component library before any session rebases config —
     # every per-task session below layers onto this same extension root.
     bootstrap_extension_root = config.extension_root
@@ -347,6 +413,7 @@ async def main():
     bootstrap_log_root = config.log_root
     extension_manager.set_base_dir(bootstrap_extension_root)
     logger.initialize(config=config)
+    warn_if_not_containerized()
     logger.info(f"| Config: {config.pretty_text}")
 
     from agentevolver.config import validate_assembly
@@ -518,7 +585,6 @@ async def main():
         with open(results_path, "w", encoding="utf-8") as f:
             json.dump({
                 "config": args.config,
-                "evolve": args.evolve,
                 "selection": {"task_ids": task_ids, "start": args.start, "end": args.end},
                 "records": results,
             }, f, ensure_ascii=False, indent=2)

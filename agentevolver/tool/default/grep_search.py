@@ -52,6 +52,53 @@ class GrepSearchTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    async def _search_in_sandbox(
+        self, sandbox, pattern: str, root: str, file_pattern: str,
+        case_sensitive: bool, max_results: int,
+    ) -> Response:
+        """Run the same search inside a peer container via grep.
+
+        Uses the container's own grep rather than reading files out one by one: the
+        result set is what matters here, and a tree walk over the transport would be
+        an order of magnitude slower. ``grep -E`` is close enough to Python's ``re``
+        for the literal and character-class patterns this tool is used with; a pattern
+        relying on Python-only syntax will simply not match, which grep reports as
+        zero results rather than an error.
+        """
+        import shlex
+
+        flags = "-rEn" if case_sensitive else "-rEni"
+        excludes = " ".join(f"--exclude-dir={shlex.quote(d)}" for d in sorted(_IGNORED_DIRS))
+        command = (
+            f"grep {flags} {excludes} --include={shlex.quote(file_pattern)} "
+            f"-- {shlex.quote(pattern)} {shlex.quote(root)} 2>/dev/null | head -n {int(max_results)}"
+        )
+        res = await sandbox.run_command(command)
+        # grep exits 1 on "no matches", which is an answer, not a failure.
+        if res.exit_code is None:
+            return Response(type=ResponseType.TOOL, success=False,
+                            message=f"Error searching {root} in sandbox: {res.as_message()}")
+
+        results: List[Dict[str, Any]] = []
+        for line in (res.stdout or "").splitlines():
+            path, _, rest = line.partition(":")
+            lineno, _, text = rest.partition(":")
+            if not lineno.isdigit():
+                continue
+            results.append({"file": path, "line": int(lineno), "text": text})
+
+        truncated = len(results) >= max_results
+        if not results:
+            message = f"No matches found for '{pattern}' under {root}"
+        else:
+            lines = "\n".join(f"{r['file']}:{r['line']}: {r['text']}" for r in results)
+            suffix = f"\n[Results capped at {max_results}.]" if truncated else ""
+            message = f"Found {len(results)} match(es):\n{lines}{suffix}"
+        return Response(
+            type=ResponseType.TOOL, success=True, message=message,
+            data={"results": results, "truncated": truncated, "pattern": pattern, "sandboxed": True},
+        )
+
     async def __call__(
         self,
         pattern: str,
@@ -71,9 +118,26 @@ class GrepSearchTool(Tool):
             max_results:    Cap on returned matches.
         """
         try:
-            sandbox_denial = check_session_path(kwargs.get("ctx"), root, write=False)
-            if sandbox_denial:
-                return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+            # A peer sandbox bound on the context means the tree worth searching lives
+            # in that container (e.g. a programbench task cleanroom). Walking the local
+            # filesystem instead would search the base container, where the task's
+            # /workspace does not exist — returning "no matches" for code that is
+            # plainly there, which reads as a fact about the code rather than about
+            # the tool.
+            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+
+            # The host-root boundary check only applies to local searches: with a peer
+            # bound, the container is the isolation boundary.
+            if sandbox is None:
+                sandbox_denial = check_session_path(kwargs.get("ctx"), root, write=False)
+                if sandbox_denial:
+                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+
+            if sandbox is not None:
+                return await self._search_in_sandbox(
+                    sandbox, pattern, root, file_pattern, case_sensitive, max_results,
+                )
+
             if not os.path.isdir(root):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Not a directory: {root}")
 

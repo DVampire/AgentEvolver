@@ -28,6 +28,12 @@ Execute bash commands in the shell.
   observation, not a tool error (e.g. `grep` returns 1 when it finds no matches);
   read STDOUT/STDERR and the exit code to decide whether the command did what you
   intended.
+- One call can carry several steps, and doing so costs one model round-trip instead
+  of several: `make && ./run-tests`, `a; b; echo $?`, pipelines,
+  a heredoc that writes a file and then runs it. Use `&&` when a later step is
+  pointless if an earlier one fails, `;` when you want every step to run regardless.
+  Only chain steps whose commands you already know — if the next command depends on
+  output you have not read yet, that is a separate call.
 
 ## Parameters
 - command (str): The command to execute. If file path is necessary, it should be an absolute path.
@@ -81,12 +87,57 @@ class BashTool(Tool):
 
         try:
             if sandbox is not None:
-                execution = await asyncio.wait_for(
-                    sandbox.run_command(command), timeout=self.timeout
-                )
+                try:
+                    execution = await asyncio.wait_for(
+                        sandbox.run_command(command), timeout=self.timeout
+                    )
+                except asyncio.TimeoutError:
+                    # The local branch has said "Command timed out after Ns" for a long
+                    # time; this branch let the bare TimeoutError fall through to the
+                    # generic handler below, whose str() is empty — the agent received
+                    # the literal text "Error executing command: " and could not tell a
+                    # timeout from a crash, let alone how long it had waited.
+                    #
+                    # Observed on ProgramBench: `./executable -z` on a reconstruction
+                    # that fell through into its TUI loop blocked for the full 600s.
+                    # Naming the cause is what lets the agent do the obvious thing next
+                    # time, so the hint is part of the message.
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=(
+                            f"Error: Command timed out after {self.timeout} seconds "
+                            f"and was abandoned (the process may still be running in "
+                            f"the sandbox). If the program you invoked can run without "
+                            f"exiting — a TUI, a REPL, a server, or a loop — wrap it: "
+                            f"`timeout 2 <command>` returns exit code 124 instead of "
+                            f"blocking. Command: {command}"
+                        ),
+                        data={"exit_code": None, "command": command,
+                              "sandboxed": True, "timed_out": True},
+                    )
+                # Same contract as the local branch below: the tool call succeeded if
+                # the command *ran*, and the exit code is an observation for the model.
+                # An exit_code means the shell reached a verdict, so only the absence of
+                # one (transport error, container gone) is a tool failure.
+                #
+                # ExecResult.success is `error is None and exit_code in (None, 0)`, which
+                # is the right rule for its other callers — a failed `git clone` in the
+                # deploy path really is a failure — so this narrows the rule here rather
+                # than changing it there.
+                #
+                # Without this, every non-zero exit reached the agent as "❌ Action
+                # 'bash_tool' failed". Observed on ProgramBench: after `compile.sh` left
+                # an untracked binary, `git add <files> && git commit` exited 1 with
+                # "nothing added to commit but untracked files present" — i.e. *the work
+                # was already committed*. The agent read the hard-failure framing as "my
+                # staging is broken", and retried variants of the same commit 11 times,
+                # burning ~40 of its 65 commands and 15 minutes. It scored 68 where the
+                # run that did not hit the loop scored 79.
+                ran = execution.exit_code is not None
                 return Response(
                     type=ResponseType.TOOL,
-                    success=execution.success,
+                    success=execution.success or ran,
                     message=warning_prefix + execution.as_message(),
                     data={"exit_code": execution.exit_code, "command": command, "sandboxed": True},
                 )
