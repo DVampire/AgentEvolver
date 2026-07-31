@@ -96,11 +96,11 @@ IMAGE_TAG = "task_cleanroom_v6"
 #: the remaining 43 could not compare anything against it.
 REFERENCE_COPY = "reference_executable"
 
-#: Ours, not the agent's, and therefore not part of the reconstruction. `inputs/` is where
-#: the framework stages task attachments so the agent can read them: the task document
-#: lives in the checkout, outside the workspace, and `check_session_path` would otherwise
-#: refuse to open it. Necessary, and no more a deliverable than the stashed reference is.
-_SCAFFOLDING = (REFERENCE_COPY, "inputs")
+#: Ours, not the agent's, and therefore not part of the reconstruction. Only the stashed
+#: reference is left here: task attachments used to land in the workspace too, and that is
+#: fixed at the source now — they stage under log_root, where they are readable without
+#: sitting in the middle of the deliverable.
+_SCAFFOLDING = (REFERENCE_COPY,)
 
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"

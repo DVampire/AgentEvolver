@@ -1,3 +1,4 @@
+import os
 """Regression tests for tool-layer robustness fixes.
 
 Three papercuts observed in a real MetaAgent run, each fixed and pinned here:
@@ -427,3 +428,21 @@ def test_grep_search_skips_binaries(tmp_path):
         pattern="Usage", root=str(tmp_path), ctx=SimpleNamespace(extra={})))
     assert resp.success is True
     assert [r["file"].split("/")[-1] for r in resp.data["results"]] == ["notes.txt"]
+
+
+def test_todo_state_lives_with_the_other_tools_state(tmp_path):
+    """A todo list is the tool's own bookkeeping, and every other tool keeps its state
+    under <log_root>/tool. Defaulting into the workspace put a `todo_tool/` directory in
+    the middle of the user's deliverable — and where a run's workspace gets packaged up,
+    shipped it along with the work."""
+    from agentevolver.tool.default.todo import TodoTool
+
+    config.workspace_root = str(tmp_path / "workspace")
+    config.log_root = str(tmp_path / "log")
+    os.makedirs(config.workspace_root, exist_ok=True)
+
+    tool = TodoTool()
+    assert tool.base_dir == os.path.join(config.log_root, "tool", "todo_tool")
+    assert config.workspace_root not in tool.base_dir
+    # Nothing of ours appears in the deliverable directory.
+    assert os.listdir(config.workspace_root) == []

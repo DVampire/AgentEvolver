@@ -741,23 +741,18 @@ def test_a_session_tree_inside_the_task_workspace_is_refused():
         rp.bind_task_workspace(ctx, _FsSandbox("/workspace/output/local/sessions/x"))
 
 
-def test_framework_scaffolding_stays_out_of_the_submission(tmp_path):
-    """`inputs/` is where the framework stages task attachments so the agent can read
-    them — the task document lives in the checkout, outside the workspace, and
-    check_session_path would otherwise refuse to open it. Necessary, and no more a
-    deliverable than the stashed reference binary is."""
+def test_the_stashed_reference_stays_out_of_the_submission(tmp_path):
+    """Shipping it would hand the grader the original binary — and a compile.sh that
+    copied it into place would score as a real reconstruction."""
     ws = _workspace_with_a_commit(tmp_path, commit_source=False)
-    (ws / "inputs").mkdir()
-    (ws / "inputs" / "000_programbench_reconstruction.html").write_text("<html/>")
 
     info = rp.collect_submission(str(ws), str(tmp_path / "out"))
 
     shipped = {p.name for p in (tmp_path / "out" / "submission").iterdir()}
-    assert "inputs" not in shipped
     assert rp.REFERENCE_COPY not in shipped
     assert "compile.sh" in shipped
-    # And it is not reported as work the agent forgot to commit.
-    assert not any(entry.startswith("inputs") for entry in info["uncommitted"])
+    # Nor is it reported as work the agent forgot to commit: it is scaffolding.
+    assert rp.REFERENCE_COPY not in info["uncommitted"]
 
 
 def test_the_audit_does_not_flag_the_prompt_that_forbids_the_tools(tmp_path):

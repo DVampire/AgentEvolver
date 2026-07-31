@@ -134,12 +134,20 @@ def bind_session_roots(config: Any, sandbox: ProjectSandbox) -> None:
 
 
 def stage_input_files(ctx: Any, input: Dict[str, Any]) -> Dict[str, Any]:
-    """Copy external task attachments into the session workspace before execution.
+    """Copy external task attachments into the session tree before execution.
 
-    Direct Python entry points commonly receive task documents from a checkout.  A
-    sandboxed agent may not read those source paths, so their file inputs are copied
-    into ``workspace/inputs`` and the agent receives only the staged paths.  Gateway
-    uploads already live in the workspace and are left untouched.
+    Direct Python entry points commonly receive task documents from a checkout, and a
+    sandboxed agent may not read those source paths — ``check_session_path`` allows only
+    the session's own roots — so their file inputs are copied in and the agent receives
+    only the staged paths.
+
+    Staged under ``log_root/inputs``, not into the workspace. The workspace holds the
+    agent's *deliverable*; an attachment is an input to the run, and putting one there
+    left an `inputs/` directory sitting in the middle of the agent's output — and, where a
+    run's workspace is packaged up, shipped it with the work. ``log_root`` is on the
+    readable side of ``check_session_path``, so the agent can still open what it is given.
+
+    Gateway uploads already live in the workspace and are left untouched.
     """
     prepared = dict(input)
     files = prepared.get("files")
@@ -147,7 +155,7 @@ def stage_input_files(ctx: Any, input: Dict[str, Any]) -> Dict[str, Any]:
         return prepared
 
     workspace = Path(config.workspace_root).resolve()
-    inputs_dir = workspace / "inputs"
+    inputs_dir = Path(config.log_root).resolve() / "inputs"
     staged: list[str] = []
     for index, value in enumerate(files):
         source = Path(str(value)).expanduser().resolve()

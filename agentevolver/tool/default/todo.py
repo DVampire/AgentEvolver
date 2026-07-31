@@ -376,13 +376,13 @@ class TodoTool(Tool):
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     
-    # Configuration parameters.  When unset, todo files live under the
-    # configured workspace root (``config.workspace_root``), which the gateway
-    # binds per-session under ``output/``.  A ``None`` default avoids anchoring
-    # to a literal ``workspace_root/`` folder in the process cwd.
+    # Configuration parameters.  When unset, todo files live under this run's tool
+    # state directory (``<log_root>/tool/todo_tool``), which is where every other
+    # tool keeps its own bookkeeping.  A ``None`` default avoids anchoring to a
+    # literal folder in the process cwd.
     base_dir: Optional[str] = Field(
         default=None,
-        description="The base directory for saving todo files. Defaults to <workspace_root>/todo_tool."
+        description="The base directory for saving todo files. Defaults to <log_root>/tool/todo_tool."
     )
     
     def __init__(
@@ -397,9 +397,13 @@ class TodoTool(Tool):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            # Anchor to the configured workspace root (bound per-session by the
-            # gateway under output/), never to the process cwd.
-            self.base_dir = os.path.join(config.workspace_root, "todo_tool")
+            # A todo list is this tool's own state, so it belongs with every other
+            # tool's under <log_root>/tool — the same root tool_manager gives itself.
+            # It used to default into the workspace, which is the directory holding the
+            # user's deliverable: a `todo_tool/` folder appeared in the middle of the
+            # agent's output and, where a run's workspace is packaged up, shipped with
+            # it. Anchored to log_root rather than the process cwd.
+            self.base_dir = os.path.join(config.log_root, "tool", "todo_tool")
 
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)

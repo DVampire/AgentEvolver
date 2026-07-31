@@ -101,12 +101,23 @@ def test_external_task_file_is_staged_inside_workspace(tmp_path: Path) -> None:
     source.write_text("<h1>task</h1>", encoding="utf-8")
     context = SessionContext(id="direct-run")
     ensure_session_sandbox(context, tmp_path / "output")
-    # stage_input_files reads the working dir from config (set per-run by
-    # bind_session_roots); mirror that here.
+    # stage_input_files reads the roots from config (set per-run by bind_session_roots);
+    # mirror that here.
     config.workspace_root = context.extra["workspace_root"]
+    config.log_root = context.extra["log_root"]
 
     prepared = stage_input_files(context, {"task": "review", "files": [str(source)]})
 
     staged = Path(prepared["files"][0])
-    assert staged.is_relative_to(Path(context.extra["workspace_root"]))
     assert staged.read_text(encoding="utf-8") == "<h1>task</h1>"
+    # Under log_root, not the workspace: the workspace holds the agent's deliverable, and
+    # an attachment is an input to the run. Staging one there left an `inputs/` directory
+    # in the middle of the agent's output and shipped it wherever the workspace gets
+    # packaged up. log_root is on the readable side of check_session_path, so the agent
+    # can still open what it is given.
+    assert staged.is_relative_to(Path(context.extra["log_root"]))
+    assert not staged.is_relative_to(Path(context.extra["workspace_root"]))
+
+    from agentevolver.sandbox.project import check_session_path
+
+    assert check_session_path(context, str(staged), write=False) is None
