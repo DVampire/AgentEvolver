@@ -61,11 +61,25 @@ _EVOLUTION_TOOL = "evolution_tool"
 _EVOLUTION_SKILL = "self_evolving_skill"
 _EVOLUTION_AGENT_SUFFIXES = ("_generate_agent", "_optimize_agent", "_evaluate_agent")
 
-#: How many blocked no-progress proposals to tolerate before terminating a run that
-#: has not yet changed anything. Higher than the post-change limit of 3 on purpose:
-#: ending such a run guarantees an empty deliverable, so a few more steps of
-#: corrective pushback is the cheaper mistake. Still bounded, so a genuinely stuck
-#: agent stops rather than burning its whole budget.
+#: Blocked no-progress proposals tolerated before a run is terminated, as a fraction of
+#: its step budget rather than a fixed count. Every blocked proposal already costs the
+#: agent a turn and pushes a correction back at it; terminating is the separate, final
+#: judgement that it will never move on.
+#:
+#: This was a fixed 3, calibrated when budgets were tens of steps. At 1000 it killed a run
+#: on step 27 — 2.7% of the budget spent, 973 steps left — while the agent was re-reading
+#: output it had correctly captured moments earlier. That is flailing and worth pushing
+#: back on, but not worth ending a run over that early: the deliverable at step 27 is
+#: almost nothing, and the agent had the material it needed.
+_NO_PROGRESS_STRIKE_BUDGET_FRACTION = 0.05
+
+#: Floors and a ceiling on the above, so a tiny budget still gets a few corrections and a
+#: huge one does not spend a quarter of itself circling.
+_NO_PROGRESS_STRIKES_MIN = 3
+_NO_PROGRESS_STRIKES_MAX = 25
+
+#: Extra allowance before the run has changed anything at all. Ending such a run
+#: guarantees an empty deliverable, so more corrective pushback is the cheaper mistake.
 _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
 
 #: Consecutive model-call failures before a run stops instead of retrying. Three is
@@ -1579,13 +1593,16 @@ class Agent(BaseModel):
         # written at all. Re-reading docs while forming a plan is normal; the guard
         # still blocks each repeat and pushes back, it just does not pull the plug
         # until the agent has changed something at least once.
-        strikes_allowed = 3 if run.produced_change else _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE
+        scaled = int(self.max_step * _NO_PROGRESS_STRIKE_BUDGET_FRACTION)
+        strikes_allowed = max(_NO_PROGRESS_STRIKES_MIN, min(scaled, _NO_PROGRESS_STRIKES_MAX))
+        if not run.produced_change:
+            strikes_allowed = max(strikes_allowed, _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE)
         if run.no_progress_rounds >= strikes_allowed:
             run.done = False
             run.result = (
-                "Stopped after three no-progress action proposals. Existing successful "
-                "evidence is preserved in Memory, but the agent did not finish or choose "
-                "a materially different action."
+                f"Stopped after {run.no_progress_rounds} no-progress action proposals. "
+                "Existing successful evidence is preserved in Memory, but the agent did "
+                "not finish or choose a materially different action."
             )
             run.reasoning = reason
             await self._conclude(run)

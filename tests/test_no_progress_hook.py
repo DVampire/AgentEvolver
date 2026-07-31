@@ -138,7 +138,9 @@ async def test_base_agent_stops_third_no_progress_proposal(tmp_path):
 
     assert await agent._prepare_round(run, decision) is None
     assert run.done is False
-    assert "three no-progress" in run.result
+    # The count is reported, not spelled out: the allowance now depends on the budget,
+    # so "three" would be wrong for most runs that hit this.
+    assert "Stopped after 3 no-progress" in run.result
     assert agent.concluded == 1
 
 
@@ -332,3 +334,39 @@ async def test_a_recovered_model_call_clears_the_failure_count():
     assert await agent._advance_once(run) is True   # text-only turn: take another
     assert run.think_failures == 0
     assert getattr(agent, "concluded", 0) == 0
+
+
+# --- terminating is a separate judgement from blocking ---------------------------
+
+def test_strike_allowance_scales_with_the_step_budget():
+    """A fixed count of 3 was calibrated when budgets were tens of steps. At 1000 it
+    ended a run on step 27 — 2.7% of the budget, 973 steps left — while the agent was
+    re-reading output it had correctly captured moments earlier. Worth pushing back on,
+    not worth ending a run over that early."""
+    from agentevolver.agent.types import (
+        _NO_PROGRESS_STRIKE_BUDGET_FRACTION as fraction,
+        _NO_PROGRESS_STRIKES_MAX as ceiling,
+        _NO_PROGRESS_STRIKES_MIN as floor,
+    )
+
+    def allowance(max_step):
+        return max(floor, min(int(max_step * fraction), ceiling))
+
+    assert allowance(30) == floor          # a tiny budget still gets a few corrections
+    assert allowance(200) > floor          # and a larger one gets proportionally more
+    assert allowance(1000) == ceiling      # without spending a quarter of itself circling
+    assert allowance(100000) == ceiling
+
+
+def test_the_terminating_message_reports_the_actual_count():
+    """It said "three" regardless of how many there had been, which is misleading once
+    the allowance depends on the budget."""
+    import inspect
+
+    from agentevolver.agent.types import Agent
+
+    source = inspect.getsource(Agent._prepare_round)
+    assert "Stopped after {run.no_progress_rounds} no-progress" in source
+    assert "Stopped after three" not in source
+    # And the backstop still exists.
+    assert "no_progress_rounds >= strikes_allowed" in source

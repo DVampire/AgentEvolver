@@ -787,3 +787,51 @@ def test_the_audit_does_flag_analysis_of_the_reference(tmp_path):
     hits = rp.audit_reference_binary(str(tmp_path))["suspicious_actions"]
     assert [h["tool"] for h in hits] == ["objdump"]
     assert hits[0]["action"] == "bash_tool"
+
+
+def test_the_submission_is_written_beside_the_workspace_not_into_it():
+    """The session's `workspace/` is the directory mounted at /workspace, so writing the
+    tarball into it would archive the archive and leave the unpacked copy inside the
+    deliverable."""
+    import inspect
+
+    source = inspect.getsource(rp.run_inner)
+    assert "collect_submission(CONTAINER_WORKSPACE, str(fs_sandbox.project_root))" in source
+    assert "fs_sandbox.workspace_root" not in source
+
+
+def test_the_workspace_is_seeded_from_the_image_before_being_mounted():
+    """Mounting a directory straight onto /workspace would hide what the image ships
+    there — the documentation that *is* the specification, the reference binary, the git
+    repository — and leave the agent an empty room."""
+    import inspect
+
+    source = inspect.getsource(rp.seed_workspace)
+    # cp -a from inside the image, so the reference binary's ---x--x--x survives: a copy
+    # that widened it would hand over the bytes the benchmark withholds.
+    assert "cp -a /workspace/. /seed/" in source
+    assert "docker" in source and "--rm" in source
+    # A previous run's root-owned files are cleared first; mixing them in would make last
+    # run's source look like this run's work.
+    assert "rm -rf /seed/" in source
+
+    launcher = inspect.getsource(rp.run_launcher)
+    assert "seed_workspace(image_ref, workspace_dir)" in launcher
+    assert "workspace_dir: CONTAINER_WORKSPACE" in launcher
+
+
+def test_every_path_comes_from_the_layout_table():
+    """No path assembly here. The launcher seeds the directory the inner run then works
+    in, so both have to name the same one — asking the layout is how they cannot drift,
+    and passing the owner explicitly is how it stops being an accident that two defaults
+    in different modules happen to match."""
+    import inspect
+
+    launcher = inspect.getsource(rp.run_launcher)
+    assert "path_manager.get(" in launcher
+    assert "P.SESSION_WORKSPACE" in launcher
+    assert "P.SESSION," in launcher
+    assert not hasattr(rp, "session_dir"), "the bespoke path helper is back"
+
+    inner = inspect.getsource(rp.run_inner)
+    assert "owner=SESSION_OWNER" in inner

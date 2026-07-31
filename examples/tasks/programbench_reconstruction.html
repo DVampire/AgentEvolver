@@ -129,6 +129,15 @@ Within an item: run the reference, run yours on the same input, diff, fix. Exit
 status, stdout and stderr all count, and which stream text goes to is part of the
 behavior. Where the documentation or the program's own output shows exact text,
 reproduce it exactly — including leading spaces and line breaks.
+
+**Capturing a behavior is not reproducing it.** Once you have the reference's output
+for something — on screen or saved to a file — the next action is to write the code
+that produces the same output. Re-reading your own capture files tells you nothing you
+did not already have, and it is the easiest way to spend a whole budget feeling
+productive: one run captured every flag's output correctly and then spent seven
+consecutive turns `cat`-ing those files back at itself without writing a line of
+source. If you catch yourself reading something you wrote, you already have the
+answer — go implement it. There is no amount of observation that finishes this task.
 </go-wide-before-deep>
 
 <build-gate>

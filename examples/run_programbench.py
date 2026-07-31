@@ -78,6 +78,7 @@ sys.path.append(root)
 
 from agentevolver.config import config
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.sandbox import sandbox_manager
 from agentevolver.utils import make_id
 
@@ -104,6 +105,13 @@ _SCAFFOLDING = (REFERENCE_COPY, "inputs")
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"
 CONTAINER_WORKSPACE = "/workspace"
+
+#: Owner segment of the output tree. Every path below comes from the layout table
+#: (agentevolver.paths); this is the one value both sides have to agree on, and it is
+#: passed explicitly rather than left to a default in another module — the launcher seeds
+#: the workspace the inner run then works in, and disagreeing about the owner would look
+#: like a run that produced nothing.
+SESSION_OWNER = "local"
 
 #: The task document. Lives under examples/tasks/ like every other run script's task, so
 #: the instructions are readable and diffable on their own, render as a styled page
@@ -453,7 +461,8 @@ async def run_inner(args) -> int:
     # an opaque hash. Re-running reuses the directory and overwrites the previous
     # submission — copy anything worth keeping out first.
     ctx = SessionContext(id=instance_id, name=f"programbench_{instance_id}")
-    fs_sandbox = ensure_session_sandbox(ctx, shared_extension_root=shared_extension_root)
+    fs_sandbox = ensure_session_sandbox(
+        ctx, owner=SESSION_OWNER, shared_extension_root=shared_extension_root)
     bind_session_roots(config, fs_sandbox)
     bind_task_workspace(ctx, fs_sandbox)
 
@@ -539,7 +548,10 @@ async def run_inner(args) -> int:
     # Collected whatever the status: an unfinished attempt still has a workspace, and
     # grading it is how partial credit happens.
     try:
-        result["submission"] = collect_submission(CONTAINER_WORKSPACE, str(fs_sandbox.workspace_root))
+        # Beside the workspace, not inside it. The session's `workspace/` is now the very
+        # directory mounted at /workspace, so writing the tarball into it would archive
+        # the archive — and leave the unpacked copy sitting in the deliverable.
+        result["submission"] = collect_submission(CONTAINER_WORKSPACE, str(fs_sandbox.project_root))
     except Exception as e:  # noqa: BLE001
         logger.warning(f"| ⚠️ [{instance_id}] could not collect the submission: {e}")
         result["submission"] = {"error": str(e)}
@@ -587,6 +599,39 @@ def inner_command(instance, args) -> str:
     ])
 
 
+def seed_workspace(image_ref: str, destination: str) -> None:
+    """Copy the image's `/workspace` into `destination` so it can be mounted back in.
+
+    Bind-mounting a directory over `/workspace` would otherwise hide what the image ships
+    there — the documentation that *is* the task specification, the reference binary, the
+    git repository — leaving the agent an empty room. Seeding first and mounting second
+    gives the same contents *and* a directory that can be watched while the run happens,
+    instead of a workspace that only becomes visible when the run is over and its tarball
+    lands.
+
+    Copied by a throwaway container rather than `docker cp`: it runs as root inside the
+    image, so `cp -a` reproduces modes and ownership exactly. That matters for one file —
+    the reference binary is mode `---x--x--x`, executable but deliberately not readable,
+    and a copy that widened it would hand the agent the bytes the benchmark withholds.
+
+    A pre-existing directory is emptied first, again from inside a container: the previous
+    run's files belong to root, so the user this launcher runs as cannot remove them.
+    Mixing them into a fresh run would be worse than either — last run's source would look
+    like this run's work.
+    """
+    os.makedirs(destination, exist_ok=True)
+    result = subprocess.run(
+        ["docker", "run", "--rm", "--entrypoint", "sh",
+         "-v", f"{destination}:/seed", image_ref, "-c",
+         'rm -rf /seed/..?* /seed/.[!.]* /seed/* 2>/dev/null; cp -a /workspace/. /seed/'],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"could not seed the workspace from {image_ref}: {(result.stderr or result.stdout).strip()[:300]}"
+        )
+
+
 def restore_ownership(path: str) -> None:
     """Give a root-created output directory back to the user running the launcher.
 
@@ -601,14 +646,6 @@ def restore_ownership(path: str) -> None:
          "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/target"],
         capture_output=True, text=True, timeout=600,
     )
-
-
-def session_dir(instance_id: str) -> str:
-    """Where the inner run's session lands, as the launcher sees it."""
-    from agentevolver.paths import P, path_manager
-
-    owner = Path(str(path_manager.get(P.SESSION))).parent.name
-    return os.path.join(root, "output", owner, "sessions", instance_id)
 
 
 async def run_launcher(args) -> int:
@@ -647,16 +684,25 @@ async def run_launcher(args) -> int:
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
         sandbox = None
         try:
+            # Seed the session's workspace from the image, then mount it back in as
+            # /workspace. The agent's files are then visible *while it works* rather than
+            # only after its tarball lands, and the deliverable is collected from a
+            # directory that is simply there — no reaching into a container for it.
+            workspace_dir = str(path_manager.get(
+                P.SESSION_WORKSPACE, owner=SESSION_OWNER, session_id=instance_id))
+            seed_workspace(image_ref, workspace_dir)
+            logger.info(f"| 🌱 [{instance_id}] Workspace seeded and mounted: {workspace_dir}")
+
             sandbox = await sandbox_manager.acquire(
                 "docker",
                 reuse_key=instance_id,
                 image=image_ref,
                 # No interface at all; the allow/deny lists come from the config and are
-                # served by a relay on the host. See the module docstring.
+                # served by a relay outside the container. See the module docstring.
                 network=False,
                 user="root",
                 workdir=CONTAINER_WORKSPACE,
-                mounts=mounts,
+                mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE},
                 env={
                     "PYTHONPATH": CONTAINER_REPO,
                     # Stop litellm fetching its model-price map at import time. It falls
@@ -680,7 +726,8 @@ async def run_launcher(args) -> int:
             if execution.stderr:
                 print(execution.stderr, file=sys.stderr)
 
-            inner_result = os.path.join(session_dir(instance_id), "result.json")
+            inner_result = os.path.join(str(path_manager.get(
+                P.SESSION, owner=SESSION_OWNER, session_id=instance_id)), "result.json")
             if os.path.isfile(inner_result):
                 with open(inner_result, encoding="utf-8") as handle:
                     record.update(json.load(handle))
