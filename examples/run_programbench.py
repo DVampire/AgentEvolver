@@ -90,7 +90,7 @@ from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
 from agentevolver.session.types import SessionContext
 from agentevolver.session.project import ensure_session_sandbox, bind_session_roots
-from agentevolver.utils import make_id, dedent
+from agentevolver.utils import make_id
 from agentevolver.sandbox import sandbox_manager
 
 
@@ -141,76 +141,12 @@ SANDBOX_ISOLATE_NETWORK = os.environ.get("AGENTEVOLVER_SANDBOX_ISOLATE_NETWORK",
 # commands could not compare anything against it. The run that scored well had
 # happened to dump `./executable -h` to a file beforehand; the run that scored
 # 11 points lower had not, and neither run was told to.
-SYSTEM_PROMPT = dedent("""
-    You are an expert software engineer. You are given only a compiled binary of a
-    program together with its documentation, running inside an offline sandbox with
-    no internet access. Your task is to architect and implement, from scratch, a
-    complete codebase that reproduces the original program's observable behavior as
-    faithfully as possible.
-
-    The binary is at `./executable` in your workspace (not named after the project).
-    Documentation (README, man pages, etc.) sits alongside it. An empty git repository
-    is already initialized in the workspace — commit your solution into it.
-
-    Your absolute working directory is `/workspace` — always use that path (or a
-    relative path from it). Any path under `/home/...` refers to the host machine, not
-    your sandbox, and will not contain the files described above.
-
-    FIRST, PRESERVE THE REFERENCE. Your `compile.sh` has to write `./executable`,
-    which is where the reference binary sits — so your first build destroys the only
-    thing you can check your work against, and nothing will warn you. Before you
-    build anything, copy it aside:
-
-        cp /workspace/executable /workspace/reference_executable
-
-    From then on run `./reference_executable` for expected behavior and `./executable`
-    for yours, and compare them directly. Do not delete or commit
-    `reference_executable`; it is scaffolding, not part of your deliverable.
-
-    HOW TO REPRODUCE BEHAVIOR. Reading the docs tells you which flags exist; only
-    running the reference tells you what they do. Work flag by flag: run the
-    reference with an input, run your build with the same input, diff the two, and
-    fix the difference. Both exit status and output text matter. Getting `--help` to
-    match is the easy part and it is not the same as reproducing the program — cover
-    the behavior each flag controls, flags in combination, and how invalid input is
-    rejected.
-
-    ALWAYS PUT `timeout` IN FRONT OF EITHER BINARY. Never run `./executable` or
-    `./reference_executable` bare:
-
-        timeout 2 ./reference_executable -h; echo "exit=$?"
-        timeout 2 ./executable -h;           echo "exit=$?"
-
-    The program you are reconstructing may not exit on its own — a TUI, a REPL, a
-    server, a loop — and an unfinished reconstruction may hang on inputs the
-    reference handles instantly. That is not a rare case: it is a *defect you are
-    hunting*, because "the reference prints usage and exits 0, mine hangs" is exactly
-    the kind of difference the tests check. Discover it in two seconds via a timeout
-    exit code of 124, not by blocking your own shell until the tool kills it — one
-    hang costs more wall-clock than dozens of real experiments. This applies most to
-    the very commands you most want to batch: a batch of comparisons with no
-    `timeout` stalls on the first hang and you lose the rest of the batch with it.
-
-    WHAT YOU MAY LEARN FROM THE BINARY — a whitelist, not a blacklist. You may
-    **run** it and read what it produces: stdout, stderr, exit status, files it
-    creates, how it responds to input. That is all. Anything that inspects the binary
-    as a *file* rather than as a *program* is out of bounds — no disassembly, no
-    decompilation, no `readelf`/`nm`/`objdump`/`strings`/`xxd`/`hexdump`, no debugger,
-    no `strace`/`ltrace`. If you catch yourself grepping a symbol table, stop: you are
-    reading the compiler's output instead of reproducing the program's behavior, and
-    those symbols are mostly libc and kernel constants that tell you nothing about
-    what this program does. One run of `./reference_executable --help` is worth more
-    than every symbol in the file.
-
-    Work entirely from running the binary and reading its documentation — you have no
-    internet access and no access to the original source code. Do not search the
-    internet, clone repositories, or install the project from any package manager.
-    Your final deliverable must include a `./compile.sh` that builds a fresh
-    `./executable` of equivalent behavior from your own source tree, on a clean
-    checkout, with no dependency on the originally provided binary.
-
-    Task:
-""")
+#: The task document. Lives under examples/tasks/ like every other run script's
+#: task, so the instructions are readable and diffable on their own, render as a
+#: styled page through resolve_task()'s view, and can be swapped per run with
+#: --task-file without editing this file. Its ``<objective>`` carries the
+#: per-instance placeholders below.
+DEFAULT_TASK_FILE = os.path.join(root, "examples", "tasks", "programbench_reconstruction.html")
 
 
 def select_instances(instances, task_ids=None, start=None, end=None):
@@ -239,21 +175,50 @@ def select_instances(instances, task_ids=None, start=None, end=None):
     return list(instances[start:end]), warnings
 
 
-def build_task_content(instance):
-    """Build the MetaAgent task content for one ProgramBench instance.
+def build_task_content(instance, task_file=None, task_log_root=None):
+    """Resolve the task document for one ProgramBench instance.
 
-    Folds SYSTEM_PROMPT into the content (agent_manager has no separate
-    system-prompt override hook here, matching how run_meta_agent.py / run_hle.py
-    already thread only task content through).
+    Returns ``(content, files, metadata)``, matching what ``resolve_task`` hands to
+    ``task_manager.submit``. This does not simply call ``resolve_task`` because the
+    document carries per-instance placeholders: only the target program varies across
+    the 201 instances, and it is substituted into the objective rather than appended
+    after it — the agent should know what it is rebuilding before reading five
+    thousand characters of method.
+
+    Substitution is a literal replace rather than ``str.format``: the document is
+    full of shell and code samples whose braces would otherwise need escaping, and
+    an escaping mistake there fails silently.
+
+    Both the agent's text and the rendered view are substituted. Filling only the
+    text leaves whoever opens ``task_view.html`` looking at a raw ``{repository}``.
     """
-    question = dedent(f"""
-        Reconstruct the program `{instance.get('repository', '')}` (language: {instance.get('language', '')}).
+    from agentevolver.task import load_task_document
+    from agentevolver.visual import render_task_page
 
-        Implement a complete codebase that reproduces `./executable`'s behavior, with
-        a `./compile.sh` that builds it from a clean checkout. Produce the full source
-        tree (your git commits in the workspace) as your final answer.
-    """)
-    return f"{SYSTEM_PROMPT}\n\n{question}"
+    path = task_file or DEFAULT_TASK_FILE
+    doc = load_task_document(path)
+    slots = {
+        "{repository}": str(instance.get("repository", "")),
+        "{language}": str(instance.get("language", "")),
+    }
+
+    content = doc.content
+    for key, value in slots.items():
+        if key not in content:
+            logger.warning(f"| ⚠️ Task document has no {key} placeholder: {path}")
+        content = content.replace(key, value)
+
+    metadata = {"task_doc": doc.source_path, "task_kind": doc.type}
+    if task_log_root:
+        html_body = doc.html_body
+        for key, value in slots.items():
+            html_body = html_body.replace(key, value)
+        view_path = os.path.join(task_log_root, f"task_view_{instance.get('instance_id', 'task')}.html")
+        os.makedirs(task_log_root, exist_ok=True)
+        render_task_page(html_body, view_path, title=doc.title)
+        metadata["task_view"] = view_path
+
+    return content, [doc.source_path], metadata
 
 
 def parse_args():
@@ -262,6 +227,11 @@ def parse_args():
         "--config",
         default=os.path.join(root, "configs", "programbench_agent.py"),
         help="Config file path",
+    )
+    parser.add_argument(
+        "--task-file", default=DEFAULT_TASK_FILE,
+        help="Task document (.html/.md) carrying the reconstruction instructions. "
+             "Swap it to try a different prompt without editing this script.",
     )
     parser.add_argument("--task-ids", default=None, help="Comma-separated ProgramBench instance_id list")
     parser.add_argument("--start", type=int, default=None, help="Start index (inclusive) into the loaded instance list")
@@ -508,9 +478,14 @@ async def main():
         bind_session_roots(config, fs_sandbox)
         logger.info(f"| 📂 [{instance_id}] Session root: {fs_sandbox.project_root}")
 
-        content = build_task_content(instance)
+        content, task_files, task_meta = build_task_content(
+            instance, args.task_file, task_log_root,
+        )
         t0 = time.time()
         status_value = "failed"
+        meta_steps = None
+        stopped_by_constraint = None
+        result_data = {}
         error_message = None
         submission_path = None
         docker_sandbox = None
@@ -536,11 +511,13 @@ async def main():
                 content=content,
                 category=TaskCategory.USER,
                 priority=TaskPriority.HIGH,
+                files=task_files,
                 metadata={
                     "instance_id": instance_id,
                     "repository": instance.get("repository", ""),
                     "language": instance.get("language", ""),
                     "image_name": instance.get("image_name", ""),
+                    **task_meta,
                 },
                 session_id=session_id,
             )
@@ -551,6 +528,14 @@ async def main():
                 await asyncio.sleep(1)
             status_value = record.task.status.value
             error_message = record.error
+            # Report what the run actually cost. The budget in the config is a
+            # *per-agent* ceiling, so this MetaAgent figure is not the whole MAS spend
+            # (delegated actors have their own step counts, logged per agent as
+            # "completed after N/M steps") — but recording it keeps the claim "we ran
+            # under the official 1000-step budget" checkable instead of assumed.
+            result_data = getattr(record.result, "data", None) or {}
+            meta_steps = result_data.get("step")
+            stopped_by_constraint = result_data.get("stopped_by_constraint")
 
             # Pull the reconstructed codebase out before the container is destroyed —
             # bash_tool ran entirely inside it once a sandbox was bound (see design
@@ -574,6 +559,9 @@ async def main():
             "instance_id": instance_id,
             "status": status_value,
             "time_seconds": round(elapsed, 1),
+            "meta_agent_steps": meta_steps,
+            "meta_agent_max_step": result_data.get("max_step"),
+            "stopped_by_constraint": stopped_by_constraint,
             "session_id": session_id,
             "session_path": str(fs_sandbox.project_root),
             "workspace_path": str(fs_sandbox.workspace_root),

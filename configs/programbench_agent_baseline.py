@@ -98,6 +98,29 @@ skill_names = [
 connector_names = []
 env_names = []
 
+#-----------------BUDGET (aligned to the official harness)-----------------
+# The official ProgramBench baseline gives one agent 1000 steps and 21600s (6h) per
+# instance. Ours were 200/5400 — 5x and 4x smaller. A tighter budget than the
+# leaderboard's makes a score comparison meaningless in the direction that flatters
+# the leaderboard rather than us, so the ceilings now match.
+#
+# Caveat worth stating plainly: these are *per-agent* ceilings, and a MAS spends steps
+# across a MetaAgent plus its actors, so they are not a like-for-like total. Matching
+# the ceiling is what stops us self-handicapping; matching the total is not achievable
+# without global step accounting. run_programbench.py therefore records the steps
+# actually consumed per instance into results.json, so a run that spent more than the
+# official allowance is visible rather than hidden.
+#
+# Expect longer runs: the task document's stopping rule spends up to two thirds of the
+# budget exploring before it starts converging, so a 1000-step ceiling is a much longer
+# leash than the ~1h that 200-step runs took.
+MAX_STEP = 1000
+WALL_CLOCK = 21600
+# Not an official number — the official harness caps per-instance *cost*, a different
+# axis. This is a cumulative-token runaway guard, left high enough that steps or wall
+# clock bind first.
+MAX_TOKEN = 3000000
+
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(enable_evolving=False)
 
@@ -122,15 +145,9 @@ code_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
-    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
-    # up" while it still had real work left. Steps are meant to be the binding
-    # constraint here, so the wall clock and token budget are raised to match —
-    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
-    # so 1800s would have quietly become the new limit at around step 120.
-    max_step=200,
-    timeout=5400,
-    max_token=3000000,
+    max_step=MAX_STEP,
+    timeout=WALL_CLOCK,
+    max_token=MAX_TOKEN,
 )
 
 general_agent.update(
@@ -138,15 +155,9 @@ general_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
-    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
-    # up" while it still had real work left. Steps are meant to be the binding
-    # constraint here, so the wall clock and token budget are raised to match —
-    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
-    # so 1800s would have quietly become the new limit at around step 120.
-    max_step=200,
-    timeout=5400,
-    max_token=3000000,
+    max_step=MAX_STEP,
+    timeout=WALL_CLOCK,
+    max_token=MAX_TOKEN,
 )
 
 reviewer_agent.update(
@@ -154,15 +165,9 @@ reviewer_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
-    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
-    # up" while it still had real work left. Steps are meant to be the binding
-    # constraint here, so the wall clock and token budget are raised to match —
-    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
-    # so 1800s would have quietly become the new limit at around step 120.
-    max_step=200,
-    timeout=5400,
-    max_token=3000000,
+    max_step=MAX_STEP,
+    timeout=WALL_CLOCK,
+    max_token=MAX_TOKEN,
 )
 
 #-----------------META AGENT CONFIG-----------------
@@ -171,13 +176,7 @@ meta_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    # ProgramBench needs a long leash: reconstruction is flag-by-flag differential
-    # work, and a run that ran out of steps at 28/30 was told "budget CRITICAL, wrap
-    # up" while it still had real work left. Steps are meant to be the binding
-    # constraint here, so the wall clock and token budget are raised to match —
-    # at the measured ~9s/step, 200 steps is ~30min, and latency grows with context,
-    # so 1800s would have quietly become the new limit at around step 120.
-    max_step=200,
-    timeout=5400,
-    max_token=3000000,
+    max_step=MAX_STEP,
+    timeout=WALL_CLOCK,
+    max_token=MAX_TOKEN,
 )

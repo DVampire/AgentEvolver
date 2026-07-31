@@ -1435,8 +1435,12 @@ class Agent(BaseModel):
                 f"{(run.result or '')[:200]}"
             )
 
+        # `step`/`max_step` travel with the response so a caller can report what the
+        # run actually cost without scraping the log — a benchmark harness needs it to
+        # say whether it stayed inside the budget it claims to be running under.
         data = {"done": run.done, "result": run.result, "reasoning": run.reasoning,
-                "stopped_by_constraint": run.stopped_by_constraint, "task_id": run.task_id}
+                "stopped_by_constraint": run.stopped_by_constraint, "task_id": run.task_id,
+                "step": run.step, "max_step": self.max_step}
         response = Response(type=ResponseType.AGENT, success=success, message=run.result or "", data=data)
         response = await self._finalize_run(response, run.ctx)
 

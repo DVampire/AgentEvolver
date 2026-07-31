@@ -106,6 +106,11 @@ class HostSandbox(Sandbox):
             return ExecResult(success=False, error=f"command failed: {e}")
 
     # ------------------------------------------------------------- files
+    # Deliberately NOT sandbox.types.DEFAULT_FILE_MODE (0o777). That default is
+    # justified by the target being a disposable container the framework owns, where
+    # the container is the isolation boundary. This backend writes real host files with
+    # no isolation at all (see the class description), possibly on a shared machine, so
+    # it keeps the conventional mode.
     async def write_file(self, path: str, data: Union[str, bytes], *, mode: int = 0o644) -> None:
         parent = os.path.dirname(path)
         if parent:

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
 from agentevolver.sandbox.process import ensure_server
-from agentevolver.sandbox.types import ExecResult, Sandbox, SandboxConfig
+from agentevolver.sandbox.types import DEFAULT_FILE_MODE, ExecResult, Sandbox, SandboxConfig
 
 #: Where scripts/run-in-sandbox.sh bind-mounts the repo inside the container.
 CONTAINER_REPO_ROOT = "/AgentEvolver"
@@ -45,13 +45,30 @@ def to_host_path(path: str) -> str:
     return path
 
 
-def _logs_to_str(logs_field: Any, *, sep: str = "") -> str:
+def _logs_to_str(logs_field: Any, *, sep: str = "\n") -> str:
     """opensandbox ExecutionLogs.stdout/stderr may be a str or a list of chunks.
 
-    `sep` defaults to "" (raw stream chunks concatenate with no implied break);
-    pass "\n" for fields that are really a list of discrete message lines (e.g.
-    ExecutionError.traceback, confirmed to come back as e.g. ["exit status 2"]
-    despite being typed as a plain string).
+    The chunks are **one per output line, with the trailing newline stripped**, so
+    they must be rejoined with "\n". Verified against a live sandbox:
+
+        printf 'A\nB\nC\n'                -> ['A', 'B', 'C']
+        printf 'X\n\nY\n'                 -> ['X', '\n', 'Y']
+        printf '  leading spaces\nx\n'    -> ['  leading spaces', 'x']
+
+    An empty line arrives as a chunk whose text is exactly "\n", so each chunk is
+    rstripped of newlines before joining — otherwise a blank line would double.
+    Leading whitespace is preserved by the API and must not be touched.
+
+    This defaulted to sep="" on the assumption that these were raw stream chunks
+    that concatenate without an implied break. They are not, and the cost was
+    severe: every command run through a sandbox came back with its line structure
+    destroyed — `ls -la` as one run-together line, and a program's `--help` output
+    collapsed from fifteen lines to one. Any agent comparing two programs' output
+    line by line was doing so on text whose lines had been glued together.
+
+    The final trailing newline of a stream cannot be recovered (the API does not
+    distinguish "C\n" from "C" in the last chunk); that is harmless for comparison
+    because it is lost identically on both sides.
     """
     if logs_field is None:
         return ""
@@ -60,7 +77,8 @@ def _logs_to_str(logs_field: Any, *, sep: str = "") -> str:
     if isinstance(logs_field, (list, tuple)):
         out = []
         for chunk in logs_field:
-            out.append(chunk if isinstance(chunk, str) else getattr(chunk, "text", str(chunk)))
+            text = chunk if isinstance(chunk, str) else getattr(chunk, "text", str(chunk))
+            out.append(text.rstrip("\n") if isinstance(text, str) else str(text))
         return sep.join(out)
     return str(logs_field)
 
@@ -217,9 +235,29 @@ class OpenSandbox(Sandbox):
             return ExecResult(success=False, error=f"command failed: {e}")
 
     # ------------------------------------------------------------- files
-    async def write_file(self, path: str, data: Union[str, bytes], *, mode: int = 0o644) -> None:
+    async def write_file(self, path: str, data: Union[str, bytes], *, mode: int = DEFAULT_FILE_MODE) -> None:
+        """Write a file inside the container. `mode` is a normal Python octal int.
+
+        opensandbox's `mode` is not the integer it appears to be: the server renders
+        whatever int it receives in decimal and then parses *that string* as base 8
+        (`strconv.ParseUint(s, 8, ...)`). Passing a genuine `0o644` therefore sent
+        "420", which it read as 0o420 — `-r---w----`, a file its own owner cannot
+        write and a different user cannot read at all. `0o755` was worse: it sent
+        "493" and the call failed outright with
+        `[RUNTIME_ERROR] error chmoding file ... parsing "493": invalid syntax`.
+
+        This was not cosmetic. Every file an agent wrote through write_file_tool or
+        edit_file_tool landed as 0o420, the mode survives the submission tarball
+        (verified across a tar round-trip), and the ProgramBench task images default
+        to the non-root user `agent` — so a graded build would have failed to read the
+        very source it was asked to compile. Confirmed live: `su agent -c 'cat <file>'`
+        returned "Permission denied".
+
+        `f"{mode:o}"` renders the octal *digits*, which is what the server actually
+        wants, so callers keep the conventional 0o644/0o755 spelling.
+        """
         sb = self._require()
-        await sb.files.write_file(path, data, mode=mode)
+        await sb.files.write_file(path, data, mode=int(f"{mode:o}"))
 
     async def read_file(self, path: str) -> str:
         sb = self._require()

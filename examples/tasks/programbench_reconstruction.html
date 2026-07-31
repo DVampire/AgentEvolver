@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="programbench_reconstruction">
+  <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+
+<objective>
+Reconstruct `{repository}` (language: {language}) from scratch.
+
+You are given only a compiled binary of the program together with its
+documentation, running inside an offline sandbox with no internet access.
+Implement a codebase that reproduces the original program's observable behavior as
+faithfully as possible, plus a `./compile.sh` that builds it.
+</objective>
+
+<environment>
+- Your absolute working directory is `/workspace`. Always use that path, or a path
+  relative to it. Anything under `/home/…` refers to the host machine, not your
+  sandbox, and will not contain the files described here.
+- The compiled binary is at `./executable`. It is not named after the project, and it
+  is mode `---x--x--x` — executable but, by design, not readable. Its *behavior* is
+  available to you; its bytes are not.
+- The project's own documentation sits alongside it. **Its filenames differ from
+  project to project** — a README, a man page, a hand-written guide, a `docs/` tree, a
+  license, an image directory, in some combination. Do not assume any particular name.
+- A git repository is already initialized, with one `Initial commit` containing exactly
+  the documentation files the project shipped. `./executable` is untracked. Commit your
+  solution into this repository.
+- There is no internet. Nothing can be fetched, cloned or installed from a registry.
+</environment>
+
+<preserve-the-reference>
+Do this before you build anything. Your `compile.sh` has to write `./executable`,
+which is exactly where the reference binary sits — so your first build destroys the
+only oracle you have, and nothing will warn you.
+
+```bash
+cp /workspace/executable /workspace/reference_executable
+```
+
+From then on `./reference_executable` is expected behavior and `./executable` is
+yours. Do not commit `reference_executable`; it is scaffolding, not deliverable.
+
+**Always put `timeout` in front of either binary:**
+
+```bash
+timeout 2 ./reference_executable --help; echo "exit=$?"
+```
+
+Many of these programs do not exit on their own — a TUI, a REPL, a server, a
+watcher — and a half-finished reconstruction can hang on input the reference
+handles instantly. Discover that in two seconds through exit code 124 rather than
+by blocking your shell for minutes. This matters most in the batched comparisons
+you most want to run: one unguarded hang stalls the whole turn.
+</preserve-the-reference>
+
+<gather-the-brief>
+Do this before anything else, and do it completely. **There is no separate problem
+statement.** The documentation shipped in the workspace, plus the reference's own
+observable behavior, *is* the specification you are graded against. Every flag,
+default, message and exit status you will be tested on is derivable from those two
+sources and nowhere else. Skimming here is the single cheapest way to lose score:
+you cannot reproduce a behavior you never learned exists.
+
+Since filenames vary by project, enumerate rather than guess. One turn:
+
+```bash
+ls -la
+find . -path ./.git -prune -o -type f -print
+git show --stat --oneline HEAD          # the exact file list the project shipped
+timeout 2 ./executable --help; echo "exit=$?"
+timeout 2 ./executable --version; echo "exit=$?"
+```
+
+Then read **every** text file end to end — not the first screen. `wc -l` them first so
+you know what "end to end" costs, and read the whole of each one:
+
+- A **man page** (`*.1`, `*.8`, …) is usually the densest spec in the workspace: it
+  enumerates every flag with its exact semantics and defaults. Read it with `cat`.
+  `man`, `nroff` and `groff` are unavailable here, so do not spend turns on them —
+  roff markup (`.TP`, `.B`, `\-`) is readable as-is.
+- A **README** gives the purpose, usage line and often the exact `--help` text.
+- A **hand-written guide, `docs/` tree, CHANGELOG or usage note** carries behavior
+  that appears nowhere else.
+- A **license** is the one file you can skip.
+- **Images** cannot be read, but their names hint at what modes exist.
+
+Extract what you read into the checklist below as you go. If `--help` and the man page
+disagree, the reference's actual behavior wins — check it.
+</gather-the-brief>
+
+<map-the-surface>
+What "observable behavior" means depends on what kind of program this is, so decide
+that first, from the documentation and a few probe runs.
+
+- A **command-line tool**: its flags, their effects, and how it rejects bad input.
+- A **filter or converter**: the mapping from input to output. Feed it
+  representative inputs and compare output bytes.
+- A **compiler or interpreter**: what it does to the source it is given — output,
+  exit status, diagnostics.
+- A **TUI, editor or viewer**: what it prints before entering, and on leaving, the
+  interactive screen, plus its non-interactive flags. Do not try to reproduce
+  frame-by-frame rendering.
+- A **server or daemon**: its startup output, configuration handling, and how it
+  reports readiness or refuses to start. Do not chase live protocol traffic.
+- A **library that ships a CLI**: treat the CLI as the surface. That is what is
+  observable.
+
+Write the surface down as a checklist in a file before you start fixing anything,
+and mark items off as you verify them. Without a written list you will rediscover
+the same three behaviors and never notice the twenty you have not looked at.
+</map-the-surface>
+
+<go-wide-before-deep>
+Get *something* correct for every item on the checklist before making any single
+item perfect. A reconstruction that handles twenty features approximately scores
+far better than one that handles three perfectly and crashes on the rest. Only
+after the checklist has been covered once should you go back and refine.
+
+Within an item: run the reference, run yours on the same input, diff, fix. Exit
+status, stdout and stderr all count, and which stream text goes to is part of the
+behavior. Where the documentation or the program's own output shows exact text,
+reproduce it exactly — including leading spaces and line breaks.
+</go-wide-before-deep>
+
+<build-gate>
+Non-negotiable: your `compile.sh` must build `./executable` from a clean checkout
+of your source alone. A submission that does not compile scores zero no matter how
+good the source looks, so verify the build early and re-verify it after every
+substantial change. Never leave the build broken while you go explore something
+else.
+</build-gate>
+
+<how-you-are-graded>
+You never see the tests and cannot run them — they do not exist in this sandbox. The
+reference binary is your only oracle, which is why the differential loop above is the
+whole method and not merely one technique.
+
+After you stop, the grader wipes the workspace, extracts only your submission, deletes
+any `./executable` you shipped, runs your `./compile.sh` **with no network and a
+15-minute limit**, and then drives the binary your build produced against hidden test
+suites. Four consequences worth acting on:
+
+- **`compile.sh` must build from your submitted files alone.** No downloads, no
+  fetch-dependencies step, and no reliance on the documentation or the reference binary
+  still being present — at grading time they are not. Anything the build needs must be
+  a file you leave in the workspace.
+- **Shipping a prebuilt binary is pointless**, and a byte-copy of the reference is
+  detected by hash and removed. Only what `compile.sh` produces is ever run.
+- **The score is a fraction of many individual test cases, not pass/fail.** Partial
+  credit is fine-grained: one more flag handled correctly is one more test passed.
+  That is the concrete reason breadth beats depth.
+- **The tests drive your program the way a user would** — running `./executable` with
+  flags and inputs and checking stdout, stderr and exit status. So most of what is
+  graded is the command-line surface: every flag in **both long and short form**, the
+  exact `--help`/usage text, how invalid, unknown or missing arguments are rejected
+  (the message *and* the exit status), behavior on empty or absent input, and several
+  flags used together. Spend your budget there before anything deeper.
+</how-you-are-graded>
+
+<rules>
+These are the benchmark's own rules, not house style. Breaking one invalidates the
+submission; being stricter than they require only costs you score.
+
+**You must not:**
+
+- Search the internet, clone repositories, or download the project from a package
+  registry. The network is blocked, so every attempt only costs you a turn.
+- **Wrap or shim the provided binary.** Your `./executable` must be built from your
+  own source by `./compile.sh`. Invoking, copying, embedding or falling back to the
+  reference is not a reconstruction, and writing original code from observed
+  behavior is the entire point.
+- Decompile the reference binary, or run `strace`/`ltrace` on it.
+- Run binary-analysis tools (`objdump`, `readelf`, `nm`, `strings`, Ghidra, …)
+  **on the reference binary**. Its mode is `---x--x--x` precisely so that its bytes
+  are not an available input; if a permissions quirk of your sandbox lets one of
+  these read it anyway, that is not permission to use it.
+
+**You may:**
+
+- Run the reference with any inputs, flags and arguments, and read everything it
+  produces — stdout, stderr, exit status, files it writes.
+- Read the bundled documentation.
+- Run analysis tools on **binaries you built yourself**. Inspecting your own output
+  is ordinary development.
+
+One further piece of advice, not a rule: even where symbol inspection of your own
+build is allowed, it rarely pays. Symbol tables are mostly libc and kernel
+constants, and a single run of `--help` tells you more about behavior than all of
+them. A run that spent a quarter of its budget grepping symbols scored worse than
+one that spent it running the program.
+</rules>
+
+<when-to-stop>
+You cannot see the tests that grade you, so you will never *know* you are finished
+— which makes an explicit stopping rule matter more than the last few refinements.
+Exact fidelity is not always reachable either: a version string may embed the
+reference's own build timestamp, and no reconstruction can match that. Do not spend
+budget on differences you have judged unreachable; write them down and move on.
+
+Call `done_tool` when either holds:
+
+1. Every checklist item is covered, the build is clean, and the differences that
+   remain are ones you have judged unreachable or cosmetic; or
+2. Your step or time budget passes roughly two thirds — then stop exploring, spend
+   what is left making the build clean and committing the checklist items you have
+   already fixed, and finish.
+</when-to-stop>
+
+<deliverable>
+The submission must contain:
+
+1. **Your own source code** — reimplemented from observed behavior, not wrapped or
+   borrowed.
+2. **`./compile.sh`**, executable, producing `./executable` from that source alone
+   on a clean checkout.
+3. **`.gitignore`** covering build artifacts, so they are not committed.
+4. **A git commit** of the above.
+
+If you stop with work outstanding, write what remains into `AGENT_REPORT.md` and
+commit it — an honest account of what is unfinished is worth more than a silent gap.
+
+Whichever stopping condition comes first, your last actions are:
+
+1. Run `./compile.sh` from a clean state and confirm `./executable` is produced and
+   behaves.
+2. `git add` your source, `compile.sh` and `.gitignore`, then commit.
+3. Call `done_tool` with an honest summary of what you reproduced and what you did
+   not.
+</deliverable>
+
+</div>
+</body>
+</html>

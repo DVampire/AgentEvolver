@@ -19,6 +19,24 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+#: Mode for files the framework writes into a sandbox.
+#:
+#: Deliberately permissive. A sandbox is a disposable container whose filesystem the
+#: framework owns outright — the isolation boundary is the container, not the file
+#: bits, so restrictive modes inside it buy nothing and cost real failures. Two we
+#: actually hit: an agent's own source landing unreadable to the user a grader runs
+#: builds as, and a `compile.sh` that had to be chmod'ed before it could be tested.
+#: 0o777 also means a caller never has to think about the executable bit for a script
+#: it just generated.
+#:
+#: The trade-off, for the record: every written file is executable, so
+#: `find -type f -executable` no longer distinguishes programs from data among files
+#: the agent itself wrote. That probe is weak anyway, and it does not apply to files
+#: that were already in the image.
+#:
+#: This is a default, not a policy — pass `mode=` for anything that needs otherwise.
+DEFAULT_FILE_MODE = 0o777
+
 
 class SandboxConfig(BaseModel):
     """Construction config for a sandbox handle."""
@@ -141,11 +159,17 @@ class Sandbox:
     # only has to implement command execution to get a full file surface. Backends
     # with a native file API (LocalSandbox, OpenSandbox) override them for speed;
     # base64 piping avoids shell-quoting pitfalls with arbitrary content.
-    async def write_file(self, path: str, data: Union[str, bytes], *, mode: int = 0o644) -> None:
+    async def write_file(self, path: str, data: Union[str, bytes], *, mode: int = DEFAULT_FILE_MODE) -> None:
         raw = data.encode("utf-8") if isinstance(data, str) else data
         encoded = base64.b64encode(raw).decode("ascii")
         parent = path.rsplit("/", 1)[0] if "/" in path else "."
-        cmd = f"mkdir -p {shlex.quote(parent)} && echo {shlex.quote(encoded)} | base64 -d > {shlex.quote(path)}"
+        # `mode` used to be accepted and then silently ignored here — a shell redirect
+        # takes the umask, so this backend and OpenSandbox disagreed on the result of
+        # an identical call. Apply it explicitly.
+        cmd = (
+            f"mkdir -p {shlex.quote(parent)} && echo {shlex.quote(encoded)} | base64 -d > {shlex.quote(path)}"
+            f" && chmod {mode:o} {shlex.quote(path)}"
+        )
         res = await self.run_command(cmd)
         if not res.success or (res.exit_code not in (None, 0)):
             raise IOError(f"write_file({path!r}) failed: {res.as_message()}")

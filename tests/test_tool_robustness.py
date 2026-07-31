@@ -417,3 +417,152 @@ def test_local_and_sandboxed_timeouts_both_report_a_timeout(tmp_path):
     for resp in (local, sandboxed):
         assert resp.success is False
         assert "timed out" in resp.message
+
+
+# --- fix #8: sandbox command output had its line structure destroyed -------------
+#
+# opensandbox returns ExecutionLogs.stdout as a list of OutputMessage, one per line
+# with the trailing newline stripped. _logs_to_str joined them with "" on the
+# assumption they were raw stream chunks, so every sandboxed command came back as a
+# single run-together line: `ls -la` unreadable, and a program's 21-line `--help`
+# collapsed to 1. Anything downstream that split on newlines (glob_search's find
+# parsing, any diff the agent tried between two programs' output) was operating on
+# glued-together text.
+
+class _Msg:
+    """Stand-in for opensandbox's OutputMessage."""
+
+    def __init__(self, text):
+        self.text = text
+
+
+def test_sandbox_logs_rejoin_lines_with_newlines():
+    from agentevolver.sandbox.default.base import _logs_to_str
+
+    # printf 'A\nB\nC\n' comes back as three chunks, newlines already stripped.
+    assert _logs_to_str([_Msg("A"), _Msg("B"), _Msg("C")]) == "A\nB\nC"
+
+
+def test_sandbox_logs_do_not_double_a_blank_line():
+    """A blank line arrives as a chunk whose text is exactly "\\n" — joining naively
+    would turn one empty line into two."""
+    from agentevolver.sandbox.default.base import _logs_to_str
+
+    assert _logs_to_str([_Msg("X"), _Msg("\n"), _Msg("Y")]) == "X\n\nY"
+
+
+def test_sandbox_logs_preserve_leading_whitespace():
+    """ProgramBench grades `--help` text exactly, indentation included, so the
+    rejoin must not strip anything but the line terminator."""
+    from agentevolver.sandbox.default.base import _logs_to_str
+
+    out = _logs_to_str([_Msg(" Usage: prog [-ab]"), _Msg("  -a: async"), _Msg("")])
+    assert out == " Usage: prog [-ab]\n  -a: async\n"
+
+
+def test_sandbox_logs_pass_through_a_plain_string():
+    from agentevolver.sandbox.default.base import _logs_to_str
+
+    assert _logs_to_str("already\njoined") == "already\njoined"
+    assert _logs_to_str(None) == ""
+
+
+def test_execution_to_result_keeps_multiline_stdout():
+    from agentevolver.sandbox.default.base import execution_to_result
+
+    execution = SimpleNamespace(
+        logs=SimpleNamespace(stdout=[_Msg("line one"), _Msg("line two")], stderr=[]),
+        exit_code=0, result=[], error=None,
+    )
+    assert execution_to_result(execution).stdout == "line one\nline two"
+
+
+# --- fix #9: list_dir's sandbox branch ignored the ignore set --------------------
+#
+# The sandbox branch was a bare `find -maxdepth N`, so neither _DEFAULT_IGNORE nor
+# the caller's own `ignore` argument was applied — contradicting the tool's
+# documented behaviour. Listing a ProgramBench workspace returned 41 lines of .git
+# plumbing wrapped around 9 lines of actual task content.
+
+def test_list_dir_in_sandbox_prunes_the_default_ignore_set():
+    from agentevolver.tool.default.list_dir import ListDirTool
+
+    sandbox = _SearchSandbox("/workspace\n/workspace/README.md\n")
+    resp = asyncio.run(ListDirTool()(
+        path="/workspace", ctx=SimpleNamespace(extra={"sandbox": sandbox}),
+    ))
+    assert resp.success is True
+    command = sandbox.commands_run[0]
+    assert "-prune" in command
+    for noisy in (".git", "__pycache__", "node_modules"):
+        assert f"-name {noisy}" in command, noisy
+
+
+def test_list_dir_in_sandbox_honours_an_explicit_ignore():
+    from agentevolver.tool.default.list_dir import ListDirTool
+
+    sandbox = _SearchSandbox("/workspace\n")
+    resp = asyncio.run(ListDirTool()(
+        path="/workspace", ignore=["target", "*.log"],
+        ctx=SimpleNamespace(extra={"sandbox": sandbox}),
+    ))
+    assert "-name target" in sandbox.commands_run[0]
+    assert "'*.log'" in sandbox.commands_run[0]
+    assert set(resp.data["ignored"]) >= {".git", "target", "*.log"}
+
+
+# --- fix #10: sandbox writes produced unreadable files ---------------------------
+#
+# opensandbox renders the `mode` int in decimal and parses that string as base 8, so a
+# genuine 0o644 arrived as "420" -> 0o420 (-r---w----) and 0o755 arrived as "493",
+# failing the call outright. Every file written through write_file_tool/edit_file_tool
+# was 0o420; the mode survives the submission tarball, and the ProgramBench images run
+# as the non-root user `agent`, so the graded build could not read its own source.
+
+def test_sandbox_write_file_sends_octal_digits_not_the_int():
+    from agentevolver.sandbox.default.base import OpenSandbox
+
+    sent = {}
+
+    class _Files:
+        async def write_file(self, path, data, mode=None):
+            sent[path] = mode
+
+    sandbox = OpenSandbox.__new__(OpenSandbox)
+    sandbox._require = lambda: SimpleNamespace(files=_Files())
+
+    asyncio.run(sandbox.write_file("/workspace/a.c", "int main(){}"))
+    asyncio.run(sandbox.write_file("/workspace/b.sh", "echo hi", mode=0o755))
+
+    # Octal *digits* — NOT 511/493, which the server would read as 0o511 and as a
+    # parse error respectively.
+    assert sent["/workspace/a.c"] == 777
+    assert sent["/workspace/b.sh"] == 755
+    assert sent["/workspace/a.c"] != 0o777
+
+
+def test_default_sandbox_file_mode_is_permissive():
+    """A sandbox is a disposable container we own; the container is the boundary, not
+    the file bits. Restrictive modes inside it only produced failures (unreadable
+    source at grading time, a compile.sh needing chmod before it could be tested)."""
+    from agentevolver.sandbox.types import DEFAULT_FILE_MODE
+
+    assert DEFAULT_FILE_MODE == 0o777
+
+
+def test_base_sandbox_write_file_applies_the_mode():
+    """The base backend accepted `mode` and silently ignored it, so an identical call
+    produced different results depending on the backend."""
+    from agentevolver.sandbox.types import Sandbox
+
+    ran = []
+
+    class _Shell(Sandbox):
+        async def run_command(self, command, **kwargs):
+            from agentevolver.sandbox.types import ExecResult  # noqa: PLC0415
+            ran.append(command)
+            return ExecResult(success=True, exit_code=0)
+
+    sandbox = _Shell.__new__(_Shell)
+    asyncio.run(Sandbox.write_file(sandbox, "/workspace/x.c", "int main(){}"))
+    assert "chmod 777 /workspace/x.c" in ran[0]
