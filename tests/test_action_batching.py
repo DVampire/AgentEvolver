@@ -105,3 +105,55 @@ def test_think_applies_the_cap():
     from agentevolver.agent.types import Agent as BaseAgent
 
     assert "_cap_actions" in inspect.getsource(BaseAgent._think)
+
+
+# --- delegation: the handoff has to be self-contained ---------------------------
+#
+# A trace from a real run had 236/236 actions attributed to the MetaAgent and not one
+# dispatch: the "MUST dispatch an actor sub-agent" rule was satisfied, in the model's
+# reading, by getting on with the work itself. And when a dispatch does happen, the
+# actor starts from the task text plus attachments alone — it cannot see the
+# orchestrator's reasoning — so anything left implicit is simply absent.
+
+def _meta_prompt() -> str:
+    from pathlib import Path
+
+    import re
+
+    html = Path("agentevolver/prompt/default/meta_agent.html").read_text(encoding="utf-8")
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
+def test_doing_the_work_yourself_does_not_count_as_delegating():
+    prompt = _meta_prompt()
+    assert "This is not satisfied by doing the work yourself with tools." in prompt
+    assert "the delegation not happening" in prompt
+
+
+def test_a_dispatch_must_be_self_contained():
+    prompt = _meta_prompt()
+    assert "A dispatch must stand on its own." in prompt
+    # The four things an actor cannot infer.
+    for required in ("what to produce and where", "prohibitions that apply",
+                     "already been established", '"finished" looks like'):
+        assert required in prompt, required
+
+
+def test_the_orchestrator_is_told_not_to_paraphrase_the_specification():
+    """Its summary of a spec is a lossy copy of something the actor could read itself,
+    and what gets lost is exactly the rules and exact strings that decide the score."""
+    prompt = _meta_prompt()
+    assert "Do not paraphrase a document you were given." in prompt
+    assert "travels to the sub-agent automatically" in prompt
+
+
+def test_attachments_travel_across_a_delegation_by_default():
+    """The mechanism behind that instruction: the orchestrator cannot forget to forward
+    the source material, because not forwarding it is not the default."""
+    import inspect
+
+    from agentevolver.agent import types as agent_types
+
+    source = inspect.getsource(agent_types.Agent._invoke_capability)
+    assert 'ambient_files = (getattr(ctx, "extra", None) or {}).get("task_files")' in source
+    assert 'files=inp.get("files") or ambient_files' in source

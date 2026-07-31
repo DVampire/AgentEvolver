@@ -62,44 +62,27 @@ class ReadFileTool(Tool):
             limit:  Maximum number of lines to return. None reads to end of file.
         """
         try:
-            # A peer sandbox bound on the context routes file IO into that container
-            # (e.g. a programbench task cleanroom); otherwise read the local fs, which
-            # under Model X already IS the project container.
-            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+            denial = check_session_path(kwargs.get("ctx"), path, write=False)
+            if denial:
+                return Response(type=ResponseType.TOOL, success=False, message=denial)
 
-            # The host-root boundary check only applies to local reads: with a peer
-            # bound, the container itself is the isolation boundary and paths (e.g.
-            # /workspace) live in the peer, not under the host session roots.
-            if sandbox is None:
-                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
-                if sandbox_denial:
-                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
+            if not os.path.exists(path):
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
+            if not os.path.isfile(path):
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
 
-            warning = ""
-            if sandbox is not None:
-                try:
-                    content = await sandbox.read_file(path)
-                except Exception as e:  # noqa: BLE001
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot read {path} in sandbox: {e}")
-                all_lines = content.splitlines(keepends=True)
-            else:
-                if not os.path.exists(path):
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
-                if not os.path.isfile(path):
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
+            # Permission + guard check (size, binary)
+            result = permission_manager.check(
+                self.name,
+                PermissionRequest(op=Operation.READ, target=path),
+                workspace=(config.workspace_root or ""),
+            )
+            if not result.allowed:
+                return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
+            warning = result.warning or ""
 
-                # Permission + guard check (size, binary)
-                result = permission_manager.check(
-                    self.name,
-                    PermissionRequest(op=Operation.READ, target=path),
-                    workspace=(config.workspace_root or ""),
-                )
-                if not result.allowed:
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
-                warning = result.warning or ""
-
-                with open(path, "r", encoding="utf-8", errors="replace") as f:
-                    all_lines = f.readlines()
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                all_lines = f.readlines()
 
             total_lines = len(all_lines)
             start = max(0, offset - 1)

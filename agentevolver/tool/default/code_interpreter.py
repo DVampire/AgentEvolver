@@ -11,13 +11,13 @@ agent did not already have (``bash_tool`` runs here too) and cost it the thing
 that mattered: the container mounted nothing, so code could not read the files
 the agent had just written into the workspace.
 
-``use_kernel=False`` trades the kernel for one-shot execution and, with a peer
-sandbox bound, runs the code *inside that container*. That is the only mode that
-works when the agent's files live somewhere the kernel cannot reach: on
-ProgramBench the task fixture is in a peer cleanroom, and a kernel started in the
-base container answered ``FileNotFoundError: /workspace/cmatrix.c`` to the very
-script that would have fixed the run's largest defect. The cost is real —
-no state across calls, no captured figures — so the kernel stays the default.
+``use_kernel=False`` trades the kernel for one-shot execution: the script is written
+out and run as a subprocess here, in the same environment and against the same
+filesystem as the agent's shell commands. That matters when the kernel is not looking
+at the files the agent is working on — a kernel held open from before the run's
+working directory existed answered ``FileNotFoundError`` to the very script that
+would have fixed a run's largest defect. The cost is real — no state across calls, no
+captured figures — so the kernel stays the default.
 """
 
 from typing import Any, Dict, Optional
@@ -119,9 +119,9 @@ class CodeInterpreterTool(Tool):
         default=True,
         description=(
             "Execute in the project's persistent Jupyter kernel (state carries across "
-            "calls, figures are captured). Set False for one-shot execution, which is "
-            "what a peer-sandboxed run needs: the kernel starts in the base "
-            "environment and cannot see a peer container's files."
+            "calls, figures are captured). Set False for one-shot subprocess execution, "
+            "which sees the filesystem as it is now rather than as it was when the "
+            "kernel started."
         ),
     )
 
@@ -134,15 +134,12 @@ class CodeInterpreterTool(Tool):
             self.instruction = _INSTRUCTION_ONE_SHOT
 
     async def _run_one_shot(self, code: str, language: str, ctx: Any) -> Response:
-        """Write the script out and run it once, in the sandbox when one is bound.
+        """Write the script out and run it once as a subprocess.
 
-        Goes through the peer sandbox so the script sees the same filesystem the
-        agent's shell commands do. A non-zero exit is reported as an observation with
-        the exit code, matching bash_tool: a script that runs and fails has told the
-        agent something, and calling that a tool malfunction hides the output it needs.
+        A non-zero exit is reported as an observation carrying the exit code, matching
+        bash_tool: a script that ran and failed has told the agent something, and calling
+        that a tool malfunction hides the output it needs.
         """
-        import shlex
-
         entry = _ONE_SHOT_RUNNERS.get((language or "python").strip().lower())
         if entry is None:
             return Response(
@@ -151,30 +148,11 @@ class CodeInterpreterTool(Tool):
                          f"Available: {', '.join(sorted(_ONE_SHOT_RUNNERS))}."),
             )
         suffix, runner = entry
-        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
-        workspace = getattr(sandbox, "container_workspace", None) if sandbox else None
-        directory = workspace or "/tmp"
-        path = f"{directory}/.agentevolver_snippet.{suffix}"
 
         try:
-            if sandbox is not None:
-                await sandbox.write_file(path, code)
-                result = await sandbox.run_command(
-                    f"cd {shlex.quote(directory)} && {runner} {shlex.quote(path)} 2>&1"
-                )
-                ran = result.exit_code is not None
-                logger.info(f"| {'✅' if ran else '⚠️'} code_interpreter ran one-shot {language} in sandbox")
-                return Response(
-                    type=ResponseType.TOOL,
-                    success=result.success or ran,
-                    message=result.as_message(),
-                    data={"exit_code": result.exit_code, "language": language,
-                          "sandboxed": True, "use_kernel": False},
-                )
-
-            # No peer bound: run here, which under Model X already IS the container.
             import asyncio
             import os
+            import shlex
             import tempfile
 
             directory = os.path.abspath(config.workspace_root or tempfile.gettempdir())

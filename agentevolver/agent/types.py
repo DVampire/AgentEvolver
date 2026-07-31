@@ -68,25 +68,6 @@ _EVOLUTION_AGENT_SUFFIXES = ("_generate_agent", "_optimize_agent", "_evaluate_ag
 #: agent stops rather than burning its whole budget.
 _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
 
-#: Stands in for a host root in the prompt when the agent's tools run inside a
-#: peer sandbox and therefore cannot reach it. A name the agent can act on is
-#: worse than none: it will try the path, get nothing, and start searching.
-_UNREACHABLE_ROOT = "(unavailable — your tools run inside a sandbox and cannot reach host paths)"
-
-
-def _sandbox_of(ctx: Any) -> Optional[Any]:
-    """The peer sandbox bound to ``ctx``, if commands really run inside one.
-
-    A sandbox without a ``container_workspace`` runs on host paths directly (no
-    remapping), so it is not one of these — under Model X the whole agent already
-    lives in the project container and every root it is told about is real.
-    """
-    sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
-    if sandbox is None or not getattr(sandbox, "container_workspace", None):
-        return None
-    return sandbox
-
-
 @lru_cache(maxsize=1)
 def _runtime_facts() -> Dict[str, str]:
     """Describe the interpreter shell commands will actually run under.
@@ -576,14 +557,9 @@ class Agent(BaseModel):
 
         Prefer ctx.workspace_root (injected by MetaAgent for sub-agents) over
         self.base_dir so all agents in a MetaAgent run share the same directory.
-        Under Model X the whole agent runs inside the project container, so this
-        path is already the in-container working directory. When a peer sandbox is
-        bound (e.g. a programbench task cleanroom), tools execute in that container,
-        so surface *its* working directory (e.g. /workspace) — not the host path.
+        The agent runs inside the container its tools run in, so this path is already
+        the working directory those tools see.
         """
-        sandbox = _sandbox_of(ctx)
-        if sandbox is not None:
-            return sandbox.container_workspace
         return assemble_workspace_path(config.workspace_root or self.base_dir)
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
@@ -593,12 +569,6 @@ class Agent(BaseModel):
         spending a tool call. Opt-in: agents that do file work expose this as a
         `workspace` sub-module from their `_get_agent_context` override.
         """
-        # With a peer sandbox bound, the working directory lives in that container;
-        # a synchronous host listing would show the wrong (empty host) directory, so
-        # surface the container path and let the agent list it with list_dir.
-        sandbox = _sandbox_of(ctx)
-        if sandbox is not None:
-            return f"{sandbox.container_workspace}\n  (sandboxed — use list_dir to inspect)"
         workspace_root = os.path.abspath(config.workspace_root or self.base_dir)
         try:
             entries = sorted(os.listdir(workspace_root))
@@ -671,17 +641,6 @@ class Agent(BaseModel):
         project_root = str(roots.get("project_root") or getattr(config, "project_root", ""))
         log_root = str(roots.get("log_root") or getattr(config, "log_root", ""))
 
-        # With a peer sandbox bound, tools execute in that container, so every
-        # root except the workspace names a *host* directory the agent cannot
-        # reach. Advertising them anyway makes the prompt contradict itself:
-        # workspace_root says /workspace while project_root says
-        # /…/sessions/<id>, whose `workspace/` subdirectory looks like the same
-        # place. Observed on ProgramBench — the agent read /workspace correctly,
-        # then went hunting under the host project_root, found nothing, and
-        # escalated to `find / -name …`, which burned the tool's full 600s
-        # timeout. Say plainly that those roots are out of reach instead.
-        if _sandbox_of(ctx) is not None:
-            extension_root = package_root = project_root = log_root = _UNREACHABLE_ROOT
         system_modules = dict(
             max_actions=self.max_actions,
             extension_root=extension_root,
@@ -1109,9 +1068,16 @@ class Agent(BaseModel):
             if child is None:
                 raise ValueError(f"No registered agent named {route[1]!r}")
             inp = call.input or {}
+            # Attachments carry across a delegation unless the dispatch names its own.
+            # The child is working on part of the same task, and the source material it
+            # needs is whatever came with that task; without this it gets only the
+            # orchestrator's paraphrase of a document the orchestrator was itself given
+            # in full. Any specifics belong in the dispatched `task` text, not in
+            # withholding the material.
+            ambient_files = (getattr(ctx, "extra", None) or {}).get("task_files")
             resp = await protocol_manager.delegate(
                 child, inp.get("task", ""),
-                files=inp.get("files"), target_name=inp.get("target_name"),
+                files=inp.get("files") or ambient_files, target_name=inp.get("target_name"),
                 allowlists={
                     k: inp.get(k) for k in (
                         "tool_allowlist", "skill_allowlist", "connector_allowlist",
@@ -1214,6 +1180,12 @@ class Agent(BaseModel):
             config.workspace_root = self.base_dir
         if files:
             logger.info(f"| 📂 Attached files: {files}")
+            # Recorded on the context so a delegation can pass them on without the
+            # orchestrator having to remember to. A sub-agent doing part of this task
+            # needs the same source material, and the alternative is that it works from
+            # the orchestrator's summary of a document it could have read itself.
+            if getattr(ctx, "extra", None) is not None:
+                ctx.extra.setdefault("task_files", list(files))
 
         # Gateways already own a public task id.  Reuse it when supplied so task events,
         # trace events, memory, and cancellation all describe one execution identity.
@@ -1593,26 +1565,12 @@ class Agent(BaseModel):
         Paths, sizes, and nanosecond mtimes detect ordinary edits cheaply. Large cache
         trees are skipped and traversal is bounded to keep the guard lightweight.
 
-        With a peer sandbox bound, the workspace the agent actually changes is inside
-        that container, and walking the host session directory instead reports a
-        fingerprint that never moves. The no-progress guard blocks a repeated action
-        only when the fingerprint is unchanged, so a constant one makes every repeat
-        look unproductive: on ProgramBench that ended a 200-step run at step 8, before
-        a single source file existed. Fingerprint the container when there is one.
+        The guard blocks a repeated action only while this is unchanged, so a
+        fingerprint that cannot move makes every repeat look unproductive: when it once
+        scanned a directory the agent was not working in, a 200-step run ended at step 8
+        before a single source file existed. It has to watch the directory the tools
+        actually write to.
         """
-        sandbox = _sandbox_of(ctx)
-        if sandbox is not None:
-            try:
-                # Same three fields as the host walk — path, size, mtime — so the two
-                # paths agree on what counts as a change.
-                res = await sandbox.run_command(
-                    "find /workspace -path '*/.git' -prune -o -printf '%P\\0%s\\0%T@\\n' -print 2>/dev/null | sort"
-                )
-                if res.exit_code is not None:
-                    return hashlib.sha256((res.stdout or "").encode()).hexdigest()
-            except Exception as e:  # noqa: BLE001 — a guard must never break a run
-                logger.warning(f"| ⚠️ Could not fingerprint the sandbox workspace: {e}")
-            return ""
         root_value = config.workspace_root
         if not root_value:
             return ""

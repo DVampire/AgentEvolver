@@ -58,40 +58,18 @@ class WriteFileTool(Tool):
             content: Full content to write.
         """
         try:
-            # A peer sandbox bound on the context routes the write into that container.
-            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+            denial = check_session_path(kwargs.get("ctx"), path, write=True)
+            if denial:
+                return Response(type=ResponseType.TOOL, success=False, message=denial)
 
-            # The host-root boundary check only applies to local writes: with a peer
-            # bound, the container itself is the isolation boundary and paths (e.g.
-            # /workspace) live in the peer, not under the host session roots.
-            if sandbox is None:
-                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
-                if sandbox_denial:
-                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-            # Permission + size check. With a peer bound the container is the boundary,
-            # so the host-workspace path check does not apply — pass workspace="" to keep
-            # size/read-only checks while skipping the host-path boundary.
+            # Permission + size check.
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=content),
-                workspace=("" if sandbox is not None else (config.workspace_root or "")),
+                workspace=(config.workspace_root or ""),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
-
-            if sandbox is not None:
-                try:
-                    await sandbox.write_file(path, content)
-                except Exception as e:  # noqa: BLE001
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot write {path} in sandbox: {e}")
-                line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-                warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
-                return Response(
-                    type=ResponseType.TOOL,
-                    success=True,
-                    message=f"{warning_prefix}Wrote {line_count} line(s) to {path} (sandbox).",
-                    data={"path": path, "line_count": line_count, "sandboxed": True},
-                )
 
             parent = os.path.dirname(path)
             if parent:

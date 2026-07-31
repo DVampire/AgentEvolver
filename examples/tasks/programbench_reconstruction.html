@@ -210,9 +210,17 @@ Call `done_tool` when either holds:
 
 1. Every checklist item is covered, the build is clean, and the differences that
    remain are ones you have judged unreachable or cosmetic; or
-2. Your step or time budget passes roughly two thirds — then stop exploring, spend
-   what is left making the build clean and committing the checklist items you have
-   already fixed, and finish.
+2. **Fewer than 40 steps, or 20 minutes, of your budget remain.** Landing the work
+   costs a fixed amount — one clean build, a commit, a summary — so reserve a fixed
+   amount for it. At that point stop exploring whatever you were in the middle of,
+   verify the build from a clean state, commit what you have already fixed, and
+   finish.
+
+Reserve an amount, not a fraction. Each step tells you which one you are on and what
+the limit is, so this is something you can check. A fraction of the budget sounds
+equivalent and is not: the same rule then means a different amount of work depending on
+how large the budget happens to be, and the part it is protecting — the build and the
+commit — does not get cheaper on a longer leash.
 </when-to-stop>
 
 <deliverable>

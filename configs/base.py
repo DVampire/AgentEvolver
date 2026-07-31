@@ -19,6 +19,35 @@ model_roles = dict(
     smoke=model_name,   # cheap model for the extension replay smoke gate
 )
 
+#---------------SANDBOX EGRESS CONFIG---------------
+# What every sandbox this run acquires may and may not reach. `sandbox_deny_hosts` always
+# wins over `sandbox_allow_hosts`, and a single `sandbox_manager.acquire(...)` can override
+# either when one sandbox genuinely differs.
+#
+# How they combine with a sandbox's own `network` flag:
+#   network=True  + deny  -> open, minus the denied hosts
+#   network=False + allow -> the sandbox gets NO network interface, and the allowed hosts
+#                            are reachable only through a relay running outside it. An
+#                            unlisted host is not filtered, it is unreachable.
+#   network=False, no allow -> no egress at all
+#
+# Empty here on purpose: the framework's default posture is whatever a sandbox asks for,
+# and a task that needs isolation says so in its own config (see
+# configs/programbench_agent*.py, where the agent's shell must not be able to fetch the
+# source it is meant to reconstruct).
+sandbox_allow_hosts = []
+sandbox_deny_hosts = []
+
+# When true, the model endpoints in use (derived from the `*_API_BASE` variables in the
+# environment) are added to the allowlist. Needed whenever the agent *brain* runs inside
+# the sandbox, since it has to reach a model to do anything at all.
+#
+# Off by default, and deliberately so: turning it on converts `network=False` from "this
+# sandbox has no network interface" into "this sandbox has a relay with an allowlist".
+# That is the right trade for a sandbox hosting the brain, and a silent downgrade for
+# anyone who wrote `network=False` meaning airgapped. A config that wants it says so.
+sandbox_allow_model_endpoints = False
+
 #---------------MEMORY CONFIG---------------
 memory_config = dict(
     type = "general_memory_system",

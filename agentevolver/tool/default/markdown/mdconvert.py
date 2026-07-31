@@ -6,7 +6,6 @@ from markitdown import MarkItDown
 import io
 import base64
 from typing import BinaryIO, Any
-import camelot
 import tempfile
 import asyncio  
 import threading
@@ -38,6 +37,14 @@ def read_tables_from_stream(file_stream):
     Returns:
         A Camelot ``TableList`` of detected tables.
     """
+    # Imported here rather than at module scope: camelot pulls in cv2, which needs the
+    # system library libGL.so.1. At module scope that made `agentevolver.tool` — and so
+    # `agentevolver.agent`, which imports it — impossible to import at all in any
+    # environment without system OpenGL. Headless task images routinely lack it, so a
+    # PDF table extractor that such a run would never call was enough to make the whole
+    # framework unloadable there.
+    import camelot
+
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as temp_pdf:
         temp_pdf.write(file_stream.read())
         temp_pdf.flush()

@@ -61,42 +61,27 @@ class EditFileTool(Tool):
             new_string: Replacement text.
         """
         try:
-            # A peer sandbox bound on the context routes the read-modify-write into
-            # that container; otherwise operate on the local fs.
-            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
+            denial = check_session_path(kwargs.get("ctx"), path, write=True)
+            if denial:
+                return Response(type=ResponseType.TOOL, success=False, message=denial)
+            if not os.path.exists(path):
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
+            if not os.path.isfile(path):
+                return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
+            if is_binary_file(path):
+                return Response(type=ResponseType.TOOL, success=False, message="Error: Binary file — use a dedicated binary tool.")
 
-            # The host-root boundary check only applies to local edits: with a peer
-            # bound, the container itself is the isolation boundary and paths (e.g.
-            # /workspace) live in the peer, not under the host session roots.
-            if sandbox is None:
-                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=True)
-                if sandbox_denial:
-                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-                if not os.path.exists(path):
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: File not found: {path}")
-                if not os.path.isfile(path):
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
-                if is_binary_file(path):
-                    return Response(type=ResponseType.TOOL, success=False, message="Error: Binary file — use a dedicated binary tool.")
-
-            # Permission check (write op). With a peer bound the container is the
-            # boundary, so pass workspace="" to skip the host-path check.
+            # Permission check (write op).
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=new_string),
-                workspace=("" if sandbox is not None else (config.workspace_root or "")),
+                workspace=(config.workspace_root or ""),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
 
-            if sandbox is not None:
-                try:
-                    original = await sandbox.read_file(path)
-                except Exception as e:  # noqa: BLE001
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot read {path} in sandbox: {e}")
-            else:
-                with open(path, "r", encoding="utf-8") as f:
-                    original = f.read()
+            with open(path, "r", encoding="utf-8") as f:
+                original = f.read()
 
             count = original.count(old_string)
             if count == 0:
@@ -118,14 +103,8 @@ class EditFileTool(Tool):
 
             updated = original.replace(old_string, new_string, 1)
 
-            if sandbox is not None:
-                try:
-                    await sandbox.write_file(path, updated)
-                except Exception as e:  # noqa: BLE001
-                    return Response(type=ResponseType.TOOL, success=False, message=f"Error: cannot write {path} in sandbox: {e}")
-            else:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(updated)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(updated)
 
             # Build unified diff for extra.data
             orig_lines: List[str] = original.splitlines(keepends=True)

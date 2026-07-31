@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from types import SimpleNamespace
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -336,67 +337,106 @@ class _FakeSandbox:
         return self._tar_bytes
 
 
-@pytest.mark.asyncio
-async def test_extract_submission_writes_tar_to_dest_dir(tmp_path):
-    # extract_submission pulls the tarball out AND unpacks it host-side for
-    # inspection, so the fake sandbox must return a real gzip tar (not a raw
-    # placeholder) or the unpack step raises tarfile.ReadError.
-    import io
-    import tarfile
+def _workspace_with_a_commit(tmp_path, *, commit_source=True, gitignore=True):
+    """A workspace shaped like a task container's: the repository arrives with one
+    commit holding the shipped docs, and the agent's work goes on top."""
+    import subprocess
 
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-        member = tarfile.TarInfo(name="hello.txt")
-        payload = b"hello-tar"
-        member.size = len(payload)
-        tf.addfile(member, io.BytesIO(payload))
-    tar_bytes = buf.getvalue()
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    (ws / "README.md").write_text("docs\n")
+    (ws / rp.REFERENCE_COPY).write_bytes(b"\x7fELF-reference")
 
-    sandbox = _FakeSandbox(tar_bytes=tar_bytes)
-    dest_dir = str(tmp_path / "workspace")
+    def git(*args):
+        subprocess.run(["git", "-C", str(ws), *args], check=True, capture_output=True)
 
-    result_path = await rp.extract_submission(sandbox, dest_dir)
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    git("add", "README.md")
+    git("commit", "-q", "-m", "Initial commit")
 
-    assert result_path == str(Path(dest_dir) / "submission.tar.gz")
-    with open(result_path, "rb") as f:
-        assert f.read() == tar_bytes
-    # Asserting the intent rather than the exact string: what must hold is that the
-    # whole workspace is archived and the reference copy is left out of it.
-    assert len(sandbox.commands_run) == 1
-    tar_cmd = sandbox.commands_run[0]
-    assert tar_cmd.startswith("tar -czf /tmp/submission.tar.gz")
-    assert "-C /workspace ." in tar_cmd
-    assert f"--exclude=./{rp.REFERENCE_COPY}" in tar_cmd
-    # The tarball is also unpacked into dest_dir/submission/ for direct inspection.
-    unpacked = Path(dest_dir) / "submission" / "hello.txt"
-    assert unpacked.read_bytes() == b"hello-tar"
+    (ws / "prog.c").write_text("int main(){}\n")
+    (ws / "compile.sh").write_text("#!/bin/sh\ngcc -o executable prog.c\n")
+    (ws / "scratch.out").write_text("comparison dump\n")
+    if gitignore:
+        (ws / ".gitignore").write_text("scratch.out\nexecutable\n")
+    if commit_source:
+        git("add", "prog.c", "compile.sh", *( [".gitignore"] if gitignore else [] ))
+        git("commit", "-q", "-m", "reconstruct")
+    return ws
 
 
-@pytest.mark.asyncio
-async def test_extract_submission_raises_on_tar_failure():
-    sandbox = _FakeSandbox(command_success=False)
+def test_committed_tree_is_what_ships(tmp_path):
+    """This is what makes the task document's "commit your solution" and
+    ".gitignore your build artifacts" mean anything. Left to a plain tar, neither
+    instruction affected the deliverable: one run shipped 70 files of which 6 were the
+    solution, the rest comparison dumps."""
+    ws = _workspace_with_a_commit(tmp_path)
+    info = rp.collect_submission(str(ws), str(tmp_path / "out"))
 
-    with pytest.raises(RuntimeError):
-        await rp.extract_submission(sandbox, "/tmp/wherever")
-
-
-# --- prompt roots under a peer sandbox -------------------------------------
-# Regression test for a live ProgramBench failure: the prompt told the agent its
-# workspace was /workspace (correct) while project_root/log_root still named host
-# paths under output/<owner>/sessions/<id>. The agent trusted project_root, looked
-# for the task files under its `workspace/` subdirectory, found nothing, and fell
-# back to `find / -name ...` — which consumed bash_tool's entire 600s timeout.
-
-from agentevolver.agent import types as agent_types  # noqa: E402
+    assert info["source"] == "git-archive"
+    shipped = {p.name for p in (tmp_path / "out" / "submission").iterdir()}
+    assert {"prog.c", "compile.sh", "README.md"} <= shipped
+    # The gitignored scratch file is gone, and so is the reference binary.
+    assert "scratch.out" not in shipped
+    assert rp.REFERENCE_COPY not in shipped
 
 
-class _PeerSandbox:
-    container_workspace = "/workspace"
+def test_a_workspace_with_no_commit_still_ships_everything(tmp_path):
+    """An agent that forgot to commit must not be handed a guaranteed zero."""
+    ws = _workspace_with_a_commit(tmp_path, commit_source=False)
+    info = rp.collect_submission(str(ws), str(tmp_path / "out"))
+
+    assert info["source"] == "full-tree"
+    shipped = {p.name for p in (tmp_path / "out" / "submission").iterdir()}
+    assert {"prog.c", "compile.sh"} <= shipped
+    assert rp.REFERENCE_COPY not in shipped
+    assert "no commit beyond" in (info["note"] or "")
 
 
-class _HostSandbox:
-    """A sandbox that runs on host paths directly — no remapping."""
-    container_workspace = None
+def test_a_committed_tree_without_compile_sh_falls_back_to_the_whole_tree(tmp_path):
+    """A submission without compile.sh scores zero by definition, so when the committed
+    tree lacks it the fuller tree can only help. Being strict here would turn a scoring
+    mistake into a guaranteed zero."""
+    import subprocess
+
+    ws = _workspace_with_a_commit(tmp_path, commit_source=False)
+    subprocess.run(["git", "-C", str(ws), "add", "prog.c"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(ws), "commit", "-q", "-m", "partial"], check=True, capture_output=True)
+
+    info = rp.collect_submission(str(ws), str(tmp_path / "out"))
+    assert info["source"] == "full-tree"
+    assert "compile.sh" in (info["note"] or "")
+    shipped = {p.name for p in (tmp_path / "out" / "submission").iterdir()}
+    assert "compile.sh" in shipped
+
+
+def test_uncommitted_work_is_recorded_not_silently_dropped(tmp_path):
+    """The most useful thing to know when a submission turns out to be missing
+    something."""
+    ws = _workspace_with_a_commit(tmp_path, gitignore=False)
+    info = rp.collect_submission(str(ws), str(tmp_path / "out"))
+    assert "scratch.out" in info["uncommitted"]
+    # The stashed reference is scaffolding, not forgotten work.
+    assert rp.REFERENCE_COPY not in info["uncommitted"]
+
+
+def test_the_reference_binary_audit_flags_only_the_reference(tmp_path):
+    """The run is root, which bypasses the permission bits the official image uses to
+    make the reference unreadable — so the prohibition holds by instruction, and an
+    instruction is worth checking. Analysis of the agent's own build is allowed."""
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "objdump -d ./executable"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "strings my_build"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "timeout 2 ./executable --help"}}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+    assert audit["checked"] is True
+    tools = [hit["tool"] for hit in audit["suspicious_actions"]]
+    assert tools == ["objdump"]
 
 
 class _Ctx:
@@ -404,48 +444,32 @@ class _Ctx:
         self.extra = extra
 
 
-def test_sandbox_of_only_matches_container_backed_peers():
-    assert agent_types._sandbox_of(_Ctx({"sandbox": _PeerSandbox()})) is not None
-    # Model X: the agent already lives in the container, so its roots are real.
-    assert agent_types._sandbox_of(_Ctx({"sandbox": _HostSandbox()})) is None
-    assert agent_types._sandbox_of(_Ctx({})) is None
-    assert agent_types._sandbox_of(_Ctx(None)) is None
-
-
-def test_unreachable_root_marker_names_no_path():
-    # The marker must not look like a path, or the agent will just try it.
-    assert "/" not in agent_types._UNREACHABLE_ROOT
-    assert "sandbox" in agent_types._UNREACHABLE_ROOT
-
-
 # --- ambient context inheritance across delegation --------------------------
-# Regression test for the same ProgramBench failure's root cause:
-# protocol_manager.delegate() built the sub-agent a fresh AgentContext carrying
-# only lineage + allowlists, so `sandbox` never crossed the boundary. bash_tool
-# and Agent._resolve_workspace_root both read it off the context, so the child
-# ran its shell commands on the HOST while its parent ran in the container.
+# A sub-agent runs where its parent runs, so the roots describing that place have to
+# cross the delegation boundary. They once did not: delegate() built the child a fresh
+# context carrying only lineage and allowlists, and the child then hunted for files
+# where they were not — one run spent a full tool timeout on `find /`.
 
 from agentevolver.protocol.server import _AMBIENT_CONTEXT_KEYS, _inherited_ambient  # noqa: E402
 
 
 def test_inherited_ambient_carries_the_execution_environment():
     parent = _Ctx({
-        "sandbox": _PeerSandbox(),
-        "project_root": "/host/proj",
-        "workspace_root": "/host/proj/workspace",
-        "log_root": "/host/proj/log",
-        "extension_root": "/host/ext",
+        "project_root": "/proj",
+        "workspace_root": "/proj/workspace",
+        "log_root": "/proj/log",
+        "extension_root": "/ext",
         "package_root": "/pkg",
         "shared_extension_root": "/shared",
     })
     got = _inherited_ambient(parent)
     assert sorted(got) == sorted(_AMBIENT_CONTEXT_KEYS)
-    assert got["sandbox"] is parent.extra["sandbox"]
+    assert got["workspace_root"] == "/proj/workspace"
 
 
 def test_inherited_ambient_drops_per_delegation_keys():
     parent = _Ctx({
-        "sandbox": _PeerSandbox(),
+        "project_root": "/proj",
         "tool_allowlist": ["bash_tool"],
         "skill_allowlist": [],
         "target_name": "some_tool",
@@ -453,7 +477,9 @@ def test_inherited_ambient_drops_per_delegation_keys():
         "parent_session_id": "xyz",
     })
     got = _inherited_ambient(parent)
-    assert got == {"sandbox": parent.extra["sandbox"]}
+    # Only the "where execution happens" keys cross; the target, the allowlists and the
+    # lineage ids are per-delegation and would misdescribe the child if inherited.
+    assert got == {"project_root": "/proj"}
 
 
 def test_inherited_ambient_tolerates_a_contextless_parent():
@@ -476,39 +502,39 @@ def test_task_tells_the_agent_to_preserve_the_reference():
     assert "diff" in prompt.lower()
 
 
-def test_extract_submission_excludes_the_reference_copy():
-    """Shipping the reference would hand the grader the original binary, and a
-    compile.sh that copied it into place would score as a real reconstruction."""
-    import inspect
-    src = inspect.getsource(rp.extract_submission)
-    assert f"--exclude=./{{REFERENCE_COPY}}" in src or "--exclude" in src
-    assert "REFERENCE_COPY" in src
-
-
-# --- Model X: the MAS belongs inside the base container ----------------------
-# A host launch still produces valid submissions, because bash and the file tools
-# route into the peer cleanroom either way. That is exactly why it needs saying
-# out loud: the divergence is invisible in the results.
-
-def test_warn_if_not_containerized_detects_both_markers(monkeypatch):
-    monkeypatch.delenv("AGENTEVOLVER_HOST_ROOT", raising=False)
-    monkeypatch.setattr(rp.os.path, "exists", lambda p: False)
-    assert rp.warn_if_not_containerized() is False
-
-    monkeypatch.setenv("AGENTEVOLVER_HOST_ROOT", "/mnt/repo")
-    assert rp.warn_if_not_containerized() is True
-
-    monkeypatch.delenv("AGENTEVOLVER_HOST_ROOT", raising=False)
-    monkeypatch.setattr(rp.os.path, "exists", lambda p: p == "/.dockerenv")
-    assert rp.warn_if_not_containerized() is True
-
-
-def test_docstring_documents_the_sandboxed_launch():
+def test_docstring_explains_where_the_agent_runs_and_why():
+    """Both halves matter and neither is obvious. The agent runs in the task's own image
+    because that is the only place its toolchain exists; the container has no network
+    because that is the benchmark's anti-cheat."""
     doc = rp.__doc__
-    assert "scripts/run-in-sandbox.sh" in doc
-    # And why the two containers exist, so nobody collapses them into one.
+    assert "inside the task's own image" in doc
+    assert "no network interface" in doc
     assert "anti-cheat" in doc
-    assert "network=False" in doc
+
+
+def test_the_inner_command_points_at_the_mounted_checkout():
+    """Host paths do not exist inside the container; the same checkout is mounted
+    elsewhere, so the paths handed to the inner run have to be rewritten."""
+    instance = {"instance_id": "org__proj.abc1234", "repository": "org/proj", "language": "c"}
+    args = SimpleNamespace(
+        config=f"{rp.root}/configs/programbench_agent_baseline.py",
+        task_file=f"{rp.root}/examples/tasks/programbench_reconstruction.html",
+    )
+    command = rp.inner_command(instance, args)
+    assert f"{rp.CONTAINER_REPO}/examples/run_programbench.py" in command
+    assert f"{rp.CONTAINER_REPO}/configs/programbench_agent_baseline.py" in command
+    assert rp.root not in command
+    # The metadata travels on the command line because the dataset is not importable in
+    # there and nothing can be installed without network.
+    assert "org__proj.abc1234" in command
+
+
+def test_the_interpreter_is_mounted_at_its_own_path():
+    """A conda or virtual environment records absolute paths, so attaching it anywhere
+    other than where it was created breaks it."""
+    prefix = rp.interpreter_prefix()
+    assert os.path.isabs(prefix)
+    assert prefix in sys.executable
 
 
 # --- the reconstructed program may not exit ----------------------------------
@@ -646,17 +672,21 @@ def test_task_points_at_the_surface_that_actually_scores():
     assert "several flags used together" in prompt
 
 def test_task_states_a_stopping_rule():
-    """Without one the agent never finishes: the grading tests are hidden from it, so
-    there is always one more difference to find. A run reached 227 turns and 48
-    minutes still comparing flags, having never been told what 'done' means."""
+    """The agent cannot see the tests, so it can never *know* it is finished. Without an
+    explicit rule a run keeps refining until something else stops it, and the last thing
+    it needed to do — verify the build, commit — is what gets cut."""
     prompt = _task_text()
     assert "## when-to-stop" in prompt
-    # A budget-based rule, not just "when it is perfect".
-    assert "two thirds" in prompt
-    assert "done_tool" in prompt
-    # And explicit permission to abandon what cannot be matched.
-    assert "unreachable" in prompt
-    assert "timestamp" in prompt
+    flat = _flat_task_text()
+    # Absolute, not proportional. A fraction of the budget means a different amount of
+    # work depending on how large the budget is, while the part it protects — one clean
+    # build and a commit — costs the same either way.
+    assert "Fewer than 40 steps, or 20 minutes, of your budget remain" in flat
+    assert "Reserve an amount, not a fraction." in flat
+    assert "two thirds" not in flat
+    # And the primary condition stays the honest one: coverage, not exhaustion.
+    assert "Every checklist item is covered" in flat
+
 
 
 def test_prompt_puts_the_build_before_refinement():
@@ -672,3 +702,40 @@ def test_prompt_orders_breadth_before_depth():
     prompt = _task_text()
     assert "## go-wide-before-deep" in prompt
     assert "checklist" in prompt
+
+
+# --- where the run works, and where its own output goes -------------------------
+#
+# Two mirror-image mistakes, both fatal and neither loud: the agent working in the
+# session directory instead of the task's, or the framework's output tree landing inside
+# the task workspace and shipping in the submission.
+
+class _FsSandbox:
+    def __init__(self, project_root):
+        self.project_root = project_root
+        self.workspace_root = os.path.join(project_root, "workspace")
+
+
+def test_the_task_workspace_is_the_working_directory():
+    """Without this the agent cannot read the documentation that *is* the specification:
+    check_session_path permits reads only under the session roots, so
+    read_file_tool('/workspace/README.md') answers "Sandbox denied read outside allowed
+    roots"."""
+    from agentevolver.sandbox.project import check_session_path
+
+    ctx = SimpleNamespace(extra={"project_root": "/AgentEvolver/output/local/sessions/x"})
+    rp.bind_task_workspace(ctx, _FsSandbox("/AgentEvolver/output/local/sessions/x"))
+
+    assert config.workspace_root == rp.CONTAINER_WORKSPACE
+    assert ctx.extra["workspace_root"] == rp.CONTAINER_WORKSPACE
+    # The decisive consequence: the task's own files are reachable.
+    assert check_session_path(ctx, "/workspace/README.md", write=False) is None
+    assert check_session_path(ctx, "/workspace/prog.c", write=True) is None
+
+
+def test_a_session_tree_inside_the_task_workspace_is_refused():
+    """It would ship in the submission — a directory of logs is not a reconstruction.
+    Depends on the process's working directory, so it is checked, not assumed."""
+    ctx = SimpleNamespace(extra={})
+    with pytest.raises(RuntimeError, match="inside the task workspace"):
+        rp.bind_task_workspace(ctx, _FsSandbox("/workspace/output/local/sessions/x"))

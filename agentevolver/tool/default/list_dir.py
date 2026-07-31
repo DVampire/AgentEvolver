@@ -129,41 +129,9 @@ class ListDirTool(Tool):
             ignore: Names/patterns to skip.
         """
         try:
-            # A peer sandbox bound on the context lists inside that container (a flat
-            # find listing); otherwise walk the local fs as a formatted tree.
-            sandbox = (getattr(kwargs.get("ctx"), "extra", None) or {}).get("sandbox")
-
-            # The host-root boundary check only applies to local listings: with a peer
-            # bound, the container itself is the isolation boundary and paths (e.g.
-            # /workspace) live in the peer, not under the host session roots.
-            if sandbox is None:
-                sandbox_denial = check_session_path(kwargs.get("ctx"), path, write=False)
-                if sandbox_denial:
-                    return Response(type=ResponseType.TOOL, success=False, message=sandbox_denial)
-
-            if sandbox is not None:
-                import shlex
-                # Apply the same ignore set as the local branch. Without this the
-                # sandbox branch contradicted the tool's own documented behaviour
-                # ("common noise directories are ignored by default") and buried the
-                # answer: listing a workspace with a git repo in it returned 41 lines
-                # of .git plumbing around 9 lines of actual content, and a caller's
-                # explicit `ignore` argument was silently dropped. `find -name`
-                # handles both the exact names and the `*suffix` patterns in the
-                # ignore set natively.
-                ignore_set = _DEFAULT_IGNORE | set(ignore or ())
-                prunes = " -o ".join(f"-name {shlex.quote(p)}" for p in sorted(ignore_set))
-                res = await sandbox.run_command(
-                    f"find {shlex.quote(path)} \\( {prunes} \\) -prune -o "
-                    f"-maxdepth {int(depth)} -print 2>/dev/null | sort"
-                )
-                if not res.success:
-                    return Response(type=ResponseType.TOOL, success=False,
-                                    message=f"Error listing {path} in sandbox: {res.as_message()}")
-                listing = res.stdout.strip() or "(empty)"
-                return Response(type=ResponseType.TOOL, success=True, message=listing,
-                                data={"depth": depth, "sandboxed": True,
-                                      "ignored": sorted(ignore_set)})
+            denial = check_session_path(kwargs.get("ctx"), path, write=False)
+            if denial:
+                return Response(type=ResponseType.TOOL, success=False, message=denial)
 
             if not os.path.exists(path):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path not found: {path}")

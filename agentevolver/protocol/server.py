@@ -31,14 +31,12 @@ _ESCALATION_TIMEOUT_S = 300.0
 #: these carry across a delegation; ``target_name``, the allowlists and the
 #: lineage ids are per-delegation and deliberately excluded.
 #:
-#: ``sandbox`` matters most. Both ``bash_tool`` (agentevolver/tool/default/bash.py)
-#: and the prompt's workspace slot (Agent._resolve_workspace_root) read it from
-#: the context, so a child that does not inherit it silently runs its shell
-#: commands on the *host* while its parent runs in a container — and is told the
-#: host's paths. Seen on ProgramBench: the sub-agent ran `find /` across the host
-#: filesystem looking for task files that only exist inside the sandbox.
+#: The roots matter because a child that does not inherit them is told different
+#: paths than its parent while working in the same place, and then goes looking for
+#: files where they are not. Seen on ProgramBench, when the execution environment
+#: itself failed to carry across: the sub-agent ran `find /` over a whole filesystem
+#: hunting for task files that existed elsewhere.
 _AMBIENT_CONTEXT_KEYS = (
-    "sandbox",
     "project_root",
     "workspace_root",
     "log_root",

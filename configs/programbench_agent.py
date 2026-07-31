@@ -67,7 +67,10 @@ log_path = "agent.log"
 # _think call 400s, the agent burns its step budget producing no tool calls, and
 # still reports `done`). Override per run with
 # `--cfg-options model_name=<name>`.
-model_name = "openrouter/gemini-3.1-pro-preview"
+# The vendor prefix is load-bearing: the gateway routes `google/gemini-...` and
+# answers `openrouter/gemini-3.1-pro-preview` with HTTP 503 model_not_found
+# ("分组 openrouter 下模型 ... 无可用渠道"). Verified live, both spellings.
+model_name = "openrouter/google/gemini-3.1-pro-preview"
 
 memory_names = [
     "file_system_memory",
@@ -128,6 +131,34 @@ skill_names = [
 
 connector_names = []
 env_names = []
+
+#-----------------SANDBOX EGRESS-----------------
+# The benchmark's anti-cheat is that the agent's shell cannot reach the internet: it must
+# reconstruct the program from the binary's behaviour, not fetch the original source. The
+# sandbox therefore runs with no network interface, and the only reachable hosts are the
+# model endpoints the agent brain needs — read from the environment rather than hardcoded,
+# because a deployment that points a provider at its own gateway is exactly the case that
+# an allowlist naming the public host would silently break.
+#
+# `network=False` plus this allowlist means an unlisted host is not filtered, it is
+# unreachable: there is no interface, and the one route out is a relay on the host whose
+# decisions the sandbox cannot influence. Verified live — `git clone https://github.com/...`
+# returns "HTTP code 403 from proxy after CONNECT", and a raw connect to 1.1.1.1 returns
+# "Network is unreachable".
+# Declared, not computed: the endpoints are derived by the sandbox manager from the
+# `*_API_BASE` variables in the environment. A config file cannot do that itself —
+# mmengine parses configs with lazy imports, so calling an imported function here raises.
+sandbox_allow_model_endpoints = True
+sandbox_allow_hosts = []
+# Belt and braces on top of the allowlist. Redundant while the network is closed, and
+# deliberately kept: it keeps the intent readable, and it still holds if someone opens the
+# network to debug a run.
+sandbox_deny_hosts = [
+    "github.com", "*.github.com", "raw.githubusercontent.com", "codeload.github.com",
+    "gitlab.com", "*.gitlab.com", "bitbucket.org", "*.bitbucket.org",
+    "pypi.org", "*.pypi.org", "files.pythonhosted.org",
+    "crates.io", "*.crates.io", "registry.npmjs.org", "proxy.golang.org",
+]
 
 #-----------------BUDGET (aligned to the official harness)-----------------
 # The official ProgramBench baseline gives one agent 1000 steps and 21600s (6h) per

@@ -48,6 +48,50 @@ class SandboxConfig(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict, description="Environment variables inside the sandbox.")
     timeout_minutes: int = Field(default=10, description="Sandbox lifetime before auto-kill.")
     network: bool = Field(default=True, description="Whether the sandbox has outbound network access.")
+    # Egress policy. `network` decides what happens to a host that matches neither list;
+    # `deny_hosts` always wins over `allow_hosts`. See agentevolver.sandbox.netpolicy for
+    # the matching rules and agentevolver.sandbox.relay for how they are enforced.
+    #
+    # The interesting combination is `network=False` with a non-empty allowlist: the
+    # container gets no network interface at all, and its only route out is a proxy
+    # running on the host, so an unlisted host is not blocked — it is unreachable. That
+    # is what lets an agent brain call a model endpoint while the work it supervises has
+    # no internet, which a single boolean cannot express.
+    allow_hosts: List[str] = Field(
+        default_factory=list,
+        description="Hosts the sandbox may reach: 'host', '*.suffix', or 'host:port'.",
+    )
+    deny_hosts: List[str] = Field(
+        default_factory=list,
+        description="Hosts the sandbox may never reach; takes precedence over allow_hosts.",
+    )
+    # Filled in by the sandbox manager, not by callers: when a policy needs enforcing it
+    # starts a relay and records here where the backend should mount its socket and which
+    # loopback port inside the sandbox should carry the proxy. A backend that ignores
+    # these simply gets no egress, which is the safe direction to fail.
+    egress_socket: Optional[str] = Field(
+        default=None, description="Host path of the egress relay socket to mount in (manager-set).",
+    )
+    egress_port: int = Field(
+        default=8888, description="Loopback port inside the sandbox that proxies to the relay.",
+    )
+    # Identity and working directory inside the container. `user` matters for more than
+    # file ownership: an image whose files are readable only by its own user relies on the
+    # process running as that user, and a sandbox that silently runs as root hands back
+    # read access the image was built to withhold.
+    user: Optional[str] = Field(
+        default=None, description="User inside the container ('root', 'agent', '1000:1000'); None = image default.",
+    )
+    workdir: Optional[str] = Field(
+        default=None, description="Working directory inside the container; None = image default.",
+    )
+    # Stable identity for this sandbox, stamped by the manager from the acquire key.
+    # Backends that name real resources need it: deriving a container name from the image
+    # alone collides the moment two sandboxes share an image, and deriving it from
+    # something random loses the ability to clean up a leftover by exact name.
+    sandbox_key: Optional[str] = Field(
+        default=None, description="Stable key identifying this sandbox (manager-set).",
+    )
     # Host directories bind-mounted into the container, as {host_path: container_path}.
     # Peer sandboxes mount the repo at /AgentEvolver so files (source + outputs) are
     # consistent across the base container and its peers — see base.py, which turns each
