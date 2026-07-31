@@ -54,6 +54,24 @@ _READ_ONLY_DENIED_TOOLS = {
     "write_file_tool", "edit_file_tool", "git_tool", "deploy_tool", "evolution_tool",
 }
 
+#: Stands in for a host root in the prompt when the agent's tools run inside a
+#: peer sandbox and therefore cannot reach it. A name the agent can act on is
+#: worse than none: it will try the path, get nothing, and start searching.
+_UNREACHABLE_ROOT = "(unavailable — your tools run inside a sandbox and cannot reach host paths)"
+
+
+def _sandbox_of(ctx: Any) -> Optional[Any]:
+    """The peer sandbox bound to ``ctx``, if commands really run inside one.
+
+    A sandbox without a ``container_workspace`` runs on host paths directly (no
+    remapping), so it is not one of these — under Model X the whole agent already
+    lives in the project container and every root it is told about is real.
+    """
+    sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
+    if sandbox is None or not getattr(sandbox, "container_workspace", None):
+        return None
+    return sandbox
+
 
 @lru_cache(maxsize=1)
 def _runtime_facts() -> Dict[str, str]:
@@ -544,10 +562,9 @@ class Agent(BaseModel):
         bound (e.g. a programbench task cleanroom), tools execute in that container,
         so surface *its* working directory (e.g. /workspace) — not the host path.
         """
-        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
-        container_ws = getattr(sandbox, "container_workspace", None) if sandbox is not None else None
-        if container_ws:
-            return container_ws
+        sandbox = _sandbox_of(ctx)
+        if sandbox is not None:
+            return sandbox.container_workspace
         return assemble_workspace_path(config.workspace_root or self.base_dir)
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
@@ -560,10 +577,9 @@ class Agent(BaseModel):
         # With a peer sandbox bound, the working directory lives in that container;
         # a synchronous host listing would show the wrong (empty host) directory, so
         # surface the container path and let the agent list it with list_dir.
-        sandbox = (getattr(ctx, "extra", None) or {}).get("sandbox")
-        container_ws = getattr(sandbox, "container_workspace", None) if sandbox is not None else None
-        if container_ws:
-            return f"{container_ws}\n  (sandboxed — use list_dir to inspect)"
+        sandbox = _sandbox_of(ctx)
+        if sandbox is not None:
+            return f"{sandbox.container_workspace}\n  (sandboxed — use list_dir to inspect)"
         workspace_root = os.path.abspath(config.workspace_root or self.base_dir)
         try:
             entries = sorted(os.listdir(workspace_root))
@@ -601,6 +617,18 @@ class Agent(BaseModel):
         package_root = str(roots.get("package_root") or get_package_root())
         project_root = str(roots.get("project_root") or getattr(config, "project_root", ""))
         log_root = str(roots.get("log_root") or getattr(config, "log_root", ""))
+
+        # With a peer sandbox bound, tools execute in that container, so every
+        # root except the workspace names a *host* directory the agent cannot
+        # reach. Advertising them anyway makes the prompt contradict itself:
+        # workspace_root says /workspace while project_root says
+        # /…/sessions/<id>, whose `workspace/` subdirectory looks like the same
+        # place. Observed on ProgramBench — the agent read /workspace correctly,
+        # then went hunting under the host project_root, found nothing, and
+        # escalated to `find / -name …`, which burned the tool's full 600s
+        # timeout. Say plainly that those roots are out of reach instead.
+        if _sandbox_of(ctx) is not None:
+            extension_root = package_root = project_root = log_root = _UNREACHABLE_ROOT
         system_modules = dict(
             max_actions=self.max_actions,
             extension_root=extension_root,
@@ -1010,6 +1038,10 @@ class Agent(BaseModel):
                     )
                 },
                 parent_ref=parent_ref, workspace_root=config.workspace_root or self.base_dir,
+                # The child executes wherever this agent executes — most importantly
+                # inside the same peer sandbox, which both bash_tool and the prompt's
+                # workspace slot read off the context.
+                parent_ctx=ctx,
             )
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")

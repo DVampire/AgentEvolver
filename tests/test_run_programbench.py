@@ -45,9 +45,20 @@ def test_programbench_agent_config_loads_expected_roster():
     assert "edit_file_tool" not in config.tool_names
     assert "list_dir_tool" not in config.tool_names
     assert "git_tool" not in config.tool_names
-    # Basic tools only — no general-workflow, document or science skills.
-    assert "run_skill" not in config.skill_names
+    # Verification methodology is not optional: an empty skill list scored 53 on
+    # cmatrix because the agent never checked its build against the reference
+    # binary. These stay loaded even under --no-evolve.
+    for required in ("verify_skill", "test_driven_development_skill",
+                     "debugging_and_error_recovery_skill"):
+        assert required in config.skill_names
+    assert not set(rp.EVOLVE_SKILL_NAMES) & {
+        "verify_skill", "test_driven_development_skill",
+        "debugging_and_error_recovery_skill", "incremental_implementation_skill",
+        "source_driven_development_skill",
+    }, "verification skills must survive --no-evolve"
+    # Still lean — no document, science or unrelated workflow skills.
     assert "docx_skill" not in config.skill_names
+    assert "observability_and_instrumentation_skill" not in config.skill_names
     assert config.connector_names == []
     assert config.env_names == []
 
@@ -265,3 +276,84 @@ async def test_extract_submission_raises_on_tar_failure():
 
     with pytest.raises(RuntimeError):
         await rp.extract_submission(sandbox, "/tmp/wherever")
+
+
+# --- prompt roots under a peer sandbox -------------------------------------
+# Regression test for a live ProgramBench failure: the prompt told the agent its
+# workspace was /workspace (correct) while project_root/log_root still named host
+# paths under output/<owner>/sessions/<id>. The agent trusted project_root, looked
+# for the task files under its `workspace/` subdirectory, found nothing, and fell
+# back to `find / -name ...` — which consumed bash_tool's entire 600s timeout.
+
+from agentevolver.agent import types as agent_types  # noqa: E402
+
+
+class _PeerSandbox:
+    container_workspace = "/workspace"
+
+
+class _HostSandbox:
+    """A sandbox that runs on host paths directly — no remapping."""
+    container_workspace = None
+
+
+class _Ctx:
+    def __init__(self, extra):
+        self.extra = extra
+
+
+def test_sandbox_of_only_matches_container_backed_peers():
+    assert agent_types._sandbox_of(_Ctx({"sandbox": _PeerSandbox()})) is not None
+    # Model X: the agent already lives in the container, so its roots are real.
+    assert agent_types._sandbox_of(_Ctx({"sandbox": _HostSandbox()})) is None
+    assert agent_types._sandbox_of(_Ctx({})) is None
+    assert agent_types._sandbox_of(_Ctx(None)) is None
+
+
+def test_unreachable_root_marker_names_no_path():
+    # The marker must not look like a path, or the agent will just try it.
+    assert "/" not in agent_types._UNREACHABLE_ROOT
+    assert "sandbox" in agent_types._UNREACHABLE_ROOT
+
+
+# --- ambient context inheritance across delegation --------------------------
+# Regression test for the same ProgramBench failure's root cause:
+# protocol_manager.delegate() built the sub-agent a fresh AgentContext carrying
+# only lineage + allowlists, so `sandbox` never crossed the boundary. bash_tool
+# and Agent._resolve_workspace_root both read it off the context, so the child
+# ran its shell commands on the HOST while its parent ran in the container.
+
+from agentevolver.protocol.server import _AMBIENT_CONTEXT_KEYS, _inherited_ambient  # noqa: E402
+
+
+def test_inherited_ambient_carries_the_execution_environment():
+    parent = _Ctx({
+        "sandbox": _PeerSandbox(),
+        "project_root": "/host/proj",
+        "workspace_root": "/host/proj/workspace",
+        "log_root": "/host/proj/log",
+        "extension_root": "/host/ext",
+        "package_root": "/pkg",
+        "shared_extension_root": "/shared",
+    })
+    got = _inherited_ambient(parent)
+    assert sorted(got) == sorted(_AMBIENT_CONTEXT_KEYS)
+    assert got["sandbox"] is parent.extra["sandbox"]
+
+
+def test_inherited_ambient_drops_per_delegation_keys():
+    parent = _Ctx({
+        "sandbox": _PeerSandbox(),
+        "tool_allowlist": ["bash_tool"],
+        "skill_allowlist": [],
+        "target_name": "some_tool",
+        "subtask_id": "abc",
+        "parent_session_id": "xyz",
+    })
+    got = _inherited_ambient(parent)
+    assert got == {"sandbox": parent.extra["sandbox"]}
+
+
+def test_inherited_ambient_tolerates_a_contextless_parent():
+    assert _inherited_ambient(None) == {}
+    assert _inherited_ambient(_Ctx(None)) == {}

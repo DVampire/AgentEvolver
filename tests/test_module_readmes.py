@@ -34,6 +34,24 @@ def _is_plugin_package(path: Path) -> bool:
     return path == PLUGIN_ROOT or PLUGIN_ROOT in path.parents
 
 
+def _is_inside_a_skill(path: Path) -> bool:
+    """True for anything under a directory that owns a SKILL.md.
+
+    A skill's payload — schemas, renderers, references, examples — is content the
+    skill ships, not an AgentEvolver module, and much of it is vendored from
+    upstream (e.g. archify, MIT). Its documentation is versioned by the skill's own
+    SKILL.md frontmatter, so requiring module frontmatter inside it would mean
+    editing third-party files on every upstream sync. The skill *package* README
+    (``agentevolver/skill/README.md``) sits above any SKILL.md and stays covered.
+    """
+    for parent in path.parents:
+        if parent == PACKAGE_ROOT.parent:
+            break
+        if (parent / "SKILL.md").is_file():
+            return True
+    return False
+
+
 def test_every_managed_python_module_has_a_readme():
     """Bundled Office Skill scripts are resources, not framework modules."""
     module_dirs = [PACKAGE_ROOT]
@@ -52,7 +70,11 @@ def test_every_managed_python_module_has_a_readme():
 
 
 def test_all_package_readmes_have_versioned_frontmatter():
+    checked = 0
     for readme in PACKAGE_ROOT.rglob("README.md"):
+        if _is_inside_a_skill(readme):
+            continue
+        checked += 1
         frontmatter, body = _frontmatter(readme)
         assert REQUIRED_FRONTMATTER <= frontmatter.keys(), readme
         assert re.fullmatch(r"\d+\.\d+\.\d+", str(frontmatter["version"])), readme
@@ -62,6 +84,10 @@ def test_all_package_readmes_have_versioned_frontmatter():
         assert re.search(r"(?im)^#\s+\S", body), f"{readme} needs a human-readable title"
 
         assert str(frontmatter["version"]) == "1.0.0", readme
+
+    # An exemption that swallowed everything would make this test pass by
+    # checking nothing.
+    assert checked > 20, f"only {checked} module READMEs checked — exemption too broad?"
 
 
 def test_every_plugin_package_has_a_manifest():

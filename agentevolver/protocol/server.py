@@ -26,6 +26,33 @@ from agentevolver.protocol.types import EscalationMessage, MonitorProgressMessag
 
 _ESCALATION_TIMEOUT_S = 300.0
 
+#: Context keys describing *where execution happens*, as opposed to what the
+#: agent was asked to do. A sub-agent runs in the same place as its parent, so
+#: these carry across a delegation; ``target_name``, the allowlists and the
+#: lineage ids are per-delegation and deliberately excluded.
+#:
+#: ``sandbox`` matters most. Both ``bash_tool`` (agentevolver/tool/default/bash.py)
+#: and the prompt's workspace slot (Agent._resolve_workspace_root) read it from
+#: the context, so a child that does not inherit it silently runs its shell
+#: commands on the *host* while its parent runs in a container — and is told the
+#: host's paths. Seen on ProgramBench: the sub-agent ran `find /` across the host
+#: filesystem looking for task files that only exist inside the sandbox.
+_AMBIENT_CONTEXT_KEYS = (
+    "sandbox",
+    "project_root",
+    "workspace_root",
+    "log_root",
+    "extension_root",
+    "package_root",
+    "shared_extension_root",
+)
+
+
+def _inherited_ambient(parent_ctx: Any) -> Dict[str, Any]:
+    """The parent's execution environment, for seeding a sub-agent's context."""
+    parent_extra = getattr(parent_ctx, "extra", None) or {}
+    return {k: parent_extra[k] for k in _AMBIENT_CONTEXT_KEYS if k in parent_extra}
+
 
 class ProtocolManager(metaclass=Singleton):
     """One handle for every agent-to-agent channel (mirror of ``runtime_manager``)."""
@@ -75,11 +102,14 @@ class ProtocolManager(metaclass=Singleton):
     async def delegate(
         self, child: Any, task: str, *,
         files: Optional[List[str]] = None, target_name: Optional[str] = None,
-        allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None, workspace_root: Optional[str] = None,
+        allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None,
+        workspace_root: Optional[str] = None, parent_ctx: Any = None,
     ) -> Response:
         """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
         ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
-        restricts its capabilities; ``target_name`` anchors an evolution target."""
+        restricts its capabilities; ``target_name`` anchors an evolution target;
+        ``parent_ctx`` is the dispatching agent's context, whose ambient execution
+        environment the child inherits."""
         import os
         from agentevolver.agent.types import AgentContext  # local: agent → protocol.server would cycle at import time
 
@@ -88,6 +118,7 @@ class ProtocolManager(metaclass=Singleton):
         ctx = AgentContext(
             id=f"{getattr(child, 'name', 'agent')}-{make_id()}",
             parent_session_id=(parent_ref.name if parent_ref is not None else None),
+            extra=_inherited_ambient(parent_ctx),
         )
         if target_name:
             ctx.extra["target_name"] = target_name

@@ -98,9 +98,27 @@ tool_names = [
     "evolution_tool",
 ]
 
-# Self-evolution skills only: the playbook plus one creator skill per evolvable
-# component type. Stripped by --no-evolve.
+# Two groups, and only two.
+#
+# The verification group is not optional garnish: a run with an empty skill list
+# scored 53 on cmatrix because the agent wrote 5KB of source from the binary's
+# `--help` text, compiled it once, ran `git status` thirteen times and declared
+# itself done — it never once compared its own build's behavior against the
+# reference binary it was given. These are the general skills that say "drive it,
+# observe it, and don't claim done without evidence". Nothing here is specific to
+# binary reconstruction; the task-specific part (that the oracle is
+# `./executable`) belongs in the task text, not in a skill.
+#
+# The self-evolution group is what `--no-evolve` strips. The verification group
+# stays either way — how you check your work should not depend on whether the
+# agent is allowed to rewrite its own tools.
 skill_names = [
+    # verification / build methodology
+    "verify_skill",
+    "test_driven_development_skill",
+    "debugging_and_error_recovery_skill",
+    "incremental_implementation_skill",
+    "source_driven_development_skill",
     # global playbook: WHEN to evolve, the loop, and the enable_evolving gate
     "self_evolving_skill",
     # per-type creator skills (orchestrator role) — drive each triad's
