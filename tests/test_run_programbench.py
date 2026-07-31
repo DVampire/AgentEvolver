@@ -739,3 +739,51 @@ def test_a_session_tree_inside_the_task_workspace_is_refused():
     ctx = SimpleNamespace(extra={})
     with pytest.raises(RuntimeError, match="inside the task workspace"):
         rp.bind_task_workspace(ctx, _FsSandbox("/workspace/output/local/sessions/x"))
+
+
+def test_framework_scaffolding_stays_out_of_the_submission(tmp_path):
+    """`inputs/` is where the framework stages task attachments so the agent can read
+    them — the task document lives in the checkout, outside the workspace, and
+    check_session_path would otherwise refuse to open it. Necessary, and no more a
+    deliverable than the stashed reference binary is."""
+    ws = _workspace_with_a_commit(tmp_path, commit_source=False)
+    (ws / "inputs").mkdir()
+    (ws / "inputs" / "000_programbench_reconstruction.html").write_text("<html/>")
+
+    info = rp.collect_submission(str(ws), str(tmp_path / "out"))
+
+    shipped = {p.name for p in (tmp_path / "out" / "submission").iterdir()}
+    assert "inputs" not in shipped
+    assert rp.REFERENCE_COPY not in shipped
+    assert "compile.sh" in shipped
+    # And it is not reported as work the agent forgot to commit.
+    assert not any(entry.startswith("inputs") for entry in info["uncommitted"])
+
+
+def test_the_audit_does_not_flag_the_prompt_that_forbids_the_tools(tmp_path):
+    """The task rules name `objdump` in the course of forbidding it, and the prompt
+    travels through the trace — so scanning raw lines accused every run of exactly the
+    thing being checked for. Only what the agent ran counts."""
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        # the task document quoted inside a trace event
+        '{"action_name": null, "event_type": "agent_start", "input": '
+        '{"task": "Run binary-analysis tools (objdump, readelf) on ./executable is forbidden"}}\n'
+        # the agent running an allowed command against the reference
+        '{"action_name": "bash_tool", "input": {"command": "timeout 2 ./executable --help"}}\n'
+        # analysis of its own build, which is allowed
+        '{"action_name": "bash_tool", "input": {"command": "objdump -d my_build"}}\n'
+    )
+    assert rp.audit_reference_binary(str(tmp_path))["suspicious_actions"] == []
+
+
+def test_the_audit_does_flag_analysis_of_the_reference(tmp_path):
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "objdump -d ./executable | head"}}\n'
+    )
+    hits = rp.audit_reference_binary(str(tmp_path))["suspicious_actions"]
+    assert [h["tool"] for h in hits] == ["objdump"]
+    assert hits[0]["action"] == "bash_tool"

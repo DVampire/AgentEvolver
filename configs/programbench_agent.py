@@ -67,10 +67,12 @@ log_path = "agent.log"
 # _think call 400s, the agent burns its step budget producing no tool calls, and
 # still reports `done`). Override per run with
 # `--cfg-options model_name=<name>`.
-# The vendor prefix is load-bearing: the gateway routes `google/gemini-...` and
-# answers `openrouter/gemini-3.1-pro-preview` with HTTP 503 model_not_found
-# ("分组 openrouter 下模型 ... 无可用渠道"). Verified live, both spellings.
-model_name = "openrouter/google/gemini-3.1-pro-preview"
+# A registered model_manager name, not a litellm model string. The registry already maps
+# it to the upstream id (`openrouter/gemini-3.1-pro-preview` -> `google/gemini-3.1-...`),
+# so the vendor prefix belongs there and not here. Calling litellm directly with the
+# prefixed spelling appears to work and is a different code path; going through the
+# manager with an unregistered name fails every `_think` instantly instead.
+model_name = "openrouter/gemini-3.1-pro-preview"
 
 memory_names = [
     "file_system_memory",

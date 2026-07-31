@@ -68,6 +68,11 @@ _EVOLUTION_AGENT_SUFFIXES = ("_generate_agent", "_optimize_agent", "_evaluate_ag
 #: agent stops rather than burning its whole budget.
 _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
 
+#: Consecutive model-call failures before a run stops instead of retrying. Three is
+#: enough to ride out a transient upstream error and few enough that a misconfiguration
+#: is reported rather than converted into an exhausted budget.
+_THINK_FAILURES_BEFORE_GIVING_UP = 3
+
 @lru_cache(maxsize=1)
 def _runtime_facts() -> Dict[str, str]:
     """Describe the interpreter shell commands will actually run under.
@@ -321,6 +326,18 @@ class _AgentRun:
         #: Agent._prepare_round.
         self.produced_change = False
         self.baseline_fingerprint: Optional[str] = None
+        #: Set when a turn should be retried immediately, so ``_advance`` loops instead
+        #: of a handler calling back into it. The recursion this replaces cost a run: a
+        #: 1000-step budget meant up to 1000 nested frames, which is Python's default
+        #: recursion limit, and the failure surfaced as "maximum recursion depth
+        #: exceeded" from inside a template renderer — nothing to do with the actual
+        #: cause.
+        self.retry_now = False
+        #: Consecutive turns whose model call raised. A run whose model is unreachable or
+        #: misnamed produces no tool calls, retries instantly, and would otherwise spend
+        #: its whole budget doing that: 958 steps in 44 seconds, reported as a stack
+        #: overflow rather than as the model error logged on the first one.
+        self.think_failures = 0
 
 
 class Agent(BaseModel):
@@ -853,7 +870,7 @@ class Agent(BaseModel):
         Pure decision — no dispatch, no state mutation — so both the leaf-agent loop and
         MetaAgent call this same method. ``include_agents`` projects registered sub-agents
         into the roster; ``extra_tools`` appends any extra schema-only tools. Returns
-        ``{tool_calls, routing, reasoning, step_tokens}``.
+        ``{tool_calls, routing, reasoning, step_tokens, error}``.
         """
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookEvent
@@ -874,6 +891,7 @@ class Agent(BaseModel):
         reasoning = ""
         tool_calls: List[Any] = []
         step_tokens = 0
+        think_error: Optional[str] = None
         try:
             acc = await accumulate_stream(
                 model_manager.stream(
@@ -886,6 +904,7 @@ class Agent(BaseModel):
             reasoning = acc.get("thinking") or acc.get("text") or ""
             tool_calls = acc.get("tool_calls") or []
         except Exception as e:
+            think_error = str(e)
             logger.error(f"| ❌ [{self.name}] Error in _think: {e}")
 
         tool_calls = self._cap_actions(tool_calls)
@@ -893,7 +912,12 @@ class Agent(BaseModel):
         logger.info(f"| 💭 [{self.name}] Reasoning: {reasoning[:200]}")
         logger.info(f"| 🔧 [{self.name}] Tool calls: {[c.name for c in tool_calls]}")
 
-        return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning, "step_tokens": step_tokens}
+        # The error travels with the decision. Swallowed, it is indistinguishable from a
+        # model that simply chose to say something without calling a tool — so the turn
+        # retries, and a broken model spends the entire budget looking like an agent
+        # thinking out loud.
+        return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning,
+                "step_tokens": step_tokens, "error": think_error}
 
     def _cap_actions(self, tool_calls: List[Any]) -> List[Any]:
         """Hold a turn's batch to ``max_actions``, keeping the earliest calls.
@@ -1275,21 +1299,36 @@ class Agent(BaseModel):
         }
 
     async def _advance(self, run: "_AgentRun") -> None:
-        """One turn: budget/step check → build messages → _think → dispatch the round.
-        Concludes directly on a limit, or loops on a text-only (no-tool) turn."""
+        """Turns, until one dispatches work or the run concludes.
+
+        A loop, not recursion. Turns that continue immediately — a text-only reply, a
+        proposal the no-progress guard blocked — used to recurse into this method, one
+        frame per step. With a 1000-step budget that is 1000 nested frames against
+        Python's default recursion limit of the same number, and the failure arrives as
+        "maximum recursion depth exceeded" raised from wherever the stack happened to run
+        out: in one run, from inside a Jinja template parser, naming nothing that had
+        anything to do with the cause.
+        """
+        while True:
+            concluded = await self._advance_once(run)
+            if not concluded:
+                return
+
+    async def _advance_once(self, run: "_AgentRun") -> bool:
+        """One turn. Returns True when the caller should immediately take another."""
         if run.step >= self.max_step:
             logger.warning(f"| 🛑 [{self.name}] Reached max steps ({self.max_step})")
             run.done, run.result = False, "The task has not been completed."
             run.reasoning = "Reached the maximum number of steps."
             await self._conclude(run)
-            return
+            return False
 
         reason, cstatus = await self._constraint_check(run.task_id, run.ctx)
         if reason is not None:
             logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
             run.done, run.result, run.stopped_by_constraint = True, reason, True
             await self._conclude(run)
-            return
+            return False
 
         logger.info(f"| 🔄 [{self.name}] Step {run.step + 1}/{self.max_step}")
         messages = await self._get_messages(
@@ -1301,9 +1340,37 @@ class Agent(BaseModel):
         run.decision = decision
         run.messages = messages
 
+        # A model that cannot be called produces no tool calls, so the turn looks like
+        # thinking out loud and retries — for as long as the budget lasts. One run spent
+        # 958 steps in 44 seconds this way and reported a stack overflow, while the
+        # actual cause ("Model ... not found. Available: [...]") had been logged on the
+        # very first step. Stop on the third consecutive one and report *that*.
+        if decision.get("error"):
+            run.think_failures += 1
+            if run.think_failures >= _THINK_FAILURES_BEFORE_GIVING_UP:
+                logger.error(
+                    f"| 🛑 [{self.name}] giving up after {run.think_failures} consecutive "
+                    f"model errors: {decision['error']}"
+                )
+                run.done = False
+                run.result = (
+                    f"The model could not be called: {decision['error']}"
+                )
+                run.reasoning = "Consecutive model errors; the run cannot make progress."
+                await self._conclude(run)
+                return False
+        else:
+            run.think_failures = 0
+
         calls = await self._prepare_round(run, decision)
         if calls is None:
-            return  # a seam (e.g. MetaAgent) fully handled this turn (concluded / deferred)
+            # A seam (e.g. MetaAgent) handled this turn. It may also have asked for an
+            # immediate retry — the no-progress guard does — which is a loop iteration
+            # here rather than a call back into this method.
+            if run.retry_now:
+                run.retry_now = False
+                return True
+            return False
         if not calls:
             # text-only turn: record the empty step, nudge, and try again next turn
             run.round_step = run.step
@@ -1314,9 +1381,9 @@ class Agent(BaseModel):
                 "You produced text but called no tool. Take the next action by calling a tool, "
                 "or if the task is COMPLETE call `done_tool` with the result now."]
             run.step += 1
-            await self._advance(run)
-            return
+            return True
         self._dispatch_round(run, calls, decision["routing"])
+        return False
 
     def _dispatch_round(self, run: "_AgentRun", calls: List[Any], routing: Dict[str, Any]) -> None:
         """Launch this turn's batch as concurrent background tasks, each posting its
@@ -1538,7 +1605,7 @@ class Agent(BaseModel):
         )
         run.action_errors = [reason + suffix]
         run.step += 1
-        await self._advance(run)
+        run.retry_now = True
         return None
 
     @staticmethod

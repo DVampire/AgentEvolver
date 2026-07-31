@@ -95,6 +95,12 @@ IMAGE_TAG = "task_cleanroom_v6"
 #: the remaining 43 could not compare anything against it.
 REFERENCE_COPY = "reference_executable"
 
+#: Ours, not the agent's, and therefore not part of the reconstruction. `inputs/` is where
+#: the framework stages task attachments so the agent can read them: the task document
+#: lives in the checkout, outside the workspace, and `check_session_path` would otherwise
+#: refuse to open it. Necessary, and no more a deliverable than the stashed reference is.
+_SCAFFOLDING = (REFERENCE_COPY, "inputs")
+
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"
 CONTAINER_WORKSPACE = "/workspace"
@@ -284,8 +290,8 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
     status = _git("status", "--porcelain", "--untracked-files=all")
     if status.returncode == 0:
         info["uncommitted"] = [
-            line[3:] for line in status.stdout.splitlines()
-            if line[3:] and line[3:] != REFERENCE_COPY
+            entry for entry in (line[3:] for line in status.stdout.splitlines())
+            if entry and not entry.split("/")[0] in _SCAFFOLDING
         ]
 
     # The repository arrives with one commit holding the shipped documentation, so
@@ -316,7 +322,7 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
         info["source"] = "full-tree"
         with tarfile.open(tarball, "w:gz") as handle:
             for entry in sorted(os.listdir(workspace)):
-                if entry == REFERENCE_COPY:
+                if entry in _SCAFFOLDING:
                     continue
                 handle.add(os.path.join(workspace, entry), arcname=entry)
 
@@ -349,13 +355,34 @@ def audit_reference_binary(log_root: str) -> dict:
     trace_dir = Path(log_root) / "trace"
     for path in sorted(trace_dir.glob("*.jsonl")) if trace_dir.is_dir() else []:
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            names_reference = REFERENCE_COPY in line or "./executable" in line
-            if not names_reference:
+            if not line.strip():
                 continue
-            lowered = line.lower()
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            # Only what the agent *ran*. Scanning raw trace lines instead flagged the task
+            # document itself: its rules name `objdump` in the course of forbidding it, and
+            # the prompt travels through the trace, so the audit accused every run of the
+            # thing it was checking for.
+            payload = event.get("input")
+            if not isinstance(payload, dict):
+                continue
+            command = " ".join(
+                str(payload.get(key, "")) for key in ("command", "code", "args", "path")
+            )
+            if not command.strip():
+                continue
+            if REFERENCE_COPY not in command and "./executable" not in command:
+                continue
+            lowered = command.lower()
             for tool in tools:
                 if tool in lowered:
-                    hits.append({"tool": tool.strip(), "trace": path.name})
+                    hits.append({
+                        "tool": tool.strip(),
+                        "action": event.get("action_name"),
+                        "command": command[:200],
+                    })
                     break
     return {"checked": True, "suspicious_actions": hits}
 

@@ -15,9 +15,6 @@ class _GuardAgent(Agent):
     async def _post_step(self, *args, **kwargs):
         self.posted = getattr(self, "posted", 0) + 1
 
-    async def _advance(self, run):
-        self.advanced = getattr(self, "advanced", 0) + 1
-
     async def _conclude(self, run):
         self.concluded = getattr(self, "concluded", 0) + 1
 
@@ -107,7 +104,10 @@ async def test_base_agent_skips_repeat_and_feeds_correction(tmp_path):
     assert run.no_progress_rounds == 1
     assert "No-progress guard" in run.action_errors[0]
     assert agent.posted == 1
-    assert agent.advanced == 1
+    # The guard asks for another turn by setting a flag, which `_advance`'s loop reads.
+    # It used to call `_advance` itself: one nested frame per blocked proposal, against
+    # Python's recursion limit, in a loop whose whole purpose is to repeat.
+    assert run.retry_now is True
 
 
 @pytest.mark.asyncio
@@ -179,7 +179,10 @@ async def test_guard_does_not_terminate_before_the_run_changes_anything(tmp_path
     assert run.no_progress_rounds == 3
     assert run.done is False
     assert run.result is None, "must not have concluded"
-    assert agent.advanced == 1
+    # The guard asks for another turn by setting a flag, which `_advance`'s loop reads.
+    # It used to call `_advance` itself: one nested frame per blocked proposal, against
+    # Python's recursion limit, in a loop whose whole purpose is to repeat.
+    assert run.retry_now is True
     assert "No-progress guard" in run.action_errors[0]
 
 
@@ -215,3 +218,117 @@ async def test_guard_still_terminates_a_stuck_run_that_never_changes_anything(tm
     assert await agent._prepare_round(run, decision) is None
     assert run.done is False
     assert "no-progress" in (run.result or "").lower()
+
+
+# --- a long budget must not be a recursion limit --------------------------------
+#
+# `_advance` used to call itself for every turn that continued immediately — a text-only
+# reply, a proposal the guard blocked. One frame per step, against Python's default
+# recursion limit of 1000. Raising max_step from 200 to 1000 turned that into a crash,
+# and the crash surfaced as "maximum recursion depth exceeded" raised from inside a Jinja
+# template parser: nothing in the traceback named the actual cause.
+
+def test_advance_iterates_rather_than_recursing():
+    import inspect
+
+    from agentevolver.agent.types import Agent
+
+    loop = inspect.getsource(Agent._advance)
+    assert "while True:" in loop
+    assert "_advance_once" in loop
+    # The turn body must not call back into the loop.
+    body = inspect.getsource(Agent._advance_once)
+    assert "self._advance(" not in body
+
+
+def test_a_thousand_immediate_retries_do_not_exhaust_the_stack():
+    """The failure mode, reproduced: a model that cannot be called yields no tool calls,
+    so every turn retries instantly."""
+    import asyncio
+
+    from agentevolver.agent.types import Agent
+
+    turns = {"n": 0}
+
+    class _Looper(Agent):
+        name: str = "looper"
+        description: str = "test"
+        metadata: dict = {}
+
+        async def _advance_once(self, run):
+            turns["n"] += 1
+            return turns["n"] < 1500
+
+    agent = _Looper(base_dir="/tmp", max_step=2000)
+    asyncio.run(agent._advance(object()))
+    assert turns["n"] == 1500
+
+
+# --- a broken model stops the run instead of consuming it -----------------------
+
+@pytest.mark.asyncio
+async def test_consecutive_model_errors_end_the_run_with_the_model_error():
+    """Observed: 958 steps in 44 seconds, reported as a stack overflow, while the real
+    cause — "Model ... not found. Available: [...]" — had been logged on step 1. A model
+    that cannot be called returns no tool calls, which is indistinguishable from thinking
+    out loud, so the turn retried for as long as the budget lasted."""
+    from agentevolver.agent.types import _THINK_FAILURES_BEFORE_GIVING_UP, _AgentRun
+
+    error = "Model nope/nope not found. Available: ['a', 'b']"
+
+    class _BrokenModelAgent(_GuardAgent):
+        name: str = "broken_model_agent"
+
+        async def _constraint_check(self, task_id, ctx):
+            return None, {}
+
+        async def _get_messages(self, *args, **kwargs):
+            return []
+
+        async def _think(self, *args, **kwargs):
+            return {"tool_calls": [], "routing": {}, "reasoning": "", "step_tokens": 0,
+                    "error": error}
+
+    agent = _BrokenModelAgent(base_dir="/tmp", max_step=1000)
+    run = _AgentRun("task", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+
+    turns = 0
+    while await agent._advance_once(run):
+        turns += 1
+        assert turns < 20, "the run kept retrying a model it cannot call"
+
+    assert run.think_failures == _THINK_FAILURES_BEFORE_GIVING_UP
+    assert getattr(agent, "concluded", 0) == 1
+    assert run.done is False
+    # The reported reason has to be the model error, not whatever the budget hit later.
+    assert error in (run.result or "")
+    # And it stops early rather than spending the budget.
+    assert run.step < 10
+
+
+@pytest.mark.asyncio
+async def test_a_recovered_model_call_clears_the_failure_count():
+    """Three *consecutive* failures, so a transient upstream error does not end a run
+    that goes on to work."""
+    from agentevolver.agent.types import _AgentRun
+
+    run = _AgentRun("task", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+    run.think_failures = 2
+
+    class _RecoveringAgent(_GuardAgent):
+        name: str = "recovering_agent"
+
+        async def _constraint_check(self, task_id, ctx):
+            return None, {}
+
+        async def _get_messages(self, *args, **kwargs):
+            return []
+
+        async def _think(self, *args, **kwargs):
+            return {"tool_calls": [], "routing": {}, "reasoning": "thinking", "step_tokens": 0,
+                    "error": None}
+
+    agent = _RecoveringAgent(base_dir="/tmp", max_step=1000)
+    assert await agent._advance_once(run) is True   # text-only turn: take another
+    assert run.think_failures == 0
+    assert getattr(agent, "concluded", 0) == 0
