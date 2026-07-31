@@ -215,6 +215,25 @@ Exact fidelity is not always reachable either: a version string may embed the
 reference's own build timestamp, and no reconstruction can match that. Do not spend
 budget on differences you have judged unreachable; write them down and move on.
 
+**Nothing here is a prerequisite for anything else.** The checklist items are
+independent, so an unresolved one never blocks the rest — and "I need to understand
+this before proceeding" is, for this task, almost always false. A run that decided the
+reference's crash on one flag was a critical edge case to understand first spent a
+hundred consecutive turns investigating it without writing a line of source, while
+every other item sat finished-or-untouched around it. If something resists, leave it
+and take the next item; you can come back with budget you still have.
+
+Treat a difference as unreachable — record it, move on — as soon as any of these holds:
+
+- **The reference crashes, hangs, or depends on something you do not have.** A
+  segfault, a terminal that is not attached, a device, a locale, a network service. You
+  cannot reproduce a crash faithfully and should not try.
+- **The difference is in a value only the original build could know**: an embedded
+  timestamp, a path from the machine it was compiled on, a commit hash.
+- **You have spent roughly ten turns on one difference without your source changing.**
+  That is the signal, and it is a fact about your own history you can check. Ten turns
+  of investigation that produced no code is not investigation any more.
+
 Call `done_tool` when either holds:
 
 1. Every checklist item is covered, the build is clean, and the differences that

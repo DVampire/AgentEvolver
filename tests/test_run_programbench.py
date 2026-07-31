@@ -830,3 +830,18 @@ def test_every_path_comes_from_the_layout_table():
 
     inner = inspect.getsource(rp.run_inner)
     assert "owner=SESSION_OWNER" in inner
+
+
+def test_the_task_says_nothing_is_a_prerequisite():
+    """A run decided the reference's crash on one flag was "a critical edge case to
+    understand before proceeding" and spent a hundred consecutive turns on it without
+    writing a line of source. The instruction to skip unreachable differences was already
+    there; what was missing was any basis for deciding one *is* unreachable, and the fact
+    that the items do not block each other."""
+    prompt = _flat_task_text()
+    assert "Nothing here is a prerequisite for anything else." in prompt
+    assert '"I need to understand this before proceeding" is, for this task, almost always false' in prompt
+    # The three signatures, each checkable without knowing the tests.
+    assert "The reference crashes, hangs, or depends on something you do not have." in prompt
+    assert "a value only the original build could know" in prompt
+    assert "roughly ten turns on one difference without your source changing" in prompt
