@@ -11,7 +11,7 @@ sys.path.append(root)
 from agentevolver.config import config
 
 
-def test_programbench_agent_config_loads_expected_base_roster():
+def test_programbench_agent_config_loads_expected_roster():
     config.initialize(
         config_path=os.path.join(root, "configs", "programbench_agent.py"),
         args=argparse.Namespace(),
@@ -24,12 +24,20 @@ def test_programbench_agent_config_loads_expected_base_roster():
     # monitor_agent is deliberately excluded — it spawns its own bash subprocess
     # directly, bypassing the Docker sandbox bash_tool routes through.
     assert "monitor_agent" not in config.agent_names
-    # Base roster excludes the self-evolution add-ons — the running script adds
-    # them at runtime via extend_roster_for_evolve() when --evolve is set.
-    assert "tool_optimize_agent" not in config.agent_names
-    assert "connector_evaluate_agent" not in config.agent_names
+    # The config carries the self-evolution roster outright (like meta_agent.py);
+    # --no-evolve strips it back out via resolve_roster().
+    assert "tool_optimize_agent" in config.agent_names
+    assert "agent_generate_agent" in config.agent_names
+    assert "skill_evaluate_agent" in config.agent_names
+    assert "evolution_tool" in config.tool_names
+    assert "self_evolving_skill" in config.skill_names
+    # Out of scope for a reconstruction run: nothing to evolve for environments
+    # or connectors, and swapping the memory system would change the measurement.
+    for absent in ("environment_generate_agent", "memory_generate_agent", "connector_evaluate_agent"):
+        assert absent not in config.agent_names
+    for absent in ("environment_creator_skill", "memory_creator_skill", "connector_creator_skill"):
+        assert absent not in config.skill_names
     assert "bash_tool" in config.tool_names
-    assert "evolution_tool" not in config.tool_names
     # None of these check get_current_sandbox() — they'd silently operate on the
     # host workspace instead of the container once a sandbox is bound.
     assert "read_file_tool" not in config.tool_names
@@ -37,8 +45,9 @@ def test_programbench_agent_config_loads_expected_base_roster():
     assert "edit_file_tool" not in config.tool_names
     assert "list_dir_tool" not in config.tool_names
     assert "git_tool" not in config.tool_names
-    assert "run_skill" in config.skill_names
-    assert "self_evolving_skill" not in config.skill_names
+    # Basic tools only — no general-workflow, document or science skills.
+    assert "run_skill" not in config.skill_names
+    assert "docx_skill" not in config.skill_names
     assert config.connector_names == []
     assert config.env_names == []
 
@@ -100,30 +109,58 @@ def test_build_task_content_includes_system_prompt_and_fields():
     assert "./compile.sh" in content
 
 
-def test_extend_roster_for_evolve_off_is_unchanged():
-    agents, tools, skills = rp.extend_roster_for_evolve(
-        ["meta_agent"], ["bash_tool"], ["run_skill"], evolve=False,
+def test_resolve_roster_off_leaves_a_base_without_addons_alone():
+    agents, tools, skills = rp.resolve_roster(
+        ["meta_agent"], ["bash_tool"], [], evolve=False,
     )
     assert agents == ["meta_agent"]
     assert tools == ["bash_tool"]
-    assert skills == ["run_skill"]
+    assert skills == []
 
 
-def test_extend_roster_for_evolve_on_adds_triads():
-    agents, tools, skills = rp.extend_roster_for_evolve(
-        ["meta_agent"], ["bash_tool"], ["run_skill"], evolve=True,
+def test_resolve_roster_off_strips_addons_the_config_already_lists():
+    agents, tools, skills = rp.resolve_roster(
+        ["meta_agent", "tool_optimize_agent"],
+        ["bash_tool", "evolution_tool"],
+        ["self_evolving_skill", "tool_creator_skill"],
+        evolve=False,
+    )
+    assert agents == ["meta_agent"]
+    assert tools == ["bash_tool"]
+    assert skills == []
+
+
+def test_resolve_roster_on_adds_triads():
+    agents, tools, skills = rp.resolve_roster(
+        ["meta_agent"], ["bash_tool"], [], evolve=True,
     )
     assert "tool_optimize_agent" in agents
-    assert "connector_evaluate_agent" in agents
+    assert "skill_generate_agent" in agents
     assert len(agents) == 1 + len(rp.EVOLVE_AGENT_NAMES)
     assert "evolution_tool" in tools
     assert "self_evolving_skill" in skills
     assert "agent_creator_skill" in skills
 
 
-def test_extend_roster_for_evolve_does_not_mutate_input_lists():
+def test_resolve_roster_on_does_not_duplicate_what_the_config_lists():
+    agents, _, _ = rp.resolve_roster(
+        ["meta_agent"] + rp.EVOLVE_AGENT_NAMES, [], [], evolve=True,
+    )
+    assert len(agents) == 1 + len(rp.EVOLVE_AGENT_NAMES)
+
+
+def test_resolve_roster_scope_excludes_environment_memory_connector():
+    for name in rp.EVOLVE_AGENT_NAMES:
+        assert not name.startswith(("environment_", "memory_", "connector_"))
+    for name in rp.EVOLVE_SKILL_NAMES:
+        assert name not in (
+            "environment_creator_skill", "memory_creator_skill", "connector_creator_skill",
+        )
+
+
+def test_resolve_roster_does_not_mutate_input_lists():
     base_agents = ["meta_agent"]
-    rp.extend_roster_for_evolve(base_agents, [], [], evolve=True)
+    rp.resolve_roster(base_agents, [], [], evolve=True)
     assert base_agents == ["meta_agent"]
 
 

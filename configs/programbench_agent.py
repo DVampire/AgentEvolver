@@ -1,29 +1,39 @@
 """Config for examples/run_programbench.py.
 
-Base roster for a pure ProgramBench code-reconstruction run: MetaAgent +
-code/general/reviewer actor agents, plus every optimizer/generator/evaluator
-agent, `evolution_tool`, and `self_evolving_skill` are imported and configured
-here too (so their settings exist) but are NOT in the default
-`agent_names`/`tool_names`/`skill_names` lists below — the running script's
-`extend_roster_for_evolve()` appends them at runtime when `--evolve` is set
-(the default). No browser/connector/environment wiring — irrelevant to a
-code-reconstruction task.
+Structured like `configs/meta_agent.py`, trimmed to what a ProgramBench
+code-reconstruction run actually needs: the basic tools, the actor agents, and
+the self-evolution roster that applies here — the tool / agent / skill triads,
+`evolution_tool`, their creator skills, and `self_evolving_skill`.
+`examples/run_programbench.py --no-evolve` strips the evolution roster back out
+for a lean, cheaper "just do the task" run.
 
-`bash_tool` is the ONLY tool in this repo that actually checks
-`get_current_sandbox()` (agentevolver/tool/default/bash.py) and routes into a
-bound real Docker sandbox — confirmed by grepping the whole codebase for
-`get_current_sandbox` usage. `read_file_tool`/`write_file_tool`/`edit_file_tool`/
-`list_dir_tool`/`git_tool` only ever check `check_session_path` (a host
-filesystem path-boundary check, agentevolver/sandbox/project.py) and
-`monitor_agent` spawns its own `asyncio.create_subprocess_shell` directly —
-neither path has any sandbox awareness at all, so all five would silently
-operate on the (nearly empty, once a Docker sandbox is bound) *host* workspace
-directory instead of the container's `/workspace`, giving the agent an
-inconsistent view of its own environment and letting file-tool writes go
-missing from `extract_submission()`'s tar of the container. All five are
-therefore deliberately absent below — `bash_tool` alone covers every file/git
-operation the agent needs (matches the official mini-swe-agent ProgramBench
-baseline, which likewise only gives the agent a single bash tool).
+Everything else meta_agent.py carries is deliberately absent, because the task
+is offline binary reconstruction inside a container:
+
+- **Only `bash_tool` for file/git work.** `bash_tool` is the ONLY tool in this
+  repo that checks `get_current_sandbox()` (agentevolver/tool/default/bash.py)
+  and routes into the bound Docker sandbox — confirmed by grepping the codebase
+  for `get_current_sandbox`. `read_file_tool`/`write_file_tool`/`edit_file_tool`/
+  `list_dir_tool`/`git_tool` only run `check_session_path`, a *host* filesystem
+  boundary check (agentevolver/sandbox/project.py), so all five would silently
+  operate on the (nearly empty) host workspace instead of the container's
+  `/workspace` — giving the agent an inconsistent view of its own environment and
+  letting writes go missing from `extract_submission()`'s tar. This matches the
+  official mini-swe-agent ProgramBench baseline, which also gives the agent one
+  bash tool and nothing else.
+- **No `monitor_agent`.** It spawns its own `asyncio.create_subprocess_shell`,
+  bypassing the sandbox entirely.
+- **No web tools, browser agent, or browser environment.** The run is offline by
+  design — network isolation is the benchmark's anti-cheat mechanism, and giving
+  the agent retrieval would let it fetch the original source it is supposed to
+  reconstruct.
+- **No environment / memory / connector triads.** A reconstruction task has no
+  environment and no connector to evolve, and swapping the memory system
+  mid-benchmark changes the measurement rather than the solution. Evolution here
+  is scoped to what the agent actually uses: its tools, its sub-agents, and its
+  skills.
+- **No document / science / general-workflow skills.** Nothing in a
+  binary-reconstruction task consumes them; they would only inflate the prompt.
 """
 from mmengine.config import read_base
 with read_base():
@@ -32,21 +42,15 @@ with read_base():
     from .agents.code_agent import code_agent
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
+    from .agents.tool_generate_agent import tool_generate_agent
     from .agents.tool_optimize_agent import tool_optimize_agent
     from .agents.tool_evaluate_agent import tool_evaluate_agent
-    from .agents.tool_generate_agent import tool_generate_agent
     from .agents.agent_generate_agent import agent_generate_agent
     from .agents.agent_optimize_agent import agent_optimize_agent
     from .agents.agent_evaluate_agent import agent_evaluate_agent
     from .agents.skill_generate_agent import skill_generate_agent
     from .agents.skill_optimize_agent import skill_optimize_agent
     from .agents.skill_evaluate_agent import skill_evaluate_agent
-    from .agents.environment_generate_agent import environment_generate_agent
-    from .agents.environment_optimize_agent import environment_optimize_agent
-    from .agents.environment_evaluate_agent import environment_evaluate_agent
-    from .agents.connector_generate_agent import connector_generate_agent
-    from .agents.connector_optimize_agent import connector_optimize_agent
-    from .agents.connector_evaluate_agent import connector_evaluate_agent
     from .tools.bash import bash_tool
     from .tools.evolution import evolution_tool
     from .tools.escalate import escalate_tool
@@ -65,49 +69,47 @@ memory_names = [
     "file_system_memory",
 ]
 
-# Base roster — extended at runtime by examples/run_programbench.py's
-# extend_roster_for_evolve() when --evolve is set (default: on).
-# monitor_agent is deliberately excluded: it spawns its own bash subprocess
-# directly (asyncio.create_subprocess_shell), bypassing the Docker sandbox
-# bash_tool routes through — see the module docstring above.
 agent_names = [
+    # actors
     "meta_agent",
     "code_agent",
     "general_agent",
     "reviewer_agent",
+    # self-evolution triads — stripped by run_programbench.py --no-evolve
+    "tool_generate_agent",
+    "tool_optimize_agent",
+    "tool_evaluate_agent",
+    "agent_generate_agent",
+    "agent_optimize_agent",
+    "agent_evaluate_agent",
+    "skill_generate_agent",
+    "skill_optimize_agent",
+    "skill_evaluate_agent",
 ]
-# read_file_tool/write_file_tool/edit_file_tool/list_dir_tool/git_tool are
-# deliberately excluded: none of them check get_current_sandbox(), so they'd
-# silently operate on the host workspace instead of the container — see the
-# module docstring above. bash_tool alone covers every file/git operation.
+
+# Basic tools only. bash_tool is the agent's entire hand for the task itself —
+# see the module docstring for why the other file/git tools are excluded.
 tool_names = [
     "bash_tool",
     "done_tool",
     "escalate_tool",
     "reply_tool",
+    # self-evolution — stripped by --no-evolve
+    "evolution_tool",
 ]
+
+# Self-evolution skills only: the playbook plus one creator skill per evolvable
+# component type. Stripped by --no-evolve.
 skill_names = [
-    "code_review_skill",
-    "security_review_skill",
-    "simplify_skill",
-    "review_skill",
-    "verify_skill",
-    "run_skill",
-    "init_skill",
-    "planning_and_task_breakdown_skill",
-    "spec_driven_development_skill",
-    "context_engineering_skill",
-    "doubt_driven_development_skill",
-    "test_driven_development_skill",
-    "debugging_and_error_recovery_skill",
-    "source_driven_development_skill",
-    "api_and_interface_design_skill",
-    "incremental_implementation_skill",
-    "documentation_and_adrs_skill",
-    "git_workflow_and_versioning_skill",
-    "performance_optimization_skill",
-    "observability_and_instrumentation_skill",
+    # global playbook: WHEN to evolve, the loop, and the enable_evolving gate
+    "self_evolving_skill",
+    # per-type creator skills (orchestrator role) — drive each triad's
+    # create -> evaluate -> improve loop
+    "tool_creator_skill",
+    "agent_creator_skill",
+    "skill_creator_skill",
 ]
+
 connector_names = []
 env_names = []
 
@@ -120,6 +122,9 @@ bash_tool.update(enable_evolving=False)
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
+    # Not evolvable here (meta_agent.py does allow it): the memory system is part
+    # of what a benchmark run measures, so rewriting it mid-run would change the
+    # measurement rather than the solution.
     enable_evolving=False,
 )
 
@@ -145,22 +150,8 @@ reviewer_agent.update(
     use_memory=True,
 )
 
-#-----------------OPTIMIZER/GENERATOR/EVALUATOR AGENT CONFIGS (self-evolution roster)-----------------
-tool_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
+#-----------------GENERATOR AGENT CONFIGS-----------------
 tool_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-tool_evaluate_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -174,21 +165,22 @@ agent_generate_agent.update(
     use_memory=True,
 )
 
-agent_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-agent_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
 skill_generate_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+#-----------------OPTIMIZER AGENT CONFIGS-----------------
+tool_optimize_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+agent_optimize_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -202,49 +194,22 @@ skill_optimize_agent.update(
     use_memory=True,
 )
 
+#-----------------EVALUATOR AGENT CONFIGS-----------------
+tool_evaluate_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
+agent_evaluate_agent.update(
+    model_name=model_name,
+    memory_name=memory_names[0],
+    enable_evolving=False,
+    use_memory=True,
+)
+
 skill_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-environment_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-environment_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-environment_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-connector_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-connector_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-connector_evaluate_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

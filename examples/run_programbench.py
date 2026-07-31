@@ -131,35 +131,44 @@ SYSTEM_PROMPT = dedent("""
 """)
 
 
+# The self-evolution roster, mirroring configs/programbench_agent.py: only the
+# tool / agent / skill triads. A reconstruction task has no environment and no
+# connector to evolve, and rewriting the memory system mid-benchmark would change
+# the measurement rather than the solution — so those three triads (and their
+# creator skills) are out of scope here, unlike in meta_agent.py.
 EVOLVE_AGENT_NAMES = [
-    "tool_optimize_agent", "tool_evaluate_agent", "tool_generate_agent",
+    "tool_generate_agent", "tool_optimize_agent", "tool_evaluate_agent",
     "agent_generate_agent", "agent_optimize_agent", "agent_evaluate_agent",
     "skill_generate_agent", "skill_optimize_agent", "skill_evaluate_agent",
-    "environment_generate_agent", "environment_optimize_agent", "environment_evaluate_agent",
-    "connector_generate_agent", "connector_optimize_agent", "connector_evaluate_agent",
 ]
 EVOLVE_TOOL_NAMES = ["evolution_tool"]
 EVOLVE_SKILL_NAMES = [
     "self_evolving_skill",
-    "agent_creator_skill", "tool_creator_skill", "environment_creator_skill",
-    "skill_creator_skill", "connector_creator_skill",
+    "tool_creator_skill", "agent_creator_skill", "skill_creator_skill",
 ]
 
 
-def extend_roster_for_evolve(agent_names, tool_names, skill_names, evolve):
-    """Extend the base roster with the self-evolution add-ons when `evolve` is True.
+def resolve_roster(agent_names, tool_names, skill_names, evolve):
+    """Return the roster with the self-evolution add-ons included or stripped.
+
+    The config already lists the evolution roster (so it reads as one complete
+    assembly, like meta_agent.py), which makes `--no-evolve` a *removal* rather
+    than the absence of an addition. Adding when missing is kept too, so the
+    switch means the same thing whichever way a config is written.
 
     Returns fresh (agent_names, tool_names, skill_names) lists; the inputs are
     never mutated in place.
     """
-    agent_names = list(agent_names)
-    tool_names = list(tool_names)
-    skill_names = list(skill_names)
-    if evolve:
-        agent_names += [n for n in EVOLVE_AGENT_NAMES if n not in agent_names]
-        tool_names += [n for n in EVOLVE_TOOL_NAMES if n not in tool_names]
-        skill_names += [n for n in EVOLVE_SKILL_NAMES if n not in skill_names]
-    return agent_names, tool_names, skill_names
+    def apply(base, addons):
+        if evolve:
+            return list(base) + [n for n in addons if n not in base]
+        return [n for n in base if n not in addons]
+
+    return (
+        apply(agent_names, EVOLVE_AGENT_NAMES),
+        apply(tool_names, EVOLVE_TOOL_NAMES),
+        apply(skill_names, EVOLVE_SKILL_NAMES),
+    )
 
 
 def select_instances(instances, task_ids=None, start=None, end=None):
@@ -290,24 +299,49 @@ async def extract_submission(sandbox, dest_dir: str) -> str:
     return local_path
 
 
+async def teardown():
+    """Shut the subsystems down in run_meta_agent.py's order, and as forgivingly.
+
+    Sandbox cleanup has to happen while the event loop and the opensandbox SDK
+    executor are still alive — leaving it to the asyncio-atexit hooks fails at
+    process exit ("Executor shutdown has been called") and leaks peer containers.
+    Each step is guarded so one failure still lets the rest run; a leaked
+    container is worse than a noisy log line. No environment_manager step:
+    ProgramBench runs with `env_names = []` (see configs/programbench_agent.py).
+    """
+    for label, step in (
+        ("task manager", task_manager.stop),
+        ("sandbox cleanup", sandbox_manager.cleanup),
+        ("trace manager", trace_manager.stop),
+    ):
+        try:
+            await step()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"| ⚠️ {label}: {e}")
+
+
 async def main():
     args = parse_args()
     config.initialize(config_path=args.config, args=args)
 
-    config.agent_names, config.tool_names, config.skill_names = extend_roster_for_evolve(
+    config.agent_names, config.tool_names, config.skill_names = resolve_roster(
         config.agent_names, config.tool_names, config.skill_names, args.evolve,
     )
 
-    # Capture the fixed bootstrap roots before any session rebases them — every
-    # per-task session below is created under these same original roots, never
-    # under the previous task's (already-rebased) config.project_root.
-    bootstrap_project_root = config.project_root
+    # Capture the shared component library before any session rebases config —
+    # every per-task session below layers onto this same extension root.
     bootstrap_extension_root = config.extension_root
 
-    bootstrap_session_id = make_id()
+    # Sessions resolve through the path manager (P.SESSION -> output/<owner>/
+    # sessions/<id>), exactly like run_meta_agent.py, so a run started here lands
+    # where the gateway would put it and shows up in the browser's project list.
+    # Deliberately NOT derived from config.project_root: bind_session_roots()
+    # repoints that at each task's sandbox, so task N+1 would otherwise nest
+    # inside task N.
+    bootstrap_session_id = f"programbench_bootstrap_{make_id()}"
     bootstrap_ctx = SessionContext(id=bootstrap_session_id, name="programbench_bootstrap")
     bootstrap_sandbox = ensure_session_sandbox(
-        bootstrap_ctx, bootstrap_project_root, shared_extension_root=bootstrap_extension_root,
+        bootstrap_ctx, shared_extension_root=bootstrap_extension_root,
     )
     bind_session_roots(config, bootstrap_sandbox)
     bootstrap_log_root = config.log_root
@@ -380,9 +414,7 @@ async def main():
 
     if not selected:
         logger.warning("| ⚠️ No instances selected — nothing to run.")
-        await task_manager.stop()
-        await trace_manager.stop()
-        await sandbox_manager.cleanup()
+        await teardown()
         return
 
     # --- Run each selected instance sequentially, in its own session sandbox ---
@@ -396,12 +428,18 @@ async def main():
         image_ref = f"{instance.get('image_name', '')}:{IMAGE_TAG}"
         logger.info(f"| ▶️ [{i}/{len(selected)}] Starting ProgramBench task: {instance_id} (image={image_ref})")
 
-        session_id = make_id()
+        # The session id IS the instance id, so the run lands in
+        # output/<owner>/sessions/<instance_id>/ and is findable by task name
+        # instead of by an opaque hash. Re-running a task reuses its directory
+        # (roots are mkdir(exist_ok=True)) and overwrites the previous
+        # submission — copy anything you want to keep out first.
+        session_id = instance_id
         ctx = SessionContext(id=session_id, name=f"programbench_{instance_id}")
         fs_sandbox = ensure_session_sandbox(
-            ctx, bootstrap_project_root, shared_extension_root=bootstrap_extension_root,
+            ctx, shared_extension_root=bootstrap_extension_root,
         )
         bind_session_roots(config, fs_sandbox)
+        logger.info(f"| 📂 [{instance_id}] Session root: {fs_sandbox.project_root}")
 
         content = build_task_content(instance)
         t0 = time.time()
@@ -470,6 +508,7 @@ async def main():
             "status": status_value,
             "time_seconds": round(elapsed, 1),
             "session_id": session_id,
+            "session_path": str(fs_sandbox.project_root),
             "workspace_path": str(fs_sandbox.workspace_root),
             "submission_path": submission_path,
             "error": error_message,
@@ -487,10 +526,10 @@ async def main():
     done_count = sum(1 for r in results if r["status"] == "done")
     print(f"\n✅ ProgramBench run done: {done_count}/{len(results)} task(s) completed")
     print(f"   Results: {results_path}")
+    for r in results:
+        print(f"   {'✅' if r['status'] == 'done' else '❌'} {r['instance_id']:45} {r['session_path']}")
 
-    await task_manager.stop()
-    await trace_manager.stop()
-    await sandbox_manager.cleanup()
+    await teardown()
 
 
 if __name__ == "__main__":
