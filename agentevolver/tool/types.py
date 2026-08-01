@@ -71,6 +71,22 @@ class Tool(BaseModel):
         default=None,
         description="No-progress policy: workspace / external / polling / always",
     )
+    #: Whether calling this tool changes state, as opposed to reporting on it. Orthogonal
+    #: to `progress_policy`, which is about repeating an identical action.
+    #:
+    #: This exists to make a distinction the agent cannot otherwise see about itself:
+    #: measuring always succeeds and never breaks anything, while changing something can
+    #: fail — so an agent that is unsure keeps measuring, and its own history reads as
+    #: activity. One run spent 65 turns on a one-line fix having already located the line:
+    #: 134 shell commands, 14 file reads, 4 edits. It could see every output; it could not
+    #: see the ratio.
+    #:
+    #: None means "depends on the arguments" — a shell command may do either — and the
+    #: effect is judged by whether observable state actually changed.
+    mutates: Optional[bool] = Field(
+        default=None,
+        description="True if the tool changes state, False if it only reports on it, None if it depends.",
+    )
 
     async def __call__(self, **kwargs) -> Response:
         """Call the tool with the given arguments."""
@@ -88,6 +104,9 @@ class ToolConfig(BaseModel):
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     progress_policy: Optional[Literal["workspace", "external", "polling", "always"]] = Field(
         default=None, description="No-progress guard policy"
+    )
+    mutates: Optional[bool] = Field(
+        default=None, description="True if the tool changes state, False if it only reports on it"
     )
     version: str = Field(default="1.0.0", description="Version of the tool")
 
@@ -129,6 +148,7 @@ class ToolConfig(BaseModel):
             "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
             "progress_policy": self.progress_policy,
+            "mutates": self.mutates,
             "version": self.version,
 
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
@@ -154,6 +174,7 @@ class ToolConfig(BaseModel):
         enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
         progress_policy = data.get("progress_policy")
+        mutates = data.get("mutates")
         version = data.get("version")
         
         cls_ = None
@@ -189,6 +210,7 @@ class ToolConfig(BaseModel):
             enable_evolving=enable_evolving,
             permission_mode=permission_mode,
             progress_policy=progress_policy,
+            mutates=mutates,
             version=version,
             cls=cls_,
             config=config,

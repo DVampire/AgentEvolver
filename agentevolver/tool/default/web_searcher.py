@@ -50,6 +50,7 @@ class WebSearcherTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
+    mutates: bool = False
 
     max_length: int = Field(default=4096, description="The maximum length of the search results")
     retry_delay: int = Field(default=10, description="The delay between retries")

@@ -42,6 +42,7 @@ class ReadFileTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
+    mutates: bool = False
     progress_policy: str = "workspace"
 
     def __init__(self, enable_evolving: bool = False, **kwargs):

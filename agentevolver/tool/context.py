@@ -26,6 +26,12 @@ from agentevolver.permission import permission_manager, PermissionMode
 
 _UNSET = object()  # sentinel: get_instruction cache is empty / invalidated
 
+def _field_default(tool_cls, name):
+    """A declared field's default, or None when the tool does not declare it."""
+    field = tool_cls.model_fields.get(name)
+    return getattr(field, "default", None) if field is not None else None
+
+
 class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -162,7 +168,12 @@ class ToolContextManager(BaseModel):
                 tool_name = tool_cls.model_fields['name'].default
                 tool_description = tool_cls.model_fields['description'].default
                 tool_metadata = tool_cls.model_fields['metadata'].default
-                
+                # Behavioural declarations, read off the class so the registry carries what
+                # the tool says about itself. Both were being dropped here, which left them
+                # None on every registered config no matter what a tool declared.
+                tool_mutates = _field_default(tool_cls, "mutates")
+                tool_progress_policy = _field_default(tool_cls, "progress_policy")
+
                 # Get or generate version from version_manager
                 tool_version = await version_manager.get_version("tool", tool_name)
                 
@@ -191,6 +202,8 @@ class ToolContextManager(BaseModel):
                     args_schema=tool_args_schema,
                     metadata=tool_metadata,
                     enable_evolving=tool_enable_evolving,
+                    mutates=tool_mutates,
+                    progress_policy=tool_progress_policy,
                     code=tool_code,
                     path=tool_path,
                 )

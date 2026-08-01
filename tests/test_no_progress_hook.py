@@ -370,3 +370,141 @@ def test_the_terminating_message_reports_the_actual_count():
     assert "Stopped after three" not in source
     # And the backstop still exists.
     assert "no_progress_rounds >= strikes_allowed" in source
+
+
+async def _register_tools():
+    """The mechanism reads each tool's own `mutates` declaration, so the registry has to be
+    there. Without it every lookup returns None and the fallback — judge by effect —
+    answers everything, which would make these tests pass while testing nothing."""
+    from agentevolver.tool import tool_manager
+
+    await tool_manager.initialize(tool_names=[
+        "bash_tool", "read_file_tool", "write_file_tool", "edit_file_tool",
+        "grep_search_tool", "list_dir_tool",
+    ])
+
+
+# --- defining "no progress": measuring is not doing --------------------------------
+#
+# The repeat guard catches one action issued twice. It cannot catch the shape that
+# actually cost three runs 65, 300 and 650 turns: many *different* measurements with
+# nothing changed between them. Every command differs, so every command looks new.
+#
+# What distinguishes the two is whether a turn changed anything — by declaration (a tool
+# that says it mutates) or by effect (observable state moved). Both are needed: a tool can
+# declare it, but a shell command depends on its arguments.
+
+def test_tools_declare_whether_they_change_anything():
+    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.edit_file import EditFileTool
+    from agentevolver.tool.default.grep_search import GrepSearchTool
+    from agentevolver.tool.default.read_file import ReadFileTool
+    from agentevolver.tool.default.write_file import WriteFileTool
+
+    assert WriteFileTool().mutates is True
+    assert EditFileTool().mutates is True
+    assert ReadFileTool().mutates is False
+    assert GrepSearchTool().mutates is False
+    # A shell command depends entirely on its arguments — `cat x` reports, `sed -i`
+    # changes — so it declares nothing and is judged by its effect.
+    assert BashTool().mutates is None
+
+
+@pytest.mark.asyncio
+async def test_a_declared_mutation_counts_even_without_a_visible_effect():
+    """An edit whose result happens to leave the fingerprint alone is still work."""
+    await _register_tools()
+    from agentevolver.agent.types import _AgentRun
+
+    agent = _GuardAgent(base_dir="/tmp")
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+    run.step_plan = [{"id": "1", "type": "tool", "name": "write_file_tool"}]
+    run.last_fingerprint = "same"
+
+    assert await agent._turn_changed_something(run, "same") is True
+
+
+@pytest.mark.asyncio
+async def test_a_shell_command_is_judged_by_its_effect():
+    """`cat` and `sed -i` are the same tool. Only the fingerprint tells them apart."""
+    await _register_tools()
+    from agentevolver.agent.types import _AgentRun
+
+    agent = _GuardAgent(base_dir="/tmp")
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+    run.step_plan = [{"id": "1", "type": "tool", "name": "bash_tool"}]
+
+    run.last_fingerprint = "before"
+    assert await agent._turn_changed_something(run, "after") is True
+    assert await agent._turn_changed_something(run, "before") is False
+
+
+@pytest.mark.asyncio
+async def test_a_read_only_turn_leaves_state_untouched_and_counts_as_idle():
+    await _register_tools()
+    from agentevolver.agent.types import _AgentRun
+
+    agent = _GuardAgent(base_dir="/tmp")
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+    run.step_plan = [{"id": "1", "type": "tool", "name": "read_file_tool"}]
+    run.last_fingerprint = "same"
+
+    assert await agent._turn_changed_something(run, "same") is False
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_sub_agent_is_work():
+    """Whatever the child does, the parent did not spend the turn looking."""
+    await _register_tools()
+    from agentevolver.agent.types import _AgentRun
+
+    agent = _GuardAgent(base_dir="/tmp")
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+    run.step_plan = [{"id": "1", "type": "agent", "name": "code_agent"}]
+    run.last_fingerprint = "same"
+
+    assert await agent._turn_changed_something(run, "same") is True
+
+
+@pytest.mark.asyncio
+async def test_an_inspection_only_proposal_is_refused_while_idle():
+    """Judged before the turn runs, so the next one has to be a change. Only a turn made
+    entirely of tools that declare themselves read-only is refused — anything that might
+    change something is allowed through."""
+    await _register_tools()
+    from agentevolver.agent.types import _IDLE_TURNS_BEFORE_BLOCKING, _AgentRun
+
+    agent = _GuardAgent(base_dir="/tmp")
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="ref"), "tid", {})
+
+    read_only = {
+        "tool_calls": [SimpleNamespace(name="read_file_tool", input={}, id="1")],
+        "routing": {"read_file_tool": ("tool",)}, "reasoning": "", "step_tokens": 0,
+    }
+    shell = {
+        "tool_calls": [SimpleNamespace(name="bash_tool", input={}, id="1")],
+        "routing": {"bash_tool": ("tool",)}, "reasoning": "", "step_tokens": 0,
+    }
+    assert await agent._turn_will_change(run, read_only) is False
+    assert await agent._turn_will_change(run, shell) is True
+    assert _IDLE_TURNS_BEFORE_BLOCKING > _IDLE_TURNS_BEFORE_WARNING_VALUE()
+
+
+def _IDLE_TURNS_BEFORE_WARNING_VALUE():
+    from agentevolver.agent.types import _IDLE_TURNS_BEFORE_WARNING
+
+    return _IDLE_TURNS_BEFORE_WARNING
+
+
+def test_the_agent_is_told_its_own_action_mix():
+    """The one thing it cannot see about itself: its history shows every command and
+    every output, but not the ratio between looking and doing."""
+    import inspect
+
+    from agentevolver.agent.types import Agent
+
+    source = inspect.getsource(Agent._get_agent_context)
+    assert "Turns that changed something" in source
+    assert "turns that only looked" in source
+    # And the warning names the remedy, not just the symptom.
+    assert "another measurement will not tell you more" in source

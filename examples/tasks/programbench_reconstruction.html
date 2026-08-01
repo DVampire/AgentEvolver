@@ -122,9 +122,11 @@ that first, from the documentation and a few probe runs.
 - A **library that ships a CLI**: treat the CLI as the surface. That is what is
   observable.
 
-Write the surface down as a checklist in a file before you start fixing anything,
-and mark items off as you verify them. Without a written list you will rediscover
-the same three behaviors and never notice the twenty you have not looked at.
+Write the surface down as a checklist with `todo_tool` before you start fixing
+anything, and mark items off as you verify them. Without a list you will rediscover
+the same three behaviors and never notice the twenty you have not looked at — and
+`todo_tool` specifically, because it comes back into your context every step, so
+consulting it costs nothing while a list in a file has to be re-read.
 </map-the-surface>
 
 <go-wide-before-deep>
@@ -137,6 +139,29 @@ Within an item: run the reference, run yours on the same input, diff, fix. Exit
 status, stdout and stderr all count, and which stream text goes to is part of the
 behavior. Where the documentation or the program's own output shows exact text,
 reproduce it exactly — including leading spaces and line breaks.
+
+**What counts as progress: a difference that used to be there and now is not.** Not a
+measurement taken, not a file written, not an explanation found. Your context reports two
+numbers each step — turns that changed something, and turns that only looked — and they
+are there because this is the one thing you cannot otherwise see about yourself. Every
+command you ran and every output you got is in your history; the ratio between them is
+not, and three runs before you spent 65, 300 and 650 consecutive turns measuring a
+difference they had already located.
+
+Two habits follow.
+
+**Keep the checklist in `todo_tool`, not in a file.** It is injected into your context
+every step, so you see what is done and what is left without spending an action to look —
+and marking an item done is how you and anyone reading the run can tell a turn moved
+something. A checklist in a text file has to be re-read to be used, and re-reading is the
+trap this whole section is about.
+
+**When the diff is down to one line, change that line.** The commonest shape: identical
+output, different exit status. That is one `return` or one `exit`, and it does not need
+another test run, a probe program, or an understanding of the argument parser. A run held
+`--help` at exit 1 for 65 turns having already found the `return 1` — it grepped for it
+twice. Write the change; if it is wrong you will know in one turn and it costs one turn to
+undo.
 
 **Capturing a behavior is not reproducing it.** Once you have the reference's output
 for something — on screen or saved to a file — the next action is to write the code

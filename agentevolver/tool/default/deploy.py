@@ -55,6 +55,7 @@ class DeployTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
+    mutates: bool = True
     permission_mode: str = Field(default="danger_full_access", description="Runs build/start commands inside an isolated sandbox.")
 
     def __init__(self, enable_evolving: bool = False, **kwargs):

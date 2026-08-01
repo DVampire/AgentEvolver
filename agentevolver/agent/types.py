@@ -87,6 +87,19 @@ _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
 #: is reported rather than converted into an exhausted budget.
 _THINK_FAILURES_BEFORE_GIVING_UP = 3
 
+#: Consecutive turns that change nothing before the agent is told so in its own context.
+#: Low, because the remedy is cheap — make the edit you were about to justify — and the
+#: failure it heads off is expensive: three separate runs spent 65, 300 and 650 turns
+#: measuring a difference they had already located.
+_IDLE_TURNS_BEFORE_WARNING = 5
+
+#: Consecutive turns that change nothing before an observation-only proposal is blocked
+#: outright. The existing guard catches a *repeated* action; this catches the other shape,
+#: which is what actually happened three times: many different measurements, none of them
+#: followed by a change. Blocking costs the agent one turn and returns a correction, the
+#: same as the repeat guard — it does not end the run.
+_IDLE_TURNS_BEFORE_BLOCKING = 12
+
 @lru_cache(maxsize=1)
 def _runtime_facts() -> Dict[str, str]:
     """Describe the interpreter shell commands will actually run under.
@@ -352,6 +365,18 @@ class _AgentRun:
         #: its whole budget doing that: 958 steps in 44 seconds, reported as a stack
         #: overflow rather than as the model error logged on the first one.
         self.think_failures = 0
+        #: Action mix, so an agent can see about itself what it otherwise cannot: that it
+        #: has been measuring rather than changing anything. Measuring always succeeds and
+        #: never breaks the build, so an unsure agent keeps doing it and its history reads
+        #: as activity. One run spent 65 turns on a one-line fix it had already located —
+        #: 134 shell commands, 14 reads, 4 edits — and could see every output but not the
+        #: ratio.
+        self.observations = 0
+        self.mutations = 0
+        #: Consecutive turns that changed nothing: no mutating tool, no change in
+        #: observable state. Reset by either.
+        self.idle_turns = 0
+        self.last_fingerprint: Optional[str] = None
 
 
 class Agent(BaseModel):
@@ -480,6 +505,26 @@ class Agent(BaseModel):
             f"Step {step_number + 1} of {self.max_step} max possible steps\n"
             f"Current date and time: {time_str}"
         )
+        # The agent's own action mix. Included because it is the one thing about its
+        # behaviour it cannot see: its history shows every command and every output, but
+        # not the ratio between looking and doing, and that ratio is what tells it whether
+        # it is working or circling.
+        run = kwargs.get("_run")
+        mutations = getattr(run, "mutations", 0)
+        observations = getattr(run, "observations", 0)
+        if run is not None and (mutations or observations):
+            step_info_body += (
+                f"\nTurns that changed something: {run.mutations} | "
+                f"turns that only looked: {run.observations}"
+            )
+            if getattr(run, "idle_turns", 0) >= _IDLE_TURNS_BEFORE_WARNING:
+                step_info_body += (
+                    f"\n⚠️  The last {getattr(run, 'idle_turns', 0)} turns changed nothing — no file "
+                    f"written, no state moved. If you already know what to change, change "
+                    f"it now; another measurement will not tell you more than the last one "
+                    f"did. If you do not know, you are looking in the wrong place: pick a "
+                    f"different item and come back."
+                )
 
         # Clean per-section bodies (no "### " prefix) — each is rendered as its own
         # agent_context sub-module (see code_agent.html and the agent prompts).
@@ -1593,6 +1638,31 @@ class Agent(BaseModel):
         # written at all. Re-reading docs while forming a plan is normal; the guard
         # still blocks each repeat and pushes back, it just does not pull the plug
         # until the agent has changed something at least once.
+        # The other shape of no progress: not one action repeated, but many different
+        # measurements with nothing changed between them. The repeat guard cannot see it —
+        # every command differs — and it is what three runs actually did, for 65, 300 and
+        # 650 turns. Blocked here so the next turn has to be a change.
+        idle_turns = getattr(run, "idle_turns", 0)
+        if idle_turns >= _IDLE_TURNS_BEFORE_BLOCKING and not await self._turn_will_change(run, decision):
+            run.round_step = run.step
+            await self._post_step(
+                run.task_id, run.step, run.ctx, run.messages,
+                reasoning=decision["reasoning"], plan=[],
+                step_tokens=decision["step_tokens"], done=False,
+            )
+            run.action_errors = [
+                f"Blocked: {idle_turns} turns in a row have changed nothing, and this "
+                f"turn proposes only more inspection. You have measured enough to act. "
+                f"Write the change you believe is right — an edit, a file, a build — even "
+                f"if you are not certain; a wrong edit is visible in one turn and "
+                f"reversible, while another measurement tells you what the last one did. "
+                f"If you genuinely cannot name a change to make, this difference is not "
+                f"the one to be working on: record it and move to the next item."
+            ]
+            run.step += 1
+            run.retry_now = True
+            return None
+
         scaled = int(self.max_step * _NO_PROGRESS_STRIKE_BUDGET_FRACTION)
         strikes_allowed = max(_NO_PROGRESS_STRIKES_MIN, min(scaled, _NO_PROGRESS_STRIKES_MAX))
         if not run.produced_change:
@@ -1691,10 +1761,67 @@ class Agent(BaseModel):
             return ""
         return digest.hexdigest()
 
+    async def _turn_will_change(self, run: "_AgentRun", decision: Dict[str, Any]) -> bool:
+        """Whether the *proposed* turn intends to change something.
+
+        Judged before it runs, so a turn of pure inspection can be refused while an idle
+        streak is open. A shell command is treated as intending to change something —
+        it may well — so this only ever blocks a turn made entirely of tools that declare
+        themselves read-only.
+        """
+        from agentevolver.tool import tool_manager
+
+        calls = decision.get("tool_calls") or []
+        if not calls:
+            return True  # a text-only turn is handled elsewhere
+        for call in calls:
+            route = (decision.get("routing") or {}).get(call.name) or ("tool",)
+            if str(route[0]) != "tool":
+                return True
+            try:
+                info = await tool_manager.get_info(call.name)
+            except Exception:  # noqa: BLE001
+                return True
+            if info is None or getattr(info, "mutates", None) is not False:
+                return True
+        return False
+
+    async def _turn_changed_something(self, run: "_AgentRun", fingerprint: str) -> bool:
+        """Whether this turn changed anything, by declaration or by effect.
+
+        Two ways to count, because neither alone is enough. A tool can say it mutates —
+        `write_file` does, `read_file` does not — but a shell command depends entirely on
+        its arguments: `cat x` reports, `sed -i` changes. So a shell command is judged by
+        whether observable state actually moved.
+        """
+        from agentevolver.tool import tool_manager
+
+        for item in run.step_plan:
+            if str(item.get("type") or "tool") != "tool":
+                # A dispatched sub-agent or workflow does work of its own.
+                return True
+            try:
+                info = await tool_manager.get_info(str(item.get("name") or ""))
+            except Exception:  # noqa: BLE001 — accounting must never break a run
+                info = None
+            if info is not None and getattr(info, "mutates", None) is True:
+                return True
+        return bool(run.last_fingerprint is not None and fingerprint != run.last_fingerprint)
+
     async def _record_action_evidence(self, run: "_AgentRun") -> None:
         """Remember successful results from the drained round at its final workspace state."""
         plans = {item.get("id"): item for item in run.step_plan}
         fingerprint = await self._workspace_fingerprint(run.ctx)
+
+        # Action mix and the idle streak, updated once per drained round.
+        changed = await self._turn_changed_something(run, fingerprint)
+        if changed:
+            run.mutations += 1
+            run.idle_turns = 0
+        else:
+            run.observations += 1
+            run.idle_turns += 1
+        run.last_fingerprint = fingerprint
         for outcome in run.round_outcomes:
             if outcome.get("error") or outcome.get("is_done"):
                 continue

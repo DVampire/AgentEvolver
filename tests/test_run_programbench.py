@@ -1019,3 +1019,41 @@ def test_a_successful_analysis_is_still_a_violation(tmp_path):
     assert audit["clean"] is False
     assert "the analysis succeeded" in audit["verdict"]
     assert audit["by_tool"] == {"strings": 1}
+
+
+def test_the_task_defines_what_progress_means():
+    """Three runs spent 65, 300 and 650 consecutive turns measuring a difference they had
+    already located. Nothing in the document said what progress was, and every instruction
+    it did give — map the surface, write the checklist, run and diff — describes looking."""
+    prompt = _flat_task_text()
+    assert "What counts as progress: a difference that used to be there and now is not." in prompt
+    assert "Not a measurement taken, not a file written, not an explanation found" in prompt
+    # It points at the counters the framework now puts in the agent's own context.
+    assert "turns that changed something, and turns that only looked" in prompt
+
+
+def test_the_task_requires_the_checklist_to_live_in_the_todo_tool():
+    """`todo_tool` was in the roster and called zero times across a 737-step run, while the
+    agent kept its checklist in a text file it then had to re-read."""
+    prompt = _flat_task_text()
+    assert "Keep the checklist in `todo_tool`, not in a file." in prompt
+    assert "injected into your context every step" in prompt
+    assert "re-reading is the trap" in prompt
+
+
+def test_the_task_says_a_one_line_diff_needs_a_one_line_change():
+    """The commonest shape and the one that cost the most: identical output, different exit
+    status. One run held `--help` at exit 1 for 65 turns having already grepped out the
+    `return 1` twice."""
+    prompt = _flat_task_text()
+    assert "When the diff is down to one line, change that line." in prompt
+    assert "identical output, different exit status" in prompt
+    assert "does not need another test run, a probe program" in prompt
+
+
+def test_the_checklist_instruction_is_consistent():
+    """Two sections told the agent to keep its checklist, one saying "in a file" and one
+    saying `todo_tool`. It followed the file one — and then spent turns re-reading it."""
+    prompt = _flat_task_text()
+    assert "Write the surface down as a checklist with `todo_tool`" in prompt
+    assert "checklist in a file" not in prompt
