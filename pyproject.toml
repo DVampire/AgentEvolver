@@ -24,6 +24,7 @@ dependencies = [
     "asyncio-atexit>=1.0.1",
     "tenacity>=9.1.4",
     "rich",
+    "pyte>=0.8.2",   # interprets a pty byte stream into the screen a person would see
     "diskcache>=5.6.3",
     "dirtyjson>=1.0.8",
     "json-repair",

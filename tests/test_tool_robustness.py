@@ -599,3 +599,62 @@ def test_a_per_call_timeout_overrides_the_default(tmp_path):
         command="sleep 30", timeout=1, ctx=SimpleNamespace(extra={})))
     assert resp.success is False
     assert "timed out after 1 seconds" in resp.message
+
+
+# --- fix #13: a terminal displays a screen, not a byte stream ---------------------
+#
+# The bytes a full-screen program writes are instructions to a device — move here, set
+# this colour, erase to end of line. What a person sees is the screen those instructions
+# leave behind. Handing over the raw stream hands over the wire protocol instead of the
+# page: one reference program's 500-character screen arrived as 32,184 bytes of escape
+# sequences, which filled the output budget and got skimmed past as noise.
+
+def test_the_screen_is_returned_not_the_escape_sequences():
+    from agentevolver.tool.default.bash import _render_terminal
+    data = b"\x1b[2J\x1b[H" + b"hello" + b"\x1b[5;10Hthere"
+    out = _render_terminal(data)
+    assert "hello" in out and "there" in out
+    assert "\x1b" not in out
+
+
+def test_a_redrawn_screen_collapses_to_what_it_ends_up_showing():
+    """The point of rendering: a program that repaints reports its screen, not every frame
+    it painted to get there."""
+    from agentevolver.tool.default.bash import _render_terminal
+    frames = b"".join(b"\x1b[2J\x1b[H" + f"frame {i}".encode() for i in range(500))
+    out = _render_terminal(frames)
+    assert "frame 499" in out
+    assert "frame 498" not in out
+    assert len(out) < len(frames) / 10
+
+
+def test_colour_and_boldness_are_reported_not_dropped():
+    """For a program whose whole job is how it draws, "it is red" is the observation — and
+    the reference's -C flag is only visible this way."""
+    from agentevolver.tool.default.bash import _render_terminal
+    out = _render_terminal(b"\x1b[31mR\x1b[0m \x1b[1;37mB\x1b[0m")
+    assert "red" in out and "white bold" in out
+
+
+def test_a_screen_that_uses_no_colour_says_nothing_about_colour():
+    from agentevolver.tool.default.bash import _render_terminal
+    out = _render_terminal(b"plain text\r\n")
+    assert "plain text" in out
+    assert "red" not in out and "green" not in out
+
+
+def test_output_longer_than_the_screen_keeps_its_scrollback():
+    """Rendering must not cost a line-oriented command its output: 60 lines of build log
+    through a 24-row terminal is still 60 lines."""
+    from agentevolver.tool.default.bash import _render_terminal
+    out = _render_terminal(b"".join(f"line {i}\r\n".encode() for i in range(60)))
+    assert "line 0" in out
+    assert "line 59" in out
+
+
+def test_a_tty_command_reports_the_screen(tmp_path):
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="printf 'a\\nb\\n'", tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
+    assert "a\nb" in resp.message
+    assert "terminal 80x24" in resp.message

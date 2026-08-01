@@ -44,10 +44,12 @@ Execute bash commands in the shell.
 ## Parameters
 - command (str): The command to execute. If file path is necessary, it should be an absolute path.
 - tty (bool, optional): Run under a pseudo-terminal. Needed for anything that requires a
-  terminal to work — full-screen programs, REPLs, prompts. stdout and stderr arrive
-  interleaved on one stream, as they would on a real terminal. TERM is set for you when
-  the environment has none; prefix the command with `TERM=vt100 ` and such to choose one,
-  since behaviour under different terminal types is itself worth comparing. Default false.
+  terminal to work — full-screen programs, REPLs, prompts. You get back what the terminal
+  displays — the screen, plus a note of the colours and boldness used — not the escape
+  sequences that produced it. stdout and stderr are one stream, as on a real terminal.
+  TERM is set for you when the environment has none; prefix the command with `TERM=vt100 `
+  and such to choose one, since behaviour under different terminal types is itself worth
+  comparing. Default false.
 - stdin (str, optional): Text fed to the command's input. With `tty: true` these are
   keystrokes, so a program can be driven and then told to quit.
 - timeout (int, optional): Seconds before the command is abandoned. Keep it small for
@@ -75,6 +77,56 @@ _PTY_ROWS, _PTY_COLS = 24, 80
 #: `vt100`, one that does not exist — is itself a behaviour worth comparing. Prefix the
 #: command with `TERM=… ` to choose.
 _PTY_DEFAULT_TERM = "xterm"
+
+
+def _render_terminal(data: bytes) -> str:
+    """Interpret a pty byte stream the way a terminal would and return what it displays.
+
+    A terminal is not a pipe with a flag set: the bytes a full-screen program writes are
+    instructions to a device — move here, set this colour, erase to end of line — and the
+    thing a person sees is the screen those instructions leave behind. Handing the raw
+    stream to a caller hands over the wire protocol instead of the page. Measured on one
+    task: a screen holding roughly 500 visible characters arrived as 32,184 bytes of escape
+    sequences, which exhausted the output budget and was skimmed past as noise.
+
+    Colour and boldness survive as a summary line rather than being dropped, because for a
+    program whose whole job is how it draws, "it is green and bold" is the observation.
+    """
+    import pyte
+
+    screen = pyte.HistoryScreen(_PTY_COLS, _PTY_ROWS, history=200)
+    stream = pyte.ByteStream(screen)
+    stream.feed(data)
+
+    def row_text(row) -> str:
+        return "".join(row[x].data for x in range(_PTY_COLS)).rstrip()
+
+    lines = [row_text(row) for row in screen.history.top]
+    lines += [line.rstrip() for line in screen.display]
+    while lines and not lines[-1]:
+        lines.pop()
+
+    # Distinct styles in first-seen order — a handful is descriptive, a hundred is noise.
+    styles: list = []
+    for row in list(screen.history.top) + [screen.buffer[y] for y in range(_PTY_ROWS)]:
+        for x in range(_PTY_COLS):
+            char = row[x]
+            if not char.data.strip():
+                continue
+            name = char.fg if char.fg != "default" else ""
+            if char.bg != "default":
+                name = f"{name or 'default'} on {char.bg}"
+            if char.bold:
+                name = f"{name or 'default'} bold"
+            if name and name not in styles:
+                styles.append(name)
+
+    note = f"[terminal {_PTY_COLS}x{_PTY_ROWS}"
+    if styles:
+        shown = ", ".join(styles[:6]) + (", …" if len(styles) > 6 else "")
+        note += f" · {shown}"
+    note += f" · {len(data):,} bytes interpreted]"
+    return "\n".join(lines + ["", note])
 
 
 def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
@@ -152,9 +204,13 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
         process.wait()
         os.close(master)
 
-    output = b"".join(chunks).decode("utf-8", errors="replace")
-    if total > OUTPUT_LIMIT * 4:
-        output += f"\n[... {total - len(output):,} further characters not captured ...]"
+    raw = b"".join(chunks)
+    try:
+        output = _render_terminal(raw)
+    except Exception as error:  # an emulator that chokes must not lose the observation
+        output = raw.decode("utf-8", errors="replace") + f"\n[terminal not rendered: {error}]"
+    if total > len(raw):
+        output += f"\n[... {total - len(raw):,} further bytes were produced and not shown ...]"
     return output, process.returncode, timed_out
 
 
