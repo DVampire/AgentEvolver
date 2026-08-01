@@ -521,3 +521,81 @@ def test_memory_caps_one_entry_even_if_a_tool_does_not():
     assert len(stored) < _RECORD_DETAIL_MAX + 200
     assert "more characters not kept in memory" in stored
     assert _RECORD_DETAIL_MAX < 32_000, "must be tighter than a single tool's own limit"
+
+
+# --- fix #12: a shell with no terminal cannot observe terminal behaviour ----------
+#
+# A program that draws a screen, prompts, or colourises takes a different path when its
+# output is not a terminal — usually refusing to start. Comparing two such programs
+# without one compares two refusals, and they agree. An entire class of a reference's
+# behaviour was invisible this way: 12 of the graded test files drive the program through
+# a pty, and the reconstruction that never implemented any of it looked correct.
+
+def test_tty_is_off_by_default(tmp_path):
+    """Turning it on unconditionally would change what every other command reports:
+    programs check isatty() and colourise, paginate, or prompt when they think a human is
+    watching."""
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="python3 -c \"import sys; print(sys.stdout.isatty())\"",
+        ctx=SimpleNamespace(extra={})))
+    assert "False" in resp.message
+
+
+def test_tty_gives_the_command_a_terminal(tmp_path):
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="python3 -c \"import sys; print(sys.stdout.isatty())\"",
+        tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
+    assert resp.success is True
+    assert "True" in resp.message
+
+
+def test_tty_sets_a_terminal_type(tmp_path):
+    """A terminal device is not enough on its own: anything built on curses also looks
+    TERM up in terminfo, and without it reports "Error opening terminal: unknown" and
+    exits — the same refusal that having no terminal produces, which is the thing this
+    exists to get past."""
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="echo TERM=$TERM", tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
+    assert "TERM=" in resp.message
+    assert "TERM=\r\n" not in resp.message, "TERM was left empty"
+
+
+def test_a_caller_can_choose_the_terminal_type(tmp_path):
+    """How a program behaves under a different TERM is itself worth comparing — the graded
+    tests use linux, vt100, dumb, screen and a name that does not exist."""
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="TERM=vt100 sh -c 'echo TERM=$TERM'", tty=True, timeout=10,
+        ctx=SimpleNamespace(extra={})))
+    assert "TERM=vt100" in resp.message
+
+
+def test_stdin_reaches_the_command(tmp_path):
+    """Driving an interactive program means sending it keys — and being able to tell it to
+    quit, which is the difference between a comparison and a hang."""
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="cat", stdin="hello from stdin\n", timeout=10,
+        ctx=SimpleNamespace(extra={})))
+    assert "hello from stdin" in resp.message
+
+
+def test_a_tty_command_that_never_exits_times_out_with_advice(tmp_path):
+    """A full-screen program holds the terminal until told to leave."""
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="sleep 30", tty=True, timeout=2, ctx=SimpleNamespace(extra={})))
+    assert resp.success is False
+    assert resp.data["timed_out"] is True
+    assert "whatever key quits it" in resp.message
+
+
+def test_a_per_call_timeout_overrides_the_default(tmp_path):
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access", timeout=600)(
+        command="sleep 30", timeout=1, ctx=SimpleNamespace(extra={})))
+    assert resp.success is False
+    assert "timed out after 1 seconds" in resp.message

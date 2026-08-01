@@ -241,6 +241,40 @@ them. A run that spent a quarter of its budget grepping symbols scored worse tha
 one that spent it running the program.
 </rules>
 
+<ask-what-the-documentation-does-not>
+The documentation specifies the *interface*, not the *behaviour*. It tells you that an
+option exists and roughly what it is for; it does not tell you which values that option
+accepts, whether it compares them case-insensitively, what happens when it is given
+twice, or what it does with a value at the edge of its range. That information exists in exactly one place — the reference — and
+it only answers questions you think to ask.
+
+This is where reconstructions lose most of their score, and the reason is worth naming:
+every other instruction here points you at something in front of you. Read the docs. Run
+the reference. Diff the output. All of it is *extraction*, and extraction stops at the
+edge of the text. The behaviours you are graded on do not stop there.
+
+So use what you already know about programs of this kind. You have seen thousands of
+them. Before you accept an option as finished, ask what a program like this would
+plausibly do that its documentation would not bother to state — and then ask the
+reference, because it costs one command and it always answers:
+
+- Is the comparison case-sensitive? (`red` / `Red` / `RED`)
+- Does it accept `--opt=value` as well as `--opt value`? A bare `-ovalue`?
+- Can flags be bundled — `-abc` for `-a -b -c`?
+- What happens when an option is given twice? Does the last one win?
+- Are there abbreviations, aliases, deprecated spellings?
+- What about the edges: empty, zero, negative, one past the maximum, a value of the wrong
+  type entirely?
+- Does argument order matter? Flags after a positional argument?
+- What is the exit status in each case, and which stream does the message go to?
+
+None of that list is specific to any one program, and none of it appears in any man page.
+Each line is one command against the reference. A behaviour it turns out not to have
+costs you a single check; a behaviour it does have, and you never asked about, costs you
+every test that exercises it — one reconstruction lost twenty-seven tests to a single
+unasked question about letter case.
+</ask-what-the-documentation-does-not>
+
 <know-when-you-are-done>
 You cannot see the tests, so "done" in the grader's sense is not knowable. What is
 knowable is "no difference I can find remains", and that is worth making into a number
@@ -302,13 +336,29 @@ and rebuild first, or you are comparing against the binary you had before the fi
 the reference becomes another `check` line, so it stays checked for the rest of the run
 instead of being verified once and forgotten.
 
-**One line per option is not coverage.** An option that takes a value has a space of
-them, and testing one point in that space tells you about that point only. For each such
-option check, at minimum: one valid value, *the same value written differently* — a
-different case, an abbreviation, an alias — a boundary value, and something invalid. A
-reconstruction that accepted `--color=red` and rejected `--color=Red` passed its author's
-one check and failed twenty-seven of the grader's, because the reference matched values
-case-insensitively and nothing in the one check could have revealed that.
+**One line per option is not coverage.** Do this as a list you work through, not as a
+judgement you make. Go along the usage line and mark every option that *takes a value* —
+they are the ones shown with an argument, `-C color`, `--width N`, `-o FILE`. Each one
+gets four checks, not one:
+
+| | why |
+|---|---|
+| a valid value | the case you already thought of |
+| **the same value written differently** | different case, an abbreviation, an alias |
+| a boundary value | empty, zero, negative, huge, the largest legal one |
+| something invalid | the reject path, which is tested as heavily as the accept path |
+
+Then count: if the usage line shows four options that take values, your script has
+sixteen lines about them. Fewer means you decided one of them did not need it, and that
+decision is the one that costs.
+
+The second row is the one everybody skips, and it is not hypothetical: a reconstruction
+that accepted `red` and rejected `Red` passed its author's single check and failed
+twenty-seven of the grader's, because the reference compared those values
+case-insensitively. Nothing in one check could have revealed that. The run before it had
+been told to check "the same value written differently", wrote a line for every other
+option on the usage line, and still did not write that one — because every other line
+could be copied off the usage text, and this one has to be thought of.
 
 The same applies to whatever mode or behaviour the program has: if it can be started in
 several ways, check that it starts in each of them and stops cleanly, not just that one

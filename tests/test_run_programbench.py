@@ -1128,12 +1128,51 @@ def test_the_task_says_one_check_per_option_is_not_coverage():
     nothing."""
     prompt = _flat_task_text()
     assert "One line per option is not coverage." in prompt
-    # The four points that make up a value space.
-    assert "one valid value" in prompt
+    # An enumerable procedure, not a judgement: the run that ignored this had followed
+    # every other instruction here, because the others could be copied off the usage line
+    # and this one had to be thought of.
+    assert "Do this as a list you work through, not as a judgement you make" in prompt
+    assert "Go along the usage line and mark every option that *takes a value*" in prompt
+    # The four points that make up a value space, and a countable self-check.
+    assert "a valid value" in prompt
     assert "the same value written differently" in prompt
-    assert "a boundary value, and something invalid" in prompt
+    assert "a boundary value" in prompt
+    assert "something invalid" in prompt
+    assert "your script has sixteen lines about them" in prompt
     # And the same argument for modes, which is where the other failures were.
     assert "check that it starts in each of them and stops cleanly" in prompt
     # The example demonstrates it rather than only describing it.
     assert 'check "value case"' in prompt
     assert 'check "usage short"' in prompt
+
+
+def test_the_task_tells_the_agent_where_questions_come_from():
+    """Every other instruction points at something in front of the agent — read the docs,
+    run the reference, diff. That is extraction, and it stops at the edge of the text. The
+    behaviours being graded do not: the documentation specifies the interface, not the
+    behaviour, and a run that followed every extraction instruction perfectly still lost
+    twenty-seven tests to a question nothing in the text could have prompted."""
+    prompt = _flat_task_text()
+    assert "## ask-what-the-documentation-does-not" in prompt
+    assert "The documentation specifies the *interface*, not the *behaviour*." in prompt
+    assert "All of it is *extraction*, and extraction stops at the edge of the text." in prompt
+    # The source of hypotheses is the model's own knowledge of programs like this one.
+    assert "use what you already know about programs of this kind" in prompt
+    # And a general list — none of it specific to any one program.
+    for question in ("Is the comparison case-sensitive?",
+                     "Can flags be bundled",
+                     "when an option is given twice",
+                     "Does argument order matter?"):
+        assert question in prompt, question
+    # The asymmetry that makes asking cheap.
+    assert "costs you a single check" in prompt
+
+
+def test_the_hypothesis_list_is_not_about_one_program():
+    """The dataset is 201 programs; a list of questions about cmatrix's flags would be
+    worth nothing on the other 200."""
+    prompt = _flat_task_text()
+    section = prompt[prompt.index("## ask-what-the-documentation-does-not"):]
+    section = section[:section.index("## know-when-you-are-done")]
+    for specific in ("cmatrix", "ncurses", "-C color", "matrix"):
+        assert specific not in section, specific

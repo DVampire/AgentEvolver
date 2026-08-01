@@ -3,14 +3,14 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pydantic import Field
 
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
 from agentevolver.config import config
-from agentevolver.tool.types import Tool, clip_output
+from agentevolver.tool.types import OUTPUT_LIMIT, Tool, clip_output
 from agentevolver.response.types import Response, ResponseType
 
 _DESCRIPTION = "Execute bash commands in the shell."
@@ -35,12 +35,127 @@ Execute bash commands in the shell.
   Only chain steps whose commands you already know — if the next command depends on
   output you have not read yet, that is a separate call.
 
+- Some programs behave differently, or refuse to run at all, when their output is not a
+  terminal — anything that draws a screen, prompts, pages, or colourises. `tty: true`
+  gives the command a real terminal, and `stdin` sends it keystrokes. Without those, such
+  a program is not merely inconvenient to test: its entire behaviour is invisible, and
+  runs both fail identically, which reads as agreement.
+
 ## Parameters
 - command (str): The command to execute. If file path is necessary, it should be an absolute path.
+- tty (bool, optional): Run under a pseudo-terminal. Needed for anything that requires a
+  terminal to work — full-screen programs, REPLs, prompts. stdout and stderr arrive
+  interleaved on one stream, as they would on a real terminal. TERM is set for you when
+  the environment has none; prefix the command with `TERM=vt100 ` and such to choose one,
+  since behaviour under different terminal types is itself worth comparing. Default false.
+- stdin (str, optional): Text fed to the command's input. With `tty: true` these are
+  keystrokes, so a program can be driven and then told to quit.
+- timeout (int, optional): Seconds before the command is abandoned. Keep it small for
+  anything that may not exit on its own.
 
 ## Example
 {"name": "bash_tool", "args": {"command": "ls -l /path/to/file.txt"}}
+{"name": "bash_tool", "args": {"command": "./viewer --colour red", "tty": true, "stdin": "q", "timeout": 3}}
 """
+
+
+#: Terminal size reported to a program running under `tty: true`. A full-screen program
+#: asks for this and lays itself out accordingly; zero would make many of them misbehave
+#: or refuse to start, which would look like a defect in the program rather than in how it
+#: was run.
+_PTY_ROWS, _PTY_COLS = 24, 80
+
+#: TERM given to a `tty: true` command when the environment does not set one. A terminal
+#: device alone is not enough for anything built on curses: it also looks TERM up in the
+#: terminfo database, and with no TERM it reports "Error opening terminal: unknown" and
+#: exits — the same refusal as having no terminal at all, which is the thing `tty` exists
+#: to get past. `xterm` because it is present in essentially every image.
+#:
+#: Overridable, and deliberately: how a program behaves under a different TERM — `dumb`,
+#: `vt100`, one that does not exist — is itself a behaviour worth comparing. Prefix the
+#: command with `TERM=… ` to choose.
+_PTY_DEFAULT_TERM = "xterm"
+
+
+def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
+    """Run `command` attached to a pseudo-terminal. Returns (output, exit_code, timed_out).
+
+    Blocking, so callers hand it to an executor.
+
+    A program that checks whether it is talking to a terminal takes a different path when
+    it is not — drawing nothing, refusing to start, dropping colour, skipping a prompt.
+    Comparing two such programs without a terminal compares two refusals, and they agree.
+    That is not a hypothetical: an entire class of a reference's behaviour was invisible
+    this way, and the reconstruction that never implemented it looked correct.
+
+    stdout and stderr are one stream here, as they are on a real terminal; a caller that
+    needs them apart should run without a tty.
+    """
+    import fcntl
+    import pty
+    import select
+    import struct
+    import subprocess
+    import termios
+    import time
+
+    if not env.get("TERM"):
+        env = {**env, "TERM": _PTY_DEFAULT_TERM}
+
+    master, slave = pty.openpty()
+    try:
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", _PTY_ROWS, _PTY_COLS, 0, 0))
+    except OSError:
+        pass  # a size we could not set is not worth failing over
+
+    process = subprocess.Popen(
+        command, shell=True, stdin=slave, stdout=slave, stderr=slave,
+        cwd=cwd, env=env, start_new_session=True, close_fds=True,
+    )
+    os.close(slave)
+
+    chunks: list = []
+    total = 0
+    timed_out = False
+    deadline = time.monotonic() + timeout
+    try:
+        if stdin:
+            os.write(master, stdin.encode("utf-8", "replace"))
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            ready, _, _ = select.select([master], [], [], min(remaining, 0.5))
+            if not ready:
+                if process.poll() is not None:
+                    break        # exited and drained
+                continue
+            try:
+                data = os.read(master, 65536)
+            except OSError:
+                break            # EIO: the child closed the terminal, i.e. it exited
+            if not data:
+                break
+            # Bounded here as well as at the end: a program that redraws a screen can
+            # produce megabytes per second, and holding all of it to clip later is how a
+            # 777MB capture file happened.
+            total += len(data)
+            if total <= OUTPUT_LIMIT * 4:
+                chunks.append(data)
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                process.kill()
+        process.wait()
+        os.close(master)
+
+    output = b"".join(chunks).decode("utf-8", errors="replace")
+    if total > OUTPUT_LIMIT * 4:
+        output += f"\n[... {total - len(output):,} further characters not captured ...]"
+    return output, process.returncode, timed_out
 
 
 @TOOL.register_module(force=True)
@@ -58,13 +173,27 @@ class BashTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
-    async def __call__(self, command: str, **kwargs) -> Response:
+    async def __call__(
+        self,
+        command: str,
+        tty: bool = False,
+        stdin: str = "",
+        timeout: Optional[int] = None,
+        **kwargs,
+    ) -> Response:
         """Execute a bash command asynchronously.
 
         Args:
-            command:   The shell command to run.
-            workspace_root:  Working directory — used for workspace-boundary checks.
+            command: The shell command to run.
+            tty:     Attach a pseudo-terminal. Programs that draw a screen, prompt, or
+                     colourise take a different path — often refusing to run — when their
+                     output is not a terminal, so without this their behaviour cannot be
+                     observed at all.
+            stdin:   Text fed to the command. Keystrokes, when `tty` is set.
+            timeout: Seconds before the command is abandoned; the tool's own default
+                     otherwise.
         """
+        limit = int(timeout) if timeout else self.timeout
         if not command.strip():
             return Response(type=ResponseType.TOOL, success=False, message="Error: Empty command provided")
 
@@ -101,8 +230,35 @@ class BashTool(Tool):
                     success=False,
                     message=f"Workspace directory does not exist: {cwd}",
                 )
+            if tty:
+                loop = asyncio.get_running_loop()
+                output, exit_code, timed_out = await loop.run_in_executor(
+                    None, _run_under_pty, command, cwd, command_env, float(limit), stdin,
+                )
+                if timed_out:
+                    return Response(
+                        type=ResponseType.TOOL, success=False,
+                        message=(
+                            f"Error: Command timed out after {limit} seconds under a "
+                            f"terminal and was abandoned. A program that holds the "
+                            f"terminal will not exit on its own — send it whatever key "
+                            f"quits it via `stdin`, or wrap it: `timeout 2 <command>`. "
+                            f"Partial output:\n{clip_output(output)}"
+                        ),
+                        data={"exit_code": None, "command": command, "timed_out": True, "tty": True},
+                    )
+                message = warning_prefix + (clip_output(output) or
+                                            f"Command completed with exit code: {exit_code}")
+                if exit_code:
+                    message = f"{message}\n\nExit code: {exit_code}"
+                return Response(
+                    type=ResponseType.TOOL, success=True, message=message,
+                    data={"exit_code": exit_code, "command": command, "tty": True},
+                )
+
             process = await asyncio.create_subprocess_shell(
                 command,
+                stdin=asyncio.subprocess.PIPE if stdin else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
@@ -112,8 +268,8 @@ class BashTool(Tool):
 
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=self.timeout,
+                    process.communicate(stdin.encode("utf-8") if stdin else None),
+                    timeout=limit,
                 )
             except asyncio.TimeoutError:
                 try:
@@ -131,7 +287,7 @@ class BashTool(Tool):
                     type=ResponseType.TOOL,
                     success=False,
                     message=(
-                        f"Error: Command timed out after {self.timeout} seconds and was "
+                        f"Error: Command timed out after {limit} seconds and was "
                         f"abandoned. If the program you invoked can run without exiting — "
                         f"a TUI, a REPL, a server, or a loop — wrap it: `timeout 2 "
                         f"<command>` returns exit code 124 instead of blocking. "
