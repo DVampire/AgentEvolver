@@ -106,6 +106,19 @@ _SCAFFOLDING = (REFERENCE_COPY,)
 CONTAINER_REPO = "/AgentEvolver"
 CONTAINER_WORKSPACE = "/workspace"
 
+#: The identity the task images are built around (uid/gid 1000), and the reason the run
+#: uses it instead of root. The reference binary is mode `---x--x--x` owned by root:
+#: executable by anyone, readable by no one but root. Running as root dissolves that, and
+#: an agent then *can* read the bytes the benchmark withholds — which is not hypothetical.
+#: A run did exactly that: about thirty `strings` calls plus `strace` and `ltrace` against
+#: the reference, mining it for the strings that drove two flags it could not otherwise
+#: work out. It scored 99, and the score is worthless.
+#:
+#: As uid 1000 those commands fail with "Permission denied" and the prohibition stops
+#: depending on the agent choosing to honour it. The audit stays, as evidence rather than
+#: as the only line of defence.
+CONTAINER_USER = "1000:1000"
+
 #: Owner segment of the output tree. Every path below comes from the layout table
 #: (agentevolver.paths); this is the one value both sides have to agree on, and it is
 #: passed explicitly rather than left to a default in another module — the launcher seeds
@@ -392,7 +405,29 @@ def audit_reference_binary(log_root: str) -> dict:
                         "command": command[:200],
                     })
                     break
-    return {"checked": True, "suspicious_actions": hits}
+    # Summarised, and the verdict first. A run that broke the rules produces a score that
+    # cannot be compared with anything, and the previous shape of this — a bare list of
+    # forty near-identical commands — buried that conclusion in its own evidence. One run
+    # scored 99 having called `strings` on the reference about thirty times; the number
+    # looked like the best result of the session.
+    by_tool: dict = {}
+    for hit in hits:
+        by_tool[hit["tool"]] = by_tool.get(hit["tool"], 0) + 1
+    return {
+        "checked": True,
+        "clean": not hits,
+        "verdict": (
+            "clean: no binary analysis of the reference"
+            if not hits else
+            f"VIOLATION — the reference was analysed as a file "
+            f"({', '.join(f'{k}×{v}' for k, v in sorted(by_tool.items()))}). "
+            f"Any score from this run is not comparable."
+        ),
+        "by_tool": by_tool,
+        # A handful is enough to confirm it; the full list is in the trace.
+        "examples": [h["command"] for h in hits[:5]],
+        "total": len(hits),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -557,6 +592,8 @@ async def run_inner(args) -> int:
         result["submission"] = {"error": str(e)}
 
     result["reference_audit"] = audit_reference_binary(config.log_root)
+    if not result["reference_audit"]["clean"]:
+        logger.error(f"| 🚨 [{instance_id}] {result['reference_audit']['verdict']}")
     result["time_seconds"] = round(time.time() - started, 1)
     result["session_path"] = str(fs_sandbox.project_root)
 
@@ -632,6 +669,40 @@ def seed_workspace(image_ref: str, destination: str) -> None:
         )
 
 
+def grant_session_to_container_user(session_path: str) -> None:
+    """Make the session tree writable by the user the container runs as.
+
+    The run writes its logs, its trace and its result into this tree, and it runs as the
+    image's own uid rather than root — so a directory owned by whoever launched it would
+    be read-only from inside. Done through a privileged throwaway container because the
+    launching user cannot chown to an id it does not own.
+
+    Only the session's own directory: the mounted checkout stays as it is, and read access
+    is all the run needs there.
+    """
+    if not os.path.isdir(session_path):
+        return
+    # Everything except the reference binary, which must stay root-owned. Handing it to
+    # the run's own user hands over the ability to `chmod u+r` it, and the mode is the
+    # only thing keeping its bytes out of reach — the barrier would be undone by the very
+    # step meant to make the session writable. Verified both ways: as the owner the chmod
+    # succeeds and `strings` then works; left as root it fails and `strings` keeps saying
+    # Permission denied.
+    script = (
+        f"chown -R {CONTAINER_USER} /session && "
+        f"if [ -e /session/workspace/executable ]; then chown 0:0 /session/workspace/executable; fi"
+    )
+    result = subprocess.run(
+        ["docker", "run", "--rm", "-v", f"{session_path}:/session", "alpine", "sh", "-c", script],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"could not hand {session_path} to {CONTAINER_USER}: "
+            f"{(result.stderr or result.stdout).strip()[:200]}"
+        )
+
+
 def restore_ownership(path: str) -> None:
     """Give a root-created output directory back to the user running the launcher.
 
@@ -690,8 +761,14 @@ async def run_launcher(args) -> int:
             # directory that is simply there — no reaching into a container for it.
             workspace_dir = str(path_manager.get(
                 P.SESSION_WORKSPACE, owner=SESSION_OWNER, session_id=instance_id))
+            session_path = str(path_manager.get(
+                P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
             seed_workspace(image_ref, workspace_dir)
-            logger.info(f"| 🌱 [{instance_id}] Workspace seeded and mounted: {workspace_dir}")
+            grant_session_to_container_user(session_path)
+            logger.info(
+                f"| 🌱 [{instance_id}] Workspace seeded and mounted: {workspace_dir} "
+                f"(owned by {CONTAINER_USER})"
+            )
 
             sandbox = await sandbox_manager.acquire(
                 "docker",
@@ -700,7 +777,7 @@ async def run_launcher(args) -> int:
                 # No interface at all; the allow/deny lists come from the config and are
                 # served by a relay outside the container. See the module docstring.
                 network=False,
-                user="root",
+                user=CONTAINER_USER,
                 workdir=CONTAINER_WORKSPACE,
                 mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE},
                 env={
@@ -768,9 +845,11 @@ async def run_launcher(args) -> int:
     for r in results:
         submission = (r.get("submission") or {}).get("source", "-")
         denied = len(((r.get("egress_audit") or {}).get("denied")) or [])
+        audit = r.get("reference_audit") or {}
+        rules = "" if audit.get("clean", True) else "  🚨 RULES VIOLATED — score not comparable"
         print(f"   {'✅' if r['status'] == 'done' else '❌'} {r['instance_id']:45} "
               f"steps={str(r.get('steps', '-')):>5}  submission={submission:12} "
-              f"egress-denied={denied}")
+              f"egress-denied={denied}{rules}")
     return 0
 
 

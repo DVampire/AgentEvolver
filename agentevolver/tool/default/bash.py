@@ -10,7 +10,7 @@ from pydantic import Field
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
 from agentevolver.config import config
-from agentevolver.tool.types import Tool
+from agentevolver.tool.types import Tool, clip_output
 from agentevolver.response.types import Response, ResponseType
 
 _DESCRIPTION = "Execute bash commands in the shell."
@@ -143,11 +143,13 @@ class BashTool(Tool):
             stdout_str = stdout_bytes.decode("utf-8", errors="replace").strip()
             stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
 
+            # Clipped per stream: a command that floods stdout must not also cost the
+            # agent the stderr that explains why.
             parts = []
             if stdout_str:
-                parts.append(f"STDOUT:\n{stdout_str}")
+                parts.append(f"STDOUT:\n{clip_output(stdout_str)}")
             if stderr_str:
-                parts.append(f"STDERR:\n{stderr_str}")
+                parts.append(f"STDERR:\n{clip_output(stderr_str)}")
 
             exit_code = process.returncode
             if exit_code != 0:

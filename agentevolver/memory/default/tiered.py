@@ -44,6 +44,11 @@ from agentevolver.utils import assemble_workspace_path
 
 _FLOW_LABEL_MAX = 80
 
+#: Cap on one remembered entry's detail. Smaller than a tool's own output limit, because
+#: memory holds a window of these and every one of them is rendered into every subsequent
+#: prompt — what a turn can afford to read once, a prompt cannot afford to carry forever.
+_RECORD_DETAIL_MAX = 8_000
+
 # MetaAgent subtask lifecycle event name → display status.
 _SUBTASK_STATUS_MAP: Dict[str, str] = {
     "subtask_dispatch": "running",
@@ -391,6 +396,24 @@ class TieredMemory(Memory):
     # ------------------------------------------------------------------
 
     def _append_recent(self, state: _SessionState, record: MemoryRecord) -> None:
+        # Bound the entry before it is stored. The window that holds these is small, but a
+        # single entry has no natural size, and a recorded tool result *is* whatever the
+        # tool returned: one `strings` call against a binary put 14,419,441 characters into
+        # this deque, and the whole window is rendered into every prompt afterwards, so the
+        # run then asked for 4.3 million tokens against a limit of 1,048,576 and died of
+        # consecutive 400s.
+        #
+        # The tools clip their own output too, which is where it matters most for what the
+        # agent reads. This is the backstop, so that no future tool — or a tool whose limit
+        # is raised — can make the prompt unsendable.
+        if record.detail and len(record.detail) > _RECORD_DETAIL_MAX:
+            dropped = len(record.detail) - _RECORD_DETAIL_MAX
+            record = record.model_copy(update={
+                "detail": (
+                    f"{record.detail[:_RECORD_DETAIL_MAX]}\n"
+                    f"[... {dropped:,} more characters not kept in memory ...]"
+                )
+            })
         state.recent.append(record)
         if len(state.recent) > self.recent_max and not state._compacting:
             asyncio.create_task(self._compact(state))

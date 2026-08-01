@@ -435,8 +435,8 @@ def test_the_reference_binary_audit_flags_only_the_reference(tmp_path):
     )
     audit = rp.audit_reference_binary(str(tmp_path))
     assert audit["checked"] is True
-    tools = [hit["tool"] for hit in audit["suspicious_actions"]]
-    assert tools == ["objdump"]
+    assert audit["by_tool"] == {"objdump": 1}
+    assert audit["clean"] is False
 
 
 class _Ctx:
@@ -495,7 +495,13 @@ def test_inherited_ambient_tolerates_a_contextless_parent():
 def test_task_tells_the_agent_to_preserve_the_reference():
     prompt = _task_text()
     assert rp.REFERENCE_COPY in prompt, "the prompt must name the file extract_submission strips"
-    assert "cp /workspace/executable" in prompt
+    # `cp` cannot work: the reference is mode ---x--x--x, so it may be executed and not
+    # read, and a copy has to read it. Verified as the image's own user: cp gives
+    # "Permission denied" while `mv` succeeds, since a rename needs only directory write
+    # permission and leaves the file runnable.
+    assert "mv /workspace/executable /workspace/reference_executable" in prompt
+    assert "Rename it. Do not try to copy it." in prompt
+    assert "`cp` cannot read the reference" in prompt
     # It must say *why*, or the step reads as optional housekeeping and gets skipped.
     assert "destroys" in prompt or "overwrit" in prompt
     # And differential testing must be spelled out — matching --help is not enough.
@@ -770,7 +776,7 @@ def test_the_audit_does_not_flag_the_prompt_that_forbids_the_tools(tmp_path):
         # analysis of its own build, which is allowed
         '{"action_name": "bash_tool", "input": {"command": "objdump -d my_build"}}\n'
     )
-    assert rp.audit_reference_binary(str(tmp_path))["suspicious_actions"] == []
+    assert rp.audit_reference_binary(str(tmp_path))["clean"] is True
 
 
 def test_the_audit_does_flag_analysis_of_the_reference(tmp_path):
@@ -779,9 +785,9 @@ def test_the_audit_does_flag_analysis_of_the_reference(tmp_path):
     (trace / "a.jsonl").write_text(
         '{"action_name": "bash_tool", "input": {"command": "objdump -d ./executable | head"}}\n'
     )
-    hits = rp.audit_reference_binary(str(tmp_path))["suspicious_actions"]
-    assert [h["tool"] for h in hits] == ["objdump"]
-    assert hits[0]["action"] == "bash_tool"
+    audit = rp.audit_reference_binary(str(tmp_path))
+    assert audit["by_tool"] == {"objdump": 1}
+    assert "objdump" in audit["examples"][0]
 
 
 def test_the_submission_is_written_beside_the_workspace_not_into_it():
@@ -845,3 +851,38 @@ def test_the_task_says_nothing_is_a_prerequisite():
     assert "The reference crashes, hangs, or depends on something you do not have." in prompt
     assert "a value only the original build could know" in prompt
     assert "roughly ten turns on one difference without your source changing" in prompt
+
+
+def test_a_violation_is_the_headline_not_a_footnote(tmp_path):
+    """A run scored 99 having called `strings` on the reference about thirty times, and
+    the number looked like the best result of the session. The audit's conclusion has to
+    arrive before its evidence."""
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "strings ./executable | grep setfont"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "strings ./executable | grep TERM"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "ltrace ./executable -l"}}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+
+    assert audit["clean"] is False
+    assert audit["verdict"].startswith("VIOLATION")
+    assert "not comparable" in audit["verdict"]
+    assert audit["by_tool"] == {"strings": 2, "ltrace": 1}
+    assert audit["total"] == 3
+    # Evidence is kept but bounded — the full list lives in the trace.
+    assert len(audit["examples"]) <= 5
+
+
+def test_a_clean_run_says_so_plainly(tmp_path):
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "timeout 2 ./executable --help"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "strings my_own_build"}}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+    assert audit["clean"] is True
+    assert audit["verdict"].startswith("clean")
+    assert audit["by_tool"] == {}

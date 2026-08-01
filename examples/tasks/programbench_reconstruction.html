@@ -42,9 +42,17 @@ Do this before you build anything. Your `compile.sh` has to write `./executable`
 which is exactly where the reference binary sits — so your first build destroys the
 only oracle you have, and nothing will warn you.
 
+**Rename it. Do not try to copy it.**
+
 ```bash
-cp /workspace/executable /workspace/reference_executable
+mv /workspace/executable /workspace/reference_executable
 ```
+
+`cp` cannot read the reference — its mode is `---x--x--x`, so it may be executed and
+not read, and a copy would have to read it. A rename only needs write permission on
+the directory, so it works, and the renamed file is still runnable. Reach for `cp`
+here and you get "Permission denied" and may conclude the file is broken; it is not,
+and neither are you doing anything wrong by renaming it.
 
 From then on `./reference_executable` is expected behavior and `./executable` is
 yours. Do not commit `reference_executable`; it is scaffolding, not deliverable.

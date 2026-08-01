@@ -446,3 +446,78 @@ def test_todo_state_lives_with_the_other_tools_state(tmp_path):
     assert config.workspace_root not in tool.base_dir
     # Nothing of ours appears in the deliverable directory.
     assert os.listdir(config.workspace_root) == []
+
+
+# --- fix #11: one command's output could make the prompt unsendable --------------
+#
+# A `strings` call against a 31KB binary returned 14,419,441 characters. That result was
+# handed to the agent whole and stored in its memory, so every turn afterwards asked for
+# ~4.3M tokens against a 1,048,576 limit; the run died of consecutive 400s and the
+# reported cause named neither the command nor the size.
+
+def test_clip_output_leaves_short_output_alone():
+    from agentevolver.tool.types import clip_output
+
+    assert clip_output("short") == "short"
+
+
+def test_clip_output_keeps_the_beginning_and_the_end():
+    """The head says what the command set out to do, the tail says how it ended — the
+    error, the summary, the exit status. The middle of an oversized dump is the least
+    informative part."""
+    from agentevolver.tool.types import clip_output
+
+    text = "HEAD-MARKER" + ("x" * 200_000) + "TAIL-MARKER"
+    clipped = clip_output(text, limit=1_000)
+
+    assert clipped.startswith("HEAD-MARKER")
+    assert clipped.endswith("TAIL-MARKER")
+    assert len(clipped) < 1_500
+    # And it says what is missing, so the agent narrows the command instead of wondering
+    # why the text stops.
+    assert "characters elided" in clipped
+    assert "Narrow the command" in clipped
+
+
+def test_bash_clips_a_flood_of_output(tmp_path):
+    from agentevolver.tool.types import OUTPUT_LIMIT
+
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="python3 -c \"print('A' * 3_000_000)\"", ctx=SimpleNamespace(extra={})))
+
+    assert resp.success is True
+    assert len(resp.message) < OUTPUT_LIMIT * 2
+    assert "characters elided" in resp.message
+
+
+def test_bash_clips_each_stream_separately(tmp_path):
+    """A command that floods stdout must not cost the agent the stderr explaining why."""
+    config.workspace_root = str(tmp_path)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command="python3 -c \"import sys; print('A'*3_000_000); sys.stderr.write('THE REASON')\"",
+        ctx=SimpleNamespace(extra={})))
+    assert "THE REASON" in resp.message
+
+
+def test_memory_caps_one_entry_even_if_a_tool_does_not():
+    """The backstop. Memory holds a window of these and renders all of it into every
+    later prompt, so what a turn can afford to read once, a prompt cannot afford to
+    carry forever."""
+    from agentevolver.memory.default.tiered import _RECORD_DETAIL_MAX, MemoryRecord, TieredMemory
+
+    class _State:
+        def __init__(self):
+            self.recent = []
+            self._compacting = True  # keep _compact() out of it
+
+    memory = TieredMemory(base_dir="/tmp", recent_max=100)
+    state = _State()
+
+    TieredMemory._append_recent(memory, state, MemoryRecord(
+        ts="00:00:00", event="bash_tool result", detail="Z" * 14_419_441, status="done"))
+
+    stored = state.recent[0].detail
+    assert len(stored) < _RECORD_DETAIL_MAX + 200
+    assert "more characters not kept in memory" in stored
+    assert _RECORD_DETAIL_MAX < 32_000, "must be tighter than a single tool's own limit"
