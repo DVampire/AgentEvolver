@@ -98,7 +98,12 @@ class DockerSandbox(Sandbox):
 
     # ------------------------------------------------------------- lifecycle
     def _run_args(self) -> List[str]:
-        args = [_DOCKER, "run", "-d", "--name", self._name]
+        # `--init` because PID 1 here is `sleep infinity`, which does not reap. Anything a
+        # command leaves behind — a killed process group's grandchildren, a backgrounded
+        # server, a build's stragglers — is reparented to PID 1 and stays a zombie forever.
+        # Measured: 51 of them accumulated in the first 13 minutes of one task, and a long
+        # run would eventually exhaust the pid limit. `--init` puts a real reaper there.
+        args = [_DOCKER, "run", "-d", "--init", "--name", self._name]
 
         # No interface at all when the network is off. An allowlist does not change that:
         # allowed hosts arrive through the mounted relay socket, so there is nothing for a

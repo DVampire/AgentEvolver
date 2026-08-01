@@ -215,3 +215,13 @@ def test_the_forwarder_is_run_as_a_script_with_isolated_sys_path():
     assert "/AgentEvolver/agentevolver/sandbox/forwarder.py" in command
     assert "-m agentevolver" not in command
     assert "--workdir" in exec_call and "/tmp" in exec_call
+
+
+def test_the_container_gets_a_process_reaper():
+    """PID 1 is `sleep infinity`, which does not reap. Without an init, anything a command
+    leaves behind — the grandchildren of a killed process group, a backgrounded server, a
+    build's stragglers — is reparented to it and stays a zombie for the life of the
+    sandbox. 51 accumulated in the first 13 minutes of one task."""
+    args = _args(image="img")
+    assert "--init" in args
+    assert args.index("--init") < args.index("img"), "flags must precede the image"
