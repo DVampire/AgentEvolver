@@ -669,14 +669,14 @@ def test_a_program_that_clears_on_exit_still_reports_what_it_drew():
     drew_then_left = b"\x1b[?1049h" + b"falling characters" + b"\x1b[2J\x1b[H" + b"\x1b[?1049l"
     out = _render_terminal(drew_then_left)
     assert "falling characters" in out
-    assert "cleared the screen on exit" in out
+    assert "as it appeared while running" in out
 
 
 def test_a_screen_that_ends_with_content_is_not_labelled_as_cleared():
     from agentevolver.tool.default.bash import _render_terminal
     out = _render_terminal(b"still here\r\n")
     assert "still here" in out
-    assert "cleared the screen on exit" not in out
+    assert "as it appeared while running" not in out
 
 
 def test_keystrokes_wait_for_the_program_to_draw(tmp_path):
@@ -692,3 +692,16 @@ def test_keystrokes_wait_for_the_program_to_draw(tmp_path):
         ctx=SimpleNamespace(extra={})))
     assert "PAINTED" in resp.message
     assert resp.success is True, "the key must still be delivered, not withheld until timeout"
+
+
+def test_a_line_left_on_the_restored_screen_does_not_hide_the_drawing():
+    """What a program drew is routinely followed by a line or two on the screen it handed
+    back — a shell prompt, an `echo exit=$?`. Rescuing only an entirely blank final frame
+    let one such line make a screenful of drawing look like it never happened."""
+    from agentevolver.tool.default.bash import _render_terminal
+    out = _render_terminal(
+        b"\x1b[?1049h" + b"\r\n".join(f"rain row {i}".encode() for i in range(10))
+        + b"\x1b[2J\x1b[H\x1b[?1049l" + b"exit=0\r\n")
+    assert "rain row 9" in out
+    assert "exit=0" in out
+    assert "as it appeared while running" in out

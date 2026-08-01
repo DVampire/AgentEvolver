@@ -118,11 +118,12 @@ def _render_terminal(data: bytes) -> str:
     Colour and boldness survive as a summary line rather than being dropped, because for a
     program whose whole job is how it draws, "it is green and bold" is the observation.
 
-    The stream is replayed in slices and the last frame with anything on it is kept, because
-    the final frame is routinely blank on purpose: a curses program's exit path clears the
-    screen and hands the terminal back the way it found it. Reporting only the end state
-    therefore says "this program displays nothing" about a program that displayed plenty —
-    which is worse than the raw bytes, since it looks like an answer.
+    The stream is replayed with a snapshot before every point where content can disappear,
+    and the fullest frame wins over the last one — because the last one is routinely near
+    empty on purpose. A curses program's exit path clears the screen and hands the terminal
+    back the way it found it, and what remains is a line or two from the shell. Reporting
+    the end state therefore says "this program displays nothing" about a program that
+    displayed plenty, which is worse than the raw bytes: it looks like an answer.
     """
     import pyte
 
@@ -159,19 +160,27 @@ def _render_terminal(data: bytes) -> str:
         for offset in _offsets_of(data, sequence)
     })
 
+    def filled(lines: list) -> int:
+        return sum(1 for line in lines if line)
+
     drawn = None
     previous = 0
     for cut in cuts + [len(data)]:
         stream.feed(data[previous:cut])
         previous = cut
         current = frame()
-        if any(current[0]):
+        if drawn is None or filled(current[0]) > filled(drawn[0]):
             drawn = current
 
     lines, styles = frame()
-    cleared = not any(lines) and drawn is not None
+    # Fullest frame beats last frame, rather than only rescuing an entirely blank one: what
+    # a program drew is routinely followed by a line or two on the restored screen — a shell
+    # prompt, an `echo exit=$?` — and one such line was enough to make a screenful of
+    # drawing look like it never happened.
+    cleared = drawn is not None and filled(drawn[0]) > filled(lines)
     if cleared:
-        lines, styles = drawn
+        remained = [line for line in lines if line and line not in drawn[0]]
+        lines, styles = drawn[0] + remained, drawn[1]
     while lines and not lines[-1]:
         lines.pop()
 
@@ -181,7 +190,7 @@ def _render_terminal(data: bytes) -> str:
         note += f" · {shown}"
     note += f" · {len(data):,} bytes interpreted"
     if cleared:
-        note += " · shown as it appeared while running; the program cleared the screen on exit"
+        note += " · the screen is as it appeared while running, since the program cleared it on exit"
     note += "]"
     return "\n".join(lines + ["", note])
 
