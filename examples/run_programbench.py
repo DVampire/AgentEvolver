@@ -536,20 +536,28 @@ def bind_task_workspace(ctx, fs_sandbox) -> None:
 
     The second half is the mirror image: the framework's output tree must not land inside
     the task workspace, or it ships in the submission — a session directory full of logs
-    is not a reconstruction. That depends on the process's working directory, so it is
-    checked rather than assumed.
+    is not a reconstruction. The path tree hangs off ``AGENTEVOLVER_HOME``, falling back to
+    the working directory, which here is the task workspace. So both roots are checked
+    rather than assumed: checking only the session tree missed ``output/.runtime`` being
+    written into the workspace, because that one is resolved from the layout root directly.
     """
     config.workspace_root = CONTAINER_WORKSPACE
     if getattr(ctx, "extra", None) is not None:
         ctx.extra["workspace_root"] = CONTAINER_WORKSPACE
 
-    project_root = str(fs_sandbox.project_root)
-    if project_root == CONTAINER_WORKSPACE or project_root.startswith(CONTAINER_WORKSPACE + os.sep):
-        raise RuntimeError(
-            f"the session tree resolved inside the task workspace ({project_root}); run "
-            f"the inner mode with its working directory at {CONTAINER_REPO} so relative "
-            f"output paths resolve against the checkout instead of the task"
-        )
+    def inside_workspace(path: str) -> bool:
+        return path == CONTAINER_WORKSPACE or path.startswith(CONTAINER_WORKSPACE + os.sep)
+
+    for label, path in (
+        ("the session tree", str(fs_sandbox.project_root)),
+        ("the framework's output tree", str(path_manager.project_dir())),
+    ):
+        if inside_workspace(path):
+            raise RuntimeError(
+                f"{label} resolved inside the task workspace ({path}); set "
+                f"AGENTEVOLVER_HOME={CONTAINER_REPO} for the inner run so the framework's "
+                f"own files land in the checkout's output tree instead of the submission"
+            )
 
 
 
@@ -900,6 +908,12 @@ async def run_launcher(args) -> int:
                 mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE},
                 env={
                     "PYTHONPATH": CONTAINER_REPO,
+                    # The path tree hangs off the current directory, and the agent works in
+                    # /workspace — so without this the framework's own bookkeeping lands
+                    # inside the deliverable, and `git add -A` commits it. Pointed at the
+                    # mounted repo, the inner run's logs join the outer run's output tree
+                    # instead, where they are also readable while the task is running.
+                    "AGENTEVOLVER_HOME": CONTAINER_REPO,
                     # Stop litellm fetching its model-price map at import time. It falls
                     # back to a bundled copy anyway, and the attempt would otherwise
                     # appear in the egress audit as a denial the agent never made.
