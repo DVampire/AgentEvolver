@@ -51,7 +51,9 @@ Execute bash commands in the shell.
   and such to choose one, since behaviour under different terminal types is itself worth
   comparing. Default false.
 - stdin (str, optional): Text fed to the command's input. With `tty: true` these are
-  keystrokes, so a program can be driven and then told to quit.
+  keystrokes, so a program can be driven and then told to quit. They are held back for a
+  moment first, so a full-screen program has drawn before it is asked to leave — and what
+  it drew is what you get back, even though its exit path clears the screen.
 - timeout (int, optional): Seconds before the command is abandoned. Keep it small for
   anything that may not exit on its own.
 
@@ -78,6 +80,30 @@ _PTY_ROWS, _PTY_COLS = 24, 80
 #: command with `TERM=… ` to choose.
 _PTY_DEFAULT_TERM = "xterm"
 
+#: The sequences that make content disappear: erase-display in its several forms, and
+#: leaving the alternate screen. Nothing else loses what is on screen — a program that
+#: overwrites in place still has its characters there — so these are the only points worth
+#: snapshotting before, and slicing by byte count instead misses a program whose whole
+#: output is shorter than one slice.
+_ERASE_SEQUENCES = (b"\x1b[2J", b"\x1b[3J", b"\x1b[J", b"\x1b[?1049l", b"\x1b[?47l", b"\x1b[?1047l")
+
+#: How long a `tty: true` command is left alone before its keystrokes are sent. Keys are
+#: input to a program that is ready for input, and a full-screen program is not ready until
+#: it has drawn: sending `q` at once quits it before it paints, and the screen that comes
+#: back is empty — which reads as "this program displays nothing". Observed exactly that,
+#: on a program that had 34,420 bytes of drawing to show. Capped against short timeouts so
+#: the keys are always actually sent.
+_PTY_KEYSTROKE_DELAY = 1.0
+
+
+def _offsets_of(data: bytes, sequence: bytes) -> list:
+    """Every position at which `sequence` starts in `data`."""
+    found, start = [], data.find(sequence)
+    while start != -1:
+        found.append(start)
+        start = data.find(sequence, start + 1)
+    return found
+
 
 def _render_terminal(data: bytes) -> str:
     """Interpret a pty byte stream the way a terminal would and return what it displays.
@@ -91,41 +117,72 @@ def _render_terminal(data: bytes) -> str:
 
     Colour and boldness survive as a summary line rather than being dropped, because for a
     program whose whole job is how it draws, "it is green and bold" is the observation.
+
+    The stream is replayed in slices and the last frame with anything on it is kept, because
+    the final frame is routinely blank on purpose: a curses program's exit path clears the
+    screen and hands the terminal back the way it found it. Reporting only the end state
+    therefore says "this program displays nothing" about a program that displayed plenty —
+    which is worse than the raw bytes, since it looks like an answer.
     """
     import pyte
 
     screen = pyte.HistoryScreen(_PTY_COLS, _PTY_ROWS, history=200)
     stream = pyte.ByteStream(screen)
-    stream.feed(data)
 
     def row_text(row) -> str:
         return "".join(row[x].data for x in range(_PTY_COLS)).rstrip()
 
-    lines = [row_text(row) for row in screen.history.top]
-    lines += [line.rstrip() for line in screen.display]
+    def styles_on_screen() -> list:
+        """Distinct styles in first-seen order — a handful describes, a hundred is noise."""
+        found: list = []
+        for row in list(screen.history.top) + [screen.buffer[y] for y in range(_PTY_ROWS)]:
+            for x in range(_PTY_COLS):
+                char = row[x]
+                if not char.data.strip():
+                    continue
+                name = char.fg if char.fg != "default" else ""
+                if char.bg != "default":
+                    name = f"{name or 'default'} on {char.bg}"
+                if char.bold:
+                    name = f"{name or 'default'} bold"
+                if name and name not in found:
+                    found.append(name)
+        return found
+
+    def frame() -> tuple:
+        return ([row_text(row) for row in screen.history.top]
+                + [line.rstrip() for line in screen.display], styles_on_screen())
+
+    cuts = sorted({
+        offset
+        for sequence in _ERASE_SEQUENCES
+        for offset in _offsets_of(data, sequence)
+    })
+
+    drawn = None
+    previous = 0
+    for cut in cuts + [len(data)]:
+        stream.feed(data[previous:cut])
+        previous = cut
+        current = frame()
+        if any(current[0]):
+            drawn = current
+
+    lines, styles = frame()
+    cleared = not any(lines) and drawn is not None
+    if cleared:
+        lines, styles = drawn
     while lines and not lines[-1]:
         lines.pop()
-
-    # Distinct styles in first-seen order — a handful is descriptive, a hundred is noise.
-    styles: list = []
-    for row in list(screen.history.top) + [screen.buffer[y] for y in range(_PTY_ROWS)]:
-        for x in range(_PTY_COLS):
-            char = row[x]
-            if not char.data.strip():
-                continue
-            name = char.fg if char.fg != "default" else ""
-            if char.bg != "default":
-                name = f"{name or 'default'} on {char.bg}"
-            if char.bold:
-                name = f"{name or 'default'} bold"
-            if name and name not in styles:
-                styles.append(name)
 
     note = f"[terminal {_PTY_COLS}x{_PTY_ROWS}"
     if styles:
         shown = ", ".join(styles[:6]) + (", …" if len(styles) > 6 else "")
         note += f" · {shown}"
-    note += f" · {len(data):,} bytes interpreted]"
+    note += f" · {len(data):,} bytes interpreted"
+    if cleared:
+        note += " · shown as it appeared while running; the program cleared the screen on exit"
+    note += "]"
     return "\n".join(lines + ["", note])
 
 
@@ -169,11 +226,14 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
     chunks: list = []
     total = 0
     timed_out = False
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    deadline = started + timeout
+    send_keys_at = started + min(_PTY_KEYSTROKE_DELAY, timeout / 2) if stdin else None
     try:
-        if stdin:
-            os.write(master, stdin.encode("utf-8", "replace"))
         while True:
+            if send_keys_at is not None and time.monotonic() >= send_keys_at:
+                os.write(master, stdin.encode("utf-8", "replace"))
+                send_keys_at = None
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 timed_out = True

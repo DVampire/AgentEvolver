@@ -658,3 +658,37 @@ def test_a_tty_command_reports_the_screen(tmp_path):
         command="printf 'a\\nb\\n'", tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
     assert "a\nb" in resp.message
     assert "terminal 80x24" in resp.message
+
+
+def test_a_program_that_clears_on_exit_still_reports_what_it_drew():
+    """A curses program's exit path hands the terminal back the way it found it — clear the
+    screen, restore the cursor, leave. So the final frame is blank by design, and reporting
+    only the end state says "this program displays nothing" about a program that displayed
+    plenty. That is worse than raw bytes, because it looks like an answer."""
+    from agentevolver.tool.default.bash import _render_terminal
+    drew_then_left = b"\x1b[?1049h" + b"falling characters" + b"\x1b[2J\x1b[H" + b"\x1b[?1049l"
+    out = _render_terminal(drew_then_left)
+    assert "falling characters" in out
+    assert "cleared the screen on exit" in out
+
+
+def test_a_screen_that_ends_with_content_is_not_labelled_as_cleared():
+    from agentevolver.tool.default.bash import _render_terminal
+    out = _render_terminal(b"still here\r\n")
+    assert "still here" in out
+    assert "cleared the screen on exit" not in out
+
+
+def test_keystrokes_wait_for_the_program_to_draw(tmp_path):
+    """`q` delivered at once quits a full-screen program before it paints, and the empty
+    screen that comes back reads as "it displays nothing" — which is how a reconstruction
+    that drew nothing came to look correct."""
+    config.workspace_root = str(tmp_path)
+    script = tmp_path / "draws.sh"
+    script.write_text("#!/bin/bash\nprintf 'PAINTED'\nread -n1 key\nprintf '\\033[2J\\033[H'\n")
+    script.chmod(0o755)
+    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
+        command=str(script), tty=True, stdin="q", timeout=8,
+        ctx=SimpleNamespace(extra={})))
+    assert "PAINTED" in resp.message
+    assert resp.success is True, "the key must still be delivered, not withheld until timeout"
