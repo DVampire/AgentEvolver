@@ -496,15 +496,44 @@ def _IDLE_TURNS_BEFORE_WARNING_VALUE():
     return _IDLE_TURNS_BEFORE_WARNING
 
 
-def test_the_agent_is_told_its_own_action_mix():
-    """The one thing it cannot see about itself: its history shows every command and
-    every output, but not the ratio between looking and doing."""
-    import inspect
+@pytest.mark.asyncio
+async def test_the_agent_is_told_its_own_action_mix():
+    """The one thing it cannot see about itself: its history shows every command and every
+    output, but not the ratio between looking and doing.
 
-    from agentevolver.agent.types import Agent
+    Asserts on the *rendered* module rather than on the source, because the source can
+    contain the right text under the wrong key and reach nobody."""
+    from agentevolver.agent.types import _AgentRun
 
-    source = inspect.getsource(Agent._get_agent_context)
-    assert "Turns that changed something" in source
-    assert "turns that only looked" in source
-    # And the warning names the remedy, not just the symptom.
-    assert "another measurement will not tell you more" in source
+    class _Probe(_GuardAgent):
+        name: str = "probe_agent"
+
+    agent = _Probe(base_dir="/tmp", max_step=1000)
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="r"), "tid", {})
+    run.mutations, run.observations, run.idle_turns = 4, 61, 14
+
+    context = await agent._get_agent_context("task", step_number=64, ctx=AgentContext(), _run=run)
+    step_info = context["step_info"]
+
+    assert "Turns that changed something: 4" in step_info
+    assert "turns that only looked: 61" in step_info
+    # Past the threshold the warning appears, and it names the remedy, not the symptom.
+    assert "The last 14 turns changed nothing" in step_info
+    assert "another measurement will not tell you more" in step_info
+
+
+@pytest.mark.asyncio
+async def test_a_working_run_is_not_nagged():
+    """The warning has to mean something when it appears."""
+    from agentevolver.agent.types import _AgentRun
+
+    class _Probe(_GuardAgent):
+        name: str = "probe_agent_2"
+
+    agent = _Probe(base_dir="/tmp", max_step=1000)
+    run = _AgentRun("t", None, AgentContext(), SimpleNamespace(name="r"), "tid", {})
+    run.mutations, run.observations, run.idle_turns = 30, 6, 1
+
+    step_info = (await agent._get_agent_context("t", step_number=35, ctx=AgentContext(), _run=run))["step_info"]
+    assert "Turns that changed something: 30" in step_info
+    assert "changed nothing" not in step_info

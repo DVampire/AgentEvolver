@@ -132,10 +132,16 @@ sandbox_deny_hosts = [
 ]
 
 #-----------------BUDGET (aligned to the official harness)-----------------
-# The official ProgramBench baseline gives one agent 1000 steps and 21600s (6h) per
-# instance. Ours were 200/5400 — 5x and 4x smaller. A tighter budget than the
-# leaderboard's makes a score comparison meaningless in the direction that flatters
-# the leaderboard rather than us, so the ceilings now match.
+# 100 steps, from measurement rather than from the official ceiling. Every run so far
+# reached its best alignment inside the first ~120 steps and then plateaued: one hit 6 of
+# 8 flags at step 53 and spent the next 240 steps eliminating one more; another was
+# effectively finished at step 63 and spent 650 further steps circling two differences,
+# one of them unreachable, before deleting its way back to roughly what it had. The tail
+# of a long budget is not where the score comes from.
+#
+# The official harness allows 1000. Running below that cannot flatter our numbers — a
+# tighter budget can only cost score — so a comparison against the leaderboard stays
+# honest, and the wall clock drops from four hours per instance to well under one.
 #
 # Caveat worth stating plainly: these are *per-agent* ceilings, and a MAS spends steps
 # across a MetaAgent plus its actors, so they are not a like-for-like total. Matching
@@ -147,7 +153,7 @@ sandbox_deny_hosts = [
 # Expect longer runs: the task document's stopping rule spends up to two thirds of the
 # budget exploring before it starts converging, so a 1000-step ceiling is a much longer
 # leash than the ~1h that 200-step runs took.
-MAX_STEP = 1000
+MAX_STEP = 100
 WALL_CLOCK = 21600
 # Not an official number — the official harness caps per-instance *cost*, a different
 # axis. This is a cumulative-token runaway guard, left high enough that steps or wall

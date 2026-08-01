@@ -678,20 +678,30 @@ def test_task_points_at_the_surface_that_actually_scores():
     assert "several flags used together" in prompt
 
 def test_task_states_a_stopping_rule():
-    """The agent cannot see the tests, so it can never *know* it is finished. Without an
-    explicit rule a run keeps refining until something else stops it, and the last thing
-    it needed to do — verify the build, commit — is what gets cut."""
-    prompt = _task_text()
+    """The benchmark defines nothing about when to stop — task.yaml carries only
+    repository, commit, language, difficulty and hashes — and the workspace is graded
+    however the run ends. So stopping early forfeits budget for no gain, and the document
+    now answers the two questions that do have checkable answers."""
+    prompt = _flat_task_text()
     assert "## when-to-stop" in prompt
-    flat = _flat_task_text()
-    # Absolute, not proportional. A fraction of the budget means a different amount of
-    # work depending on how large the budget is, while the part it protects — one clean
-    # build and a commit — costs the same either way.
-    assert "Fewer than 40 steps, or 20 minutes, of your budget remain" in flat
-    assert "Reserve an amount, not a fraction." in flat
-    assert "two thirds" not in flat
-    # And the primary condition stays the honest one: coverage, not exhaustion.
-    assert "Every checklist item is covered" in flat
+    assert "Finishing early wins you nothing." in prompt
+    assert "There is no bonus for stopping sooner" in prompt
+    # When to leave an item, and how much to keep back for landing the work.
+    assert "When do I leave this difference and take the next one?" in prompt
+    assert "How much budget do I keep back to land the work?" in prompt
+    assert "FAIL count has not dropped in roughly ten turns" in prompt
+    # Absolute, not proportional: landing the work costs the same at any budget.
+    assert "Reserve an amount, not a fraction" in prompt
+    assert "two thirds" not in prompt
+
+
+def test_task_says_to_rebuild_before_comparing():
+    """A run wrote the correct line, did not run compile.sh, and then compared against
+    the previous binary for a dozen turns — concluding each time that the difference was
+    still there."""
+    prompt = _flat_task_text()
+    assert "Rebuild and re-compare after every source change" in prompt
+    assert "a comparison against a binary you did not rebuild reports the difference you just fixed" in prompt
 
 
 
@@ -1057,3 +1067,53 @@ def test_the_checklist_instruction_is_consistent():
     prompt = _flat_task_text()
     assert "Write the surface down as a checklist with `todo_tool`" in prompt
     assert "checklist in a file" not in prompt
+
+
+def test_the_task_gives_the_agent_a_way_to_know_it_is_done():
+    """The tests are hidden, so "done" in the grader's sense is unknowable — but "no
+    difference I can find remains" is, and it should be a number the agent reads rather
+    than a feeling it arrives at. Every run wrote a comparison script of its own accord
+    (test_flags.sh, compare.sh, check_codes.sh) and none of them used its output as a
+    completion criterion."""
+    prompt = _flat_task_text()
+    assert "## know-when-you-are-done" in prompt
+    assert "Write one script that checks everything, early, and keep it current." in prompt
+    # It answers all three questions the run kept getting wrong.
+    assert "It answers \"am I done\"." in prompt
+    assert "It is the progress number." in prompt
+    assert "It stops you rediscovering the same three behaviours." in prompt
+
+
+def test_the_acceptance_script_is_not_only_for_flag_parsers():
+    """The dataset is 201 programs — compilers, filters, servers, TUIs, libraries with a
+    CLI. A template that can only pass arguments and read stdout fits one of those shapes,
+    and the first draft of this one did."""
+    prompt = _flat_task_text()
+    # stdin, for a filter; a file argument, for a compiler or converter.
+    assert "stdin-file" in prompt
+    assert "a filter: feed it, compare the bytes out" in prompt
+    assert "a compiler or converter: give it the input" in prompt
+    # And what to do when output cannot be captured at all.
+    assert "a program that only draws on a terminal, a server that must be talked to" in prompt
+    assert "Compare files it writes with `cmp`" in prompt
+    # No flag from any particular program.
+    assert "-z" not in prompt.replace("---x--x--x", "")
+    # And the stopping rule points at the number, not at a judgement.
+    assert "`check.sh`'s FAIL count has not dropped in roughly ten turns" in prompt
+    assert "FAIL=0 apart from the differences you recorded as unreachable" in prompt
+
+
+def test_the_budget_is_set_from_measurement():
+    """Every run reached its best alignment inside the first ~120 steps and plateaued;
+    one spent 650 further steps circling two differences before deleting its way back to
+    roughly what it already had."""
+    import argparse
+
+    for name in ("programbench_agent.py", "programbench_agent_baseline.py"):
+        config.initialize(
+            config_path=os.path.join(root, "configs", name),
+            args=argparse.Namespace(), verbose=False,
+        )
+        assert config.meta_agent["max_step"] == 100, name
+        # A tighter budget than the official 1000 can only cost score, never flatter it.
+        assert config.meta_agent["max_step"] < 1000

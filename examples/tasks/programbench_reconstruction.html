@@ -241,9 +241,87 @@ them. A run that spent a quarter of its budget grepping symbols scored worse tha
 one that spent it running the program.
 </rules>
 
+<know-when-you-are-done>
+You cannot see the tests, so "done" in the grader's sense is not knowable. What is
+knowable is "no difference I can find remains", and that is worth making into a number
+you can read rather than a feeling you arrive at.
+
+**Write one script that checks everything, early, and keep it current.** For each item on
+your checklist it runs the reference and your build on the same input, compares stdout,
+stderr and exit status, and prints one line per item plus a final count:
+
+```bash
+#: check.sh — the only question that matters, answered in one command
+pass=0; fail=0
+check() {                    # check "<label>" [stdin-file|""] <args...>
+  label="$1"; input="$2"; shift 2
+  if [ -n "$input" ]; then
+    r=$(timeout 2 ./reference_executable "$@" < "$input" 2>&1; echo "exit=$?")
+    m=$(timeout 2 ./executable          "$@" < "$input" 2>&1; echo "exit=$?")
+  else
+    r=$(timeout 2 ./reference_executable "$@" 2>&1; echo "exit=$?")
+    m=$(timeout 2 ./executable          "$@" 2>&1; echo "exit=$?")
+  fi
+  if [ "$r" = "$m" ]; then pass=$((pass+1))
+  else fail=$((fail+1)); echo "DIFF $label"; diff <(echo "$r") <(echo "$m") | head -5
+  fi
+}
+
+check "usage"        "" --help          # whatever this program calls its usage output
+check "bad input"    "" --no-such-thing # however it rejects something it cannot accept
+check "reads stdin"  sample.txt         # a filter: feed it, compare the bytes out
+check "reads a file" "" sample.txt      # a compiler or converter: give it the input
+echo "PASS=$pass FAIL=$fail"
+```
+
+That shape covers most programs, and the parts that differ are the arguments, not the
+comparison. Where output cannot be captured this way — a program that only draws on a
+terminal, a server that must be talked to — check what it does *around* that: what it
+prints before and after, how it reports being unable to start, what it does with a
+configuration it cannot use. Compare files it writes with `cmp`. Anything you can
+observe twice, you can put in this script.
+
+Three things follow from having it.
+
+**It answers "am I done".** `FAIL=0`, apart from differences you have recorded as
+unreachable, is as finished as this task gets. Nothing else you can do will tell you
+more.
+
+**It is the progress number.** FAIL going down is the only progress there is; if it has
+not moved in ten turns you are working on the wrong item. Run it after every change —
+and rebuild first, or you are comparing against the binary you had before the fix.
+
+**It stops you rediscovering the same three behaviours.** Each new thing you learn about
+the reference becomes another `check` line, so it stays checked for the rest of the run
+instead of being verified once and forgotten.
+
+Record unreachable differences as a comment beside the check you removed, so the count
+stays honest and the next reader knows why.
+</know-when-you-are-done>
+
 <when-to-stop>
-You cannot see the tests that grade you, so you will never *know* you are finished
-— which makes an explicit stopping rule matter more than the last few refinements.
+**Finishing early wins you nothing.** Your workspace is collected and graded when the
+run ends, however it ends — whether you declare yourself done or simply run out of
+budget. There is no bonus for stopping sooner and no penalty for using the whole
+allowance, so "am I done?" is the wrong question. The benchmark never answers it either:
+it defines what to produce and nothing about when to stop.
+
+Two questions replace it, and both have answers you can check.
+
+**When do I leave this difference and take the next one?** Whenever it has stopped
+paying: `check.sh`'s FAIL count has not dropped in roughly ten turns, or the difference
+is one of the unreachable shapes below. There is always another item, and the score is the count of
+behaviours you match — twenty approximated beats three perfected.
+
+**How much budget do I keep back to land the work?** About ten steps — one clean build
+from a fresh checkout, a commit, a summary, and slack for the build failing once.
+Reserve an amount, not a fraction: landing costs the same whether your budget is 100
+steps or 1000. Below that line, stop opening anything new and spend what is left making
+sure what you have is committed and builds.
+
+Only then does calling `done_tool` make sense — not because you are finished, but
+because there is nothing left worth the remaining budget.
+
 Exact fidelity is not always reachable either: a version string may embed the
 reference's own build timestamp, and no reconstruction can match that. Do not spend
 budget on differences you have judged unreachable; write them down and move on.
@@ -279,21 +357,18 @@ Treat a difference as unreachable — record it, move on — as soon as any of t
   That is the signal, and it is a fact about your own history you can check. Ten turns
   of investigation that produced no code is not investigation any more.
 
-Call `done_tool` when either holds:
+Concretely:
 
-1. Every checklist item is covered, the build is clean, and the differences that
-   remain are ones you have judged unreachable or cosmetic; or
-2. **Fewer than 40 steps, or 20 minutes, of your budget remain.** Landing the work
-   costs a fixed amount — one clean build, a commit, a summary — so reserve a fixed
-   amount for it. At that point stop exploring whatever you were in the middle of,
-   verify the build from a clean state, commit what you have already fixed, and
-   finish.
-
-Reserve an amount, not a fraction. Each step tells you which one you are on and what
-the limit is, so this is something you can check. A fraction of the budget sounds
-equivalent and is not: the same rule then means a different amount of work depending on
-how large the budget happens to be, and the part it is protecting — the build and the
-commit — does not get cheaper on a longer leash.
+1. **While more than 10 steps remain**, keep taking checklist items. Leave any single
+   difference after ~10 turns without eliminating one. Rebuild and re-compare after
+   every source change — a comparison against a binary you did not rebuild reports the
+   difference you just fixed, and a run lost a dozen turns that way.
+2. **Below 10 steps, or 10 minutes**, stop opening anything new: build from a clean
+   checkout, confirm `./executable` is produced and behaves, `git add` your source,
+   `compile.sh` and `.gitignore`, commit, and call `done_tool` with an honest summary.
+3. **Call `done_tool` earlier only if** `check.sh` reports FAIL=0 apart from the
+   differences you recorded as unreachable — which is rare, and is not the same as
+   having run out of ideas about the item in front of you.
 </when-to-stop>
 
 <deliverable>
