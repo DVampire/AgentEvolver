@@ -1117,3 +1117,23 @@ def test_the_budget_is_set_from_measurement():
         assert config.meta_agent["max_step"] == 100, name
         # A tighter budget than the official 1000 can only cost score, never flatter it.
         assert config.meta_agent["max_step"] < 1000
+
+
+def test_the_task_says_one_check_per_option_is_not_coverage():
+    """81 points, and 27 of the 96 failures were one thing: the reference matched colour
+    names case-insensitively and the reconstruction did not. The agent's own script had
+    checked that option — with a single lowercase value, which could not have revealed
+    it. Another ~30 failures were modes it never entered at all, invisible for the same
+    reason: with no terminal attached neither binary starts, so the comparison showed
+    nothing."""
+    prompt = _flat_task_text()
+    assert "One line per option is not coverage." in prompt
+    # The four points that make up a value space.
+    assert "one valid value" in prompt
+    assert "the same value written differently" in prompt
+    assert "a boundary value, and something invalid" in prompt
+    # And the same argument for modes, which is where the other failures were.
+    assert "check that it starts in each of them and stops cleanly" in prompt
+    # The example demonstrates it rather than only describing it.
+    assert 'check "value case"' in prompt
+    assert 'check "usage short"' in prompt

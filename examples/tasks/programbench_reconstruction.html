@@ -267,10 +267,17 @@ check() {                    # check "<label>" [stdin-file|""] <args...>
   fi
 }
 
-check "usage"        "" --help          # whatever this program calls its usage output
+check "usage long"   "" --help          # whatever this program calls its usage output
+check "usage short"  "" -h              # long and short forms are separate behaviours
 check "bad input"    "" --no-such-thing # however it rejects something it cannot accept
 check "reads stdin"  sample.txt         # a filter: feed it, compare the bytes out
 check "reads a file" "" sample.txt      # a compiler or converter: give it the input
+
+# An option that takes a value needs several points in that space, not one:
+check "value ok"     "" --colour red
+check "value case"   "" --colour RED    # the same value, written differently
+check "value edge"   "" --colour ""     # empty, zero, negative, out of range
+check "value bad"    "" --colour nosuch
 echo "PASS=$pass FAIL=$fail"
 ```
 
@@ -294,6 +301,20 @@ and rebuild first, or you are comparing against the binary you had before the fi
 **It stops you rediscovering the same three behaviours.** Each new thing you learn about
 the reference becomes another `check` line, so it stays checked for the rest of the run
 instead of being verified once and forgotten.
+
+**One line per option is not coverage.** An option that takes a value has a space of
+them, and testing one point in that space tells you about that point only. For each such
+option check, at minimum: one valid value, *the same value written differently* — a
+different case, an abbreviation, an alias — a boundary value, and something invalid. A
+reconstruction that accepted `--color=red` and rejected `--color=Red` passed its author's
+one check and failed twenty-seven of the grader's, because the reference matched values
+case-insensitively and nothing in the one check could have revealed that.
+
+The same applies to whatever mode or behaviour the program has: if it can be started in
+several ways, check that it starts in each of them and stops cleanly, not just that one
+of them works. Thirty more tests were lost that way — the reconstruction never entered
+its main loop at all, and a comparison run without a terminal attached showed no
+difference because neither binary could start.
 
 Record unreachable differences as a comment beside the check you removed, so the count
 stays honest and the next reader knows why.
