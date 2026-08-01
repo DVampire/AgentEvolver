@@ -886,3 +886,52 @@ def test_a_clean_run_says_so_plainly(tmp_path):
     assert audit["clean"] is True
     assert audit["verdict"].startswith("clean")
     assert audit["by_tool"] == {}
+
+
+def test_shared_roots_are_checked_before_the_first_container():
+    """A root run left extension/manifest.json at mode 0600, and the next run — no longer
+    root — died seventeen seconds in on a PermissionError from inside manager
+    initialisation, naming one file and no remedy."""
+    import inspect
+
+    launcher = inspect.getsource(rp.run_launcher)
+    assert "check_shared_roots_readable()" in launcher
+    # Before any container is created.
+    assert launcher.index("check_shared_roots_readable()") < launcher.index('sandbox_manager.acquire(')
+
+    check = inspect.getsource(rp.check_shared_roots_readable)
+    assert "! -readable" in check
+    assert "CONTAINER_USER" in check
+    assert "chmod -R a+rX" in check, "the error has to carry the fix"
+
+
+def test_ownership_is_restored_for_every_tree_the_run_writes():
+    """`output/` was covered and `extension/` was not, which is how the 0600 file
+    survived to break the next run."""
+    import inspect
+
+    launcher = inspect.getsource(rp.run_launcher)
+    assert 'restore_ownership(os.path.join(root, "output"))' in launcher
+    assert 'restore_ownership(os.path.join(root, "extension"))' in launcher
+
+    restore = inspect.getsource(rp.restore_ownership)
+    # Readable as well as owned: these trees are inputs to the *next* run.
+    assert "chmod -R a+rX" in restore
+
+
+def test_both_writable_trees_are_granted_to_the_container_user():
+    """The session tree is the obvious one. The shared extension root is the other:
+    extension_manager.initialize() rewrites manifest.json there, so a run that can only
+    read it dies during manager initialisation — which is exactly what happened."""
+    import inspect
+
+    launcher = inspect.getsource(rp.run_launcher)
+    assert "grant_to_container_user(session_path)" in launcher
+    assert 'grant_to_container_user(os.path.join(root, "extension"))' in launcher
+    # And both come back afterwards.
+    assert 'restore_ownership(os.path.join(root, "extension"))' in launcher
+
+    grant = inspect.getsource(rp.grant_to_container_user)
+    # The reference binary is the one thing not handed over: its owner could chmod it
+    # readable, and the mode is all that keeps its bytes out of reach.
+    assert "chown 0:0" in grant and "executable" in grant

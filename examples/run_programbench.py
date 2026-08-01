@@ -669,16 +669,19 @@ def seed_workspace(image_ref: str, destination: str) -> None:
         )
 
 
-def grant_session_to_container_user(session_path: str) -> None:
-    """Make the session tree writable by the user the container runs as.
+def grant_to_container_user(session_path: str) -> None:
+    """Make the trees the run writes into writable by the user the container runs as.
 
-    The run writes its logs, its trace and its result into this tree, and it runs as the
-    image's own uid rather than root — so a directory owned by whoever launched it would
-    be read-only from inside. Done through a privileged throwaway container because the
-    launching user cannot chown to an id it does not own.
+    Two of them. The session tree holds its logs, its trace and its result. The shared
+    extension root is the other, and less obviously: `extension_manager.initialize()`
+    rewrites `manifest.json` there — the same thing run_meta_agent.py does — so a run that
+    can only read it dies during manager initialisation. Both are handed over for the
+    duration and handed back by `restore_ownership` afterwards.
 
-    Only the session's own directory: the mounted checkout stays as it is, and read access
-    is all the run needs there.
+    Done through a privileged throwaway container because the launching user cannot chown
+    to an id it does not own.
+
+    The mounted checkout otherwise stays as it is; read access is all the run needs there.
     """
     if not os.path.isdir(session_path):
         return
@@ -704,25 +707,55 @@ def grant_session_to_container_user(session_path: str) -> None:
 
 
 def restore_ownership(path: str) -> None:
-    """Give a root-created output directory back to the user running the launcher.
+    """Give a directory the container wrote into back to the user running the launcher.
 
-    The agent runs as root inside the container, so everything it writes into the
-    mounted output tree lands root-owned — and the user then cannot delete it without a
-    privileged helper, which is exactly the situation this avoids by using one here.
+    The run writes as a uid that is not the launching user's, so what it leaves behind is
+    owned by that uid and cannot be removed without a privileged helper — which is the
+    situation this avoids by being one. Also made readable, because these trees are inputs
+    to the *next* run: a root run once left `extension/manifest.json` at mode 0600, and the
+    following run — no longer root — died seventeen seconds in on PermissionError reading
+    it.
     """
     if not os.path.isdir(path):
         return
     subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{path}:/target", "alpine",
-         "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/target"],
+        ["docker", "run", "--rm", "-v", f"{path}:/target", "alpine", "sh", "-c",
+         f"chown -R {os.getuid()}:{os.getgid()} /target && chmod -R a+rX /target"],
         capture_output=True, text=True, timeout=600,
     )
+
+
+def check_shared_roots_readable() -> None:
+    """Fail before the first container if the run could not read what it needs.
+
+    The shared extension root and the checkout are inputs the run only reads, but it reads
+    them as the image's uid rather than the launching user's, so a file left group- and
+    world-unreadable stops it. Checked here because the alternative is a PermissionError
+    raised from inside manager initialisation, seventeen seconds into a run, naming one
+    file and no remedy.
+    """
+    probes = [os.path.join(root, "extension"), os.path.join(root, "examples", "tasks")]
+    result = subprocess.run(
+        ["docker", "run", "--rm", "-v", f"{host_repo_root()}:/repo:ro",
+         "--user", CONTAINER_USER, "alpine", "sh", "-c",
+         "find /repo/extension /repo/examples/tasks -type f ! -readable -print 2>/dev/null | head -5"],
+        capture_output=True, text=True, timeout=120,
+    )
+    unreadable = [line for line in result.stdout.splitlines() if line.strip()]
+    if unreadable:
+        raise RuntimeError(
+            f"the run executes as {CONTAINER_USER} and cannot read: {unreadable}. "
+            f"Earlier runs executing as root can leave files at mode 0600 here. Fix with: "
+            f"docker run --rm -v $PWD:/r alpine chmod -R a+rX /r/extension"
+        )
+    logger.info(f"| 🔎 Shared roots readable as {CONTAINER_USER}: {', '.join(probes)}")
 
 
 async def run_launcher(args) -> int:
     from agentevolver.data.programbench import ProgramBenchDataset
 
     await sandbox_manager.initialize()
+    check_shared_roots_readable()
 
     dataset = ProgramBenchDataset()
     task_ids = [t.strip() for t in args.task_ids.split(",") if t.strip()] if args.task_ids else None
@@ -764,7 +797,8 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
             seed_workspace(image_ref, workspace_dir)
-            grant_session_to_container_user(session_path)
+            grant_to_container_user(session_path)
+            grant_to_container_user(os.path.join(root, "extension"))
             logger.info(
                 f"| 🌱 [{instance_id}] Workspace seeded and mounted: {workspace_dir} "
                 f"(owned by {CONTAINER_USER})"
@@ -820,7 +854,9 @@ async def run_launcher(args) -> int:
         finally:
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
+            # Both trees the run writes into, not just the output one.
             restore_ownership(os.path.join(root, "output"))
+            restore_ownership(os.path.join(root, "extension"))
 
         record.setdefault("time_seconds", round(time.time() - started, 1))
         results.append(record)
