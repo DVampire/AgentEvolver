@@ -935,3 +935,16 @@ def test_both_writable_trees_are_granted_to_the_container_user():
     # The reference binary is the one thing not handed over: its owner could chmod it
     # readable, and the mode is all that keeps its bytes out of reach.
     assert "chown 0:0" in grant and "executable" in grant
+
+
+def test_the_task_names_the_compile_timestamp_by_sight():
+    """The abstract rule — "a value only the original build could know" — was already
+    there, and a run still spent over a hundred turns trying to match a compile
+    timestamp, writing test programs to probe __TIME__. The commonest unreachable
+    difference needs to be recognisable on sight, not deduced."""
+    prompt = _flat_task_text()
+    assert "`__DATE__` and `__TIME__`, fixed when the reference was compiled" in prompt
+    assert "compiled 22:13:51, Jun 11 2026" in prompt
+    assert "hard-coding them is not reproducing behaviour either" in prompt
+    # And what to do about it, immediately.
+    assert "Record it and move on the moment you see it." in prompt

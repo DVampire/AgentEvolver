@@ -237,7 +237,19 @@ Treat a difference as unreachable — record it, move on — as soon as any of t
   segfault, a terminal that is not attached, a device, a locale, a network service. You
   cannot reproduce a crash faithfully and should not try.
 - **The difference is in a value only the original build could know**: an embedded
-  timestamp, a path from the machine it was compiled on, a commit hash.
+  timestamp, a path from the machine it was compiled on, a commit hash. The commonest
+  form by far, and worth recognising on sight:
+
+  ```
+  reference: version 2.0 (compiled 22:13:51, Jun 11 2026)
+  yours:     version 2.0 (compiled 04:34:42, Aug  1 2026)
+  ```
+
+  That is `__DATE__` and `__TIME__`, fixed when the reference was compiled. Your build
+  cannot produce those characters and no amount of work will change that — hard-coding
+  them is not reproducing behaviour either, and the next instance's would differ again.
+  Record it and move on the moment you see it. A run spent over a hundred turns on this
+  one line while a genuinely fixable difference sat beside it untouched.
 - **You have spent roughly ten turns on one difference without your source changing.**
   That is the signal, and it is a fact about your own history you can check. Ten turns
   of investigation that produced no code is not investigation any more.
