@@ -61,6 +61,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -358,6 +359,40 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
     return info
 
 
+def _reads_the_binary_as_a_file(command: str, tools) -> bool:
+    """True when an analysis tool is pointed at the reference binary itself.
+
+    The distinction that matters: `strings reference_executable` reads the binary, while
+    `./reference_executable -V | hexdump -C` reads what the binary *printed*. The second
+    is allowed and useful — exact leading spaces and line endings are part of the
+    behaviour being reproduced — so the audit has to look at what the tool was given, not
+    at which words appear in the command.
+
+    Conservative in the direction of flagging: a command whose shape this cannot parse and
+    which names both a tool and the binary is reported, because a missed violation is
+    worse than a false one that a human checks.
+    """
+    import shlex
+
+    for fragment in re.split(r"[|;&\n]+", command):
+        try:
+            argv = shlex.split(fragment)
+        except ValueError:
+            argv = fragment.split()
+        if not argv:
+            continue
+        name = os.path.basename(argv[0]).lower()
+        if not any(name == tool.strip() for tool in tools):
+            continue
+        # Its operands, ignoring flags. A redirect target is not an operand of the tool.
+        operands = [a for a in argv[1:] if not a.startswith("-")]
+        for operand in operands:
+            base = os.path.basename(operand)
+            if base in (REFERENCE_COPY, "executable"):
+                return True
+    return False
+
+
 def audit_reference_binary(log_root: str) -> dict:
     """Check the run's own trace for binary analysis of the reference.
 
@@ -375,13 +410,14 @@ def audit_reference_binary(log_root: str) -> dict:
     hits: list = []
     trace_dir = Path(log_root) / "trace"
     for path in sorted(trace_dir.glob("*.jsonl")) if trace_dir.is_dir() else []:
+        rows = []
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if not line.strip():
-                continue
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue
+            if line.strip():
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    pass
+        for index, event in enumerate(rows):
             # Only what the agent *ran*. Scanning raw trace lines instead flagged the task
             # document itself: its rules name `objdump` in the course of forbidding it, and
             # the prompt travels through the trace, so the audit accused every run of the
@@ -396,13 +432,38 @@ def audit_reference_binary(log_root: str) -> dict:
                 continue
             if REFERENCE_COPY not in command and "./executable" not in command:
                 continue
-            lowered = command.lower()
+            # The tool has to be reading the binary *as a file* — which means the binary
+            # is its argument. `hexdump -C ref_V.txt` and `./reference_executable -V |
+            # hexdump -C` are inspecting the program's *output*, which the rules
+            # explicitly allow ("read everything it produces"), and the agent has a good
+            # reason to: exact leading spaces and line endings are part of what it must
+            # reproduce. Matching on "both words appear somewhere in the command" called
+            # eighteen such inspections a violation.
+            if not _reads_the_binary_as_a_file(command, tools):
+                continue
+            # A command and its result are separate events — `tool_start` carries the
+            # input, `tool_call` the output — so the outcome has to be looked up nearby.
+            # Reading it off the same row leaves every attempt looking successful, which
+            # is how seven refused attempts were reported as a violation.
+            outcome = str(event.get("output") or "")
+            if not outcome:
+                for neighbour in rows[index:index + 3]:
+                    if neighbour.get("output"):
+                        outcome = str(neighbour["output"])
+                        break
+            blocked = (
+                "permission denied" in outcome.lower()
+                or "not found" in outcome.lower()
+                or "Exit code: 1" in outcome
+                or "Exit code: 127" in outcome
+            )
             for tool in tools:
-                if tool in lowered:
+                if tool.strip() in command.lower():
                     hits.append({
                         "tool": tool.strip(),
                         "action": event.get("action_name"),
                         "command": command[:200],
+                        "blocked": blocked,
                     })
                     break
     # Summarised, and the verdict first. A run that broke the rules produces a score that
@@ -410,23 +471,46 @@ def audit_reference_binary(log_root: str) -> dict:
     # forty near-identical commands — buried that conclusion in its own evidence. One run
     # scored 99 having called `strings` on the reference about thirty times; the number
     # looked like the best result of the session.
-    by_tool: dict = {}
-    for hit in hits:
-        by_tool[hit["tool"]] = by_tool.get(hit["tool"], 0) + 1
-    return {
-        "checked": True,
-        "clean": not hits,
-        "verdict": (
-            "clean: no binary analysis of the reference"
-            if not hits else
-            f"VIOLATION — the reference was analysed as a file "
+    # An attempt the environment refused is not a violation — it is the defences
+    # working, and it is worth reporting as such. This run tried `strace` five times
+    # (absent from the image) and `strings` twice (refused by the reference's mode) and
+    # obtained nothing from either; counting those as violations would have discarded a
+    # clean run's score, which is the same mistake in the opposite direction as missing a
+    # real one.
+    succeeded = [h for h in hits if not h["blocked"]]
+    blocked = [h for h in hits if h["blocked"]]
+
+    def _tally(entries):
+        out: dict = {}
+        for entry in entries:
+            out[entry["tool"]] = out.get(entry["tool"], 0) + 1
+        return out
+
+    by_tool = _tally(succeeded)
+    if succeeded:
+        verdict = (
+            f"VIOLATION — the reference was analysed as a file and the analysis succeeded "
             f"({', '.join(f'{k}×{v}' for k, v in sorted(by_tool.items()))}). "
             f"Any score from this run is not comparable."
-        ),
+        )
+    elif blocked:
+        verdict = (
+            f"clean: {len(blocked)} attempt(s) to analyse the reference were refused by the "
+            f"environment ({', '.join(f'{k}×{v}' for k, v in sorted(_tally(blocked).items()))}) "
+            f"and returned nothing"
+        )
+    else:
+        verdict = "clean: no binary analysis of the reference"
+
+    return {
+        "checked": True,
+        "clean": not succeeded,
+        "verdict": verdict,
         "by_tool": by_tool,
+        "blocked_attempts": _tally(blocked),
         # A handful is enough to confirm it; the full list is in the trace.
-        "examples": [h["command"] for h in hits[:5]],
-        "total": len(hits),
+        "examples": [h["command"] for h in succeeded[:5]],
+        "total": len(succeeded),
     }
 
 

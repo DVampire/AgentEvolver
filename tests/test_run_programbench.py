@@ -948,3 +948,74 @@ def test_the_task_names_the_compile_timestamp_by_sight():
     assert "hard-coding them is not reproducing behaviour either" in prompt
     # And what to do about it, immediately.
     assert "Record it and move on the moment you see it." in prompt
+
+
+def test_the_audit_allows_inspecting_the_programs_output(tmp_path):
+    """`./reference_executable -V | hexdump -C` reads what the binary printed, not the
+    binary — and the rules explicitly allow reading everything it produces. The agent has
+    a good reason to: exact leading spaces and line endings are part of what it has to
+    reproduce. Matching on "both words appear in the command" called eighteen such
+    inspections a violation and would have discarded a clean run's score."""
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "./reference_executable -V | hexdump -C"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "./reference_executable -h > ref_h.txt; hexdump -C ref_h.txt"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "timeout 2 ./reference_executable -V > out.txt"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "strings my_own_build"}}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+    assert audit["clean"] is True, audit["verdict"]
+
+
+def test_the_audit_still_catches_reading_the_binary_itself(tmp_path):
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "strings /workspace/reference_executable | grep setfont"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "hexdump -C reference_executable | head"}}\n'
+        '{"action_name": "bash_tool", "input": {"command": "objdump -d ./executable"}}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+    assert audit["clean"] is False
+    assert audit["by_tool"] == {"strings": 1, "hexdump": 1, "objdump": 1}
+
+
+def test_a_refused_attempt_is_the_defences_working_not_a_violation(tmp_path):
+    """This run tried `strace` five times — absent from the image — and `strings` twice —
+    refused by the reference's mode — and got nothing from either. Counting those as
+    violations discards a clean run's score, which is the same mistake as missing a real
+    violation, in the other direction."""
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    # The real trace shape: `tool_start` carries the command, `tool_call` the result.
+    # Written on one row, this test passed while the real case did not.
+    (trace / "a.jsonl").write_text(
+        '{"event_type": "tool_start", "action_name": "bash_tool",'
+        ' "input": {"command": "strace ./reference_executable"}, "output": null}\n'
+        '{"event_type": "tool_call", "action_name": "bash_tool",'
+        ' "output": "STDERR: /bin/sh: 1: strace: not found  Exit code: 127"}\n'
+        '{"event_type": "tool_start", "action_name": "bash_tool",'
+        ' "input": {"command": "strings ./reference_executable | grep isatty"}, "output": null}\n'
+        '{"event_type": "tool_call", "action_name": "bash_tool", "output": "Exit code: 1"}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+
+    assert audit["clean"] is True
+    assert audit["verdict"].startswith("clean:")
+    assert "refused by the environment" in audit["verdict"]
+    assert audit["blocked_attempts"] == {"strace": 1, "strings": 1}
+    assert audit["by_tool"] == {}
+
+
+def test_a_successful_analysis_is_still_a_violation(tmp_path):
+    trace = tmp_path / "trace"
+    trace.mkdir()
+    (trace / "a.jsonl").write_text(
+        '{"action_name": "bash_tool", "input": {"command": "strings ./reference_executable | grep setfont"},'
+        ' "output": "STDOUT: setfont\\nconsolechars\\nExit code: 0"}\n'
+    )
+    audit = rp.audit_reference_binary(str(tmp_path))
+    assert audit["clean"] is False
+    assert "the analysis succeeded" in audit["verdict"]
+    assert audit["by_tool"] == {"strings": 1}
