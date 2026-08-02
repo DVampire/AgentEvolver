@@ -1016,5 +1016,27 @@ async def main() -> int:
     return await run_launcher(args)
 
 
+def _terminate_via_exception(signum, _frame):
+    """Turn SIGTERM into an exception so `finally` blocks actually run.
+
+    The launcher hands two shared trees — `output/` and `extension/` — to the
+    container's uid for the duration of a run and takes them back in a `finally`.
+    That covers a crash, and it covers Ctrl-C, which arrives as KeyboardInterrupt
+    and unwinds the stack. It does *not* cover SIGTERM: Python's default handler
+    ends the process without unwinding, so the restore never runs and both trees
+    are left owned by a uid the launching user is not. Every subsequent run on the
+    host then dies reading `extension/manifest.json` — the exact failure
+    `restore_ownership` documents, reached by a different route.
+
+    Observed: a `kill` on a launcher mid-run left `extension/` owned by uid 1000,
+    and the next `run_meta_agent.py` died on PermissionError before it reached its
+    first step.
+    """
+    raise KeyboardInterrupt(f"terminated by signal {signum}")
+
+
 if __name__ == "__main__":
+    import signal
+
+    signal.signal(signal.SIGTERM, _terminate_via_exception)
     sys.exit(asyncio.run(main()))
