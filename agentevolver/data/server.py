@@ -110,7 +110,11 @@ class DataManager(BaseModel):
         return None
 
     def _local_path(self, repo: str) -> str:
-        safe = _SAFE_NAME.sub("_", str(repo or "").strip()).strip("_") or "dataset"
+        # Dots are stripped from the ends as well as underscores — see the matching
+        # note in agentevolver/knowledge/server.py. A repo named exactly ``..`` came
+        # through the character class intact and resolved a level above the datasets
+        # root; ``.`` alone would have written into the root itself.
+        safe = _SAFE_NAME.sub("_", str(repo or "").strip()).strip("_.") or "dataset"
         return os.path.join(self.base_dir or ".", safe)
 
     async def __call__(self, name: str, input: Dict[str, Any], ctx: Any = None, **kwargs) -> Response:

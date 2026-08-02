@@ -110,7 +110,13 @@ class KnowledgeManager(BaseModel):
         return None
 
     def _base_path(self, base: str) -> str:
-        safe = _SAFE_NAME.sub("_", str(base or "").strip()).strip("_") or "default"
+        # Dots are stripped from the ends as well as underscores. The character class
+        # above allows ``.`` so version-ish names survive, but that let a base named
+        # exactly ``..`` through intact — and the name comes from a model, so the
+        # corpus then landed a level above the knowledge root. Deeper traversal was
+        # never possible (the separator in ``../..`` is replaced), and ``.`` alone
+        # would have written into the root itself.
+        safe = _SAFE_NAME.sub("_", str(base or "").strip()).strip("_.") or "default"
         return os.path.join(self.base_dir or ".", safe)
 
     def _read_corpus(self, base: str) -> List[Dict[str, Any]]:
