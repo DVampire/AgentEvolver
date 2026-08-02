@@ -380,6 +380,20 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
             "fallback_model": "openrouter/gemini-3.5-flash",
         },
         {
+            # Same 8k thinking cap as 4.8, and for the same reason — a long
+            # chain of thought eating the completion budget truncates the
+            # structured-output JSON. Thinking is *on by default* on Opus 5
+            # (unlike 4.8, where omitting the config meant no thinking), so the
+            # cap matters more here, not less.
+            "model_name": "openrouter/claude-opus-5",
+            "model_id": "anthropic/claude-opus-5",
+            "model_type": "chat/completions",
+            "reasoning": {"reasoning": {"max_tokens": 8000}},
+            "temperature": default_temperature,
+            "max_completion_tokens": max_tokens,
+            "fallback_model": "openrouter/gemini-3.5-flash",
+        },
+        {
             "model_name": "openrouter/claude-fable-5",
             "model_id": "anthropic/claude-fable-5",
             "model_type": "chat/completions",
