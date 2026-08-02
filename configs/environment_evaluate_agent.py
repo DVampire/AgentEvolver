@@ -11,9 +11,11 @@ with read_base():
 
 tag = "environment_evaluate_agent"
 # Pre-binding default only: bind_session_roots() repoints this at the
-# session sandbox as soon as real work starts. `tag` stays as a label,
-# not a directory level, so it cannot collide with an owner name.
-project_root = "output/.runtime/unbound"
+# session sandbox as soon as real work starts. `tag` stays as a label, not a
+# directory level, so it cannot collide with an owner name. Startup logs land in
+# the owner tree beside that owner's sessions, not in the machine-level
+# `.runtime` — nothing about a run's own pre-session window belongs to the host.
+project_root = "output/local"
 log_path = "environment_evaluate_agent.log"
 
 model_name = "google/gemini-3.1-pro-preview"

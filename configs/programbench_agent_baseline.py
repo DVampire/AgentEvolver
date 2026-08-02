@@ -43,19 +43,23 @@ with read_base():
 
 tag = "programbench_agent_baseline"
 # Pre-binding default only: bind_session_roots() repoints this at the
-# session sandbox as soon as real work starts. `tag` stays as a label,
-# not a directory level, so it cannot collide with an owner name.
-project_root = "output/.runtime/unbound"
+# session sandbox as soon as real work starts. `tag` stays as a label, not a
+# directory level, so it cannot collide with an owner name. Startup logs land in
+# the owner tree beside that owner's sessions, not in the machine-level
+# `.runtime` — nothing about a run's own pre-session window belongs to the host.
+project_root = "output/local"
 log_path = "agent.log"
 
 # Same model and route as the evolving arm — see programbench_agent.py for why
-# this goes through OpenRouter rather than the direct `google/*` provider.
+# this goes through OpenRouter rather than a direct vendor provider. The two arms
+# differ only in the evolution roster, so this must stay equal to the evolving
+# arm's model_name; a mismatch turns the comparison into a model benchmark.
 # A registered model_manager name, not a litellm model string. The registry already maps
-# it to the upstream id (`openrouter/gemini-3.1-pro-preview` -> `google/gemini-3.1-...`),
+# it to the upstream id (`openrouter/claude-opus-5` -> `anthropic/claude-opus-5`),
 # so the vendor prefix belongs there and not here. Calling litellm directly with the
 # prefixed spelling appears to work and is a different code path; going through the
 # manager with an unregistered name fails every `_think` instantly instead.
-model_name = "openrouter/gemini-3.1-pro-preview"
+model_name = "openrouter/claude-opus-5"
 
 memory_names = [
     "file_system_memory",

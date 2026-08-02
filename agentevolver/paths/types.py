@@ -30,9 +30,6 @@ class P(str, Enum):
     DEPLOY = "deploy"
     CHECKPOINTS = "checkpoints"
     STAGING = "staging"
-    #: Where output lands before anything binds a session — the gateway's own
-    #: startup logs, or a direct run that never opened one.
-    UNBOUND = "unbound"
 
     # --- per owner (durable, survives every session) ---------------------
     OWNER = "owner"
@@ -88,7 +85,6 @@ LAYOUT: Dict[P, str] = {
     P.DEPLOY: "output/.runtime/deploy",
     P.CHECKPOINTS: "output/.runtime/checkpoints",
     P.STAGING: "output/.runtime/staging/{project_key}",
-    P.UNBOUND: "output/.runtime/unbound",
 
     P.OWNER: "output/{owner}",
     P.OWNER_STATE: "output/{owner}/state",

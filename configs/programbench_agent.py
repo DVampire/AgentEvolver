@@ -56,23 +56,29 @@ with read_base():
 
 tag = "programbench_agent"
 # Pre-binding default only: bind_session_roots() repoints this at the
-# session sandbox as soon as real work starts. `tag` stays as a label,
-# not a directory level, so it cannot collide with an owner name.
-project_root = "output/.runtime/unbound"
+# session sandbox as soon as real work starts. `tag` stays as a label, not a
+# directory level, so it cannot collide with an owner name. Startup logs land in
+# the owner tree beside that owner's sessions, not in the machine-level
+# `.runtime` — nothing about a run's own pre-session window belongs to the host.
+project_root = "output/local"
 log_path = "agent.log"
 
-# Same model, reached through OpenRouter rather than Google directly: the
-# `google/*` route reads GOOGLE_API_KEY straight from the environment, and a
-# direct-Google key that stops working takes the whole run down silently (every
-# _think call 400s, the agent burns its step budget producing no tool calls, and
-# still reports `done`). Override per run with
-# `--cfg-options model_name=<name>`.
+# Reached through OpenRouter rather than a vendor's direct route: a `google/*` or
+# `anthropic/*` provider reads its key straight from the environment, and a direct
+# key that stops working takes the whole run down silently (every _think call 400s,
+# the agent burns its step budget producing no tool calls, and still reports
+# `done`). Override per run with `--cfg-options model_name=<name>` — that override
+# does reach the container, but only since the launcher started forwarding it; it
+# was dropped silently before, so a run pinned to a model this way is worth
+# checking against the container's own command line.
 # A registered model_manager name, not a litellm model string. The registry already maps
-# it to the upstream id (`openrouter/gemini-3.1-pro-preview` -> `google/gemini-3.1-...`),
+# it to the upstream id (`openrouter/claude-opus-5` -> `anthropic/claude-opus-5`),
 # so the vendor prefix belongs there and not here. Calling litellm directly with the
 # prefixed spelling appears to work and is a different code path; going through the
 # manager with an unregistered name fails every `_think` instantly instead.
-model_name = "openrouter/gemini-3.1-pro-preview"
+# Keep this in sync with programbench_agent_baseline.py — the two arms are only
+# comparable while they run the same model.
+model_name = "openrouter/claude-opus-5"
 
 memory_names = [
     "file_system_memory",
