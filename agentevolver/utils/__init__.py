@@ -22,6 +22,7 @@ from .screenshot_utils import ScreenshotService
 from .url_utils import fetch_url
 from .args_utils import parse_tool_args
 from .hvac_utils import hvac_client
+from .terminal import render_terminal, PTY_ROWS, PTY_COLS, PTY_DEFAULT_TERM, PTY_KEYSTROKE_DELAY
 from .token_utils import (
     count_tokens,
     count_message_tokens,

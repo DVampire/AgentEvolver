@@ -27,6 +27,7 @@ import pytest
 from agentevolver.config import config
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.default.bash import BashTool
+from agentevolver.utils.terminal import render_terminal
 from agentevolver.tool.default.done import DoneTool
 
 
@@ -610,9 +611,8 @@ def test_a_per_call_timeout_overrides_the_default(tmp_path):
 # sequences, which filled the output budget and got skimmed past as noise.
 
 def test_the_screen_is_returned_not_the_escape_sequences():
-    from agentevolver.tool.default.bash import _render_terminal
     data = b"\x1b[2J\x1b[H" + b"hello" + b"\x1b[5;10Hthere"
-    out = _render_terminal(data)
+    out = render_terminal(data)
     assert "hello" in out and "there" in out
     assert "\x1b" not in out
 
@@ -620,9 +620,8 @@ def test_the_screen_is_returned_not_the_escape_sequences():
 def test_a_redrawn_screen_collapses_to_what_it_ends_up_showing():
     """The point of rendering: a program that repaints reports its screen, not every frame
     it painted to get there."""
-    from agentevolver.tool.default.bash import _render_terminal
     frames = b"".join(b"\x1b[2J\x1b[H" + f"frame {i}".encode() for i in range(500))
-    out = _render_terminal(frames)
+    out = render_terminal(frames)
     assert "frame 499" in out
     assert "frame 498" not in out
     assert len(out) < len(frames) / 10
@@ -631,14 +630,12 @@ def test_a_redrawn_screen_collapses_to_what_it_ends_up_showing():
 def test_colour_and_boldness_are_reported_not_dropped():
     """For a program whose whole job is how it draws, "it is red" is the observation — and
     the reference's -C flag is only visible this way."""
-    from agentevolver.tool.default.bash import _render_terminal
-    out = _render_terminal(b"\x1b[31mR\x1b[0m \x1b[1;37mB\x1b[0m")
+    out = render_terminal(b"\x1b[31mR\x1b[0m \x1b[1;37mB\x1b[0m")
     assert "red" in out and "white bold" in out
 
 
 def test_a_screen_that_uses_no_colour_says_nothing_about_colour():
-    from agentevolver.tool.default.bash import _render_terminal
-    out = _render_terminal(b"plain text\r\n")
+    out = render_terminal(b"plain text\r\n")
     assert "plain text" in out
     assert "red" not in out and "green" not in out
 
@@ -646,8 +643,7 @@ def test_a_screen_that_uses_no_colour_says_nothing_about_colour():
 def test_output_longer_than_the_screen_keeps_its_scrollback():
     """Rendering must not cost a line-oriented command its output: 60 lines of build log
     through a 24-row terminal is still 60 lines."""
-    from agentevolver.tool.default.bash import _render_terminal
-    out = _render_terminal(b"".join(f"line {i}\r\n".encode() for i in range(60)))
+    out = render_terminal(b"".join(f"line {i}\r\n".encode() for i in range(60)))
     assert "line 0" in out
     assert "line 59" in out
 
@@ -665,16 +661,14 @@ def test_a_program_that_clears_on_exit_still_reports_what_it_drew():
     screen, restore the cursor, leave. So the final frame is blank by design, and reporting
     only the end state says "this program displays nothing" about a program that displayed
     plenty. That is worse than raw bytes, because it looks like an answer."""
-    from agentevolver.tool.default.bash import _render_terminal
     drew_then_left = b"\x1b[?1049h" + b"falling characters" + b"\x1b[2J\x1b[H" + b"\x1b[?1049l"
-    out = _render_terminal(drew_then_left)
+    out = render_terminal(drew_then_left)
     assert "falling characters" in out
     assert "as it appeared while running" in out
 
 
 def test_a_screen_that_ends_with_content_is_not_labelled_as_cleared():
-    from agentevolver.tool.default.bash import _render_terminal
-    out = _render_terminal(b"still here\r\n")
+    out = render_terminal(b"still here\r\n")
     assert "still here" in out
     assert "as it appeared while running" not in out
 
@@ -698,8 +692,7 @@ def test_a_line_left_on_the_restored_screen_does_not_hide_the_drawing():
     """What a program drew is routinely followed by a line or two on the screen it handed
     back — a shell prompt, an `echo exit=$?`. Rescuing only an entirely blank final frame
     let one such line make a screenful of drawing look like it never happened."""
-    from agentevolver.tool.default.bash import _render_terminal
-    out = _render_terminal(
+    out = render_terminal(
         b"\x1b[?1049h" + b"\r\n".join(f"rain row {i}".encode() for i in range(10))
         + b"\x1b[2J\x1b[H\x1b[?1049l" + b"exit=0\r\n")
     assert "rain row 9" in out
