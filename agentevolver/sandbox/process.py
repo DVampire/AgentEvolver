@@ -43,7 +43,7 @@ class SandboxServerManager:
 
     Usage::
 
-        mgr = SandboxServerManager(domain=default_domain())
+        mgr = SandboxServerManager()  # domain resolved on first use
         await mgr.ensure_running()   # idempotent — starts the daemon if needed
         ...
         await mgr.shutdown()         # once, on global cleanup
@@ -51,16 +51,33 @@ class SandboxServerManager:
 
     def __init__(
         self,
-        domain: str,
+        domain: Optional[str] = None,
         server_bin: str = "opensandbox-server",
         startup_timeout: float = 30.0,
         poll_interval: float = 0.5,
     ):
-        self.domain = domain
+        self._domain = domain
         self.server_bin = server_bin
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
         self._process: Optional[subprocess.Popen] = None
+
+    @property
+    def domain(self) -> str:
+        """The daemon's domain, resolved on first use rather than at construction.
+
+        Resolving it registers a port in the machine-level registry, and that is a
+        side effect on state shared by every process on the host. Most callers that
+        build this manager never start the daemon — an environment roster with
+        nothing marked ``use_sandbox``, or a run on the ``docker``/``host`` backend
+        — so resolving eagerly published a record saying opensandbox holds a port
+        that nothing was listening on. The registry exists to say who holds what;
+        an entry for a daemon that never started is exactly the claim it must not
+        make.
+        """
+        if self._domain is None:
+            self._domain = default_domain()
+        return self._domain
 
     # ------------------------------------------------------------------ public
     async def ensure_running(self) -> None:

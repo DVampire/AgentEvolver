@@ -20,7 +20,7 @@ from agentevolver.version import version_manager
 from agentevolver.utils import assemble_workspace_path, gather_with_concurrency
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.environment.types import Environment, EnvironmentConfig, ActionConfig, EnvironmentContext
-from agentevolver.sandbox import SandboxServerManager, default_domain
+from agentevolver.sandbox import SandboxServerManager
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import ENVIRONMENT
 
@@ -54,8 +54,13 @@ class EnvironmentContextManager(BaseModel):
         self._environment_history_versions: Dict[str, Dict[str, EnvironmentConfig]] = {}
 
         # Daemon domain comes from the port manager (preferring OPENSANDBOX, else a
-        # free port) rather than a hard-coded 8080, so it can't collide on a shared host.
-        self._sandbox_server = SandboxServerManager(domain=default_domain())
+        # free port) rather than a hard-coded 8080, so it can't collide on a shared
+        # host — but it is resolved on first use, not here. Whether the daemon is
+        # needed at all is decided later, in `_ensure_sandbox_server`, from whether
+        # any registered environment asks for `use_sandbox`; most rosters do not,
+        # and constructing this manager must not claim a port for a daemon that
+        # never starts.
+        self._sandbox_server = SandboxServerManager()
         self._cleanup_registered = False
         
     async def initialize(self, env_names: Optional[List[str]] = None):
