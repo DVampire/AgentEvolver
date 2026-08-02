@@ -1197,8 +1197,12 @@ class Agent(BaseModel):
             logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
             return response.message, False, None, None
         if kind == "environment":
+            from agentevolver.agent.env_binding import render_action_result
             from agentevolver.environment.server import environment_manager
             action_result = await environment_manager(name=route[1], action=route[2], input=call.input, ctx=ctx)
+            # Rendered, not returned raw. The rest of the loop takes text; handing it the
+            # environment's result dict stops the run dead with no error and no next step.
+            action_result = render_action_result(action_result)
             logger.info(f"| ✅ [{self.name}] Environment '{route[1]}' action '{route[2]}' completed")
             return action_result, False, None, None
         if kind == "env":

@@ -13,14 +13,14 @@ from agentevolver.agent.types import (
     Agent,
     AgentContext,
 )
-from agentevolver.environment.server import environment_manager
+from agentevolver.agent.env_binding import EnvironmentBound
 from agentevolver.message import ContentPartImage, ContentPartText, ImageURL, Message
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.utils.name_utils import make_id
 
 
 @AGENT.register_module(force=True)
-class BrowserAgent(Agent):
+class BrowserAgent(EnvironmentBound, Agent):
     """Agent dedicated to the browser environment.
 
     Each step it observes the environment state (text + screenshots), plans a
@@ -77,63 +77,6 @@ class BrowserAgent(Agent):
     # Environment access
     # ------------------------------------------------------------------
 
-    async def _native_env_tools(self, ctx: Optional[AgentContext] = None):
-        """Project this env's actions into native tools for the run loop.
-
-        Returns ``[(ns, params, desc, route), ...]`` consumed by
-        ``assemble_native_tools``: each browser action becomes an ``env__<name>``
-        tool routed back through ``_handle_env_action``.
-        """
-        out = []
-        try:
-            env_info = await environment_manager.get_info(self.env_name)
-        except Exception:
-            env_info = None
-        if not env_info or not getattr(env_info, "actions", None):
-            return out
-        for action in env_info.actions.values():
-            name = action.name
-            fc = getattr(action, "function_calling", None) or {}
-            params = (fc.get("function", {}) or {}).get("parameters") or {"type": "object", "additionalProperties": True}
-            desc = getattr(action, "description", "") or name
-            out.append((f"env__{name}", params, desc, ("env", name)))
-        return out
-
-    async def _handle_env_action(
-        self,
-        action_name: str,
-        action_args: Dict[str, Any],
-        ctx: "AgentContext",
-    ) -> Any:
-        """Dispatch one ``env__*`` tool_call back to the browser environment action.
-
-        Routing target for the tools produced by ``_native_env_tools``. ``ctx`` flows
-        through so the environment resolves the per-session browser tab (env
-        ``session_id`` == ``ctx.id`` == this agent's session id).
-
-        Returns:
-            The action's ``message`` on success (or the raw result when not a dict).
-
-        Raises:
-            RuntimeError: If the environment reports the action failed.
-        """
-        # ctx flows to the environment so it resolves the per-session browser tab
-        # (env session_id == ctx.id == this agent's session id).
-        result = await environment_manager(name=self.env_name, action=action_name, input=action_args, ctx=ctx)
-        if isinstance(result, dict):
-            if not result.get("success", False):
-                raise RuntimeError(result.get("message") or "env action failed")
-            return result.get("message")
-        return result
-
-    async def _observe(self, ctx: Optional[AgentContext] = None) -> Optional[Dict[str, Any]]:
-        """Fetch the current environment state for this session; None when unavailable."""
-        try:
-            return await environment_manager.get_state(self.env_name, ctx=ctx)
-        except Exception as e:
-            logger.error(f"| ❌ [{self.name}] Failed to get environment state: {e}")
-            return None
-
     # ------------------------------------------------------------------
     # Context builders
     # ------------------------------------------------------------------
@@ -173,20 +116,6 @@ class BrowserAgent(Agent):
     async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Return an empty skill context: this agent exposes no skills."""
         return {"skill_context": ""}
-
-    async def _get_environment_context(self) -> Dict[str, Any]:
-        """Render the environment's actions (auto-generated text representations)."""
-        try:
-            env_info = await environment_manager.get_info(self.env_name)
-        except Exception:
-            env_info = None
-        if not env_info or not env_info.actions:
-            return {"environment_context": "### Available Environment Actions\n[No environment actions loaded.]"}
-
-        parts = [f"### Available Environment Actions ({self.env_name})"]
-        for action in env_info.actions.values():
-            parts.append(action.text or f"- {action.name}: {action.description}")
-        return {"environment_context": "\n\n".join(parts)}
 
     async def _get_messages(
         self,
