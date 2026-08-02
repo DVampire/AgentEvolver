@@ -151,6 +151,20 @@ class SandboxManagerServer(BaseModel):
         except Exception:
             # A relay outlives a failed start otherwise, leaving a stale socket and a
             # listener for a sandbox that never existed.
+            #
+            # The handle goes too, because a start can fail *after* the backend has
+            # created real resources: DockerSandbox builds the container and only then
+            # starts the egress forwarder inside it, so a policy whose forwarder cannot
+            # run left the container running with nothing holding it. Nothing has been
+            # cached at this point, so `release` would never find it either. Teardown
+            # failure is logged rather than raised — the original error is the one the
+            # caller needs to see.
+            try:
+                await handle.destroy()
+            except Exception as teardown_error:  # noqa: BLE001
+                logger.warning(
+                    f"| ⚠️ Could not destroy {kind} sandbox after a failed start: {teardown_error}"
+                )
             await self._stop_relay(handle)
             raise
         if cache_key:
