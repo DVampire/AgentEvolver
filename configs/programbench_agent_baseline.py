@@ -82,8 +82,9 @@ agent_names = [
 # were excluded while that was not true — a write would have landed on the host
 # and gone missing from extract_submission()'s tar of the container.
 tool_names = [
-    # sandbox-aware: each of these reads ctx.extra["sandbox"] and routes its IO
-    # into the bound peer container, so they see the task's /workspace.
+    # These run wherever the agent process runs. Nothing here reads a sandbox handle
+    # or routes its IO into a container — the isolation comes from the agent being
+    # started *inside* the task container, not from the tools knowing about one.
     "bash_tool",
     "read_file_tool",
     "write_file_tool",

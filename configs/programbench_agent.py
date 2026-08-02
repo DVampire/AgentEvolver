@@ -10,14 +10,17 @@ for a lean, cheaper "just do the task" run.
 Everything else meta_agent.py carries is deliberately absent, because the task
 is offline binary reconstruction inside a container:
 
-- **The file/git tools are sandbox-aware, so they are included.**
+- **The file/git tools are included, and they are not container-aware.**
   `read_file_tool`/`write_file_tool`/`edit_file_tool`/`list_dir_tool`/`git_tool`
-  each read `ctx.extra["sandbox"]` and route their IO into the bound container.
-  They were excluded while that was not the case: a write would have landed on the
-  (nearly empty) host workspace instead of `/workspace`, giving the agent an
-  inconsistent view of its own environment and letting its source go missing from
-  `extract_submission()`'s tar. That also depends on the sandbox handle reaching
-  sub-agents at all — see `protocol_manager.delegate`, which used to drop it.
+  read and write wherever the agent process is running. Nothing consults a sandbox
+  handle. What makes them land in `/workspace` is that the agent itself runs
+  *inside* the task container — `examples/run_programbench.py` starts a launcher on
+  the host, which starts the agent in the container, and from there the local
+  filesystem simply is the task's.
+  This matters because the alternative was tried and failed: while the tools ran on
+  the host, a write landed on the (nearly empty) host workspace instead of
+  `/workspace`, giving the agent an inconsistent view of its own environment and
+  letting its source go missing from `extract_submission()`'s tar.
 - **No `monitor_agent`.** It spawns its own `asyncio.create_subprocess_shell`,
   bypassing the sandbox entirely.
 - **No web tools, browser agent, or browser environment.** The run is offline by
@@ -104,10 +107,11 @@ agent_names = [
 
 # Basic tools only — see the module docstring for what is deliberately absent.
 tool_names = [
-    # sandbox-aware: each of these reads ctx.extra["sandbox"] and routes its IO
-    # into the bound peer container, so they see the task's /workspace. Kept in
-    # step with programbench_agent_baseline.py — the two arms differ only in
-    # evolution capability, so any tool asymmetry would confound the comparison.
+    # These run wherever the agent process runs. Nothing here reads a sandbox handle
+    # or routes its IO into a container — the isolation comes from the agent being
+    # started *inside* the task container, not from the tools knowing about one.
+    # Kept in step with the other arm — the two differ only in evolution
+    # capability, so any tool asymmetry would confound the comparison.
     "bash_tool",
     "read_file_tool",
     "write_file_tool",
