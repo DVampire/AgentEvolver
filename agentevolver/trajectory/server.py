@@ -186,9 +186,26 @@ class TrajectoryManagerServer:
     # ------------------------------------------------------------------
 
     def _path(self, traj: Trajectory) -> str:
-        base = self.base_dir or "."
+        # Falling back to `.` put `<task_id>.jsonl` in whatever directory the process
+        # happened to start in — for a run launched from a checkout, the repository root.
+        # The hook that writes these is registered by `hook_manager.initialize()`, so any
+        # runner that does not also initialize *this* manager was leaking files into the
+        # source tree; `examples/run_browser_agent.py` did, and so did every new runner
+        # written from it. The default now resolves the same way `initialize()` does.
+        base = self.base_dir or self._default_base_dir()
         safe = traj.task_id.replace("/", "_").replace("\\", "_")
         return os.path.join(base, f"{safe}.jsonl")
+
+    @staticmethod
+    def _default_base_dir() -> str:
+        from agentevolver.config import config
+        from agentevolver.utils import assemble_workspace_path
+
+        try:
+            log_root = config.log_root
+        except (AttributeError, KeyError):
+            log_root = "workspace_root"
+        return assemble_workspace_path(os.path.join(log_root, "trajectory"))
 
     def _persist(self, traj: Trajectory) -> None:
         try:
