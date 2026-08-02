@@ -714,18 +714,31 @@ def inner_command(instance, args) -> str:
 
     Config and task-file paths are rewritten from the host's repo root to the mount
     point, since the same checkout is visible at a different path in there.
+
+    ``--cfg-options`` is forwarded too. The launcher parses it but the run happens
+    in here, so dropping it meant a documented override — the module docstring
+    advertises ``--cfg-options model_name=…`` — silently did nothing: the inner run
+    fell back to the config file's default and burned a full step budget on the
+    wrong model, with nothing in the launcher's log to say so.
     """
     payload = json.dumps({
         key: instance.get(key, "")
         for key in ("instance_id", "repository", "language", "image_name")
     })
-    return " ".join([
+    parts = [
         shlex.quote(sys.executable),
         shlex.quote(f"{CONTAINER_REPO}/examples/run_programbench.py"),
         "--instance-json", shlex.quote(payload),
         "--config", shlex.quote(args.config.replace(root, CONTAINER_REPO)),
         "--task-file", shlex.quote(args.task_file.replace(root, CONTAINER_REPO)),
-    ])
+    ]
+    overrides = getattr(args, "user_cfg_options", None) or {}
+    if overrides:
+        parts.append("--cfg-options")
+        parts.extend(
+            shlex.quote(f"{key}={value}") for key, value in overrides.items()
+        )
+    return " ".join(parts)
 
 
 def seed_workspace(image_ref: str, destination: str) -> None:
@@ -989,7 +1002,14 @@ async def run_launcher(args) -> int:
 
 async def main() -> int:
     args = parse_args()
+    # `config.initialize` merges every CLI argument into `args.cfg_options`, in
+    # place — so after it runs, that dict also holds `task_file`, `task_ids` and
+    # friends, carrying *host* paths. The launcher forwards cfg-options into the
+    # container, where those paths do not exist, so snapshot what the user
+    # actually asked for before it is overwritten.
+    user_cfg_options = dict(args.cfg_options or {})
     config.initialize(config_path=args.config, args=args)
+    args.user_cfg_options = user_cfg_options
     if args.instance_json:
         return await run_inner(args)
     logger.initialize(config=config)
