@@ -62,8 +62,8 @@ output/
     deploy/                     deploy workspaces
     checkpoints/<run_id>.json   workflow run checkpoints
     staging/<project_key>/      extension staging
-    unbound/                    output produced before anything bound a session
   <owner>/
+    log/                        output produced before anything bound a session
     state/                      durable, survives every session
       files/  flows/  ide/{extensions,user-data,home}
     sessions/<session_id>/      disposable
