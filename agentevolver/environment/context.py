@@ -196,12 +196,19 @@ class EnvironmentContextManager(BaseModel):
                 env_cls: Environment class to register
             """
             try:
-                env_config_key = inflection.underscore(env_cls.__name__)
-                env_config_dict= config.get(env_config_key, {})
-                env_enable_evolving = env_config_dict.get("enable_evolving", False) if env_config_dict and "enable_evolving" in env_config_dict else False
-                
                 # Get environment properties from environment class
                 env_name = env_cls.model_fields['name'].default
+
+                # A config block may be keyed by either the underscored class name or the
+                # environment's registered name. They coincide for `BrowserEnvironment` /
+                # `browser_environment`, which is why only the first was ever needed — but
+                # an environment whose name says what it is rather than how it is reached
+                # (`SSHEnvironment` serving `remote_host`) makes them differ, and the
+                # config that named the block after `env_names` was silently ignored.
+                env_config_key = inflection.underscore(env_cls.__name__)
+                env_config_dict = config.get(env_config_key, {}) or config.get(env_name, {})
+                env_enable_evolving = env_config_dict.get("enable_evolving", False) if env_config_dict and "enable_evolving" in env_config_dict else False
+
                 env_description = env_cls.model_fields['description'].default
                 env_metadata = env_cls.model_fields['metadata'].default
 

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="remote_workspace_audit">
+  <meta name="description" content="Audit a large workspace on a remote machine as a background job, follow it to completion, and bring the report back to the local machine">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Find out where the disk space in the remote workspace has gone, and bring the
+answer back here. The tree is large enough that scanning it is not something you
+can wait on inside a single command — treat that as part of the problem, not an
+obstacle to it.
+
+Deliver a report that a person could act on: not just which directories are
+biggest, but what kind of content they hold and which of it looks like it could
+be reclaimed.
+</objective>
+
+<requirements>
+- Work out how large the workspace actually is before you decide how to scan it.
+  A scan you cannot wait for must be launched as a background job and followed
+  to completion; a scan that finishes in seconds need not be.
+- Report the 10 largest directories directly under the workspace root, each with
+  its size, and the overall total.
+- Break the content down by file type — which extensions account for the bulk of
+  the bytes, not merely which are most numerous. A directory of ten thousand
+  small logs and a directory of ten large checkpoints are different problems.
+- Identify anything that looks reclaimable and say why you think so: caches,
+  build output, checkpoints superseded by later ones, duplicated downloads. Say
+  plainly when you are inferring rather than certain.
+- Bring the report back to the local machine as a file. It is a deliverable, and
+  a deliverable that only exists on the far host has not been delivered.
+- **Change nothing.** Read, measure and report. Do not delete, move, or rewrite
+  anything in the workspace, and do not act on your own reclamation suggestions —
+  they are a recommendation for the machine's owner to decide on. Any scratch
+  file you create for the scan is yours to clean up afterwards.
+- Account for what you started. If you launched a background job, confirm it
+  finished; if anything is still running when you finish, say so by name.
+</requirements>
+
+<acceptance>
+- The local deliverable exists and contains the directory ranking, the file-type
+  breakdown, and the reclamation notes.
+- Every number in the report came from a command you actually ran on the remote
+  host, and you can say which one.
+- The remote workspace is in the state you found it in.
+</acceptance>
+</div>
+
+</body>
+</html>
