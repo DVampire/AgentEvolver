@@ -23,7 +23,7 @@ UI_PORT="${UI_PORT:-$(python -c 'from agentevolver.port import UI; print(UI)')}"
 # Record the UI port in the PortManager (persisted to ports.json) so it is
 # discoverable alongside the Gateway (which `agentevolver serve` registers
 # itself). Both are fixed host ports — the single port a remote user forwards.
-python -c "from agentevolver.port import port_manager; port_manager.register('ui', ${UI_PORT}, kind='host', override=True)" || true
+python -c "from agentevolver.port import port_manager; port_manager.register('ui', ${UI_PORT}, type='host', override=True)" || true
 
 GW_PID=""
 UI_PID=""
