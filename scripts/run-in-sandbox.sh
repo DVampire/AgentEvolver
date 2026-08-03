@@ -80,7 +80,19 @@ echo "AgentEvolver — run in sandbox (Model X)"
 echo "  image   : ${IMAGE}"
 echo "  repo    : ${REPO_ROOT} -> /AgentEvolver"
 echo "  gpus    : $([[ ${#GPU_ARG[@]} -gt 0 ]] && echo 'all' || echo 'none')"
+# The container runs as root, so ~/.ssh inside it is /root/.ssh. The host directory is
+# mounted read-only to a staging path and *copied* there rather than mounted directly:
+# ssh refuses a config or key that is group-writable or owned by someone else, and a
+# bind mount keeps the host's ownership and mode. `-rw-rw-r-- 1014` becomes "Bad owner
+# or permissions on /root/.ssh/config" and every alias stops working — with an error
+# that reads like a broken config rather than a mount that cannot be fixed in place.
+SSH_MOUNT=()
+if [[ -d "${HOME}/.ssh" ]]; then
+  SSH_MOUNT=(-v "${HOME}/.ssh:/mnt/host-ssh:ro")
+fi
+
 echo "  command : $*"
+echo "  ssh     : $([[ ${#SSH_MOUNT[@]} -gt 0 ]] && echo "${HOME}/.ssh -> /root/.ssh" || echo 'no ~/.ssh to mount')"
 
 exec docker run --rm "${TTY_ARG[@]}" \
   --network host \
@@ -90,6 +102,13 @@ exec docker run --rm "${TTY_ARG[@]}" \
   --stop-timeout 60 \
   -v "${DOCKER_SOCK}:${DOCKER_SOCK}" \
   -v "${REPO_ROOT}:/AgentEvolver" \
+  `# The SSH environment reaches other machines from in here, so it needs the keys` \
+  `# and known_hosts that are the whole basis of that reach. Read-only: the agent has` \
+  `# no business writing to them, and a host key accepted inside a --rm container` \
+  `# would vanish with it anyway. Without this the environment is configurable from` \
+  `# the frontend and cannot connect to anything — the failure reads as a bad key` \
+  `# path rather than as a missing mount, which is a slow thing to work out.` \
+  "${SSH_MOUNT[@]}" \
   -w /AgentEvolver \
   `# Peer containers are created against the HOST Docker daemon, so their bind` \
   `# mounts resolve in the host's mount namespace. Pass the host path we mounted` \
@@ -98,4 +117,4 @@ exec docker run --rm "${TTY_ARG[@]}" \
   -e AGENTEVOLVER_HOST_ROOT="${REPO_ROOT}" \
   "${GPU_ARG[@]}" \
   "${IMAGE}" \
-  "$@"
+  /AgentEvolver/scripts/sandbox-entry.sh "$@"
