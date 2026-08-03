@@ -21,10 +21,21 @@ button { cursor: pointer; }
    canvas/code/science shell (height: 100vh, overflow hidden) behaved
    differently: under a fixed height the flex:1 agents section won and squeezed
    the project list to zero, so switching to Code silently took the projects
-   away. */
+   away.
+
+   Both zones scroll, and both are guaranteed room. .sidebar-nav used to be
+   flex: 0 0 auto — never shrinking — which fixed that first bug by handing it
+   the opposite one: on a short window the brand, the button, the project list
+   and the four views together exceed the viewport, .sidebar-rest is squeezed to
+   zero, and because .sidebar clips, Capabilities / Models / Active agents /
+   Deployments are neither visible nor reachable. Nothing scrolls to them,
+   because the element that would scroll has no height. Now nav gives ground
+   under pressure and scrolls internally, while rest keeps a floor. */
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid hsl(var(--border)); padding: 22px 16px; }
-.sidebar-nav { flex: 0 0 auto; display: flex; flex-direction: column; }
-.sidebar-rest { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+/* The one scrollable thing. `overscroll-behavior: contain` stops a wheel that reaches
+   the end here from carrying on into the page behind it. */
+.sidebar-scroll { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.sidebar-nav, .sidebar-rest { flex: 0 0 auto; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; padding: 0 8px 24px; }
 .brand-mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #101114; background: linear-gradient(135deg, #b0c7ff, #8ce4cc); }
 .new-chat, .composer button, .modal button, .select-all { border: 0; border-radius: 9px; color: #101114; background: #c7d8ff; font-weight: 650; padding: 10px 12px; transition: .15s ease; }
@@ -36,11 +47,62 @@ button { cursor: pointer; }
 .session-dot, .agent-state.running, .connection-dot.connected { background: #70d7b0; box-shadow: 0 0 0 3px rgba(112, 215, 176, .1); }
 .agent-state.completed { background: #8ea9ff; }.agent-state.failed, .connection-dot.error, .connection-dot.disconnected { background: #ef7d87; }.connection-dot.connecting { background: #f2c679; }
 .capability-nav { display: grid; gap: 2px; }.capability-nav .eyebrow { margin-bottom: 6px; }.capability-nav button { display: grid; grid-template-columns: 21px 1fr auto; align-items: center; gap: 7px; width: 100%; border: 0; border-radius: 8px; padding: 8px 7px; color: #babfcb; background: transparent; text-align: left; }.capability-nav button:hover { color: hsl(var(--foreground)); background: #22252d; }.capability-nav button strong { font-size: 13px; font-weight: 550; }.capability-nav button em, .capability-menu em { color: hsl(var(--muted-foreground)); font-size: 11px; font-style: normal; }
-.projects-section { flex: 0 0 auto; max-height: min(34vh, 260px); overflow-y: auto; padding-right: 2px; }.project-group + .project-group { margin-top: 12px; }.project-name { overflow: hidden; padding: 4px 5px 5px; color: #aeb5c5; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }.project-session { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; width: 100%; gap: 7px; border: 0; border-radius: 7px; padding: 7px 5px; color: #a9afbe; background: transparent; text-align: left; }.project-session:hover, .project-session.selected { color: #eff1f7; background: #292c35; }.project-session span:nth-child(2) { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.project-session em { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }.project-session.selected .session-dot { background: #8ea9ff; }.agents-section { flex: 0 1 auto; min-height: 72px; }
+/* No max-height and no scrollbar of its own: it used to cap at 34vh and scroll
+   internally, which is a second place the wheel stops inside one column. The
+   sidebar scrolls as a whole now, so a long project list simply makes it longer. */
+.projects-section { flex: 0 0 auto; }.project-group + .project-group { margin-top: 12px; }.project-name { overflow: hidden; padding: 4px 5px 5px; color: #aeb5c5; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }.project-session { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; width: 100%; gap: 7px; border: 0; border-radius: 7px; padding: 7px 5px; color: #a9afbe; background: transparent; text-align: left; }.project-session:hover, .project-session.selected { color: #eff1f7; background: #292c35; }.project-session span:nth-child(2) { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.project-session em { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }.project-session.selected .session-dot { background: #8ea9ff; }.agents-section { flex: 0 1 auto; min-height: 72px; }
 .deploy-section { flex: 0 1 auto; max-height: 30vh; overflow-y: auto; }
 .deploy-section .eyebrow { display: flex; align-items: center; justify-content: space-between; }
 .section-refresh { border: 0; padding: 0 4px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 12px; cursor: pointer; }
 .section-refresh:hover { color: #c6ccda; }
+/* Remote machines. The row is a target you click to switch to, so the whole name is
+   the button rather than a separate control beside it — picking which machine you are
+   working on is the common act, and testing or opening a shell is the exception.
+
+   Theme variables throughout, not literals. The first version copied .project-session's
+   hardcoded dark values and not its light-theme override, so the active machine showed
+   as a dark pill on a white sidebar. A colour that has to be restated per theme is a
+   colour that will be restated in only one of them. */
+.hosts-section .host-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto auto; align-items: center; gap: 4px; padding: 2px 0; }
+.hosts-section .host-pick { display: flex; align-items: center; min-width: 0; gap: 7px; border: 0; border-radius: 7px; padding: 6px; color: hsl(var(--muted-foreground)); background: transparent; text-align: left; cursor: pointer; }
+.hosts-section .host-pick:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.hosts-section .host-row.active .host-pick { color: hsl(var(--foreground)); background: hsl(var(--accent)); cursor: default; }
+.hosts-section .host-name { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-section .host-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--muted-foreground)); opacity: .55; }
+/* Filled only once a connection is actually open — a machine you have configured and
+   one you are talking to are different things, and the dot is the only place that says
+   which. */
+.hosts-section .host-dot.connected { background: #34b98a; opacity: 1; box-shadow: 0 0 0 3px rgb(52 185 138 / .16); }
+.hosts-section .host-row small { overflow: hidden; color: hsl(var(--muted-foreground)); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-section .host-action { display: grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: 6px; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; font-size: 13px; line-height: 1; }
+.hosts-section .host-action:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.hosts-section .host-action:disabled, .hosts-section .host-pick:disabled { cursor: default; }
+.hosts-section .host-probe { margin: 6px 2px 0; font-size: 11px; line-height: 1.45; word-break: break-word; }
+.hosts-section .host-probe.running { color: hsl(var(--muted-foreground)); }
+.hosts-section .host-probe.ok { color: #34b98a; }
+.hosts-section .host-probe.failed { color: #d1616a; }
+.hosts-section .host-form { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid hsl(var(--border)); }
+.hosts-section .host-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.hosts-section .host-form input { min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 6px 8px; color: hsl(var(--foreground)); background: hsl(var(--background)); font-size: 11px; }
+.hosts-section .host-form input:focus { outline: 0; border-color: hsl(var(--ring, 220 70% 70%)); }
+.hosts-section .host-form-actions { display: flex; gap: 6px; }
+.hosts-section .host-form-actions button { flex: 1; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 6px; color: hsl(var(--foreground)); background: hsl(var(--accent)); font-size: 11px; cursor: pointer; }
+.hosts-section .host-form-actions button:disabled { opacity: .5; cursor: default; }
+
+/* The terminal. A dialog rather than a sidebar pane because a shell wants the room —
+   80 columns of output in a 250px column is not a terminal, it is a rumour of one. */
+.hosts-section .host-spin { width: 11px; height: 11px; border: 2px solid hsl(var(--muted-foreground)); border-top-color: transparent; border-radius: 50%; animation: host-spin .7s linear infinite; }
+@keyframes host-spin { to { transform: rotate(360deg); } }
+.terminal-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 32px; background: rgb(0 0 0 / .55); backdrop-filter: blur(3px); }
+.terminal-dialog { display: flex; flex-direction: column; width: min(1100px, 100%); height: min(680px, 100%); overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--background)); box-shadow: 0 24px 70px rgb(0 0 0 / .35); }
+.terminal-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid hsl(var(--border)); }
+.terminal-head strong { font-size: 13px; }
+.terminal-head small { color: hsl(var(--muted-foreground)); font-size: 11px; }
+.terminal-head .terminal-spacer { margin-left: auto; }
+.terminal-head button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 7px; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; font-size: 17px; }
+.terminal-head button:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.terminal-dialog iframe { flex: 1; width: 100%; border: 0; background: #000; }
+.terminal-status { display: grid; place-items: center; flex: 1; padding: 24px; color: hsl(var(--muted-foreground)); font-size: 12px; text-align: center; }
 .deploy-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; }
 .deploy-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #7b8190; }
 .deploy-dot.running { background: #70d7b0; box-shadow: 0 0 0 3px rgba(112, 215, 176, .1); }

@@ -148,6 +148,13 @@ class AgentGateway:
         # fixed /env/vnc route so a remote user only forwards the UI port — the
         # ephemeral port stays server-internal. See transport.py:/env/vnc.
         self._latest_vnc_target: Optional[str] = None
+        # Same idea as the VNC relay above, for the SSH terminals: token -> the loopback
+        # port the ssh tunnel put that ttyd on. The browser is usually not on the machine
+        # running the gateway — a remote user forwards the UI port and nothing else — so
+        # handing out `http://127.0.0.1:<ephemeral>` produced a dialog that could only
+        # ever say "refused to connect". Requests come to /env/term/<token>/… on the
+        # gateway's own origin instead and are proxied from here.
+        self._terminal_targets: Dict[str, int] = {}
         self._initialized = False
         self._stopping = False
         self._workspace_source = (
@@ -2029,6 +2036,187 @@ class AgentGateway:
                 session_id=self._run_sessions.get(event.task_id, event.session_id),
                 task_id=event.task_id,
             )
+
+    # ------------------------------------------------------------------ remote hosts
+    #
+    # The SSH environment is the one capability whose configuration is a *working set*
+    # rather than a setting: which machines you happen to be using changes daily, and
+    # editing a file under configs/ and restarting for each one is not how anybody wants
+    # to work. So the host list gets its own commands, and the frontend edits it live.
+    #
+    # Nothing here accepts a password. Authentication stays with ssh — a key path at
+    # most, the same thing ~/.ssh/config holds in plain text.
+
+    async def _ssh_environment(self):
+        """The SSH environment instance, or None when this deployment has no remote hosts."""
+        try:
+            info = await environment_manager.get_info("remote_host")
+        except Exception:  # noqa: BLE001 — an absent environment is not an error here
+            return None
+        instance = getattr(info, "instance", None) if info else None
+        return instance if getattr(instance, "host_store", None) is not None else None
+
+    def _session_ctx(self, params: Optional[Dict[str, Any]] = None):
+        """The session these host commands act for.
+
+        The client's `session_id` first, exactly like every other session-scoped command.
+        `_bound_session_id` is only set once a *task* runs, so relying on it meant every
+        browser session shared one remote shell until the first task and then silently
+        moved to a different one — session isolation that only existed after work started.
+        """
+        from agentevolver.session.types import SessionContext
+
+        requested = str((params or {}).get("session_id") or "")
+        return SessionContext(id=requested or self._bound_session_id or "default")
+
+    @staticmethod
+    async def _resolve_ssh_alias(host: str) -> Dict[str, str]:
+        """What ssh would actually use for `host`, without connecting to it.
+
+        `ssh -G` prints the effective configuration after ~/.ssh/config is applied, so an
+        entry that names only an alias can still be shown as `wentao@10.96.186.57`. The
+        alternative is a panel with a blank user field beside a machine that connects
+        fine, which reads as "this is not configured" when in fact it is configured
+        somewhere else.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ssh", "-G", host,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        except Exception:  # noqa: BLE001 — display sugar must never break the list
+            return {}
+        resolved: Dict[str, str] = {}
+        for line in out.decode(errors="replace").splitlines():
+            key, _, value = line.partition(" ")
+            if key in {"user", "hostname", "port"} and value:
+                resolved[key] = value.strip()
+        return resolved
+
+    async def _command_environment_hosts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        env = await self._ssh_environment()
+        if env is None:
+            return {"available": False, "hosts": [], "active": ""}
+        ctx = self._session_ctx(params)
+        active = env.active_host(ctx)
+        store = env.host_store
+        return {
+            "available": True,
+            "active": active.name if active else "",
+            "hosts": [await self._host_view(host, store, env, ctx) for host in store.list()],
+        }
+
+    async def _host_view(self, host, store, env, ctx) -> Dict[str, Any]:
+        resolved = {} if host.user and host.host else await self._resolve_ssh_alias(host.host)
+        user = host.user or resolved.get("user", "")
+        address = resolved.get("hostname") or host.host
+        return {
+            **host.to_dict(),
+            # What ssh will use, whether it came from this record or from ~/.ssh/config.
+            "effective_user": user,
+            "effective_host": address,
+            "target": f"{user}@{address}" if user else address,
+            "removable": store.removable(host.name),
+            "connected": (ctx.id, host.name) in env._services,  # noqa: SLF001
+        }
+
+    async def _command_environment_hosts_add(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        env = await self._ssh_environment()
+        if env is None:
+            raise ValueError("This deployment has no remote_host environment")
+        # `host` is a record when the client nests one and the machine's address when it
+        # does not — the two forms share a key name, and reading it blindly turns the flat
+        # form's address string into a dict() call that fails on its first character.
+        nested = params.get("host")
+        record = dict(nested) if isinstance(nested, dict) else dict(params)
+        host = env.host_store.add(record)
+        logger.info(f"| 🖥️  remote host saved: {host.name} -> {host.host}")
+        return await self._command_environment_hosts_list({"session_id": params.get("session_id")})
+
+    async def _command_environment_hosts_remove(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        env = await self._ssh_environment()
+        if env is None:
+            raise ValueError("This deployment has no remote_host environment")
+        name = str(params.get("name") or "")
+        if not env.host_store.remove(name):
+            raise ValueError(
+                f"{name!r} is not removable from here — it comes from a config file, "
+                f"and deleting it would only last until the next restart"
+            )
+        # Drop the connection too. Leaving it open would keep a machine reachable that
+        # the user has just said they are done with.
+        await env.close_host(name)
+        return await self._command_environment_hosts_list({"session_id": params.get("session_id")})
+
+    async def _command_environment_hosts_select(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        env = await self._ssh_environment()
+        if env is None:
+            raise ValueError("This deployment has no remote_host environment")
+        name = str(params.get("name") or "")
+        try:
+            env.select_host(self._session_ctx(params), name)
+        except KeyError:
+            raise ValueError(f"No host named {name!r}") from None
+        return await self._command_environment_hosts_list({"session_id": params.get("session_id")})
+
+    async def _command_environment_hosts_test(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Connect and report what came back — the "does this actually work" button.
+
+        Run against the saved record rather than the form, so what is tested is what the
+        agent will use. A failure returns its reason instead of raising: "cannot reach
+        this machine" is an answer, not a broken command.
+        """
+        env = await self._ssh_environment()
+        if env is None:
+            raise ValueError("This deployment has no remote_host environment")
+        name = str(params.get("name") or "")
+        ctx = self._session_ctx(params)
+        try:
+            service = await env._svc(ctx, name)  # noqa: SLF001 — same subsystem
+            result = await service.run("hostname; uname -sr", timeout=30)
+        except Exception as exc:  # noqa: BLE001 — the failure IS the result
+            return {"ok": False, "name": name, "error": str(exc)[:400]}
+        if not result.ok:
+            return {"ok": False, "name": name,
+                    "error": (result.stderr or result.stdout).strip()[:400]}
+        return {
+            "ok": True,
+            "name": name,
+            "detail": result.stdout.strip()[:400],
+            "workspace_root": service.workspace_root,
+        }
+
+    async def _command_environment_hosts_terminal(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Open a shell of your own on a machine and return where to embed it.
+
+        Yours, not the agent's. The read-only view exists to watch the agent work and is
+        locked on both sides so a human typing into it is not fighting for the keyboard;
+        this is a second tmux session on the same host, so both can work and neither
+        notices the other. It also outlives the dialog — a command left running is still
+        there next time.
+        """
+        env = await self._ssh_environment()
+        if env is None:
+            raise ValueError("This deployment has no remote_host environment")
+        name = str(params.get("name") or "")
+        ctx = self._session_ctx(params)
+        # A token per (session, machine) so the path is stable across reopens — a new one
+        # each time would leak an entry per click and break a reloaded iframe.
+        import hashlib
+
+        token = hashlib.sha256(f"{ctx.id}:{name}".encode()).hexdigest()[:16]
+        base = f"/env/term/{token}"
+        opened = await env.open_terminal(ctx, name, base_path=base)
+        if not opened or not opened.get("port"):
+            raise ValueError(
+                f"Could not start a terminal on {name!r} — the machine may be unreachable, "
+                f"or ttyd could not be installed or bound there"
+            )
+        self._terminal_targets[token] = int(opened["port"])
+        # Relative on purpose: the client resolves it against whatever origin it reached
+        # the gateway on, so a forwarded UI port is all anybody needs.
+        return {"url": f"{base}/", "name": name}
 
     async def _on_environment_view(self, view) -> None:
         """Republish an environment live-view to the client watching the active session.

@@ -7,8 +7,9 @@ import { containerProxy } from './container-proxy';
 // (/ws), the VNC live view (/env/vnc), the per-session containers
 // (/ide/<session>/ and /science/<session>/ — see container-proxy.ts), and the
 // health probe (/health) to the gateway on 9876. The
-// gateway in turn relays /env/vnc to the sandbox's ephemeral websockify port,
-// so that port never needs forwarding.
+// gateway in turn relays /env/vnc to the sandbox's ephemeral websockify port and
+// /env/term/<token>/ to the ttyd an ssh tunnel put on its loopback, so neither of
+// those ports ever needs forwarding.
 const GATEWAY = process.env.GATEWAY_PORT || '9876';
 
 export default defineConfig({
@@ -34,6 +35,12 @@ export default defineConfig({
     proxy: {
       '/ws': { target: `ws://127.0.0.1:${GATEWAY}`, ws: true, changeOrigin: true },
       '/env/vnc': { target: `ws://127.0.0.1:${GATEWAY}`, ws: true, changeOrigin: true },
+      // The SSH terminals. Both halves through one entry: ttyd serves its page over
+      // HTTP and its stream over a WebSocket under the same prefix, and `ws: true`
+      // makes this proxy handle the upgrade as well as the ordinary requests. Without
+      // it the iframe's relative URL resolved against the Vite origin, hit the SPA's
+      // index.html fallback, and rendered a terminal-shaped page that never connected.
+      '/env/term': { target: `http://127.0.0.1:${GATEWAY}`, ws: true, changeOrigin: true },
       '/health': { target: `http://127.0.0.1:${GATEWAY}` },
     },
   },

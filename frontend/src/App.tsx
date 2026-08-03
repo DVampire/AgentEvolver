@@ -3,28 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
-import {
-  Boxes,
-  Cable,
-  GraduationCap,
-  MessageSquare,
-  Monitor,
-  Moon,
-  Plus,
-  RefreshCw,
-  Settings,
-  Sparkles,
-  Code2,
-  FlaskConical,
-  PanelLeftClose,
-  PanelLeftOpen,
-  SquareTerminal,
-  Sun,
-  Waypoints,
-  Workflow,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+import { Boxes, Cable, Code2, FlaskConical, GraduationCap, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -54,6 +33,31 @@ interface UploadedAttachment { id: string; name: string; path?: string; size: nu
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
 interface WorkspaceEntry { name: string; path: string; type: 'directory' | 'file'; size?: number | null; modified_at: number; }
 interface WorkspaceFile { name: string; path: string; content: string; encoding?: 'utf-8' | 'base64'; size: number; modified_at: number; etag: string; mime_type: string; language: string; }
+/** One machine the SSH environment can reach, as the gateway reports it. */
+interface RemoteHost {
+  name: string;
+  host: string;
+  user?: string;
+  port?: number;
+  identity_file?: string;
+  jump_host?: string;
+  workspace_root?: string;
+  origin?: string;
+  target?: string;
+  /** What ssh will actually use, after ~/.ssh/config — blank fields resolve to these. */
+  effective_user?: string;
+  effective_host?: string;
+  /** False for hosts that come from a config file — deleting one here would not last. */
+  removable?: boolean;
+  connected?: boolean;
+}
+
+/** The add-a-machine form. Ports stay strings while being typed. */
+interface HostDraft {
+  name: string; host: string; user: string; port: string;
+  identity_file: string; jump_host: string; workspace_root: string;
+}
+
 interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
 interface EnvironmentViewInfo { env_name: string; type: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
@@ -148,6 +152,17 @@ export function App() {
   const [editingModel, setEditingModel] = useState<ModelEditorState>();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [deploys, setDeploys] = useState<DeploySite[]>([]);
+  const [hosts, setHosts] = useState<RemoteHost[]>([]);
+  const [activeHost, setActiveHost] = useState<string>('');
+  const [hostsAvailable, setHostsAvailable] = useState<boolean>(false);
+  const [hostFormOpen, setHostFormOpen] = useState<boolean>(false);
+  const [hostEditing, setHostEditing] = useState<string>('');
+  const [hostBusy, setHostBusy] = useState<boolean>(false);
+  const [hostError, setHostError] = useState<string>('');
+  const [terminal, setTerminal] = useState<{ name: string; url: string } | null>(null);
+  const [terminalOpening, setTerminalOpening] = useState<string>('');
+  const [hostProbe, setHostProbe] = useState<{ name: string; state: 'running' | 'ok' | 'failed'; detail: string } | null>(null);
+  const [hostDraft, setHostDraft] = useState<HostDraft>({ name: '', host: '', user: '', port: '22', identity_file: '', jump_host: '', workspace_root: '~' });
   const [environmentView, setEnvironmentView] = useState<EnvironmentViewInfo>();
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
@@ -215,6 +230,90 @@ export function App() {
   }, []);
 
   // Deployments are project-global (not per session), so this needs no session id.
+  // Remote machines. Unlike every other capability this is a *working set* — which
+  // machines you are using changes daily — so it is edited live here rather than by
+  // editing a config file and restarting.
+  const loadHosts = useCallback(async (socket: GatewaySocket) => {
+    const response = await socket.request('environment.hosts.list', { session_id: sessionRef.current });
+    if (!response.ok) return;
+    const result = response.result as { available?: boolean; active?: string; hosts?: RemoteHost[] };
+    setHostsAvailable(Boolean(result.available));
+    setHosts(Array.isArray(result.hosts) ? result.hosts : []);
+    setActiveHost(typeof result.active === 'string' ? result.active : '');
+  }, []);
+
+  const hostCommand = useCallback(async (method: string, params: Record<string, unknown>) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    setHostBusy(true);
+    setHostError('');
+    try {
+      const response = await socket.request(method, { ...params, session_id: sessionRef.current });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Request failed');
+      const result = response.result as { hosts?: RemoteHost[]; active?: string };
+      if (Array.isArray(result.hosts)) setHosts(result.hosts);
+      if (typeof result.active === 'string') setActiveHost(result.active);
+      return response.result;
+    } catch (error) {
+      setHostError(error instanceof Error ? error.message : String(error));
+      return undefined;
+    } finally {
+      setHostBusy(false);
+    }
+  }, []);
+
+  const testHost = useCallback(async (name: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    setHostBusy(true);
+    setHostError('');
+    setHostProbe({ name, state: 'running', detail: '' });
+    try {
+      const response = await socket.request('environment.hosts.test', { name, session_id: sessionRef.current });
+      const result = (response.result ?? {}) as { ok?: boolean; detail?: string; error?: string };
+      setHostProbe({
+        name,
+        state: response.ok && result.ok ? 'ok' : 'failed',
+        detail: result.ok ? (result.detail ?? '') : (result.error ?? response.error?.message ?? 'unreachable'),
+      });
+      if (socketRef.current) await loadHosts(socketRef.current);
+    } finally {
+      setHostBusy(false);
+    }
+  }, [loadHosts]);
+
+  // On document, not on the dialog: a div's onKeyDown only fires while that div has
+  // focus, and the moment the terminal is usable the focus is inside its iframe. The
+  // key never reached React, so Escape did nothing — which is exactly when a modal
+  // feels like a trap.
+  useEffect(() => {
+    if (!terminal) return;
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setTerminal(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [terminal]);
+
+  const openTerminal = useCallback(async (name: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    setTerminalOpening(name);
+    setHostError('');
+    try {
+      // First open on a machine installs ttyd and waits for it to bind, so this is
+      // seconds rather than instant — the button says so while it happens.
+      const response = await socket.request('environment.hosts.terminal', { name, session_id: sessionRef.current });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Could not open a terminal');
+      const url = (response.result as { url?: string }).url;
+      if (!url) throw new Error('Gateway returned no terminal address');
+      setTerminal({ name, url });
+      if (socketRef.current) await loadHosts(socketRef.current);
+    } catch (error) {
+      setHostError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTerminalOpening('');
+    }
+  }, [loadHosts]);
+
   const loadDeploys = useCallback(async (socket: GatewaySocket) => {
     const response = await socket.request('deploy.list');
     if (response.ok && Array.isArray(response.result.sites)) {
@@ -320,7 +419,7 @@ export function App() {
       if (resume) {
         sessionRef.current = resume.session_id;
         setSessionId(resume.session_id);
-        await Promise.all([hydrateCapabilities(socket, resume.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, resume.session_id), loadExtensionStage(socket, resume.session_id)]);
+        await Promise.all([hydrateCapabilities(socket, resume.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadHosts(socket), loadAttachments(socket, resume.session_id), loadExtensionStage(socket, resume.session_id)]);
         // Rebuild the transcript from this project's CHAT conversation, and
         // keep hold of it so the next message continues rather than restarts.
         const events = await resumeChat(socket, resume.session_id);
@@ -348,12 +447,12 @@ export function App() {
       chatConversation.current = undefined;
       setSessionId(response.result.session_id);
       setMessages([{ id: 'welcome', type: 'system', title: 'Ready', content: 'Describe what you want AgentEvolver to do.', timestamp: new Date().toISOString() }]);
-      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
+      await Promise.all([hydrateCapabilities(socket, response.result.session_id), refreshSessions(socket), loadModels(socket), loadDeploys(socket), loadHosts(socket), loadAttachments(socket, response.result.session_id), loadExtensionStage(socket, response.result.session_id)]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
       setStatus('error');
     }
-  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, loadDeploys, refreshSessions, resumeChat]);
+  }, [hydrateCapabilities, loadAttachments, loadExtensionStage, loadModels, loadDeploys, loadHosts, refreshSessions, resumeChat]);
 
   const updateAgent = useCallback((name: string, nextStatus: AgentState['status']) => {
     setAgents((current) => {
@@ -887,9 +986,16 @@ export function App() {
       )}
       {mainView === 'chat' ? <div className="col-resizer col-resizer-right" onPointerDown={startColumnDrag('inspector')} role="separator" aria-orientation="vertical" aria-label="Resize workspace panel" /> : null}
       <aside className="sidebar">
-        {/* Navigation: which project, which view. Never shrinks, and is the
-            same in all four views — a project is the level ABOVE them, so
-            switching to Code must not take the project list away. */}
+        {/* One scroll region, not several. Nav and the reference sections below it are
+            separate boxes only so their spacing differs; making each of them scroll
+            turned one column into three scroll areas that stop at their own boundaries,
+            and a wheel that stops halfway down a sidebar reads as broken rather than as
+            two panes. Everything keeps its natural height and the whole column moves
+            together; the footer below stays put. */}
+        <div className="sidebar-scroll">
+        {/* Navigation: which project, which view. The same in all four views — a project
+            is the level ABOVE them, so switching to Code must not take the project list
+            away. */}
         <div className="sidebar-nav">
         <div className="brand"><span className="brand-mark"><Sparkles size={16} strokeWidth={2} /></span><span>AgentEvolver</span><button className="sidebar-collapse" onClick={() => setSidebarCollapsed(true)} title="Hide sidebar" aria-label="Hide sidebar"><PanelLeftClose size={16} strokeWidth={1.9} /></button></div>
         <button className="new-chat" onClick={() => void createNewSession()} disabled={status !== 'connected'}><Plus size={16} /> New project</button>
@@ -918,6 +1024,116 @@ export function App() {
           <p className="eyebrow">Active agents</p>
           {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
         </div>
+        {hostsAvailable ? <div className="sidebar-section hosts-section">
+          <p className="eyebrow">Remote machines <button className="section-refresh" title="Add a machine" onClick={() => {
+              setHostFormOpen((open) => !(open && !hostEditing));
+              setHostEditing('');
+              setHostDraft({ name: '', host: '', user: '', port: '22', identity_file: '', jump_host: '', workspace_root: '~' });
+              setHostError('');
+            }}><Plus size={12} /></button></p>
+          {hosts.length ? hosts.map((machine) => <div className={`host-row ${machine.name === activeHost ? 'active' : ''}`} key={machine.name}>
+            <button className="host-pick" title={`Work on ${machine.name}`} disabled={hostBusy || machine.name === activeHost}
+                    onClick={() => void hostCommand('environment.hosts.select', { name: machine.name })}>
+              <span className={`host-dot ${machine.connected ? 'connected' : ''}`} />
+              <span className="host-name">{machine.name}</span>
+            </button>
+            {/* The address only when it says something the name does not — a machine you
+                did not rename shows its address as its name already, and printing it
+                twice costs the width the workspace path would rather have. */}
+            {/* The address when it says something the name does not, otherwise the
+                workspace — the two facts worth the width, never the same one twice. */}
+            <small title={`${machine.target ?? machine.host} · ${machine.workspace_root || '~'}`}>
+              {(machine.target ?? machine.host) === machine.name
+                ? (machine.workspace_root || '~')
+                : (machine.target ?? machine.host)}
+            </small>
+            <button className="host-action" title={`Edit ${machine.name}`} disabled={hostBusy}
+                    onClick={() => {
+                      setHostEditing(machine.name);
+                      setHostDraft({
+                        name: machine.name, host: machine.host, user: machine.user ?? '',
+                        port: String(machine.port ?? 22), identity_file: machine.identity_file ?? '',
+                        jump_host: machine.jump_host ?? '', workspace_root: machine.workspace_root ?? '~',
+                      });
+                      setHostFormOpen(true);
+                      setHostError('');
+                    }}><Pencil size={12} /></button>
+            <button className="host-action" title={`Open a shell on ${machine.name}`}
+                    disabled={hostBusy || terminalOpening === machine.name}
+                    onClick={() => void openTerminal(machine.name)}>
+              {terminalOpening === machine.name ? <span className="host-spin" /> : <SquareTerminal size={12} />}
+            </button>
+            <button className="host-action" title="Test the connection" disabled={hostBusy}
+                    onClick={() => void testHost(machine.name)}><Plug size={12} /></button>
+            {machine.removable ? <button className="host-action" title="Forget this machine" disabled={hostBusy}
+                    onClick={() => void hostCommand('environment.hosts.remove', { name: machine.name })}>×</button> : null}
+          </div>) : <p className="empty">No machines yet — add one to work on it.</p>}
+          {hostProbe ? <p className={`host-probe ${hostProbe.state}`}>
+            {hostProbe.state === 'running' ? `Connecting to ${hostProbe.name}…`
+              : hostProbe.state === 'ok' ? `${hostProbe.name}: ${hostProbe.detail.split('\n')[0]}`
+              : `${hostProbe.name} unreachable — ${hostProbe.detail}`}
+          </p> : null}
+          {hostError ? <p className="host-probe failed">{hostError}</p> : null}
+          {hostFormOpen ? <form className="host-form" onSubmit={(event) => {
+              event.preventDefault();
+              void (async () => {
+                const saved = await hostCommand('environment.hosts.add', {
+                  ...hostDraft, port: Number(hostDraft.port) || 22,
+                  name: hostDraft.name.trim() || hostDraft.host.trim(),
+                });
+                if (saved) {
+                  setHostFormOpen(false);
+                  setHostEditing('');
+                  setHostDraft({ name: '', host: '', user: '', port: '22', identity_file: '', jump_host: '', workspace_root: '~' });
+                }
+              })();
+            }}>
+            {/* Address first: it is the only required field, and everything else can come
+                from ~/.ssh/config once you have it. No password field anywhere — auth is
+                ssh's, and a credential in a form is a credential on disk. */}
+            <input required placeholder="hostname or ~/.ssh/config alias, e.g. gpu-box" value={hostDraft.host}
+                   onChange={(event) => setHostDraft((draft) => ({ ...draft, host: event.target.value }))} />
+            <div className="host-form-row">
+              {/* Locked while editing: the name is what identifies a machine everywhere —
+                  the connection, the remote tmux sessions, the agent's `host` argument.
+                  Typing a new one here would not rename anything, it would quietly make a
+                  second machine and leave the first behind. */}
+              <input placeholder="name (defaults to the address)" value={hostDraft.name}
+                     disabled={Boolean(hostEditing)} title={hostEditing ? 'A machine cannot be renamed — remove it and add it again' : undefined}
+                     onChange={(event) => setHostDraft((draft) => ({ ...draft, name: event.target.value }))} />
+              {/* Left blank, ssh resolves the user from ~/.ssh/config. The placeholder
+                  says which one it landed on rather than leaving a machine that connects
+                  fine sitting beside an empty field that reads as unconfigured. */}
+              <input placeholder={hostEditing && hosts.find((m) => m.name === hostEditing)?.effective_user
+                                    ? `${hosts.find((m) => m.name === hostEditing)?.effective_user} (from ~/.ssh/config)`
+                                    : 'user (blank → from ~/.ssh/config)'}
+                     value={hostDraft.user}
+                     onChange={(event) => setHostDraft((draft) => ({ ...draft, user: event.target.value }))} />
+            </div>
+            <div className="host-form-row">
+              <input placeholder="port" inputMode="numeric" value={hostDraft.port}
+                     onChange={(event) => setHostDraft((draft) => ({ ...draft, port: event.target.value }))} />
+              <input placeholder="jump host (optional)" value={hostDraft.jump_host}
+                     onChange={(event) => setHostDraft((draft) => ({ ...draft, jump_host: event.target.value }))} />
+            </div>
+            {/* Usually blank: your whole ~/.ssh is available, so ssh finds the key and any
+                Host alias by itself. When it is set it must be a path ssh can see from
+                where the gateway runs — `~/.ssh/id_ed25519`, not the host's absolute
+                path, which does not exist inside the container. */}
+            <input placeholder="private key, e.g. ~/.ssh/id_ed25519 (usually blank)" value={hostDraft.identity_file}
+                   onChange={(event) => setHostDraft((draft) => ({ ...draft, identity_file: event.target.value }))} />
+            {/* The agent is confined below this on that machine, so it is worth setting to
+                a project directory rather than leaving at the home directory. */}
+            <input placeholder="workspace root — blank or ~ is the home directory" value={hostDraft.workspace_root}
+                   onChange={(event) => setHostDraft((draft) => ({ ...draft, workspace_root: event.target.value }))} />
+            <div className="host-form-actions">
+              <button type="submit" disabled={hostBusy || !hostDraft.host.trim()}>
+                {hostEditing ? `Save ${hostEditing}` : 'Add machine'}
+              </button>
+              <button type="button" onClick={() => { setHostFormOpen(false); setHostEditing(''); setHostError(''); }}>Cancel</button>
+            </div>
+          </form> : null}
+        </div> : null}
         <div className="sidebar-section deploy-section">
           <p className="eyebrow">Deployments <button className="section-refresh" title="Refresh" onClick={() => { if (socketRef.current) void loadDeploys(socketRef.current); }}><RefreshCw size={12} /></button></p>
           {deploys.length ? deploys.map((site) => <div className={`deploy-row ${site.status}`} key={site.site_id}>
@@ -934,10 +1150,33 @@ export function App() {
           </div>) : <p className="empty">No deployed services yet.</p>}
         </div>
         </div>
+        </div>
         {/* Pinned to the bottom rather than scrolling away with the sections
             above it: theme and connection are settings, always reachable. */}
         <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button></div>
       </aside>
+
+      {/* The terminal. Closing it only hides it: the shell is a tmux session on the far
+          machine, so whatever was running is still running and still there next time.
+          Escape and a click on the backdrop both close, because a modal that only closes
+          by its own small button is a modal people learn to dread. */}
+      {terminal ? <div className="terminal-backdrop" role="dialog" aria-modal="true"
+                       aria-label={`Terminal on ${terminal.name}`}
+                       onClick={(event) => { if (event.target === event.currentTarget) setTerminal(null); }}
+>
+        <div className="terminal-dialog">
+          <div className="terminal-head">
+            <SquareTerminal size={15} />
+            <strong>{terminal.name}</strong>
+            <small>your own shell — the agent has its own, neither sees the other</small>
+            <span className="terminal-spacer" />
+            <button title="Close" onClick={() => setTerminal(null)}>×</button>
+          </div>
+          <iframe src={terminal.url} title={`Terminal on ${terminal.name}`}
+                  allow="clipboard-read; clipboard-write" />
+        </div>
+      </div> : null}
+
 
       {/* No page header here: VS Code brings its own full chrome, so the usual
           eyebrow+title bar would be a second wasted strip above it. IdeView's

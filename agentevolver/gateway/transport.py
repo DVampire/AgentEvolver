@@ -9,7 +9,7 @@ import sys
 from contextlib import suppress
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from agentevolver.gateway.protocol import GatewayCommand, error_response
@@ -145,6 +145,99 @@ def create_websocket_app(
             writer.cancel()
             await asyncio.gather(forwarder, writer, return_exceptions=True)
             gateway.unsubscribe(event_queue)
+
+    @app.websocket("/env/term/{token}/ws")
+    async def terminal_ws(websocket: WebSocket, token: str):
+        """Relay the terminal's websocket to the ttyd the ssh tunnel put on loopback."""
+        if not _authorize(websocket):
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
+        port = gateway._terminal_targets.get(token)
+        # ttyd negotiates the "tty" subprotocol; echo it or the client refuses the socket.
+        requested = websocket.headers.get("sec-websocket-protocol", "")
+        protocols = [p.strip() for p in requested.split(",") if p.strip()]
+        await websocket.accept(subprotocol=protocols[0] if protocols else None)
+        if not port:
+            await websocket.close(code=1011, reason="No such terminal")
+            return
+
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                upstream = await session.ws_connect(
+                    f"http://127.0.0.1:{port}/env/term/{token}/ws",
+                    protocols=protocols or (), autoping=True,
+                )
+            except Exception:
+                with suppress(Exception):
+                    await websocket.close(code=1011, reason="Terminal unreachable")
+                return
+
+            async def client_to_upstream() -> None:
+                while True:
+                    message = await websocket.receive()
+                    if message.get("type") == "websocket.disconnect":
+                        return
+                    if (data := message.get("bytes")) is not None:
+                        await upstream.send_bytes(data)
+                    elif (text := message.get("text")) is not None:
+                        await upstream.send_str(text)
+
+            async def upstream_to_client() -> None:
+                async for msg in upstream:
+                    if msg.type == aiohttp.WSMsgType.BINARY:
+                        await websocket.send_bytes(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.TEXT:
+                        await websocket.send_text(msg.data)
+
+            tasks = [asyncio.create_task(client_to_upstream()),
+                     asyncio.create_task(upstream_to_client())]
+            try:
+                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            except WebSocketDisconnect:
+                pass
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                with suppress(Exception):
+                    await upstream.close()
+
+    @app.api_route("/env/term/{token}/{path:path}", methods=["GET", "POST"])
+    async def terminal_http(request: Request, token: str, path: str):
+        """Serve ttyd's page and assets from the gateway's own origin.
+
+        ttyd runs with `-b /env/term/<token>`, so every URL it emits already carries this
+        prefix and the paths line up on both sides without rewriting any HTML.
+        """
+        port = gateway._terminal_targets.get(token)
+        if not port:
+            return Response(status_code=404, content="No such terminal")
+
+        import aiohttp
+
+        target = f"http://127.0.0.1:{port}/env/term/{token}/{path}"
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        body = await request.body()
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.request(
+                    request.method, target, data=body or None,
+                    headers={k: v for k, v in request.headers.items()
+                             if k.lower() not in {"host", "connection", "content-length"}},
+                    allow_redirects=False,
+                ) as upstream:
+                    payload = await upstream.read()
+                    headers = {k: v for k, v in upstream.headers.items()
+                               if k.lower() not in {"content-encoding", "content-length",
+                                                    "transfer-encoding", "connection"}}
+                    return Response(content=payload, status_code=upstream.status,
+                                    headers=headers,
+                                    media_type=upstream.headers.get("content-type"))
+            except Exception:
+                return Response(status_code=502, content="Terminal unreachable")
 
     @app.websocket("/env/vnc")
     async def vnc_relay(websocket: WebSocket):
