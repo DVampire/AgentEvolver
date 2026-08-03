@@ -220,6 +220,11 @@ class SSHService:
 
     # ------------------------------------------------------------------ paths
     @property
+    def target(self) -> str:
+        """`user@host` for this connection — what a log line should name."""
+        return self._config.target
+
+    @property
     def workspace_root(self) -> str:
         return self._resolved_root or self._config.workspace_root
 

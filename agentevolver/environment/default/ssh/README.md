@@ -32,6 +32,34 @@ confuse. That failure is on record in this repo: a run whose writes landed on th
 host while its commands ran in a container "gave the agent an inconsistent view of
 its own environment".
 
+## Which machines, and who decides
+
+The environment reaches a *set* of machines, not one. Each is a named record — address,
+user, port, key path, jump host, and its own workspace root, because a workspace is a
+property of the machine you are working on and two machines rarely keep the same project
+in the same place.
+
+Two sources. Hosts in a config are what a deployment ships with: reviewed, in version
+control, the same for everyone. Hosts added from the frontend are one person's working
+set, so they persist to `output/.runtime/ssh_hosts.json` rather than editing a file under
+`configs/`. Same name means the same machine and the runtime record wins; a config host
+cannot be deleted from the frontend, because that delete would only last until the next
+restart and one that silently undoes itself is worse than one that is refused.
+
+No record holds a credential. A key *path* is what `~/.ssh/config` already keeps in plain
+text; a password would have to live in a file, and a file is the one place it must never
+be. Authentication stays entirely with ssh.
+
+Every action takes an optional `host`. It defaults to the session's active machine, which
+is the point: with one machine configured the agent never names a machine at all, and the
+argument stays the exception rather than a routing decision on every call. `use_host`
+moves the default for a stretch of work; `host=` targets a single call elsewhere. The
+alternative — one environment per machine — makes the action names unambiguous and then
+hands the model sixteen tools per machine.
+
+Connections are keyed by (session, machine), so a session working across two machines
+holds two, and closing one disturbs neither the other machine nor another session.
+
 ## The connection
 
 One `ControlMaster` per session, opened lazily on first use. Two sessions never

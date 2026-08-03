@@ -242,7 +242,7 @@ def env_and_service(monkeypatch):
     env = SSHEnvironment(host="example", user="u", workspace_root="/home/u/proj")
     fake = _FakeService()
 
-    async def _svc(ctx):
+    async def _svc(ctx, host=""):
         return fake
 
     monkeypatch.setattr(env, "_svc", _svc)
@@ -345,7 +345,7 @@ class TestActions:
         env = SSHEnvironment(host="example", workspace_root="/home/u/proj", allow_launch=False)
         fake = _FakeService()
 
-        async def _svc(ctx):
+        async def _svc(ctx, host=""):
             return fake
 
         monkeypatch.setattr(env, "_svc", _svc)
@@ -510,6 +510,128 @@ class TestEnvironmentBinding:
                 await bound._handle_env_action("write", {}, None)
         finally:
             binding.environment_manager = original
+
+
+class TestHostRegistry:
+    """Which machines exist, where that list lives, and who may change it."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_store(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+
+    def test_config_hosts_come_first_and_runtime_additions_follow(self) -> None:
+        from agentevolver.environment.default.ssh.hosts import HostStore
+
+        store = HostStore([{"name": "a", "host": "a.example"}, {"name": "b", "host": "b.example"}])
+        store.add({"name": "c", "host": "c.example"})
+        assert store.names() == ["a", "b", "c"]
+        assert store.default().name == "a"
+
+    def test_a_runtime_host_shadows_a_config_host_without_reordering(self) -> None:
+        """Editing an entry must not move it — a list you have learned to read should stay put."""
+        from agentevolver.environment.default.ssh.hosts import HostStore
+
+        store = HostStore([{"name": "a", "host": "a.example"}, {"name": "b", "host": "b.example"}])
+        store.add({"name": "a", "host": "a-new.example"})
+        assert store.names() == ["a", "b"]
+        assert store.get("a").host == "a-new.example"
+
+    def test_runtime_hosts_survive_a_restart_and_config_hosts_are_not_duplicated(self) -> None:
+        from agentevolver.environment.default.ssh.hosts import HostStore
+
+        HostStore([{"name": "a", "host": "a.example"}]).add({"name": "c", "host": "c.example"})
+        reopened = HostStore([{"name": "a", "host": "a.example"}])
+        assert reopened.names() == ["a", "c"]
+
+    def test_a_config_host_cannot_be_deleted_from_the_store(self) -> None:
+        """The delete would only last until the next restart, and one that silently
+        undoes itself is worse than one that is refused."""
+        from agentevolver.environment.default.ssh.hosts import HostStore
+
+        store = HostStore([{"name": "a", "host": "a.example"}])
+        assert store.remove("a") is False
+        assert store.removable("a") is False
+        assert store.names() == ["a"]
+
+    @pytest.mark.parametrize("bad", [
+        {"name": "x"},                       # no address
+        {"host": "h", "name": "a/b"},        # reaches a tmux session name and a path
+        {"host": "h", "name": ".hidden"},
+        {"host": "h", "name": "x", "port": "not-a-number"},
+    ])
+    def test_a_malformed_host_is_refused(self, bad) -> None:
+        from agentevolver.environment.default.ssh.hosts import HostStore
+
+        with pytest.raises(ValueError):
+            HostStore([]).add(bad)
+
+    def test_the_store_holds_no_credential(self) -> None:
+        """A key path is what ~/.ssh/config already keeps in plain text. A password is not."""
+        from agentevolver.environment.default.ssh.hosts import RemoteHost
+
+        fields = set(RemoteHost.__dataclass_fields__)
+        assert not fields & {"password", "passphrase", "secret", "token"}
+
+
+class TestMultiHostRouting:
+    @pytest.fixture(autouse=True)
+    def _isolated_store(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+
+    @pytest.fixture
+    def env(self):
+        from agentevolver.environment.default.ssh.environment import SSHEnvironment
+
+        return SSHEnvironment(hosts=[
+            {"name": "alpha", "host": "a.example", "workspace_root": "/srv/alpha"},
+            {"name": "beta", "host": "b.example", "workspace_root": "/srv/beta"},
+        ], live_view=False)
+
+    def test_the_first_host_is_the_default_and_selection_is_per_session(self, env) -> None:
+        one, two = _Ctx("session-one"), _Ctx("session-two")
+        assert env.active_host(one).name == "alpha"
+        env.select_host(one, "beta")
+        assert env.active_host(one).name == "beta"
+        assert env.active_host(two).name == "alpha", "one session's choice leaked into another"
+
+    def test_every_action_takes_a_host(self, env) -> None:
+        """The argument is the exception, not a routing decision on every call — but it
+        has to exist on all of them, or some work is unreachable on a second machine."""
+        import inspect
+
+        from agentevolver.environment.default.ssh.environment import SSHEnvironment
+
+        exempt = {"hosts", "use_host"}  # these are *about* the host list
+        for attribute in dir(SSHEnvironment):
+            action = getattr(SSHEnvironment, attribute, None)
+            name = getattr(action, "_action_name", None)
+            if not name or name in exempt:
+                continue
+            assert "host" in inspect.signature(action).parameters, f"{name} cannot target a machine"
+
+    @pytest.mark.asyncio
+    async def test_naming_a_machine_that_does_not_exist_is_reported_not_raised(self, env) -> None:
+        result = await env.run(command="true", host="ghost", ctx=_Ctx())
+        assert result["success"] is False
+        assert "alpha" in result["message"] and "beta" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_with_no_hosts_the_error_says_how_to_add_one(self) -> None:
+        from agentevolver.environment.default.ssh.environment import SSHEnvironment
+
+        empty = SSHEnvironment(hosts=[], live_view=False)
+        result = await empty.run(command="true", ctx=_Ctx())
+        assert result["success"] is False
+        assert "frontend" in result["message"] or "hosts" in result["message"]
+
+    def test_the_single_host_config_form_still_works(self) -> None:
+        """`--host` and every one-machine config already write the flat form."""
+        from agentevolver.environment.default.ssh.environment import SSHEnvironment
+
+        env = SSHEnvironment(host="solo.example", user="u", workspace_root="/srv/solo",
+                             live_view=False)
+        assert env.host_store.names() == ["solo.example"]
+        assert env.active_host(_Ctx()).workspace_root == "/srv/solo"
 
 
 class TestBothRoutesRenderResults:

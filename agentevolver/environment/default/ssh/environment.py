@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
+from agentevolver.environment.default.ssh.hosts import HostStore, RemoteHost, UnknownHostError
 from agentevolver.environment.default.ssh.service import (
     RemotePathError,
     SSHConfig,
@@ -80,6 +81,13 @@ class SSHEnvironment(Environment):
 
     def __init__(
         self,
+        #: The machines this environment can reach. Each entry is a `RemoteHost` field
+        #: mapping; `name` is the handle the agent and the frontend use. Hosts added from
+        #: the frontend are merged over these at runtime.
+        hosts: Optional[List[Dict[str, Any]]] = None,
+        #: The single-host form, kept because it is what a one-machine config and
+        #: `examples/run_ssh_agent.py --host` already write. It becomes one entry in the
+        #: list, named after itself.
         host: str = "",
         user: str = "",
         port: int = 22,
@@ -99,79 +107,159 @@ class SSHEnvironment(Environment):
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        self._config = SSHConfig(
-            host=host,
-            user=user,
-            port=port,
-            identity_file=identity_file,
-            jump_host=jump_host,
-            workspace_root=workspace_root,
-            connect_timeout=connect_timeout,
-            known_hosts_strict=known_hosts_strict,
-        )
+        seed = list(hosts or [])
+        if host:
+            seed.append({
+                "name": host, "host": host, "user": user, "port": port,
+                "identity_file": identity_file, "jump_host": jump_host,
+                "workspace_root": workspace_root, "connect_timeout": connect_timeout,
+                "known_hosts_strict": known_hosts_strict,
+            })
+        self._hosts = HostStore(seed)
         self._allow_launch = allow_launch
         self._max_upload_mb = max_upload_mb
         self._live_view_enabled = live_view
         self._state_entries = state_entries
-        self._services: Dict[str, SSHService] = {}
+        #: Keyed by (session, host) — a session working across two machines holds two
+        #: connections, and closing one must not disturb the other any more than two
+        #: sessions on one machine may share a channel.
+        self._services: Dict[tuple, SSHService] = {}
+        #: Which machine this session's actions land on when they do not say. The whole
+        #: point of having one: with a single host configured the agent never mentions a
+        #: machine at all, and the `host` argument stays the exception rather than a
+        #: routing decision on every call.
+        self._active: Dict[str, str] = {}
         self._last: Dict[str, Dict[str, Any]] = {}
-        self._view_port: Optional[int] = None
-        self._view_remote_ports: Dict[str, int] = {}
-        self._view_urls: Dict[str, str] = {}
+        self._view_ports: Dict[tuple, int] = {}
+        self._view_remote_ports: Dict[tuple, int] = {}
+        self._view_urls: Dict[tuple, str] = {}
 
-    # ------------------------------------------------------------------ session
+    # ------------------------------------------------------------------ hosts
+    @property
+    def host_store(self) -> Optional[HostStore]:
+        """The host registry, for the gateway's host-management commands.
+
+        Guarded rather than returning ``self._hosts`` directly: ``Environment.__init__``
+        walks ``dir(self)`` and reads every attribute it finds, which calls this property
+        before ``super().__init__()`` has returned and the field exists. Any property on
+        an environment subclass has to survive being read that early.
+        """
+        return self.__dict__.get("_hosts")
+
     @staticmethod
     def _session_id(ctx) -> str:
         return (getattr(ctx, "id", "") or "default") if ctx else "default"
 
-    async def _svc(self, ctx) -> SSHService:
-        """The connection for this session, opened on first use.
-
-        One master per session rather than one per environment: two conversations must not
-        share a channel, and ending one must not disturb the other.
-        """
+    def active_host(self, ctx) -> Optional[RemoteHost]:
+        """The machine this session is working on, falling back to the first configured."""
         sid = self._session_id(ctx)
-        service = self._services.get(sid)
+        chosen = self._hosts.get(self._active.get(sid, ""))
+        return chosen or self._hosts.default()
+
+    def select_host(self, ctx, name: str) -> RemoteHost:
+        """Point this session at `name`. Raises ``KeyError`` when there is no such host."""
+        host = self._hosts.get(name)
+        if host is None:
+            raise KeyError(name)
+        self._active[self._session_id(ctx)] = host.name
+        return host
+
+    def _resolve(self, ctx, name: str = "") -> RemoteHost:
+        if name:
+            host = self._hosts.get(name)
+            if host is None:
+                known = ", ".join(self._hosts.names()) or "none configured"
+                raise UnknownHostError(f"no host named {name!r} — known hosts: {known}")
+            return host
+        host = self.active_host(ctx)
+        if host is None:
+            raise UnknownHostError(
+                "no remote host is configured — add one from the frontend, or set "
+                "`hosts` in the environment's config block"
+            )
+        return host
+
+    async def _svc(self, ctx, host: str = "") -> SSHService:
+        """The connection for this session and machine, opened on first use."""
+        target = self._resolve(ctx, host)
+        key = (self._session_id(ctx), target.name)
+        service = self._services.get(key)
         if service is None or not await service.is_alive():
-            service = SSHService(self._config, sid)
+            service = SSHService(
+                SSHConfig(
+                    host=target.host,
+                    user=target.user,
+                    port=target.port,
+                    identity_file=target.identity_file,
+                    jump_host=target.jump_host,
+                    workspace_root=target.workspace_root,
+                    connect_timeout=target.connect_timeout,
+                    known_hosts_strict=target.known_hosts_strict,
+                ),
+                f"{key[0]}:{key[1]}",
+            )
             await service.start()
-            self._services[sid] = service
+            self._services[key] = service
         return service
 
     def _job_prefix(self, ctx) -> str:
         return f"{_JOB_PREFIX}-{self._session_id(ctx)[:8]}-"
 
     async def initialize(self) -> None:
-        logger.info(f"| 🔌 SSH environment ready: {self._config.target} (lazy connect)")
+        names = self._hosts.names()
+        summary = ", ".join(names) if names else "no hosts configured yet"
+        logger.info(f"| 🔌 SSH environment ready: {summary} (lazy connect)")
 
     async def cleanup(self) -> None:
-        for sid in list(self._services):
+        for sid in {key[0] for key in self._services}:
             await self.close_session(sid)
         self._services.clear()
 
     async def close_session(self, session_id: str) -> None:
-        service = self._services.pop(session_id, None)
-        if service is None:
-            return
-        try:
-            await self._stop_view(service, session_id)
-        except Exception as exc:  # noqa: BLE001 — teardown must not raise
-            logger.warning(f"| ⚠️ SSH view teardown: {exc}")
-        try:
-            await service.stop()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"| ⚠️ SSH teardown: {exc}")
+        for key in [k for k in self._services if k[0] == session_id]:
+            service = self._services.pop(key)
+            try:
+                await self._stop_view(service, key)
+            except Exception as exc:  # noqa: BLE001 — teardown must not raise
+                logger.warning(f"| ⚠️ SSH view teardown: {exc}")
+            try:
+                await service.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"| ⚠️ SSH teardown: {exc}")
+        self._active.pop(session_id, None)
 
-    async def _stop_view(self, service: SSHService, session_id: str) -> None:
+    async def close_host(self, name: str) -> None:
+        """Drop every session's connection to one machine, and any view it was serving.
+
+        Called when a host is removed: leaving the master open would keep a machine
+        reachable that the user has just said they are done with, and the next action
+        naming it would quietly succeed against a host no longer in the list.
+        """
+        for key in [k for k in self._services if k[1] == name]:
+            service = self._services.pop(key)
+            try:
+                await self._stop_view(service, key)
+            except Exception as exc:  # noqa: BLE001 — teardown must not raise
+                logger.warning(f"| ⚠️ SSH view teardown: {exc}")
+            try:
+                await service.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"| ⚠️ SSH teardown: {exc}")
+        for sid, active in list(self._active.items()):
+            if active == name:
+                del self._active[sid]
+
+    async def _stop_view(self, service: SSHService, key: tuple) -> None:
         """Take the view's server down with the session that asked for it.
 
         Launched jobs deliberately outlive the conversation — that is what `launch` is for.
         The view is not work, it is plumbing, and leaving it behind would accumulate an
         idle ttyd and two tmux sessions on the far host for every run ever started.
         """
-        self._view_remote_ports.pop(session_id, None)
-        self._view_urls.pop(session_id, None)
-        view = f"{_JOB_PREFIX}-{session_id[:8]}-view"
+        self._view_remote_ports.pop(key, None)
+        self._view_urls.pop(key, None)
+        self._view_ports.pop(key, None)
+        view = f"{_JOB_PREFIX}-{key[0][:8]}-view"
         await service.run_raw(
             f"tmux kill-session -t {shlex.quote(view + '-srv')} 2>/dev/null; "
             f"tmux kill-session -t {shlex.quote(view)} 2>/dev/null; true",
@@ -199,18 +287,19 @@ class SSHEnvironment(Environment):
         timeout: int = 60,
         cwd: str = "",
         tty: bool = False,
+        host: str = "",
         ctx=None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             result = await service.run(
                 command,
                 timeout=min(float(timeout or _DEFAULT_RUN_TIMEOUT), 900.0),
                 cwd=cwd or None,
                 tty=bool(tty),
             )
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
         except ConnectionError as exc:
             return _fail(f"ssh: {exc}")
@@ -237,12 +326,12 @@ class SSHEnvironment(Environment):
                     "files rather than pulling the whole thing back.",
     )
     async def read(
-        self, path: str, offset: int = 0, limit: int = 0, ctx=None, **kwargs: Any
+        self, path: str, offset: int = 0, limit: int = 0, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             target = service.resolve(path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         if offset or limit:
@@ -273,13 +362,13 @@ class SSHEnvironment(Environment):
         description="Write a text file on the remote host, creating parent directories. "
                     "Replaces the whole file; use `edit` to change part of one.",
     )
-    async def write(self, path: str, content: str, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+    async def write(self, path: str, content: str, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
         import base64
 
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             target = service.resolve(path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         # base64 rather than a heredoc: the content is arbitrary, and every delimiter a
@@ -302,7 +391,7 @@ class SSHEnvironment(Environment):
                     "line.",
     )
     async def edit(
-        self, path: str, old: str, new: str, ctx=None, **kwargs: Any
+        self, path: str, old: str, new: str, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         read_result = await self.read(path, ctx=ctx)
         if not read_result.get("success"):
@@ -330,12 +419,12 @@ class SSHEnvironment(Environment):
                     "results tree is thousands of lines that say nothing.",
     )
     async def list(
-        self, path: str = "", depth: int = 1, ctx=None, **kwargs: Any
+        self, path: str = "", depth: int = 1, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             target = service.resolve(path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         command = (
@@ -363,12 +452,12 @@ class SSHEnvironment(Environment):
     )
     async def grep(
         self, pattern: str, path: str = "", glob: str = "", max_results: int = 100,
-        ctx=None, **kwargs: Any,
+        host: str = "", ctx=None, **kwargs: Any,
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             target = service.resolve(path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         include = f"--include={shlex.quote(glob)} " if glob else ""
@@ -386,12 +475,12 @@ class SSHEnvironment(Environment):
         description="Find remote files by name pattern, newest first.",
     )
     async def glob(
-        self, pattern: str, path: str = "", max_results: int = 100, ctx=None, **kwargs: Any
+        self, pattern: str, path: str = "", max_results: int = 100, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             target = service.resolve(path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         command = (
@@ -407,12 +496,12 @@ class SSHEnvironment(Environment):
         description="Delete a remote file or directory inside the workspace.",
     )
     async def remove(
-        self, path: str, recursive: bool = False, ctx=None, **kwargs: Any
+        self, path: str, recursive: bool = False, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             target = service.resolve(path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
         if target.rstrip("/") == service.workspace_root.rstrip("/"):
             return _fail("refusing to delete the workspace root itself")
@@ -429,7 +518,7 @@ class SSHEnvironment(Environment):
         description="Copy a local file or directory to the remote workspace.",
     )
     async def upload(
-        self, local_path: str, remote_path: str, ctx=None, **kwargs: Any
+        self, local_path: str, remote_path: str, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         source = os.path.abspath(os.path.expanduser(local_path))
         if not os.path.exists(source):
@@ -442,9 +531,9 @@ class SSHEnvironment(Environment):
                 f"limit for this host"
             )
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             destination = service.remote_spec(remote_path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         result = await service.rsync(source, destination)
@@ -457,12 +546,12 @@ class SSHEnvironment(Environment):
         description="Copy a remote file or directory back to the local machine.",
     )
     async def download(
-        self, remote_path: str, local_path: str, ctx=None, **kwargs: Any
+        self, remote_path: str, local_path: str, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
             source = service.remote_spec(remote_path)
-        except RemotePathError as exc:
+        except (RemotePathError, UnknownHostError) as exc:
             return _fail(str(exc))
 
         destination = os.path.abspath(os.path.expanduser(local_path))
@@ -488,13 +577,13 @@ class SSHEnvironment(Environment):
                     "name; follow it with `logs` and stop it with `signal`.",
     )
     async def launch(
-        self, command: str, name: str, gpus: str = "", ctx=None, **kwargs: Any
+        self, command: str, name: str, gpus: str = "", host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
         if not self._allow_launch:
             return _fail("launching background work is disabled for this host")
         safe = "".join(ch for ch in (name or "job") if ch.isalnum() or ch in "-_")[:32] or "job"
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
         except ConnectionError as exc:
             return _fail(f"ssh: {exc}")
 
@@ -528,7 +617,7 @@ class SSHEnvironment(Environment):
         if not result.ok:
             return _fail(f"launch failed: {(result.stderr or result.stdout).strip()[:300]}")
 
-        logger.info(f"| 🚀 launched {session} on {self._config.target}")
+        logger.info(f"| 🚀 launched {session} on {service.target}")
         return _ok({
             "job": safe,
             "session": session,
@@ -542,8 +631,11 @@ class SSHEnvironment(Environment):
         description="List this session's long-running jobs, running and finished. A "
                     "finished job keeps its log — read it with `logs`.",
     )
-    async def jobs(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
-        service = await self._svc(ctx)
+    async def jobs(self, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        try:
+            service = await self._svc(ctx, host)
+        except (RemotePathError, UnknownHostError) as exc:
+            return _fail(str(exc))
         prefix = self._job_prefix(ctx)
         log_dir = f"{service.workspace_root}/.agentevolver/logs"
 
@@ -595,9 +687,12 @@ class SSHEnvironment(Environment):
         description="Read the tail of a launched job's log.",
     )
     async def logs(
-        self, job: str, lines: int = 100, ctx=None, **kwargs: Any
+        self, job: str, lines: int = 100, host: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:
-        service = await self._svc(ctx)
+        try:
+            service = await self._svc(ctx, host)
+        except (RemotePathError, UnknownHostError) as exc:
+            return _fail(str(exc))
         safe = "".join(ch for ch in (job or "") if ch.isalnum() or ch in "-_")[:32]
         log_path = f"{service.workspace_root}/.agentevolver/logs/{safe}.log"
         result = await service.run(
@@ -611,8 +706,11 @@ class SSHEnvironment(Environment):
         name="signal",
         description="Stop a job this session launched.",
     )
-    async def signal(self, job: str, ctx=None, **kwargs: Any) -> Dict[str, Any]:
-        service = await self._svc(ctx)
+    async def signal(self, job: str, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        try:
+            service = await self._svc(ctx, host)
+        except (RemotePathError, UnknownHostError) as exc:
+            return _fail(str(exc))
         safe = "".join(ch for ch in (job or "") if ch.isalnum() or ch in "-_")[:32]
         session = f"{self._job_prefix(ctx)}{safe}"
         result = await service.run(
@@ -624,15 +722,56 @@ class SSHEnvironment(Environment):
             return _fail(f"no job named {safe!r} in this session", job=safe)
         return _ok({"job": safe, "stopped": True})
 
+    # ------------------------------------------------------------------ machines
+    @environment_manager.action(
+        name="hosts",
+        description="List the machines you can reach, and which one your actions land on "
+                    "by default. Every other action takes an optional `host` to act on a "
+                    "different one for that call.",
+    )
+    async def hosts_action(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        current = self.active_host(ctx)
+        entries = [
+            {
+                "name": machine.name,
+                "target": f"{machine.user}@{machine.host}" if machine.user else machine.host,
+                "workspace_root": machine.workspace_root,
+                "active": bool(current and machine.name == current.name),
+                "connected": (self._session_id(ctx), machine.name) in self._services,
+            }
+            for machine in self._hosts.list()
+        ]
+        if not entries:
+            return _ok({"hosts": [], "message": "No machines are configured yet."})
+        return _ok({"hosts": entries, "active": current.name if current else ""})
+
+    @environment_manager.action(
+        name="use_host",
+        description="Make a machine the default for this session, so later actions do not "
+                    "have to name it. Use this when you are about to do several things on "
+                    "one machine; use the `host` argument for a single call elsewhere.",
+    )
+    async def use_host(self, name: str, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        try:
+            machine = self.select_host(ctx, name)
+        except KeyError:
+            known = ", ".join(self._hosts.names()) or "none configured"
+            return _fail(f"no host named {name!r} — known hosts: {known}")
+        return _ok({
+            "message": f"Now working on {machine.name} "
+                       f"(workspace {machine.workspace_root}).",
+            "host": machine.name,
+        })
+
     # ------------------------------------------------------------------ state
     @environment_manager.action(
         name="get_state",
         description="What the remote workspace looks like right now: files, git status, "
                     "GPU occupancy, running jobs, and the last command's exit code.",
     )
-    async def get_state(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+    async def get_state(self, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
         try:
-            service = await self._svc(ctx)
+            service = await self._svc(ctx, host)
         except ConnectionError as exc:
             return _fail(f"ssh: {exc}")
 
@@ -660,8 +799,10 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         sections = _split_sections(result.stdout)
         last = self._last.get(self._session_id(ctx))
 
+        machine = self._resolve(ctx, host)
         info = _render_state(
-            target=self._config.target,
+            target=f"{machine.name} ({service.target})" if machine.name != service.target
+                   else service.target,
             root=root,
             sections=sections,
             last=last,
@@ -670,7 +811,9 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         return _ok({
             "info": info,
             "workspace_root": root,
-            "host": self._config.target,
+            "host": machine.name,
+            "target": service.target,
+            "hosts": self._hosts.names(),
             "raw": sections,
         })
 
@@ -678,8 +821,11 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         name="gpu",
         description="Full GPU detail on the remote host — who is using what.",
     )
-    async def gpu(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
-        service = await self._svc(ctx)
+    async def gpu(self, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        try:
+            service = await self._svc(ctx, host)
+        except (RemotePathError, UnknownHostError) as exc:
+            return _fail(str(exc))
         result = await service.run_raw(
             "nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu "
             "--format=csv,noheader 2>/dev/null || echo '(no nvidia-smi)'",
@@ -705,18 +851,65 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         return EnvironmentView(type="iframe", url=url) if url else None
 
     async def _ensure_view(self, ctx) -> Optional[str]:
+        """The read-only view of the agent's own session on the active machine."""
+        # The view follows the session's active machine — switching machines and still
+        # watching the old one's terminal would be worse than no view at all.
+        machine = self._resolve(ctx)
+        return await self._ensure_ttyd(
+            ctx, machine.name, kind="view", writable=False,
+            cwd=None,
+        )
+
+    async def open_terminal(
+        self, ctx, host: str = "", base_path: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """A writable shell of your own on a machine, for the frontend to embed.
+
+        Deliberately *not* the session the read-only view shows. That one exists to watch
+        the agent work, and it is read-only on both sides precisely so a human typing into
+        it is not fighting the agent for the keyboard. This is a second tmux session on the
+        same machine: you get a real shell, the agent keeps its pane, and neither notices
+        the other. It also survives your closing the dialog, so a command you left running
+        is still there when you open it again.
+        """
+        machine = self._resolve(ctx, host)
+        url = await self._ensure_ttyd(
+            ctx, machine.name, kind="shell", writable=True, cwd=None,
+            base_path=base_path,
+        )
+        if not url:
+            return None
+        # The local port as well as the URL. The address is only reachable from wherever
+        # the gateway runs; a browser on someone else's machine has forwarded the UI port
+        # and nothing else, so the gateway proxies this one on its own origin instead of
+        # handing the address out. See transport.py:/env/term.
+        key = (self._session_id(ctx), machine.name, "shell")
+        return {"url": url, "port": self._view_ports.get(key), "host": machine.name}
+
+    async def _ensure_ttyd(
+        self, ctx, host_name: str, *, kind: str, writable: bool, cwd: Optional[str],
+        base_path: str = "",
+    ) -> Optional[str]:
+        """Start (or reuse) a ttyd on `host_name` and tunnel it here. Returns its URL.
+
+        One implementation for both terminals because they differ in exactly two things —
+        which tmux session they attach to and whether the keyboard is live. Everything
+        else (finding or installing ttyd, picking a free remote port, detaching the
+        server, waiting for the bind, adding the forward) is identical, and two copies of
+        it would drift on the first fix that only one of them got.
+        """
         from agentevolver.port import port_manager
 
-        sid = self._session_id(ctx)
+        key = (self._session_id(ctx), host_name, kind)
         # The manager announces the view after *every* action. For the browser that is a
         # property lookup; here the full path is five remote round trips and a subprocess,
-        # which turned a one-second action into a nine-second one. Once the view is up its
-        # address does not change, so the answer is remembered and the work is done once.
-        cached = self._view_urls.get(sid)
+        # which turned a one-second action into a nine-second one. Once a terminal is up
+        # its address does not change, so the answer is remembered and the work done once.
+        cached = self._view_urls.get(key)
         if cached:
             return cached
 
-        service = await self._svc(ctx)
+        service = await self._svc(ctx, host_name)
 
         # ttyd is a single static binary and the user may not have root on the far end, so
         # it goes in ~/.local/bin. Checked before fetching so a host that already has it —
@@ -731,7 +924,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         )
         ttyd_path = probe.stdout.strip().splitlines()[-1] if probe.stdout.strip() else "MISSING"
         if ttyd_path == "MISSING":
-            logger.info(f"| ⬇️  installing ttyd on {self._config.target}")
+            logger.info(f"| ⬇️  installing ttyd on {service.target}")
             install = await service.run_raw(
                 'mkdir -p "$HOME/.local/bin" && '
                 'curl -fsSL -o "$HOME/.local/bin/ttyd" '
@@ -744,10 +937,10 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
             ttyd_path = install.stdout.strip().splitlines()[-1]
 
         # A fixed remote port would let the first session on a host claim it and leave every
-        # later one unable to bind — and the loser's only symptom is a view that never
-        # appears. The far end picks a free one instead, and it is remembered so asking for
-        # the view twice reuses the server rather than starting a second.
-        remote_port = self._view_remote_ports.get(sid)
+        # later one unable to bind — and the loser's only symptom is a terminal that never
+        # appears. The far end picks a free one instead, and it is remembered so asking
+        # twice reuses the server rather than starting a second.
+        remote_port = self._view_remote_ports.get(key)
         if remote_port is None:
             picked = await service.run_raw(
                 "for p in $(seq 7681 7780); do "
@@ -757,42 +950,46 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
             )
             candidate = picked.stdout.strip().splitlines()[-1] if picked.stdout.strip() else ""
             if not candidate.isdigit():
-                logger.warning(f"| ⚠️ no free port for the view on {self._config.target}")
+                logger.warning(f"| ⚠️ no free port for the {kind} on {service.target}")
                 return None
             remote_port = int(candidate)
-            self._view_remote_ports[sid] = remote_port
-        session_name = f"{self._job_prefix(ctx)}view"
+            self._view_remote_ports[key] = remote_port
+
+        session_name = f"{self._job_prefix(ctx)}{kind}"
         await service.run_raw(
             f'tmux has-session -t {shlex.quote(session_name)} 2>/dev/null || '
             f'tmux new-session -d -s {shlex.quote(session_name)} '
-            f'-c {shlex.quote(service.workspace_root)}',
+            f'-c {shlex.quote(cwd or service.workspace_root)}',
             timeout=30,
         )
-        # ttyd serves read-only by default — `-W` would be the flag to allow writing, and
-        # it is deliberately absent. `attach -r` locks the tmux side too. Two locks because
-        # the view exists to watch the agent work, and a human typing into the same pane
-        # would be fighting it for the keyboard.
+        # ttyd serves read-only by default; `-W` is what allows writing. The agent's view
+        # deliberately lacks it and `attach -r` locks the tmux side too — two locks,
+        # because that pane exists to watch the agent and a human typing into it would be
+        # fighting for the keyboard. Your own shell gets both unlocked.
         #
-        # `-i 127.0.0.1` is the third lock, and the one that matters most on a shared login
-        # node: ttyd binds every interface by default, which would put an unauthenticated
-        # terminal onto the network for anyone who can reach the host. The view is meant to
-        # arrive through the ssh tunnel, and now that is the only way it can.
+        # `-i 127.0.0.1` stays on both, and it is the one that matters most on a shared
+        # login node: ttyd binds every interface by default, which would put a terminal —
+        # a writable one, here — onto the network for anyone who can reach the host. It is
+        # meant to arrive through the ssh tunnel, and that is now the only way it can. The
+        # tunnel's local end is loopback too, so reaching it means already being able to
+        # reach the gateway, which runs arbitrary commands anyway.
         #
         # No `-o`: that flag means "serve one client and exit on disconnect", which would
-        # make the view work exactly once. And ttyd runs inside its own tmux session rather
-        # than under `nohup &` — backgrounding it from a command that ssh is about to close
-        # leaves it in that command's process group, and it goes away with the connection.
-        # A tmux session is the same detachment the launched jobs already rely on.
+        # make the terminal work exactly once. And ttyd runs inside its own tmux session
+        # rather than under `nohup &` — backgrounding it from a command that ssh is about
+        # to close leaves it in that command's process group, and it goes away with the
+        # connection. A tmux session is the same detachment launched jobs already rely on.
         #
         # The already-running check asks tmux, not `pgrep -f`: a `pgrep` pattern travels
         # inside the very `bash -c` string being searched, so it matches its own shell and
         # reports a server that was never started. tmux is exact, and because a session
         # whose command exits disappears with it, presence here means ttyd is actually up.
         server_session = f"{session_name}-srv"
+        attach = f"tmux attach {'' if writable else '-r '}-t {session_name}".replace("  ", " ")
         await service.run_raw(
             f'tmux has-session -t {shlex.quote(server_session)} 2>/dev/null || '
             f'tmux new-session -d -s {shlex.quote(server_session)} '
-            f'{shlex.quote(f"{ttyd_path} -i 127.0.0.1 -p {remote_port} tmux attach -r -t {session_name}")}',
+            f'{shlex.quote(f"{ttyd_path} -i 127.0.0.1 {"-W " if writable else ""}"f"{f"-b {base_path} " if base_path else ""}-p {remote_port} {attach}")}',
             timeout=30,
         )
         # ttyd needs a moment to bind before the tunnel is worth opening.
@@ -808,21 +1005,23 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
                 break
             await _aio.sleep(0.5)
         else:
-            logger.warning(f"| ⚠️ ttyd did not bind {remote_port} on {self._config.target}")
+            logger.warning(f"| ⚠️ ttyd did not bind {remote_port} on {service.target}")
             return None
 
-        if self._view_port is None:
-            record = port_manager.register(f"ssh-view:{sid}", type="host")
-            self._view_port = record["port"]
+        local_port = self._view_ports.get(key)
+        if local_port is None:
+            record = port_manager.register(f"ssh-{kind}:{key[0]}:{key[1]}", type="host")
+            local_port = record["port"]
+            self._view_ports[key] = local_port
 
-        # `-O forward` asks the running master to add the tunnel, so watching costs no
-        # extra connection. It has to be *waited on*: the URL is only usable once the
-        # local listener exists, and returning before then hands the frontend an address
-        # that refuses the connection it is about to make.
+        # `-O forward` asks the running master to add the tunnel, so this costs no extra
+        # connection. It has to be *waited on*: the URL is only usable once the local
+        # listener exists, and returning before then hands the frontend an address that
+        # refuses the connection it is about to make.
         proc = await _aio.create_subprocess_exec(
             *service._base_args(),  # noqa: SLF001 — same package, one transport
-            "-O", "forward", "-L", f"{self._view_port}:127.0.0.1:{remote_port}",
-            self._config.target,
+            "-O", "forward", "-L", f"{local_port}:127.0.0.1:{remote_port}",
+            service.target,
             stdout=_aio.subprocess.PIPE, stderr=_aio.subprocess.PIPE,
         )
         _out, err = await proc.communicate()
@@ -830,10 +1029,10 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
             # A repeat request for a forward the master already holds is not a failure.
             detail = err.decode(errors="replace").strip()
             if "forward" not in detail.lower():
-                logger.warning(f"| ⚠️ SSH view tunnel failed: {detail}")
+                logger.warning(f"| ⚠️ SSH {kind} tunnel failed: {detail}")
                 return None
-        url = f"http://127.0.0.1:{self._view_port}/"
-        self._view_urls[sid] = url
+        url = f"http://127.0.0.1:{local_port}/"
+        self._view_urls[key] = url
         return url
 
 

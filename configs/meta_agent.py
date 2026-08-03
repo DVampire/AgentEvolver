@@ -204,7 +204,21 @@ connector_names = [
 # base image needs no chromium of its own. use_sandbox=True selects that peer.
 env_names = [
     "browser_environment",
+    "remote_host",
 ]
+
+# ---------------- REMOTE HOSTS (SSH) ----------------
+# Ships with no machines. A remote agent must never connect somewhere nobody named, and
+# an example host in a shipped config is exactly how that happens. Add machines from the
+# frontend's "Remote machines" panel — they persist to output/.runtime/ssh_hosts.json —
+# or seed them here for a deployment that always has the same ones.
+remote_host = dict(
+    hosts=[],
+    allow_launch=True,
+    max_upload_mb=500,
+    live_view=True,
+    state_entries=20,
+)
 browser_environment = dict(
     base_dir="environment/browser",
     headless=True,          # ignored when vnc=True (chrome-vnc forces headful)

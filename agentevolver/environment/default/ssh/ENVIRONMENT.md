@@ -7,9 +7,9 @@ type: worker
 
 <environment_remote_host>
 
-## The two machines
+## The machines
 
-Every action here acts on the **remote** host. Your other tools act on the **local** one.
+Every action here acts on a **remote** machine — one of the ones `hosts` lists. Your other tools act on the **local** one.
 No action does both, and no argument switches a tool between them. Data crosses only
 through `upload` (local → remote) and `download` (remote → local): a local path means
 nothing to an action here, and a remote path means nothing to a local tool.
@@ -31,6 +31,16 @@ machine; they are invisible here and cannot be signalled.
 None. This environment reports text.
 
 ## Actions
+
+### hosts
+List the machines you can reach and which one your actions land on by default.
+
+Every other action takes an optional `host` naming a different one for that call. With a
+single machine configured you never need it; with several, `use_host` is for "I am about
+to do a few things over there" and `host` is for one call.
+
+### use_host
+- name (str): make this machine the default for the rest of the session.
 
 ### run
 Run a shell command from the workspace root and wait for it.

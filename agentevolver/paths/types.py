@@ -27,6 +27,7 @@ class P(str, Enum):
     RUNTIME = "runtime"
     PORTS = "ports"
     LEDGER = "ledger"
+    SSH_HOSTS = "ssh_hosts"
     DEPLOY = "deploy"
     CHECKPOINTS = "checkpoints"
     STAGING = "staging"
@@ -82,6 +83,7 @@ LAYOUT: Dict[P, str] = {
     P.RUNTIME: "output/.runtime",
     P.PORTS: "output/.runtime/ports.json",
     P.LEDGER: "output/.runtime/sandbox_ledger.json",
+    P.SSH_HOSTS: "output/.runtime/ssh_hosts.json",
     P.DEPLOY: "output/.runtime/deploy",
     P.CHECKPOINTS: "output/.runtime/checkpoints",
     P.STAGING: "output/.runtime/staging/{project_key}",
