@@ -4,6 +4,7 @@ from .base import OpenSandbox
 from .code_interpreter import CodeInterpreterSandbox
 from .playwright import PlaywrightSandbox
 from .chrome_vnc import ChromeVncSandbox
+from .computer import DesktopSandbox
 from .host import HostSandbox
 
-__all__ = ["OpenSandbox", "CodeInterpreterSandbox", "PlaywrightSandbox", "ChromeVncSandbox", "HostSandbox"]
+__all__ = ["OpenSandbox", "CodeInterpreterSandbox", "PlaywrightSandbox", "ChromeVncSandbox", "DesktopSandbox", "HostSandbox"]

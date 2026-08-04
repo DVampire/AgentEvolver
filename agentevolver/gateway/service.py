@@ -636,6 +636,33 @@ class AgentGateway:
         from agentevolver.port import port_manager
         return {"ports": port_manager.list()}
 
+    async def _command_environment_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        """List environments the agent can operate (computer/browser/…)."""
+        names = await environment_manager.list()
+        return {"environments": [{"name": n, "kind": "local"} for n in names]}
+
+    async def _command_environment_open(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Open an environment's live view (start/attach its desktop) and stream it.
+
+        Asks the environment for its live_view; on success republishes it as an
+        environment.view event so the frontend renders the noVNC card inline —
+        the "enter the interface" button. Returns opened=False with a reason when
+        the environment has no live view (e.g. it needs a VNC-capable runtime).
+        """
+        session = self._sessions[self._require_session_id(params)]
+        self._bind_runtime_to_session(session)
+        name = str(params.get("name") or "")
+        env = await environment_manager.get(name)
+        if env is None:
+            raise ValueError(f"Environment not available: {name!r} (is it enabled in this config?)")
+        view = await env.live_view(session.context) if hasattr(env, "live_view") else None
+        if view is None:
+            return {"opened": False, "reason": "This environment has no live view yet (it needs a VNC-capable runtime, e.g. the computer/chrome-vnc sandbox)."}
+        view.session_id = self._bound_session_id or session.context.id
+        view.env_name = view.env_name or name
+        await self._publish("environment.view", view.model_dump(mode="json"), session_id=self._bound_session_id)
+        return {"opened": True, "view": view.model_dump(mode="json")}
+
     async def _command_deploy_redeploy(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Rebuild a stopped/detached site from its stored request (new URL likely)."""
         site_id = str(params.get("site_id") or "")

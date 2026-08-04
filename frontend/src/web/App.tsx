@@ -444,6 +444,19 @@ export function App() {
     await loadDeploys(socket);
   };
 
+  const openEnvironment = async (name: string) => {
+    const socket = socketRef.current;
+    if (!socket || !sessionRef.current) { setNotice('Connect a session first.'); return; }
+    try {
+      const response = await socket.request('environment.open', { session_id: sessionRef.current, name });
+      if (!response.ok) { setNotice(response.error?.message ?? 'Could not open the environment'); return; }
+      // opened:true → the environment.view event renders the live card; otherwise explain.
+      if (response.result.opened === false) setNotice(String(response.result.reason ?? 'This environment has no live view yet.'));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const createNewSession = async () => {
     const socket = socketRef.current;
     if (!socket || status !== 'connected') return;
@@ -769,6 +782,14 @@ export function App() {
         <div className="sidebar-section agents-section">
           <p className="eyebrow">Active agents</p>
           {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
+        </div>
+        <div className="sidebar-section machine-section">
+          <p className="eyebrow">Machines</p>
+          {[{ name: 'computer', label: 'Computer' }, { name: 'browser', label: 'Browser' }].map((machine) => <div className="machine-row" key={machine.name}>
+            <span className="machine-dot" />
+            <div className="machine-meta"><span>{machine.label}</span><small>local</small></div>
+            <button className="machine-open" title="Open the live interface" disabled={!sessionId} onClick={() => void openEnvironment(machine.name)}>Open</button>
+          </div>)}
         </div>
         <div className="sidebar-section deploy-section">
           <p className="eyebrow">Deployments <button className="section-refresh" title="Refresh" onClick={() => { if (socketRef.current) void loadDeploys(socketRef.current); }}>↻</button></p>
