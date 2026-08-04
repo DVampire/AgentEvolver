@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xfce4-appfinder \
         xfconf \
         xfce4-terminal \
-        nautilus \
+        thunar \
         gnome-text-editor \
         yaru-theme-gtk \
         yaru-theme-icon \
@@ -85,15 +85,35 @@ RUN wget -qO /etc/apt/keyrings/google-chrome.asc https://dl.google.com/linux/lin
     && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
+# Chrome refuses to run as root unless --no-sandbox is passed, and this container is
+# root by design (xdotool, scrot and run_command all are). Launched from the menu or a
+# desktop icon it therefore exited immediately, printing its objection to a stderr
+# nobody was reading — a double-click that did nothing at all, with no error dialog.
+#
+# Patched into the launcher rather than left to each caller: the desktop entry IS how a
+# person starts Chrome here, and every other route already passes the flag. All three
+# Exec lines, because the right-click actions are separate entries that would otherwise
+# still fail. --disable-dev-shm-usage alongside it: the default /dev/shm in a container
+# is 64 MB, which Chrome exhausts and reports as tabs crashing for no visible reason.
+RUN sed -i 's|^Exec=/usr/bin/google-chrome-stable|Exec=/usr/bin/google-chrome-stable --no-sandbox --disable-dev-shm-usage|' \
+        /usr/share/applications/google-chrome.desktop \
+    && grep -c -- '--no-sandbox' /usr/share/applications/google-chrome.desktop
+
 # The panel's layout, in place before it first runs (see the file for why).
 COPY xfce4-panel.xml /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
 
 # Icons on the desktop, copied from the entries the applications themselves install —
 # so they launch with whatever flags the packager intended and cannot drift out of sync
 # with a hand-written duplicate. Executable, or xfdesktop asks before every launch.
+#
+# Thunar is not here only to browse files. xfdesktop does not exec a desktop icon
+# itself; it hands it to the org.xfce.FileManager D-Bus service, and with no provider
+# for that name every icon fails with "requires a file manager service to be present".
+# Nautilus does not claim the name, so the icons sat there looking functional and
+# refused every double-click.
 RUN mkdir -p /root/Desktop \
     && for f in google-chrome.desktop xfce4-terminal.desktop \
-                org.gnome.Nautilus.desktop org.gnome.TextEditor.desktop; do \
+                thunar.desktop org.gnome.TextEditor.desktop; do \
            [ -f "/usr/share/applications/$f" ] && cp "/usr/share/applications/$f" /root/Desktop/; \
        done; \
        chmod +x /root/Desktop/*.desktop

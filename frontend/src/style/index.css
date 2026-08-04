@@ -31,10 +31,29 @@ button { cursor: pointer; }
    Deployments are neither visible nor reachable. Nothing scrolls to them,
    because the element that would scroll has no height. Now nav gives ground
    under pressure and scrolls internally, while rest keeps a floor. */
+/* Scrollbars only while you are pointing at the thing that scrolls.
+   The platform default is a permanent grey slab down the side of every panel — loud,
+   and drawn even when nothing is moving. These are the same width the browser would
+   use, so nothing reflows when one fades in; only the thumb's colour changes. Overlaid
+   rather than reserved, because a gutter held open for a bar nobody is looking at is
+   the same wasted stripe by another name. */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover, *:focus-within { scrollbar-color: hsl(var(--border)) transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent; border-radius: 99px;
+  background: transparent; background-clip: padding-box;
+}
+:hover::-webkit-scrollbar-thumb, :focus-within::-webkit-scrollbar-thumb {
+  background: hsl(var(--border)); background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); background-clip: padding-box; }
+
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid hsl(var(--border)); padding: 22px 16px; }
 /* The one scrollable thing. `overscroll-behavior: contain` stops a wheel that reaches
    the end here from carrying on into the page behind it. */
-.sidebar-scroll { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.sidebar-scroll { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
 .sidebar-nav, .sidebar-rest { flex: 0 0 auto; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; padding: 0 8px 24px; }
 .brand-mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #101114; background: linear-gradient(135deg, #b0c7ff, #8ce4cc); }
