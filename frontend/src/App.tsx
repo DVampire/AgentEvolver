@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
-import { Boxes, Cable, Code2, FlaskConical, GraduationCap, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
+import { Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareArrowOutUpRight, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -103,6 +103,14 @@ const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: LucideIcon;
 };
 const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
 
+/** The local machines the Machines panel can "Open" into a live noVNC view —
+ *  environments that ship their own VNC-capable runtime. SSH machines are the
+ *  remote counterpart, managed separately below (they open a shell, not a view). */
+const LOCAL_MACHINES: { name: string; label: string; icon: LucideIcon; blurb: string }[] = [
+  { name: 'browser', label: 'Browser', icon: Globe, blurb: 'Headful Chrome, driven over noVNC' },
+  { name: 'computer', label: 'Computer', icon: Monitor, blurb: 'A desktop for GUI automation, over noVNC' },
+];
+
 /** Sidebar capability icon (lucide, matching the canvas + langflow style). */
 function CapIcon({ kind, size = 16 }: { kind: CapabilityKind; size?: number }) {
   const Icon = CAPABILITY_META[kind].icon;
@@ -164,6 +172,9 @@ export function App() {
   const [hostProbe, setHostProbe] = useState<{ name: string; state: 'running' | 'ok' | 'failed'; detail: string } | null>(null);
   const [hostDraft, setHostDraft] = useState<HostDraft>({ name: '', host: '', user: '', port: '22', identity_file: '', jump_host: '', workspace_root: '~' });
   const [environmentView, setEnvironmentView] = useState<EnvironmentViewInfo>();
+  // Local machines (browser/computer): which one is mid-open, and the last open error.
+  const [envOpening, setEnvOpening] = useState<string>('');
+  const [envError, setEnvError] = useState<string>('');
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [extensionStage, setExtensionStage] = useState<ExtensionStage>({ valid: true, components: [] });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -313,6 +324,27 @@ export function App() {
       setTerminalOpening('');
     }
   }, [loadHosts]);
+
+  // Open a local machine's live view. The gateway asks the environment for its
+  // live_view and, on success, republishes it as an `environment.view` event —
+  // the same subscription that shows the agent's browser turns it into the inline
+  // noVNC card, so there is nothing to render from the response here.
+  const openEnvironment = useCallback(async (name: string) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    setEnvOpening(name);
+    setEnvError('');
+    try {
+      const response = await socket.request('environment.open', { name, session_id: sessionRef.current });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Could not open the machine');
+      const result = response.result as { opened?: boolean; reason?: string };
+      if (!result.opened) throw new Error(result.reason ?? 'This machine has no live view yet.');
+    } catch (error) {
+      setEnvError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEnvOpening('');
+    }
+  }, []);
 
   const loadDeploys = useCallback(async (socket: GatewaySocket) => {
     const response = await socket.request('deploy.list');
@@ -1023,6 +1055,22 @@ export function App() {
         <div className="sidebar-section agents-section">
           <p className="eyebrow">Active agents</p>
           {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
+        </div>
+        <div className="sidebar-section hosts-section machines-local">
+          <p className="eyebrow">Local machines</p>
+          {LOCAL_MACHINES.map((machine) => <div className="host-row" key={machine.name}>
+            <span className="host-pick" title={machine.blurb}>
+              <span className="host-icon"><machine.icon size={13} strokeWidth={1.9} /></span>
+              <span className="host-name">{machine.label}</span>
+            </span>
+            <small title={machine.blurb}>local</small>
+            <button className="host-action" title={`Open ${machine.label}`}
+                    disabled={status !== 'connected' || envOpening === machine.name}
+                    onClick={() => void openEnvironment(machine.name)}>
+              {envOpening === machine.name ? <span className="host-spin" /> : <SquareArrowOutUpRight size={12} />}
+            </button>
+          </div>)}
+          {envError ? <p className="host-probe failed">{envError}</p> : null}
         </div>
         {hostsAvailable ? <div className="sidebar-section hosts-section">
           <p className="eyebrow">Remote machines <button className="section-refresh" title="Add a machine" onClick={() => {

@@ -81,6 +81,11 @@ button { cursor: pointer; }
 .hosts-section .host-probe.running { color: hsl(var(--muted-foreground)); }
 .hosts-section .host-probe.ok { color: #34b98a; }
 .hosts-section .host-probe.failed { color: #d1616a; }
+/* Local machines (browser/computer): the label is a static span, not a button —
+   only the "Open" action is clickable, so don't dress the label up as one. */
+.machines-local .host-pick { cursor: default; }
+.machines-local .host-pick:hover { color: hsl(var(--muted-foreground)); background: transparent; }
+.machines-local .host-icon { display: inline-flex; flex: 0 0 auto; align-items: center; color: hsl(var(--muted-foreground)); }
 .hosts-section .host-form { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid hsl(var(--border)); }
 .hosts-section .host-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .hosts-section .host-form input { min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 6px 8px; color: hsl(var(--foreground)); background: hsl(var(--background)); font-size: 11px; }
