@@ -1,45 +1,86 @@
 # A general Linux desktop the agent drives with mouse/keyboard (the "computer"
-# environment). Built on the OpenSandbox chrome image so the OpenSandbox agent
-# and a browser (for web apps like Bilibili) are already present; we add a full
-# X11 desktop (XFCE), a VNC->websockify bridge for the live view, and the input
-# / capture / accessibility tools the environment needs.
+# environment): a full X11 desktop (XFCE), a VNC->websockify bridge for the live view,
+# and the input / capture / accessibility tools the environment needs.
 #
-# IMPORTANT: the ENTRYPOINT is intentionally NOT overridden. The OpenSandbox
-# agent (its default entrypoint) must keep running so the sandbox's run_command
-# channel works — that is how the environment injects xdotool input and takes
-# screenshots. The desktop itself is started on demand by /usr/local/bin/
-# start-desktop (called via run_command once the sandbox is up), not by the
-# entrypoint.
+# Plain Ubuntu. Nothing is inherited from another project's image.
+#
+# There is no OpenSandbox agent in here, and none is needed. OpenSandbox launches the
+# container with its *own* command and ignores the image's ENTRYPOINT entirely (see the
+# note in sandbox/default/chrome_vnc.py), so the agent binary this image used to carry
+# was never executed — `run_command` works through the runtime, not through anything
+# baked into the image. The desktop is started on demand by /usr/local/bin/start-desktop,
+# called via run_command once the sandbox is up.
 #
 # Ports (mapped to ephemeral host ports by the opensandbox proxy):
 #   5900  raw VNC (internal)
 #   6080  websockify (RFB over WebSocket) — the noVNC live-view endpoint
-FROM opensandbox/chrome:latest
+FROM ubuntu:24.04
 
-USER root
+ENV DEBIAN_FRONTEND=noninteractive
 
-# X server + XFCE desktop, VNC bridge (x11vnc + websockify/noVNC), input/capture
-# (xdotool + scrot), accessibility for grounding (AT-SPI), and CJK fonts so apps
-# like Bilibili/WeChat render text.
+# Mutter as the window manager, with tint2 as the panel — the shape Anthropic's own
+# computer-use reference container uses, and it is the right one for a reason worth
+# writing down.
+#
+# The obvious move is `ubuntu-desktop-minimal`, and it does not work here: GNOME's
+# *session* asks logind for a seat, logind is part of systemd, and systemd as PID 1 in a
+# container needs privileges this host would not give it — the shell comes up as "Oh no!
+# Something has gone wrong." and says nothing more useful. Mutter is GNOME's window
+# manager and runs perfectly well on its own, so windows are drawn the way GNOME draws
+# them without any of the session machinery behind it. With Yaru and the Ubuntu font on
+# top, this looks like Ubuntu because its parts *are* Ubuntu's.
+#
+# Alongside it: the VNC bridge (x11vnc + websockify/noVNC), input/capture (xdotool +
+# scrot), accessibility for grounding (AT-SPI), and a browser for web apps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         xvfb \
         x11vnc \
         websockify \
         novnc \
-        xfce4 \
-        xfce4-terminal \
+        mutter \
+        tint2 \
+        gnome-terminal \
+        nautilus \
+        gnome-text-editor \
+        yaru-theme-gtk \
+        yaru-theme-icon \
+        fonts-ubuntu \
         dbus-x11 \
         xdotool \
         scrot \
         at-spi2-core \
         python3-pyatspi \
+        python3 \
+        ca-certificates \
+        wget \
+        gnupg \
+        adwaita-icon-theme \
         fonts-liberation \
+        fonts-dejavu-core \
         fonts-noto-cjk \
+        fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
+# Google Chrome from Google's own apt repository.
+#
+# NOT Ubuntu's `chromium-browser`: on 24.04 that is a 50 KB transitional package that
+# pulls in 36 MB of snapd and installs the browser as a snap — and snaps do not run in a
+# container. It installs "successfully" and leaves no usable browser behind.
+RUN wget -qO /etc/apt/keyrings/google-chrome.asc https://dl.google.com/linux/linux_signing_key.pub \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] https://dl.google.com/linux/chrome/deb/ stable main" \
+       > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# noVNC ships its client as vnc.html; the live view is served from the directory root.
 RUN if [ -f /usr/share/novnc/vnc.html ] && [ ! -e /usr/share/novnc/index.html ]; then \
         ln -s /usr/share/novnc/vnc.html /usr/share/novnc/index.html; \
     fi
+
+# Font rendering. fontconfig enables antialiasing on its own, but nothing tells Xft the
+# DPI or the hint style, so toolkits that read X resources rather than fontconfig render
+# at a guessed size — which is most of the blur in a screenshot of this desktop.
+COPY Xresources /root/.Xresources
 
 COPY start-desktop.sh /usr/local/bin/start-desktop
 COPY a11y-dump.py /usr/local/bin/a11y-dump

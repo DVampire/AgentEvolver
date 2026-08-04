@@ -36,6 +36,13 @@ CHROME_ARGS=(
     --disable-gpu
     --remote-debugging-address=0.0.0.0
     --remote-debugging-port="${CDP_PORT}"
+    # Chrome refuses to open the debugging port while running on the default profile
+    # directory, and says nothing about it: the window appears, VNC works, and 9222 is
+    # simply never bound, so Playwright waits for a CDP endpoint that is not coming.
+    # Upstream's own launcher carries the same flag with the same note.
+    --user-data-dir="${CHROME_DATA_DIR:-/tmp/chrome-data}"
+    --disable-dev-shm-usage
+    --no-default-browser-check
     --window-position=0,0
     --window-size=1280,800
     --start-maximized
