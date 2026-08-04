@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Bring up the desktop stack on demand: a virtual display, the XFCE session, and
-# the VNC->websockify bridge the live view connects to. Idempotent — safe to call
-# more than once. Run via the sandbox's run_command once the container is up
-# (NOT as the container entrypoint, so the OpenSandbox agent keeps serving
-# run_command for input injection / screenshots).
+# Bring up the desktop stack on demand: a virtual display, a window manager, the
+# desktop surface and panel, and the VNC->websockify bridge the live view connects to.
+# Idempotent — safe to call more than once. Run via the sandbox's run_command once the
+# container is up, not as the entrypoint: the container's PID 1 has to stay alive for
+# run_command to keep working at all.
 set -euo pipefail
 
 DISPLAY_NUM="${DISPLAY_NUM:-:99}"
@@ -40,7 +40,10 @@ fi
 # Software rendering: there is no GPU here, and mutter will try for one unless told.
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
-export XDG_CURRENT_DESKTOP=GNOME
+# Both, and in this order: the Applications menu hides entries marked NotShowIn for the
+# current desktop, so naming only one of the two halves this desktop is built from drops
+# real applications out of the only menu there is.
+export XDG_CURRENT_DESKTOP=XFCE:GNOME
 export XDG_SESSION_TYPE=x11
 export GTK_THEME=Yaru
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-root}"
@@ -66,8 +69,44 @@ if ! pgrep -x mutter >/dev/null 2>&1; then
     exit 1
 fi
 
-# The panel, so the desktop has somewhere to show what is running.
-tint2 >/tmp/tint2.log 2>&1 &
+# The desktop itself. Mutter manages windows and nothing else — without these three
+# there is no menu, no icons and no way to launch anything, which looks exactly like a
+# desktop that failed to start.
+#
+# xfsettingsd first: it owns XSETTINGS, so it is what actually applies the GTK theme,
+# the icon theme and the font DPI to everything that starts afterwards.
+xfsettingsd --replace >/tmp/xfsettingsd.log 2>&1 &
+for _ in $(seq 1 20); do pgrep -x xfsettingsd >/dev/null 2>&1 && break; sleep 0.25; done
+
+# Theme and DPI through xfconf, which is where xfsettingsd reads them from.
+#
+# DPI is stored here in real dots per inch. The XSETTINGS *protocol* carries it in
+# 1/1024ths and xfsettingsd does that multiplication itself — writing the protocol
+# number into this key means asking for 96 and getting 98304, which renders as a
+# desktop of enormous fuzzy letters.
+xfconf-query -c xsettings -p /Net/ThemeName        -n -t string -s Yaru      2>/dev/null || true
+xfconf-query -c xsettings -p /Net/IconThemeName    -n -t string -s Yaru      2>/dev/null || true
+xfconf-query -c xsettings -p /Gtk/FontName         -n -t string -s "Ubuntu 11" 2>/dev/null || true
+xfconf-query -c xsettings -p /Xft/DPI              -n -t int    -s 96        2>/dev/null || true
+xfconf-query -c xsettings -p /Xft/Antialias        -n -t int    -s 1         2>/dev/null || true
+xfconf-query -c xsettings -p /Xft/HintStyle        -n -t string -s hintslight 2>/dev/null || true
+xfconf-query -c xsettings -p /Xft/RGBA             -n -t string -s rgb       2>/dev/null || true
+
+# The wallpaper. Which monitor key applies depends on the output's name, and under Xvfb
+# that is whatever RANDR decided to call it — so ask, rather than guess and silently
+# write a key nothing reads.
+MONITOR="$(xrandr --query 2>/dev/null | awk '/ connected/{print $1; exit}')"
+WALLPAPER="$(ls /usr/share/backgrounds/*.png /usr/share/backgrounds/*.jpg 2>/dev/null | head -1)"
+if [ -n "${MONITOR}" ] && [ -n "${WALLPAPER}" ]; then
+    BACKDROP="/backdrop/screen0/monitor${MONITOR}/workspace0"
+    xfconf-query -c xfce4-desktop -p "${BACKDROP}/last-image" -n -t string -s "${WALLPAPER}" 2>/dev/null || true
+    xfconf-query -c xfce4-desktop -p "${BACKDROP}/image-style" -n -t int -s 5 2>/dev/null || true
+fi
+
+# The desktop surface (wallpaper, icons, right-click menu) and the panel (Applications
+# menu, window list, tray, clock).
+xfdesktop >/tmp/xfdesktop.log 2>&1 &
+xfce4-panel >/tmp/xfce4-panel.log 2>&1 &
 
 # 3) VNC server on the display + the websockify bridge noVNC connects to.
 # -xrandr resize: honour a client asking the desktop to match its window, which is

@@ -18,9 +18,8 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Mutter as the window manager, with tint2 as the panel — the shape Anthropic's own
-# computer-use reference container uses, and it is the right one for a reason worth
-# writing down.
+# Mutter as the window manager — the shape Anthropic's own computer-use reference
+# container uses, and it is the right one for a reason worth writing down.
 #
 # The obvious move is `ubuntu-desktop-minimal`, and it does not work here: GNOME's
 # *session* asks logind for a seat, logind is part of systemd, and systemd as PID 1 in a
@@ -30,6 +29,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # them without any of the session machinery behind it. With Yaru and the Ubuntu font on
 # top, this looks like Ubuntu because its parts *are* Ubuntu's.
 #
+# What mutter does NOT give you is a desktop: no menu, no icons, no way to start
+# anything. The reference container does not care, because the only thing driving it is
+# a model typing xdotool. A person looking at the live view sees an empty wallpaper and
+# reasonably concludes it is broken. So the desktop *surface* comes from XFCE's two
+# standalone pieces — xfdesktop (wallpaper, icons, right-click menu) and xfce4-panel
+# (Applications menu, window list, tray, clock). Both are plain X clients: they work
+# under any window manager and neither asks for a session manager or a seat.
+#
 # Alongside it: the VNC bridge (x11vnc + websockify/noVNC), input/capture (xdotool +
 # scrot), accessibility for grounding (AT-SPI), and a browser for web apps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,14 +45,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         websockify \
         novnc \
         mutter \
-        tint2 \
-        gnome-terminal \
+        xfdesktop4 \
+        xfce4-panel \
+        xfce4-settings \
+        xfce4-appfinder \
+        xfconf \
+        xfce4-terminal \
         nautilus \
         gnome-text-editor \
         yaru-theme-gtk \
         yaru-theme-icon \
+        ubuntu-wallpapers \
         fonts-ubuntu \
         dbus-x11 \
+        x11-xserver-utils \
         xdotool \
         scrot \
         at-spi2-core \
@@ -71,6 +84,19 @@ RUN wget -qO /etc/apt/keyrings/google-chrome.asc https://dl.google.com/linux/lin
        > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
+
+# The panel's layout, in place before it first runs (see the file for why).
+COPY xfce4-panel.xml /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+
+# Icons on the desktop, copied from the entries the applications themselves install —
+# so they launch with whatever flags the packager intended and cannot drift out of sync
+# with a hand-written duplicate. Executable, or xfdesktop asks before every launch.
+RUN mkdir -p /root/Desktop \
+    && for f in google-chrome.desktop xfce4-terminal.desktop \
+                org.gnome.Nautilus.desktop org.gnome.TextEditor.desktop; do \
+           [ -f "/usr/share/applications/$f" ] && cp "/usr/share/applications/$f" /root/Desktop/; \
+       done; \
+       chmod +x /root/Desktop/*.desktop
 
 # noVNC ships its client as vnc.html; the live view is served from the directory root.
 RUN if [ -f /usr/share/novnc/vnc.html ] && [ ! -e /usr/share/novnc/index.html ]; then \
