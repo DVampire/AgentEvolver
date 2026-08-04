@@ -204,8 +204,20 @@ connector_names = [
 # base image needs no chromium of its own. use_sandbox=True selects that peer.
 env_names = [
     "browser_environment",
+    "computer_environment",
     "remote_host",
 ]
+
+# ---------------- COMPUTER (DESKTOP) ----------------
+# A whole Linux desktop the agent drives with mouse and keyboard. The container is
+# started on first use, not at boot, so listing it here costs nothing until something
+# actually opens it.
+computer_environment = dict(
+    width=1920,
+    height=1080,
+    use_som=True,
+    sandbox_timeout_minutes=60,
+)
 
 # ---------------- REMOTE HOSTS (SSH) ----------------
 # Ships with no machines. A remote agent must never connect somewhere nobody named, and

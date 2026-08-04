@@ -82,6 +82,13 @@ class SandboxConfig(BaseModel):
     user: Optional[str] = Field(
         default=None, description="User inside the container ('root', 'agent', '1000:1000'); None = image default.",
     )
+    #: Container ports to publish on the host, `{container_port: host_port}`; a host port
+    #: of 0 lets Docker choose. Needed because `expose_port` cannot publish after the
+    #: fact — a published port is fixed when the container is created.
+    publish_ports: Dict[int, int] = Field(
+        default_factory=dict,
+        description="Container ports to publish, {container: host} (0 = pick one).",
+    )
     workdir: Optional[str] = Field(
         default=None, description="Working directory inside the container; None = image default.",
     )

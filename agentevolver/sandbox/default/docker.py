@@ -103,7 +103,16 @@ class DockerSandbox(Sandbox):
         # server, a build's stragglers — is reparented to PID 1 and stays a zombie forever.
         # Measured: 51 of them accumulated in the first 13 minutes of one task, and a long
         # run would eventually exhaust the pid limit. `--init` puts a real reaper there.
+        # `--init` because PID 1 here is `sleep infinity`, which does not reap. Anything a
+        # command leaves behind — a killed process group's grandchildren, a backgrounded
+        # server, a build's stragglers — is reparented to PID 1 and stays a zombie forever.
+        # Measured: 51 of them accumulated in the first 13 minutes of one task, and a long
+        # run would eventually exhaust the pid limit. `--init` puts a real reaper there.
         args = [_DOCKER, "run", "-d", "--init", "--name", self._name]
+
+        for container_port, host_port in (self.config.publish_ports or {}).items():
+            args += ["-p", (f"{host_port}:{container_port}" if host_port
+                            else f"{container_port}")]
 
         # No interface at all when the network is off. An allowlist does not change that:
         # allowed hosts arrive through the mounted relay socket, so there is nothing for a
@@ -138,8 +147,13 @@ class DockerSandbox(Sandbox):
         # `sleep infinity` rather than the image's entrypoint: this is a place to exec
         # into, and an image whose entrypoint exits would otherwise take the sandbox with
         # it. Overriding the entrypoint too, since an image with its own ENTRYPOINT would
-        # treat the command as arguments to it.
-        args += ["--entrypoint", "sleep", self.config.image, "infinity"]
+        # treat the command as arguments to it. A caller that needs something else as PID
+        # 1 — systemd, for a desktop — says so explicitly.
+        if self.config.entrypoint:
+            args += ["--entrypoint", self.config.entrypoint[0], self.config.image]
+            args += list(self.config.entrypoint[1:])
+        else:
+            args += ["--entrypoint", "sleep", self.config.image, "infinity"]
         return args
 
     async def start(self) -> None:
@@ -292,13 +306,21 @@ class DockerSandbox(Sandbox):
         return ExecResult(success=True, stdout=out, stderr=err, exit_code=code)
 
     async def expose_port(self, port: int) -> str:
+        """The host address a published container port answers on.
+
+        Docker assigns the host side at creation, so this reads back what was actually
+        bound rather than assuming the numbers match — `publish_ports` with a host port of
+        0 asks Docker to choose, and it does.
+        """
         code, out, _err = await _run(
-            _DOCKER, "inspect", "-f",
-            "{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}{{end}}", self._name, timeout=30,
+            _DOCKER, "port", self._name, str(port), timeout=30,
         )
-        if code != 0 or not out.strip():
+        mapped = (out or "").strip().splitlines()
+        if code != 0 or not mapped:
             raise RuntimeError(
-                f"no published ports on {self._name}; DockerSandbox does not publish ports "
-                f"after start — pass them at acquire time if a service needs reaching."
+                f"port {port} is not published on {self._name}; a published port is fixed "
+                f"when the container is created — list it in config.publish_ports."
             )
-        return f"http://127.0.0.1:{port}"
+        # e.g. "0.0.0.0:49154" or "[::]:49154"
+        host_port = mapped[0].rsplit(":", 1)[-1].strip()
+        return f"http://127.0.0.1:{host_port}"
