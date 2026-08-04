@@ -113,6 +113,20 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir \
         pybtex bibtexparser pint uncertainties tabulate
 
+# The Docker CLI. Peer containers (the desktop, chrome-vnc, deploy sites) are
+# spawned as siblings through the mounted socket, and DockerSandbox drives that by
+# shelling out to `docker` — a mounted socket with no client binary is a
+# FileNotFoundError at sandbox start, which surfaces to the UI as the far less
+# informative "this environment has no live view". Client only, from Docker's
+# static bundle: no daemon, no apt repo, one file. Pinned to the host's server
+# version; the CLI negotiates API versions, so a drift here is not fatal.
+ARG DOCKER_CLI_VERSION=28.3.3
+RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+        | tar -xz -C /tmp docker/docker \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/docker \
+    && docker --version
+
 # The agentevolver framework + sandbox extra (opensandbox / opensandbox-server /
 # docker) so the in-container agent can spawn peer containers through the mounted
 # Docker socket. Editable install off a COPY bakes deps into the image; at runtime
