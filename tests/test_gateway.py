@@ -709,9 +709,14 @@ def test_projects_are_listed_most_recently_worked_in_first() -> None:
 def test_a_vnc_live_view_never_hands_the_client_the_raw_socket() -> None:
     """The client gets a same-origin path; the ephemeral target stays server-side.
 
-    This broke silently once already: the field was renamed ``kind`` -> ``type``
-    and the check kept reading ``kind``, so it matched nothing and every raw
-    websockify address went straight out to the browser.
+    This has broken twice. First the field was renamed ``kind`` -> ``type`` and the check
+    kept reading ``kind``, so it matched nothing. Then a second exit appeared: the reply
+    to ``environment.open``, which published through this path but *returned* the raw
+    view — and the reply is the one the panel reads. Both exits are covered below.
+
+    Neither failure is visible from the machine the gateway runs on, where the ephemeral
+    port genuinely exists. It only shows up as "Live view disconnected" in a browser
+    somewhere else, which is the browser every real user has.
     """
 
     async def run() -> None:
@@ -727,8 +732,21 @@ def test_a_vnc_live_view_never_hands_the_client_the_raw_socket() -> None:
 
         await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
             env_name="browser", type="vnc", url="ws://172.17.0.5:41293/websockify"))
-        assert published[-1][1]["url"] == "/env/vnc"
-        assert gateway._latest_vnc_target == "ws://172.17.0.5:41293/websockify"  # noqa: SLF001
+        assert published[-1][1]["url"] == "/env/vnc/browser"
+        assert gateway._vnc_targets["browser"] == "ws://172.17.0.5:41293/websockify"  # noqa: SLF001
+
+        # A second VNC environment must not displace the first: one shared slot meant the
+        # view opened earlier silently started pointing at the other one's endpoint.
+        await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
+            env_name="computer_environment", type="vnc", url="ws://172.17.0.9:5555/websockify"))
+        assert published[-1][1]["url"] == "/env/vnc/computer_environment"
+        assert gateway._vnc_targets["browser"] == "ws://172.17.0.5:41293/websockify"  # noqa: SLF001
+
+        # The other exit — what `environment.open` hands back, which is what the panel uses.
+        returned = gateway._relayed_view({  # noqa: SLF001
+            "env_name": "computer_environment", "type": "vnc",
+            "url": "ws://172.17.0.9:5555/websockify"})
+        assert returned["url"] == "/env/vnc/computer_environment"
 
         # An iframe view is a plain page; it is passed through untouched.
         await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
@@ -812,3 +830,37 @@ def test_a_follow_up_stays_in_the_same_state_scope() -> None:
             ["write an add function", "make it subtract instead"]
 
     asyncio.run(run())
+
+def test_every_live_view_leaves_the_gateway_as_a_relay_path() -> None:
+    """A raw endpoint reaching the browser is a view that can only say "disconnected".
+
+    The address is an ephemeral port on the machine the gateway runs on; a browser
+    elsewhere has forwarded the UI port and nothing else. Testing from the gateway host
+    hides it entirely — the port really is there — which is why this shipped twice.
+
+    There are two exits: the `environment.view` event and the reply to
+    `environment.open`. For a while only the first rewrote anything, and the panel uses
+    the second.
+    """
+    import inspect
+
+    from agentevolver.gateway.service import AgentGateway
+
+    for method in (AgentGateway._command_environment_open, AgentGateway._on_environment_view):
+        source = inspect.getsource(method)
+        assert "_relayed_view" in source, (
+            f"{method.__name__} hands out a view without routing it through the relay"
+        )
+
+
+def test_vnc_targets_are_kept_per_environment() -> None:
+    """One slot was enough while the browser was the only VNC environment. With two,
+    the later one replaced the earlier one's target and whichever view was opened first
+    went black."""
+    import inspect
+
+    from agentevolver.gateway.service import AgentGateway
+
+    source = inspect.getsource(AgentGateway._relayed_view)
+    assert "_vnc_targets[env_name]" in source
+    assert "/env/vnc/{env_name}" in source

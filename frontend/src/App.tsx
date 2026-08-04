@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
-import { Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareArrowOutUpRight, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
+import { Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -106,9 +106,13 @@ const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
 /** The local machines the Machines panel can "Open" into a live noVNC view —
  *  environments that ship their own VNC-capable runtime. SSH machines are the
  *  remote counterpart, managed separately below (they open a shell, not a view). */
+// `name` is the environment's *registered* name, which is what `environment.open` looks
+// up — sending the short label instead produced "Environment not available: 'browser'"
+// on every click. The label beside it is what a person reads; the two are different
+// things and only one of them is an identifier.
 const LOCAL_MACHINES: { name: string; label: string; icon: LucideIcon; blurb: string }[] = [
-  { name: 'browser', label: 'Browser', icon: Globe, blurb: 'Headful Chrome, driven over noVNC' },
-  { name: 'computer', label: 'Computer', icon: Monitor, blurb: 'A desktop for GUI automation, over noVNC' },
+  { name: 'browser_environment', label: 'Browser', icon: Globe, blurb: 'Headful Chrome, driven over noVNC' },
+  { name: 'computer_environment', label: 'Computer', icon: Monitor, blurb: 'A desktop for GUI automation, over noVNC' },
 ];
 
 /** Sidebar capability icon (lucide, matching the canvas + langflow style). */
@@ -120,6 +124,10 @@ function CapIcon({ kind, size = 16 }: { kind: CapabilityKind; size?: number }) {
 // Legacy builds hardcoded a direct gateway endpoint and persisted it. That
 // bypasses the same-origin Vite proxy and breaks remote (forward-only-5173)
 // access, so drop the stale value and fall back to the same-origin default.
+// How long a configured endpoint gets to connect before the app decides it is wrong and
+// goes back to the same-origin default. Long enough that a slow gateway boot is not
+// mistaken for a bad address, short enough that nobody sits staring at "Connecting".
+const ENDPOINT_FALLBACK_MS = 12_000;
 const LEGACY_ENDPOINTS = new Set(['ws://127.0.0.1:9876/ws', 'ws://localhost:9876/ws']);
 function initialEndpoint(): string {
   const stored = localStorage.getItem('agentevolver.gateway.endpoint');
@@ -631,6 +639,28 @@ export function App() {
     });
     socket.onEvent(handleGatewayEvent);
     socket.connect();
+
+    // A saved endpoint that no longer works must not lock the app out forever. The socket
+    // retries the same address with backoff and never reconsiders it, so an override typed
+    // once — a LAN IP, a hostname that has since moved — leaves every later visit stuck
+    // with no way back short of clearing site data. LEGACY_ENDPOINTS handles the two
+    // addresses old builds hardcoded; this handles the rest.
+    //
+    // On a deadline rather than on an error, because the common failure for a wrong
+    // address is not a refusal: the browser sits in TCP connect until the OS gives up, so
+    // `onerror` may not fire for a minute or more and the UI reads "Connecting" the whole
+    // time. Falling back to the origin that served this page is always safe — it is the
+    // same reverse proxy the app was loaded through.
+    if (endpoint !== DEFAULT_ENDPOINT) {
+      const deadline = window.setTimeout(() => {
+        if (socketRef.current !== socket) return;
+        console.warn(`Gateway endpoint ${endpoint} did not connect; falling back to this origin.`);
+        localStorage.removeItem('agentevolver.gateway.endpoint');
+        setEndpoint(DEFAULT_ENDPOINT);
+      }, ENDPOINT_FALLBACK_MS);
+      const stop = socket.onStatus((s) => { if (s === 'connected') window.clearTimeout(deadline); });
+      return () => { window.clearTimeout(deadline); stop(); };
+    }
   }, [endpoint, token, startSession, handleGatewayEvent]);
 
   useEffect(() => {
@@ -1063,12 +1093,14 @@ export function App() {
               <span className="host-icon"><machine.icon size={13} strokeWidth={1.9} /></span>
               <span className="host-name">{machine.label}</span>
             </span>
-            <small title={machine.blurb}>local</small>
-            <button className="host-action" title={`Open ${machine.label}`}
-                    disabled={status !== 'connected' || envOpening === machine.name}
-                    onClick={() => void openEnvironment(machine.name)}>
-              {envOpening === machine.name ? <span className="host-spin" /> : <SquareArrowOutUpRight size={12} />}
-            </button>
+            <span className="host-actions">
+              <button className="host-action" title={`Open the live ${machine.label.toLowerCase()} view`}
+                      disabled={status !== 'connected' || envOpening === machine.name}
+                      onClick={() => void openEnvironment(machine.name)}>
+                {envOpening === machine.name ? <span className="host-spin" /> : <MonitorPlay size={13} />}
+              </button>
+            </span>
+            <small className="host-meta" title={machine.blurb}>{machine.blurb}</small>
           </div>)}
           {envError ? <p className="host-probe failed">{envError}</p> : null}
         </div>
@@ -1088,13 +1120,7 @@ export function App() {
             {/* The address only when it says something the name does not — a machine you
                 did not rename shows its address as its name already, and printing it
                 twice costs the width the workspace path would rather have. */}
-            {/* The address when it says something the name does not, otherwise the
-                workspace — the two facts worth the width, never the same one twice. */}
-            <small title={`${machine.target ?? machine.host} · ${machine.workspace_root || '~'}`}>
-              {(machine.target ?? machine.host) === machine.name
-                ? (machine.workspace_root || '~')
-                : (machine.target ?? machine.host)}
-            </small>
+            <span className="host-actions">
             <button className="host-action" title={`Edit ${machine.name}`} disabled={hostBusy}
                     onClick={() => {
                       setHostEditing(machine.name);
@@ -1115,6 +1141,14 @@ export function App() {
                     onClick={() => void testHost(machine.name)}><Plug size={12} /></button>
             {machine.removable ? <button className="host-action" title="Forget this machine" disabled={hostBusy}
                     onClick={() => void hostCommand('environment.hosts.remove', { name: machine.name })}>×</button> : null}
+            </span>
+            {/* Its own line. Side by side, a long `user@host` in an auto-width column ate
+                the width the name needed and the two overlapped; an address is also the
+                sort of thing you read second, not the thing you click. */}
+            <small className="host-meta" title={`${machine.target ?? machine.host} · ${machine.workspace_root || '~'}`}>
+              {machine.target ?? machine.host}{machine.workspace_root && machine.workspace_root !== '~'
+                ? ` · ${machine.workspace_root}` : ''}
+            </small>
           </div>) : <p className="empty">No machines yet — add one to work on it.</p>}
           {hostProbe ? <p className={`host-probe ${hostProbe.state}`}>
             {hostProbe.state === 'running' ? `Connecting to ${hostProbe.name}…`
@@ -1502,20 +1536,74 @@ function MediaDocument({ file, src }: { file: WorkspaceFile; src: string }) {
 
 /** Inline live view of an environment (e.g. the browser over noVNC) in the conversation. */
 function EnvironmentLive({ view, onClose }: { view: EnvironmentViewInfo; onClose: () => void }) {
+  // A window, not a card wedged into the conversation: a desktop wants the room, and the
+  // same dialog shape the remote terminal already uses means one thing to learn instead
+  // of two.
+  const [mode, setMode] = useState<'normal' | 'minimized' | 'maximized'>('normal');
+  // Watching by default. You and the agent share one cursor, so driving is something you
+  // ask for rather than something you fall into by clicking on the picture.
+  const [interactive, setInteractive] = useState(false);
+  const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const onStatus = useCallback((next: typeof status) => setStatus(next), []);
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      // Only while watching. Once you have taken over, Escape belongs to whatever is
+      // running in there — closing the window out from under a vim session is not help.
+      if (event.key === 'Escape' && !interactive) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [interactive, onClose]);
+
   return (
-    <section className="environment-live">
-      <header>
-        <span className="live-dot" />
-        <strong>{view.label || 'Live environment'}</strong>
-        <small>{view.env_name}</small>
-        <button className="live-close" onClick={onClose} aria-label="Hide live view">×</button>
-      </header>
-      <div className="environment-live-body">
-        {view.type === 'vnc'
-          ? <Suspense fallback={<div className="vnc-overlay">Loading live view…</div>}><VncView url={view.url} password={view.password} /></Suspense>
-          : <iframe title={view.label || 'Live environment'} src={view.url} />}
+    <div className="live-backdrop" role="dialog" aria-modal="true" aria-label={view.label || 'Live environment'}
+         onClick={(event) => { if (event.target === event.currentTarget && !interactive) onClose(); }}>
+      <div className={`live-window ${mode}`}>
+        <header className="live-head">
+          {/* Traffic lights, in the order and colours a person already knows. */}
+          <span className="live-lights">
+            <button className="light close" onClick={onClose} title="Close" aria-label="Close" />
+            <button className="light min" onClick={() => setMode((m) => m === 'minimized' ? 'normal' : 'minimized')}
+                    title={mode === 'minimized' ? 'Restore' : 'Minimize'} aria-label="Minimize" />
+            <button className="light max" onClick={() => setMode((m) => m === 'maximized' ? 'normal' : 'maximized')}
+                    title={mode === 'maximized' ? 'Restore' : 'Maximize'} aria-label="Maximize" />
+          </span>
+          <strong>{view.label || 'Live environment'}</strong>
+          {/* After the title, not beside the lights: sitting fourth in that row it read
+              as a fourth traffic light rather than as connection state. */}
+          <span className={`live-dot ${status}`} title={status} />
+          <small>{view.env_name}</small>
+          <span className="live-spacer" />
+          {view.type === 'vnc' ? (
+            <button className={`live-action${interactive ? ' on' : ''}`}
+                    disabled={status !== 'connected'}
+                    onClick={() => setInteractive((v) => !v)}
+                    title={interactive
+                      ? 'Hand back to the agent (watch only)'
+                      : 'Take over — your mouse and keyboard drive this machine'}
+                    aria-pressed={interactive}>
+              {/* Always the hand: it names the action, not the current state. Swapping in
+                  an eye while watching made the button describe what you already have
+                  instead of what pressing it does. Whether you hold the machine is what
+                  the lit background says. */}
+              <Hand size={14} />
+            </button>
+          ) : null}
+        </header>
+        {/* Hidden, never unmounted. Unmounting tore down the RFB connection, so minimising
+            dropped the stream and restoring paid a reconnect and a black rectangle — a
+            minimise that loses what you minimised is not one. */}
+        <div className="live-body" hidden={mode === 'minimized'}>
+          {view.type === 'vnc'
+            ? <Suspense fallback={<div className="vnc-overlay">Loading live view…</div>}>
+                <VncView url={view.url} password={view.password}
+                         interactive={interactive} onStatus={onStatus} />
+              </Suspense>
+            : <iframe title={view.label || 'Live environment'} src={view.url} />}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 

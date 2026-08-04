@@ -148,6 +148,12 @@ class AgentGateway:
         # fixed /env/vnc route so a remote user only forwards the UI port — the
         # ephemeral port stays server-internal. See transport.py:/env/vnc.
         self._latest_vnc_target: Optional[str] = None
+        # …and the same, per environment. One slot was enough while the browser was the
+        # only VNC-capable environment; `computer_environment` makes two, both publishing
+        # through /env/vnc, and the later one silently replaced the earlier one's target —
+        # so whichever view you opened first went black with "Live view disconnected"
+        # while its container was running perfectly well.
+        self._vnc_targets: Dict[str, str] = {}
         # Same idea as the VNC relay above, for the SSH terminals: token -> the loopback
         # port the ssh tunnel put that ttyd on. The browser is usually not on the machine
         # running the gateway — a remote user forwards the UI port and nothing else — so
@@ -1082,8 +1088,9 @@ class AgentGateway:
             return {"opened": False, "reason": "This environment has no live view yet (it needs a VNC-capable runtime, e.g. the computer/chrome-vnc sandbox)."}
         view.session_id = self._bound_session_id or session.context.id
         view.env_name = view.env_name or name
-        await self._publish("environment.view", view.model_dump(mode="json"), session_id=self._bound_session_id)
-        return {"opened": True, "view": view.model_dump(mode="json")}
+        payload = self._relayed_view(view.model_dump(mode="json"))
+        await self._publish("environment.view", payload, session_id=self._bound_session_id)
+        return {"opened": True, "view": payload}
 
     async def _command_deploy_redeploy(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Rebuild a stopped/detached site from its stored request (new URL likely)."""
@@ -2158,6 +2165,13 @@ class AgentGateway:
         nested = params.get("host")
         record = dict(nested) if isinstance(nested, dict) else dict(params)
         host = env.host_store.add(record)
+        # Drop any live connection to this machine. A connection caches the address, the
+        # credentials and the *resolved* workspace root from when it was opened, and `_svc`
+        # reuses it — so editing a host changed the record and nothing else: the panel
+        # showed the new workspace while the agent kept working in the old directory, with
+        # nothing anywhere saying the two had diverged. Reconnecting is cheap; a silent
+        # disagreement about which directory the work is in is not.
+        await env.close_host(host.name)
         logger.info(f"| 🖥️  remote host saved: {host.name} -> {host.host}")
         return await self._command_environment_hosts_list({"session_id": params.get("session_id")})
 
@@ -2257,10 +2271,29 @@ class AgentGateway:
         # and hand the client a same-origin relative path instead. The client
         # resolves it against the gateway origin and connects via /env/vnc, which
         # the gateway relays to this target — so only the UI port is ever exposed.
-        if payload.get("type") == "vnc" and payload.get("url"):
-            self._latest_vnc_target = payload["url"]
-            payload["url"] = "/env/vnc"
+        payload = self._relayed_view(payload)
         await self._publish("environment.view", payload, session_id=self._bound_session_id)
+
+    def _relayed_view(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace a live view's raw endpoint with a path on the gateway's own origin.
+
+        The raw address is an ephemeral port on whatever machine the gateway runs on. A
+        browser somewhere else has forwarded the UI port and nothing else, so handing it
+        that address produces a panel that can only ever say "Live view disconnected" —
+        while the container behind it is running perfectly well. Testing from the gateway
+        host hides this completely, because there the port really is there.
+
+        One function, because there are two ways a view reaches the client — the
+        `environment.view` event and the reply to `environment.open` — and for a while
+        only the first rewrote anything. The second is the one the panel actually uses.
+        """
+        if payload.get("type") != "vnc" or not payload.get("url"):
+            return payload
+        env_name = payload.get("env_name") or "default"
+        self._vnc_targets[env_name] = payload["url"]
+        # Kept for a client that still asks for the unqualified path.
+        self._latest_vnc_target = payload["url"]
+        return {**payload, "url": f"/env/vnc/{env_name}"}
 
     async def _on_extension_change(self, change: Dict[str, str]) -> None:
         """Publish registry changes so connected clients see evolved components immediately."""

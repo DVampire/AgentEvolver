@@ -634,6 +634,54 @@ class TestMultiHostRouting:
         assert env.active_host(_Ctx()).workspace_root == "/srv/solo"
 
 
+class TestEditingAHostTakesEffect:
+    """A saved edit has to reach the connection, not just the record."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_store(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+
+    @pytest.mark.asyncio
+    async def test_close_host_drops_only_that_machines_connections(self) -> None:
+        """A connection caches the address, the credentials and the resolved workspace
+        root from when it opened, and `_svc` reuses it. Without dropping it, editing a
+        machine changed the panel and nothing else: the agent kept working in the old
+        directory and nothing said the two had diverged.
+        """
+        from agentevolver.environment.default.ssh.environment import SSHEnvironment
+
+        env = SSHEnvironment(hosts=[
+            {"name": "alpha", "host": "a.example"},
+            {"name": "beta", "host": "b.example"},
+        ], live_view=False)
+
+        class _Svc:
+            def __init__(self): self.stopped = False
+            async def stop(self): self.stopped = True
+            async def run_raw(self, *a, **k): return SSHResult(exit_code=0)
+
+        alpha_one, alpha_two, beta = _Svc(), _Svc(), _Svc()
+        env._services[("s1", "alpha")] = alpha_one
+        env._services[("s2", "alpha")] = alpha_two
+        env._services[("s1", "beta")] = beta
+        env._active["s1"] = "alpha"
+
+        await env.close_host("alpha")
+
+        assert alpha_one.stopped and alpha_two.stopped, "every session's connection must drop"
+        assert not beta.stopped, "another machine's connection was collateral damage"
+        assert list(env._services) == [("s1", "beta")]
+        assert "s1" not in env._active, "the active pointer still names a dropped connection"
+
+    def test_the_gateway_drops_the_connection_when_a_host_is_saved(self) -> None:
+        import inspect
+
+        from agentevolver.gateway.service import AgentGateway
+
+        source = inspect.getsource(AgentGateway._command_environment_hosts_add)
+        assert "close_host" in source, "an edit that does not reconnect does not take effect"
+
+
 class TestBothRoutesRenderResults:
     """An env action reaches the loop by two routes; both must produce text.
 

@@ -120,3 +120,34 @@ def test_is_free_reflects_an_actually_bound_socket():
         held.bind(("127.0.0.1", 0))
         held.listen(1)
         assert is_free(held.getsockname()[1]) is False
+
+def test_nothing_calls_register_with_the_wrong_keyword() -> None:
+    """`register(..., kind=...)` raises TypeError; the parameter is `type`.
+
+    Three separate call sites have had this wrong. Each failed differently and none
+    failed loudly: `scripts/serve-ui.sh` swallowed it with `|| true` so the UI port
+    silently never entered the registry, and the computer sandbox's `vnc_ws_url` raised
+    inside a `try` that the environment's `live_view` caught, so the frontend reported
+    "this environment has no live view" — which reads as unimplemented rather than as a
+    typo one frame down.
+    """
+    import inspect
+    import re
+    from pathlib import Path
+
+    from agentevolver.port import port_manager
+
+    assert "type" in inspect.signature(port_manager.register).parameters
+    assert "kind" not in inspect.signature(port_manager.register).parameters
+
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for path in [*root.glob("agentevolver/**/*.py"), *root.glob("scripts/*.sh"),
+                 *root.glob("examples/*.py")]:
+        if "__pycache__" in str(path):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in re.finditer(r"port_manager\.register\([^)]*", text):
+            if "kind=" in match.group(0):
+                offenders.append(str(path.relative_to(root)))
+    assert not offenders, f"port_manager.register(kind=...) should be type=...: {offenders}"

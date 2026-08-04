@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from agentevolver.gateway.protocol import GatewayCommand, error_response
 from agentevolver.gateway.service import AgentGateway
+from agentevolver.logger import logger
 
 
 def _encode(message) -> str:
@@ -239,20 +240,31 @@ def create_websocket_app(
             except Exception:
                 return Response(status_code=502, content="Terminal unreachable")
 
+    @app.websocket("/env/vnc/{env}")
+    async def vnc_relay_for(websocket: WebSocket, env: str):
+        """Relay one *named* environment's noVNC connection.
+
+        The unqualified route below keeps a single most-recent target, which was fine
+        while only the browser had a VNC view. With two such environments the second
+        overwrote the first, so the view opened earlier connected to the other one's
+        endpoint and went black. The name in the path is what keeps them apart.
+        """
+        await _vnc_bridge(websocket, gateway._vnc_targets.get(env))
+
     @app.websocket("/env/vnc")
     async def vnc_relay(websocket: WebSocket):
-        """Relay the browser's noVNC connection to the sandbox websockify endpoint.
+        await _vnc_bridge(websocket, gateway._latest_vnc_target)
 
-        The browser environment's websockify is reachable only via an ephemeral
-        host port (assigned by the opensandbox proxy). Rather than exposing that
-        port, the client connects here on the fixed gateway origin and we pipe
-        frames to/from the upstream target cached by the gateway. This keeps the
-        remote experience to a single forwarded port (the UI).
+    async def _vnc_bridge(websocket: WebSocket, target: Optional[str]) -> None:
+        """Pipe frames between the browser and a sandbox websockify endpoint.
+
+        That endpoint is reachable only on an ephemeral host port assigned by the
+        opensandbox proxy. Rather than exposing it, the client connects here on the fixed
+        gateway origin — so the remote experience stays one forwarded port (the UI).
         """
         if not _authorize(websocket):
             await websocket.close(code=1008, reason="Unauthorized")
             return
-        target = gateway._latest_vnc_target
         # noVNC negotiates a subprotocol ("binary"/"base64"); echo the client's
         # choice on accept and to the upstream, or the RFB handshake fails.
         requested = websocket.headers.get("sec-websocket-protocol", "")
@@ -270,7 +282,13 @@ def create_websocket_app(
                 upstream = await session.ws_connect(
                     target, protocols=protocols or (), autoping=True
                 )
-            except Exception:
+            except Exception as e:
+                # Logged with the target: "upstream unreachable" alone says nothing about
+                # WHICH endpoint failed or why, and the browser only ever shows a dead
+                # canvas. The address is the first thing anyone debugging this needs.
+                logger.warning(
+                    f"| ⚠️ VNC relay could not reach {target}: {type(e).__name__}: {e}"
+                )
                 with suppress(Exception):
                     await websocket.close(code=1011, reason="VNC upstream unreachable")
                 return

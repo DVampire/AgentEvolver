@@ -11,17 +11,25 @@ const focusRfb = (rfb: RFB | null | undefined) => { try { (rfb as FocusableRFB |
  * Render a live VNC stream (RFB over WebSocket) onto a canvas noVNC manages.
  * Frames flow browser ↔ gateway relay ↔ websockify.
  *
- * Two modes, toggled by the "接管/Take over" button:
+ * Two modes:
  *  - watch (default): viewOnly, so you only observe what the agent does;
- *  - interactive: mouse + keyboard are sent to the container, so you can drive
- *    the browser yourself. (You and the agent share one cursor — take over only
- *    when the agent is idle.)
+ *  - interactive: mouse + keyboard are sent to the container, so you can drive it
+ *    yourself. You and the agent share one cursor, so take over only when it is idle.
+ *
+ * Neither the toggle nor the connection state lives here any more: both belong to the
+ * window around the stream, which is where a person looks for a window's controls. This
+ * component renders pixels and reports what it knows.
  */
-export default function VncView({ url, password }: { url: string; password?: string | null }) {
+export default function VncView({ url, password, interactive = false, onStatus }: {
+  url: string;
+  password?: string | null;
+  interactive?: boolean;
+  onStatus?: (status: 'connecting' | 'connected' | 'disconnected') => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [interactive, setInteractive] = useState(false);
+  useEffect(() => { onStatus?.(status); }, [status, onStatus]);
 
   useEffect(() => {
     const target = containerRef.current;
@@ -30,8 +38,20 @@ export default function VncView({ url, password }: { url: string; password?: str
     let rfb: RFB | undefined;
     try {
       rfb = new RFB(target, url, password ? { credentials: { password } } : undefined);
-      rfb.scaleViewport = true;      // fit the stream to the card
+      // Ask the far side to match the window instead of stretching its picture to fit.
+      // A 1280x800 desktop shown in a 1600px window — wider still on a HiDPI screen — is
+      // upscaled by nearly two, and every glyph goes soft. With RANDR on the X server and
+      // a client that requests it, the remote reshapes to the viewport and the pixels are
+      // 1:1. `scaleViewport` stays on as the fallback for servers that refuse.
+      rfb.resizeSession = true;
+      rfb.scaleViewport = true;
       rfb.clipViewport = false;
+      // Tight encoding's JPEG quality (0-9, default 6) and how hard it compresses. This
+      // is a container on the same host reached over loopback, so the bandwidth those
+      // defaults protect is not scarce — spending it on a legible screen is the trade
+      // worth making here.
+      rfb.qualityLevel = 9;
+      rfb.compressionLevel = 2;
       rfb.viewOnly = !interactive;   // start read-only unless the user took over
       rfb.addEventListener('connect', () => setStatus('connected'));
       rfb.addEventListener('disconnect', () => setStatus('disconnected'));
@@ -60,16 +80,6 @@ export default function VncView({ url, password }: { url: string; password?: str
         ref={containerRef}
         onMouseEnter={() => { if (interactive) focusRfb(rfbRef.current); }}
       />
-      {status === 'connected' ? (
-        <button
-          type="button"
-          className={`vnc-takeover${interactive ? ' on' : ''}`}
-          onClick={() => setInteractive((v) => !v)}
-          title={interactive ? '交还给 agent（回到只看）' : '接管浏览器（可用鼠标键盘操作）'}
-        >
-          {interactive ? '● 操作中 · 交还' : '接管'}
-        </button>
-      ) : null}
       {status !== 'connected'
         ? <div className="vnc-overlay">{status === 'connecting' ? 'Connecting to live view…' : 'Live view disconnected'}</div>
         : null}
