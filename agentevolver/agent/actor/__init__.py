@@ -3,7 +3,8 @@ from .code_agent import CodeAgent
 from .meta_agent import MetaAgent
 from .monitor_agent import MonitorAgent
 from .browser_agent import BrowserAgent
+from .computer_agent import ComputerAgent
 from .reviewer_agent import ReviewerAgent
 from .ssh_agent import SSHAgent
 
-__all__ = ["GeneralAgent", "CodeAgent", "MetaAgent", "MonitorAgent", "BrowserAgent", "ReviewerAgent", "SSHAgent"]
+__all__ = ["GeneralAgent", "CodeAgent", "MetaAgent", "MonitorAgent", "BrowserAgent", "ComputerAgent", "ReviewerAgent", "SSHAgent"]
