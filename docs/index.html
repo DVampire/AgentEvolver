@@ -111,6 +111,37 @@
   .stat .l{color:var(--muted);font-size:13.5px;margin-top:6px}
   @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
 
+  /* ---------- icons ----------
+     One stroke set at 24px, so every glyph in the page shares a weight and a
+     corner radius. Emoji did not: they carried each vendor's own palette. */
+  .ic{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round;display:block}
+  .ic-sm{width:17px;height:17px;stroke-width:1.8}
+  .ic-lg{width:27px;height:27px}
+
+  /* ---------- capability ecosystem ---------- */
+  .caps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .cap{display:flex;gap:14px;align-items:flex-start;background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:18px 18px;transition:.22s}
+  .cap:hover{border-color:var(--border-strong);background:var(--panel-strong);transform:translateY(-3px)}
+  .cap .ci{flex:0 0 auto;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:#bcb2ff;
+    background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(34,211,238,.15));border:1px solid var(--border-strong)}
+  .cap h4{margin:0;font-size:15px;font-weight:700;display:flex;align-items:baseline;gap:9px}
+  .cap h4 em{font-style:normal;font-family:var(--mono);font-size:12.5px;color:var(--brand-2);font-weight:600}
+  .cap p{margin-top:5px;color:var(--muted);font-size:13.5px;line-height:1.55}
+  @media(max-width:980px){.caps{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:620px){.caps{grid-template-columns:1fr}}
+
+  /* ---------- two-column prose block ---------- */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+  @media(max-width:900px){.split{grid-template-columns:1fr;gap:26px}}
+  .rows{display:grid;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:16px;background:var(--bg-2);padding:14px 18px}
+  .row b{font-size:14px}
+  .row span{color:var(--muted);font-size:13.5px}
+  .row code{font-family:var(--mono);font-size:12.5px;color:var(--brand-2)}
+  @media(max-width:620px){.row{grid-template-columns:1fr;gap:4px}}
+
   /* ---------- web UI showcase ---------- */
   .ui-stage{margin:0;border-radius:16px;overflow:hidden;border:1px solid var(--border-strong);
     background:#0a0c1c;box-shadow:0 30px 70px rgba(0,0,0,.6);position:relative}
@@ -134,8 +165,9 @@
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude}
   .card:hover::before{opacity:.7}
-  .ico{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-size:22px;margin-bottom:18px;
+  .ico{width:48px;height:48px;border-radius:13px;display:grid;place-items:center;margin-bottom:18px;color:#c6bcff;
     background:linear-gradient(135deg,rgba(124,92,255,.25),rgba(34,211,238,.18));border:1px solid var(--border-strong)}
+  .card:hover .ico{color:#e2dcff}
   .card h3{font-size:19px;margin-bottom:9px}
   .card p{color:var(--muted);font-size:14.5px}
   @media(max-width:900px){.features{grid-template-columns:repeat(2,1fr)}}
@@ -152,7 +184,7 @@
     font-weight:800;font-size:15px}
   .evo-node{position:absolute;width:34%;text-align:center;padding:14px 10px;border-radius:14px;
     background:var(--panel-strong);border:1px solid var(--border-strong)}
-  .evo-node .e{font-size:22px}
+  .evo-node .e{display:grid;place-items:center;color:#c6bcff;margin-bottom:2px}
   .evo-node .t{font-weight:700;font-size:14px;margin-top:4px}
   .evo-node .d{font-size:11.5px;color:var(--muted);margin-top:3px}
   .evo-node.n1{top:0;left:50%;transform:translateX(-50%)}
@@ -200,11 +232,53 @@
   .foot-links{display:flex;gap:22px}
   .foot-links a{color:var(--muted);transition:.2s}.foot-links a:hover{color:var(--text)}
 
+  /* ---------- narrow screens ----------
+     Three things pushed the document wider than the viewport: the decorative
+     blobs (fixed, but still counted), the un-wrapped nav actions, and the
+     quick-start code blocks, whose long lines have to scroll inside their own
+     box rather than drag the whole page sideways with them. */
+  html{overflow-x:hidden}
+  .qs pre{overflow-x:auto}
+  @media(max-width:560px){
+    .nav-inner{gap:10px}
+    .nav-actions{gap:8px}
+    .nav-actions .btn{padding:8px 11px;font-size:13px}
+    .lang button{padding:5px 9px}
+    .brand{font-size:16px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+
   .reveal{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s ease}
   .reveal.in{opacity:1;transform:none}
 </style>
 </head>
 <body>
+
+<!-- Icon sprite: defined once, referenced with <use>. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-loop" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></symbol>
+<symbol id="i-file-code" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10.2 12.6 8.2 14.6l2 2"/><path d="M13.8 12.6l2 2-2 2"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.2c0 4.6-3.2 8.5-7.5 10.3C7.7 19.7 4.5 15.8 4.5 11.2V6z"/><path d="M9.2 12.2l2 2 3.8-4"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24"><path d="M3.6 16.5a9 9 0 1 1 16.8 0"/><path d="M12 14.6l3.8-4.4"/><circle cx="12" cy="15.2" r="1.5"/></symbol>
+<symbol id="i-panels" viewBox="0 0 24 24"><rect x="3" y="3.5" width="18" height="17" rx="2.4"/><path d="M3 9h18M9.5 9v11.5"/></symbol>
+<symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5.6" rx="7.8" ry="3"/><path d="M4.2 5.6v12.8c0 1.7 3.5 3 7.8 3s7.8-1.3 7.8-3V5.6"/><path d="M4.2 12c0 1.7 3.5 3 7.8 3s7.8-1.3 7.8-3"/></symbol>
+<symbol id="i-boxes" viewBox="0 0 24 24"><rect x="3" y="3" width="7.6" height="7.6" rx="1.8"/><rect x="13.4" y="3" width="7.6" height="7.6" rx="1.8"/><rect x="3" y="13.4" width="7.6" height="7.6" rx="1.8"/><rect x="13.4" y="13.4" width="7.6" height="7.6" rx="1.8"/></symbol>
+<symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/><path d="M9.5 2.5v4M14.5 2.5v4M9.5 17.5v4M14.5 17.5v4M2.5 9.5h4M2.5 14.5h4M17.5 9.5h4M17.5 14.5h4"/></symbol>
+<symbol id="i-wrench" viewBox="0 0 24 24"><path d="M15.6 3.4a5.2 5.2 0 0 0-6.7 6.7L3 16v5h5l5.9-5.9a5.2 5.2 0 0 0 6.7-6.7l-3.2 3.2-3-.6-.6-3z"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4.2 5A2.8 2.8 0 0 1 7 2.2h12.8v19.6H7A2.8 2.8 0 0 1 4.2 19z"/><path d="M4.2 19A2.8 2.8 0 0 1 7 16.2h12.8"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2.5v6M15 2.5v6"/><path d="M6 8.5h12v2.8a6 6 0 0 1-12 0z"/><path d="M12 17.3v4.2"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="12.5" rx="2.2"/><path d="M8 20.5h8M12 16.5v4"/></symbol>
+<symbol id="i-flow" viewBox="0 0 24 24"><rect x="2.6" y="2.8" width="6.4" height="5" rx="1.6"/><rect x="15" y="2.8" width="6.4" height="5" rx="1.6"/><rect x="8.8" y="16.2" width="6.4" height="5" rx="1.6"/><path d="M5.8 7.8v3a2.2 2.2 0 0 0 2.2 2.2h8a2.2 2.2 0 0 0 2.2-2.2v-3"/><path d="M12 13v3.2"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="4.6"/><circle cx="12" cy="12" r="1.1"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.2"/><path d="M7 9.6l3 2.6-3 2.6M12.8 15h4.4"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11 3.2l1.7 4.4 4.4 1.7-4.4 1.7L11 15.4 9.3 11 4.9 9.3l4.4-1.7z"/><path d="M18 14.4l.85 2.15 2.15.85-2.15.85-.85 2.15-.85-2.15-2.15-.85 2.15-.85z"/></symbol>
+<symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 3.2v17.6M7.5 20.8h9"/><path d="M4.8 6.8h14.4"/><path d="M4.8 6.8L2 13.2a2.8 2.8 0 0 0 5.6 0z"/><path d="M19.2 6.8l-2.8 6.4a2.8 2.8 0 0 0 5.6 0z"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"/><circle cx="9" cy="6.5" r="2.1"/><circle cx="15.5" cy="12" r="2.1"/><circle cx="7.5" cy="17.5" r="2.1"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M3.2 12h17.6"/><path d="M12 3.2a13.5 13.5 0 0 1 0 17.6 13.5 13.5 0 0 1 0-17.6z"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2.8 21 7.4l-9 4.6-9-4.6z"/><path d="M3 12.2l9 4.6 9-4.6"/><path d="M3 16.8l9 4.6 9-4.6"/></symbol>
+<symbol id="i-rocket" viewBox="0 0 24 24"><path d="M13.5 3.5c3.4 1.3 5.6 4.4 6.4 8.3l-6.6 6.6-4.4-4.4 6.6-6.6"/><path d="M5.2 10.5 9.6 15"/><path d="M9.6 15c-1.8 1.8-2.1 4-2.1 4s2.2-.3 4-2.1"/><circle cx="14.8" cy="9.2" r="1.5"/></symbol>
+</svg>
+
 <div class="bg-fx"></div>
 <div class="grid-fx"></div>
 <div class="blob b1"></div>
@@ -213,13 +287,14 @@
 <!-- ============ NAV ============ -->
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="#top"><span class="mark">🧬</span> AgentEvolver</a>
+    <a class="brand" href="#top"><span class="mark"><svg class="ic ic-sm" style="stroke-width:2"><use href="#i-loop"/></svg></span> AgentEvolver</a>
     <div class="nav-links">
-      <a href="#features" data-i18n="nav_features">Features</a>
+      <a href="#features" data-i18n="nav_features">Highlights</a>
       <a href="#architecture" data-i18n="nav_arch">Architecture</a>
       <a href="#evolution" data-i18n="nav_evo">Self-Evolution</a>
+      <a href="#registries" data-i18n="nav_caps">Capabilities</a>
       <a href="#webui" data-i18n="nav_ui">Web UI</a>
-      <a href="#benchmarks" data-i18n="nav_bench">Benchmarks</a>
+      <a href="#safety" data-i18n="nav_safe">Safety</a>
       <a href="#quickstart" data-i18n="nav_start">Quick Start</a>
     </div>
     <div class="nav-actions">
@@ -228,7 +303,7 @@
         <button data-lang="zh">中文</button>
       </div>
       <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">
-        <span>★</span> GitHub</a>
+        <svg class="ic ic-sm"><use href="#i-sparkles"/></svg> GitHub</a>
     </div>
   </div>
 </nav>
@@ -240,7 +315,7 @@
     <h1 class="title" data-i18n="hero_title_html">Agents that <span class="grad">evolve themselves</span></h1>
     <p class="subtitle" data-i18n="hero_sub">A MetaAgent orchestrates specialized sub-agents to solve tasks — while generator, evaluator, and optimizer agents continuously grow the tool, skill, and agent ecosystem.</p>
     <div class="hero-cta">
-      <a class="btn primary" href="#quickstart" data-i18n="hero_cta1">🚀 Get Started</a>
+      <a class="btn primary" href="#quickstart"><svg class="ic ic-sm"><use href="#i-rocket"/></svg> <span data-i18n="hero_cta1">Get Started</span></a>
       <a class="btn" href="#architecture" data-i18n="hero_cta2">Explore Architecture →</a>
     </div>
     <div class="badges">
@@ -256,10 +331,16 @@
 <section style="padding-top:0">
   <div class="wrap">
     <div class="stats reveal">
-      <div class="stat"><div class="n">10+</div><div class="l" data-i18n="stat_reg">Component registries</div></div>
-      <div class="stat"><div class="n">4</div><div class="l" data-i18n="stat_sa">Specialist sub-agents</div></div>
-      <div class="stat"><div class="n">3×</div><div class="l" data-i18n="stat_evo">Evolution roles per component</div></div>
-      <div class="stat"><div class="n">8+</div><div class="l" data-i18n="stat_bench">Built-in benchmarks</div></div>
+      <div class="stat"><div class="n">48</div><div class="l" data-i18n="stat_mod">Framework modules, ~91k lines</div></div>
+      <div class="stat"><div class="n">29</div><div class="l" data-i18n="stat_ag">Built-in agents</div></div>
+      <div class="stat"><div class="n">83</div><div class="l" data-i18n="stat_sk">Skills, in 11 categories</div></div>
+      <div class="stat"><div class="n">27</div><div class="l" data-i18n="stat_tl">Atomic tools</div></div>
+    </div>
+    <div class="stats reveal" style="margin-top:18px">
+      <div class="stat"><div class="n">25</div><div class="l" data-i18n="stat_mcp">MCP connectors</div></div>
+      <div class="stat"><div class="n">332</div><div class="l" data-i18n="stat_pl">Plugin tools, from 89 services</div></div>
+      <div class="stat"><div class="n">84</div><div class="l" data-i18n="stat_gw">Gateway commands</div></div>
+      <div class="stat"><div class="n">9</div><div class="l" data-i18n="stat_bench">Benchmarks · 41 test modules</div></div>
     </div>
   </div>
 </section>
@@ -273,12 +354,12 @@
       <p data-i18n="feat_p">A clean, registry-driven core where every capability is a hot-pluggable component, and dedicated agents grow that ecosystem over time.</p>
     </div>
     <div class="features">
-      <div class="card reveal"><div class="ico">🧠</div><h3 data-i18n="f1_h">MetaAgent Orchestration</h3><p data-i18n="f1_p">A planning agent decomposes tasks, dispatches subtasks over an Agent Bus, executes in parallel, and evaluates — looping until done.</p></div>
-      <div class="card reveal"><div class="ico">🧬</div><h3 data-i18n="f2_h">Self-Evolution Loop</h3><p data-i18n="f2_p">Generator, evaluator, and optimizer agents create, assess, and refine tools, skills, agents, and environments automatically.</p></div>
-      <div class="card reveal"><div class="ico">🔌</div><h3 data-i18n="f3_h">Hot-plug Extensions</h3><p data-i18n="f3_p">The ExtensionManager layers evolved components on top of built-ins at runtime — versioned, archived, and instantly rollback-able.</p></div>
-      <div class="card reveal"><div class="ico">🗂️</div><h3 data-i18n="f4_h">Registry-driven Core</h3><p data-i18n="f4_p">Tools, agents, prompts, skills, benchmarks, hooks, constraints, memory — each self-registers via a clean mmengine registry.</p></div>
-      <div class="card reveal"><div class="ico">🔭</div><h3 data-i18n="f5_h">Live Trace UI</h3><p data-i18n="f5_p">Watch every agent step through a task in real time in your browser, with full run artifacts written to the work directory.</p></div>
-      <div class="card reveal"><div class="ico">🏆</div><h3 data-i18n="f6_h">Benchmark Suite</h3><p data-i18n="f6_p">Ships with AIME, GPQA, GSM8K, HLE, LeetCode, DeepWeb and more — datasets-first with automatic HuggingFace fallback.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-loop"/></svg></div><h3 data-i18n="f1_h">It rewrites itself</h3><p data-i18n="f1_p">A closed loop — detect gap → generate → evaluate → adopt or roll back — runs <em>while</em> serving your task, strictly separated from the user work itself. Every version is archived; any of them restores with one call.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-file-code"/></svg></div><h3 data-i18n="f2_h">Everything is HTML you can open</h3><p data-i18n="f2_p">Prompts, workflows, task documents, memory reports and per-step snapshots are complete HTML documents — executable by the runtime <em>and</em> browsable, diffable, reviewable by a human.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-shield"/></svg></div><h3 data-i18n="f3_h">The sandbox has no way out</h3><p data-i18n="f3_p">Task containers get no network interface — only loopback. The single route out is a host-side relay over a Unix socket, so egress policy lives where the sandboxed process cannot edit it.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-gauge"/></svg></div><h3 data-i18n="f4_h">Budgets the model can see</h3><p data-i18n="f4_p">Step, token and wall-time limits aren't just kill-switches: the remaining budget is rendered into the prompt every step as NORMAL / TIGHT / CRITICAL, so the agent plans around it instead of being cut off.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-panels"/></svg></div><h3 data-i18n="f5_h">Four views, one project</h3><p data-i18n="f5_p">Chat, a visual flow canvas, real VS Code in the browser, and a Science workstation with a live Jupyter kernel — all editing the same workspace, over one WebSocket protocol.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-database"/></svg></div><h3 data-i18n="f6_h">One table owns the disk</h3><p data-i18n="f6_p">Every path the framework writes is declared in a single enum-keyed table. Two writable roots, and only two — a rule enforced by a test, not by convention.</p></div>
     </div>
   </div>
 </section>
@@ -322,9 +403,9 @@
             <path d="M22,66 A40,40 0 0 1 38,22"/>
           </g>
         </svg>
-        <div class="evo-node n1"><div class="e">✨</div><div class="t" data-i18n="evo_g">Generator</div><div class="d" data-i18n="evo_g_d">creates new components</div></div>
-        <div class="evo-node n2"><div class="e">⚖️</div><div class="t" data-i18n="evo_e">Evaluator</div><div class="d" data-i18n="evo_e_d">assesses quality</div></div>
-        <div class="evo-node n3"><div class="e">🔧</div><div class="t" data-i18n="evo_o">Optimizer</div><div class="d" data-i18n="evo_o_d">refines the code</div></div>
+        <div class="evo-node n1"><div class="e"><svg class="ic"><use href="#i-sparkles"/></svg></div><div class="t" data-i18n="evo_g">Generator</div><div class="d" data-i18n="evo_g_d">writes a new component</div></div>
+        <div class="evo-node n2"><div class="e"><svg class="ic"><use href="#i-scale"/></svg></div><div class="t" data-i18n="evo_e">Evaluator</div><div class="d" data-i18n="evo_e_d">scores whether it helped</div></div>
+        <div class="evo-node n3"><div class="e"><svg class="ic"><use href="#i-sliders"/></svg></div><div class="t" data-i18n="evo_o">Optimizer</div><div class="d" data-i18n="evo_o_d">rewrites an existing one</div></div>
         <div class="evo-center" data-i18n="evo_center">Evolving Ecosystem</div>
       </div>
 
@@ -332,12 +413,32 @@
         <h3 data-i18n="evo_side_h">Immutable core, mutable everything-else</h3>
         <p data-i18n="evo_side_p">Hand-written built-ins live in <code>src/</code> and never change. Evolved components live in an external <code>extension/</code> tree, loaded and versioned by the ExtensionManager — so the system can grow safely and roll back instantly.</p>
         <div class="evo-targets">
-          <span class="target">🧩 <span data-i18n="evo_t1">Tools</span></span>
-          <span class="target">📘 <span data-i18n="evo_t2">Skills</span></span>
-          <span class="target">🤖 <span data-i18n="evo_t3">Agents</span></span>
-          <span class="target">🌐 <span data-i18n="evo_t4">Environments</span></span>
+          <span class="target"><svg class="ic ic-sm"><use href="#i-wrench"/></svg><span data-i18n="evo_t1">Tools</span></span>
+          <span class="target"><svg class="ic ic-sm"><use href="#i-book"/></svg><span data-i18n="evo_t2">Skills</span></span>
+          <span class="target"><svg class="ic ic-sm"><use href="#i-cpu"/></svg><span data-i18n="evo_t3">Agents</span></span>
+          <span class="target"><svg class="ic ic-sm"><use href="#i-monitor"/></svg><span data-i18n="evo_t4">Environments</span></span>
+          <span class="target"><svg class="ic ic-sm"><use href="#i-plug"/></svg><span data-i18n="evo_t5">Connectors</span></span>
+          <span class="target"><svg class="ic ic-sm"><use href="#i-flow"/></svg><span data-i18n="evo_t6">Workflows</span></span>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HTML-NATIVE ============ -->
+<section id="html-native">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow" data-i18n="html_eyebrow">HTML-native</div>
+      <h2 data-i18n="html_h">The agent's files are the files you open</h2>
+      <p data-i18n="html_p">Prompts, workflows, task documents and step snapshots are complete HTML documents — executed by the runtime and rendered in a browser from the same bytes. There is no "export to HTML" step that can drift.</p>
+    </div>
+    <div class="rows reveal">
+      <div class="row"><b data-i18n="html_r1">Agent prompt</b><span><code>prompt/default/&lt;agent&gt;.html</code> — <span data-i18n="html_r1d">run by <code>prompt_manager</code>, styled by <code>prompt.css</code></span></span></div>
+      <div class="row"><b data-i18n="html_r2">Dynamic workflow</b><span><code>workflow/default/&lt;name&gt;.html</code> — <span data-i18n="html_r2d">compiled by <code>WorkflowCompiler</code> into the runtime</span></span></div>
+      <div class="row"><b data-i18n="html_r3">Task document</b><span><code>examples/tasks/*.html</code> — <span data-i18n="html_r3d">loaded by <code>task/loader.py</code></span></span></div>
+      <div class="row"><b data-i18n="html_r4">Memory report</b><span><code>FileSystemMemory</code> — <span data-i18n="html_r4d">a JSON twin backs the runtime, the HTML is for you</span></span></div>
+      <div class="row"><b data-i18n="html_r5">Step snapshot</b><span><code>&lt;log_root&gt;/messages/&lt;agent&gt;/NNNN.html</code> — <span data-i18n="html_r5d">every step, in the <em>same</em> stylesheet as the prompt</span></span></div>
     </div>
   </div>
 </section>
@@ -347,10 +448,42 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <div class="eyebrow" data-i18n="reg_eyebrow">Registry-driven</div>
-      <h2 data-i18n="reg_h">Every capability is a component</h2>
-      <p data-i18n="reg_p">Each module self-registers with an mmengine registry — discoverable, swappable, and evolvable.</p>
+      <h2 data-i18n="reg_h">Nine kinds of capability, one contract</h2>
+      <p data-i18n="reg_p">Every callable manager implements the same <code>get_schema()</code> — <code>json</code> returns the exact function-calling object sent to the model, <code>md</code> returns a human-readable contract. The prompt carries only a compact roster; full schemas travel in the request.</p>
     </div>
-    <div class="chips reveal">
+
+    <div class="caps reveal">
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-cpu"/></svg></div><div>
+        <h4><span data-i18n="cap1">Agent</span> <em>29</em></h4>
+        <p data-i18n="cap1_d">Reasoning + execution loop: 8 actors, 7 generators, 7 evaluators, 7 optimizers.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-wrench"/></svg></div><div>
+        <h4><span data-i18n="cap2">Tool</span> <em>27</em></h4>
+        <p data-i18n="cap2_d">One atomic operation — bash, file r/w/edit, git, grep, web fetch, code interpreter, deploy.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-book"/></svg></div><div>
+        <h4><span data-i18n="cap3">Skill</span> <em>83</em></h4>
+        <p data-i18n="cap3_d">Filesystem-backed SOPs (<code>SKILL.md</code> + scripts) across 11 categories.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-plug"/></svg></div><div>
+        <h4><span data-i18n="cap4">Connector</span> <em>25</em></h4>
+        <p data-i18n="cap4_d">An external MCP server, each action projected as its own function.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-monitor"/></svg></div><div>
+        <h4><span data-i18n="cap5">Environment</span> <em>4</em></h4>
+        <p data-i18n="cap5_d">Stateful worlds with <code>@action</code> methods — browser, Linux desktop, SSH, artifact renderer.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-flow"/></svg></div><div>
+        <h4><span data-i18n="cap6">Workflow</span></h4>
+        <p data-i18n="cap6_d">An executable HTML multi-agent program, compiled and run on the shared runtime.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-layers"/></svg></div><div>
+        <h4><span data-i18n="cap7">Memory system</span> <em>2</em></h4>
+        <p data-i18n="cap7_d">Pluggable per-session memory, tiered — and itself evolvable.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-boxes"/></svg></div><div>
+        <h4><span data-i18n="cap8">Plugin</span> <em>89 · 332</em></h4>
+        <p data-i18n="cap8_d">One outside service each (OpenAI, Tavily, Chroma, Composio…), exposing 332 datasource tools.</p></div></div>
+      <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-database"/></svg></div><div>
+        <h4><span data-i18n="cap9">Knowledge · Process</span></h4>
+        <p data-i18n="cap9_d">RAG over named corpora (<code>bm25</code>, <code>tfidf</code>…) and pure record/text transforms.</p></div></div>
+    </div>
+
+    <p style="text-align:center;color:var(--muted-2);font-size:13.5px;margin-top:30px" data-i18n="reg_note">Each self-registers with an mmengine registry — discoverable, swappable, evolvable:</p>
+    <div class="chips reveal" style="margin-top:14px">
       <span class="chip"><b>@TOOL</b></span>
       <span class="chip"><b>@AGENT</b></span>
       <span class="chip"><b>@PROMPT</b></span>
@@ -397,6 +530,63 @@
     <p style="text-align:center;margin-top:34px">
       <a class="btn primary" href="ui.html" style="padding:13px 26px;font-size:15px" data-i18n="ui_cta">Take the full tour →</a>
     </p>
+  </div>
+</section>
+
+<!-- ============ SAFETY ============ -->
+<section id="safety">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow" data-i18n="safe_eyebrow">Sandbox &amp; safety</div>
+      <h2 data-i18n="safe_h">Denial is the default state of the world</h2>
+      <p data-i18n="safe_p">A task sandbox usually needs <em>some</em> network — the agent's brain has to reach a model endpoint — while the work itself must not reach the open internet. A boolean flag cannot express that.</p>
+    </div>
+
+    <div class="split reveal">
+      <figure class="egress" style="margin:0">
+        <svg viewBox="0 0 460 216" role="img" aria-labelledby="egt" style="width:100%;height:auto;display:block">
+          <title id="egt">The container has no network interface; its only route out is a Unix socket to a host-side relay that checks policy and records every attempt.</title>
+          <defs>
+            <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#22d3ee"/>
+            </marker>
+          </defs>
+          <rect x="6" y="16" width="196" height="184" rx="12" fill="rgba(255,92,157,.06)" stroke="rgba(255,255,255,.18)"/>
+          <text x="18" y="38" fill="#9aa3c7" font-size="11.5" font-family="ui-monospace,monospace">container</text>
+          <rect x="24" y="52" width="160" height="34" rx="8" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.16)"/>
+          <text x="104" y="73" fill="#eef1ff" font-size="12" text-anchor="middle">agent process</text>
+          <path d="M104,88 L104,110" stroke="#22d3ee" stroke-width="1.6" marker-end="url(#ar)" fill="none"/>
+          <rect x="24" y="116" width="160" height="34" rx="8" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.16)"/>
+          <text x="104" y="137" fill="#eef1ff" font-size="12" text-anchor="middle">forwarder.py</text>
+          <text x="104" y="176" fill="#ff8fb4" font-size="11" text-anchor="middle">no network interface</text>
+          <text x="104" y="190" fill="#ff8fb4" font-size="11" text-anchor="middle">loopback only</text>
+
+          <path d="M188,133 L262,133" stroke="#22d3ee" stroke-width="1.6" marker-end="url(#ar)" fill="none" stroke-dasharray="5 4"/>
+          <text x="225" y="126" fill="#9aa3c7" font-size="10.5" text-anchor="middle" font-family="ui-monospace,monospace">unix socket</text>
+
+          <rect x="266" y="16" width="188" height="184" rx="12" fill="rgba(34,211,238,.06)" stroke="rgba(255,255,255,.18)"/>
+          <text x="278" y="38" fill="#9aa3c7" font-size="11.5" font-family="ui-monospace,monospace">host</text>
+          <rect x="282" y="52" width="156" height="98" rx="8" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.16)"/>
+          <text x="360" y="73" fill="#eef1ff" font-size="12" text-anchor="middle">relay.py</text>
+          <text x="298" y="95" fill="#9aa3c7" font-size="11">├─ policy check</text>
+          <text x="298" y="115" fill="#9aa3c7" font-size="11">├─ record the attempt</text>
+          <text x="298" y="135" fill="#9aa3c7" font-size="11">└─ open, or refuse</text>
+          <text x="360" y="176" fill="#7ee6c0" font-size="11" text-anchor="middle">policy lives out here —</text>
+          <text x="360" y="190" fill="#7ee6c0" font-size="11" text-anchor="middle">where the sandbox can't edit it</text>
+        </svg>
+      </figure>
+
+      <div>
+        <div class="rows">
+          <div class="row"><b data-i18n="safe_r1">No interface at all</b><span data-i18n="safe_r1d">Not a filter that must catch everything — the container simply has nowhere to go.</span></div>
+          <div class="row"><b data-i18n="safe_r2">A socket, not a port</b><span data-i18n="safe_r2d">File permissions are a boundary; a listening port would be reachable by anything else on the machine.</span></div>
+          <div class="row"><b data-i18n="safe_r3">deny beats allow</b><span data-i18n="safe_r3d">Always. With <code>default_allow=False</code> a forgotten host fails closed.</span></div>
+          <div class="row"><b data-i18n="safe_r4">Derived allowlist</b><span data-i18n="safe_r4d">Model hosts come from the deployment's own <code>*_API_BASE</code>, never hardcoded.</span></div>
+          <div class="row"><b data-i18n="safe_r5">Every attempt recorded</b><span data-i18n="safe_r5d">"The work had no internet access" becomes a claim a run can substantiate.</span></div>
+        </div>
+        <p style="margin-top:20px;color:var(--muted);font-size:14px" data-i18n="safe_more">Three more layers sit around this one: six sandbox backends for isolation, a permission manager that classifies command intent before anything runs, and a write-ahead ledger that force-removes containers a dead run leaked.</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -463,7 +653,7 @@ python examples/run_meta_agent.py <span class="k">\</span>
       <h2 data-i18n="cta_h">Ready to build self-evolving agents?</h2>
       <p data-i18n="cta_p">Clone the repo, run the MetaAgent, and watch the ecosystem grow.</p>
       <div class="hero-cta">
-        <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px">★ <span data-i18n="cta_b1">Star on GitHub</span></a>
+        <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px"><svg class="ic ic-sm"><use href="#i-sparkles"/></svg> <span data-i18n="cta_b1">Star on GitHub</span></a>
         <a class="btn" href="https://github.com/DVampire/AgentEvolver/blob/main/README.md" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px" data-i18n="cta_b2">Read the Docs →</a>
       </div>
     </div>
@@ -474,7 +664,7 @@ python examples/run_meta_agent.py <span class="k">\</span>
 <footer>
   <div class="wrap foot-inner">
     <div>
-      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:14px">🧬</span> AgentEvolver</div>
+      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px"><svg class="ic" style="width:15px;height:15px;stroke-width:2"><use href="#i-loop"/></svg></span> AgentEvolver</div>
       <div style="margin-top:8px;font-size:13px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
     </div>
     <div class="foot-links">
@@ -490,31 +680,57 @@ python examples/run_meta_agent.py <span class="k">\</span>
 /* ---------------- i18n ---------------- */
 const I18N = {
   en:{
-    nav_features:"Features", nav_arch:"Architecture", nav_evo:"Self-Evolution", nav_ui:"Web UI", nav_bench:"Benchmarks", nav_start:"Quick Start",
+    nav_features:"Highlights", nav_arch:"Architecture", nav_evo:"Self-Evolution", nav_caps:"Capabilities", nav_ui:"Web UI", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start",
     hero_pill:"Self-evolving multi-agent framework",
     hero_title_html:'Agents that <span class="grad">evolve themselves</span>',
     hero_sub:"A MetaAgent orchestrates specialized sub-agents to solve tasks — while generator, evaluator, and optimizer agents continuously grow the tool, skill, and agent ecosystem.",
-    hero_cta1:"🚀 Get Started", hero_cta2:"Explore Architecture →",
-    stat_reg:"Component registries", stat_sa:"Specialist sub-agents", stat_evo:"Evolution roles per component", stat_bench:"Built-in benchmarks",
+    hero_cta1:"Get Started", hero_cta2:"Explore Architecture →",
+    stat_mod:"Framework modules, ~91k lines", stat_ag:"Built-in agents", stat_sk:"Skills, in 11 categories", stat_tl:"Atomic tools",
+    stat_mcp:"MCP connectors", stat_pl:"Plugin tools, from 89 services", stat_gw:"Gateway commands", stat_bench:"Benchmarks · 41 test modules",
     feat_eyebrow:"Why AgentEvolver", feat_h:"Built to orchestrate — and to improve itself",
-    feat_p:"A clean, registry-driven core where every capability is a hot-pluggable component, and dedicated agents grow that ecosystem over time.",
-    f1_h:"MetaAgent Orchestration", f1_p:"A planning agent decomposes tasks, dispatches subtasks over an Agent Bus, executes in parallel, and evaluates — looping until done.",
-    f2_h:"Self-Evolution Loop", f2_p:"Generator, evaluator, and optimizer agents create, assess, and refine tools, skills, agents, and environments automatically.",
-    f3_h:"Hot-plug Extensions", f3_p:"The ExtensionManager layers evolved components on top of built-ins at runtime — versioned, archived, and instantly rollback-able.",
-    f4_h:"Registry-driven Core", f4_p:"Tools, agents, prompts, skills, benchmarks, hooks, constraints, memory — each self-registers via a clean mmengine registry.",
-    f5_h:"Live Trace UI", f5_p:"Watch every agent step through a task in real time in your browser, with full run artifacts written to the work directory.",
-    f6_h:"Benchmark Suite", f6_p:"Ships with AIME, GPQA, GSM8K, HLE, LeetCode, DeepWeb and more — datasets-first with automatic HuggingFace fallback.",
+    feat_p:"A registry-driven core where every capability is a hot-pluggable component, dedicated agents grow that ecosystem over time, and the artifacts they produce are files you can open.",
+    f1_h:"It rewrites itself", f1_p:"A closed loop — detect gap → generate → evaluate → adopt or roll back — runs <em>while</em> serving your task, strictly separated from the user work itself. Every version is archived; any of them restores with one call.",
+    f2_h:"Everything is HTML you can open", f2_p:"Prompts, workflows, task documents, memory reports and per-step snapshots are complete HTML documents — executable by the runtime <em>and</em> browsable, diffable, reviewable by a human.",
+    f3_h:"The sandbox has no way out", f3_p:"Task containers get no network interface — only loopback. The single route out is a host-side relay over a Unix socket, so egress policy lives where the sandboxed process cannot edit it.",
+    f4_h:"Budgets the model can see", f4_p:"Step, token and wall-time limits aren't just kill-switches: the remaining budget is rendered into the prompt every step as NORMAL / TIGHT / CRITICAL, so the agent plans around it instead of being cut off.",
+    f5_h:"Four views, one project", f5_p:"Chat, a visual flow canvas, real VS Code in the browser, and a Science workstation with a live Jupyter kernel — all editing the same workspace, over one WebSocket protocol.",
+    f6_h:"One table owns the disk", f6_p:"Every path the framework writes is declared in a single enum-keyed table. Two writable roots, and only two — a rule enforced by a test, not by convention.",
+    html_eyebrow:"HTML-native", html_h:"The agent's files are the files you open",
+    html_p:"Prompts, workflows, task documents and step snapshots are complete HTML documents — executed by the runtime and rendered in a browser from the same bytes. There is no \"export to HTML\" step that can drift.",
+    html_r1:"Agent prompt", html_r1d:"run by <code>prompt_manager</code>, styled by <code>prompt.css</code>",
+    html_r2:"Dynamic workflow", html_r2d:"compiled by <code>WorkflowCompiler</code> into the runtime",
+    html_r3:"Task document", html_r3d:"loaded by <code>task/loader.py</code>",
+    html_r4:"Memory report", html_r4d:"a JSON twin backs the runtime, the HTML is for you",
+    html_r5:"Step snapshot", html_r5d:"every step, in the <em>same</em> stylesheet as the prompt",
+    cap1:"Agent", cap1_d:"Reasoning + execution loop: 8 actors, 7 generators, 7 evaluators, 7 optimizers.",
+    cap2:"Tool", cap2_d:"One atomic operation — bash, file r/w/edit, git, grep, web fetch, code interpreter, deploy.",
+    cap3:"Skill", cap3_d:"Filesystem-backed SOPs (<code>SKILL.md</code> + scripts) across 11 categories.",
+    cap4:"Connector", cap4_d:"An external MCP server, each action projected as its own function.",
+    cap5:"Environment", cap5_d:"Stateful worlds with <code>@action</code> methods — browser, Linux desktop, SSH, artifact renderer.",
+    cap6:"Workflow", cap6_d:"An executable HTML multi-agent program, compiled and run on the shared runtime.",
+    cap7:"Memory system", cap7_d:"Pluggable per-session memory, tiered — and itself evolvable.",
+    cap8:"Plugin", cap8_d:"One outside service each (OpenAI, Tavily, Chroma, Composio…), exposing 332 datasource tools.",
+    cap9:"Knowledge · Process", cap9_d:"RAG over named corpora (<code>bm25</code>, <code>tfidf</code>…) and pure record/text transforms.",
+    reg_note:"Each self-registers with an mmengine registry — discoverable, swappable, evolvable:",
+    safe_eyebrow:"Sandbox & safety", safe_h:"Denial is the default state of the world",
+    safe_p:"A task sandbox usually needs <em>some</em> network — the agent's brain has to reach a model endpoint — while the work itself must not reach the open internet. A boolean flag cannot express that.",
+    safe_r1:"No interface at all", safe_r1d:"Not a filter that must catch everything — the container simply has nowhere to go.",
+    safe_r2:"A socket, not a port", safe_r2d:"File permissions are a boundary; a listening port would be reachable by anything else on the machine.",
+    safe_r3:"deny beats allow", safe_r3d:"Always. With <code>default_allow=False</code> a forgotten host fails closed.",
+    safe_r4:"Derived allowlist", safe_r4d:"Model hosts come from the deployment's own <code>*_API_BASE</code>, never hardcoded.",
+    safe_r5:"Every attempt recorded", safe_r5d:"\"The work had no internet access\" becomes a claim a run can substantiate.",
+    safe_more:"Three more layers sit around this one: six sandbox backends for isolation, a permission manager that classifies command intent before anything runs, and a write-ahead ledger that force-removes containers a dead run leaked.",
     arch_eyebrow:"Architecture", arch_h:"One planner, many specialists",
     arch_p:"The MetaAgent plans and dispatches work over the Agent Bus to specialist sub-agents that run in parallel and return results for evaluation.",
     evo_eyebrow:"The Evolution Engine", evo_h:"A framework that rewrites itself",
     evo_p:"For every kind of component, three agents form a closed improvement loop — new capabilities are born, judged, and refined without touching the immutable core.",
-    evo_g:"Generator", evo_g_d:"creates new components", evo_e:"Evaluator", evo_e_d:"assesses quality", evo_o:"Optimizer", evo_o_d:"refines the code",
+    evo_g:"Generator", evo_g_d:"writes a new component", evo_e:"Evaluator", evo_e_d:"scores whether it helped", evo_o:"Optimizer", evo_o_d:"rewrites an existing one",
     evo_center:"Evolving Ecosystem",
     evo_side_h:"Immutable core, mutable everything-else",
     evo_side_p:"Hand-written built-ins live in <code>src/</code> and never change. Evolved components live in an external <code>extension/</code> tree, loaded and versioned by the ExtensionManager — so the system can grow safely and roll back instantly.",
-    evo_t1:"Tools", evo_t2:"Skills", evo_t3:"Agents", evo_t4:"Environments",
-    reg_eyebrow:"Registry-driven", reg_h:"Every capability is a component",
-    reg_p:"Each module self-registers with an mmengine registry — discoverable, swappable, and evolvable.",
+    evo_t1:"Tools", evo_t2:"Skills", evo_t3:"Agents", evo_t4:"Environments", evo_t5:"Connectors", evo_t6:"Workflows",
+    reg_eyebrow:"The capability ecosystem", reg_h:"Nine kinds of capability, one contract",
+    reg_p:"Every callable manager implements the same <code>get_schema()</code> — <code>json</code> returns the exact function-calling object sent to the model, <code>md</code> returns a human-readable contract. The prompt carries only a compact roster; full schemas travel in the request.",
     ui_eyebrow:"The workbench", ui_h:"Drive it from the browser",
     ui_p:"A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, and a desktop the agent can actually use.",
     ui_t1:"Canvas flow editor", ui_t2:"Editor on the workspace", ui_t3:"Notebook &amp; compute", ui_t4:"Machines over noVNC",
@@ -528,31 +744,57 @@ const I18N = {
     foot_tag:"A self-evolving multi-agent framework · MIT License", foot_readme:"README", foot_top:"Back to top ↑"
   },
   zh:{
-    nav_features:"特性", nav_arch:"架构", nav_evo:"自进化", nav_ui:"Web 界面", nav_bench:"基准测试", nav_start:"快速开始",
+    nav_features:"亮点", nav_arch:"架构", nav_evo:"自进化", nav_caps:"能力", nav_ui:"Web 界面", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始",
     hero_pill:"自进化的多智能体框架",
     hero_title_html:'会<span class="grad">自我进化</span>的智能体',
     hero_sub:"由 MetaAgent 编排各领域专精子智能体来完成任务；同时 generator、evaluator、optimizer 智能体持续壮大工具、技能与智能体生态。",
-    hero_cta1:"🚀 快速开始", hero_cta2:"探索架构 →",
-    stat_reg:"组件注册表", stat_sa:"专精子智能体", stat_evo:"每类组件的进化角色", stat_bench:"内置基准测试",
+    hero_cta1:"快速开始", hero_cta2:"探索架构 →",
+    stat_mod:"框架模块，约 9.1 万行", stat_ag:"内置智能体", stat_sk:"技能，分 11 类", stat_tl:"原子工具",
+    stat_mcp:"MCP 连接器", stat_pl:"插件工具，来自 89 个服务", stat_gw:"Gateway 命令", stat_bench:"基准测试 · 41 个测试模块",
     feat_eyebrow:"为什么选择 AgentEvolver", feat_h:"既能编排，也能自我改进",
-    feat_p:"简洁、以注册表驱动的内核：每项能力都是可热插拔的组件，并由专门的智能体让整个生态随时间不断成长。",
-    f1_h:"MetaAgent 编排", f1_p:"规划智能体拆解任务、通过 Agent Bus 分发子任务、并行执行并评估，循环直至完成。",
-    f2_h:"自进化闭环", f2_p:"generator、evaluator、optimizer 智能体自动创建、评估并优化工具、技能、智能体与环境。",
-    f3_h:"热插拔扩展", f3_p:"ExtensionManager 在运行时将进化出的组件叠加到内置组件之上——带版本、可归档、可即时回滚。",
-    f4_h:"注册表驱动内核", f4_p:"工具、智能体、提示词、技能、基准、钩子、约束、记忆——都通过简洁的 mmengine 注册表自注册。",
-    f5_h:"实时 Trace UI", f5_p:"在浏览器中实时观看每个智能体逐步执行任务，完整运行产物写入工作目录。",
-    f6_h:"基准测试套件", f6_p:"内置 AIME、GPQA、GSM8K、HLE、LeetCode、DeepWeb 等——本地数据优先，自动回退到 HuggingFace 下载。",
+    feat_p:"以注册表驱动的内核：每项能力都是可热插拔的组件，专门的智能体让生态随时间成长，而它们产出的每份产物都是你能直接打开的文件。",
+    f1_h:"它会改写自己", f1_p:"一条闭环——发现缺口 → 生成 → 评估 → 采纳或回滚——在<em>服务你的任务的同时</em>运行，且与用户工作严格分离。每个版本都归档，任意一版一次调用即可恢复。",
+    f2_h:"一切都是可直接打开的 HTML", f2_p:"提示词、工作流、任务文档、记忆报告和每一步快照，都是完整的 HTML 文档——既能被运行时执行，<em>也能</em>被人打开、diff、评审。",
+    f3_h:"沙箱根本没有出口", f3_p:"任务容器没有任何网络接口，只有 loopback。唯一的出路是宿主侧经 Unix socket 的中继，于是出网策略活在沙箱内进程改不到的地方。",
+    f4_h:"模型看得见的预算", f4_p:"步数、token、墙钟时间不只是断路器：剩余预算每一步都以 NORMAL / TIGHT / CRITICAL 渲染进提示词，让智能体主动绕着它规划，而不是被一刀切断。",
+    f5_h:"四个视图，同一个工程", f5_p:"Chat、可视化流程画布、浏览器里的真 VS Code，以及带实时 Jupyter 内核的 Science 工作台——全都编辑同一份 workspace，走同一条 WebSocket 协议。",
+    f6_h:"一张表管住整块磁盘", f6_p:"框架写入的每一条路径都声明在一张 enum 索引的表里。可写根目录只有两个，且仅有两个——这条规则由测试强制，不靠约定。",
+    html_eyebrow:"HTML 原生", html_h:"智能体读写的文件，就是你打开的文件",
+    html_p:"提示词、工作流、任务文档和步骤快照都是完整的 HTML 文档——运行时执行它，浏览器渲染它，用的是同一份字节。不存在会走样的「导出成 HTML」环节。",
+    html_r1:"智能体提示词", html_r1d:"由 <code>prompt_manager</code> 执行，<code>prompt.css</code> 负责呈现",
+    html_r2:"动态工作流", html_r2d:"由 <code>WorkflowCompiler</code> 编译进运行时",
+    html_r3:"任务文档", html_r3d:"由 <code>task/loader.py</code> 载入",
+    html_r4:"记忆报告", html_r4d:"运行时读的是 JSON 孪生体，HTML 是给你看的",
+    html_r5:"步骤快照", html_r5d:"每一步一份，用的是和提示词<em>同一套</em>样式表",
+    cap1:"智能体", cap1_d:"推理 + 执行闭环：8 个执行者、7 个生成器、7 个评估器、7 个优化器。",
+    cap2:"工具", cap2_d:"单一原子操作——bash、文件读写编辑、git、grep、网页抓取、代码解释器、部署。",
+    cap3:"技能", cap3_d:"以文件系统承载的 SOP（<code>SKILL.md</code> + 脚本），共 11 个类别。",
+    cap4:"连接器", cap4_d:"一个外部 MCP 服务器，每个 action 投影成独立的函数。",
+    cap5:"环境", cap5_d:"带 <code>@action</code> 方法的有状态世界——浏览器、Linux 桌面、SSH、产物渲染器。",
+    cap6:"工作流", cap6_d:"可执行的 HTML 多智能体程序，编译后跑在共享运行时上。",
+    cap7:"记忆系统", cap7_d:"可插拔的会话级记忆，分层，且自身也可进化。",
+    cap8:"插件", cap8_d:"每个对应一个外部服务（OpenAI、Tavily、Chroma、Composio…），共暴露 332 个数据源工具。",
+    cap9:"知识 · 处理", cap9_d:"对命名语料做 RAG（<code>bm25</code>、<code>tfidf</code>…），以及纯记录/文本变换。",
+    reg_note:"每一项都通过 mmengine 注册表自注册——可发现、可替换、可进化：",
+    safe_eyebrow:"沙箱与安全", safe_h:"「拒绝」是这个世界的默认状态",
+    safe_p:"任务沙箱通常<em>需要一点</em>网络——智能体的大脑得够得到模型端点——但工作本身绝不能碰到公网。一个布尔开关表达不了这件事。",
+    safe_r1:"压根没有网络接口", safe_r1d:"不是一个必须拦住一切的过滤器——容器根本无处可去。",
+    safe_r2:"是 socket，不是端口", safe_r2d:"文件权限本身就是边界；换成监听端口，机器上任何东西都能连上来。",
+    safe_r3:"deny 永远压过 allow", safe_r3d:"始终如此。配上 <code>default_allow=False</code>，漏配的主机会安全地失败。",
+    safe_r4:"允许列表是推导出来的", safe_r4d:"模型主机来自部署自己的 <code>*_API_BASE</code>，绝不硬编码。",
+    safe_r5:"每一次尝试都留痕", safe_r5d:"「这次运行没有联网」因此成为可举证的结论，而不是对配置文件的期望。",
+    safe_more:"这一层之外还有三层：六种沙箱后端负责隔离；权限管理器在任何东西执行前先对命令意图分类；预写式账本会强制清掉上一次崩溃遗留的容器。",
     arch_eyebrow:"架构", arch_h:"一个规划者，众多专家",
     arch_p:"MetaAgent 负责规划，并通过 Agent Bus 将工作分发给并行运行的专精子智能体，再收集结果进行评估。",
     evo_eyebrow:"进化引擎", evo_h:"一个会改写自己的框架",
     evo_p:"对每一类组件，三个智能体构成闭环改进——在不触碰不可变内核的前提下，让新能力被创造、评判并打磨。",
-    evo_g:"生成器", evo_g_d:"创建新组件", evo_e:"评估器", evo_e_d:"评估质量", evo_o:"优化器", evo_o_d:"打磨代码",
+    evo_g:"生成器", evo_g_d:"写出一个新组件", evo_e:"评估器", evo_e_d:"评判它是否真有帮助", evo_o:"优化器", evo_o_d:"改写已有组件的源码",
     evo_center:"进化中的生态",
     evo_side_h:"内核不可变，其余皆可变",
     evo_side_p:"手写的内置组件位于 <code>src/</code>，永不变动。进化出的组件位于外部 <code>extension/</code> 目录，由 ExtensionManager 加载并版本化——因此系统能安全成长，并可即时回滚。",
-    evo_t1:"工具", evo_t2:"技能", evo_t3:"智能体", evo_t4:"环境",
-    reg_eyebrow:"注册表驱动", reg_h:"每项能力都是一个组件",
-    reg_p:"每个模块都通过 mmengine 注册表自注册——可发现、可替换、可进化。",
+    evo_t1:"工具", evo_t2:"技能", evo_t3:"智能体", evo_t4:"环境", evo_t5:"连接器", evo_t6:"工作流",
+    reg_eyebrow:"能力生态", reg_h:"九类能力，同一套契约",
+    reg_p:"每个可调用的 manager 都实现同一个 <code>get_schema()</code>——<code>json</code> 返回发给模型的函数调用对象原文，<code>md</code> 返回给人读的契约。提示词里只带一份紧凑名册，完整 schema 随请求走。",
     ui_eyebrow:"浏览器工作台", ui_h:"在浏览器里直接驱动它",
     ui_p:"React 工作台通过 WebSocket 与 Python Gateway 通信：同一个会话四种工作视图、实时的能力目录，以及一块 agent 真能上手操作的桌面。",
     ui_t1:"Canvas 流程编辑器", ui_t2:"工作区编辑器", ui_t3:"Notebook 与算力", ui_t4:"noVNC 机器环境",

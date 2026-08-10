@@ -114,6 +114,18 @@
   .foot-links{display:flex;gap:20px;flex-wrap:wrap}
   .foot-links a:hover{color:var(--text)}
 
+  /* The brand, the language switch and the GitHub button do not fit side by
+     side on a phone; shrink the two on the right rather than let the page
+     scroll sideways. */
+  html{overflow-x:hidden}
+  @media(max-width:560px){
+    .nav-inner{gap:10px}
+    .nav-actions{gap:8px}
+    .nav-actions .btn{padding:8px 11px;font-size:13px}
+    .lang button{padding:5px 9px}
+    .brand{font-size:16px}
+  }
+
   .reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease}
   .reveal.in{opacity:1;transform:none}
   @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
