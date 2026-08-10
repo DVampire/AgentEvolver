@@ -149,10 +149,13 @@
   <div class="wrap">
     <span class="pill"><span class="dot"></span><span data-i18n="hero_pill">Recorded from a live gateway session</span></span>
     <h1 class="title" data-i18n="hero_title_html">The workbench, <span class="grad">one feature at a time</span></h1>
-    <p class="subtitle" data-i18n="hero_sub">AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Below is one short clip per part of it — the layout, the four workspaces, the capability catalogue, the session panels, the machines, and the model registry.</p>
+    <p class="subtitle" data-i18n="hero_sub">AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Eleven short clips below, one per feature — the layout, each of the four workspaces in turn, the capability catalogue, the session panels, the machines, and the model registry.</p>
     <div class="toc">
       <a href="#layout" data-i18n="toc1">Layout</a>
       <a href="#workspaces" data-i18n="toc2">Workspaces</a>
+      <a href="#canvas" data-i18n="toc9">Canvas</a>
+      <a href="#code" data-i18n="toc10">Code</a>
+      <a href="#science" data-i18n="toc11">Science</a>
       <a href="#capabilities" data-i18n="toc3">Capabilities</a>
       <a href="#composer" data-i18n="toc4">Task composer</a>
       <a href="#panels" data-i18n="toc5">Session panels</a>
@@ -207,16 +210,80 @@
   </div>
 </section>
 
-<!-- ============ 3. CAPABILITIES ============ -->
-<section class="feat" id="capabilities">
+<!-- ============ 3. CANVAS ============ -->
+<section class="feat" id="canvas">
   <div class="wrap feat-grid reveal">
     <figure class="shot">
-      <video src="assets/ui/03-capabilities.mp4" poster="assets/ui/03-capabilities.jpg"
+      <video src="assets/ui/03-canvas.mp4" poster="assets/ui/03-canvas.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>03-canvas.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">03</div>
+      <h2 data-i18n="s9_h">Wire a flow instead of describing one</h2>
+      <p data-i18n="s9_p">The Canvas is a node editor for the times a picture beats a paragraph. Components are dragged in from a categorised palette and joined into a flow you can save and reuse — a human-facing library, separate from the agent-facing workflows.</p>
+      <ul class="kv">
+        <li data-i18n="s9_a"><b>Input &amp; Output</b> — where a flow takes in and hands back</li>
+        <li data-i18n="s9_b"><b>Flow control</b> — map, branch, loop, reduce, verify, checkpoint</li>
+        <li data-i18n="s9_c"><b>Agents</b> and <b>Data</b> — delegation and dataset steps as nodes</li>
+        <li data-i18n="s9_d"><b>Processing</b> — select, filter, sort, split, regex over records</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. CODE ============ -->
+<section class="feat flip" id="code">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/04-code.mp4" poster="assets/ui/04-code.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>04-code.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">04</div>
+      <h2 data-i18n="s10_h">A real editor, on the session's own files</h2>
+      <p data-i18n="s10_p">Code opens an OpenVSCode server rooted at the session workspace — the same <code>/workspace</code> the agent writes into. The first launch boots the editor container, so it takes a moment; after that it is just VS Code in a tab.</p>
+      <ul class="kv">
+        <li data-i18n="s10_a"><b>Explorer</b> — the session workspace, nothing else</li>
+        <li data-i18n="s10_b"><b>Full editor</b> — search, source control, extensions, terminal</li>
+        <li data-i18n="s10_c"><b>Per-session container</b> — destroyed with the session</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. SCIENCE ============ -->
+<section class="feat" id="science">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/05-science.mp4" poster="assets/ui/05-science.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>05-science.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">05</div>
+      <h2 data-i18n="s11_h">A kernel you and the agent share</h2>
+      <p data-i18n="s11_p">Science attaches a Jupyter kernel to the very files the agent is working on. You can poke at a result the moment it lands, and the agent can run a cell whenever it needs one — the first boot takes about ten seconds, then cells run in milliseconds.</p>
+      <ul class="kv">
+        <li data-i18n="s11_a"><b>Notebook</b> — run cells, interrupt, restart, save as <code>.ipynb</code></li>
+        <li data-i18n="s11_b"><b>Compute</b> — live GPU, CPU, memory and disk for the session host</li>
+        <li data-i18n="s11_c"><b>JupyterLab</b> — an escape hatch to the full interface</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. CAPABILITIES ============ -->
+<section class="feat flip" id="capabilities">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/06-capabilities.mp4" poster="assets/ui/06-capabilities.jpg"
              muted loop playsinline preload="none" data-autoplay></video>
       <figcaption>03-capabilities.mp4</figcaption>
     </figure>
     <div class="feat-copy">
-      <div class="num">03</div>
+      <div class="num">06</div>
       <h2 data-i18n="s3_h">A catalogue of everything the agent may use</h2>
       <p data-i18n="s3_p">Each registry in the framework surfaces here as a browsable, searchable list, and what you tick is what the session is handed. The counts beside each entry are live — they grow as the evolution loop registers new components.</p>
       <ul class="kv">
@@ -230,15 +297,15 @@
 </section>
 
 <!-- ============ 4. COMPOSER ============ -->
-<section class="feat flip" id="composer">
+<section class="feat" id="composer">
   <div class="wrap feat-grid reveal">
     <figure class="shot">
-      <video src="assets/ui/04-composer.mp4" poster="assets/ui/04-composer.jpg"
+      <video src="assets/ui/07-composer.mp4" poster="assets/ui/07-composer.jpg"
              muted loop playsinline preload="none" data-autoplay></video>
       <figcaption>04-composer.mp4</figcaption>
     </figure>
     <div class="feat-copy">
-      <div class="num">04</div>
+      <div class="num">07</div>
       <h2 data-i18n="s4_h">Start from a card, or just say it</h2>
       <p data-i18n="s4_p">Four starting points cover the usual asks — review, plan, explain, investigate — and the composer underneath takes anything else. Files can be attached to the session before the run begins.</p>
       <ul class="kv">
@@ -251,15 +318,15 @@
 </section>
 
 <!-- ============ 5. PANELS ============ -->
-<section class="feat" id="panels">
+<section class="feat flip" id="panels">
   <div class="wrap feat-grid reveal">
     <figure class="shot">
-      <video src="assets/ui/05-panels.mp4" poster="assets/ui/05-panels.jpg"
+      <video src="assets/ui/08-panels.mp4" poster="assets/ui/08-panels.jpg"
              muted loop playsinline preload="none" data-autoplay></video>
       <figcaption>05-panels.mp4</figcaption>
     </figure>
     <div class="feat-copy">
-      <div class="num">05</div>
+      <div class="num">08</div>
       <h2 data-i18n="s5_h">Files, activity, and the raw event stream</h2>
       <p data-i18n="s5_p">The right pane answers "what is it actually doing". Each session gets its own initially empty workspace — only staged inputs and files produced during that session appear there, never a copy of your checkout.</p>
       <ul class="kv">
@@ -272,15 +339,15 @@
 </section>
 
 <!-- ============ 6. MACHINES ============ -->
-<section class="feat flip" id="machines">
+<section class="feat" id="machines">
   <div class="wrap feat-grid reveal">
     <figure class="shot">
-      <video src="assets/ui/06-machines.mp4" poster="assets/ui/06-machines.jpg"
+      <video src="assets/ui/09-machines.mp4" poster="assets/ui/09-machines.jpg"
              muted loop playsinline preload="none" data-autoplay></video>
       <figcaption>06-machines.mp4</figcaption>
     </figure>
     <div class="feat-copy">
-      <div class="num">06</div>
+      <div class="num">09</div>
       <h2 data-i18n="s6_h">Give the agent a screen, or a second host</h2>
       <p data-i18n="s6_p">Some work needs a GUI rather than a shell. Local environments ship their own VNC-capable runtime and open as a live view in the browser; remote machines are reached over SSH instead.</p>
       <ul class="kv">
@@ -294,15 +361,15 @@
 </section>
 
 <!-- ============ 7. MODELS ============ -->
-<section class="feat" id="models">
+<section class="feat flip" id="models">
   <div class="wrap feat-grid reveal">
     <figure class="shot">
-      <video src="assets/ui/07-models.mp4" poster="assets/ui/07-models.jpg"
+      <video src="assets/ui/10-models.mp4" poster="assets/ui/10-models.jpg"
              muted loop playsinline preload="none" data-autoplay></video>
       <figcaption>07-models.mp4</figcaption>
     </figure>
     <div class="feat-copy">
-      <div class="num">07</div>
+      <div class="num">10</div>
       <h2 data-i18n="s7_h">One catalogue for every provider</h2>
       <p data-i18n="s7_p">Providers are registered centrally, and every model declares what it can do — so the orchestrator can pick a model that actually supports the call it is about to make.</p>
       <ul class="kv">
@@ -315,15 +382,15 @@
 </section>
 
 <!-- ============ 8. THEME ============ -->
-<section class="feat flip" id="theme">
+<section class="feat" id="theme">
   <div class="wrap feat-grid reveal">
     <figure class="shot">
-      <video src="assets/ui/08-theme.mp4" poster="assets/ui/08-theme.jpg"
+      <video src="assets/ui/11-theme.mp4" poster="assets/ui/11-theme.jpg"
              muted loop playsinline preload="none" data-autoplay></video>
       <figcaption>08-theme.mp4</figcaption>
     </figure>
     <div class="feat-copy">
-      <div class="num">08</div>
+      <div class="num">11</div>
       <h2 data-i18n="s8_h">Dark or light, local or remote</h2>
       <p data-i18n="s8_p">The theme is remembered across sessions, and the endpoint is not baked in: point the workbench at a gateway on another host, or supply a token when the gateway requires one.</p>
       <ul class="kv">
@@ -381,9 +448,29 @@ const I18N = {
     nav_features:"Features", nav_arch:"Architecture", nav_bench:"Benchmarks", nav_ui:"Web UI", nav_start:"Quick Start",
     hero_pill:"Recorded from a live gateway session",
     hero_title_html:'The workbench, <span class="grad">one feature at a time</span>',
-    hero_sub:"AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Below is one short clip per part of it — the layout, the four workspaces, the capability catalogue, the session panels, the machines, and the model registry.",
+    hero_sub:"AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Eleven short clips below, one per feature — the layout, each of the four workspaces in turn, the capability catalogue, the session panels, the machines, and the model registry.",
     toc1:"Layout", toc2:"Workspaces", toc3:"Capabilities", toc4:"Task composer",
     toc5:"Session panels", toc6:"Machines", toc7:"Models", toc8:"Theme & connection",
+    toc9:"Canvas", toc10:"Code", toc11:"Science",
+
+    s9_h:"Wire a flow instead of describing one",
+    s9_p:"The Canvas is a node editor for the times a picture beats a paragraph. Components are dragged in from a categorised palette and joined into a flow you can save and reuse — a human-facing library, separate from the agent-facing workflows.",
+    s9_a:"<b>Input &amp; Output</b> — where a flow takes in and hands back",
+    s9_b:"<b>Flow control</b> — map, branch, loop, reduce, verify, checkpoint",
+    s9_c:"<b>Agents</b> and <b>Data</b> — delegation and dataset steps as nodes",
+    s9_d:"<b>Processing</b> — select, filter, sort, split, regex over records",
+
+    s10_h:"A real editor, on the session's own files",
+    s10_p:"Code opens an OpenVSCode server rooted at the session workspace — the same <code>/workspace</code> the agent writes into. The first launch boots the editor container, so it takes a moment; after that it is just VS Code in a tab.",
+    s10_a:"<b>Explorer</b> — the session workspace, nothing else",
+    s10_b:"<b>Full editor</b> — search, source control, extensions, terminal",
+    s10_c:"<b>Per-session container</b> — destroyed with the session",
+
+    s11_h:"A kernel you and the agent share",
+    s11_p:"Science attaches a Jupyter kernel to the very files the agent is working on. You can poke at a result the moment it lands, and the agent can run a cell whenever it needs one — the first boot takes about ten seconds, then cells run in milliseconds.",
+    s11_a:"<b>Notebook</b> — run cells, interrupt, restart, save as <code>.ipynb</code>",
+    s11_b:"<b>Compute</b> — live GPU, CPU, memory and disk for the session host",
+    s11_c:"<b>JupyterLab</b> — an escape hatch to the full interface",
 
     s1_h:"Three panes, one live connection",
     s1_p:"Projects and navigation on the left, the task surface in the middle, session state on the right. The header carries the gateway status — this workbench is a thin client over a running Python process, not a mock.",
@@ -451,9 +538,29 @@ const I18N = {
     nav_features:"特性", nav_arch:"架构", nav_bench:"基准", nav_ui:"Web 界面", nav_start:"快速开始",
     hero_pill:"录自一次真实的 Gateway 会话",
     hero_title_html:'界面功能，<span class="grad">逐个看过来</span>',
-    hero_sub:"AgentEvolver 自带一个浏览器工作台，通过 WebSocket 与 Python Gateway 通信。下面每个功能配一段短视频——整体布局、四种工作视图、能力目录、会话面板、机器环境，以及模型注册表。",
+    hero_sub:"AgentEvolver 自带一个浏览器工作台，通过 WebSocket 与 Python Gateway 通信。下面十一段短视频，一个功能一段——整体布局、四种工作视图各自展开、能力目录、会话面板、机器环境，以及模型注册表。",
     toc1:"布局", toc2:"工作视图", toc3:"能力目录", toc4:"任务输入",
     toc5:"会话面板", toc6:"机器环境", toc7:"模型", toc8:"主题与连接",
+    toc9:"Canvas 画布", toc10:"代码", toc11:"Science",
+
+    s9_h:"与其描述流程，不如把它连出来",
+    s9_p:"Canvas 是节点编辑器，用在图胜过一段话的场合。组件从分类面板里拖进来，连成可保存复用的流程——这是给人用的流程库，和给 agent 用的 workflows 是两回事。",
+    s9_a:"<b>Input &amp; Output</b>——流程的入口与出口",
+    s9_b:"<b>流程控制</b>——map、branch、loop、reduce、verify、checkpoint",
+    s9_c:"<b>Agents</b> 与 <b>Data</b>——把委派和数据集步骤变成节点",
+    s9_d:"<b>Processing</b>——对记录做选取、过滤、排序、拆分、正则提取",
+
+    s10_h:"一个真正的编辑器，开在会话自己的文件上",
+    s10_p:"Code 打开的是 OpenVSCode 服务器，根目录就是会话工作区——agent 写入的那个 <code>/workspace</code>。首次启动要拉起编辑器容器，所以会等一下；之后就是标签页里的 VS Code。",
+    s10_a:"<b>Explorer</b>——只有会话工作区，没有别的",
+    s10_b:"<b>完整编辑器</b>——搜索、源码管理、扩展、终端",
+    s10_c:"<b>每会话独立容器</b>——随会话一起销毁",
+
+    s11_h:"你和 agent 共用同一个内核",
+    s11_p:"Science 把 Jupyter 内核挂在 agent 正在处理的那批文件上。结果一落地你就能立刻上手戳，agent 需要时也随时能跑一个 cell——首次启动约十秒，之后 cell 是毫秒级。",
+    s11_a:"<b>Notebook</b>——运行 cell、中断、重启、存成 <code>.ipynb</code>",
+    s11_b:"<b>Compute</b>——会话所在主机的 GPU、CPU、内存、磁盘实时状态",
+    s11_c:"<b>JupyterLab</b>——需要完整界面时的出口",
 
     s1_h:"三栏布局，一条实时连接",
     s1_p:"左侧是项目与导航，中间是任务区，右侧是会话状态。顶栏显示 Gateway 连接状态——这个工作台是运行中 Python 进程的瘦客户端，不是静态原型。",
