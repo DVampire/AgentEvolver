@@ -29,8 +29,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # enablement: turn Pages on if it is off, so a disabled site self-heals
+      # instead of failing every deploy at this step.
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload docs artifact
         uses: actions/upload-pages-artifact@v3
