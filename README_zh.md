@@ -1,6 +1,6 @@
 # AgentEvolver
 
-一个自进化的多智能体框架。由 **MetaAgent** 编排各子智能体来完成用户任务，同时 optimizer / evaluator / generator 等智能体持续改进工具、技能与智能体生态。
+一个自进化的多智能体框架。由 **MetaAgent** 编排各子智能体来完成用户任务，同时 optimizer / evaluator / generator 等智能体持续改进工具、技能、工作流与智能体生态。
 
 > 🌐 English version: [README.md](README.md)
 
