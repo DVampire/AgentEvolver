@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AgentEvolver · Multi-Agent Execution That Builds Reusable Capabilities</title>
-<meta name="description" content="AgentEvolver is a self-evolving multi-agent framework for complex engineering and research tasks. It orchestrates specialist agents, then turns verified capability gaps into versioned, reviewable extensions." />
+<title>AgentEvolver · From Multi-Agent Execution to Trainable Trajectories</title>
+<meta name="description" content="AgentEvolver orchestrates complex multi-agent tasks, evolves versioned capabilities, and captures reward-annotated trajectories for SFT/RL—building toward an end-to-end train, evaluate, and serve loop." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E" />
 <style>
   :root{
@@ -348,6 +348,7 @@
       <a href="#fit" data-i18n="nav_fit">Fit</a>
       <a href="#architecture" data-i18n="nav_arch">Architecture</a>
       <a href="#evolution" data-i18n="nav_evo">Self-Evolution</a>
+      <a href="#training" data-i18n="nav_training">Training Loop</a>
       <a href="#webui" data-i18n="nav_ui">Web UI</a>
       <a href="#safety" data-i18n="nav_safe">Safety</a>
     </div>
@@ -365,9 +366,9 @@
 <!-- ============ HERO ============ -->
 <header class="hero" id="top">
   <div class="wrap">
-    <span class="pill"><span class="dot"></span><span data-i18n="hero_pill">Component-level self-evolution · not model training</span></span>
+    <span class="pill"><span class="dot"></span><span data-i18n="hero_pill">Capability evolution today · end-to-end model evolution ahead</span></span>
     <h1 class="title" data-i18n="hero_title_html">Finish the task.<br><span class="grad">Grow the system.</span></h1>
-    <p class="subtitle" data-i18n="hero_sub">AgentEvolver orchestrates specialist agents for complex engineering and research work, then turns verified capability gaps into reusable, versioned extensions.</p>
+    <p class="subtitle" data-i18n="hero_sub">AgentEvolver orchestrates specialist agents, evolves reusable components, and captures reward-annotated trajectories for SFT/RL—connecting task execution to a future train, evaluate, and serve loop.</p>
     <div class="hero-cta">
       <a class="btn primary" href="#quickstart"><svg class="ic ic-sm"><use href="#i-rocket"/></svg> <span data-i18n="hero_cta1">Get Started</span></a>
       <a class="btn" href="#fit" data-i18n="hero_cta2">Is it a fit? →</a>
@@ -376,7 +377,7 @@
       <span class="badge"><span data-i18n="badge_version">Version</span> <b>0.1.0</b></span>
       <span class="badge"><b data-i18n="badge_core_a">Immutable</b> <span data-i18n="badge_core_b">core</span></span>
       <span class="badge"><b data-i18n="badge_ext_a">Versioned</b> <span data-i18n="badge_ext_b">extensions</span></span>
-      <span class="badge"><b data-i18n="badge_art_a">Reviewable</b> <span data-i18n="badge_art_b">artifacts</span></span>
+      <span class="badge"><b data-i18n="badge_art_a">Trainable</b> <span data-i18n="badge_art_b">trajectories</span></span>
       <span class="badge"><b data-i18n="badge_roll_a">Rollback</b> <span data-i18n="badge_roll_b">built in</span></span>
     </div>
   </div>
@@ -394,16 +395,17 @@
           <li data-i18n="def_is_1">Multi-agent planning, execution, review, and escalation</li>
           <li data-i18n="def_is_2">Tools, skills, agents, connectors, environments, workflows, and memory as extensions</li>
           <li data-i18n="def_is_3">Evaluation, version history, staging, promotion, and rollback</li>
+          <li data-i18n="def_is_4">Reward-annotated trajectories for SFT and RL pipelines</li>
         </ul>
       </article>
       <article class="definition-card no">
         <div class="label" data-i18n="def_not_label">What it is not</div>
-        <h2 data-i18n="def_not_h">Unbounded source rewriting or model training</h2>
-        <p data-i18n="def_not_p">Self-evolution is constrained to registered components. The hand-written core stays separate, and a new extension is not trusted merely because an agent created it.</p>
+        <h2 data-i18n="def_not_h">Uncontrolled mutation—or a finished trainer</h2>
+        <p data-i18n="def_not_p">Evolution is constrained and evaluated. The current release captures training-oriented SFT/RL records but does not yet update weights, manage checkpoints, and feed a trained model back into serving inside one run.</p>
         <ul>
-          <li data-i18n="def_not_1">It does not update LLM weights</li>
-          <li data-i18n="def_not_2">It does not evolve after every ordinary mistake</li>
-          <li data-i18n="def_not_3">It does not replace tests, benchmarks, or human approval</li>
+          <li data-i18n="def_not_1">Tasks already produce reward-annotated SFT/RL trajectories</li>
+          <li data-i18n="def_not_2">In-system training and model feedback are the next-stage roadmap</li>
+          <li data-i18n="def_not_3">Tests, benchmarks, and human approval remain part of the loop</li>
         </ul>
       </article>
     </div>
@@ -424,7 +426,7 @@
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-shield"/></svg></div><h3 data-i18n="f3_h">Core and extensions stay separate</h3><p data-i18n="f3_p">Hand-written built-ins remain in the package. Evolved components are staged, versioned, promoted, and rolled back outside it, limiting the mutation surface.</p></div>
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-gauge"/></svg></div><h3 data-i18n="f4_h">Budgets the model can see</h3><p data-i18n="f4_p">Step, token and wall-time limits aren't just kill-switches: the remaining budget is rendered into the prompt every step as NORMAL / TIGHT / CRITICAL, so the agent plans around it instead of being cut off.</p></div>
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-panels"/></svg></div><h3 data-i18n="f5_h">Four views, one project</h3><p data-i18n="f5_p">Chat, a visual flow canvas, real VS Code in the browser, and a Science workstation with a live Jupyter kernel — all editing the same workspace, over one WebSocket protocol.</p></div>
-      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-database"/></svg></div><h3 data-i18n="f6_h">One table owns the disk</h3><p data-i18n="f6_p">Every path the framework writes is declared in a single enum-keyed table. Two writable roots, and only two — a rule enforced by a test, not by convention.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-database"/></svg></div><h3 data-i18n="f6_h">Execution becomes training data</h3><p data-i18n="f6_p"><code>TrajectoryHook</code> records the effective prompt, native tool-calling target, observations, token use, and late-arriving reward—then exports SFT or pluggable RL formats such as VERL.</p></div>
     </div>
   </div>
 </section>
@@ -444,7 +446,7 @@
         <ul>
           <li data-i18n="fit_yes_1">Long-running engineering, data, or scientific tasks with several specialist roles</li>
           <li data-i18n="fit_yes_2">Teams that want task-specific methods to become reusable capabilities</li>
-          <li data-i18n="fit_yes_3">Research on agent runtimes, evaluation loops, trajectories, and human oversight</li>
+          <li data-i18n="fit_yes_3">Research on agent runtimes, SFT/RL data flywheels, evaluation loops, and human oversight</li>
           <li data-i18n="fit_yes_4">Projects that need detailed artifacts, visual control, and reversible extension changes</li>
         </ul>
       </article>
@@ -638,6 +640,38 @@
           <span class="target"><svg class="ic ic-sm"><use href="#i-flow"/></svg><span data-i18n="evo_t6">Workflows</span></span>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TRAINING DATA FLYWHEEL ============ -->
+<section id="training">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow" data-i18n="train_eyebrow">The data flywheel</div>
+      <h2 data-i18n="train_h">Every run can become training data</h2>
+      <p data-i18n="train_p">Trajectory is the bridge between using a model and improving one: it preserves the exact behavior seen at inference, attaches evaluation rewards, and projects the result into SFT or RL records.</p>
+    </div>
+
+    <div class="pipe reveal">
+      <div class="st"><div class="k" data-i18n="train_k1">implemented · capture</div><b data-i18n="train_t1">Run real tasks</b><span data-i18n="train_d1">The lifecycle hook records each effective prompt, reasoning turn, native tool call, observation, token count, and task relationship.</span></div>
+      <div class="st"><div class="k" data-i18n="train_k2">implemented · export</div><b data-i18n="train_t2">Build SFT / RL records</b><span data-i18n="train_d2">Rewards can arrive after judging. SFT uses OpenAI Chat turns; the pluggable RL interface includes a text-level VERL episode format.</span></div>
+      <div class="st"><div class="k" data-i18n="train_k3">roadmap · train</div><b data-i18n="train_t3">Train and version models</b><span data-i18n="train_d3">Connect trainers, tokenizer-aware annotation, checkpoints, lineage, and model registration without importing training stacks into the runtime core.</span></div>
+      <div class="st"><div class="k" data-i18n="train_k4">roadmap · apply</div><b data-i18n="train_t4">Evaluate, promote, serve</b><span data-i18n="train_d4">Gate a candidate against baselines, approve promotion, serve it back to agents, and collect the next generation of trajectories.</span></div>
+    </div>
+
+    <div class="split reveal" style="margin-top:32px;align-items:stretch">
+      <div class="rows">
+        <div class="row"><b><code>z_t</code></b><span data-i18n="train_z">The effective messages actually sent to the model</span></div>
+        <div class="row"><b><code>a_t</code></b><span data-i18n="train_a">Reasoning plus native tool calls—the byte-faithful assistant target</span></div>
+        <div class="row"><b><code>o_t</code></b><span data-i18n="train_o">Results and errors returned by every action</span></div>
+        <div class="row"><b><code>r_t</code></b><span data-i18n="train_r">A benchmark or evaluator reward, backfilled after the run</span></div>
+      </div>
+      <article class="fit-card">
+        <h3 data-i18n="train_vision_h">One system, two forms of evolution</h3>
+        <p style="color:var(--muted);font-size:14.5px" data-i18n="train_vision_p">Component evolution gives agents new methods immediately. Model training internalizes successful behavior over time. AgentEvolver's end-state connects both through the same tasks, rewards, evaluations, and deployment controls.</p>
+        <p style="color:var(--muted-2);font-size:13px;margin-top:16px" data-i18n="train_status">Status: capture, reward backfill, JSONL persistence, SFT export, and RLFormat/VERL export exist today. The in-system trainer, checkpoint lifecycle, and trained-model feedback are planned integrations.</p>
+      </article>
     </div>
   </div>
 </section>
@@ -869,8 +903,8 @@ python examples/run_meta_agent.py <span class="k">\</span>
 <section style="padding-top:0">
   <div class="wrap">
     <div class="cta-banner reveal">
-      <h2 data-i18n="cta_h">Build agents that leave reusable capabilities behind</h2>
-      <p data-i18n="cta_p">Start with one task, inspect the run, and promote only the extensions that earn your trust.</p>
+      <h2 data-i18n="cta_h">Close the loop from task execution to model improvement</h2>
+      <p data-i18n="cta_p">Evolve reusable components today, collect training trajectories on every run, and help build the train–evaluate–serve loop next.</p>
       <div class="hero-cta">
         <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px"><svg class="ic ic-sm"><use href="#i-sparkles"/></svg> <span data-i18n="cta_b1">Star on GitHub</span></a>
         <a class="btn" href="https://github.com/DVampire/AgentEvolver/blob/main/README.md" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px" data-i18n="cta_b2">Read the Docs →</a>
@@ -899,21 +933,21 @@ python examples/run_meta_agent.py <span class="k">\</span>
 /* ---------------- i18n ---------------- */
 const I18N = {
   en:{
-    page_title:"AgentEvolver · Multi-Agent Execution That Builds Reusable Capabilities", page_desc:"AgentEvolver is a self-evolving multi-agent framework for complex engineering and research tasks. It orchestrates specialist agents, then turns verified capability gaps into versioned, reviewable extensions.",
-    nav_overview:"Overview", nav_features:"Design", nav_fit:"Fit", nav_arch:"Architecture", nav_rt:"Runtime", nav_evo:"Self-Evolution", nav_caps:"Capabilities", nav_ui:"Web UI", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start",
-    hero_pill:"Component-level self-evolution · not model training",
+    page_title:"AgentEvolver · From Multi-Agent Execution to Trainable Trajectories", page_desc:"AgentEvolver orchestrates complex multi-agent tasks, evolves versioned capabilities, and captures reward-annotated trajectories for SFT/RL—building toward an end-to-end train, evaluate, and serve loop.",
+    nav_overview:"Overview", nav_features:"Design", nav_fit:"Fit", nav_arch:"Architecture", nav_rt:"Runtime", nav_evo:"Self-Evolution", nav_training:"Training Loop", nav_caps:"Capabilities", nav_ui:"Web UI", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start",
+    hero_pill:"Capability evolution today · end-to-end model evolution ahead",
     hero_title_html:'Finish the task.<br><span class="grad">Grow the system.</span>',
-    hero_sub:"AgentEvolver orchestrates specialist agents for complex engineering and research work, then turns verified capability gaps into reusable, versioned extensions.",
+    hero_sub:"AgentEvolver orchestrates specialist agents, evolves reusable components, and captures reward-annotated trajectories for SFT/RL—connecting task execution to a future train, evaluate, and serve loop.",
     hero_cta1:"Get Started", hero_cta2:"Is it a fit? →",
-    badge_version:"Version", badge_core_a:"Immutable", badge_core_b:"core", badge_ext_a:"Versioned", badge_ext_b:"extensions", badge_art_a:"Reviewable", badge_art_b:"artifacts", badge_roll_a:"Rollback", badge_roll_b:"built in",
+    badge_version:"Version", badge_core_a:"Immutable", badge_core_b:"core", badge_ext_a:"Versioned", badge_ext_b:"extensions", badge_art_a:"Trainable", badge_art_b:"trajectories", badge_roll_a:"Rollback", badge_roll_b:"built in",
     def_is_label:"What it is", def_is_h:"A task runtime that can preserve what it learns",
     def_is_p:"The MetaAgent delegates today's work. When tests or review expose a reusable gap, an evolution loop can turn the missing method into a component for tomorrow.",
     def_is_1:"Multi-agent planning, execution, review, and escalation",
     def_is_2:"Tools, skills, agents, connectors, environments, workflows, and memory as extensions",
-    def_is_3:"Evaluation, version history, staging, promotion, and rollback",
-    def_not_label:"What it is not", def_not_h:"Unbounded source rewriting or model training",
-    def_not_p:"Self-evolution is constrained to registered components. The hand-written core stays separate, and a new extension is not trusted merely because an agent created it.",
-    def_not_1:"It does not update LLM weights", def_not_2:"It does not evolve after every ordinary mistake", def_not_3:"It does not replace tests, benchmarks, or human approval",
+    def_is_3:"Evaluation, version history, staging, promotion, and rollback", def_is_4:"Reward-annotated trajectories for SFT and RL pipelines",
+    def_not_label:"What it is not", def_not_h:"Uncontrolled mutation—or a finished trainer",
+    def_not_p:"Evolution is constrained and evaluated. The current release captures training-oriented SFT/RL records but does not yet update weights, manage checkpoints, and feed a trained model back into serving inside one run.",
+    def_not_1:"Tasks already produce reward-annotated SFT/RL trajectories", def_not_2:"In-system training and model feedback are the next-stage roadmap", def_not_3:"Tests, benchmarks, and human approval remain part of the loop",
     feat_eyebrow:"Design choices", feat_h:"Six decisions that shape the system",
     feat_p:"The value is not a large capability count. It is the way orchestration, evaluation, inspectability, and rollback fit together.",
     f1_h:"Evidence before evolution", f1_p:"A failed check, recurring structural defect, or measured quality ceiling must establish the need. The normal response to a first fixable error is still to fix it.",
@@ -921,10 +955,10 @@ const I18N = {
     f3_h:"Core and extensions stay separate", f3_p:"Hand-written built-ins remain in the package. Evolved components are staged, versioned, promoted, and rolled back outside it, limiting the mutation surface.",
     f4_h:"Budgets the model can see", f4_p:"Step, token and wall-time limits aren't just kill-switches: the remaining budget is rendered into the prompt every step as NORMAL / TIGHT / CRITICAL, so the agent plans around it instead of being cut off.",
     f5_h:"Four views, one project", f5_p:"Chat, a visual flow canvas, real VS Code in the browser, and a Science workstation with a live Jupyter kernel — all editing the same workspace, over one WebSocket protocol.",
-    f6_h:"One table owns the disk", f6_p:"Every path the framework writes is declared in a single enum-keyed table. Two writable roots, and only two — a rule enforced by a test, not by convention.",
+    f6_h:"Execution becomes training data", f6_p:"<code>TrajectoryHook</code> records the effective prompt, native tool-calling target, observations, token use, and late-arriving reward—then exports SFT or pluggable RL formats such as VERL.",
     fit_eyebrow:"Fit & trade-offs", fit_h:"Powerful when the task justifies the machinery",
     fit_p:"AgentEvolver is designed for work where reusable methods, specialist coordination, and auditability matter more than minimum latency.",
-    fit_yes_h:"A good fit", fit_yes_1:"Long-running engineering, data, or scientific tasks with several specialist roles", fit_yes_2:"Teams that want task-specific methods to become reusable capabilities", fit_yes_3:"Research on agent runtimes, evaluation loops, trajectories, and human oversight", fit_yes_4:"Projects that need detailed artifacts, visual control, and reversible extension changes",
+    fit_yes_h:"A good fit", fit_yes_1:"Long-running engineering, data, or scientific tasks with several specialist roles", fit_yes_2:"Teams that want task-specific methods to become reusable capabilities", fit_yes_3:"Research on agent runtimes, SFT/RL data flywheels, evaluation loops, and human oversight", fit_yes_4:"Projects that need detailed artifacts, visual control, and reversible extension changes",
     fit_no_h:"Think twice", fit_no_1:"Simple Q&A or one-step automation where a script or single agent is enough", fit_no_2:"Strict low-latency or low-token workloads; orchestration and evaluation add calls", fit_no_3:"Zero-operations expectations; the full stack needs Docker, Node.js, and credentials", fit_no_4:"High-risk use without task-specific tests, policy, approval, and rollback drills",
     trade_1_h:"Reusable capability ↔ maintenance", trade_1_p:"Extensions compound over time, but their contracts, evaluation data, and versions need ownership.",
     trade_2_h:"Richer coordination ↔ more cost", trade_2_p:"Specialist agents and baseline comparisons improve coverage while increasing model calls and wall time.",
@@ -997,6 +1031,15 @@ const I18N = {
     evo_side_h:"Immutable core, versioned extension layer",
     evo_side_p:"Hand-written built-ins live in <code>agentevolver/</code>. Evolved components live in an external <code>extension/</code> tree, loaded and versioned by the ExtensionManager. This limits where evolution writes and makes rollback possible; evaluation is still required.",
     evo_t1:"Tools", evo_t2:"Skills", evo_t3:"Agents", evo_t4:"Environments", evo_t5:"Connectors", evo_t6:"Workflows",
+    train_eyebrow:"The data flywheel", train_h:"Every run can become training data",
+    train_p:"Trajectory is the bridge between using a model and improving one: it preserves the exact behavior seen at inference, attaches evaluation rewards, and projects the result into SFT or RL records.",
+    train_k1:"implemented · capture", train_t1:"Run real tasks", train_d1:"The lifecycle hook records each effective prompt, reasoning turn, native tool call, observation, token count, and task relationship.",
+    train_k2:"implemented · export", train_t2:"Build SFT / RL records", train_d2:"Rewards can arrive after judging. SFT uses OpenAI Chat turns; the pluggable RL interface includes a text-level VERL episode format.",
+    train_k3:"roadmap · train", train_t3:"Train and version models", train_d3:"Connect trainers, tokenizer-aware annotation, checkpoints, lineage, and model registration without importing training stacks into the runtime core.",
+    train_k4:"roadmap · apply", train_t4:"Evaluate, promote, serve", train_d4:"Gate a candidate against baselines, approve promotion, serve it back to agents, and collect the next generation of trajectories.",
+    train_z:"The effective messages actually sent to the model", train_a:"Reasoning plus native tool calls—the byte-faithful assistant target", train_o:"Results and errors returned by every action", train_r:"A benchmark or evaluator reward, backfilled after the run",
+    train_vision_h:"One system, two forms of evolution", train_vision_p:"Component evolution gives agents new methods immediately. Model training internalizes successful behavior over time. AgentEvolver's end-state connects both through the same tasks, rewards, evaluations, and deployment controls.",
+    train_status:"Status: capture, reward backfill, JSONL persistence, SFT export, and RLFormat/VERL export exist today. The in-system trainer, checkpoint lifecycle, and trained-model feedback are planned integrations.",
     reg_eyebrow:"The capability ecosystem", reg_h:"Nine kinds of capability, one contract",
     reg_p:"Every callable manager implements the same <code>get_schema()</code> — <code>json</code> returns the exact function-calling object sent to the model, <code>md</code> returns a human-readable contract. The prompt carries only a compact roster; full schemas travel in the request.",
     ui_eyebrow:"The workbench", ui_h:"Drive it from the browser",
@@ -1007,26 +1050,26 @@ const I18N = {
     bench_p:"Datasets are read locally first, then snapshot-downloaded from HuggingFace on demand.",
     qs_eyebrow:"Quick Start", qs_h:"Start with the shortest working path", qs_p:"Install the core, configure one model provider, and run locally. Add Docker, browser automation, or the Web UI only when you need them.",
     qs_note:"The full setup, including Model X, Vault, provider variables, and optional dependencies, is documented in",
-    cta_h:"Build agents that leave reusable capabilities behind", cta_p:"Start with one task, inspect the run, and promote only the extensions that earn your trust.",
+    cta_h:"Close the loop from task execution to model improvement", cta_p:"Evolve reusable components today, collect training trajectories on every run, and help build the train–evaluate–serve loop next.",
     cta_b1:"Star on GitHub", cta_b2:"Read the Docs →",
     foot_tag:"A self-evolving multi-agent framework · research & engineering · MIT License", foot_readme:"README", foot_top:"Back to top ↑"
   },
   zh:{
-    page_title:"AgentEvolver · 能积累可复用能力的多智能体框架", page_desc:"AgentEvolver 面向复杂工程与研究任务编排专精智能体，并将经验证的能力缺口转化为可版本化、可审查、可回滚的扩展组件。",
-    nav_overview:"项目定位", nav_features:"设计", nav_fit:"适用性", nav_arch:"架构", nav_rt:"运行时", nav_evo:"自进化", nav_caps:"能力", nav_ui:"Web 界面", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始",
-    hero_pill:"组件级自进化 · 不是训练模型权重",
+    page_title:"AgentEvolver · 从多智能体执行到可训练轨迹", page_desc:"AgentEvolver 编排复杂多智能体任务、进化版本化能力，并采集带奖励的 SFT/RL trajectory，最终走向训练、评测与应用一体化的端到端闭环。",
+    nav_overview:"项目定位", nav_features:"设计", nav_fit:"适用性", nav_arch:"架构", nav_rt:"运行时", nav_evo:"自进化", nav_training:"训练闭环", nav_caps:"能力", nav_ui:"Web 界面", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始",
+    hero_pill:"当前：能力进化与训练数据闭环 · 目标：端到端模型进化",
     hero_title_html:'完成这次任务，<br><span class="grad">也让系统为下一次变强。</span>',
-    hero_sub:"AgentEvolver 面向复杂工程与研究任务编排专精智能体，并把执行中经验证的能力缺口转化为可复用、可版本化的扩展组件。",
+    hero_sub:"AgentEvolver 编排专精智能体、进化可复用组件，并采集带奖励的 SFT/RL trajectory，把任务执行连接到未来的训练、评测与模型应用闭环。",
     hero_cta1:"快速开始", hero_cta2:"它适合我吗？→",
-    badge_version:"版本", badge_core_a:"核心", badge_core_b:"保持不变", badge_ext_a:"扩展", badge_ext_b:"全程版本化", badge_art_a:"产物", badge_art_b:"可直接审查", badge_roll_a:"回滚", badge_roll_b:"内置支持",
+    badge_version:"版本", badge_core_a:"核心", badge_core_b:"保持不变", badge_ext_a:"扩展", badge_ext_b:"全程版本化", badge_art_a:"轨迹", badge_art_b:"可用于训练", badge_roll_a:"回滚", badge_roll_b:"内置支持",
     def_is_label:"它是什么", def_is_h:"一个能保存任务经验的多智能体运行时",
     def_is_p:"MetaAgent 负责完成今天的任务；当测试或审查发现可复用的能力缺口时，进化闭环会把缺失的方法做成明天可直接使用的组件。",
     def_is_1:"多智能体规划、执行、审查与卡点升级",
     def_is_2:"将工具、技能、智能体、连接器、环境、工作流和记忆作为扩展",
-    def_is_3:"评估、版本历史、暂存、提升与回滚",
-    def_not_label:"它不是什么", def_not_h:"不受约束的源码改写，也不是模型训练",
-    def_not_p:"自进化只发生在已注册的组件层。手写核心与进化内容保持分离；新扩展不会仅仅因为由 Agent 生成就自动获得信任。",
-    def_not_1:"它不会更新大模型权重", def_not_2:"它不会在每次普通失误后都触发进化", def_not_3:"它不能取代测试、基准或人工审批",
+    def_is_3:"评估、版本历史、暂存、提升与回滚", def_is_4:"面向 SFT 与 RL 流水线的带奖励 trajectory",
+    def_not_label:"它尚未是什么", def_not_h:"不是无约束改写；训练执行闭环仍在建设",
+    def_not_p:"进化受到组件边界和评估约束。当前版本已经产生面向训练的 SFT/RL 记录，但还没有在同一次系统闭环内完成权重更新、checkpoint 管理和训练后模型回流。",
+    def_not_1:"任务已经产出带奖励的 SFT/RL trajectory", def_not_2:"系统内训练和模型回流是下一阶段路线图", def_not_3:"测试、基准与人工审批仍然属于闭环的一部分",
     feat_eyebrow:"设计取向", feat_h:"塑造系统的六个关键决定",
     feat_p:"价值不在于堆出庞大的能力数量，而在于让编排、评估、可审查性与回滚真正形成闭环。",
     f1_h:"先有证据，再谈进化", f1_p:"必须由失败的检查、重复的结构性缺陷或经测量的质量上限证明需求。第一次可修复的错误，默认动作仍然是直接修好。",
@@ -1034,10 +1077,10 @@ const I18N = {
     f3_h:"核心与扩展保持分离", f3_p:"手写内置能力留在包内；进化组件在包外暂存、版本化、提升和回滚，从结构上限制可修改的范围。",
     f4_h:"模型看得见的预算", f4_p:"步数、token、墙钟时间不只是断路器：剩余预算每一步都以 NORMAL / TIGHT / CRITICAL 渲染进提示词，让智能体主动绕着它规划，而不是被一刀切断。",
     f5_h:"四个视图，同一个工程", f5_p:"Chat、可视化流程画布、浏览器里的真 VS Code，以及带实时 Jupyter 内核的 Science 工作台——全都编辑同一份 workspace，走同一条 WebSocket 协议。",
-    f6_h:"一张表管住整块磁盘", f6_p:"框架写入的每一条路径都声明在一张 enum 索引的表里。可写根目录只有两个，且仅有两个——这条规则由测试强制，不靠约定。",
+    f6_h:"执行过程直接成为训练数据", f6_p:"<code>TrajectoryHook</code> 记录实际 prompt、原生工具调用 target、观察、token 与后到奖励，再导出 SFT 或 VERL 等可插拔 RL 格式。",
     fit_eyebrow:"适用性与取舍", fit_h:"任务足够复杂时，这套机制才值得",
     fit_p:"AgentEvolver 面向重视方法复用、专精协作与过程可审查性的工作，而不是追求最低延迟的每一个场景。",
-    fit_yes_h:"适合", fit_yes_1:"包含多个专精角色的长链路工程、数据或科研任务", fit_yes_2:"希望把任务方法沉淀为可复用能力的团队", fit_yes_3:"研究 Agent 运行时、评估闭环、轨迹和人类监督", fit_yes_4:"需要详细产物、可视化控制和可逆扩展变更的项目",
+    fit_yes_h:"适合", fit_yes_1:"包含多个专精角色的长链路工程、数据或科研任务", fit_yes_2:"希望把任务方法沉淀为可复用能力的团队", fit_yes_3:"研究 Agent 运行时、SFT/RL 数据飞轮、评估闭环和人类监督", fit_yes_4:"需要详细产物、可视化控制和可逆扩展变更的项目",
     fit_no_h:"需要慎重", fit_no_1:"简单问答或单步自动化——脚本或单 Agent 已经足够", fit_no_2:"严格的低延迟、低 token 场景——编排和评估会增加调用", fit_no_3:"期望零运维——完整能力需要 Docker、Node.js 和相应凭证", fit_no_4:"没有任务专属测试、安全策略、审批与回滚演练的高风险用途",
     trade_1_h:"能力复用 ↔ 维护责任", trade_1_p:"扩展会随时间积累价值，但组件契约、评估数据和版本都需要明确维护者。",
     trade_2_h:"协作更丰富 ↔ 成本更高", trade_2_p:"专精智能体与基线对照扩大覆盖面，同时增加模型调用和运行时间。",
@@ -1110,6 +1153,15 @@ const I18N = {
     evo_side_h:"核心不变，扩展层有版本",
     evo_side_p:"手写内置组件位于 <code>agentevolver/</code>；进化组件位于外部 <code>extension/</code>，由 ExtensionManager 加载和版本化。这限制了写入范围并支持回滚，但新能力仍然必须经过评估。",
     evo_t1:"工具", evo_t2:"技能", evo_t3:"智能体", evo_t4:"环境", evo_t5:"连接器", evo_t6:"工作流",
+    train_eyebrow:"数据飞轮", train_h:"每一次运行都可以成为训练数据",
+    train_p:"Trajectory 是模型应用与模型提升之间的桥梁：它保留推理时真正发生的行为，接收评测奖励，并将结果投射为 SFT 或 RL 训练记录。",
+    train_k1:"已实现 · 采集", train_t1:"运行真实任务", train_d1:"生命周期 hook 记录每一步实际 prompt、推理、原生工具调用、观察、token 数量和任务关系。",
+    train_k2:"已实现 · 导出", train_t2:"构建 SFT / RL 记录", train_d2:"奖励可以在评测后回填；SFT 使用 OpenAI Chat turn，可插拔 RL 接口内置文本级 VERL episode 格式。",
+    train_k3:"路线图 · 训练", train_t3:"训练并版本化模型", train_d3:"接入训练器、tokenizer 感知标注、checkpoint、血缘和模型注册，同时让运行时核心不直接依赖训练框架。",
+    train_k4:"路线图 · 应用", train_t4:"评测、提升、服务", train_d4:"候选模型与基线对照，通过审批后提升并重新服务 Agent，再采集下一代 trajectory。",
+    train_z:"实际发送给模型的有效消息", train_a:"推理与原生工具调用——忠实于推理时输出的 assistant target", train_o:"每一个动作返回的结果或错误", train_r:"由 benchmark 或 evaluator 在任务结束后回填的奖励",
+    train_vision_h:"一个系统，两种进化", train_vision_p:"组件进化让 Agent 立即获得新方法；模型训练让成功行为逐步内化。AgentEvolver 的最终形态，是用同一套任务、奖励、评测和部署控制把两者连接起来。",
+    train_status:"当前状态：轨迹采集、奖励回填、JSONL 持久化、SFT 导出和 RLFormat/VERL 导出已经存在；系统内训练器、checkpoint 生命周期和训练后模型回流属于规划中的集成。",
     reg_eyebrow:"能力生态", reg_h:"九类能力，同一套契约",
     reg_p:"每个可调用的 manager 都实现同一个 <code>get_schema()</code>——<code>json</code> 返回发给模型的函数调用对象原文，<code>md</code> 返回给人读的契约。提示词里只带一份紧凑名册，完整 schema 随请求走。",
     ui_eyebrow:"浏览器工作台", ui_h:"在浏览器里直接驱动它",
@@ -1120,7 +1172,7 @@ const I18N = {
     bench_p:"数据集优先从本地读取，需要时再从 HuggingFace 快照下载。",
     qs_eyebrow:"快速开始", qs_h:"先走最短的可用路径", qs_p:"安装核心、配置一个模型供应商并在本机运行；需要时再增加 Docker、浏览器自动化或 Web UI。",
     qs_note:"Model X、Vault、供应商变量和可选依赖等完整安装说明见",
-    cta_h:"让 Agent 在交付任务后留下可复用能力", cta_p:"从一个任务开始，检查完整过程，只提升真正赢得你信任的扩展。",
+    cta_h:"打通从任务执行到模型提升的完整闭环", cta_p:"现在进化可复用组件、在每次运行中积累训练轨迹，并继续构建训练—评测—应用回流。",
     cta_b1:"在 GitHub 点亮 Star", cta_b2:"阅读文档 →",
     foot_tag:"自进化多智能体框架 · 研究与工程 · MIT 许可证", foot_readme:"README", foot_top:"回到顶部 ↑"
   }

@@ -2,11 +2,12 @@
 
 # AgentEvolver
 
-### 让多智能体在完成任务的同时，积累下一次可复用的能力
+### 让多智能体完成任务、沉淀可复用能力，并把真实运行转化为下一轮训练数据
 
 AgentEvolver 是一个面向复杂工程与研究任务的**自进化多智能体框架**。
 MetaAgent 负责规划、分派和验收；当实际执行暴露出明确的能力缺口时，专门的生成、评估与优化智能体
-会创建或改进工具、技能、智能体、连接器、环境、工作流和记忆组件。
+会创建或改进工具、技能、智能体、连接器、环境、工作流和记忆组件。与此同时，`trajectory` 将真实
+执行过程转化为带奖励的 SFT/RL 训练记录，为后续模型训练与回流保留数据基础。
 
 [![License](https://img.shields.io/badge/license-MIT-5B6CFF.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
@@ -16,6 +17,7 @@ MetaAgent 负责规划、分派和验收；当实际执行暴露出明确的能�
 **[在线主页](https://dvampire.github.io/AgentEvolver/)** ·
 **[快速开始](#快速开始)** ·
 **[工作原理](#工作原理)** ·
+**[训练数据闭环](#从任务轨迹到端到端训练)** ·
 **[适用场景与取舍](#适用场景与取舍)** ·
 **[Web 工作台](#web-工作台)**
 
@@ -42,10 +44,11 @@ AgentEvolver 还多问一步：**这次任务暴露出的能力缺口，如何�
 | 优先保证当前任务完成 | 新组件先评估，再采纳或回滚 |
 | 工作文件写入独立 session workspace | 可复用组件写入外部 `extension/`，核心包保持不变 |
 
-因此，这里的“自进化”是**运行时组件级进化**，不是训练或修改模型权重，也不是允许 Agent 无限制地
-重写框架源码。
+当前版本的在线“自进化”首先发生在**运行时组件层**，不会在一次普通任务中直接修改模型权重，也不
+允许 Agent 无限制地重写框架源码。但模型进化并未被排除：系统已经采集可训练 trajectory，目标是
+进一步接入训练、评测、模型注册与应用回流，完成端到端闭环。
 
-> **一句话心智模型：** AgentEvolver = 多智能体任务运行时 + 可版本化的能力扩展系统 + 对扩展进行生成、评估和优化的闭环。
+> **一句话心智模型：** AgentEvolver = 多智能体任务运行时 + 可版本化的能力扩展系统 + SFT/RL 数据飞轮；当前闭环到“可训练数据”，未来闭环到“训练后的模型重新服务 Agent”。
 
 ## 它解决什么问题
 
@@ -57,7 +60,7 @@ AgentEvolver 把这些方法做成一等组件：
 - **先编排任务。** MetaAgent 将目标拆成子任务，通过统一运行时把工作交给专精智能体，并收集、审查结果。
 - **再用证据判断是否需要进化。** 第一次可修复的错误只会重试；只有缺失能力、重复的结构性失败，或经测量确认的质量上限，才进入进化流程。
 - **把改进保存成组件。** 新能力落在 `extension/`，可热加载、版本化、比较和回滚，不污染手写核心。
-- **让过程可检查。** 提示词、任务文档、工作流、步骤快照和记忆报告都可直接打开；trace 与 trajectory 记录运行过程。
+- **让过程既可检查又可训练。** `trace` 保留原始观察事件；`trajectory` 将运行投射为逐步、带奖励、可导出到 SFT/RL 流水线的训练记录。
 
 ## 核心特点
 
@@ -66,6 +69,7 @@ AgentEvolver 把这些方法做成一等组件：
 | **证据驱动的自进化** | 发现缺口 → 生成或优化 → 只读评估 → 与基线比较 → 采纳或回滚；“看起来可能更好”不算验证。 |
 | **不可变核心，可变扩展** | 手写内置能力位于 `agentevolver/`；进化结果位于外部 `extension/`。每个版本都有归档，已有版本可以恢复。 |
 | **统一的多智能体运行时** | `spawn`、`send`、`ask`、`suspend/resume`、`publish/subscribe` 支撑委派、进度、控制和升级处理。 |
+| **面向训练的数据接口** | `TrajectoryHook` 记录每步实际上下文、推理与工具调用、观察、token 和奖励；支持 OpenAI Chat SFT 记录与可插拔 RL 格式，内置 VERL 文本级 episode 导出。 |
 | **HTML 原生的可审查产物** | 提示词、动态工作流、任务文档、记忆报告和逐步快照既供运行时使用，也供人阅读与 diff。 |
 | **预算进入 Agent 上下文** | 步数、token 与墙钟预算以 `NORMAL / TIGHT / CRITICAL` 呈现，让 Agent 主动收敛，而不只是超限后被终止。 |
 | **同一工程的四种视图** | Chat、Canvas、浏览器内 VS Code、Science/Jupyter 共用 session workspace 和 Gateway 协议。 |
@@ -78,7 +82,7 @@ AgentEvolver 把这些方法做成一等组件：
 
 - 需要多个专精 Agent 协作的长链路工程、数据分析或科研任务；
 - 希望把任务中形成的方法沉淀为可复用工具、技能或工作流；
-- 研究 Agent 运行时、自改进策略、评估闭环、轨迹采集和人机协作；
+- 研究 Agent 运行时、自改进策略、SFT/RL 数据构建、评估闭环和人机协作；
 - 需要可视化工作台、完整运行记录、版本回滚和较强扩展能力的团队。
 
 ### 可能不适合
@@ -259,6 +263,53 @@ Runtime 负责消息如何移动；Protocol 定义对话的语义。每个活跃
 这种设计限制了修改范围，但**不会自动证明新组件正确**。测试、基准、只读评估器和人工审批仍然是
 高风险场景所必需的。
 
+## 从任务轨迹到端到端训练
+
+AgentEvolver 不只记录“发生过什么”，还维护一份面向训练的运行投影。`TrajectoryHook` 监听 Agent
+生命周期，把一次执行聚合成步骤序列：
+
+```text
+s_t = (z_t, a_t, o_t, r_t)
+
+z_t  实际发送给模型的上下文
+a_t  模型产生的推理与原生工具调用
+o_t  每个动作的结果或错误
+r_t  benchmark / evaluator 在任务结束后回填的奖励
+```
+
+当前已经实现：
+
+- 按 `task_id` 采集 Agent 每一步的有效 prompt、推理、工具调用、观察结果和 token 使用量；
+- 保存 session/task 标识、任务结果、成功状态以及 parent/subtask metadata；
+- 允许 benchmark 或 evaluator 在任务结束后回填 task-level reward，并传播到每一步；
+- 持久化为 `<log_root>/trajectory/<task_id>.jsonl`；
+- `export_sft()` 导出逐步 OpenAI Chat 格式，assistant target 保留推理和原生 `tool_calls`；
+- `export_rl()` 通过可插拔 `RLFormat` 导出 RL episode；内置 `VerlFormat` 提供
+  `prompt / response / reward` 等文本级字段，token ids 与 mask 预留给持有 tokenizer 的训练 provider。
+
+因此，系统的数据闭环已经到达“**真实任务 → 奖励标注 trajectory → SFT 记录 / RL 格式 episode**”。下一阶段的
+目标是在同一系统中接入训练执行、checkpoint 与模型版本管理、离线/在线评测、审批提升和 serving，
+形成完整飞轮：
+
+```text
+任务执行
+   ↓
+Trajectory 采集与奖励回填             ← 当前已实现
+   ↓
+SFT / RL 数据集与 VERL 等格式导出     ← 当前已实现
+   ↓
+训练与 checkpoint 管理                ← 规划接入
+   ↓
+基准评测、对照验证与模型提升           ← 规划接入
+   ↓
+新模型重新服务 Agent                  ← 规划接入
+   └──────────────────────────────→ 产生新一轮 trajectory
+```
+
+这也是 AgentEvolver 更完整的“进化”定义：**组件层进化让系统获得新方法，模型层训练让系统把高质量
+行为内化；两者最终由同一套任务、评价和数据接口连接起来。** 当前仓库提供数据采集与导出基础，不能把
+尚未接入的训练执行器描述成已经完成。
+
 ## Web 工作台
 
 <div align="center">
@@ -299,7 +350,7 @@ Runtime 负责消息如何移动；Protocol 定义对话的语义。每个活跃
 
 - `constraint/` 同时跟踪步数、token 和墙钟时间，并把剩余预算写入 Agent 上下文；
 - `trace/` 保存结构化事件并实时推送给 Gateway；
-- `trajectory/` 将运行投射为可用于 SFT/RL 的步级记录；
+- `trajectory/` 将运行投射为带奖励的步级记录，并导出 OpenAI Chat SFT 或 VERL 等 RL 格式；
 - `memory/` 维护近期历史、压缩后的工作记忆、todo、调用路径与最终结果；
 - `benchmark/` 提供 AIME、GPQA、GSM8K、HLE、LeetCode、DeepWeb、ProgramBench 等评测入口。
 
@@ -363,11 +414,13 @@ AgentEvolver/
 | [`docs/workflows.md`](docs/workflows.md) | 动态 HTML 工作流 |
 | [`docs/canvas.md`](docs/canvas.md) | 可视化 Canvas 流程 |
 | [`docs/capability-schemas.md`](docs/capability-schemas.md) | 能力 schema 协议 |
+| [`agentevolver/trajectory/README.md`](agentevolver/trajectory/README.md) | trajectory 采集、持久化与 SFT/RL 导出契约 |
 
 ## 项目状态
 
-AgentEvolver 目前是 `0.1.0` 阶段的研究与工程框架。欢迎使用、实验和扩展；如果要用于生产或高风险
-环境，请先建立与你的任务相匹配的评估集、审批流程、安全策略和回滚演练。
+AgentEvolver 目前是 `0.1.0` 阶段的研究与工程框架。组件进化和 SFT/RL trajectory 数据接口已经
+存在；训练执行、checkpoint/模型版本管理和训练后模型回流属于下一阶段路线图。欢迎使用、实验和扩展；
+如果要用于生产或高风险环境，请先建立与你的任务相匹配的评估集、审批流程、安全策略和回滚演练。
 
 ## 许可证
 

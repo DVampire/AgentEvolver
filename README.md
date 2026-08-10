@@ -2,12 +2,14 @@
 
 # AgentEvolver
 
-### Multi-agent execution that turns lessons from one task into reusable capabilities for the next
+### Multi-agent execution that evolves reusable capabilities and turns real runs into training data
 
 AgentEvolver is a **self-evolving multi-agent framework** for complex engineering and research tasks.
 A MetaAgent plans, delegates, and reviews the work. When execution reveals a verified capability gap,
 dedicated generator, evaluator, and optimizer agents can create or improve tools, skills, agents,
-connectors, environments, workflows, and memory components.
+connectors, environments, workflows, and memory components. In parallel, `trajectory` turns real
+executions into reward-annotated SFT/RL records, preserving the data foundation for future model
+training and feedback into the runtime.
 
 [![License](https://img.shields.io/badge/license-MIT-5B6CFF.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
@@ -17,6 +19,7 @@ connectors, environments, workflows, and memory components.
 **[Website](https://dvampire.github.io/AgentEvolver/)** ·
 **[Quick start](#quick-start)** ·
 **[How it works](#how-it-works)** ·
+**[Training data loop](#from-task-trajectories-to-end-to-end-training)** ·
 **[Fit and trade-offs](#fit-and-trade-offs)** ·
 **[Web workbench](#web-workbench)**
 
@@ -45,10 +48,13 @@ A typical run contains two deliberately separate paths:
 | Prioritizes finishing the current task | Evaluates a new component before adoption, with rollback available |
 | Writes task files into an isolated session workspace | Writes reusable components into external `extension/`; the core package stays unchanged |
 
-“Self-evolving” here means **runtime component evolution**. It does not train or modify model weights,
-and it does not give agents unrestricted permission to rewrite the framework source.
+In the current release, online “self-evolution” happens first at the **runtime component layer**. An
+ordinary task does not update model weights, and agents do not receive unrestricted permission to
+rewrite the framework source. Model evolution is still part of the design: the system already captures
+trainable trajectories, with training, evaluation, model registration, and serving feedback planned as
+the next stage.
 
-> **Mental model:** AgentEvolver = a multi-agent task runtime + a versioned capability extension system + a loop that generates, evaluates, and optimizes those extensions.
+> **Mental model:** AgentEvolver = a multi-agent task runtime + a versioned capability extension system + an SFT/RL data flywheel. Today the loop reaches trainable data; the goal is to close it with trained models serving agents again.
 
 ## What problem does it solve?
 
@@ -61,7 +67,7 @@ AgentEvolver makes those methods first-class components:
 - **Orchestrate first.** The MetaAgent breaks down the goal, delegates through one runtime, and gathers and reviews results.
 - **Require evidence before evolving.** A first fixable mistake is retried. Evolution is reserved for a missing capability, repeated structural failure, or a measured quality ceiling.
 - **Persist the improvement.** New capabilities live in `extension/`, where they can be hot-loaded, versioned, compared, and rolled back without mutating the hand-written core.
-- **Keep the process inspectable.** Prompts, task documents, workflows, step snapshots, and memory reports can be opened directly; traces and trajectories record the run.
+- **Make the process inspectable and trainable.** `trace` preserves raw observation events; `trajectory` projects runs into reward-annotated, step-level records for SFT/RL pipelines.
 
 ## Core characteristics
 
@@ -70,6 +76,7 @@ AgentEvolver makes those methods first-class components:
 | **Evidence-driven self-evolution** | Detect a gap → generate or optimize → evaluate under a read-only guard → compare with a baseline → adopt or roll back. “It looks better” is not validation. |
 | **Immutable core, mutable extensions** | Hand-written capabilities live in `agentevolver/`; evolved content lives in external `extension/`. Versions are archived and restorable. |
 | **One multi-agent runtime** | `spawn`, `send`, `ask`, `suspend/resume`, and `publish/subscribe` support delegation, progress, control, and escalation. |
+| **Training-oriented data interface** | `TrajectoryHook` captures the effective context, reasoning and tool calls, observations, token use, and reward for every step; it exports OpenAI Chat SFT records and pluggable RL formats, including a built-in text-level VERL episode format. |
 | **Inspectable, HTML-native artifacts** | Prompts, dynamic workflows, task documents, memory reports, and step snapshots are used by the runtime and readable by people. |
 | **Budgets inside the agent context** | Step, token, and wall-time budgets appear as `NORMAL / TIGHT / CRITICAL`, helping agents converge before a hard limit is reached. |
 | **Four views over one project** | Chat, Canvas, browser-based VS Code, and Science/Jupyter share a session workspace and Gateway protocol. |
@@ -82,7 +89,7 @@ AgentEvolver makes those methods first-class components:
 
 - long-running engineering, data, or scientific tasks that benefit from specialist agents;
 - teams that want methods discovered during a task to become reusable tools, skills, or workflows;
-- research into agent runtimes, self-improvement strategies, evaluation loops, trajectory capture, and human oversight;
+- research into agent runtimes, self-improvement strategies, SFT/RL data construction, evaluation loops, and human oversight;
 - deployments that need a visual workbench, detailed run records, rollback, and a broad extension surface.
 
 ### Probably not the right fit for
@@ -270,6 +277,54 @@ This design limits the mutation surface, but it **does not automatically prove t
 correct**. Tests, benchmarks, read-only evaluators, and human approval remain necessary in high-risk
 settings.
 
+## From task trajectories to end-to-end training
+
+AgentEvolver does more than record what happened. It maintains a training-oriented projection of each
+run. `TrajectoryHook` consumes the agent lifecycle and aggregates an execution into a sequence of
+steps:
+
+```text
+s_t = (z_t, a_t, o_t, r_t)
+
+z_t  effective context actually sent to the model
+a_t  model reasoning and native tool calls
+o_t  result or error from each action
+r_t  reward backfilled by a benchmark or evaluator after the run
+```
+
+Implemented today:
+
+- capture each step's effective prompt, reasoning, tool calls, observations, and token usage by `task_id`;
+- preserve session/task identity, task outcome, success state, and parent/subtask metadata;
+- backfill a task-level reward after a benchmark or evaluator finishes, propagating it to every step;
+- persist to `<log_root>/trajectory/<task_id>.jsonl`;
+- export step-level OpenAI Chat SFT records through `export_sft()`, retaining reasoning and native `tool_calls` in the assistant target;
+- export RL episodes through the pluggable `RLFormat` interface. The built-in `VerlFormat` emits text-level `prompt / response / reward` fields; token ids and masks are intentionally left for a training provider that owns the tokenizer.
+
+The current data loop therefore reaches **real task → reward-annotated trajectory → SFT records / RL
+format episodes**. The next stage is to integrate training execution, checkpoints and model versions, offline
+and online evaluation, approval/promotion, and serving into the same system:
+
+```text
+Task execution
+   ↓
+Trajectory capture and reward backfill        ← implemented
+   ↓
+SFT / RL datasets and VERL-style export       ← implemented
+   ↓
+Training and checkpoint management            ← planned integration
+   ↓
+Benchmarking, comparison, model promotion     ← planned integration
+   ↓
+The new model serves agents again              ← planned integration
+   └──────────────────────────────────────→ produces the next trajectories
+```
+
+This is the fuller meaning of evolution in AgentEvolver: **component evolution gives the system new
+methods; model training internalizes successful behavior. Both are ultimately connected by the same
+tasks, evaluation signals, and data interfaces.** This repository already provides the capture and
+export foundation; it should not imply that the in-system trainer is complete today.
+
 ## Web workbench
 
 <div align="center">
@@ -311,7 +366,7 @@ their threat model.
 
 - `constraint/` tracks step, token, and wall-time budgets and renders the remaining budget into agent context;
 - `trace/` persists structured events and streams them through the Gateway;
-- `trajectory/` projects runs into step-level records for SFT/RL pipelines;
+- `trajectory/` projects runs into reward-annotated step records and exports OpenAI Chat SFT or RL formats such as VERL;
 - `memory/` maintains recent history, compacted working memory, todos, call paths, and final results;
 - `benchmark/` provides entry points for AIME, GPQA, GSM8K, HLE, LeetCode, DeepWeb, ProgramBench, and related evaluations.
 
@@ -378,12 +433,15 @@ Framework writes are resolved centrally through `agentevolver.paths`. The main w
 | [`docs/workflows.md`](docs/workflows.md) | Dynamic HTML workflows |
 | [`docs/canvas.md`](docs/canvas.md) | Visual Canvas flows |
 | [`docs/capability-schemas.md`](docs/capability-schemas.md) | Capability schema protocol |
+| [`agentevolver/trajectory/README.md`](agentevolver/trajectory/README.md) | Trajectory capture, persistence, and SFT/RL export contract |
 
 ## Project status
 
-AgentEvolver is currently a `0.1.0` research and engineering framework. It is ready for experimentation
-and extension. Before production or high-risk use, establish task-specific evaluations, approval flows,
-security policy, and rollback drills.
+AgentEvolver is currently a `0.1.0` research and engineering framework. Component evolution and the
+SFT/RL trajectory data interface are implemented; training execution, checkpoint/model version
+management, and feedback of trained models into serving are the next-stage roadmap. Before production
+or high-risk use, establish task-specific evaluations, approval flows, security policy, and rollback
+drills.
 
 ## License
 
