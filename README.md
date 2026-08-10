@@ -459,6 +459,65 @@ scvi-tools, literature review · `writing/` a full research-paper pipeline · `i
   (a blocked sub-agent asks its parent and suspends until it replies), **delegation** / **query**,
   **progress** / **control** (cancel, pause, resume), **pubsub**.
 
+<details>
+<summary><b>What <code>spawn</code> actually wraps an agent in</b></summary>
+
+An `Agent` is a class with a `handle(msg, ref)` method; it has no loop of its own. `spawn` gives it
+an **`AgentRef`** — a handle holding a private `asyncio.Queue` inbox, a pump task, a status
+(`RUNNING` / `STOPPING` / `STOPPED` / `DEAD`) and a slot for a pending reply. Everything else in the
+framework addresses the ref, never the object.
+
+```
+   send / ask ──▶ ref._inbox ──▶ ref._pump_task ──▶ agent.handle(msg, ref)
+                  (asyncio.Queue)   drains forever      the agent's own work
+```
+
+The pump **owns nothing**: it drains the inbox and dispatches, and that is all. Two exits, both
+deliberate — a `StopMessage` makes it return cleanly (so a graceful stop drains what is already
+queued first), and an unhandled exception marks the ref `DEAD` rather than leaving a half-live agent
+that silently accepts messages nobody will ever process. Sending to a ref that is not `RUNNING`
+raises `AgentDeadError` instead of dropping the message on the floor.
+
+Because the loop belongs to the ref rather than to the agent, one agent is one mailbox: work arrives
+from a parent agent, the Gateway, a tool or another session through the same door, in arrival order.
+
+</details>
+
+<details>
+<summary><b>Interrupt and resume: parking a coroutine on a key</b></summary>
+
+`suspend(key, timeout=…)` registers a **one-shot future** under `key` and blocks the caller;
+`resume(key, value)` resolves it and returns *whether anyone was actually waiting* — so a reply that
+arrives after a timeout is a `False`, not a crash. A second waiter on a live key is a
+`Suspend key collision`, never a silent overwrite.
+
+**Escalation** is the primary user. A sub-agent that cannot proceed posts an `EscalationMessage`
+(reason, situation, suggestion) to its parent and then suspends **on its own `task_id`**:
+
+```
+  sub-agent          parent
+     │ escalate ───────▶ │  (EscalationMessage lands in the parent's inbox)
+     │ suspend(task_id)  │
+     ⏸  parked           │  the parent keeps working, decides, then:
+     │ ◀─── reply(task_id, guidance)      → runtime.resume(task_id, guidance)
+     ▶ carries on with the guidance
+```
+
+While parked the coroutine holds no loop and burns no budget. **Nothing hangs forever**: no parent,
+a parent that has died, or a timeout each return a graceful-stop instruction, so the subtask ends on
+its own terms instead of blocking until the run is killed.
+
+One subtlety worth knowing about, because getting it wrong is subtle and fatal: a caller's timeout on
+`ask` must **not** cancel the future the agent owns. The in-flight handler may still complete
+normally, and cancelling the shared future would turn that completion into an `InvalidStateError`
+that takes the long-lived pump down with it. The wait is therefore shielded — a slow answer is late,
+not lethal.
+
+Alongside that, `ControlMessage` carries `cancel` / `pause` / `resume` to an agent that is *already
+mid-flight*, and `QueryMessage` asks a running agent for a status snapshot without disturbing it.
+
+</details>
+
 ### Hooks: cross-cutting behaviour, one pipeline
 
 | Hook | What it does |

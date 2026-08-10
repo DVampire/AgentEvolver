@@ -445,6 +445,61 @@ ESM2/ESMFold、Evo2、LigandMPNN/ProteinMPNN、scGPT、scvi-tools、文献综述
   （被卡住的子智能体向父级提问并挂起，直到收到回复）、**delegation** / **query**、
   **progress** / **control**（取消、暂停、恢复）、**pubsub**。
 
+<details>
+<summary><b><code>spawn</code> 到底把智能体包进了什么</b></summary>
+
+`Agent` 只是一个带 `handle(msg, ref)` 方法的类，它自己没有循环。`spawn` 给它配一个
+**`AgentRef`** —— 这个句柄持有一个私有的 `asyncio.Queue` 收件箱、一个 pump 任务、一个状态
+（`RUNNING` / `STOPPING` / `STOPPED` / `DEAD`），以及一个待回复的位置。框架其余部分寻址的都是这个
+ref，从不直接碰对象本身。
+
+```
+   send / ask ──▶ ref._inbox ──▶ ref._pump_task ──▶ agent.handle(msg, ref)
+                  (asyncio.Queue)    一直抽干           智能体自己的活
+```
+
+pump **什么都不拥有**：抽干收件箱、把消息分派出去，仅此而已。它只有两个出口，都是有意为之——
+收到 `StopMessage` 会干净地返回（所以优雅停止会先把已经排队的消息处理完），而未捕获的异常会把 ref
+标成 `DEAD`，而不是留下一个半死不活、还在照单全收但永远没人处理的智能体。向非 `RUNNING` 的 ref
+发消息会抛 `AgentDeadError`，不会把消息悄悄丢掉。
+
+正因为循环属于 ref 而不属于智能体，一个智能体就是一个信箱：来自父智能体、Gateway、工具或另一个
+会话的活儿，都从同一扇门按到达顺序进来。
+
+</details>
+
+<details>
+<summary><b>中断与恢复：把协程挂在一个 key 上</b></summary>
+
+`suspend(key, timeout=…)` 以 `key` 注册一个**一次性 future** 并阻塞调用方；`resume(key, value)`
+兑现它，并返回*当时到底还有没有人在等*——所以超时之后才到的回复只是一个 `False`，不是崩溃。
+往一个还活着的 key 上挂第二个等待者会报 `Suspend key collision`，绝不会静默覆盖。
+
+**升级（escalation）** 是它的主要用户。走不下去的子智能体向父级投一条 `EscalationMessage`
+（卡在哪、当前状况、建议怎么办），然后**按自己的 `task_id`** 挂起：
+
+```
+  子智能体            父级
+     │ escalate ───────▶ │  （EscalationMessage 落进父级的收件箱）
+     │ suspend(task_id)  │
+     ⏸  挂起              │  父级继续干自己的活，做出判断，然后：
+     │ ◀─── reply(task_id, guidance)      → runtime.resume(task_id, guidance)
+     ▶ 带着这条指引继续往下走
+```
+
+挂起期间协程不占循环，也不烧预算。**没有任何东西会无限期挂着**：没有父级、父级已死、超时，三种
+情况各自返回一条优雅停止的指示，于是子任务是自己收尾的，而不是堵到整个运行被杀掉。
+
+有个细节值得单独知道，因为踩错了既隐蔽又致命：调用方在 `ask` 上的超时**绝不能**去取消那个由智能体
+持有的 future。执行中的 handler 仍可能正常完成，而取消这个共享 future 会把那次正常完成变成
+`InvalidStateError`，并连带把长驻的 pump 打死。所以这个等待是被 shield 包住的——答得慢只是慢，
+不会要命。
+
+与之并行的还有：`ControlMessage` 把 `cancel` / `pause` / `resume` 送给一个*已经执行到一半*的
+智能体；`QueryMessage` 则在不打扰它的前提下要一份状态快照。
+
+</details>
+
 ### 钩子：横切行为，一条流水线
 
 | 钩子 | 作用 |
