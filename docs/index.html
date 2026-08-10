@@ -111,6 +111,19 @@
   .stat .l{color:var(--muted);font-size:13.5px;margin-top:6px}
   @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
 
+  /* ---------- web UI showcase ---------- */
+  .ui-stage{margin:0;border-radius:16px;overflow:hidden;border:1px solid var(--border-strong);
+    background:#0a0c1c;box-shadow:0 30px 70px rgba(0,0,0,.6);position:relative}
+  .ui-stage video{display:block;width:100%;height:auto;background:#0a0c1c}
+  .ui-thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:22px}
+  .ui-thumb{display:block;border-radius:12px;overflow:hidden;border:1px solid var(--border);
+    background:var(--panel);transition:.25s}
+  .ui-thumb:hover{transform:translateY(-4px);border-color:var(--border-strong)}
+  .ui-thumb img{display:block;width:100%;height:auto}
+  .ui-thumb span{display:block;padding:11px 13px;font-size:13.5px;color:var(--muted)}
+  .ui-thumb:hover span{color:var(--text)}
+  @media(max-width:860px){.ui-thumbs{grid-template-columns:repeat(2,1fr)}}
+
   /* ---------- feature grid ---------- */
   .features{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;
@@ -205,6 +218,7 @@
       <a href="#features" data-i18n="nav_features">Features</a>
       <a href="#architecture" data-i18n="nav_arch">Architecture</a>
       <a href="#evolution" data-i18n="nav_evo">Self-Evolution</a>
+      <a href="#webui" data-i18n="nav_ui">Web UI</a>
       <a href="#benchmarks" data-i18n="nav_bench">Benchmarks</a>
       <a href="#quickstart" data-i18n="nav_start">Quick Start</a>
     </div>
@@ -351,6 +365,41 @@
   </div>
 </section>
 
+<!-- ============ WEB UI ============ -->
+<section id="webui">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow" data-i18n="ui_eyebrow">The workbench</div>
+      <h2 data-i18n="ui_h">Drive it from the browser</h2>
+      <p data-i18n="ui_p">A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, and a desktop the agent can actually use.</p>
+    </div>
+
+    <figure class="ui-stage reveal">
+      <video src="assets/ui/01-overview.mp4" poster="assets/ui/01-overview.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+    </figure>
+
+    <div class="ui-thumbs reveal">
+      <a class="ui-thumb" href="ui.html#workspaces">
+        <img src="assets/ui/02-views.jpg" alt="Chat, Canvas, Code and Science workspaces" loading="lazy">
+        <span data-i18n="ui_t1">Four workspaces</span></a>
+      <a class="ui-thumb" href="ui.html#capabilities">
+        <img src="assets/ui/03-capabilities.jpg" alt="The capability catalogue" loading="lazy">
+        <span data-i18n="ui_t2">Capability catalogue</span></a>
+      <a class="ui-thumb" href="ui.html#machines">
+        <img src="assets/ui/06-machines.jpg" alt="Local and remote machines" loading="lazy">
+        <span data-i18n="ui_t3">Machines over noVNC</span></a>
+      <a class="ui-thumb" href="ui.html#models">
+        <img src="assets/ui/07-models.jpg" alt="The model catalogue" loading="lazy">
+        <span data-i18n="ui_t4">Model catalogue</span></a>
+    </div>
+
+    <p style="text-align:center;margin-top:34px">
+      <a class="btn primary" href="ui.html" style="padding:13px 26px;font-size:15px" data-i18n="ui_cta">Take the full tour →</a>
+    </p>
+  </div>
+</section>
+
 <!-- ============ BENCHMARKS ============ -->
 <section id="benchmarks">
   <div class="wrap">
@@ -441,7 +490,7 @@ python examples/run_meta_agent.py <span class="k">\</span>
 /* ---------------- i18n ---------------- */
 const I18N = {
   en:{
-    nav_features:"Features", nav_arch:"Architecture", nav_evo:"Self-Evolution", nav_bench:"Benchmarks", nav_start:"Quick Start",
+    nav_features:"Features", nav_arch:"Architecture", nav_evo:"Self-Evolution", nav_ui:"Web UI", nav_bench:"Benchmarks", nav_start:"Quick Start",
     hero_pill:"Self-evolving multi-agent framework",
     hero_title_html:'Agents that <span class="grad">evolve themselves</span>',
     hero_sub:"A MetaAgent orchestrates specialized sub-agents to solve tasks — while generator, evaluator, and optimizer agents continuously grow the tool, skill, and agent ecosystem.",
@@ -466,6 +515,10 @@ const I18N = {
     evo_t1:"Tools", evo_t2:"Skills", evo_t3:"Agents", evo_t4:"Environments",
     reg_eyebrow:"Registry-driven", reg_h:"Every capability is a component",
     reg_p:"Each module self-registers with an mmengine registry — discoverable, swappable, and evolvable.",
+    ui_eyebrow:"The workbench", ui_h:"Drive it from the browser",
+    ui_p:"A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, and a desktop the agent can actually use.",
+    ui_t1:"Four workspaces", ui_t2:"Capability catalogue", ui_t3:"Machines over noVNC", ui_t4:"Model catalogue",
+    ui_cta:"Take the full tour →",
     bench_eyebrow:"Evaluate everything", bench_h:"Benchmarks out of the box",
     bench_p:"Datasets are read locally first, then snapshot-downloaded from HuggingFace on demand.",
     qs_eyebrow:"Quick Start", qs_h:"Up and running in minutes", qs_p:"Set up the environment, then let the MetaAgent run a task to completion.",
@@ -475,7 +528,7 @@ const I18N = {
     foot_tag:"A self-evolving multi-agent framework · MIT License", foot_readme:"README", foot_top:"Back to top ↑"
   },
   zh:{
-    nav_features:"特性", nav_arch:"架构", nav_evo:"自进化", nav_bench:"基准测试", nav_start:"快速开始",
+    nav_features:"特性", nav_arch:"架构", nav_evo:"自进化", nav_ui:"Web 界面", nav_bench:"基准测试", nav_start:"快速开始",
     hero_pill:"自进化的多智能体框架",
     hero_title_html:'会<span class="grad">自我进化</span>的智能体',
     hero_sub:"由 MetaAgent 编排各领域专精子智能体来完成任务；同时 generator、evaluator、optimizer 智能体持续壮大工具、技能与智能体生态。",
@@ -500,6 +553,10 @@ const I18N = {
     evo_t1:"工具", evo_t2:"技能", evo_t3:"智能体", evo_t4:"环境",
     reg_eyebrow:"注册表驱动", reg_h:"每项能力都是一个组件",
     reg_p:"每个模块都通过 mmengine 注册表自注册——可发现、可替换、可进化。",
+    ui_eyebrow:"浏览器工作台", ui_h:"在浏览器里直接驱动它",
+    ui_p:"React 工作台通过 WebSocket 与 Python Gateway 通信：同一个会话四种工作视图、实时的能力目录，以及一块 agent 真能上手操作的桌面。",
+    ui_t1:"四种工作视图", ui_t2:"能力目录", ui_t3:"noVNC 机器环境", ui_t4:"模型目录",
+    ui_cta:"看完整功能演示 →",
     bench_eyebrow:"全面评测", bench_h:"开箱即用的基准测试",
     bench_p:"数据集优先从本地读取，需要时再从 HuggingFace 快照下载。",
     qs_eyebrow:"快速开始", qs_h:"几分钟即可跑起来", qs_p:"配置好环境，让 MetaAgent 把任务跑到完成。",
@@ -543,6 +600,25 @@ const io = new IntersectionObserver((entries)=>{
   entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
 },{threshold:.12});
 document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
+
+/* ---------------- play the workbench clip only while it is on screen ----------------
+   preload="none" keeps the video off the critical path; it is fetched the first
+   time the section scrolls into view, and paused again on the way out. */
+const clipIO = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    const v = e.target;
+    if(e.isIntersecting){
+      if(v.preload === "none") v.preload = "auto";
+      v.play().catch(()=>{});     // autoplay may be refused; the poster stays put
+    } else {
+      v.pause();
+    }
+  });
+},{threshold:.35});
+document.querySelectorAll("video[data-autoplay]").forEach(v=>{
+  clipIO.observe(v);
+  v.addEventListener("click", ()=>{ v.paused ? v.play().catch(()=>{}) : v.pause(); });
+});
 </script>
 </body>
 </html>

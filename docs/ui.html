@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AgentEvolver · The Web UI, feature by feature</title>
+<meta name="description" content="A guided tour of the AgentEvolver browser workbench — four workspaces, a live capability catalogue, session panels, machines over noVNC, and the model registry. One short clip per feature." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#05060f; --bg-2:#0a0c1c;
+    --panel:rgba(255,255,255,.035); --panel-strong:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.16);
+    --text:#eef1ff; --muted:#9aa3c7; --muted-2:#6f7aa6;
+    --brand:#7c5cff; --brand-2:#22d3ee; --brand-3:#ff5c9d;
+    --radius:18px; --maxw:1180px;
+    --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,SFMono-Regular,"JetBrains Mono","Fira Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
+    line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3{line-height:1.15;margin:0;letter-spacing:-.02em}
+  p{margin:0}
+  code{font-family:var(--mono);font-size:.92em;background:rgba(255,255,255,.07);
+    border:1px solid var(--border);border-radius:6px;padding:1px 6px}
+  ::selection{background:rgba(124,92,255,.35)}
+
+  .bg-fx{position:fixed;inset:0;z-index:-2;overflow:hidden;background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(124,92,255,.20), transparent 60%),
+    radial-gradient(1000px 700px at 100% 0%, rgba(34,211,238,.14), transparent 55%),
+    radial-gradient(900px 900px at 50% 120%, rgba(255,92,157,.10), transparent 60%),
+    var(--bg);}
+  .grid-fx{position:fixed;inset:0;z-index:-1;
+    background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+    background-size:56px 56px;
+    -webkit-mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 30%,transparent 75%);
+            mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 30%,transparent 75%);}
+
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+    background:rgba(5,6,15,.6);border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex;align-items:center;gap:20px;height:66px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.02em}
+  .brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2));box-shadow:0 6px 20px rgba(124,92,255,.5)}
+  .nav-links{display:flex;gap:26px;margin-left:auto;font-size:14.5px;color:var(--muted)}
+  .nav-links a{transition:color .2s}.nav-links a:hover{color:var(--text)}
+  .nav-links a.here{color:var(--text)}
+  .nav-actions{display:flex;align-items:center;gap:12px}
+  .lang{display:flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;font-size:13px;font-weight:600}
+  .lang button{background:none;border:0;color:var(--muted);padding:6px 13px;cursor:pointer;font-family:inherit;font-weight:inherit;transition:.2s}
+  .lang button.active{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:11px;font-weight:600;font-size:14px;
+    border:1px solid var(--border-strong);transition:.2s;cursor:pointer}
+  .btn:hover{border-color:rgba(255,255,255,.35);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(135deg,var(--brand),#5a3bff);border-color:transparent;
+    box-shadow:0 8px 24px rgba(124,92,255,.4)}
+  @media(max-width:960px){.nav-links{display:none}}
+
+  header.hero{padding:88px 0 54px;text-align:center}
+  .pill{display:inline-flex;align-items:center;gap:9px;padding:7px 16px;border-radius:999px;font-size:13px;
+    color:var(--muted);border:1px solid var(--border-strong);background:var(--panel);margin-bottom:26px}
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:#3ee6a0;box-shadow:0 0 10px #3ee6a0}
+  h1.title{font-size:clamp(38px,6vw,68px);font-weight:800;letter-spacing:-.04em}
+  h1.title .grad{background:linear-gradient(120deg,#a78bff 5%,#22d3ee 50%,#ff7eb6 95%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .subtitle{max-width:760px;margin:22px auto 0;font-size:clamp(16px,2vw,20px);color:var(--muted)}
+
+  .toc{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:34px}
+  .toc a{font-size:13.5px;color:var(--muted);padding:7px 14px;border-radius:999px;
+    background:var(--panel);border:1px solid var(--border);transition:.2s}
+  .toc a:hover{color:var(--text);border-color:var(--border-strong);transform:translateY(-1px)}
+
+  section.feat{padding:56px 0;border-top:1px solid var(--border)}
+  .feat-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:44px;align-items:center}
+  section.feat.flip .feat-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.55fr)}
+  section.feat.flip .feat-copy{order:-1}
+  .num{font-family:var(--mono);font-size:12.5px;color:var(--brand-2);letter-spacing:.16em;margin-bottom:12px}
+  .feat-copy h2{font-size:clamp(24px,3.2vw,33px);font-weight:800}
+  .feat-copy p{margin-top:14px;color:var(--muted);font-size:15.5px}
+  .kv{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:9px}
+  .kv li{position:relative;padding-left:20px;color:var(--muted);font-size:14.5px}
+  .kv li::before{content:"";position:absolute;left:0;top:9px;width:7px;height:7px;border-radius:2px;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2))}
+  .kv b{color:var(--text);font-weight:600}
+
+  .shot{margin:0;border-radius:14px;overflow:hidden;border:1px solid var(--border-strong);
+    background:#0a0c1c;box-shadow:0 24px 60px rgba(0,0,0,.55);position:relative}
+  .shot video{display:block;width:100%;height:auto;background:#0a0c1c;cursor:pointer}
+  .shot figcaption{position:absolute;left:12px;bottom:11px;font-size:11.5px;color:var(--muted);
+    background:rgba(5,6,15,.72);border:1px solid var(--border);border-radius:7px;padding:3px 9px;
+    backdrop-filter:blur(6px);pointer-events:none;font-family:var(--mono)}
+  @media(max-width:900px){
+    .feat-grid,section.feat.flip .feat-grid{grid-template-columns:1fr;gap:26px}
+    section.feat.flip .feat-copy{order:0}
+  }
+
+  .note{margin-top:22px;padding:16px 18px;border-radius:12px;background:var(--panel);
+    border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13.5px;max-width:760px}
+
+  .cta-banner{background:linear-gradient(135deg,rgba(124,92,255,.16),rgba(34,211,238,.10));
+    border:1px solid var(--border-strong);border-radius:22px;padding:52px 40px;text-align:center;margin:70px 0}
+  .cta-banner h2{font-size:clamp(26px,3.6vw,38px);font-weight:800}
+  .cta-banner p{margin-top:14px;color:var(--muted)}
+  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:30px}
+
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted-2);font-size:13.5px}
+  .foot-inner{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .foot-links{display:flex;gap:20px;flex-wrap:wrap}
+  .foot-links a:hover{color:var(--text)}
+
+  .reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+</style>
+</head>
+<body>
+<div class="bg-fx"></div>
+<div class="grid-fx"></div>
+
+<!-- ============ NAV ============ -->
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="mark">🧬</span> AgentEvolver</a>
+    <div class="nav-links">
+      <a href="index.html#features" data-i18n="nav_features">Features</a>
+      <a href="index.html#architecture" data-i18n="nav_arch">Architecture</a>
+      <a href="index.html#benchmarks" data-i18n="nav_bench">Benchmarks</a>
+      <a href="ui.html" class="here" data-i18n="nav_ui">Web UI</a>
+      <a href="index.html#quickstart" data-i18n="nav_start">Quick Start</a>
+    </div>
+    <div class="nav-actions">
+      <div class="lang" role="group" aria-label="language">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="zh">中文</button>
+      </div>
+      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener"><span>★</span> GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span><span data-i18n="hero_pill">Recorded from a live gateway session</span></span>
+    <h1 class="title" data-i18n="hero_title_html">The workbench, <span class="grad">one feature at a time</span></h1>
+    <p class="subtitle" data-i18n="hero_sub">AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Below is one short clip per part of it — the layout, the four workspaces, the capability catalogue, the session panels, the machines, and the model registry.</p>
+    <div class="toc">
+      <a href="#layout" data-i18n="toc1">Layout</a>
+      <a href="#workspaces" data-i18n="toc2">Workspaces</a>
+      <a href="#capabilities" data-i18n="toc3">Capabilities</a>
+      <a href="#composer" data-i18n="toc4">Task composer</a>
+      <a href="#panels" data-i18n="toc5">Session panels</a>
+      <a href="#machines" data-i18n="toc6">Machines</a>
+      <a href="#models" data-i18n="toc7">Models</a>
+      <a href="#theme" data-i18n="toc8">Theme &amp; connection</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 1. LAYOUT ============ -->
+<section class="feat" id="layout">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/01-overview.mp4" poster="assets/ui/01-overview.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>01-overview.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">01</div>
+      <h2 data-i18n="s1_h">Three panes, one live connection</h2>
+      <p data-i18n="s1_p">Projects and navigation on the left, the task surface in the middle, session state on the right. The header carries the gateway status — this workbench is a thin client over a running Python process, not a mock.</p>
+      <ul class="kv">
+        <li data-i18n="s1_a"><b>Projects</b> — every session you have opened, grouped by age</li>
+        <li data-i18n="s1_b"><b>Views</b> — switch the middle pane between four workspaces</li>
+        <li data-i18n="s1_c"><b>Capabilities</b> — what this session is allowed to use</li>
+        <li data-i18n="s1_d"><b>Connected</b> — a live WebSocket to <code>ws://…/ws</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. WORKSPACES ============ -->
+<section class="feat flip" id="workspaces">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/02-views.mp4" poster="assets/ui/02-views.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>02-views.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">02</div>
+      <h2 data-i18n="s2_h">Four workspaces over one session</h2>
+      <p data-i18n="s2_p">The same session, seen four ways. Switching a view does not start a new run — the workspace, the files, and the agent history stay put underneath.</p>
+      <ul class="kv">
+        <li data-i18n="s2_a"><b>Chat</b> — describe a task and watch it get worked</li>
+        <li data-i18n="s2_b"><b>Canvas</b> — a node editor with a component palette: inputs, flow control, agents, data, processing</li>
+        <li data-i18n="s2_c"><b>Code</b> — an editor over the session workspace</li>
+        <li data-i18n="s2_d"><b>Science</b> — a Jupyter kernel on the same files, with a JupyterLab escape hatch</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. CAPABILITIES ============ -->
+<section class="feat" id="capabilities">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/03-capabilities.mp4" poster="assets/ui/03-capabilities.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>03-capabilities.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">03</div>
+      <h2 data-i18n="s3_h">A catalogue of everything the agent may use</h2>
+      <p data-i18n="s3_p">Each registry in the framework surfaces here as a browsable, searchable list, and what you tick is what the session is handed. The counts beside each entry are live — they grow as the evolution loop registers new components.</p>
+      <ul class="kv">
+        <li data-i18n="s3_a"><b>Skills</b> and <b>Tools</b> — specialist workflows and callable actions</li>
+        <li data-i18n="s3_b"><b>Agents</b> — specialists available for delegation</li>
+        <li data-i18n="s3_c"><b>Connectors</b> — external data sources and services</li>
+        <li data-i18n="s3_d"><b>Environments</b>, <b>Workflows</b>, <b>Commands</b>, and saved <b>Canvas</b> flows</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. COMPOSER ============ -->
+<section class="feat flip" id="composer">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/04-composer.mp4" poster="assets/ui/04-composer.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>04-composer.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">04</div>
+      <h2 data-i18n="s4_h">Start from a card, or just say it</h2>
+      <p data-i18n="s4_p">Four starting points cover the usual asks — review, plan, explain, investigate — and the composer underneath takes anything else. Files can be attached to the session before the run begins.</p>
+      <ul class="kv">
+        <li data-i18n="s4_a"><b>Starter cards</b> — review, plan a feature, explain the architecture, investigate</li>
+        <li data-i18n="s4_b"><b>Free-form prompt</b> — Enter to send, Shift+Enter for a newline</li>
+        <li data-i18n="s4_c"><b>Attach files</b> — staged into the session workspace</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. PANELS ============ -->
+<section class="feat" id="panels">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/05-panels.mp4" poster="assets/ui/05-panels.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>05-panels.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">05</div>
+      <h2 data-i18n="s5_h">Files, activity, and the raw event stream</h2>
+      <p data-i18n="s5_p">The right pane answers "what is it actually doing". Each session gets its own initially empty workspace — only staged inputs and files produced during that session appear there, never a copy of your checkout.</p>
+      <ul class="kv">
+        <li data-i18n="s5_a"><b>Files</b> — browse and open anything in the session workspace</li>
+        <li data-i18n="s5_b"><b>Activity</b> — the agent timeline, step by step</li>
+        <li data-i18n="s5_c"><b>Inspector</b> — the raw gateway events behind that timeline</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. MACHINES ============ -->
+<section class="feat flip" id="machines">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/06-machines.mp4" poster="assets/ui/06-machines.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>06-machines.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">06</div>
+      <h2 data-i18n="s6_h">Give the agent a screen, or a second host</h2>
+      <p data-i18n="s6_p">Some work needs a GUI rather than a shell. Local environments ship their own VNC-capable runtime and open as a live view in the browser; remote machines are reached over SSH instead.</p>
+      <ul class="kv">
+        <li data-i18n="s6_a"><b>Browser</b> — headful Chrome, driven over noVNC</li>
+        <li data-i18n="s6_b"><b>Computer</b> — a full desktop for GUI automation, over noVNC</li>
+        <li data-i18n="s6_c"><b>Remote machines</b> — SSH hosts that open a shell</li>
+        <li data-i18n="s6_d"><b>Deployments</b> — services the session has published</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7. MODELS ============ -->
+<section class="feat" id="models">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/07-models.mp4" poster="assets/ui/07-models.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>07-models.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">07</div>
+      <h2 data-i18n="s7_h">One catalogue for every provider</h2>
+      <p data-i18n="s7_p">Providers are registered centrally, and every model declares what it can do — so the orchestrator can pick a model that actually supports the call it is about to make.</p>
+      <ul class="kv">
+        <li data-i18n="s7_a"><b>Per-model flags</b> — tool use, vision, streaming</li>
+        <li data-i18n="s7_b"><b>Grouped by provider</b> — Anthropic, Google, OpenRouter and friends</li>
+        <li data-i18n="s7_c"><b>Add a model</b> — register a new endpoint without a redeploy</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8. THEME ============ -->
+<section class="feat flip" id="theme">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/08-theme.mp4" poster="assets/ui/08-theme.jpg"
+             muted loop playsinline preload="none" data-autoplay></video>
+      <figcaption>08-theme.mp4</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">08</div>
+      <h2 data-i18n="s8_h">Dark or light, local or remote</h2>
+      <p data-i18n="s8_p">The theme is remembered across sessions, and the endpoint is not baked in: point the workbench at a gateway on another host, or supply a token when the gateway requires one.</p>
+      <ul class="kv">
+        <li data-i18n="s8_a"><b>Theme</b> — light and dark, remembered per browser</li>
+        <li data-i18n="s8_b"><b>Connection</b> — change the gateway endpoint at runtime</li>
+        <li data-i18n="s8_c"><b>Token</b> — <code>AGENTEVOLVER_GATEWAY_TOKEN</code> for protected gateways</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RUN IT ============ -->
+<section class="feat" id="run">
+  <div class="wrap reveal">
+    <div class="num">▸</div>
+    <h2 style="font-size:clamp(24px,3.2vw,33px);font-weight:800" data-i18n="run_h">Run this yourself</h2>
+    <p style="margin-top:14px;color:var(--muted);max-width:760px" data-i18n="run_p">Both halves — the Python Gateway and the Vite dev server — start together inside the base sandbox. One container, two processes.</p>
+    <div class="note">scripts/run-in-sandbox.sh -- scripts/serve-ui.sh</div>
+    <p style="margin-top:16px;color:var(--muted-2);font-size:13.5px;max-width:760px" data-i18n="run_note">Then open <code>http://127.0.0.1:5173</code>. The sandbox runs with <code>--network host</code>, so the container loopback is the host loopback; the UI connects to <code>ws://127.0.0.1:9876/ws</code> by default.</p>
+  </div>
+</section>
+
+<section style="padding:0">
+  <div class="wrap">
+    <div class="cta-banner reveal">
+      <h2 data-i18n="cta_h">See the rest of the framework</h2>
+      <p data-i18n="cta_p">The workbench is one surface on a registry-driven core that grows its own tools, skills, and agents.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="index.html" style="padding:13px 26px;font-size:15px" data-i18n="cta_b1">← Back to the overview</a>
+        <a class="btn" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px" data-i18n="cta_b2">★ Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>
+      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:14px">🧬</span> AgentEvolver</div>
+      <div style="margin-top:8px;font-size:13px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
+    </div>
+    <div class="foot-links">
+      <a href="index.html" data-i18n="foot_home">Overview</a>
+      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/DVampire/AgentEvolver/blob/main/frontend/README.md" target="_blank" rel="noopener" data-i18n="foot_fe">Frontend README</a>
+      <a href="#top" data-i18n="foot_top">Back to top ↑</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ---------------- i18n ---------------- */
+const I18N = {
+  en:{
+    nav_features:"Features", nav_arch:"Architecture", nav_bench:"Benchmarks", nav_ui:"Web UI", nav_start:"Quick Start",
+    hero_pill:"Recorded from a live gateway session",
+    hero_title_html:'The workbench, <span class="grad">one feature at a time</span>',
+    hero_sub:"AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Below is one short clip per part of it — the layout, the four workspaces, the capability catalogue, the session panels, the machines, and the model registry.",
+    toc1:"Layout", toc2:"Workspaces", toc3:"Capabilities", toc4:"Task composer",
+    toc5:"Session panels", toc6:"Machines", toc7:"Models", toc8:"Theme & connection",
+
+    s1_h:"Three panes, one live connection",
+    s1_p:"Projects and navigation on the left, the task surface in the middle, session state on the right. The header carries the gateway status — this workbench is a thin client over a running Python process, not a mock.",
+    s1_a:"<b>Projects</b> — every session you have opened, grouped by age",
+    s1_b:"<b>Views</b> — switch the middle pane between four workspaces",
+    s1_c:"<b>Capabilities</b> — what this session is allowed to use",
+    s1_d:"<b>Connected</b> — a live WebSocket to <code>ws://…/ws</code>",
+
+    s2_h:"Four workspaces over one session",
+    s2_p:"The same session, seen four ways. Switching a view does not start a new run — the workspace, the files, and the agent history stay put underneath.",
+    s2_a:"<b>Chat</b> — describe a task and watch it get worked",
+    s2_b:"<b>Canvas</b> — a node editor with a component palette: inputs, flow control, agents, data, processing",
+    s2_c:"<b>Code</b> — an editor over the session workspace",
+    s2_d:"<b>Science</b> — a Jupyter kernel on the same files, with a JupyterLab escape hatch",
+
+    s3_h:"A catalogue of everything the agent may use",
+    s3_p:"Each registry in the framework surfaces here as a browsable, searchable list, and what you tick is what the session is handed. The counts beside each entry are live — they grow as the evolution loop registers new components.",
+    s3_a:"<b>Skills</b> and <b>Tools</b> — specialist workflows and callable actions",
+    s3_b:"<b>Agents</b> — specialists available for delegation",
+    s3_c:"<b>Connectors</b> — external data sources and services",
+    s3_d:"<b>Environments</b>, <b>Workflows</b>, <b>Commands</b>, and saved <b>Canvas</b> flows",
+
+    s4_h:"Start from a card, or just say it",
+    s4_p:"Four starting points cover the usual asks — review, plan, explain, investigate — and the composer underneath takes anything else. Files can be attached to the session before the run begins.",
+    s4_a:"<b>Starter cards</b> — review, plan a feature, explain the architecture, investigate",
+    s4_b:"<b>Free-form prompt</b> — Enter to send, Shift+Enter for a newline",
+    s4_c:"<b>Attach files</b> — staged into the session workspace",
+
+    s5_h:"Files, activity, and the raw event stream",
+    s5_p:"The right pane answers \"what is it actually doing\". Each session gets its own initially empty workspace — only staged inputs and files produced during that session appear there, never a copy of your checkout.",
+    s5_a:"<b>Files</b> — browse and open anything in the session workspace",
+    s5_b:"<b>Activity</b> — the agent timeline, step by step",
+    s5_c:"<b>Inspector</b> — the raw gateway events behind that timeline",
+
+    s6_h:"Give the agent a screen, or a second host",
+    s6_p:"Some work needs a GUI rather than a shell. Local environments ship their own VNC-capable runtime and open as a live view in the browser; remote machines are reached over SSH instead.",
+    s6_a:"<b>Browser</b> — headful Chrome, driven over noVNC",
+    s6_b:"<b>Computer</b> — a full desktop for GUI automation, over noVNC",
+    s6_c:"<b>Remote machines</b> — SSH hosts that open a shell",
+    s6_d:"<b>Deployments</b> — services the session has published",
+
+    s7_h:"One catalogue for every provider",
+    s7_p:"Providers are registered centrally, and every model declares what it can do — so the orchestrator can pick a model that actually supports the call it is about to make.",
+    s7_a:"<b>Per-model flags</b> — tool use, vision, streaming",
+    s7_b:"<b>Grouped by provider</b> — Anthropic, Google, OpenRouter and friends",
+    s7_c:"<b>Add a model</b> — register a new endpoint without a redeploy",
+
+    s8_h:"Dark or light, local or remote",
+    s8_p:"The theme is remembered across sessions, and the endpoint is not baked in: point the workbench at a gateway on another host, or supply a token when the gateway requires one.",
+    s8_a:"<b>Theme</b> — light and dark, remembered per browser",
+    s8_b:"<b>Connection</b> — change the gateway endpoint at runtime",
+    s8_c:"<b>Token</b> — <code>AGENTEVOLVER_GATEWAY_TOKEN</code> for protected gateways",
+
+    run_h:"Run this yourself",
+    run_p:"Both halves — the Python Gateway and the Vite dev server — start together inside the base sandbox. One container, two processes.",
+    run_note:"Then open <code>http://127.0.0.1:5173</code>. The sandbox runs with <code>--network host</code>, so the container loopback is the host loopback; the UI connects to <code>ws://127.0.0.1:9876/ws</code> by default.",
+
+    cta_h:"See the rest of the framework",
+    cta_p:"The workbench is one surface on a registry-driven core that grows its own tools, skills, and agents.",
+    cta_b1:"← Back to the overview", cta_b2:"★ Star on GitHub",
+    foot_tag:"A self-evolving multi-agent framework · MIT License",
+    foot_home:"Overview", foot_fe:"Frontend README", foot_top:"Back to top ↑"
+  },
+  zh:{
+    nav_features:"特性", nav_arch:"架构", nav_bench:"基准", nav_ui:"Web 界面", nav_start:"快速开始",
+    hero_pill:"录自一次真实的 Gateway 会话",
+    hero_title_html:'界面功能，<span class="grad">逐个看过来</span>',
+    hero_sub:"AgentEvolver 自带一个浏览器工作台，通过 WebSocket 与 Python Gateway 通信。下面每个功能配一段短视频——整体布局、四种工作视图、能力目录、会话面板、机器环境，以及模型注册表。",
+    toc1:"布局", toc2:"工作视图", toc3:"能力目录", toc4:"任务输入",
+    toc5:"会话面板", toc6:"机器环境", toc7:"模型", toc8:"主题与连接",
+
+    s1_h:"三栏布局，一条实时连接",
+    s1_p:"左侧是项目与导航，中间是任务区，右侧是会话状态。顶栏显示 Gateway 连接状态——这个工作台是运行中 Python 进程的瘦客户端，不是静态原型。",
+    s1_a:"<b>Projects</b>——你打开过的所有会话，按时间分组",
+    s1_b:"<b>Views</b>——在四种工作视图之间切换中间栏",
+    s1_c:"<b>Capabilities</b>——这次会话被允许使用的能力",
+    s1_d:"<b>Connected</b>——一条到 <code>ws://…/ws</code> 的实时连接",
+
+    s2_h:"同一个会话，四种工作视图",
+    s2_p:"同一个会话的四个切面。切换视图不会开启新的运行——底下的工作区、文件和 agent 历史都原封不动。",
+    s2_a:"<b>Chat</b>——描述任务，看它被一步步执行",
+    s2_b:"<b>Canvas</b>——节点编辑器，左侧组件面板含输入输出、流程控制、Agents、数据、处理",
+    s2_c:"<b>Code</b>——直接编辑会话工作区里的文件",
+    s2_d:"<b>Science</b>——挂在同一批文件上的 Jupyter 内核，另有 JupyterLab 入口",
+
+    s3_h:"agent 能用的一切，都在这张目录里",
+    s3_p:"框架里每个注册表都在这里呈现为可搜索的列表，你勾选什么，这次会话就拿到什么。每项旁边的数字是实时的——随着进化循环注册新组件而增长。",
+    s3_a:"<b>Skills</b> 与 <b>Tools</b>——专项工作流与可调用动作",
+    s3_b:"<b>Agents</b>——可供委派的专家 agent",
+    s3_c:"<b>Connectors</b>——外部数据源与服务",
+    s3_d:"<b>Environments</b>、<b>Workflows</b>、<b>Commands</b>，以及保存下来的 <b>Canvas</b> 流程",
+
+    s4_h:"从卡片起步，或者直接说",
+    s4_p:"四张起始卡覆盖了最常见的诉求——审查、规划、讲解、排查——下方的输入框接住其余一切。运行开始前可以先把文件挂到会话里。",
+    s4_a:"<b>起始卡片</b>——审查项目、规划功能、讲解架构、排查问题",
+    s4_b:"<b>自由输入</b>——Enter 发送，Shift+Enter 换行",
+    s4_c:"<b>附加文件</b>——暂存进会话工作区",
+
+    s5_h:"文件、活动，以及原始事件流",
+    s5_p:"右栏回答的是「它到底在干什么」。每个会话都有自己最初为空的工作区——只有暂存的输入和该会话运行中产生的文件会出现在那里，绝不会把你的代码库整个复制进去。",
+    s5_a:"<b>Files</b>——浏览并打开会话工作区里的任何文件",
+    s5_b:"<b>Activity</b>——agent 时间线，逐步展开",
+    s5_c:"<b>Inspector</b>——时间线背后的原始 Gateway 事件",
+
+    s6_h:"给 agent 一块屏幕，或者另一台主机",
+    s6_p:"有些活儿需要图形界面而不是命令行。本地环境自带 VNC 运行时，在浏览器里开成实时画面；远程机器则走 SSH。",
+    s6_a:"<b>Browser</b>——有头 Chrome，经 noVNC 驱动",
+    s6_b:"<b>Computer</b>——完整桌面，用于 GUI 自动化，经 noVNC",
+    s6_c:"<b>Remote machines</b>——通过 SSH 打开 shell 的远程主机",
+    s6_d:"<b>Deployments</b>——该会话已发布的服务",
+
+    s7_h:"所有 provider，一张目录",
+    s7_p:"Provider 集中注册，每个模型都声明自己的能力——编排器因此能挑一个真正支持当前调用方式的模型。",
+    s7_a:"<b>逐模型能力标记</b>——工具调用、视觉、流式",
+    s7_b:"<b>按 provider 分组</b>——Anthropic、Google、OpenRouter 等",
+    s7_c:"<b>Add model</b>——不重新部署即可注册新端点",
+
+    s8_h:"深色浅色，本地远程",
+    s8_p:"主题跨会话记住，端点也不是写死的：可以把工作台指向另一台主机上的 Gateway，或在 Gateway 需要鉴权时提供 token。",
+    s8_a:"<b>主题</b>——深浅两套，按浏览器记忆",
+    s8_b:"<b>Connection</b>——运行时更改 Gateway 端点",
+    s8_c:"<b>Token</b>——受保护的 Gateway 用 <code>AGENTEVOLVER_GATEWAY_TOKEN</code>",
+
+    run_h:"自己跑一遍",
+    run_p:"两半——Python Gateway 与 Vite 开发服务器——在 base 沙箱里一起启动。一个容器，两个进程。",
+    run_note:"然后打开 <code>http://127.0.0.1:5173</code>。沙箱以 <code>--network host</code> 运行，容器的 loopback 就是宿主的 loopback；界面默认连 <code>ws://127.0.0.1:9876/ws</code>。",
+
+    cta_h:"看看框架的其余部分",
+    cta_p:"工作台只是其中一个界面，底下是一个注册表驱动、能自己生长出工具/技能/agent 的内核。",
+    cta_b1:"← 回到总览", cta_b2:"★ 去 GitHub 点星",
+    foot_tag:"自进化多智能体框架 · MIT 许可证",
+    foot_home:"总览", foot_fe:"前端 README", foot_top:"回到顶部 ↑"
+  }
+};
+
+function applyLang(lang){
+  const dict = I18N[lang] || I18N.en;
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const v = dict[el.dataset.i18n];
+    if (v != null) el.innerHTML = v;
+  });
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll(".lang button").forEach(b=>
+    b.classList.toggle("active", b.dataset.lang === lang));
+  try{ localStorage.setItem("ae_lang", lang); }catch(e){}
+}
+document.querySelectorAll(".lang button").forEach(b=>
+  b.addEventListener("click", ()=>applyLang(b.dataset.lang)));
+
+let lang0 = "en";
+try{
+  lang0 = localStorage.getItem("ae_lang")
+       || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+}catch(e){}
+applyLang(lang0);
+
+/* -------- reveal on scroll -------- */
+const revealIO = new IntersectionObserver((entries)=>{
+  for (const e of entries) if (e.isIntersecting){ e.target.classList.add("in"); revealIO.unobserve(e.target); }
+}, {rootMargin:"0px 0px -8% 0px"});
+document.querySelectorAll(".reveal").forEach(el=>revealIO.observe(el));
+
+/* -------- play a clip only while it is on screen --------
+   Eight autoplaying videos would pull several megabytes up front and keep
+   decoding off-screen. preload="none" plus this observer means a clip is only
+   fetched and decoded once someone is actually looking at it. */
+const playIO = new IntersectionObserver((entries)=>{
+  for (const e of entries){
+    const v = e.target;
+    if (e.isIntersecting){
+      if (v.preload === "none") v.preload = "auto";
+      v.play().catch(()=>{});      // autoplay can still be refused; the poster stays
+    } else {
+      v.pause();
+    }
+  }
+}, {threshold:0.35});
+document.querySelectorAll("video[data-autoplay]").forEach(v=>{
+  playIO.observe(v);
+  v.addEventListener("click", ()=>{ v.paused ? v.play().catch(()=>{}) : v.pause(); });
+});
+</script>
+</body>
+</html>
