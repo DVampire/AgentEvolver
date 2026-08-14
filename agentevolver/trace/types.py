@@ -161,6 +161,11 @@ def agent_call_event(
         message=reasoning,
         success=True,
         duration_ms=duration_ms,
+        # On the surface: this is the assistant's turn. It was log-only while the
+        # surface meant "what memory records", which covers results and not the
+        # reasoning that produced them — so a compaction could hide a result while
+        # leaving the thinking behind it in the history.
+        surface_op=APPEND,
     )
 
 
@@ -186,7 +191,7 @@ def agent_end_event(
 def tool_start_event(
     session_id: str, task_id: str, agent_name: str,
     step_number: int, action_index: int, action_name: str,
-    action_args: Dict[str, Any],
+    action_args: Dict[str, Any], call_id: str = "",
 ) -> TraceEvent:
     return TraceEvent(
         event_type=TraceEventType.TOOL_START,
@@ -194,6 +199,7 @@ def tool_start_event(
         step_number=step_number, action_index=action_index,
         action_type="tool", action_name=action_name,
         label=f"tool: {action_name}", input=action_args,
+        metadata={"call_id": call_id} if call_id else {},
     )
 
 
@@ -202,11 +208,16 @@ def tool_call_event(
     step_number: int, action_index: int, action_name: str,
     result: Any, success: bool,
     duration_ms: Optional[float] = None, error: Optional[str] = None,
-    description: Optional[str] = None,
+    description: Optional[str] = None, call_id: str = "",
 ) -> TraceEvent:
     meta: Dict[str, Any] = {"success": success}
     if description:
         meta["description"] = description
+    if call_id:
+        # The model's own id for the call this result answers. Pairing on
+        # (step, index) works only while both events survive; an id survives
+        # reordering, replay, and a log read out of context.
+        meta["call_id"] = call_id
     return TraceEvent(
         event_type=TraceEventType.TOOL_CALL,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
@@ -226,7 +237,7 @@ def tool_call_event(
 def skill_start_event(
     session_id: str, task_id: str, agent_name: str,
     step_number: int, action_index: int, action_name: str,
-    action_args: Dict[str, Any],
+    action_args: Dict[str, Any], call_id: str = "",
 ) -> TraceEvent:
     return TraceEvent(
         event_type=TraceEventType.SKILL_START,
@@ -234,6 +245,7 @@ def skill_start_event(
         step_number=step_number, action_index=action_index,
         action_type="skill", action_name=action_name,
         label=f"skill: {action_name}", input=action_args,
+        metadata={"call_id": call_id} if call_id else {},
     )
 
 
@@ -242,11 +254,16 @@ def skill_call_event(
     step_number: int, action_index: int, action_name: str,
     result: Any, success: bool,
     duration_ms: Optional[float] = None, error: Optional[str] = None,
-    description: Optional[str] = None,
+    description: Optional[str] = None, call_id: str = "",
 ) -> TraceEvent:
     meta: Dict[str, Any] = {"success": success}
     if description:
         meta["description"] = description
+    if call_id:
+        # The model's own id for the call this result answers. Pairing on
+        # (step, index) works only while both events survive; an id survives
+        # reordering, replay, and a log read out of context.
+        meta["call_id"] = call_id
     return TraceEvent(
         event_type=TraceEventType.SKILL_CALL,
         session_id=session_id, task_id=task_id, agent_name=agent_name,

@@ -156,7 +156,7 @@ class ToolCall(BaseModel):
 # region - Message types
 class Message(BaseModel):
     """Base class for all message types"""
-    role: Literal['user', 'system', 'assistant'] = Field(description="The role of the message.")  # type: ignore
+    role: Literal['user', 'system', 'assistant', 'tool'] = Field(description="The role of the message.")  # type: ignore
     cache: bool = Field(default=False, description="Whether to cache this message. This is only applicable when using Anthropic models.")  # type: ignore
  
 class HumanMessage(Message):
@@ -251,3 +251,32 @@ class AssistantMessage(Message):
 
     def __repr__(self) -> str:
         return f'AssistantMessage(content={repr(self.text)})'
+
+
+class ToolMessage(Message):
+    """A tool's result, answering one assistant tool call.
+
+    The turn a history could not previously express. `AssistantMessage` already
+    carried `tool_calls`, but nothing carried what came back, so a transcript had to
+    describe results in prose instead of replaying them in the shape the model was
+    trained on.
+
+    `tool_call_id` matches the `ToolCall.id` the model issued. Pairing by position
+    would work only while both ends survive in order; an id survives replay, a log
+    read out of context, and a range folded away by compaction.
+    """
+
+    role: Literal['tool'] = Field(default='tool', description="The role of the messages author, in this case `tool`.")  # type: ignore
+    content: str = Field(description="The tool's result, as the model should see it.")
+    tool_call_id: str = Field(description="Id of the assistant tool call this result answers.")
+    is_error: bool = Field(default=False, description="Whether the call failed. Kept out of `content` so a consumer can style or count failures without parsing prose.")
+
+    @property
+    def text(self) -> str:
+        return self.content
+
+    def __str__(self) -> str:
+        return f'ToolMessage(tool_call_id={self.tool_call_id}, content={self.text})'
+
+    def __repr__(self) -> str:
+        return f'ToolMessage(tool_call_id={self.tool_call_id}, content={repr(self.text)})'

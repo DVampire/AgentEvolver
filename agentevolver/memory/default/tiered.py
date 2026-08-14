@@ -546,14 +546,29 @@ class TieredMemory(Memory):
             from agentevolver.trace import replace_op, trace_manager
             from agentevolver.trace.types import TraceEvent, TraceEventType
 
+            # Cite the whole span, not just these records. Memory keeps one record per
+            # *result*, while the surface also carries the assistant turn that produced
+            # it — so citing only what memory holds would under-claim, and the fold would
+            # refuse the log. The trace owns the surface; ask it what is in the range.
+            start, end = min(seqs), max(seqs)
+            shadowed = trace_manager.surface_span(state.session_id, start, end)
+            if not shadowed:
+                # The surface is live state. Empty means this process did not emit these
+                # events, so the span cannot be verified — and a replacement that cannot
+                # cite what it shadows is worse than no record of the fold at all.
+                logger.debug(
+                    f"| 🗜️ {self.name}: no live surface for {state.session_id}; fold not recorded"
+                )
+                return
+
             await trace_manager.emit(TraceEvent(
                 event_type=TraceEventType.CUSTOM,
                 session_id=state.session_id,
                 label="compaction summary",
                 message=summary,
                 success=True,
-                surface_op=replace_op(min(seqs), max(seqs)),
-                source_event_seqs=sorted(seqs),
+                surface_op=replace_op(start, end),
+                source_event_seqs=shadowed,
                 metadata={"kind": "compaction", "records": len(chunk)},
             ))
         except Exception as error:  # noqa: BLE001 — the fold itself already succeeded

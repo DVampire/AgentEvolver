@@ -42,6 +42,11 @@ class TraceManager(metaclass=Singleton):
         #: because the writer consumes the queue asynchronously: numbering there would
         #: leave every subscriber holding an event whose position is still unknown.
         self._next_seq: dict[str, int] = {}
+        #: session_id → the live surface, in history order. Maintained here because this
+        #: is already the one funnel that sees every event in order, and because a
+        #: producer that wants to replace a range needs to know what is in it — which it
+        #: cannot work out from its own records alone.
+        self._surface: dict[str, list[int]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -111,8 +116,10 @@ class TraceManager(metaclass=Singleton):
         """
         if not self._running or self._queue is None:
             return
+        session = event.session_id or "no_session"
         if event.seq_no is None:
-            event.seq_no = self._claim_seq(event.session_id or "no_session")
+            event.seq_no = self._claim_seq(session)
+        self._apply_surface(session, event)
         self._queue.emit(event)
         for subscriber in tuple(self._subscribers):
             try:
@@ -139,6 +146,53 @@ class TraceManager(metaclass=Singleton):
         seq = self._next_seq[session_id]
         self._next_seq[session_id] = seq + 1
         return seq
+
+    def _apply_surface(self, session_id: str, event: TraceEvent) -> None:
+        """Advance the live surface by one event.
+
+        Deliberately forgiving where :func:`fold_surface` is strict. That function reads
+        a stored log and must refuse one it cannot interpret; this one is on the emit
+        path, where dropping a *live* event because its declaration looked wrong would
+        lose the event itself. A malformed replacement is left as an append.
+        """
+        op = event.surface_op
+        if op is None or event.seq_no is None:
+            return
+        nodes = self._surface.setdefault(session_id, [])
+        if isinstance(op, dict) and op.get("op") == "replace":
+            try:
+                i, j = nodes.index(int(op["start"])), nodes.index(int(op["end"]))
+            except (KeyError, TypeError, ValueError):
+                nodes.append(event.seq_no)
+                return
+            if i <= j:
+                nodes[i : j + 1] = [event.seq_no]
+                return
+        nodes.append(event.seq_no)
+
+    def surface(self, session_id: str) -> list[int]:
+        """The session's current surface, in history order.
+
+        Empty for a session this process has not been emitting — the surface is live
+        state, not a durable read. A caller that needs it to be authoritative must treat
+        emptiness as "unknown", never as "nothing on the surface".
+        """
+        return list(self._surface.get(session_id) or [])
+
+    def surface_span(self, session_id: str, start: int, end: int) -> list[int]:
+        """Every surface node from ``start`` through ``end`` inclusive, in history order.
+
+        What a producer needs before it may replace a range: a replacement has to cite
+        everything it shadows, and its own records are usually only some of that. Returns
+        empty when either edge is not on the surface, so a caller cannot cite a span it
+        does not actually cover.
+        """
+        nodes = self._surface.get(session_id) or []
+        try:
+            i, j = nodes.index(start), nodes.index(end)
+        except ValueError:
+            return []
+        return nodes[i : j + 1] if i <= j else []
 
     def subscribe(self, callback) -> None:
         """Receive every emitted event without coupling callers to a transport."""

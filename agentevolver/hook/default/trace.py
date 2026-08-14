@@ -123,6 +123,7 @@ class TraceHook(Hook):
                 action_index=idx,
                 action_name=aname,
                 action_args=aargs,
+                call_id=str(action.get("id") or ""),
             )
             self._timers[f"{ctx.id}:action:{step}:{idx}"] = time.monotonic()
 
@@ -147,6 +148,7 @@ class TraceHook(Hook):
                 success=success,
                 duration_ms=elapsed,
                 error=error,
+                call_id=str(action.get("id") or ""),
             )
 
         if event is not None:

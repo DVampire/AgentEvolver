@@ -187,15 +187,6 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
     chat_models = [
         # ---- OpenAI (via OpenRouter) ----
         {
-            "model_name": "openrouter/gpt-5.6-sol",
-            "model_id": "openai/gpt-5.6-sol",
-            "model_type": "chat/completions",
-            "reasoning": {"reasoning": _r()},
-            "temperature": default_temperature,
-            "max_completion_tokens": max_tokens,
-            "fallback_model": "openrouter/gemini-3.5-flash",
-        },
-        {
             "model_name": "openrouter/gpt-4o",
             "model_id": "openai/gpt-4o",
             "model_type": "chat/completions",
@@ -549,7 +540,21 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
             "fallback_model": "openrouter/gemini-3.5-flash",
         },
     ]
-    return {"chat": chat_models}
+    # Models that refuse function tools on chat/completions. gpt-5.6-sol answers a
+    # tools request there with "use /v1/responses or set reasoning_effort to 'none'" —
+    # and an agent loop is tool calling, so dropping reasoning is not the trade to make.
+    response_models = [
+        {
+            "model_name": "openrouter/gpt-5.6-sol",
+            "model_id": "gpt-5.6-sol",
+            "model_type": "responses",
+            "reasoning": {"effort": "low"},
+            "max_output_tokens": max_tokens,
+            "fallback_model": "openrouter/gemini-3.5-flash",
+        },
+    ]
+
+    return {"chat": chat_models, "response": response_models}
 
 
 def google_models(*, max_tokens, default_temperature, default_timeout, default_plugins, default_reasoning):

@@ -19,6 +19,7 @@ from agentevolver.model.openai.response import ResponseOpenAI
 from agentevolver.model.openai.transcribe import TranscribeOpenAI
 from agentevolver.model.openai.embedding import EmbeddingOpenAI
 from agentevolver.model.openrouter.chat import ChatOpenRouter
+from agentevolver.model.openrouter.response import ResponseOpenRouter
 from agentevolver.model.anthropic.chat import ChatAnthropic
 from agentevolver.model.google.chat import ChatGoogle
 from agentevolver.message.types import Message
@@ -240,6 +241,7 @@ class ModelContextManager:
             default_reasoning=self.default_reasoning,
         )
         chat_models = specs["chat"]
+        response_models = specs.get("response") or []
 
         api_base = await self._key_pool.get_base("openrouter")
         api_key = await self._key_pool.get_key("openrouter")
@@ -259,6 +261,30 @@ class ModelContextManager:
                 max_completion_tokens=m.get("max_completion_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
                 supports_streaming=True,
+                supports_functions=True,
+                supports_vision=True,
+                output_version=None,
+                fallback_model=m.get("fallback_model"),
+            )
+            self.models[cfg.model_name] = cfg
+            await self._create_client(cfg)
+
+        for m in response_models:
+            cfg = ModelConfig(
+                model_name=m["model_name"],
+                model_id=m["model_id"],
+                model_type=m["model_type"],
+                provider="openrouter",
+                key_pool_name="openrouter",
+                api_base=api_base,
+                api_key=api_key,
+                reasoning=m.get("reasoning") or None,
+                max_output_tokens=m.get("max_output_tokens"),
+                timeout=m.get("timeout", self.default_timeout),
+                # No token stream of its own; `stream()` buffers one call and replays it
+                # as canonical events. Functions are the reason this surface is used at
+                # all — the chat surface refuses them for these models.
+                supports_streaming=False,
                 supports_functions=True,
                 supports_vision=True,
                 output_version=None,
@@ -352,6 +378,15 @@ class ModelContextManager:
                     temperature=config.temperature or self.default_temperature,
                     max_completion_tokens=config.max_completion_tokens
                     or self.max_tokens,
+                )
+            if config.model_type == "responses":
+                return ResponseOpenRouter(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
+                    reasoning=config.reasoning or None,
+                    max_output_tokens=config.max_output_tokens or self.max_tokens,
+                    timeout=config.timeout or self.default_timeout,
                 )
             raise ValueError(
                 f"Unsupported model type {config.model_type} for OpenRouter provider"

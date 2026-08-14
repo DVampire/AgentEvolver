@@ -10,6 +10,7 @@ from .types import (
     skill_call_event,
 )
 from .server import trace_manager
+from .derive import derive_messages
 from .surface import (
     SurfaceError,
     fold_surface,
@@ -29,6 +30,7 @@ __all__ = [
     "skill_start_event",
     "skill_call_event",
     "trace_manager",
+    "derive_messages",
     "SurfaceError",
     "fold_surface",
     "replace_op",

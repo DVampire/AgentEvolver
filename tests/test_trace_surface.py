@@ -101,15 +101,15 @@ def test_history_bearing_constructors_join_the_surface():
     )
 
     joins = [
-        agent_start_event("s", "t", "a", "task"),
-        agent_end_event("s", "t", "a", True, "r"),
-        tool_call_event("s", "t", "a", 1, 0, "bash", None, True),
+        agent_start_event("s", "t", "a", "task"),                 # the task
+        agent_call_event("s", "t", "a", 1),                       # the assistant's turn
+        agent_end_event("s", "t", "a", True, "r"),                # the final answer
+        tool_call_event("s", "t", "a", 1, 0, "bash", None, True),  # a result
         skill_call_event("s", "t", "a", 1, 0, "sk", None, True),
     ]
-    log_only = [
-        agent_call_event("s", "t", "a", 1),                       # a step marker
-        tool_start_event("s", "t", "a", 1, 0, "bash", {}),        # the call, not its result
-    ]
+    # A call is part of the assistant's turn, not a message of its own, so the event
+    # carrying its arguments stays log-only and is joined in when projecting.
+    log_only = [tool_start_event("s", "t", "a", 1, 0, "bash", {})]
 
     assert all(e.surface_op == APPEND for e in joins)
     assert all(e.surface_op is None for e in log_only)
@@ -215,6 +215,15 @@ def test_compaction_records_its_fold_in_the_log():
     memory._summarise = _summary
 
     class _Manager:
+        """Stands in for the real manager, which owns the live surface."""
+
+        def __init__(self):
+            self.nodes = list(range(9))
+
+        def surface_span(self, session_id, start, end):
+            i, j = self.nodes.index(start), self.nodes.index(end)
+            return self.nodes[i : j + 1]
+
         async def emit(self, event):
             emitted.append(event)
 
@@ -250,6 +259,9 @@ def test_records_without_a_position_are_not_cited():
     memory._summarise = _summary
 
     class _Manager:
+        def surface_span(self, session_id, start, end):
+            return [start, end]
+
         async def emit(self, event):
             emitted.append(event)
 
@@ -262,3 +274,80 @@ def test_records_without_a_position_are_not_cited():
         trace_pkg.trace_manager = real
 
     assert emitted == []
+
+
+# --------------------------------------------------------------------------- #
+# The live surface on the manager
+# --------------------------------------------------------------------------- #
+def _live_manager():
+    from agentevolver.trace.server import TraceManager
+
+    manager = TraceManager.__new__(TraceManager)
+    TraceManager.__init__(manager)
+
+    class _Q:
+        def emit(self, event): pass
+
+    manager._queue, manager._running = _Q(), True
+    return manager
+
+
+def test_the_manager_tracks_the_surface_as_it_emits():
+    manager = _live_manager()
+    for _ in range(3):
+        asyncio.run(manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+    asyncio.run(manager.emit(TraceEvent(
+        event_type=TraceEventType.CUSTOM, session_id="s", surface_op=None)))   # log-only
+
+    assert manager.surface("s") == [0, 1, 2]
+
+
+def test_a_replacement_advances_the_live_surface_in_place():
+    manager = _live_manager()
+    for _ in range(4):
+        asyncio.run(manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+    asyncio.run(manager.emit(TraceEvent(
+        event_type=TraceEventType.CUSTOM, session_id="s",
+        surface_op=replace_op(1, 2), source_event_seqs=[1, 2])))
+
+    assert manager.surface("s") == [0, 4, 3]
+
+
+def test_surface_span_returns_everything_in_the_range():
+    """What a producer needs before replacing: its own records are only part of it."""
+    manager = _live_manager()
+    for _ in range(5):
+        asyncio.run(manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+
+    assert manager.surface_span("s", 1, 3) == [1, 2, 3]
+
+
+def test_surface_span_is_empty_when_an_edge_is_not_on_the_surface():
+    """Empty means "cannot verify", so a caller cannot cite a span it does not cover."""
+    manager = _live_manager()
+    for _ in range(3):
+        asyncio.run(manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+
+    assert manager.surface_span("s", 0, 99) == []
+    assert manager.surface_span("unknown-session", 0, 1) == []
+
+
+def test_the_live_surface_keeps_a_malformed_replacement_rather_than_dropping_it():
+    """The emit path is forgiving where the fold is strict.
+
+    `fold_surface` reads a stored log and must refuse one it cannot interpret. Here the
+    event is still in flight: refusing would lose the event itself, which is worse than
+    a surface entry in the wrong place.
+    """
+    manager = _live_manager()
+    asyncio.run(manager.emit(TraceEvent(
+        event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+    asyncio.run(manager.emit(TraceEvent(
+        event_type=TraceEventType.CUSTOM, session_id="s",
+        surface_op=replace_op(50, 60))))          # names a range that does not exist
+
+    assert manager.surface("s") == [0, 1]

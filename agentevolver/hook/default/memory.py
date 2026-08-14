@@ -160,6 +160,7 @@ class MemoryHook(Hook):
                 action_name=action.get("name", ""), result=inp.action_result,
                 success=not bool(inp.error), duration_ms=None, error=inp.error,
                 description=action.get("description") or None,
+                call_id=str(action.get("id") or ""),
             )
 
         if inp.event == HookEvent.ON_CALL:
