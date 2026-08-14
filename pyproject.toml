@@ -75,8 +75,13 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 addopts = "-m 'not integration'"
 testpaths = ["tests"]
 norecursedirs = ["output", "node_modules", ".git", ".venv", "venv"]
-markers = [ 
+markers = [
     "integration: requires external credentials, services, browsers, or containers",
+    # Not deselected by default: a gate that cannot fail is worse than no gate, and the
+    # only proof it can is to reintroduce the defect and watch it go red. Skipping that
+    # by default would leave the gates themselves unguarded, which is the state this
+    # marker exists to end.
+    "slow: reintroduces a defect in a subprocess to prove a gate still catches it",
 ]
 asyncio_mode = "strict"
 
