@@ -198,6 +198,7 @@ class AgentGateway:
         await trace_manager.initialize()
         await trace_manager.start()
         trace_manager.subscribe(self._on_trace_event)
+        plan_manager.subscribe(self._on_plan_change)
         environment_stream.subscribe(self._on_environment_view)
         await trajectory_manager.initialize()
         await hook_manager.initialize()
@@ -266,6 +267,7 @@ class AgentGateway:
         await science_manager.stop_all()
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
+        plan_manager.unsubscribe(self._on_plan_change)
         environment_stream.unsubscribe(self._on_environment_view)
         await trace_manager.stop()
         await canvas_manager.cleanup()
@@ -703,6 +705,94 @@ class AgentGateway:
         delivered = question_manager.answer(request_id, answers)
         return {"request_id": request_id, "delivered": delivered}
 
+    async def _command_job_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Background work this project started, and whether any of it is still running.
+
+        Read-only, and deliberately the same registry the agent's own `job_list_tool`
+        reads. Two sources for "what is outstanding" would disagree the moment one of
+        them lagged, and the moment they disagree is exactly when someone is trying to
+        work out whether it is safe to close the tab.
+        """
+        from agentevolver.job import job_manager
+
+        session = self._sessions[self._require_session_id(params)]
+        jobs = job_manager.list(session.context.id)
+        now = job_manager.clock()
+        return {
+            "jobs": [{
+                "id": job.id,
+                "kind": job.kind,
+                "label": job.label,
+                "status": job.status.value,
+                "running": not job.status.is_final,
+                "exit_code": job.exit_code,
+                "error": job.error,
+                "elapsed": round(job.elapsed, 1),
+                "due_at": job.due_at,
+                "summary": job.summary(now),
+            } for job in jobs],
+            "running": sum(1 for job in jobs if not job.status.is_final),
+        }
+
+    async def _command_job_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """What one job has printed. Repeatable — reading does not consume."""
+        from agentevolver.job import job_manager
+
+        self._sessions[self._require_session_id(params)]
+        job_id = str(params.get("job_id") or "")
+        job = job_manager.get(job_id)
+        if job is None:
+            raise ValueError(f"No job {job_id!r}")
+        return {"job_id": job.id, "status": job.status.value,
+                "running": not job.status.is_final,
+                "output": job_manager.output(job_id) or "",
+                "truncated": job.truncated}
+
+    async def _command_goal_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """The objective this project is working toward, if a person set one.
+
+        `null` rather than an empty object when there is none: a goal that was never
+        created and a goal with no text are different states, and a UI that renders the
+        second as a blank bar claims an objective exists.
+        """
+        from agentevolver.task.goal import goal_manager, owner_of
+
+        session = self._sessions[self._require_session_id(params)]
+        goal = goal_manager.current(session.context.id, owner=owner_of(session.context))
+        if goal is None:
+            return {"goal": None}
+        return {"goal": {
+            "objective": goal.objective,
+            "phase": goal.phase.value,
+            "revision": goal.revision,
+            "blocked_reason": getattr(goal, "blocked_reason", None),
+            "summary": goal.summary(),
+        }}
+
+
+    def _on_plan_change(self, state) -> None:
+        """Publish every plan-state change, whoever caused it.
+
+        Previously only `plan.set` published, so a plan the agent got approved through
+        `exit_plan_mode` opened the gate in silence and the UI went on saying plan mode
+        was active — at the exact moment the person had just approved it.
+
+        Synchronous, because `plan_manager` is not async and the transition must not wait
+        on a publish. The task is fired and not awaited; a publish that fails must not
+        undo a gate that has already moved.
+        """
+        import asyncio as _asyncio
+
+        try:
+            _asyncio.get_running_loop().create_task(
+                self._publish("plan.mode.changed", state.summary(),
+                              session_id=state.session_id))
+        except RuntimeError:
+            # No loop running — a state change from a synchronous context outside the
+            # gateway's own. Nothing to publish to; `plan.get` still reads the truth.
+            pass
+
+
     async def _command_plan_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Whether this project is holding its agent to planning."""
         session = self._sessions[self._require_session_id(params)]
@@ -717,9 +807,11 @@ class AgentGateway:
         """
         session = self._sessions[self._require_session_id(params)]
         active = bool(params.get("active", True))
+        # No publish here: the transition announces itself, so this path and the
+        # agent's own `exit_plan_mode` reach the UI the same way. Publishing here as
+        # well would send it twice.
         state = (plan_manager.enter(session.context.id) if active
                  else plan_manager.leave(session.context.id))
-        await self._publish("plan.mode.changed", state.summary(), session_id=session.context.id)
         return state.summary()
 
     async def _command_session_events(self, params: Dict[str, Any]) -> Dict[str, Any]:

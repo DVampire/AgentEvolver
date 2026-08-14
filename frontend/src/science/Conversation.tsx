@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Loader2, Route } from 'lucide-react';
+import { ArrowUp, Activity, Loader2, Route } from 'lucide-react';
 
 import { MessageMarkdown } from '../components/common/Markdown';
 import { Button } from '../components/ui/button';
 import type { RequestFn } from '../canvas/types';
 import type { GatewayEvent } from '../controllers/gateway';
+import { GoalCard } from './GoalCard';
+import { JobsDialog, useJobs } from './JobsDialog';
+import { PlanBar } from './PlanBar';
 import { TrajectoryDialog } from './TrajectoryDialog';
 
 interface Entry { id: string; role: 'user' | 'agent' | 'system'; title: string; content: string; timestamp: string }
@@ -40,6 +43,12 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
   // everything it drops — reasoning, arguments, results, cost, timing — is what
   // the dialog reads back out of the transcript.
   const [trajectoryOpen, setTrajectoryOpen] = useState(false);
+  // Work that outlives the turn that started it. Three surfaces in this column
+  // are ambient rather than historical — the goal above, the running jobs here,
+  // plan mode against the composer — and none of them belong in the thread:
+  // they are true NOW, and the thread scrolls what is true away.
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const { jobs, running } = useJobs({ request, subscribe, sessionId, polling: jobsOpen });
   const bottom = useRef<HTMLDivElement>(null);
 
   // Resume this project's science conversation, so a refresh does not open on
@@ -109,13 +118,31 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
 
   return (
     <section className="science-conversation">
-      {conversationId ? (
+      {conversationId || jobs.length ? (
         <div className="science-thread-bar">
-          <Button variant="ghost" size="xs" onClick={() => setTrajectoryOpen(true)}>
-            <Route /> Trajectory
-          </Button>
+          {/* Quiet at zero and absent when the registry is empty: most of the
+              time nothing is running, and a control that is always lit stops
+              meaning anything when it finally does matter. */}
+          {jobs.length ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              className={running ? 'science-jobs-live' : undefined}
+              onClick={() => setJobsOpen(true)}
+            >
+              {running
+                ? <><Loader2 className="science-spinner inline" /> {running} running</>
+                : <><Activity /> Jobs</>}
+            </Button>
+          ) : null}
+          {conversationId ? (
+            <Button variant="ghost" size="xs" onClick={() => setTrajectoryOpen(true)}>
+              <Route /> Trajectory
+            </Button>
+          ) : null}
         </div>
       ) : null}
+      <GoalCard request={request} subscribe={subscribe} sessionId={sessionId} />
       <div className="science-thread">
         {entries.length ? entries.map((entry) => (
           <article className={`science-message ${entry.role}`} key={entry.id}>
@@ -149,6 +176,7 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
         ) : null}
         <div ref={bottom} />
       </div>
+      <PlanBar request={request} subscribe={subscribe} sessionId={sessionId} />
       <div className="science-composer">
         <textarea
           value={draft}
@@ -170,6 +198,14 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
           sessionId={sessionId}
           conversationId={conversationId}
           onClose={() => setTrajectoryOpen(false)}
+        />
+      ) : null}
+      {jobsOpen ? (
+        <JobsDialog
+          request={request}
+          sessionId={sessionId}
+          jobs={jobs}
+          onClose={() => setJobsOpen(false)}
         />
       ) : null}
     </section>

@@ -178,9 +178,13 @@
 .science-thread-bar button:hover { color: hsl(var(--foreground)); }
 .science-thread-bar button svg { width: 13px; height: 13px; }
 
-.trajectory-dialog { --tj-ok: #3f9c72; --tj-fail: #c2606c; --tj-warn: #a8791c; --tj-accent: #5b74c9;
+/* Both dialogs in this column share one shell: the same tokens, the same
+   header, body, notice, pill and block. A second dialog idiom would make the
+   trajectory and the job registry read as unrelated features rather than two
+   views of the same run. */
+.trajectory-dialog, .jobs-dialog { --tj-ok: #3f9c72; --tj-fail: #c2606c; --tj-warn: #a8791c; --tj-accent: #5b74c9;
   display: flex; color: hsl(var(--foreground)); }
-.dark .trajectory-dialog { --tj-ok: #6fbf8f; --tj-fail: #d78b95; --tj-warn: #d8b26a; --tj-accent: #8ea9ff; }
+.dark .trajectory-dialog, .dark .jobs-dialog { --tj-ok: #6fbf8f; --tj-fail: #d78b95; --tj-warn: #d8b26a; --tj-accent: #8ea9ff; }
 
 /* Header, summary and toolbar are flex-none; only .trajectory-body scrolls, so
    at forty steps the stats and the expand-all control stay put. */
@@ -263,6 +267,9 @@
 .trajectory-pill { border-radius: 99px; padding: 1px 7px; color: hsl(var(--muted-foreground)); background: hsl(var(--background)); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .trajectory-pill.ok { color: var(--tj-ok); background: color-mix(in srgb, var(--tj-ok) 16%, transparent); }
 .trajectory-pill.fail { color: var(--tj-fail); background: color-mix(in srgb, var(--tj-fail) 18%, transparent); }
+.trajectory-pill.warn { color: var(--tj-warn); background: color-mix(in srgb, var(--tj-warn) 18%, transparent); }
+/* Neither outcome yet — a job that is still going, or has not begun. */
+.trajectory-pill.run { color: var(--tj-accent); background: color-mix(in srgb, var(--tj-accent) 16%, transparent); }
 .trajectory-call > .trajectory-block { border-width: 0; border-top-width: 1px; border-radius: 0; }
 .trajectory-call > .trajectory-block:first-of-type { border-top-width: 0; }
 
@@ -290,3 +297,107 @@
   .trajectory-step-meta em.tokens { display: none; }
   .trajectory-head { flex-direction: column; }
 }
+
+/* ==========================================================================
+   Three ambient surfaces.
+
+   The thread records what HAPPENED, in time order, and scrolls it away. These
+   three are things that are true right NOW — an objective, three jobs still
+   running, a gate on the send button — and being visible is the whole of their
+   value, so none of them are in the flow. Each is placed where the fact it
+   carries applies: the goal above the transcript it is the heading for, the
+   jobs in the bar the trajectory is in, plan mode against the composer whose
+   behaviour it changes.
+
+   The same four accents the dialogs use, restated for the column: the dialogs
+   are portalled onto <body> and these are not, so the values are the same but
+   the scope they hang on cannot be.
+   ========================================================================== */
+.science-conversation { --sc-ok: #3f9c72; --sc-fail: #c2606c; --sc-warn: #a8791c; --sc-accent: #5b74c9; }
+.dark .science-conversation { --sc-ok: #6fbf8f; --sc-fail: #d78b95; --sc-warn: #d8b26a; --sc-accent: #8ea9ff; }
+
+/* --- Goal ----------------------------------------------------------------
+   Above the thread and outside its scroll: the objective holds for the whole
+   conversation, and a heading that has scrolled off the top is a heading you
+   have to reconstruct. Absent entirely when no goal was set — a blank bar
+   would claim an objective exists. */
+/* Shares the composer's and the plan bar's margin: the three pieces of chrome
+   bracketing the thread line up with each other, and the thread's own text is
+   inset a little from them. */
+.science-goal { flex: 0 0 auto; display: grid; grid-template-columns: 15px minmax(0, 1fr) auto; align-items: start; gap: 10px; margin: 8px 24px 0; border: 1px solid hsl(var(--border)); border-left: 2px solid var(--sc-accent); border-radius: 10px; padding: 9px 12px; background: hsl(var(--background)); }
+.science-goal.blocked { border-left-color: var(--sc-warn); }
+.science-goal.complete { border-left-color: var(--sc-ok); }
+.science-goal.paused { border-left-color: hsl(var(--muted-foreground)); }
+.science-goal-icon { display: grid; place-items: center; margin-top: 2px; color: var(--sc-accent); }
+.science-goal.blocked .science-goal-icon { color: var(--sc-warn); }
+.science-goal.complete .science-goal-icon { color: var(--sc-ok); }
+.science-goal.paused .science-goal-icon { color: hsl(var(--muted-foreground)); }
+.science-goal-body { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.science-goal-eyebrow { display: flex; align-items: center; gap: 7px; color: hsl(var(--muted-foreground)); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+/* The revision is the goal's version, not decoration: an objective quietly
+   rewritten under a conversation is exactly what this makes visible. */
+.science-goal-eyebrow i { border-radius: 4px; padding: 1px 5px; background: hsl(var(--muted)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; font-style: normal; font-weight: 600; letter-spacing: 0; text-transform: none; }
+/* Two lines. An objective longer than that is a paragraph, and a paragraph
+   pinned above the thread eats the thread. */
+.science-goal p { display: -webkit-box; overflow: hidden; margin: 0; color: hsl(var(--foreground)); font-size: 13px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.science-goal-blocked { color: var(--sc-warn); font-size: 11px; font-style: normal; line-height: 1.5; }
+.science-goal-phase { flex: 0 0 auto; border-radius: 99px; padding: 2px 8px; color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.science-goal-phase.active { color: var(--sc-accent); background: color-mix(in srgb, var(--sc-accent) 15%, transparent); }
+.science-goal-phase.blocked { color: var(--sc-warn); background: color-mix(in srgb, var(--sc-warn) 18%, transparent); }
+.science-goal-phase.complete { color: var(--sc-ok); background: color-mix(in srgb, var(--sc-ok) 16%, transparent); }
+
+/* --- Jobs: the button ----------------------------------------------------
+   Quiet while nothing runs, accented while something does. A control that is
+   always lit says nothing on the day it matters. */
+.science-thread-bar button.science-jobs-live,
+.science-thread-bar button.science-jobs-live:hover { color: var(--sc-accent); }
+.science-thread-bar button svg.science-spinner { animation: rotate 1.2s linear infinite; }
+
+/* --- Jobs: the dialog ----------------------------------------------------
+   Registry on the left, one job's output on the right. Newest first, because
+   the job being asked about is almost always the last one started. */
+.jobs-layout { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); }
+.jobs-list { min-height: 0; margin: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px; border-right: 1px solid hsl(var(--border)); list-style: none; }
+.jobs-row { display: grid; grid-template-columns: 15px minmax(0, 1fr); align-items: start; width: 100%; column-gap: 9px; row-gap: 5px; border: 0; border-radius: 9px; padding: 8px 9px; color: hsl(var(--foreground)); background: transparent; text-align: left; cursor: pointer; }
+.jobs-row:hover { background: hsl(var(--muted)); }
+.jobs-row.on { background: hsl(var(--muted)); box-shadow: inset 2px 0 0 var(--tj-accent); }
+.jobs-row-icon { display: grid; place-items: center; margin-top: 2px; color: hsl(var(--muted-foreground)); }
+.jobs-row.live .jobs-row-icon { color: var(--tj-accent); }
+.jobs-row-main { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.jobs-row-main strong { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.jobs-row-main em { overflow: hidden; color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.jobs-row-meta { display: flex; align-items: center; gap: 8px; grid-column: 2; }
+/* Elapsed is the only thing separating working from hung, so it is never the
+   thing that gets truncated. */
+.jobs-row-meta em { margin-left: auto; color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-style: normal; white-space: nowrap; }
+
+.jobs-output { display: flex; min-height: 0; flex-direction: column; gap: 9px; padding: 14px 18px 18px; }
+.jobs-output > header { display: flex; flex: 0 0 auto; flex-direction: column; gap: 3px; }
+.jobs-output > header strong { overflow: hidden; color: hsl(var(--foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.jobs-output > header em { color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-style: normal; }
+.jobs-output pre { flex: 1 1 auto; min-height: 0; margin: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid hsl(var(--border)); border-radius: 9px; padding: 10px 12px; color: hsl(var(--foreground)); background: hsl(var(--muted)); font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jobs-error { margin: 0; border-left: 2px solid var(--tj-fail); padding-left: 9px; color: var(--tj-fail); font-size: 11.5px; line-height: 1.55; }
+.jobs-trimmed { margin: 0; color: var(--tj-warn); font-size: 10.5px; line-height: 1.5; }
+.jobs-output .trajectory-notice { flex: 0 0 auto; margin: 2px; }
+
+@media (max-width: 760px) {
+  .jobs-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 40%) minmax(0, 1fr); }
+  .jobs-list { border-right: 0; border-bottom: 1px solid hsl(var(--border)); }
+}
+
+/* --- Plan mode -----------------------------------------------------------
+   Against the composer, because it is a fact about the send button: while it
+   is on, what you send gets read and reasoned about and nothing that changes
+   state runs until you approve the plan. At the top of the column you would
+   not be looking at it while typing. */
+.science-plan { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; margin: 0 24px 8px; }
+.science-plan-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid hsl(var(--border)); border-radius: 99px; padding: 3px 10px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 10.5px; font-weight: 550; cursor: pointer; }
+.science-plan-chip:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+.science-plan.on { border: 1px solid color-mix(in srgb, var(--sc-accent) 40%, hsl(var(--border))); border-left-width: 2px; border-radius: 10px; padding: 7px 11px; background: color-mix(in srgb, var(--sc-accent) 9%, transparent); }
+.science-plan-icon { display: grid; place-items: center; color: var(--sc-accent); }
+.science-plan.on strong { flex: 0 0 auto; color: hsl(var(--foreground)); font-size: 11.5px; font-weight: 650; }
+.science-plan-note { min-width: 0; overflow: hidden; color: hsl(var(--muted-foreground)); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.science-plan-off { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; margin-left: auto; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 3px 9px; color: hsl(var(--muted-foreground)); background: hsl(var(--background)); font-size: 10.5px; font-weight: 550; cursor: pointer; }
+.science-plan-off:hover:not(:disabled) { color: hsl(var(--foreground)); }
+.science-plan button:disabled { cursor: default; opacity: .55; }
+.science-plan button svg { width: 12px; height: 12px; flex: 0 0 auto; margin-top: 0; }

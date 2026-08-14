@@ -381,3 +381,73 @@ def test_the_gateway_exposes_commands_to_read_and_set_plan_mode():
 
     for method in ("plan.get", "plan.set"):
         assert getattr(AgentGateway, f"_command_{method.replace('.', '_')}", None) is not None
+
+
+# --------------------------------------------------------------------------- #
+# A gate that moves must say so
+# --------------------------------------------------------------------------- #
+def test_every_transition_announces_itself():
+    """Only the gateway's own `plan.set` used to publish.
+
+    So a plan the *agent* got approved through `exit_plan_mode` opened the gate in
+    silence, and the UI went on saying plan mode was active — at the exact moment the
+    person had just approved it. A state that changes without saying so is a UI that
+    lies, and the durable fix is to make the transition responsible rather than each
+    caller responsible for remembering.
+    """
+    from agentevolver.plan import plan_manager
+
+    seen = []
+    listener = lambda state: seen.append((state.session_id, state.active))
+    plan_manager.subscribe(listener)
+    try:
+        plan_manager.enter("announce-1")
+        plan_manager.approve("announce-1", "the plan")
+        plan_manager.leave("announce-1")
+    finally:
+        plan_manager.unsubscribe(listener)
+        plan_manager.forget("announce-1")
+
+    assert [active for _, active in seen] == [True, False, False], (
+        "a transition did not announce; whichever one is missing is a state the UI "
+        "cannot follow")
+
+
+def test_a_failing_listener_does_not_undo_the_transition():
+    """The gate has already moved by the time listeners run.
+
+    Refusing to finish because a subscriber raised would leave the caller believing the
+    gate had not moved while it had — the worst of both, and unrecoverable from inside
+    the caller.
+    """
+    from agentevolver.plan import plan_manager
+
+    def explode(_state):
+        raise RuntimeError("subscriber is broken")
+
+    plan_manager.subscribe(explode)
+    try:
+        state = plan_manager.enter("announce-2")
+    finally:
+        plan_manager.unsubscribe(explode)
+        plan_manager.forget("announce-2")
+
+    assert state.active is True
+
+
+def test_the_gateway_follows_the_manager_rather_than_its_own_command():
+    """Publishing from `plan.set` alone is what created the gap.
+
+    Reading it from the source: the subscription is the fact under test, and standing up
+    a gateway to observe it would test the harness.
+    """
+    import inspect
+
+    import agentevolver.gateway.service as service
+
+    source = inspect.getsource(service)
+    assert "plan_manager.subscribe" in source, (
+        "the gateway no longer follows plan state, so an agent-approved plan reaches no UI")
+    assert source.count('_publish("plan.mode.changed"') == 1, (
+        "plan.mode.changed is published from more than one place; the UI would see the "
+        "same transition twice")

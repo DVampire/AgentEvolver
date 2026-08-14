@@ -17,7 +17,7 @@ to be safe.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from agentevolver.logger import logger
 from agentevolver.plan.types import PlanState, _now
@@ -102,6 +102,51 @@ class PlanManagerServer(metaclass=Singleton):
 
     def __init__(self) -> None:
         self._states: Dict[str, PlanState] = {}
+        #: Called with each new state. The gateway subscribes so a UI can follow the
+        #: gate; anything else that needs to know can too.
+        self._listeners: List[Callable[[PlanState], None]] = []
+
+    def _listener_list(self) -> List[Callable[[PlanState], None]]:
+        """The subscriber list, created on demand.
+
+        `Singleton` hands back an instance built before this field existed, so `__init__`
+        does not run again for it and a plain attribute would be missing on exactly the
+        long-lived instance everything shares.
+        """
+        listeners = getattr(self, "_listeners", None)
+        if listeners is None:
+            listeners = []
+            self._listeners = listeners
+        return listeners
+
+    def subscribe(self, listener: Callable[[PlanState], None]) -> None:
+        """Hear about every plan-state change, whoever made it."""
+        self._listener_list().append(listener)
+
+    def unsubscribe(self, listener: Callable[[PlanState], None]) -> None:
+        listeners = self._listener_list()
+        if listener in listeners:
+            listeners.remove(listener)
+
+    def _announce(self, state: PlanState) -> None:
+        """Tell every listener the gate moved.
+
+        Announcing here rather than at the call sites is the point. Only the gateway's
+        own `plan.set` used to publish, so a plan the *agent* got approved through
+        `exit_plan_mode` opened the gate silently — the person had just approved it and
+        the bar still read "plan mode on". A state that changes without saying so is a
+        UI that lies, and the way to stop that recurring is to make the transition
+        responsible for it instead of each caller remembering.
+
+        A listener that raises must not stop the transition: the gate has already moved,
+        and refusing to finish because a subscriber failed would leave the caller
+        believing it had not.
+        """
+        for listener in tuple(self._listener_list()):
+            try:
+                listener(state)
+            except Exception as error:                              # noqa: BLE001
+                logger.warning(f"| ⚠️ Plan listener failed: {error}")
 
     def state(self, session_id: str) -> PlanState:
         """This run's plan state. A run nobody put in plan mode is not in it."""
@@ -120,6 +165,7 @@ class PlanManagerServer(metaclass=Singleton):
         state = PlanState(session_id=session_id, active=True, entered_at=_now())
         self._states[session_id] = state
         logger.info(f"| 📋 Plan mode on for {session_id}")
+        self._announce(state)
         return state
 
     def approve(self, session_id: str, plan: str) -> PlanState:
@@ -130,6 +176,7 @@ class PlanManagerServer(metaclass=Singleton):
         state.approved_at = _now()
         self._states[session_id] = state
         logger.info(f"| 📋 Plan approved for {session_id} ({len(plan)} chars)")
+        self._announce(state)
         return state
 
     def leave(self, session_id: str) -> PlanState:
@@ -142,6 +189,7 @@ class PlanManagerServer(metaclass=Singleton):
         state.active = False
         self._states[session_id] = state
         logger.info(f"| 📋 Plan mode off for {session_id}")
+        self._announce(state)
         return state
 
     def forget(self, session_id: str) -> None:
