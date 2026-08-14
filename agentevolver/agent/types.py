@@ -783,7 +783,49 @@ class Agent(BaseModel):
         messages = response.data["messages"]
         if self.derive_context:
             messages = self._derived_messages(messages, ctx)
+        else:
+            messages = self._frozen_rendered(messages, ctx)
         return messages
+
+    def _frozen_rendered(self, rendered: List[Message], ctx: AgentContext) -> List[Message]:
+        """Hold the catalog's bytes still on the default path as well.
+
+        Freezing reached only the projection, which is the switch nobody has turned on.
+        The default path re-rendered the catalog live every step, so the first component
+        this framework generated rewrote it — and the catalog sits at the front of the
+        turn, ahead of the cache breakpoint, so rewriting it invalidates the prefix for
+        the rest of the session. The one thing the system exists to do would quietly
+        cancel the caching it just gained.
+
+        Same trade as the projection, minus the restructuring: the catalog goes out
+        exactly as first rendered, and the delta is appended to the *end* of the same
+        turn. The breakpoint is at ``</capability-context>``, so text after it is outside
+        the cached prefix and costs nothing to change.
+        """
+        import re as _re
+
+        extra = getattr(ctx, "extra", None)
+        if extra is None:
+            return rendered
+
+        for index, message in enumerate(rendered):
+            text = getattr(message, "text", "") or ""
+            match = _re.search(r"<capability-context>.*?</capability-context>", text, _re.S)
+            if match is None:
+                continue
+
+            frozen, addition = self._freeze_capabilities(
+                [HumanMessage(content=match.group(0))], ctx)
+            if not addition:
+                # Either the first step, or nothing has changed since it. Either way the
+                # bytes already match the snapshot; rebuilding would only risk differing.
+                return rendered
+
+            rebuilt = (text[:match.start()] + frozen[0].text + text[match.end():]
+                       + "\n\n" + addition[0].text)
+            return rendered[:index] + [HumanMessage(content=rebuilt)] + rendered[index + 1:]
+
+        return rendered
 
     def _derived_messages(self, rendered: List[Message], ctx: AgentContext) -> List[Message]:
         """Replace the rendered transcript with the log's own projection.

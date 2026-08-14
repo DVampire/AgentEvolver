@@ -77,6 +77,17 @@ def _strict_incompatible(o: Any) -> bool:
     return False
 
 
+#: How long a cached prefix stays readable. The default is five minutes, which is
+#: shorter than the gap between an orchestrator's own steps: it delegates, the sub-agent
+#: runs for minutes, and by the orchestrator's next step the entry has expired. Measured
+#: on `penguins_analysis`, meta_agent wrote 308,469 input tokens across three steps and
+#: read back zero, while agents whose steps are seconds apart hit 36-49% on the same run.
+#:
+#: An hour costs 2x base on the write against 1.25x, and reads are 0.1x either way — so
+#: one extra hit that would otherwise have missed already pays for it, and the case this
+#: fixes is missing *every* hit.
+CACHE_TTL = "1h"
+
 class OpenRouterChatSerializer:
     """
     Serializer for converting between custom message types and OpenRouter chat completions API message param types.
@@ -380,7 +391,7 @@ class OpenRouterChatSerializer:
                 stable, rest = split
                 blocks: list[dict[str, Any]] = [
                     {'type': 'text', 'text': stable,
-                     'cache_control': {'type': 'ephemeral'}},
+                     'cache_control': {'type': 'ephemeral', 'ttl': CACHE_TTL}},
                 ]
                 if rest.strip():
                     blocks.append({'type': 'text', 'text': rest})
@@ -403,7 +414,8 @@ class OpenRouterChatSerializer:
                         'type': 'text',
                         'text': OpenRouterChatSerializer._serialize_system_content(message.content),
                         "cache_control": {
-                            "type": "ephemeral"
+                            "type": "ephemeral",
+                            "ttl": CACHE_TTL,
                         }
                     }
                 ],

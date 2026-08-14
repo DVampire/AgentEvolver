@@ -536,3 +536,80 @@ def test_a_small_delta_is_still_carried_rather_than_re_taken():
     assert "gamma: generated mid-run" in addition[0].text
     assert frozen[0].text == base, "the frozen prefix is held still"
     assert ctx.extra["_capability_snapshot"] == base
+
+
+# --------------------------------------------------------------------------- #
+# Freezing is not only for the projection
+# --------------------------------------------------------------------------- #
+def _rendered_turn(skills: str):
+    from agentevolver.message.types import SystemMessage
+    return [SystemMessage(content="rules"),
+            HumanMessage(content=(
+                "<capability-context>\n<tool-context>\n- bash: run\n</tool-context>\n"
+                f"<skill-context>\n{skills}\n</skill-context>\n</capability-context>\n"
+                "<agent-context><step-info>step N</step-info></agent-context>"))]
+
+
+def _agent():
+    from agentevolver.agent.types import Agent
+    return Agent.__new__(Agent)          # the method under test needs no construction
+
+
+def test_the_default_path_freezes_the_catalog_too():
+    """The switch nobody has turned on was the only path protected.
+
+    The default path re-rendered the catalog live every step, so the first component this
+    framework generated rewrote it — and the catalog sits ahead of the cache breakpoint,
+    so rewriting it invalidates the prefix for the rest of the session. Self-evolution
+    would have cancelled the caching it had just gained.
+    """
+    from agentevolver.agent.types import Agent
+
+    ctx, agent = _ctx(), _agent()
+    Agent._frozen_rendered(agent, _rendered_turn("- alpha: A"), ctx)
+    out = Agent._frozen_rendered(
+        agent, _rendered_turn("- alpha: A\n- gamma: generated mid-run"), ctx)
+
+    catalog = out[1].text[:out[1].text.index("</capability-context>")]
+    assert "gamma" not in catalog, "the frozen catalog must go out byte-identical"
+    assert "gamma: generated mid-run" in out[1].text, "but the change must still be stated"
+
+
+def test_the_delta_lands_after_the_breakpoint():
+    """Appended to the end of the same turn, not spliced into the catalog.
+
+    The breakpoint is `</capability-context>`; anything before it must not move, and
+    anything after it is outside the cached prefix and free to change.
+    """
+    from agentevolver.agent.types import Agent
+
+    ctx, agent = _ctx(), _agent()
+    first = Agent._frozen_rendered(agent, _rendered_turn("- alpha: A"), ctx)
+    second = Agent._frozen_rendered(
+        agent, _rendered_turn("- alpha: A\n- gamma: new"), ctx)
+
+    marker = "</capability-context>"
+    assert (second[1].text[:second[1].text.index(marker)]
+            == first[1].text[:first[1].text.index(marker)]), \
+        "every byte up to the breakpoint must be unchanged"
+    assert second[1].text.rstrip().endswith("</capability-context-changes>")
+
+
+def test_an_unchanged_catalog_is_left_exactly_alone():
+    """The common case: no rebuild, so no chance of differing by a stray newline."""
+    from agentevolver.agent.types import Agent
+
+    ctx, agent = _ctx(), _agent()
+    Agent._frozen_rendered(agent, _rendered_turn("- alpha: A"), ctx)
+    same = _rendered_turn("- alpha: A")
+    assert Agent._frozen_rendered(agent, same, ctx) is same
+
+
+def test_a_turn_without_a_catalog_passes_through():
+    """Not every agent loads capabilities; those turns must not be rewritten."""
+    from agentevolver.agent.types import Agent
+    from agentevolver.message.types import SystemMessage
+
+    ctx, agent = _ctx(), _agent()
+    plain = [SystemMessage(content="rules"), HumanMessage(content="<agent-context/>")]
+    assert Agent._frozen_rendered(agent, plain, ctx) is plain

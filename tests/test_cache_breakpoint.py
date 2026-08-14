@@ -29,7 +29,7 @@ def test_the_breakpoint_lands_after_the_catalog(serializer):
     blocks = serializer.serialize_message(HumanMessage(content=TURN))["content"]
 
     assert blocks[0]["text"].endswith("</capability-context>")
-    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert blocks[0]["cache_control"]["type"] == "ephemeral"
     assert "step 7 of 40" in blocks[1]["text"]
     assert "cache_control" not in blocks[1], "the volatile half must not be a breakpoint"
 
@@ -51,7 +51,7 @@ def test_a_catalog_with_nothing_after_it_is_one_block(serializer):
     only = "<capability-context><tool-context>- bash</tool-context></capability-context>\n"
     blocks = serializer.serialize_message(HumanMessage(content=only))["content"]
     assert len(blocks) == 1
-    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert blocks[0]["cache_control"]["type"] == "ephemeral"
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
@@ -81,3 +81,28 @@ def test_templates_put_the_catalog_before_the_agent_state():
             misordered.append(path.name)
 
     assert not misordered, f"capabilities must precede agent state: {misordered}"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_the_cached_prefix_outlives_a_sub_agent(serializer):
+    """Five minutes is shorter than the gap between an orchestrator's own steps.
+
+    It delegates, the sub-agent runs for minutes, and by the orchestrator's next step the
+    entry has expired. Measured on `penguins_analysis`: meta_agent wrote 308,469 input
+    tokens across three steps and read back zero, while agents whose steps are seconds
+    apart hit 36-49% in the same run — the pattern of a TTL, not of an unstable prefix.
+
+    An hour costs 2x base on the write against 1.25x, and reads are 0.1x either way, so
+    one otherwise-missed hit already pays for it. The case this fixes misses every hit.
+    """
+    blocks = serializer.serialize_message(HumanMessage(content=TURN))["content"]
+    assert blocks[0]["cache_control"].get("ttl") == "1h"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_the_system_prompt_is_cached_on_the_same_terms(serializer):
+    """It is fixed for the whole session — the one part guaranteed worth keeping."""
+    from agentevolver.message.types import SystemMessage
+
+    block = serializer.serialize_message(SystemMessage(content="rules"))["content"][0]
+    assert block["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
