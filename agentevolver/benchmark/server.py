@@ -111,7 +111,9 @@ class BenchmarkManager(BaseModel):
                         ground_truth=gt
                     )
                     evaluated_task = await benchmark.eval(task)
-                    return evaluated_task.score if evaluated_task else 0.0
+                    score = evaluated_task.score if evaluated_task else 0.0
+                    _record_reward(t_id, res, score)
+                    return score
                 except Exception as e:
                     logger.error(f"| ❌ Eval failed for task {t_id}: {e}")
                     return 0.0
@@ -131,3 +133,39 @@ class BenchmarkManager(BaseModel):
 
 # Global instance
 benchmark_manager = BenchmarkManager()
+
+
+def _record_reward(task_id: str, result: dict, score: float) -> None:
+    """Backfill the score onto the run that earned it.
+
+    The score was computed per task and then averaged away, so every trajectory this
+    framework wrote carried `reward = 0.0` — 61 of 61 in a real output tree, success and
+    failure alike. A trajectory exists to be trained on and the reward *is* the training
+    signal, so the whole corpus said "this run was worth nothing" about runs that had
+    just been scored.
+
+    Both sides were already built for this: `set_reward` keys on the run's `task_id`,
+    which `Response.data` carries, and `set_reward_by_session` exists — its docstring says
+    so — for the benchmark case of one session per task. Nothing joined them.
+
+    Never fatal. A benchmark's number is the thing being asked for; failing it because
+    the trajectory could not be annotated would throw away the answer to keep the
+    footnote.
+    """
+    from agentevolver.trajectory import trajectory_manager
+
+    try:
+        if trajectory_manager.set_reward(task_id, score) is not None:
+            return
+    except Exception as error:                                      # noqa: BLE001
+        logger.warning(f"| ⚠️ could not record reward for task {task_id}: {error}")
+        return
+
+    # A benchmark that ran one agent session per task holds the session id, not the run's
+    # task_id; `set_reward` above will have found nothing and said so.
+    session_id = str(result.get("session_id") or "")
+    if session_id:
+        try:
+            trajectory_manager.set_reward_by_session(session_id, score)
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(f"| ⚠️ could not record reward for session {session_id}: {error}")

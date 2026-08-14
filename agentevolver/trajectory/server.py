@@ -135,20 +135,26 @@ class TrajectoryManagerServer:
     # Reward — arrives after the run (benchmark judge / evaluator)
     # ------------------------------------------------------------------
 
-    def set_reward(self, task_id: str, reward: float) -> None:
+    def set_reward(self, task_id: str, reward: float) -> Optional[str]:
         """Backfill a task-level reward to every step and re-persist.
 
         The run's ``task_id`` is surfaced on ``Response.data["task_id"]`` so a
         driver that runs an agent and then scores its output can correlate the
         two.
+
+        Returns the task_id it matched, or ``None`` when there was no such trajectory.
+        A caller holding a *session* id rather than a task id — the benchmark case — has
+        no other way to tell "recorded" from "silently dropped", and a reward that goes
+        nowhere leaves the corpus saying the run was worth zero.
         """
         traj = self._trajectories.get(task_id)
         if traj is None:
             logger.warning(f"| ⚠️ set_reward: no trajectory for task_id={task_id}")
-            return
+            return None
         traj.backfill_reward(reward)
         self._persist(traj)
         logger.info(f"| 🎯 Trajectory reward set: task_id={task_id} reward={reward}")
+        return task_id
 
     def set_reward_by_session(self, session_id: str, reward: float) -> int:
         """Backfill reward to every trajectory in a session. Returns count matched.
