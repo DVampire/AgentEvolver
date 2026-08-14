@@ -28,7 +28,7 @@ Built-in hooks (`default/`):
 | `trajectory_hook` | Builds step-level training trajectories from lifecycle events |
 | `memory_hook` | Feeds lifecycle events into the memory systems |
 | `constraint_hook` | Enforces per-step resource budgets |
-| `repeat_tool_reminder_hook` | Advises, never blocks, when a call repeats verbatim |
+| `repeat_tool_reminder_hook` | Advises, never blocks, when a whole action batch repeats verbatim |
 | `snapshot_hook` | Saves each step's rendered messages as HTML |
 | `compact` | Generic summariser for compressing record lists |
 | `tool_registration_hook` | Registers a generated tool file |

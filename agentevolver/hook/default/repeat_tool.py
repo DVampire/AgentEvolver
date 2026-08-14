@@ -53,16 +53,31 @@ def _tracked(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [a for a in actions if str(a.get("name") or "") not in TRANSPARENT]
 
 
-def _preview(signature: str) -> str:
-    """The call's arguments, bounded, with what was dropped stated."""
+def _args_of(signature: str) -> str:
+    """One call's arguments, as text."""
     try:
-        args = json.loads(signature).get("args", {})
-        text = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str)
+        return json.dumps(json.loads(signature).get("args", {}),
+                          ensure_ascii=False, sort_keys=True, default=str)
     except (ValueError, AttributeError):
-        text = signature
+        return signature
+
+
+def _preview(signatures: List[str]) -> str:
+    """The batch's arguments, bounded, with what was dropped stated."""
+    text = " | ".join(_args_of(s) for s in signatures)
     if len(text) <= ARGS_PREVIEW_CHARS:
         return text
     return f"{text[:ARGS_PREVIEW_CHARS]} […{len(text) - ARGS_PREVIEW_CHARS:,} more characters]"
+
+
+def batch_key(actions: List[Dict[str, Any]]) -> List[str]:
+    """The tracked call signatures of one batch, in a canonical order.
+
+    Sorted, so the same parallel calls issued in a different order are still the same
+    batch — for the same reason the per-call signature sorts its argument keys: neither
+    ordering changes the work being asked for.
+    """
+    return sorted(str(a.get("signature") or "") for a in _tracked(actions))
 
 
 def advance_chain(
@@ -70,23 +85,25 @@ def advance_chain(
 ) -> Dict[str, Any]:
     """Fold one proposed batch into the chain. Pure; the caller owns the state.
 
-    A batch counts as a repeat only when its tracked actions are exactly one call
-    identical to the last one. A batch proposing several different calls, or a
-    different call, restarts the run at 1. A batch of only transparent actions leaves
-    the chain untouched.
-    """
-    tracked = _tracked(actions)
-    if not tracked:
-        return dict(chain or {"signature": None, "count": 0, "name": ""})
-    if len(tracked) > 1:
-        return {"signature": None, "count": 0, "name": ""}
+    The unit is the **batch**, not the call. Keying on a single call was a faithful
+    port of a harness that dispatches one call at a time, and it was blind here: an
+    agent that proposed the same three calls together on seven consecutive turns scored
+    zero every turn, because a multi-call batch reset the chain by definition. In the
+    run that exposed it the identical `read_file_tool` call was issued thirteen times
+    and the chain never once reached two.
 
-    action = tracked[0]
-    signature = str(action.get("signature") or "")
-    name = str(action.get("name") or "action")
-    if chain and chain.get("signature") == signature:
-        return {"signature": signature, "count": int(chain.get("count", 0)) + 1, "name": name}
-    return {"signature": signature, "count": 1, "name": name}
+    A batch whose tracked calls are identical to the previous batch's increments the
+    run; any different batch restarts it at 1. A batch of only transparent actions
+    leaves the chain untouched, so bookkeeping interleaved into a loop cannot launder it.
+    """
+    key = batch_key(actions)
+    if not key:
+        return dict(chain or {"signature": None, "count": 0, "names": []})
+
+    names = [str(a.get("name") or "action") for a in _tracked(actions)]
+    if chain and chain.get("signature") == key:
+        return {"signature": key, "count": int(chain.get("count", 0)) + 1, "names": names}
+    return {"signature": key, "count": 1, "names": names}
 
 
 def reminder_for(chain: Dict[str, Any]) -> Optional[str]:
@@ -95,17 +112,21 @@ def reminder_for(chain: Dict[str, Any]) -> Optional[str]:
     if count not in THRESHOLDS:
         return None
 
-    name = chain.get("name") or "the same tool"
+    names = chain.get("names") or []
+    what = ", ".join(f"`{n}`" for n in names) or "the same tool"
+    subject = "this exact set of calls" if len(names) > 1 else "this exact call"
+
     if count == THRESHOLDS[0]:
         return (
-            f"You have now called `{name}` {count} times in a row with identical arguments. "
-            f"Re-read the result you already have: if it answered the question, act on it; "
-            f"if it did not, a fourth identical call will not answer it either — change the "
-            f"arguments, try a different tool, or conclude."
+            f"You have now issued {subject} {count} times in a row, with identical "
+            f"arguments each time: {what}. Re-read the result you already have: if it "
+            f"answered the question, act on it; if it did not, issuing it again will not "
+            f"answer it either — change the arguments, try a different capability, or "
+            f"conclude."
         )
     return (
-        f"`{name}` has now been called {count} times consecutively with identical arguments: "
-        f"{_preview(str(chain.get('signature') or ''))}. "
+        f"{subject.capitalize()} has now been issued {count} times consecutively with "
+        f"identical arguments — {what}: {_preview(list(chain.get('signature') or []))}. "
         f"The result will not differ. Re-read the last one and take a different action — "
         f"different arguments, a different capability, a state-changing step — or, if the "
         f"task's acceptance conditions are already met, call `done_tool` now."
@@ -135,4 +156,11 @@ class RepeatToolReminderHook(Hook):
         )
 
 
-__all__ = ["RepeatToolReminderHook", "advance_chain", "reminder_for", "THRESHOLDS", "TRANSPARENT"]
+__all__ = [
+    "RepeatToolReminderHook",
+    "advance_chain",
+    "batch_key",
+    "reminder_for",
+    "THRESHOLDS",
+    "TRANSPARENT",
+]

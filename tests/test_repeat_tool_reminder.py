@@ -73,13 +73,35 @@ def test_bookkeeping_between_repeats_does_not_launder_the_loop():
     assert "todo_tool" in TRANSPARENT
 
 
-def test_a_batch_of_several_different_calls_is_not_a_repeat():
+def test_a_multi_call_batch_repeats_like_any_other():
+    """The unit is the batch. Keying on a single call made this shape invisible.
+
+    A real run proposed the same three calls together on seven consecutive turns and
+    scored zero every turn, because a multi-call batch reset the chain by definition —
+    while the identical `read_file_tool` inside it was issued thirteen times.
+    """
+    batch = [_action("read_file_tool", path="a.py"),
+             _action("read_file_tool", path="b.py"),
+             _action("bash_tool", command="pytest")]
+    chain = _run([batch] * 3)
+
+    assert chain["count"] == 3
+    assert reminder_for(chain), "the shape that actually loops must be able to speak"
+
+
+def test_a_different_batch_restarts_the_run():
     chain = _run([
-        [_action("t", a=1)],
-        [_action("t", a=1)],
         [_action("t", a=1), _action("u", b=2)],
+        [_action("t", a=1), _action("u", b=2)],
+        [_action("t", a=1)],                      # one call dropped: different work
     ])
-    assert chain["count"] == 0
+    assert chain["count"] == 1
+
+
+def test_call_order_within_a_batch_is_not_a_difference():
+    """Parallel calls are unordered work, for the same reason argument order is."""
+    a, b = _action("t", x=1), _action("u", y=2)
+    assert _run([[a, b], [b, a]])["count"] == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -87,18 +109,26 @@ def test_a_batch_of_several_different_calls_is_not_a_repeat():
 # --------------------------------------------------------------------------- #
 def test_it_stays_quiet_below_the_first_threshold():
     for count in range(1, THRESHOLDS[0]):
-        assert reminder_for({"count": count, "name": "t", "signature": "{}"}) is None
+        assert reminder_for({"count": count, "names": ["t"], "signature": []}) is None
 
 
 def test_the_first_reminder_is_a_short_nudge():
-    text = reminder_for({"count": THRESHOLDS[0], "name": "grep_search_tool", "signature": "{}"})
+    text = reminder_for({"count": THRESHOLDS[0], "names": ["grep_search_tool"], "signature": []})
     assert text and "grep_search_tool" in text
     assert str(THRESHOLDS[0]) in text
+    assert "this exact call" in text, "a one-call batch should not read as a set"
+
+
+def test_a_multi_call_reminder_names_every_call_in_the_batch():
+    text = reminder_for({"count": THRESHOLDS[0],
+                         "names": ["read_file_tool", "bash_tool"], "signature": []})
+    assert text and "read_file_tool" in text and "bash_tool" in text
+    assert "set of calls" in text
 
 
 def test_later_reminders_quote_the_arguments():
-    signature = json.dumps({"kind": "tool", "name": "t", "args": {"pattern": "needle"}})
-    text = reminder_for({"count": THRESHOLDS[1], "name": "t", "signature": signature})
+    signature = [json.dumps({"kind": "tool", "name": "t", "args": {"pattern": "needle"}})]
+    text = reminder_for({"count": THRESHOLDS[1], "names": ["t"], "signature": signature})
     assert text and "needle" in text
     assert "done_tool" in text          # names the exit, not just the problem
 
@@ -109,8 +139,8 @@ def test_a_huge_payload_is_not_quoted_back_whole():
     Without this, a looping `write_file_tool` carrying a large payload would copy that
     payload into every reminder, i.e. into the next request.
     """
-    signature = json.dumps({"kind": "tool", "name": "w", "args": {"content": "Z" * 50_000}})
-    text = reminder_for({"count": THRESHOLDS[1], "name": "w", "signature": signature})
+    signature = [json.dumps({"kind": "tool", "name": "w", "args": {"content": "Z" * 50_000}})]
+    text = reminder_for({"count": THRESHOLDS[1], "names": ["w"], "signature": signature})
     assert text is not None
     assert len(text) < 2_000
     assert "more characters" in text     # says what it dropped
@@ -119,7 +149,7 @@ def test_a_huge_payload_is_not_quoted_back_whole():
 def test_only_the_declared_thresholds_speak():
     """Every repeat speaking would be nagging; the run lengths that speak are chosen."""
     said = [c for c in range(1, 12)
-            if reminder_for({"count": c, "name": "t", "signature": "{}"})]
+            if reminder_for({"count": c, "names": ["t"], "signature": []})]
     assert said == [t for t in THRESHOLDS if t < 12]
 
 
