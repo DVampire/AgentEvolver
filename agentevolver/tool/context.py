@@ -372,8 +372,16 @@ class ToolContextManager(BaseModel):
                 args_schema=tool_args_schema,
                 code=tool_code,
                 path=tool_path,
+                # Carried across, as `_load_from_registry` does. Omitting them left a
+                # runtime-registered tool with no declaration at all, and plan mode
+                # refuses what has not declared itself — so every tool this framework
+                # evolved was unusable the moment a person asked to approve the plan.
+                # The direction was safe and the effect was not: self-evolution produced
+                # capabilities that could not be used in the mode that reviews them.
+                mutates=tool_instance.mutates,
+                permission_mode=tool_instance.permission_mode,
             )
-            
+
             # --- Persist current config and history ---
             self._tool_configs[tool_name] = tool_config
             
@@ -508,6 +516,12 @@ class ToolContextManager(BaseModel):
                 text=tool_text,
                 args_schema=tool_args_schema,
                 code=tool_code,
+                # Carried across, as registration does. An evolved or copied tool
+                # that arrives undeclared is refused by the plan gate — and these
+                # are the two paths self-evolution takes, so the capabilities this
+                # framework produces were the only ones it could not review.
+                mutates=tool_instance.mutates,
+                permission_mode=tool_instance.permission_mode,
             )
             
             # Update the tool config (replaces current version)
@@ -620,6 +634,12 @@ class ToolContextManager(BaseModel):
                 text=tool_text,
                 args_schema=tool_args_schema,
                 code=tool_code,
+                # Carried across, as registration does. An evolved or copied tool
+                # that arrives undeclared is refused by the plan gate — and these
+                # are the two paths self-evolution takes, so the capabilities this
+                # framework produces were the only ones it could not review.
+                mutates=tool_instance.mutates,
+                permission_mode=tool_instance.permission_mode,
             )
             
             # Register new tool

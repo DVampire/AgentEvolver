@@ -36,6 +36,10 @@ class P(str, Enum):
     #: into a subdirectory itself, so a caller holding only a tool context — which
     #: carries no owner or session id — can still resolve the root.
     SPILL = "spill"
+    #: Where the bytes of an image the agent read are pinned, content-addressed, so
+    #: the model's view of it cannot change when the source file does. Machine-level
+    #: for the same reason as SPILL: a tool context carries neither owner nor session.
+    ATTACHMENTS = "attachments"
 
     # --- per owner (durable, survives every session) ---------------------
     OWNER = "owner"
@@ -103,6 +107,7 @@ LAYOUT: Dict[P, str] = {
     P.CHECKPOINTS: "output/.runtime/checkpoints",
     P.STAGING: "output/.runtime/staging/{project_key}",
     P.SPILL: "output/.runtime/spill",
+    P.ATTACHMENTS: "output/.runtime/attachments",
 
     P.OWNER: "output/{owner}",
     P.OWNER_STATE: "output/{owner}/state",

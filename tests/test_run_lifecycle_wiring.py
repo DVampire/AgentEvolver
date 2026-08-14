@@ -64,6 +64,21 @@ def test_a_finished_run_releases_its_jobs_and_terminals():
     assert "forget" in released, "nothing in the release path actually calls forget()"
 
 
+def test_a_finished_run_also_stops_the_sub_agents_it_started():
+    """A background child is the one leaked resource that keeps spending money.
+
+    A stranded process group sits idle and a stranded PTY holds a shell, but a stranded
+    sub-agent goes on taking turns — calling a model on a task whose answer nobody can
+    collect any more, because the run that wanted it has already returned its result.
+    """
+    # Read from the source rather than from the calls: the reapers are named in a list
+    # and invoked through the loop variable, so none of them appears as a call here.
+    assert "_forget_subagents" in _source_of("_release_session_resources"), (
+        "the release path no longer stops background sub-agents; one will keep running "
+        "after the run that started it has ended")
+    assert "forget" in _calls_in("_forget_subagents")
+
+
 def test_releasing_resources_cannot_fail_a_finished_run():
     """The run is over by the time this happens.
 
@@ -124,3 +139,34 @@ def test_the_plan_notice_stays_out_of_the_cached_prefix():
     assert "action_errors" in source, (
         "the notice no longer rides in the volatile section; if it moved into the system "
         "prompt, toggling plan mode now costs the whole cached prefix")
+
+
+# --------------------------------------------------------------------------- #
+# A declaration that does not survive registration
+# --------------------------------------------------------------------------- #
+def test_a_runtime_registered_tool_keeps_its_declarations():
+    """`register()` dropped `mutates` and `permission_mode`; `_load_from_registry` kept them.
+
+    Plan mode refuses whatever has not declared itself, so a tool that lost its
+    declaration on the way in was refused — safe in direction, wrong in effect, and worst
+    of all specific to the tools this framework generates. Self-evolution produced
+    capabilities that could not be used in the mode whose whole purpose is reviewing what
+    the agent is about to do.
+
+    Read from the source rather than by registering a tool: `register` is async, touches
+    the version manager and the on-disk registry, and the fact under test is one line.
+    """
+    import inspect
+    import re
+
+    from agentevolver.tool.context import ToolContextManager
+
+    source = inspect.getsource(ToolContextManager)
+    constructions = re.findall(r"ToolConfig\((.*?)\n            \)", source, re.S)
+    assert constructions, "ToolConfig is no longer built here; this check needs updating"
+
+    undeclared = [i for i, body in enumerate(constructions)
+                  if "instance=tool_instance" in body and "mutates=" not in body]
+    assert not undeclared, (
+        "a ToolConfig is built from a live instance without carrying `mutates`; that "
+        "tool reaches the plan gate undeclared and is refused")

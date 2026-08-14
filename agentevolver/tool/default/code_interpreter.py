@@ -11,6 +11,11 @@ agent did not already have (``bash_tool`` runs here too) and cost it the thing
 that mattered: the container mounted nothing, so code could not read the files
 the agent had just written into the workspace.
 
+Code that calls *tools* rather than computing is a different tool: `run_code_tool`
+(``agentevolver/tool/default/code_mode/``) runs a program whose tool calls go back through
+the agent's guarded dispatch. It keeps no state, which is exactly the trade this one makes
+in the other direction.
+
 ``use_kernel=False`` trades the kernel for one-shot execution: the script is written
 out and run as a subprocess here, in the same environment and against the same
 filesystem as the agent's shell commands. That matters when the kernel is not looking

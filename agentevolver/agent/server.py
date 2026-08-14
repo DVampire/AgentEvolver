@@ -134,12 +134,19 @@ class AgentManagerServer(BaseModel):
         Defines the parameters an orchestrator passes when dispatching any sub-agent as
         a callable (``task`` plus optional files, evolution target, and per-capability
         allowlists), so every agent is projected with the same strict function schema.
+
+        Backgrounding is a parameter here rather than a separate ``subagent`` tool. Every
+        registered agent is already projected as a callable, so a second, tool-shaped way
+        to reach the same children would give the model two names for one act and let the
+        two schemas drift.
         """
         return {
             "type": "object",
             "properties": {
                 "task": {"type": "string", "description": "Precise, self-contained instruction — the sub-agent receives only this."},
                 "files": {"type": "array", "items": {"type": "string"}, "description": "Existing file paths to pass as context; omit if none."},
+                "run_in_background": {"type": "boolean", "description": "Run it as a background job and return its id instead of waiting. Collect with job_output_tool, stop with job_kill_tool."},
+                "continuable": {"type": "boolean", "description": "Background only: keep it alive between turns so send_message_tool can give it more work on the same conversation. Default false — it answers once and ends."},
                 "target_name": {"type": "string", "description": "ONLY for evaluator/optimizer/generator: the capability being evaluated/improved/created."},
                 "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
                 "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},

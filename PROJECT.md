@@ -39,6 +39,7 @@ AgentEvolver/
 │   ├── memory/             # Memory systems (tiered per-session)
 │   ├── hook/               # Hook pipeline (compact, memory, trace, repeat-call reminder, ...)
 │   ├── spill/              # Oversized tool output parked on disk; the excerpt carries a locator (infra)
+│   ├── attachment/         # Images the agent read, pinned and re-attached to every later turn (infra)
 │   ├── trace/              # Observability — raw event log (TraceManager + UI server)
 │   ├── trajectory/         # Trainable projection of a run (SFT/RL records)
 │   ├── runtime/            # Agent runtime: mailbox + pump + lifecycle

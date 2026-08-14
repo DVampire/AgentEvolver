@@ -16,7 +16,7 @@ general; this file is just their typed conversations.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from agentevolver.logger import logger
 from agentevolver.response.types import Response
@@ -97,18 +97,20 @@ class ProtocolManager(metaclass=Singleton):
     # delegation — ask: run another agent and get its Response (runtime.invoke)
     # ------------------------------------------------------------------
 
-    async def delegate(
+    def child_brief(
         self, child: Any, task: str, *,
-        files: Optional[List[str]] = None, target_name: Optional[str] = None,
-        allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None,
-        workspace_root: Optional[str] = None, parent_ctx: Any = None,
-    ) -> Response:
-        """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
-        ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
-        restricts its capabilities; ``target_name`` anchors an evolution target;
-        ``parent_ctx`` is the dispatching agent's context, whose ambient execution
-        environment the child inherits."""
-        import os
+        target_name: Optional[str] = None, allowlists: Optional[Dict[str, Any]] = None,
+        parent_ref: Any = None, parent_ctx: Any = None,
+    ) -> Tuple[str, Any]:
+        """The task text and the context one delegation hands its child.
+
+        Split out of :meth:`delegate` because a background delegation needs the context
+        *before* the child starts — it has to write the child's job id into it — and
+        because everything this decides is a rule that must not exist twice. Which
+        ambient keys carry across, which per-delegation ones must not, and where an
+        evolution target's allowlists come from are each a one-word mistake away from a
+        child working in the wrong place or holding a scope granted to its sibling.
+        """
         from agentevolver.agent.types import AgentContext  # local: agent → protocol.server would cycle at import time
 
         if target_name:
@@ -128,6 +130,30 @@ class ProtocolManager(metaclass=Singleton):
         for key, val in effective_allowlists.items():
             if val is not None:
                 ctx.extra[key] = val
+        return task, ctx
+
+    async def delegate(
+        self, child: Any, task: str, *,
+        files: Optional[List[str]] = None, target_name: Optional[str] = None,
+        allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None,
+        workspace_root: Optional[str] = None, parent_ctx: Any = None,
+        ctx: Any = None,
+    ) -> Response:
+        """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
+        ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
+        restricts its capabilities; ``target_name`` anchors an evolution target;
+        ``parent_ctx`` is the dispatching agent's context, whose ambient execution
+        environment the child inherits.
+
+        ``ctx`` accepts a context already built by :meth:`child_brief` — the caller that
+        needed it early passes back the same one rather than a second, differently
+        seeded copy."""
+        import os
+
+        if ctx is None:
+            task, ctx = self.child_brief(child, task, target_name=target_name,
+                                         allowlists=allowlists, parent_ref=parent_ref,
+                                         parent_ctx=parent_ctx)
         existing = [f for f in (files or []) if os.path.exists(f)]
         return await runtime_manager.invoke(child, task=task, files=existing or None, ctx=ctx, parent_ref=parent_ref)
 

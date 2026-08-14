@@ -6,6 +6,7 @@ from .web_searcher import WebSearcherTool
 from .media_search import MediaSearchTool
 from .mdify import MdifyTool
 from .read_file import ReadFileTool
+from .read_image import ReadImageTool
 from .write_file import WriteFileTool
 from .edit_file import EditFileTool
 from .list_dir import ListDirTool
@@ -15,6 +16,7 @@ from .deploy import DeployTool
 from .evolution import EvolutionTool
 from .journal import JournalTool
 from .escalate import EscalateTool
+from .code_mode import RunCodeTool
 from .job import JobKillTool, JobListTool, JobOutputTool
 from .ask_user import AskUserTool
 from .exit_plan_mode import ExitPlanModeTool
@@ -36,6 +38,8 @@ from .terminal import (
     TerminalSignalTool,
 )
 from .reply import ReplyTool
+from .send_message import SendMessageTool
+from .report import ReportTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
 from .inspect_tool import InspectTool
@@ -68,6 +72,10 @@ __all__ = [
     "JobListTool",
     "MediaSearchTool",
     "JobKillTool",
+    "SendMessageTool",
+    "ReportTool",
+    "ReadImageTool",
+    "RunCodeTool",
     "TerminalCloseTool",
     "TerminalSignalTool",
     "TerminalListTool",

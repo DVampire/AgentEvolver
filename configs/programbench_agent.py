@@ -52,6 +52,7 @@ with read_base():
     from .agents.skill_optimize_agent import skill_optimize_agent
     from .agents.skill_evaluate_agent import skill_evaluate_agent
     from .tools.bash import bash_tool
+    from .tools.run_code import run_code_tool
     from .tools.terminal_open import terminal_open_tool
     from .tools.terminal_send import terminal_send_tool
     from .tools.terminal_read import terminal_read_tool
@@ -124,6 +125,7 @@ tool_names = [
     # Kept in step with the other arm — the two differ only in evolution
     # capability, so any tool asymmetry would confound the comparison.
     "bash_tool",
+    "run_code_tool",
     "terminal_open_tool",
     "terminal_send_tool",
     "terminal_read_tool",
@@ -149,6 +151,8 @@ tool_names = [
     "done_tool",
     "escalate_tool",
     "reply_tool",
+    "report_tool",
+    "send_message_tool",
     "todo_tool",
     # evolution arm only
     "deploy_tool",

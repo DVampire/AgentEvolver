@@ -26,6 +26,7 @@ with read_base():
     from .agents.connector_optimize_agent import connector_optimize_agent
     from .agents.connector_evaluate_agent import connector_evaluate_agent
     from .tools.bash import bash_tool
+    from .tools.read_image import read_image_tool
     from .tools.ask_user import ask_user_question
     from .tools.exit_plan_mode import exit_plan_mode
     from .tools.get_goal import get_goal_tool
@@ -94,6 +95,7 @@ agent_names = [
 ]
 tool_names = [
     "bash_tool",
+    "read_image_tool",
     "ask_user_question",
     "exit_plan_mode",
     "get_goal_tool",
@@ -120,6 +122,8 @@ tool_names = [
     "evolution_tool",
     "escalate_tool",
     "reply_tool",
+    "report_tool",
+    "send_message_tool",
     # web retrieval — search the web, fetch a page, and download REAL images to bundle
     "web_searcher_tool",
     "web_fetcher_tool",

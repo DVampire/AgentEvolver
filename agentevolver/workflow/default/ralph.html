@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="name" content="ralph">
+  <meta name="description" content="Iterate toward one immutable objective, one fresh worker per round.">
+  <meta name="version" content="1.0.0">
+  <meta name="workflow-schema-version" content="1.1.0">
+  <title>Ralph · Dynamic Workflow</title>
+  <link rel="stylesheet" href="../../visual/css/prompt.css">
+  <link rel="stylesheet" href="../../visual/css/workflow.css">
+  <script defer src="../../visual/js/workflow.js"></script>
+</head>
+<body>
+<main class="workflow-preview" data-workflow-preview>
+  <noscript>This preview requires JavaScript. The embedded Workflow definition remains readable in the page source.</noscript>
+</main>
+
+<!--
+  The element below is executable Workflow source. WorkflowCompiler reads it directly;
+  visual/js/workflow.js renders a separate preview without modifying the source tree.
+
+  Why a loop of single agent steps and not a long-lived agent: every round calls
+  agent_manager afresh, so round N+1 starts with no messages from round N. The
+  objective is restated from the immutable input each time, the workspace holds the
+  progress, and a round that argued itself into a corner leaves nothing behind for the
+  next one to inherit.
+
+  Why the completion signal is a file and not the worker's prose: a loop condition can
+  only test a value the runtime can resolve, and an agent's return value is always
+  {message, data, files} with data.done set for every run that finished. So "the
+  objective is met" has to be said in a way the workspace can hold — the sentinel file
+  the worker writes. It is also inspectable afterwards, which prose in a transcript is
+  not.
+-->
+<workflow
+  name="ralph"
+  schema-version="1.1.0"
+  version="1.0.0"
+  description="Iterate toward one immutable objective with a fresh worker each round, stopping when the worker marks the objective complete."
+  max-agents="24"
+  max-concurrency="1"
+  enable-evolving="false">
+  <inputs>
+    <input name="objective" type="string" required="true"
+           description="The completion objective. It is restated verbatim to every round and never rewritten." />
+    <input name="max_rounds" type="integer" required="false" default="8"
+           description="Stop after this many rounds even if the objective is not met. 1-20." />
+    <schema for="max_rounds">{"type":"integer","minimum":1,"maximum":20}</schema>
+  </inputs>
+  <applicability>
+    <tag>iteration</tag><tag>fresh-context</tag><tag>long-running</tag>
+    Use when one objective needs many attempts and the transcript of the failed attempts is
+    a liability rather than an asset — a build to get green, a spec to satisfy, a migration to
+    finish. Use a plain sub-agent for bounded work that fits one context, and the goal tools
+    for long work that should keep its conversation.
+  </applicability>
+  <flow>
+    <loop id="rounds" max-rounds="20" until="not stop.data.exit_code">
+      <agent id="worker" name="general_agent">
+        <task>
+You are one worker in a Ralph loop, round ${loop.round}. You have no memory of earlier
+rounds and no transcript from them: the workspace and its working tree are the only record
+of what has been done, so read them before you act.
+
+The objective, unchanged every round: ${inputs.objective}
+
+Inspect the workspace first and find out how far the objective already is. Preserve the work
+that is there — earlier rounds were you. Then do one concrete piece of in-scope work and
+verify it: run the build, run the tests, read back what you wrote.
+
+Leave the next round a note. Append what you did, what you learned, and what you would do
+next to `.ralph/notes.md`, creating the directory if it is missing. That file is the only
+thing you can say to the round after you.
+
+When, and only when, the whole objective is met and you have verified it, create the file
+`.ralph/COMPLETE` with a short statement of the evidence. Creating it ends the loop, so do
+not create it because you ran out of ideas — if you are stuck, write why in the notes and
+stop without it.
+        </task>
+      </agent>
+      <tool id="stop" name="bash_tool">
+        <arg name="command" value="test -f .ralph/COMPLETE || test ${loop.round} -ge ${inputs.max_rounds}" />
+      </tool>
+    </loop>
+  </flow>
+  <outputs>
+    <output name="rounds" value="${rounds}" />
+  </outputs>
+</workflow>
+</body>
+</html>

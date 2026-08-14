@@ -6,7 +6,7 @@ type: collection
 category: workflow
 requirements: []
 metadata:
-  workflow_collection_version: 1.0.2
+  workflow_collection_version: 1.1.0
 ---
 # Built-in workflows
 
@@ -24,6 +24,9 @@ Skill instances, it is live immediately and must be evaluated and rolled back if
 
 - `parallel_review.html` — parallel independent review, per-finding verification, and
   final synthesis. Workflow version `1.0.2`, schema version `1.1.0`.
+- `ralph.html` — one immutable objective, a fresh worker per round, stopping when the
+  worker writes the `.ralph/COMPLETE` sentinel or the caller's round cap is reached.
+  Workflow version `1.0.0`, schema version `1.1.0`.
 
 When changing behavior, increment the Workflow's `version`. When using new language
 syntax, update `schema-version` and the root Workflow README compatibility section.

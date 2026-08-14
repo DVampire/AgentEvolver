@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import itertools
 import json
 import os
 import uuid
@@ -19,11 +20,12 @@ from typing import Any, ClassVar, Dict, List, Optional, Type, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.code import RUN_CODE_TOOL, GuardedDispatch
 from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
-from agentevolver.message import HumanMessage, Message
+from agentevolver.message import ContentPartText, HumanMessage, Message
 from agentevolver.prompt import prompt_manager
 from agentevolver.tool import tool_manager
 from agentevolver.skill import skill_manager
@@ -617,8 +619,24 @@ class Agent(BaseModel):
         allowlist = ctx.extra.get("tool_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
         content = await tool_manager.get_instruction(allowlist=allowlist)
         available_tools = content if content else "[No tools loaded.]"
-        tool_context = f"### Available Tools\n{available_tools}"
+        sdk = await self._code_mode_section(allowlist)
+        tool_context = f"### Available Tools\n{available_tools}" + (f"\n\n{sdk}" if sdk else "")
         return {"tool_context": tool_context, "available_tools": available_tools}
+
+    async def _code_mode_section(self, allowlist: Optional[List[str]]) -> str:
+        """Declare the visible tools as functions, for agents that hold `run_code_tool`.
+
+        Rendered from the same roster the tool cards above it come from, and only when the
+        transport is actually in that roster — an agent that cannot run a program has no
+        use for a calling convention, and the block would just be prompt it pays for every
+        step.
+        """
+        from agentevolver.tool.default.code_mode.sdk import code_mode_section, sdk_for
+
+        names = list(allowlist) if allowlist is not None else await tool_manager.list()
+        if RUN_CODE_TOOL not in names:
+            return ""
+        return code_mode_section(await sdk_for(names, tool_manager))
 
     def _allowed_skill_types(self) -> List[str]:
         """Which skill types this agent may see. Workers see 'worker' skills;
@@ -745,6 +763,13 @@ class Agent(BaseModel):
                             **kwargs) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
+        # Record the route this turn is being built for. A tool called during the turn
+        # receives this exact context object, so this is how a tool learns which model
+        # its result is about to be shown to — `read_image_tool` refuses on it. Written
+        # here rather than read from config because an agent may carry its own model.
+        if getattr(ctx, "extra", None) is not None and self.model_name:
+            ctx.extra["model_name"] = self.model_name
+
         workspace_root = await self._resolve_workspace_root(ctx=ctx, **kwargs)
         roots = getattr(ctx, "extra", {}) or {}
         extension_root = str(roots.get("extension_root") or get_extension_root())
@@ -785,7 +810,33 @@ class Agent(BaseModel):
             messages = self._derived_messages(messages, ctx)
         else:
             messages = self._frozen_rendered(messages, ctx)
-        return messages
+        return self._with_attachments(messages, ctx)
+
+    @staticmethod
+    def _with_attachments(messages: List[Message], ctx: AgentContext) -> List[Message]:
+        """Append the images this run has read as a trailing user turn.
+
+        Every step rebuilds the whole prompt from memory, so an image appended once is
+        absent from the next request. Re-attaching each step is what makes "look at this
+        screenshot" hold for more than one turn.
+
+        A new message rather than parts appended to the last one: the last message is not
+        reliably a user turn — the derived path can end with the frozen capability delta —
+        and its content is sometimes a plain string. Appending after everything else also
+        keeps the images behind the cache breakpoint, where content that changes between
+        steps belongs.
+        """
+        from agentevolver.attachment import attachment_manager
+
+        live = attachment_manager.live(str(getattr(ctx, "id", "") or ""))
+        if not live:
+            return messages
+
+        parts: List[Any] = [ContentPartText(text="Images you read, in the order you read them:")]
+        for attachment in live:
+            parts.append(ContentPartText(text=f"\n[{attachment.source_path}]"))
+            parts.append(attachment_manager.content_part(attachment))
+        return list(messages) + [HumanMessage(content=parts)]
 
     def _frozen_rendered(self, rendered: List[Message], ctx: AgentContext) -> List[Message]:
         """Hold the catalog's bytes still on the default path as well.
@@ -1429,7 +1480,17 @@ class Agent(BaseModel):
                     f"read_only agent '{self.name}' may not invoke framework-mutating "
                     f"tool '{route[1]}'. Report findings instead of modifying anything."
                 )
-            action_result, done, result, reasoning = await self._invoke_capability(route, call, ctx, parent_ref)
+            # `run_code_tool` carries a program whose tool calls come back through THIS
+            # method. It is the only dispatch handed a way to dispatch, and it is handed
+            # one bound to this turn — so a call from inside a program is checked against
+            # the same roster, gated by the same plan mode, and recorded by the same
+            # hooks as the call the model could have made itself.
+            bridge = None
+            if kind == "tool" and route[1] == RUN_CODE_TOOL:
+                bridge = self._guarded_dispatch(routing, task_id, step_number, ctx,
+                                                parent_ref, call.id)
+            action_result, done, result, reasoning = await self._invoke_capability(
+                route, call, ctx, parent_ref, bridge)
         except Exception as e:
             error = str(e)
             logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
@@ -1452,20 +1513,83 @@ class Agent(BaseModel):
         return {"name": call.name, "done": done, "result": result, "reasoning": reasoning,
                 "error": error, "output": action_result}
 
-    async def _invoke_capability(self, route: Any, call: Any, ctx: "AgentContext", parent_ref: Any = None):
+    def _guarded_dispatch(
+        self,
+        routing: Dict[str, Any],
+        task_id: str,
+        step_number: int,
+        ctx: "AgentContext",
+        parent_ref: Any,
+        parent_call_id: str,
+    ) -> GuardedDispatch:
+        """A callable that runs ONE tool call through this agent's own action path.
+
+        Handed to `run_code_tool` so a program's `await tools.x(...)` is dispatched by
+        `_run_one`, not by a private line to the tool manager. That distinction is the
+        whole safety argument for code mode: everything a call is checked by lives in
+        `_run_one` and in the tool itself, so a second dispatcher — however careful — would
+        be a second copy of the plan-mode gate, the read-only refusal, the permission
+        check and four hook firings, silently drifting from this one.
+
+        Only ``tool`` routes are bound. Skills, connectors and sub-agents dispatch through
+        the same method and would work, but the model is told what it may call by a
+        declaration block generated from the tool roster, and binding names it was never
+        shown buys nothing.
+        """
+        from agentevolver.model.types import ToolCall
+        from agentevolver.tool.default.code_mode.sdk import callable_names
+
+        names = tuple(callable_names(
+            [name for name, route in routing.items() if (route or ("tool",))[0] == "tool"]))
+        served = itertools.count(1)
+
+        async def dispatch(name: str, args: Dict[str, Any]) -> str:
+            if name not in names:
+                raise LookupError(
+                    f"'{name}' is not callable from a program here. Callable: "
+                    f"{', '.join(names) or 'none'}.")
+            # A distinct id per sub-call, derived from the program's own call id, so the
+            # trace shows which program each action came out of instead of a flat run of
+            # unattributed calls.
+            sub_call = ToolCall(id=f"{parent_call_id}#{next(served)}", name=name, input=args or {})
+            outcome = await self._run_one(sub_call, 0, routing, task_id, step_number, ctx,
+                                          parent_ref=parent_ref)
+            if outcome.get("error"):
+                raise RuntimeError(str(outcome["error"]))
+            output = outcome.get("output")
+            if output is None:
+                # `_run_one` returns this shape when a hook blocked the action before it
+                # ran. Returning it as an empty success would tell the program the tool
+                # did its work and had nothing to say.
+                raise RuntimeError(f"'{name}' was blocked before it ran.")
+            return str(output)
+
+        return GuardedDispatch(names=names, call=dispatch)
+
+    async def _invoke_capability(self, route: Any, call: Any, ctx: "AgentContext", parent_ref: Any = None,
+                                 bridge: Optional[GuardedDispatch] = None):
         """Route ONE call to the manager that owns it — the single dispatch table that
         knows how each capability kind executes. Returns
         ``(action_result, done, result, reasoning)``.
+
+        ``bridge`` is set only for `run_code_tool`, and is that tool's only way to reach
+        another capability.
 
         ``agent`` is a capability like any other: dispatching one runs a sub-agent to
         completion via the runtime, with this agent as its parent (so the child can
         escalate back up). This is what lets an orchestrator use the very same loop as a
         leaf actor — a sub-agent is just another tool it can call.
+
+        ``run_in_background`` is the one branch: the dispatch returns a job id as soon as
+        the child holds its brief, instead of the child's result. Everything else about
+        the delegation — what the child inherits, what it must not, who it escalates to
+        — is identical, because the only thing backgrounding changes is whether this
+        agent spends its own steps waiting.
         """
         kind = route[0]
         if kind == "agent":
             from agentevolver.agent.server import agent_manager
-            from agentevolver.protocol import protocol_manager
+            from agentevolver.subagent import subagent_manager
             child = await agent_manager.get(route[1])
             if child is None:
                 raise ValueError(f"No registered agent named {route[1]!r}")
@@ -1477,8 +1601,7 @@ class Agent(BaseModel):
             # in full. Any specifics belong in the dispatched `task` text, not in
             # withholding the material.
             ambient_files = (getattr(ctx, "extra", None) or {}).get("task_files")
-            resp = await protocol_manager.delegate(
-                child, inp.get("task", ""),
+            brief = dict(
                 files=inp.get("files") or ambient_files, target_name=inp.get("target_name"),
                 allowlists={
                     k: inp.get(k) for k in (
@@ -1486,12 +1609,18 @@ class Agent(BaseModel):
                         "environment_allowlist", "workflow_allowlist",
                     )
                 },
-                parent_ref=parent_ref, workspace_root=config.workspace_root or self.base_dir,
+                parent_ref=parent_ref,
                 # The child executes wherever this agent executes — most importantly
                 # inside the same peer sandbox, which both bash_tool and the prompt's
                 # workspace slot read off the context.
                 parent_ctx=ctx,
             )
+            if inp.get("run_in_background"):
+                started = await subagent_manager.start(
+                    child, inp.get("task", ""), continuable=bool(inp.get("continuable")), **brief)
+                logger.info(f"| 🚀 [{self.name}] Sub-agent '{route[1]}' backgrounded as {started.job_id}")
+                return started.handoff(), False, None, None
+            resp = await subagent_manager.run(child, inp.get("task", ""), **brief)
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
@@ -1529,7 +1658,8 @@ class Agent(BaseModel):
             logger.info(f"| ✅ [{self.name}] Env action '{route[1]}' completed")
             return action_result, False, None, None
         if kind == "tool":
-            tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx)
+            passthrough = {"sub_dispatch": bridge} if bridge is not None else {}
+            tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx, **passthrough)
             if not tool_response.success:
                 raise RuntimeError(tool_response.message or f"Tool {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Tool '{route[1]}' completed")
@@ -1730,7 +1860,7 @@ class Agent(BaseModel):
 
 
     def _release_session_resources(self, run: "_AgentRun") -> None:
-        """Reap what the run left running: background jobs, terminals, language servers.
+        """Reap what the run left running: sub-agents, jobs, terminals, language servers.
 
         Each registry had a `forget` and nothing called it. A backgrounded command, a
         PTY shell and an indexing language server outlive the step that started them by
@@ -1747,14 +1877,31 @@ class Agent(BaseModel):
         session_id = str(getattr(run.ctx, "id", "") or "")
         if not session_id:
             return
-        for label, forget in (("jobs", self._forget_jobs),
+        # Sub-agents first. A background child is stopped through the manager that knows
+        # how to stop one — cancel its driver, which stops its pump — and only then does
+        # the job registry drop the record. The other order would forget the record while
+        # the child was still calling a model, with nothing left that could name it.
+        for label, forget in (("sub-agents", self._forget_subagents),
+                              ("jobs", self._forget_jobs),
                               ("terminals", self._forget_terminals),
-                              ("language servers", self._forget_language_servers)):
+                              ("language servers", self._forget_language_servers),
+                              ("attachments", self._forget_attachments)):
             try:
                 forget(session_id)
             except Exception as error:                              # noqa: BLE001
                 logger.warning(f"| ⚠️ [{self.name}] could not release {label} for "
                                f"{session_id}: {error}")
+
+    @staticmethod
+    def _forget_attachments(session_id: str) -> None:
+        """Drop the run's live images. The committed bytes on disk are left alone."""
+        from agentevolver.attachment import attachment_manager
+        attachment_manager.release(session_id)
+
+    @staticmethod
+    def _forget_subagents(session_id: str) -> None:
+        from agentevolver.subagent import subagent_manager
+        subagent_manager.forget(session_id)
 
     @staticmethod
     def _forget_jobs(session_id: str) -> None:
