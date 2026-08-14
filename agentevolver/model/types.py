@@ -69,10 +69,24 @@ class TokenUsage(BaseModel):
         """Normalize provider-specific usage dicts into TokenUsage."""
         if not raw:
             return None
-        # cache_read: OpenRouter returns in prompt_tokens_details.cached_tokens
+        # Every surface names the cache counts differently, and a name this does not
+        # know reads as "nothing was cached" rather than as "not reported" — the two
+        # look identical downstream, so a provider is silently written off as
+        # uncacheable. Anthropic uses top-level `cache_*_input_tokens`;
+        # chat/completions nests `prompt_tokens_details`; the Responses API nests
+        # `input_tokens_details` with a differently spelled write count; Gemini's
+        # `cached_content_token_count` is mapped at the provider.
+        prompt_details = raw.get("prompt_tokens_details") or {}
+        input_details = raw.get("input_tokens_details") or {}
         cache_read = (
             raw.get("cache_read_input_tokens") or
-            (raw.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+            prompt_details.get("cached_tokens") or
+            input_details.get("cached_tokens") or 0
+        )
+        cache_write = (
+            raw.get("cache_creation_input_tokens") or
+            prompt_details.get("cache_write_tokens") or
+            input_details.get("cache_write_tokens") or 0
         )
         # cost: OpenRouter returns top-level cost field
         cost_raw = raw.get("cost")
@@ -86,7 +100,7 @@ class TokenUsage(BaseModel):
                 raw.get("completion_tokens") or raw.get("output_tokens") or
                 raw.get("candidates_token_count") or 0
             ),
-            cache_write_tokens=raw.get("cache_creation_input_tokens") or 0,
+            cache_write_tokens=cache_write,
             cache_read_tokens=cache_read,
             cost=cost,
         )

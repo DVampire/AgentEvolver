@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "output" / "results" / "context"
@@ -196,37 +196,70 @@ def _measure(session: Path) -> Dict[str, Any]:
     }
 
 
-def run(args: argparse.Namespace) -> int:
-    RESULTS.mkdir(parents=True, exist_ok=True)
+def _one_task(task_file: str, args: argparse.Namespace) -> Optional[Dict[str, Any]]:
+    """Run one task and measure the sessions it produced.
+
+    Each task gets its own subprocess and its own session directory, matched by mtime.
+    Returns None when nothing was written, which is a failure to *measure*, not a task
+    that scored zero — the caller must not average it in as one.
+    """
     started = time.time()
     command = [sys.executable, str(ROOT / "examples" / "run_meta_agent.py"),
-               "--task-file", args.task_file]
+               "--task-file", task_file]
     if args.cfg_options:
         command += ["--cfg-options", *args.cfg_options]
 
-    print(f"running: {' '.join(command)}")
+    print(f"  running: {Path(task_file).name}", flush=True)
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                                timeout=args.timeout)
-    elapsed = time.time() - started
-
     sessions = _sessions_after(started)
     if not sessions:
-        print("no session directory was produced; nothing to measure", file=sys.stderr)
-        print(completed.stderr[-2000:], file=sys.stderr)
+        print(f"  no session for {task_file}; skipped", file=sys.stderr)
+        print(completed.stderr[-1500:], file=sys.stderr)
+        return None
+
+    measured = [_measure(s) for s in sorted(sessions)]
+    for entry in measured:
+        entry["task_file"] = task_file
+        entry["exit_code"] = completed.returncode
+        entry["wall_seconds"] = round(time.time() - started, 1)
+    return measured
+
+
+def run(args: argparse.Namespace) -> int:
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    tasks = args.task_file if isinstance(args.task_file, list) else [args.task_file]
+
+    runs: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+    started = time.time()
+    for task_file in tasks:
+        measured = _one_task(task_file, args)
+        if measured is None:
+            skipped.append(task_file)
+            continue
+        runs.extend(measured)
+
+    if not runs:
+        print("nothing measured", file=sys.stderr)
         return 1
 
     record = {
         "label": args.label,
-        "task_file": args.task_file,
+        "task_files": tasks,
+        # Named, not counted: "3 of 4 tasks" invites averaging over whichever three
+        # happened to work, and a task that could not be measured is not a data point.
+        "skipped": skipped,
         "cfg_options": args.cfg_options or [],
-        "exit_code": completed.returncode,
-        "wall_seconds": round(elapsed, 1),
-        "runs": [_measure(s) for s in sorted(sessions)],
+        "wall_seconds": round(time.time() - started, 1),
+        "runs": runs,
     }
     out = RESULTS / f"{args.label}.json"
     out.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps(record, indent=2, ensure_ascii=False))
-    print(f"\nwritten: {out.relative_to(ROOT)}")
+    print(f"\nmeasured {len(runs)} run(s) over {len(tasks) - len(skipped)}/{len(tasks)} task(s)")
+    if skipped:
+        print(f"skipped: {', '.join(skipped)}")
+    print(f"written: {out.relative_to(ROOT)}")
     return 0
 
 
@@ -239,11 +272,12 @@ def compare(labels: List[str]) -> int:
             return 1
         records.append(json.loads(path.read_text(encoding="utf-8")))
 
-    rows = [("label", "agent", "path", "prompts", "mean chars", "prefix reuse",
-             "input tok", "cache read", "cache hit", "cost")]
+    rows = [("label", "task", "agent", "path", "steps", "prefix reuse",
+             "input tok", "cache read", "cache hit")]
     gaps: List[str] = []
     for record in records:
         for run_ in record["runs"]:
+            task = Path(run_.get("task_file", "?")).stem[:18]
             for agent, m in sorted(run_["agents"].items()):
                 reuse = "—" if m["prefix_reuse"] is None else f"{m['prefix_reuse']:.1%}"
                 u = m.get("usage") or {}
@@ -252,12 +286,10 @@ def compare(labels: List[str]) -> int:
                     gaps.append(f"{record['label']}/{agent}: "
                                 f"{u['steps_without_usage']} step(s) reported no usage")
                 rows.append((
-                    record["label"], agent, m["path"], str(m["prompts"]),
-                    f"{m['mean_chars']:,}", reuse,
+                    record["label"], task, agent, m["path"], str(m["prompts"]), reuse,
                     f"{u.get('input_tokens', 0):,}" if u else "—",
                     f"{u.get('cache_read_tokens', 0):,}" if u else "—",
                     "—" if hit is None else f"{hit:.1%}",
-                    f"${u['cost']:.4f}" if u.get("cost") else "—",
                 ))
 
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
@@ -267,11 +299,23 @@ def compare(labels: List[str]) -> int:
             print("  ".join("-" * w for w in widths))
 
     print()
+    # Pooled per label: totals, not a mean of per-run rates. Averaging rates gives a
+    # short run the same weight as a long one, and the question is what a session costs.
     for record in records:
+        pooled_in = pooled_read = 0
+        ok = total = 0
         for run_ in record["runs"]:
-            print(f"{record['label']}: exit={record['exit_code']} "
-                  f"{record['wall_seconds']}s  steps={run_['max_step']} "
-                  f"tools={run_['tool_calls']} ended_ok={run_['agent_ended_ok']}")
+            total += 1
+            ok += bool(run_["agent_ended_ok"])
+            for m in run_["agents"].values():
+                u = m.get("usage") or {}
+                pooled_in += u.get("input_tokens", 0)
+                pooled_read += u.get("cache_read_tokens", 0)
+        share = f"{pooled_read / pooled_in:.1%}" if pooled_in else "—"
+        print(f"{record['label']:<10} {ok}/{total} runs ended ok   "
+              f"pooled input {pooled_in:,}  cache read {pooled_read:,}  ({share})"
+              + (f"   skipped: {', '.join(record['skipped'])}"
+                 if record.get("skipped") else ""))
 
     for gap in gaps:
         print(f"  incomplete: {gap}")
@@ -287,7 +331,9 @@ def compare(labels: List[str]) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--task-file", default=str(ROOT / "examples" / "tasks" / "reverse_string.md"))
+    parser.add_argument("--task-file", nargs="+",
+                        default=[str(ROOT / "examples" / "tasks" / "reverse_string.md")],
+                        help="One or more task files; each is run and measured separately.")
     parser.add_argument("--label", default="rendered", help="Name this measurement.")
     parser.add_argument("--cfg-options", nargs="+", help="Passed through to the runner.")
     parser.add_argument("--timeout", type=int, default=2400)

@@ -209,3 +209,71 @@ def test_response_format_is_refused_loudly_rather_than_reinterpreted():
             await client(messages=[HumanMessage(content="x")], response_format=dict)
 
     asyncio.run(run())
+
+
+# --------------------------------------------------------------------------- #
+# A derived history, on the Responses surface
+# --------------------------------------------------------------------------- #
+def test_a_derived_history_becomes_valid_response_items():
+    """What `derive_context` produces, through the surface `gpt-5.6-sol` is routed to.
+
+    That model refuses function tools on chat/completions, so it is the only path this
+    agent loop can use for it — and the projection's `[user, assistant(+tool_calls),
+    tool]` had never been sent through it. Chat attaches calls to the assistant message;
+    Responses makes the call and its result separate items. `tool_call_id` is the hinge,
+    and it is the same value on both sides.
+    """
+    from agentevolver.message.types import (AssistantMessage, Function, HumanMessage,
+                                            ToolCall, ToolMessage)
+    from agentevolver.model.llm_hub.response import serialize_input
+
+    history = [
+        HumanMessage(content="write hello.py"),
+        AssistantMessage(content="I'll write it.", tool_calls=[ToolCall(
+            id="call_1",
+            function=Function(name="write_file_tool", arguments='{"path": "hello.py"}'))]),
+        ToolMessage(content="Created hello.py", tool_call_id="call_1",
+                    name="write_file_tool"),
+    ]
+    items = serialize_input(history)
+
+    assert [i.get("type") or i.get("role") for i in items] == [
+        "user", "assistant", "function_call", "function_call_output"]
+
+    call = next(i for i in items if i.get("type") == "function_call")
+    result = next(i for i in items if i.get("type") == "function_call_output")
+    assert call["call_id"] == result["call_id"] == "call_1", \
+        "the result must echo the call_id, which is what pairs them"
+    assert result["output"] == "Created hello.py"
+
+
+def test_an_assistant_turn_with_no_text_contributes_only_its_calls():
+    """A step that called a tool without narrating is the common case, not an edge one.
+
+    An empty `content` item is rejected by the surface, so it must be dropped rather
+    than sent as "".
+    """
+    from agentevolver.message.types import AssistantMessage, Function, ToolCall
+    from agentevolver.model.llm_hub.response import serialize_input
+
+    items = serialize_input([AssistantMessage(content="", tool_calls=[ToolCall(
+        id="call_1", function=Function(name="t", arguments="{}"))])])
+
+    assert [i.get("type") for i in items] == ["function_call"]
+
+
+def test_the_responses_surface_reports_its_cache_counts_under_a_different_name():
+    """`input_tokens_details`, not `prompt_tokens_details`.
+
+    A name `from_raw` does not know reads as "nothing was cached" rather than "not
+    reported", and the two are indistinguishable downstream — so a whole surface gets
+    written off as uncacheable without anyone seeing a zero appear.
+    """
+    from agentevolver.model.types import TokenUsage
+
+    usage = TokenUsage.from_raw({
+        "input_tokens": 57, "output_tokens": 29,
+        "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 17},
+    })
+    assert usage.cache_read_tokens == 40
+    assert usage.cache_write_tokens == 17
