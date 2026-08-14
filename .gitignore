@@ -228,4 +228,3 @@ output/
 # User-level AgentEvolver home (config, staging, deploy registry, caches)
 .agentevolver/
 
-.agents/
