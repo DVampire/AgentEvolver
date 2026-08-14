@@ -41,25 +41,25 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`firecrawl_search_tool`](#firecrawl_search_tool) | `workspace_write` | not declared | `FirecrawlSearch` | `agentevolver.tool.default.search.firecrawl_search` |
 | [`get_goal_tool`](#get_goal_tool) | `read_only` | no | `GetGoalTool` | `agentevolver.tool.default.goal` |
 | [`git_tool`](#git_tool) | `workspace_write` | not declared | `GitTool` | `agentevolver.tool.default.git` |
-| [`glob_search_tool`](#glob_search_tool) | `workspace_write` | no | `GlobSearchTool` | `agentevolver.tool.default.glob_search` |
+| [`glob_search_tool`](#glob_search_tool) | `read_only` | no | `GlobSearchTool` | `agentevolver.tool.default.glob_search` |
 | [`google_lens_search_tool`](#google_lens_search_tool) | `workspace_write` | not declared | `GoogleLensSearch` | `agentevolver.tool.default.search.google_lens_search` |
-| [`grep_search_tool`](#grep_search_tool) | `workspace_write` | no | `GrepSearchTool` | `agentevolver.tool.default.grep_search` |
+| [`grep_search_tool`](#grep_search_tool) | `read_only` | no | `GrepSearchTool` | `agentevolver.tool.default.grep_search` |
 | [`http_request_tool`](#http_request_tool) | `read_only` | not declared | `HttpRequestTool` | `agentevolver.tool.default.data_sources` |
-| [`inspect_agent_tool`](#inspect_agent_tool) | `workspace_write` | no | `InspectAgent` | `agentevolver.tool.default.inspect_agent` |
-| [`inspect_connector_tool`](#inspect_connector_tool) | `workspace_write` | no | `InspectConnector` | `agentevolver.tool.default.inspect_connector` |
-| [`inspect_environment_tool`](#inspect_environment_tool) | `workspace_write` | no | `InspectEnvironment` | `agentevolver.tool.default.inspect_environment` |
-| [`inspect_skill_tool`](#inspect_skill_tool) | `workspace_write` | no | `InspectSkill` | `agentevolver.tool.default.inspect_skill` |
-| [`inspect_tool`](#inspect_tool) | `workspace_write` | no | `InspectTool` | `agentevolver.tool.default.inspect_tool` |
-| [`inspect_workflow`](#inspect_workflow) | `workspace_write` | not declared | `InspectWorkflow` | `agentevolver.tool.default.inspect_workflow` |
+| [`inspect_agent_tool`](#inspect_agent_tool) | `read_only` | no | `InspectAgent` | `agentevolver.tool.default.inspect_agent` |
+| [`inspect_connector_tool`](#inspect_connector_tool) | `read_only` | no | `InspectConnector` | `agentevolver.tool.default.inspect_connector` |
+| [`inspect_environment_tool`](#inspect_environment_tool) | `read_only` | no | `InspectEnvironment` | `agentevolver.tool.default.inspect_environment` |
+| [`inspect_skill_tool`](#inspect_skill_tool) | `read_only` | no | `InspectSkill` | `agentevolver.tool.default.inspect_skill` |
+| [`inspect_tool`](#inspect_tool) | `read_only` | no | `InspectTool` | `agentevolver.tool.default.inspect_tool` |
+| [`inspect_workflow`](#inspect_workflow) | `read_only` | not declared | `InspectWorkflow` | `agentevolver.tool.default.inspect_workflow` |
 | [`jina_search_tool`](#jina_search_tool) | `workspace_write` | not declared | `JinaSearch` | `agentevolver.tool.default.search.jina_search` |
 | [`job_kill_tool`](#job_kill_tool) | `workspace_write` | not declared | `JobKillTool` | `agentevolver.tool.default.job` |
 | [`job_list_tool`](#job_list_tool) | `read_only` | not declared | `JobListTool` | `agentevolver.tool.default.job` |
 | [`job_output_tool`](#job_output_tool) | `read_only` | not declared | `JobOutputTool` | `agentevolver.tool.default.job` |
 | [`journal_tool`](#journal_tool) | `workspace_write` | yes | `JournalTool` | `agentevolver.tool.default.journal` |
-| [`list_dir_tool`](#list_dir_tool) | `workspace_write` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
+| [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
 | [`mdify_tool`](#mdify_tool) | `workspace_write` | not declared | `MdifyTool` | `agentevolver.tool.default.mdify` |
 | [`media_search_tool`](#media_search_tool) | `workspace_write` | yes | `MediaSearchTool` | `agentevolver.tool.default.media_search` |
-| [`read_file_tool`](#read_file_tool) | `workspace_write` | no | `ReadFileTool` | `agentevolver.tool.default.read_file` |
+| [`read_file_tool`](#read_file_tool) | `read_only` | no | `ReadFileTool` | `agentevolver.tool.default.read_file` |
 | [`reformulator_tool`](#reformulator_tool) | `workspace_write` | not declared | `ReformulatorTool` | `agentevolver.tool.other.reformulator` |
 | [`reply_tool`](#reply_tool) | `read_only` | not declared | `ReplyTool` | `agentevolver.tool.default.reply` |
 | [`schedule_create_tool`](#schedule_create_tool) | `workspace_write` | yes | `ScheduleCreateTool` | `agentevolver.tool.default.schedule` |
@@ -232,7 +232,7 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 
 Find files matching a glob pattern within a directory tree.
 
-Permission mode: `workspace_write` · reports only · call budget 120s
+Permission mode: `read_only` · reports only · call budget 120s
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -258,7 +258,7 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 
 Search file contents for lines matching a regex or literal string.
 
-Permission mode: `workspace_write` · reports only · call budget 120s
+Permission mode: `read_only` · reports only · call budget 120s
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -286,7 +286,7 @@ Permission mode: `read_only` · does not declare whether it changes state
 
 Fetch a registered agent's live registry facts (registration/instantiation status, version, evolvability/enable_evolving, file paths) by name.
 
-Permission mode: `workspace_write` · reports only
+Permission mode: `read_only` · reports only
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -296,7 +296,7 @@ Permission mode: `workspace_write` · reports only
 
 Fetch a registered connector's live registry facts (registration status, version, evolvability/enable_evolving, MCP connection, actions, CONNECTOR.md path) by name.
 
-Permission mode: `workspace_write` · reports only
+Permission mode: `read_only` · reports only
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -306,7 +306,7 @@ Permission mode: `workspace_write` · reports only
 
 Fetch a registered environment's live registry facts (registration status, version, evolvability/enable_evolving, source file / ENVIRONMENT.md path) by name.
 
-Permission mode: `workspace_write` · reports only
+Permission mode: `read_only` · reports only
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -316,7 +316,7 @@ Permission mode: `workspace_write` · reports only
 
 Fetch a registered skill's live registry facts (registration status, version, evolvability/enable_evolving, skill directory + SKILL.md path) by name.
 
-Permission mode: `workspace_write` · reports only
+Permission mode: `read_only` · reports only
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -326,7 +326,7 @@ Permission mode: `workspace_write` · reports only
 
 Fetch a registered tool's full instruction plus its live registry facts (version, evolvability/enable_evolving, source file path) by name.
 
-Permission mode: `workspace_write` · reports only
+Permission mode: `read_only` · reports only
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -336,7 +336,7 @@ Permission mode: `workspace_write` · reports only
 
 Fetch a registered workflow's full HTML definition, contract, and live registry facts by name.
 
-Permission mode: `workspace_write` · does not declare whether it changes state
+Permission mode: `read_only` · does not declare whether it changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -400,7 +400,7 @@ Permission mode: `workspace_write` · changes state
 
 List the contents of a directory as a tree structure.
 
-Permission mode: `workspace_write` · reports only · call budget 60s
+Permission mode: `read_only` · reports only · call budget 60s
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -437,7 +437,7 @@ Permission mode: `workspace_write` · changes state
 
 Read the contents of a file.
 
-Permission mode: `workspace_write` · reports only · call budget 60s
+Permission mode: `read_only` · reports only · call budget 60s
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |

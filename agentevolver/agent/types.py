@@ -1666,6 +1666,69 @@ class Agent(BaseModel):
     # The event-driven loop body (shared by every agent)
     # ------------------------------------------------------------------
 
+    def _announce_plan_mode(self, run: "_AgentRun") -> None:
+        """Say that plan mode is on, while it is on.
+
+        Otherwise the model learns it from the first refusal — it proposes an action, the
+        gate turns it away, and it has to infer a mode nobody mentioned from a single
+        error. That costs a step and reads, from inside, like a malfunction.
+
+        Not in the system prompt, which is where a mode notice would normally go. Plan
+        mode is toggled mid-session; text in the system message sits ahead of the cache
+        breakpoint, so switching it on would rewrite the prefix and throw away the whole
+        session's cached tokens to deliver one paragraph. It rides in the volatile
+        section instead, past the breakpoint, where changing it costs nothing.
+
+        Repeated every step rather than announced once. A mode that constrains every
+        action has to be legible at the moment of every action, and by the tenth step the
+        opening turn is a long way back.
+        """
+        try:
+            from agentevolver.plan import PLAN_MODE_NOTICE, plan_manager
+
+            session_id = str(getattr(run.ctx, "id", "") or "")
+            if session_id and plan_manager.active(session_id):
+                run.action_errors = [*(run.action_errors or []), PLAN_MODE_NOTICE]
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(f"| ⚠️ [{self.name}] could not read plan mode: {error}")
+
+
+    def _deliver_due_reminders(self, run: "_AgentRun") -> None:
+        """Hand the model any reminder whose time has come.
+
+        A reminder the agent has to remember to look for is not a reminder. `schedule`
+        wrote them and `job_list_tool` could show them, but nothing pushed — so the agent
+        saw a due reminder only if it happened to list its jobs, which is precisely the
+        thing it set the reminder in order not to have to do.
+
+        Delivered on the same channel as the repeat advice, and for the same reason: it
+        rides beside the batch that is about to run rather than replacing it. A reminder
+        is context, not an interruption, and stopping the turn to announce one would cost
+        a step for something the model can simply read.
+
+        `claim_due` consumes, so a reminder is announced exactly once. Reading it twice
+        would be worse than not at all — the model would take the repetition as a new
+        event and act on the same thing again.
+
+        Never fatal: a reminder that cannot be collected must not end a run that is
+        otherwise going fine.
+        """
+        try:
+            from agentevolver.job import job_manager
+
+            session_id = str(getattr(run.ctx, "id", "") or "")
+            if not session_id:
+                return
+            due = job_manager.claim_due(session_id)
+            if not due:
+                return
+            lines = [f"Reminder you set earlier is now due: {job.label}" for job in due]
+            run.action_errors = [*(run.action_errors or []), *lines]
+            logger.info(f"| ⏰ [{self.name}] delivered {len(due)} due reminder(s)")
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(f"| ⚠️ [{self.name}] could not collect due reminders: {error}")
+
+
     def _release_session_resources(self, run: "_AgentRun") -> None:
         """Reap what the run left running: background jobs and persistent terminals.
 
@@ -1993,6 +2056,9 @@ class Agent(BaseModel):
             # Appended, not returned in place of the calls: the batch still runs. The
             # model reads this alongside the result it was about to fetch again.
             run.action_errors = [*(run.action_errors or []), advice.additional_context]
+
+        self._announce_plan_mode(run)
+        self._deliver_due_reminders(run)
 
         # The idle backstop. Not "this action repeats" — many *different* measurements
         # with nothing changed between them is the shape that actually consumed runs of

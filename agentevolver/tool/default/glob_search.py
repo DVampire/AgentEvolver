@@ -42,6 +42,11 @@ class GlobSearchTool(Tool):
     """Find files matching a glob pattern, skipping common noise directories."""
 
     name: str = "glob_search_tool"
+    # Declared, not inherited. The base default is `workspace_write`, which for a
+    # tool that only reads is a claim it never had to make — and the two fields
+    # plan mode reads are exactly `mutates` and this one, so leaving the wider
+    # value in place describes the tool as something it is not.
+    permission_mode: str = "read_only"
     #: a tree walk over a large repository, not an unbounded scan.
     call_timeout_seconds: float = 120
     description: str = _DESCRIPTION

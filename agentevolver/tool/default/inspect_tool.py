@@ -31,6 +31,11 @@ class InspectTool(Tool):
     """A tool that returns another registered tool's full instruction on demand."""
 
     name: str = "inspect_tool"
+    # Declared, not inherited. The base default is `workspace_write`, which for a
+    # tool that only reads is a claim it never had to make — and the two fields
+    # plan mode reads are exactly `mutates` and this one, so leaving the wider
+    # value in place describes the tool as something it is not.
+    permission_mode: str = "read_only"
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")

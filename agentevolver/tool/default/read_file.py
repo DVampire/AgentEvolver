@@ -38,6 +38,11 @@ class ReadFileTool(Tool):
     """Read file contents with optional line range, returning numbered lines."""
 
     name: str = "read_file_tool"
+    # Declared, not inherited. The base default is `workspace_write`, which for a
+    # tool that only reads is a claim it never had to make — and the two fields
+    # plan mode reads are exactly `mutates` and this one, so leaving the wider
+    # value in place describes the tool as something it is not.
+    permission_mode: str = "read_only"
     #: reading a file is local I/O; a minute means the path is on a wedged mount, not that the file is big.
     call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
