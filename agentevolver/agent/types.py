@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Tuple
 
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,7 +23,7 @@ from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
-from agentevolver.message import Message
+from agentevolver.message import HumanMessage, Message
 from agentevolver.prompt import prompt_manager
 from agentevolver.tool import tool_manager
 from agentevolver.skill import skill_manager
@@ -410,6 +410,7 @@ class Agent(BaseModel):
         review_steps: int = 5,
         enable_evolving: bool = False,
         use_memory: bool = True,
+        derive_context: bool = False,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -428,6 +429,11 @@ class Agent(BaseModel):
         self.prompt_name = prompt_name
         self.memory_name = memory_name
         self.use_memory = use_memory
+        #: Take the model's history from the session log instead of from the rendered
+        #: memory transcript. Off by default: it changes what every step of every agent
+        #: sees, so it is switched on per agent and measured against a baseline rather
+        #: than flipped globally. See `trace/derive.py`.
+        self.derive_context = derive_context
         self.model_name = model_name
 
         # Setup steps
@@ -762,7 +768,160 @@ class Agent(BaseModel):
         if not response.success:
             raise ValueError(response.message)
 
-        return response.data["messages"]
+        messages = response.data["messages"]
+        if self.derive_context:
+            messages = self._derived_messages(messages, ctx)
+        return messages
+
+    def _derived_messages(self, rendered: List[Message], ctx: AgentContext) -> List[Message]:
+        """Replace the rendered transcript with the log's own projection.
+
+        The rendered path describes history in prose inside one user turn, re-built from
+        memory every step. The projection replays it as the turns that actually
+        happened — assistant messages carrying their tool calls, tool messages carrying
+        the results — which is the shape the model was trained on, and which appends
+        rather than being rewritten, so the prompt prefix can be cached.
+
+        The rendered turn carries more than history, though: the budget, the step
+        guidance, the todo list, the workspace snapshot, and the previous step's errors —
+        which is where the repeat reminder rides. Replacing it wholesale silently turned
+        those off, so they are re-attached as a trailing turn instead. That is also where
+        they belong for caching: they change every step, and volatile content after the
+        last stable byte is what keeps the prefix reusable, whereas the rendered path
+        mixes them *into* the history and so can never settle.
+
+        Falls back to the rendered messages, loudly, whenever the log cannot support the
+        projection. A short history is worse than a described one: the model would act on
+        a conversation that silently lost its earlier turns.
+        """
+        from agentevolver.trace import trace_manager
+        from agentevolver.trace.derive import derive_messages
+        from agentevolver.trace.surface import SurfaceError
+
+        session_id = str(getattr(ctx, "id", "") or "")
+        system = [m for m in rendered if getattr(m, "role", "") == "system"]
+        events = trace_manager.events(session_id)
+        if not events:
+            logger.warning(
+                f"| ⚠️ [{self.name}] No retained log for session {session_id}; "
+                f"using the rendered history"
+            )
+            return rendered
+        try:
+            derived = derive_messages(events)
+        except SurfaceError as error:
+            logger.warning(
+                f"| ⚠️ [{self.name}] Log for session {session_id} cannot be projected "
+                f"({error}); using the rendered history"
+            )
+            return rendered
+        if not derived:
+            return rendered
+        stable, volatile = self._split_rendered_turn(rendered)
+        stable, addition = self._freeze_capabilities(stable, ctx)
+        return system + stable + derived + addition + volatile
+
+    @staticmethod
+    def _freeze_capabilities(
+        stable: List[Message], ctx: AgentContext
+    ) -> Tuple[List[Message], List[Message]]:
+        """Hold the capability catalog's bytes still, and announce changes after it.
+
+        The catalog is only stable until this framework does the thing it exists for.
+        Evolution registers a component mid-session and every agent's next step reads the
+        managers live, so the catalog is rebuilt — and it is not merely appended to:
+        measured on a real registry, removing one skill of eighty-four leaves a common
+        prefix of **four characters**. Rewritten in place at the front of the request,
+        one generated skill invalidates the entire conversation behind it.
+
+        So the first render's bytes are kept verbatim for the rest of the session, and
+        what changed since is stated as a later turn instead. The frozen catalog stays
+        cacheable; the announcement rides where invalidation costs nothing. This is the
+        same move compaction makes with `replace`: never rewrite what has already been
+        said, add something that supersedes it.
+
+        Returns:
+            ``(frozen, addition)`` — the catalog to send in the stable slot, and zero or
+            one message describing what changed since it was taken.
+        """
+        import difflib
+
+        extra = getattr(ctx, "extra", None)
+        if extra is None or not stable:
+            return stable, []
+
+        current = stable[0].text
+        snapshot = extra.get("_capability_snapshot")
+        if snapshot is None:
+            extra["_capability_snapshot"] = current
+            return stable, []
+        if snapshot == current:
+            return stable, []
+
+        before, after = snapshot.splitlines(), current.splitlines()
+        added = [l for l in difflib.unified_diff(before, after, n=0, lineterm="")
+                 if l.startswith("+") and not l.startswith("+++")]
+        removed = [l for l in difflib.unified_diff(before, after, n=0, lineterm="")
+                   if l.startswith("-") and not l.startswith("---")]
+        if not added and not removed:
+            return [HumanMessage(content=snapshot)], []
+
+        lines = ["<capability-changes>",
+                 "The capability list above was taken when this conversation started. "
+                 "Since then:"]
+        lines += [f"  now available: {l[1:].strip()}" for l in added if l[1:].strip()]
+        lines += [f"  no longer available: {l[1:].strip()}" for l in removed if l[1:].strip()]
+        lines.append("</capability-changes>")
+        # The frozen snapshot goes out unchanged; only this addition is new.
+        return [HumanMessage(content=snapshot)], [HumanMessage(content="\n".join(lines))]
+
+    @staticmethod
+    def _split_rendered_turn(rendered: List[Message]) -> Tuple[List[Message], List[Message]]:
+        """Partition the rendered turn by what changes between steps, not by origin.
+
+        The rendered turn is one message carrying several things at once, and they do
+        not belong in the same place once history is a real conversation:
+
+        - The capability catalogs (tools, skills, connectors, workflows) are **identical
+          every step**. They are stable content and belong ahead of the history, where a
+          cache can keep them.
+        - `task` and `memory` are already the projection — the opening turn and the
+          conversation itself — so repeating them would state each twice.
+        - What is left (`agent-context`: budget, step guidance, todo, workspace, errors)
+          genuinely changes every step, and belongs after the last stable byte.
+
+        Getting this split wrong is expensive and quiet. Sending the catalogs *after* the
+        history put 61,000 unchanging characters beyond the last reusable byte and cut
+        prefix reuse to 20% — no better than not projecting at all. "It came from the
+        per-step render" is not the same question as "does it change per step".
+
+        Returns:
+            ``(stable, volatile)`` — each a list of zero or one message.
+        """
+        import re as _re
+
+        turn = next((m for m in reversed(rendered) if getattr(m, "role", "") != "system"), None)
+        if turn is None:
+            return [], []
+        text = getattr(turn, "text", "") or ""
+
+        stable_parts = []
+        for block in ("tool-context", "skill-context", "connector-context", "workflow-context"):
+            for match in _re.finditer(rf"<{block}>.*?</{block}>", text, _re.S):
+                stable_parts.append(match.group(0))
+            text = _re.sub(rf"<{block}>.*?</{block}>", "", text, flags=_re.S)
+
+        # Already carried by the projection.
+        for block in ("task", "memory"):
+            text = _re.sub(rf"<{block}>.*?</{block}>", "", text, flags=_re.S)
+
+        def _turn(body: str) -> List[Message]:
+            # Tags alone are not content: a wrapper left holding nothing adds a turn
+            # that says nothing. Unrecognised prose *is* content and is kept — a prompt
+            # template this code has not seen must not lose what it says.
+            return [HumanMessage(content=body.strip())] if _re.sub(r"<[^>]+>", "", body).strip() else []
+
+        return _turn("\n".join(stable_parts)), _turn(text)
 
     async def _handle_env_action(
         self,

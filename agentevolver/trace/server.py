@@ -47,6 +47,16 @@ class TraceManager(metaclass=Singleton):
         #: producer that wants to replace a range needs to know what is in it — which it
         #: cannot work out from its own records alone.
         self._surface: dict[str, list[int]] = {}
+        #: session_id → the session's events, for consumers that project the log rather
+        #: than follow it (see `derive.py`). Held only while a session is live; the
+        #: durable copy is the writer's.
+        self._events: dict[str, list[TraceEvent]] = {}
+        #: Per-session retention cap. Exceeding it drops the session from retention
+        #: entirely rather than keeping a suffix: a projection built from a truncated log
+        #: silently loses the turns at the front, which reads as a shorter conversation
+        #: rather than as a missing one. `events()` then returns nothing, and a caller
+        #: that needs the whole log can tell "not retained" from "nothing happened".
+        self._max_retained: int = 20_000
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -120,6 +130,7 @@ class TraceManager(metaclass=Singleton):
         if event.seq_no is None:
             event.seq_no = self._claim_seq(session)
         self._apply_surface(session, event)
+        self._retain(session, event)
         self._queue.emit(event)
         for subscriber in tuple(self._subscribers):
             try:
@@ -169,6 +180,44 @@ class TraceManager(metaclass=Singleton):
                 nodes[i : j + 1] = [event.seq_no]
                 return
         nodes.append(event.seq_no)
+
+    def _retain(self, session_id: str, event: TraceEvent) -> None:
+        """Keep one session's events for consumers that project the log.
+
+        A session that overflows is marked `None` and stays that way for the rest of its
+        life. Resuming retention afterwards would rebuild a *suffix* — a log that looks
+        whole and has lost its opening turns — which is the failure the cap exists to
+        avoid, arriving a few thousand events later.
+        """
+        held = self._events.get(session_id, ...)
+        if held is None:
+            return                                  # overflowed earlier; stay dropped
+        if held is ...:
+            held = self._events[session_id] = []
+        held.append(event)
+        if len(held) > self._max_retained:
+            logger.warning(
+                f"| ⚠️ Session {session_id} passed {self._max_retained:,} retained events; "
+                f"dropping its in-memory log for good. Consumers that project it will see "
+                f"nothing rather than a silently truncated history."
+            )
+            self._events[session_id] = None
+
+    def events(self, session_id: str) -> list[TraceEvent]:
+        """One session's events in write order, or empty when not retained.
+
+        Empty means "this process is not holding that session's log" — a session from
+        another process, one that overflowed the cap, or one that has been forgotten.
+        It never means "the session did nothing"; a caller that cannot tell those apart
+        must not treat the result as a complete history.
+        """
+        return list(self._events.get(session_id) or [])
+
+    def forget(self, session_id: str) -> None:
+        """Release a finished session's in-memory log, surface, and numbering."""
+        self._events.pop(session_id, None)
+        self._surface.pop(session_id, None)
+        self._next_seq.pop(session_id, None)
 
     def surface(self, session_id: str) -> list[int]:
         """The session's current surface, in history order.
