@@ -348,12 +348,47 @@ class LLMHubChatSerializer:
     def serialize_message(message: AssistantMessage) -> ChatCompletionAssistantMessageParam: ...
 
     @staticmethod
+    def _cache_split(text: str):
+        """Split a user turn after the capability catalogs, for a cache breakpoint.
+
+        Only the system message carried a breakpoint before, and the catalogs live in the
+        user turn — so the largest stable part of the prompt, ~63% of it in a measured
+        run, sat past the last cacheable byte and was re-read in full every step.
+
+        The split point is the end of `<capability-context>`: everything up to it is
+        byte-identical on every step of a session, everything after it is the live agent
+        state. Returns ``None`` when the turn has no catalog, which is every turn but the
+        one carrying it — those must not be given a breakpoint of their own, since a
+        breakpoint placed after content that changes each step caches nothing and spends
+        a write to learn it.
+        """
+        marker = "</capability-context>"
+        end = text.find(marker)
+        if end == -1:
+            return None
+        end += len(marker)
+        return text[:end], text[end:]
+
+    @staticmethod
     def serialize_message(message: Message) -> ChatCompletionMessageParam:
         """Serialize a custom message to an LLM Hub message param."""
         if isinstance(message, HumanMessage):
+            split = (LLMHubChatSerializer._cache_split(message.content)
+                     if isinstance(message.content, str) else None)
+            if split is not None:
+                stable, rest = split
+                blocks: list[dict[str, Any]] = [
+                    {'type': 'text', 'text': stable,
+                     'cache_control': {'type': 'ephemeral'}},
+                ]
+                if rest.strip():
+                    blocks.append({'type': 'text', 'text': rest})
+                content = blocks
+            else:
+                content = LLMHubChatSerializer._serialize_user_content(message.content)
             user_result: ChatCompletionUserMessageParam = {
                 'role': 'user',
-                'content': LLMHubChatSerializer._serialize_user_content(message.content),
+                'content': content,
             }
             if message.name is not None:
                 user_result['name'] = message.name

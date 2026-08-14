@@ -32,6 +32,11 @@ class TraceHook(Hook):
     priority: int = 1
 
     _timers: Dict[str, float] = PrivateAttr(default_factory=dict)
+    #: session → running total of every step's usage, so the run's cost is recorded as a
+    #: figure and not left to be re-derived by summing the log. A reader that has to do
+    #: that arithmetic cannot tell a session whose steps were partly unrecorded from one
+    #: that genuinely cost that little.
+    _usage: Dict[str, Dict[str, float]] = PrivateAttr(default_factory=dict)
 
     async def handle(self, ctx: HookContext) -> HookResult:
         """Translate the incoming agent lifecycle event into a TraceEvent and emit it.
@@ -84,6 +89,7 @@ class TraceHook(Hook):
                 success=True,
                 result=None,
                 duration_ms=elapsed,
+                usage=self._usage.pop(ctx.id, None),
             )
 
         elif inp_event == HookEvent.PRE_STEP:
@@ -93,6 +99,7 @@ class TraceHook(Hook):
         elif inp_event == HookEvent.POST_STEP:
             step = inp.get("step_number")
             elapsed = self._pop_timer(f"{ctx.id}:step:{step}")
+            step_usage = inp.get("step_usage")
             event = agent_call_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
@@ -100,7 +107,9 @@ class TraceHook(Hook):
                 step_number=step,
                 reasoning=inp.get("reasoning"),
                 duration_ms=elapsed,
+                usage=step_usage,
             )
+            self._add_usage(ctx.id, step_usage)
 
         elif inp_event == HookEvent.PRE_ACTION:
             action = inp.get("action") or {}
@@ -172,3 +181,18 @@ class TraceHook(Hook):
         """Pop the timer at ``key`` and return the elapsed time in milliseconds (``None`` if unset)."""
         start = self._timers.pop(key, None)
         return None if start is None else (time.monotonic() - start) * 1000
+
+    def _add_usage(self, session_id: str, usage: Optional[Dict]) -> None:
+        """Fold one step's cost into the session total.
+
+        A step whose usage the provider did not report is skipped rather than counted as
+        zero: a missing figure and a free call are different facts, and adding the former
+        as the latter makes the total read as authoritative when it is short.
+        """
+        if not usage:
+            return
+        running = self._usage.setdefault(session_id, {"steps": 0})
+        running["steps"] += 1
+        for key, value in usage.items():
+            if isinstance(value, (int, float)):
+                running[key] = running.get(key, 0) + value

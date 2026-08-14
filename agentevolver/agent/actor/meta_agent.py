@@ -92,7 +92,7 @@ class MetaAgent(Agent):
                 run.messages,
                 reasoning=decision["reasoning"],
                 plan=[],
-                step_tokens=decision["step_tokens"],
+                step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                 done=False,
             )
             # Appended: `super()._prepare_round` may already have raised a repetition

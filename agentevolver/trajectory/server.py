@@ -116,6 +116,7 @@ class TrajectoryManagerServer:
         step.reasoning = inp.get("reasoning") or ""
         step.actions = inp.get("plan") or []
         step.token_usage = inp.get("step_tokens") or 0
+        step.usage = inp.get("step_usage")
         traj.steps.append(step)
         self._open_steps.pop(ctx.task_id, None)
 

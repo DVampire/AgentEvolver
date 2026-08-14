@@ -82,6 +82,12 @@ class TrajectoryStep(BaseModel):
     # o_t — one entry per executed action.
     observations: List[Dict[str, Any]] = Field(default_factory=list)
     token_usage: int = 0
+    # The same step's full cost — input / output / cache_write / cache_read / cost.
+    # `token_usage` above stays the completion count because the reward pipeline reads
+    # it; widening its meaning would quietly change the training signal. This sits
+    # beside it so a run can be priced, and so a cached prompt is distinguishable from
+    # one re-read in full.
+    usage: Optional[Dict[str, Any]] = None
     # r_t — backfilled from the task-level reward at finalize.
     reward: float = 0.0
 
@@ -130,6 +136,7 @@ class TrajectoryStep(BaseModel):
             "actions": self.actions,
             "observations": self.observations,
             "token_usage": self.token_usage,
+            "usage": self.usage,
             "reward": self.reward,
         }
 

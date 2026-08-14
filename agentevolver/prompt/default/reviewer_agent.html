@@ -96,19 +96,18 @@ Be specific: name files/URLs/commands and quote what you observed. Prefer a blun
 </div>
 
 <div class="user">
+<capability-context>
+  <tool-context>{{ available_tools }}
+  </tool-context>
+
+  <skill-context>{{ available_skills }}
+  </skill-context>
+
+  <connector-context>{{ available_connectors }}
+  </connector-context>
+</capability-context>
+
 <module src="../module/agent_context.html"></module>
-
-<tool-context>
-{{ available_tools }}
-</tool-context>
-
-<skill-context>
-{{ available_skills }}
-</skill-context>
-
-<connector-context>
-{{ available_connectors }}
-</connector-context>
 </div>
 
 </body>

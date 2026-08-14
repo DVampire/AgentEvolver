@@ -99,6 +99,47 @@ def _prefix_share(earlier: str, later: str) -> float:
     return round(i / len(earlier), 3)
 
 
+def _usage_by_agent(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """What each agent actually spent, from the counts the provider returned.
+
+    Prefix reuse below is a *proxy*: it says a cache could have hit. This says whether
+    one did. They are not the same claim and the gap between them is where the money
+    goes — a prompt can be 99% reusable and still be billed in full, which is exactly
+    what happened while the only cache breakpoint sat on the system message and the
+    capability catalogs were rendered after the agent state.
+
+    Steps whose usage the provider did not report are counted separately rather than as
+    zero, so a short total cannot be mistaken for a cheap run.
+    """
+    per_agent: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if row.get("event_type") != "agent_call":
+            continue
+        name = row.get("agent_name") or "?"
+        entry = per_agent.setdefault(name, {
+            "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "cost": 0.0, "steps_with_usage": 0, "steps_without_usage": 0,
+        })
+        usage = row.get("usage")
+        if not isinstance(usage, dict):
+            entry["steps_without_usage"] += 1
+            continue
+        entry["steps_with_usage"] += 1
+        for key in ("input_tokens", "output_tokens", "cache_read_tokens",
+                    "cache_write_tokens"):
+            entry[key] += int(usage.get(key) or 0)
+        entry["cost"] += float(usage.get("cost") or 0.0)
+
+    for entry in per_agent.values():
+        billed = entry["input_tokens"]
+        # Providers report cached reads as a subset of the input count, so the share is
+        # of input — not of input + cache_read, which would understate it.
+        entry["cache_hit_rate"] = (round(entry["cache_read_tokens"] / billed, 3)
+                                   if billed else None)
+    return per_agent
+
+
 def _measure(session: Path) -> Dict[str, Any]:
     """What one run cost, per agent, and whether its prompts were reusable.
 
@@ -107,6 +148,7 @@ def _measure(session: Path) -> Dict[str, Any]:
     difference the run was meant to show.
     """
     rows = _events(session)
+    usage = _usage_by_agent(rows)
     agents: Dict[str, Dict[str, Any]] = {}
     for path in sorted(session.glob("log/messages/*/*.html")):
         text = path.read_text(encoding="utf-8")
@@ -129,7 +171,17 @@ def _measure(session: Path) -> Dict[str, Any]:
             "mean_chars": round(sum(sizes) / len(sizes)) if sizes else 0,
             # Mean over consecutive pairs: what a cache could have reused each step.
             "prefix_reuse": round(sum(shares) / len(shares), 3) if shares else None,
+            # What it actually reused. Absent when this process recorded no usage for
+            # the agent, which is a different fact from "it reused nothing".
+            "usage": usage.get(name),
         }
+
+    for name, entry in usage.items():
+        # An agent that emitted calls but rendered no prompt snapshots would otherwise
+        # vanish from the table along with everything it spent.
+        per_agent.setdefault(name, {"path": "?", "paths": {}, "prompts": 0,
+                                    "first_chars": 0, "last_chars": 0, "mean_chars": 0,
+                                    "prefix_reuse": None, "usage": entry})
 
     steps = [r.get("step_number") for r in rows if r.get("step_number") is not None]
     return {
@@ -187,15 +239,25 @@ def compare(labels: List[str]) -> int:
             return 1
         records.append(json.loads(path.read_text(encoding="utf-8")))
 
-    rows = [("label", "agent", "path", "prompts", "first", "last", "mean", "prefix reuse")]
+    rows = [("label", "agent", "path", "prompts", "mean chars", "prefix reuse",
+             "input tok", "cache read", "cache hit", "cost")]
+    gaps: List[str] = []
     for record in records:
         for run_ in record["runs"]:
             for agent, m in sorted(run_["agents"].items()):
                 reuse = "—" if m["prefix_reuse"] is None else f"{m['prefix_reuse']:.1%}"
+                u = m.get("usage") or {}
+                hit = u.get("cache_hit_rate")
+                if u.get("steps_without_usage"):
+                    gaps.append(f"{record['label']}/{agent}: "
+                                f"{u['steps_without_usage']} step(s) reported no usage")
                 rows.append((
                     record["label"], agent, m["path"], str(m["prompts"]),
-                    f"{m['first_chars']:,}", f"{m['last_chars']:,}",
                     f"{m['mean_chars']:,}", reuse,
+                    f"{u.get('input_tokens', 0):,}" if u else "—",
+                    f"{u.get('cache_read_tokens', 0):,}" if u else "—",
+                    "—" if hit is None else f"{hit:.1%}",
+                    f"${u['cost']:.4f}" if u.get("cost") else "—",
                 ))
 
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
@@ -210,9 +272,15 @@ def compare(labels: List[str]) -> int:
             print(f"{record['label']}: exit={record['exit_code']} "
                   f"{record['wall_seconds']}s  steps={run_['max_step']} "
                   f"tools={run_['tool_calls']} ended_ok={run_['agent_ended_ok']}")
-    print("\nprefix reuse is the number to read: a rendered prompt re-renders its whole "
-          "history every step, so a cache can never hit; a derived one appends. The "
-          "deliverable still has to be checked by hand.")
+
+    for gap in gaps:
+        print(f"  incomplete: {gap}")
+
+    print("\nRead `cache hit` first — it is what the provider billed. `prefix reuse` only "
+          "says a cache *could* have hit; the two came apart badly once, when a 99%-"
+          "reusable prompt was billed in full because the only breakpoint sat on the "
+          "system message. A run where they disagree is a bug in the request, not in the "
+          "measurement. The deliverable still has to be checked by hand.")
     return 0
 
 

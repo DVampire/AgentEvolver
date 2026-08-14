@@ -76,10 +76,62 @@ const _CODE_TAGS = new Set([
 
 // Container tags hold nested sub-module cards; render each child as a leaf
 // rather than flattening the container's combined text.
-const _CONTAINER_TAGS = new Set(['agent-context']);
+const _CONTAINER_TAGS = new Set(['agent-context', 'capability-context']);
+
+// The leaves inside <capability-context>. Each holds one markdown catalog: a
+// "## name" heading per capability, followed by its description and details.
+const _CAPABILITY_TAGS = new Set([
+  'tool-context', 'skill-context', 'connector-context', 'workflow-context',
+]);
 
 function _renderLeaf(el) {
   el.innerHTML = marked.parse(el.textContent.trim());
+}
+
+/**
+ * Group a rendered catalog into one card per capability.
+ *
+ * marked emits a flat run — h2, p, ul, h2, p, ... — where the only thing marking
+ * where one tool ends and the next begins is a heading. Flat siblings cannot be
+ * boxed by CSS alone, so the grouping happens here: each h2 opens a card and
+ * collects the nodes after it until the next h2. That turns a 60,000-character
+ * wall of text into a scannable grid, which is the whole point — this catalog is
+ * the largest thing in the prompt and the hardest part of it to read.
+ *
+ * Content before the first heading is a preamble, not a capability, so it keeps
+ * its own full-width row rather than being dressed up as a card of its own.
+ */
+function _cardify(el) {
+  const nodes = Array.from(el.children);
+  if (!nodes.some(n => n.tagName === 'H2')) return;   // not a catalog; leave it
+
+  const grid = document.createElement('div');
+  grid.className = 'cap-grid';
+  let card = null;
+  let lead = null;
+
+  for (const node of nodes) {
+    if (node.tagName === 'H2') {
+      card = document.createElement('div');
+      card.className = 'cap-card';
+      grid.appendChild(card);
+    }
+    if (card) {
+      card.appendChild(node);
+    } else {
+      if (!lead) {
+        lead = document.createElement('div');
+        lead.className = 'cap-lead';
+        grid.appendChild(lead);
+      }
+      lead.appendChild(node);
+    }
+  }
+  el.appendChild(grid);
+  // Read back by the leaf's ::before label. An empty catalog and one that failed
+  // to render both show no cards; only the count distinguishes them.
+  const n = grid.querySelectorAll(':scope > .cap-card').length;
+  el.dataset.countLabel = `  ·  ${n}`;
 }
 
 /**
@@ -166,7 +218,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (_CONTAINER_TAGS.has(tag)) {
       el.querySelectorAll(':scope > *').forEach(sub => {
         _renderLeaf(sub);
-        if (sub.tagName.toLowerCase() === 'constraints') _renderBudgetRings(sub);
+        const subTag = sub.tagName.toLowerCase();
+        if (subTag === 'constraints') _renderBudgetRings(sub);
+        if (_CAPABILITY_TAGS.has(subTag)) _cardify(sub);
       });
       return;
     }

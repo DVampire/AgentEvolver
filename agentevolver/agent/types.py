@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Type, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Type, Tuple
 
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -385,6 +385,18 @@ class Agent(BaseModel):
     """Base class for all agents, mirroring the design of `Tool`."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    #: When the accumulated capability changes reach this fraction of the frozen
+    #: catalog *and* :data:`_REFREEZE_MIN_CHARS` in absolute size, the catalog is
+    #: re-taken instead of patched further. See :meth:`_freeze_capabilities`.
+    #: ClassVars so they stay constants of the class rather than becoming pydantic
+    #: fields on every agent instance.
+    _REFREEZE_RATIO: ClassVar[float] = 0.25
+    #: Both conditions must hold, because re-freezing costs a cache write of the whole
+    #: catalog. Against a small catalog the ratio alone fires on the first change — the
+    #: per-line prefixes ("now available: ") outweigh a two-line catalog — and paying
+    #: tens of thousands of characters to retire a few hundred is never the trade.
+    _REFREEZE_MIN_CHARS: ClassVar[int] = 2_000
 
     name: str = Field(description="The name of the agent.")
     description: str = Field(description="The description of the agent.")
@@ -840,6 +852,20 @@ class Agent(BaseModel):
         same move compaction makes with `replace`: never rewrite what has already been
         said, add something that supersedes it.
 
+        The announcement reuses the *same block types* — a generated skill is announced
+        inside a `<skill-context>`, a generated tool inside a `<tool-context>`. A new
+        capability is not a new kind of thing, and asking the model to merge a catalog
+        with a separate change log to answer "what skills do I have" adds a vocabulary
+        the prompt never defined. The block repeats; the concept does not.
+
+        Freezing is not free forever. Each change lengthens the announcement while the
+        frozen catalog grows staler, and a long evolving session would end up carrying a
+        change log rivalling the catalog it patches — paying for both, and asking the
+        model to reconcile them on every step. Past :data:`_REFREEZE_RATIO` the trade
+        inverts: re-freezing costs one cache write and the announcement goes back to
+        empty, so that is what happens. Rare by construction, since it takes a great many
+        changes to get there.
+
         Returns:
             ``(frozen, addition)`` — the catalog to send in the stable slot, and zero or
             one message describing what changed since it was taken.
@@ -858,22 +884,65 @@ class Agent(BaseModel):
         if snapshot == current:
             return stable, []
 
-        before, after = snapshot.splitlines(), current.splitlines()
-        added = [l for l in difflib.unified_diff(before, after, n=0, lineterm="")
-                 if l.startswith("+") and not l.startswith("+++")]
-        removed = [l for l in difflib.unified_diff(before, after, n=0, lineterm="")
-                   if l.startswith("-") and not l.startswith("---")]
-        if not added and not removed:
+        import re as _re
+
+        def _blocks(text: str) -> Dict[str, str]:
+            # Leaf blocks only, and excluded *while matching* rather than after. The
+            # container's own tag matches this pattern too, and being outermost it wins:
+            # one lazy match swallows the whole catalog, so discarding it afterwards
+            # discards every leaf inside it and the diff comes back empty.
+            return {m.group(1): m.group(2)
+                    for m in _re.finditer(
+                        r"<((?!capability-context)[a-z-]+-context)>(.*?)</\1>", text, _re.S)}
+
+        old_blocks, new_blocks = _blocks(snapshot), _blocks(current)
+        sections: List[str] = []
+        # Per leaf block, so an added skill is announced inside a `<skill-context>` and
+        # an added tool inside a `<tool-context>` — the same vocabulary the catalog
+        # uses. A new capability is not a new *kind* of thing.
+        for kind in sorted(set(old_blocks) | set(new_blocks)):
+            before = old_blocks.get(kind, "").splitlines()
+            after = new_blocks.get(kind, "").splitlines()
+            diff = list(difflib.unified_diff(before, after, n=0, lineterm=""))
+            added = [l[1:].strip() for l in diff if l.startswith("+") and not l.startswith("+++")]
+            removed = [l[1:].strip() for l in diff if l.startswith("-") and not l.startswith("---")]
+            added = [l for l in added if l]
+            removed = [l for l in removed if l]
+            if not added and not removed:
+                continue
+            body = [f"  <{kind}>"]
+            body += [f"    now available: {l}" for l in added]
+            body += [f"    no longer available, do not call: {l}" for l in removed]
+            body.append(f"  </{kind}>")
+            sections.append("\n".join(body))
+
+        if not sections:
             return [HumanMessage(content=snapshot)], []
 
-        lines = ["<capability-changes>",
-                 "The capability list above was taken when this conversation started. "
-                 "Since then:"]
-        lines += [f"  now available: {l[1:].strip()}" for l in added if l[1:].strip()]
-        lines += [f"  no longer available: {l[1:].strip()}" for l in removed if l[1:].strip()]
-        lines.append("</capability-changes>")
+        # Measured on the change content, not on the wrapped message: the container and
+        # its explanatory line are a fixed ~190 characters that do not grow with the
+        # number of changes, and counting them made every small catalog re-freeze on its
+        # first change — the opposite of what the ratio is for.
+        delta = sum(len(s) for s in sections)
+        if (delta > Agent._REFREEZE_RATIO * len(snapshot)
+                and delta > Agent._REFREEZE_MIN_CHARS):
+            extra["_capability_snapshot"] = current
+            return stable, []
+        # Wrapped in a container that mirrors `<capability-context>`, so the leaf blocks
+        # inside it read as an update to that catalog rather than as a second, competing
+        # one. The name is derived from a container the prompt already defines — before
+        # the catalogs were merged there was nothing for it to refer to, and a
+        # free-standing change log had to introduce a concept of its own.
+        addition = "\n".join([
+            "<capability-context-changes>",
+            "Changes to the capability-context above, which was taken when this "
+            "conversation started. It still stands except as stated here:",
+            *sections,
+            "</capability-context-changes>",
+        ])
+
         # The frozen snapshot goes out unchanged; only this addition is new.
-        return [HumanMessage(content=snapshot)], [HumanMessage(content="\n".join(lines))]
+        return [HumanMessage(content=snapshot)], [HumanMessage(content=addition)]
 
     @staticmethod
     def _split_rendered_turn(rendered: List[Message]) -> Tuple[List[Message], List[Message]]:
@@ -905,8 +974,12 @@ class Agent(BaseModel):
             return [], []
         text = getattr(turn, "text", "") or ""
 
+        # One container, so the split follows the template rather than a list of tag
+        # names kept in sync with it by hand. The bare blocks are still matched, for
+        # prompts written before the container existed.
         stable_parts = []
-        for block in ("tool-context", "skill-context", "connector-context", "workflow-context"):
+        for block in ("capability-context", "tool-context", "skill-context",
+                      "connector-context", "workflow-context"):
             for match in _re.finditer(rf"<{block}>.*?</{block}>", text, _re.S):
                 stable_parts.append(match.group(0))
             text = _re.sub(rf"<{block}>.*?</{block}>", "", text, flags=_re.S)
@@ -1039,12 +1112,14 @@ class Agent(BaseModel):
         # Per-step lifecycle: POST_STEP + snapshot + trajectory capture.
         await self._post_step(task_id, step_number, ctx, messages,
                               reasoning=decision["reasoning"], plan=outcome["plan"],
-                              step_tokens=decision["step_tokens"], done=outcome["done"])
+                              step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
+                              done=outcome["done"])
 
         return {"done": outcome["done"], "result": outcome["result"], "reasoning": outcome["reasoning"],
                 "action_errors": outcome["action_errors"], "constraint_status": [], "stopped_by_constraint": False}
 
-    async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning, plan, step_tokens, done):
+    async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning, plan, step_tokens,
+                         done, step_usage=None):
         """Fire the per-step POST_STEP lifecycle (memory / trace / snapshot / trajectory)
         and carry token usage forward. Shared by the blocking ``_think_and_act`` path
         (BrowserAgent) and the event-driven round loop, so a step is recorded identically
@@ -1059,7 +1134,7 @@ class Agent(BaseModel):
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": reasoning},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": reasoning, "step_usage": step_usage},
             ctx=ctx,
         )
         await hook_manager(
@@ -1073,7 +1148,7 @@ class Agent(BaseModel):
             name="trajectory_hook",
             input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
                    "task_id": task_id, "messages": messages, "reasoning": reasoning,
-                   "plan": plan, "step_tokens": step_tokens},
+                   "plan": plan, "step_tokens": step_tokens, "step_usage": step_usage},
             ctx=ctx,
         )
         self._pending_step_tokens[task_id] = step_tokens
@@ -1126,6 +1201,7 @@ class Agent(BaseModel):
         reasoning = ""
         tool_calls: List[Any] = []
         step_tokens = 0
+        step_usage: Optional[Dict[str, Any]] = None
         think_error: Optional[str] = None
         try:
             acc = await accumulate_stream(
@@ -1135,7 +1211,17 @@ class Agent(BaseModel):
                     ctx=ctx,
                 )
             )
-            step_tokens = int((acc.get("usage") or {}).get("output_tokens", 0) or 0)
+            # The whole usage record, not just the completion count. Every provider
+            # already reports input, cache_write and cache_read alongside it; taking
+            # `output_tokens` alone discarded them here, at the first hop, which is why
+            # no durable record downstream could say whether a prompt was ever cached.
+            # `step_tokens` keeps its old meaning — it feeds the trajectory's reward —
+            # and the full record travels beside it.
+            from agentevolver.model.types import TokenUsage
+            usage = TokenUsage.from_raw(acc.get("usage"))
+            if usage is not None:
+                step_usage = usage.model_dump()
+                step_tokens = usage.output_tokens
             reasoning = acc.get("thinking") or acc.get("text") or ""
             tool_calls = acc.get("tool_calls") or []
         except Exception as e:
@@ -1152,7 +1238,7 @@ class Agent(BaseModel):
         # retries, and a broken model spends the entire budget looking like an agent
         # thinking out loud.
         return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning,
-                "step_tokens": step_tokens, "error": think_error}
+                "step_tokens": step_tokens, "step_usage": step_usage, "error": think_error}
 
     def _cap_actions(self, tool_calls: List[Any]) -> List[Any]:
         """Hold a turn's batch to ``max_actions``, keeping the earliest calls.
@@ -1615,7 +1701,8 @@ class Agent(BaseModel):
             run.round_step = run.step
             run.step_plan = []
             await self._post_step(run.task_id, run.step, run.ctx, messages,
-                                  reasoning=decision["reasoning"], plan=[], step_tokens=decision["step_tokens"], done=False)
+                                  reasoning=decision["reasoning"], plan=[], step_tokens=decision["step_tokens"],
+                                  step_usage=decision.get("step_usage"), done=False)
             run.action_errors = [
                 "You produced text but called no tool. Take the next action by calling a tool, "
                 "or if the task is COMPLETE call `done_tool` with the result now."]
@@ -1665,7 +1752,8 @@ class Agent(BaseModel):
         await self._record_round_outcome(run)
         await self._post_step(run.task_id, run.round_step, run.ctx, run.messages,
                               reasoning=decision["reasoning"], plan=getattr(run, "step_plan", []),
-                              step_tokens=decision["step_tokens"], done=run.round_done)
+                              step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
+                              done=run.round_done)
         run.action_errors = list(run.round_errors)
         run.step = run.round_step + 1
         if run.round_done:
@@ -1854,7 +1942,7 @@ class Agent(BaseModel):
         await self._post_step(
             run.task_id, run.step, run.ctx, run.messages,
             reasoning=decision["reasoning"], plan=[],
-            step_tokens=decision["step_tokens"], done=False,
+            step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"), done=False,
         )
         blocked = (
             f"{reason} You have measured enough to act. Write the change you believe is "

@@ -246,10 +246,40 @@ class AnthropicChatSerializer:
     def serialize(message: AssistantMessage) -> dict[str, Any]: ...
 
     @staticmethod
+    def _cache_split(text: str):
+        """Split a user turn after the capability catalogs, for a cache breakpoint.
+
+        Mirrors the LLM Hub and OpenRouter serializers. This provider had no
+        `cache_control` at all, so nothing it sent was ever cacheable — including the
+        capability catalogs, which are byte-identical on every step of a session and are
+        the largest single thing in the prompt.
+
+        The split point is the end of `<capability-context>`. Returns ``None`` when the
+        turn has no catalog, which is every turn but the one carrying it — those must
+        not be given a breakpoint, since one placed after content that changes each step
+        caches nothing and spends a cache write to find out.
+        """
+        marker = "</capability-context>"
+        end = text.find(marker)
+        if end == -1:
+            return None
+        end += len(marker)
+        return text[:end], text[end:]
+
+    @staticmethod
     def serialize(message: Message) -> dict[str, Any]:
         """Serialize a custom message to an Anthropic message format."""
         if isinstance(message, HumanMessage):
-            content = AnthropicChatSerializer._serialize_user_content(message.content)
+            split = (AnthropicChatSerializer._cache_split(message.content)
+                     if isinstance(message.content, str) else None)
+            if split is not None:
+                stable, rest = split
+                content = [{'type': 'text', 'text': stable,
+                            'cache_control': {'type': 'ephemeral'}}]
+                if rest.strip():
+                    content.append({'type': 'text', 'text': rest})
+            else:
+                content = AnthropicChatSerializer._serialize_user_content(message.content)
             result: dict[str, Any] = {
                 'role': 'user',
                 'content': content,
@@ -314,7 +344,14 @@ class AnthropicChatSerializer:
             else:
                 # Serialize user/assistant messages
                 anthropic_messages.append(AnthropicChatSerializer.serialize(message))
-        
+
+        # As a block list rather than a bare string, so it can carry a breakpoint: the
+        # system prompt is fixed for a whole session and is the one part of the request
+        # guaranteed to be worth caching.
+        if system_message:
+            system_message = [{'type': 'text', 'text': system_message,
+                               'cache_control': {'type': 'ephemeral'}}]
+
         return system_message, anthropic_messages
 
     @staticmethod

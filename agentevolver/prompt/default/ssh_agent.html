@@ -85,6 +85,14 @@ Before finishing, account for what you started: a job you launched keeps running
 </div>
 
 <div class="user">
+<capability-context>
+  <tool-context>{{ available_tools }}
+  </tool-context>
+
+  <skill-context>{{ available_skills }}
+  </skill-context>
+</capability-context>
+
 <module src="../module/agent_context.html"></module>
 
 <remote-state>
@@ -94,14 +102,6 @@ Before finishing, account for what you started: a job you launched keeps running
 <environment-context>
 {{ environment_context }}
 </environment-context>
-
-<tool-context>
-{{ available_tools }}
-</tool-context>
-
-<skill-context>
-{{ available_skills }}
-</skill-context>
 </div>
 
 </body>

@@ -311,9 +311,6 @@ div.system > verification-template::before { display: none; }
    USER SECTION — context blocks
    ===================================================== */
 
-div.user > tool-context,
-div.user > skill-context,
-div.user > connector-context,
 div.user > examples,
 div.user > evaluation-target,
 div.user > optimization-target,
@@ -329,9 +326,6 @@ div.user > domain-target {
   color: var(--text-mid);
 }
 
-div.user > tool-context::before    { content: counter(section, decimal-leading-zero) "  ·  tool-context";    color: var(--text-mid); border-bottom-color: var(--border); }
-div.user > skill-context::before   { content: counter(section, decimal-leading-zero) "  ·  skill-context";   color: var(--text-mid); border-bottom-color: var(--border); }
-div.user > connector-context::before { content: counter(section, decimal-leading-zero) "  ·  connector-context"; color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > examples::before        { content: counter(section, decimal-leading-zero) "  ·  examples";        color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > evaluation-target::before  { content: counter(section, decimal-leading-zero) "  ·  evaluation-target";  color: var(--text-mid); border-bottom-color: var(--border); }
 div.user > optimization-target::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target"; color: var(--text-mid); border-bottom-color: var(--border); }
@@ -339,72 +333,140 @@ div.user > generation-target::before  { content: counter(section, decimal-leadin
 div.user > domain-target::before   { content: counter(section, decimal-leading-zero) "  ·  domain-target";   color: var(--text-mid); border-bottom-color: var(--border); }
 
 /* =====================================================
-   CAPABILITY CARDS — tool / skill / connector context.
-   Each capability is injected as markdown: one "## name"
-   header (the card divider) + a description line + bold
-   sub-labels (Parameters / Example / ...), lists, and an
-   example block. The content is real parsed HTML now, so
-   drop the inherited pre-wrap (it turned inter-tag
-   newlines into blank lines) and give every H2 a compact
-   ruled header so consecutive cards read as separate.
+   CAPABILITY CARDS — tool / skill / connector / workflow.
+   Each capability is one "## name" heading plus its details;
+   prompt.js groups each of those runs into a .cap-card, since
+   flat sibling nodes cannot be boxed by CSS alone. The result
+   is a responsive grid: this catalog is the largest single
+   thing in the prompt, and as one unbroken column it is the
+   part nobody can actually read.
    ===================================================== */
-div.user > tool-context,
-div.user > skill-context,
-div.user > connector-context {
-  white-space: normal;
-  padding-top: 2px;
-  padding-bottom: 6px;
+div.user > capability-context {
+  display: block;
+  counter-increment: section;
 }
 
-div.user > tool-context h2,
-div.user > skill-context h2,
-div.user > connector-context h2 {
+div.user > capability-context::before {
+  content: counter(section, decimal-leading-zero) "  ·  capability-context";
+  display: block;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+div.user capability-context > tool-context,
+div.user capability-context > skill-context,
+div.user capability-context > connector-context,
+div.user capability-context > workflow-context {
+  display: block;
+  white-space: normal;
+  border: none;
+  background: none;
+  padding: 10px 0 4px;
+}
+
+/* The leaf's own label, with its live count — a catalog that lists nothing and a
+   catalog that failed to load look identical without it. */
+div.user capability-context > tool-context::before,
+div.user capability-context > skill-context::before,
+div.user capability-context > connector-context::before,
+div.user capability-context > workflow-context::before {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  padding: 2px 0 3px 8px;
+  margin-bottom: 8px;
+  border: none;
+  border-left: 3px solid var(--kind, var(--text-mid));
+  color: var(--kind, var(--text-mid));
+  counter-increment: none;
+}
+div.user capability-context > tool-context::before      { content: "TOOLS"      attr(data-count-label); --kind: var(--blue); }
+div.user capability-context > skill-context::before     { content: "SKILLS"     attr(data-count-label); --kind: var(--green); }
+div.user capability-context > connector-context::before { content: "CONNECTORS" attr(data-count-label); --kind: var(--amber); }
+div.user capability-context > workflow-context::before  { content: "WORKFLOWS"  attr(data-count-label); --kind: var(--text-mid); }
+
+div.user capability-context > tool-context      { --kind: var(--blue); }
+div.user capability-context > skill-context     { --kind: var(--green); }
+div.user capability-context > connector-context { --kind: var(--amber); }
+div.user capability-context > workflow-context  { --kind: var(--text-mid); }
+
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+
+.cap-lead { grid-column: 1 / -1; }
+
+.cap-card {
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--kind, var(--text-faint));
+  border-radius: 4px;
+  background: var(--surface-2);
+  padding: 8px 10px 10px;
+  /* A single tool's docs can run hundreds of lines. Capping the card keeps the
+     grid a grid; the full text is still there, one scroll away. */
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cap-card h2 {
+  font-family: var(--mono);
+  font-size: 12.5px;
   font-weight: bold;
   color: var(--text);
-  margin: 14px 0 6px;
-  padding: 6px 10px 6px 10px;
-  border-top: 1px solid var(--border-hi);
-  border-left: 2px solid var(--green);
-  background: var(--surface-3);
+  margin: 0 0 5px;
+  padding: 0;
+  border: none;
+  background: none;
   letter-spacing: 0.01em;
+  word-break: break-word;
 }
 
-div.user > tool-context h2:first-child,
-div.user > skill-context h2:first-child,
-div.user > connector-context h2:first-child {
-  margin-top: 0;
-  border-top: none;
+.cap-card p {
+  margin: 3px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-mid);
 }
 
-div.user > tool-context p,
-div.user > skill-context p,
-div.user > connector-context p {
-  margin: 4px 0;
-  font-size: 12.5px;
-  line-height: 1.55;
+.cap-card ul {
+  margin: 3px 0 6px;
+  padding-left: 15px;
 }
 
-div.user > tool-context ul,
-div.user > skill-context ul,
-div.user > connector-context ul {
-  margin: 3px 0 8px;
-  padding-left: 16px;
-}
-
-div.user > tool-context li,
-div.user > skill-context li,
-div.user > connector-context li {
+.cap-card li {
   margin-bottom: 2px;
-  font-size: 12.5px;
-  line-height: 1.55;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-mid);
 }
 
-div.user > tool-context pre,
-div.user > skill-context pre,
-div.user > connector-context pre {
-  margin: 4px 0 8px;
+.cap-card strong { color: var(--text); }
+
+.cap-card pre {
+  margin: 5px 0;
+  padding: 6px 8px;
+  background: var(--ground);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+  overflow-x: auto;
+}
+
+.cap-card code { font-size: 11px; }
+
+@media (max-width: 720px) {
+  .cap-grid { grid-template-columns: 1fr; }
 }
 
 /* =====================================================

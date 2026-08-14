@@ -14,9 +14,12 @@
 <!--
 TEMPLATE — HTML prompt for a tool-calling agent. Copy to extension/prompt/{name}.html,
 set <meta name="name"> to the agent's name (must match the class's prompt_name), and
-fill each <profile>/rules block. Keep the <div class="user"> structure below: an
-<agent-context> CONTAINER holding the state sub-modules, with <tool-context> /
-<skill-context> / <connector-context> as SIBLINGS (not nested). Only use the template
+fill each <profile>/rules block. Keep the <div class="user"> structure below: a
+<capability-context> CONTAINER holding <tool-context> / <skill-context> /
+<connector-context>, placed FIRST, then an <agent-context> CONTAINER holding the
+state sub-modules. The order matters: the capability catalogs are identical on every
+step and the agent state is not, so the catalogs go ahead of it — a prompt cache keeps
+a prefix, and anything that changes each step invalidates everything after it. Only use the template
 variables the base context builder provides (listed in the user block below).
 -->
 
@@ -90,6 +93,20 @@ To act, CALL a tool. Your capabilities — tools, skills, connectors, and enviro
 </div>
 
 <div class="user">
+<capability-context>
+  <tool-context>
+  {{ available_tools }}
+  </tool-context>
+
+  <skill-context>
+  {{ available_skills }}
+  </skill-context>
+
+  <connector-context>
+  {{ available_connectors }}
+  </connector-context>
+</capability-context>
+
 <agent-context>
 <task>
 {{ task }}
@@ -116,18 +133,6 @@ To act, CALL a tool. Your capabilities — tools, skills, connectors, and enviro
 {{ errors }}
 </errors>
 {% endif %}</agent-context>
-
-<tool-context>
-{{ available_tools }}
-</tool-context>
-
-<skill-context>
-{{ available_skills }}
-</skill-context>
-
-<connector-context>
-{{ available_connectors }}
-</connector-context>
 </div>
 
 </body>

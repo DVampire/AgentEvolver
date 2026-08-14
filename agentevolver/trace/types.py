@@ -84,6 +84,13 @@ class TraceEvent(BaseModel):
 
     duration_ms: Optional[float] = None
 
+    #: What this call cost, as ``TokenUsage.model_dump()`` — input / output /
+    #: cache_write / cache_read / cost. A first-class field rather than a corner of
+    #: ``metadata`` because it is the only durable record of whether a prompt was
+    #: cached: the counts exist in memory on every provider path, and until they are
+    #: written here nothing downstream can tell a cache hit from a full re-read.
+    usage: Optional[Dict[str, Any]] = None
+
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -151,6 +158,7 @@ def agent_call_event(
     step_number: int,
     reasoning: Optional[str] = None,
     duration_ms: Optional[float] = None,
+    usage: Optional[Dict[str, Any]] = None,
 ) -> TraceEvent:
     return TraceEvent(
         event_type=TraceEventType.AGENT_CALL,
@@ -161,6 +169,7 @@ def agent_call_event(
         message=reasoning,
         success=True,
         duration_ms=duration_ms,
+        usage=usage,
         # On the surface: this is the assistant's turn. It was log-only while the
         # surface meant "what memory records", which covers results and not the
         # reasoning that produced them — so a compaction could hide a result while
@@ -173,9 +182,11 @@ def agent_end_event(
     session_id: str, task_id: str, agent_name: str,
     success: bool, result: Optional[str],
     duration_ms: Optional[float] = None, error: Optional[str] = None,
+    usage: Optional[Dict[str, Any]] = None,
 ) -> TraceEvent:
     return TraceEvent(
         event_type=TraceEventType.AGENT_END,
+        usage=usage,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         label=f"Agent end: {agent_name} ({'ok' if success else 'fail'})",
         output=result,

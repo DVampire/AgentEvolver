@@ -85,6 +85,17 @@ To act, CALL a tool. Your capabilities — tools, skills, connectors, and enviro
 </div>
 
 <div class="user">
+<capability-context>
+  <tool-context>{{ available_tools }}
+  </tool-context>
+
+  <skill-context>{{ available_skills }}
+  </skill-context>
+
+  <connector-context>{{ available_connectors }}
+  </connector-context>
+</capability-context>
+
 <agent-context>
 <task>
 {{ task }}
@@ -111,18 +122,6 @@ To act, CALL a tool. Your capabilities — tools, skills, connectors, and enviro
 {{ errors }}
 </errors>
 {% endif %}</agent-context>
-
-<tool-context>
-{{ available_tools }}
-</tool-context>
-
-<skill-context>
-{{ available_skills }}
-</skill-context>
-
-<connector-context>
-{{ available_connectors }}
-</connector-context>
 </div>
 
 </body>

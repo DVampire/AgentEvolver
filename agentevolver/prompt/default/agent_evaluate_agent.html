@@ -102,7 +102,7 @@ Use `✓` for confirmed facts, `✗` for pending or failed. Include score for ea
 **Prompt Quality (20 pts)** — Is the HTML prompt well-structured? (auto-pass 20 if procedural agent)
 - For tool-calling only: HTML file exists and has `&lt;div class="system"&gt;` and `&lt;div class="user"&gt;` sections.
 - system section has: `&lt;profile&gt;`, `&lt;task-rules&gt;`, `&lt;plan-rules&gt;`, `&lt;output-schema&gt;`.
-- user section nests sub-modules inside `&lt;agent-context&gt;` (`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, plus `{{ workspace }}` / `{{ errors }}` where relevant), with `&lt;tool-context&gt;` (`{{ available_tools }}`) and `&lt;skill-context&gt;` (`{{ available_skills }}`) as siblings.
+- user section opens with `&lt;capability-context&gt;` nesting `&lt;tool-context&gt;` (`{{ available_tools }}`), `&lt;skill-context&gt;` (`{{ available_skills }}`) and `&lt;connector-context&gt;` (`{{ available_connectors }}`), then `&lt;agent-context&gt;` nesting the state sub-modules (`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, plus `{{ workspace }}` / `{{ errors }}` where relevant). Capabilities first: they are identical every step, the agent state is not, and a prompt cache only keeps a prefix.
 - Instructions are clear, not contradictory, no placeholder text left unfilled.
 - Score guide: 20 = complete and clear; −4 per missing required section; procedural agents get 20 automatically because they intentionally have no prompt.
 
@@ -149,19 +149,18 @@ Do NOT write or run a standalone test script (`bash_tool`/`code_interpreter_tool
 </div>
 
 <div class="user">
+<capability-context>
+  <tool-context>{{ available_tools }}
+  </tool-context>
+
+  <skill-context>{{ available_skills }}
+  </skill-context>
+
+  <connector-context>{{ available_connectors }}
+  </connector-context>
+</capability-context>
+
 <module src="../module/agent_context.html"></module>
-
-<tool-context>
-{{ available_tools }}
-</tool-context>
-
-<skill-context>
-{{ available_skills }}
-</skill-context>
-
-<connector-context>
-{{ available_connectors }}
-</connector-context>
 </div>
 
 </body>

@@ -326,6 +326,47 @@ def test_a_new_capability_is_announced_after_the_catalog():
     assert "now available" in addition[0].text
 
 
+def test_a_change_is_announced_in_the_block_it_belongs_to():
+    """A generated skill is a skill. It is not a new kind of thing.
+
+    Announcing every change in one invented block made the model merge a catalog with
+    a change log to answer "what skills do I have" — a vocabulary the prompt never
+    defined. The block type repeats instead.
+    """
+    from agentevolver.agent.types import Agent
+
+    ctx = _ctx()
+    before = [HumanMessage(content="<tool-context>\n- bash: run\n</tool-context>\n"
+                                   "<skill-context>\n- alpha: A\n</skill-context>")]
+    after = [HumanMessage(content="<tool-context>\n- bash: run\n- csv: new tool\n</tool-context>\n"
+                                  "<skill-context>\n- alpha: A\n- gamma: new skill\n</skill-context>")]
+    Agent._freeze_capabilities(before, ctx)
+    _, addition = Agent._freeze_capabilities(after, ctx)
+
+    text = addition[0].text
+    assert "<capability-changes>" not in text, "no invented block type"
+    tools = text[text.index("<tool-context>"):text.index("</tool-context>")]
+    skills = text[text.index("<skill-context>"):text.index("</skill-context>")]
+    assert "csv: new tool" in tools and "gamma" not in tools
+    assert "gamma: new skill" in skills and "csv" not in skills
+
+
+def test_an_untouched_block_is_not_mentioned():
+    """Only what changed is restated; the rest is already above, byte for byte."""
+    from agentevolver.agent.types import Agent
+
+    ctx = _ctx()
+    before = [HumanMessage(content="<tool-context>\n- bash: run\n</tool-context>\n"
+                                   "<skill-context>\n- alpha: A\n</skill-context>")]
+    after = [HumanMessage(content="<tool-context>\n- bash: run\n</tool-context>\n"
+                                  "<skill-context>\n- alpha: A\n- gamma: new\n</skill-context>")]
+    Agent._freeze_capabilities(before, ctx)
+    _, addition = Agent._freeze_capabilities(after, ctx)
+
+    assert "<tool-context>" not in addition[0].text
+    assert "<skill-context>" in addition[0].text
+
+
 def test_a_withdrawn_capability_is_announced_too():
     """Evolution replaces components as well as adding them."""
     from agentevolver.agent.types import Agent
@@ -336,6 +377,7 @@ def test_a_withdrawn_capability_is_announced_too():
 
     assert addition and "no longer available" in addition[0].text
     assert "beta: B" in addition[0].text
+    assert "do not call" in addition[0].text, "the model must be told not to try it"
 
 
 def test_an_unchanged_catalog_says_nothing():
@@ -363,3 +405,134 @@ def test_the_prefix_survives_an_evolution_step():
     common = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
     assert common == len(a), "the frozen catalog must stay byte-identical"
     assert addition, "and the change must still reach the model"
+
+
+# --------------------------------------------------------------------------- #
+# The container: one catalog, one cache breakpoint
+# --------------------------------------------------------------------------- #
+def test_the_container_is_treated_as_stable():
+    """`<capability-context>` is the catalog now, and the split must follow the template.
+
+    The predecessor listed the four leaf tags by hand. That list and the templates were
+    two records of the same fact, and only one of them was edited when the blocks were
+    merged — the split then found nothing stable and sent the whole 58,000-character
+    catalog after the history, where no cache can reach it.
+    """
+    from agentevolver.agent.types import Agent
+
+    turn = [HumanMessage(content=(
+        "<capability-context>\n<tool-context>- bash</tool-context>\n"
+        "<skill-context>- alpha</skill-context>\n</capability-context>\n"
+        "<agent-context><step-info>step 3</step-info></agent-context>"))]
+    stable, volatile = Agent._split_rendered_turn(turn)
+
+    assert "<capability-context>" in stable[0].text
+    assert "bash" in stable[0].text and "alpha" in stable[0].text
+    assert "capability-context" not in volatile[0].text
+    assert "step 3" in volatile[0].text
+
+
+def test_bare_blocks_still_split_without_the_container():
+    """A prompt written before the container existed must not lose its catalog."""
+    from agentevolver.agent.types import Agent
+
+    turn = [HumanMessage(content="<tool-context>- bash</tool-context>\n"
+                                 "<agent-context><step-info>step 3</step-info></agent-context>")]
+    stable, volatile = Agent._split_rendered_turn(turn)
+    assert "bash" in stable[0].text
+    assert "step 3" in volatile[0].text
+
+
+def test_changes_are_wrapped_in_a_container_that_mirrors_the_catalog():
+    """The change block names a container the prompt actually defines.
+
+    While the catalogs were four loose blocks there was nothing for a change block to
+    refer to, so any name for it introduced a concept of its own. With one container the
+    update can say which catalog it updates — and the leaves inside keep their own tags,
+    so a new skill is still announced as a skill.
+    """
+    from agentevolver.agent.types import Agent
+
+    ctx = _ctx()
+    before = [HumanMessage(content="<capability-context>\n<tool-context>\n- bash: run\n"
+                                   "</tool-context>\n<skill-context>\n- alpha: A\n"
+                                   "</skill-context>\n</capability-context>")]
+    after = [HumanMessage(content="<capability-context>\n<tool-context>\n- bash: run\n"
+                                  "</tool-context>\n<skill-context>\n- alpha: A\n"
+                                  "- gamma: new skill\n</skill-context>\n</capability-context>")]
+    Agent._freeze_capabilities(before, ctx)
+    frozen, addition = Agent._freeze_capabilities(after, ctx)
+
+    text = addition[0].text
+    assert text.startswith("<capability-context-changes>")
+    assert "<skill-context>" in text and "gamma: new skill" in text
+    assert "<tool-context>" not in text, "an untouched leaf is not restated"
+    # The container wraps the leaves; it is not diffed as a leaf itself, which would
+    # report every change a second time as one undifferentiated lump.
+    assert text.count("gamma: new skill") == 1
+    assert frozen[0].text == before[0].text, "the frozen catalog goes out byte-identical"
+
+
+def test_the_catalog_is_re_taken_once_the_delta_grows_too_large():
+    """Freezing is not free forever.
+
+    Each change lengthens the announcement while the frozen catalog grows staler. Left
+    alone, a long evolving session carries a change log rivalling the catalog it patches
+    — paying for both and asking the model to reconcile them every step. Past the ratio
+    *and* past the absolute floor, one cache write buys a prompt that states its
+    capabilities once.
+    """
+    from agentevolver.agent.types import Agent
+
+    ctx = _ctx()
+    base = ("<capability-context>\n<skill-context>\n"
+            + "".join(f"- skill_{i:02d}: does a thing in the workspace\n" for i in range(30))
+            + "</skill-context>\n</capability-context>")
+    Agent._freeze_capabilities([HumanMessage(content=base)], ctx)
+
+    grown = base.replace("</skill-context>", "".join(
+        f"- generated_{i:03d}: written mid-run by the evolver\n" for i in range(90))
+        + "</skill-context>")
+    frozen, addition = Agent._freeze_capabilities([HumanMessage(content=grown)], ctx)
+
+    assert addition == [], "past both thresholds the delta is dropped, not carried"
+    assert frozen[0].text == grown, "the catalog sent is the current one"
+    assert ctx.extra["_capability_snapshot"] == grown, "and it becomes the new baseline"
+
+
+def test_a_large_ratio_alone_does_not_re_take_a_small_catalog():
+    """The floor. Re-freezing costs a cache write of the whole catalog.
+
+    Against a two-line catalog the ratio fires on the first change — the per-line
+    prefixes outweigh the catalog itself — and paying for a re-write to retire a few
+    hundred characters is never the trade.
+    """
+    from agentevolver.agent.types import Agent
+
+    ctx = _ctx()
+    base = "<capability-context>\n<skill-context>\n- alpha: A\n</skill-context>\n</capability-context>"
+    Agent._freeze_capabilities([HumanMessage(content=base)], ctx)
+
+    grown = base.replace("- alpha: A\n", "- alpha: A\n- gamma: generated mid-run\n")
+    frozen, addition = Agent._freeze_capabilities([HumanMessage(content=grown)], ctx)
+
+    assert "gamma: generated mid-run" in addition[0].text
+    assert frozen[0].text == base
+
+
+def test_a_small_delta_is_still_carried_rather_than_re_taken():
+    """The common case. Re-taking on every change would defeat the whole mechanism."""
+    from agentevolver.agent.types import Agent
+
+    ctx = _ctx()
+    base = ("<capability-context>\n<skill-context>\n"
+            + "".join(f"- skill_{i:02d}: does a thing\n" for i in range(40))
+            + "</skill-context>\n</capability-context>")
+    Agent._freeze_capabilities([HumanMessage(content=base)], ctx)
+
+    grown = base.replace("</skill-context>", "- gamma: generated mid-run\n</skill-context>")
+    frozen, addition = Agent._freeze_capabilities([HumanMessage(content=grown)], ctx)
+
+    assert "gamma: generated mid-run" in addition[0].text
+    assert frozen[0].text == base, "the frozen prefix is held still"
+    assert ctx.extra["_capability_snapshot"] == base

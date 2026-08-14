@@ -74,7 +74,8 @@ Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta n
 
 **Structure (do not break it):**
 - **system**: `profile`, `language-settings`, `project`, `input-rules`, `constraint-rules`, `task-rules`, `context-rules`, `response-protocol`.
-- **user**: an `<agent-context>` **container** holding `task` / `constraints` / `step-info` / `memory` / (`todo`) / `workspace` / (`errors`), with `<tool-context>`, `<skill-context>`, `<connector-context>` as **siblings** of `<agent-context>` (NOT nested). The CSS/renderer depends on this container-vs-sibling layout.
+- **user**: two containers, in this order — a `<capability-context>` holding `<tool-context>` / `<skill-context>` / `<connector-context>` (and `<workflow-context>` where the agent has workflows), then an `<agent-context>` holding `task` / `constraints` / `step-info` / `memory` / (`todo`) / `workspace` / (`errors`). The CSS/renderer depends on this layout.
+  - **The order is not cosmetic.** The capability catalogs are byte-identical on every step; the agent state is not. A prompt cache keeps a *prefix*, so anything that changes each step invalidates everything after it — putting the catalogs last meant the largest stable part of the prompt (≈63% of it) was re-read in full every step. Catalogs first, live state last.
 
 **What each block is for** (fill the agent-specific ones; keep the shared ones roughly as the template has them):
 - `profile` *(agent-specific)* — who the agent is and its core behavior; explain the WHY, not just rules.
@@ -85,7 +86,7 @@ Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta n
 - `task-rules` *(agent-specific)* — the agent's objective and when to call `done_tool`.
 - `context-rules` *(shared)* — how memory is presented, and that it must use only the listed tools/skills/connectors (ignoring any not loaded).
 - `response-protocol` *(shared)* — that it acts by **calling tools natively** (not by emitting a JSON plan), and signals completion only via `done_tool`.
-- `agent-context` + `tool/skill/connector-context` *(shared frame)* — the live-state and capability slots; only the template variables below go here.
+- `capability-context` + `agent-context` *(shared frame)* — the capability and live-state slots; only the template variables below go here.
 
 > **Shared blocks & modules.** The built-in default agents in `agentevolver/prompt/default/` factor the shared blocks (`language-settings`, `constraint-rules`, `context-rules`, `response-protocol`, `agent-context`) into `agentevolver/prompt/module/*.html`, referenced with `<module src="../module/NAME.html"></module>` (the server inlines them into the message; `prompt.js` inlines them for browser viewing). **Generated agents keep these blocks inline** — do NOT use `<module src>` in an `extension/prompt/` file: module `src` is resolved relative to the prompt file, so `../module/...` only exists under `agentevolver/prompt/default/` and would fail to load from `extension/prompt/`.
 
