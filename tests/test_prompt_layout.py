@@ -22,9 +22,21 @@ from agentevolver.prompt.types import parse_prompt_file
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
             sorted((ROOT / "extension" / "prompt").glob("*.html"))
-CSS = (ROOT / "agentevolver" / "visual" / "css" / "prompt.css").read_text(encoding="utf-8")
-JS = (ROOT / "agentevolver" / "visual" / "js" / "prompt.js").read_text(encoding="utf-8")
-SPLITTER = (ROOT / "agentevolver" / "agent" / "types.py").read_text(encoding="utf-8")
+# Read per test, not at import. Collection happens before session fixtures, so a
+# module-level read captures whatever is on disk at that instant — including a mutation
+# the repair fixture is about to undo. That exact race cost a commit: a killed run left
+# the stylesheet mutated, collection cached it, the repair restored the file, and the
+# check still failed against its stale in-memory copy.
+def _css() -> str:
+    return (ROOT / "agentevolver" / "visual" / "css" / "prompt.css").read_text(encoding="utf-8")
+
+
+def _js() -> str:
+    return (ROOT / "agentevolver" / "visual" / "js" / "prompt.js").read_text(encoding="utf-8")
+
+
+def _splitter() -> str:
+    return (ROOT / "agentevolver" / "agent" / "types.py").read_text(encoding="utf-8")
 
 CONTAINER = "capability-context"
 
@@ -68,10 +80,10 @@ def test_the_stylesheet_reaches_the_leaf_at_its_real_depth(leaf):
     A direct-child selector for a leaf that is now a grandchild matches nothing, and a
     stylesheet that matches nothing fails silently by definition.
     """
-    assert f"div.user > {leaf}" not in CSS, (
+    assert f"div.user > {leaf}" not in _css(), (
         f"{leaf} is nested in <{CONTAINER}> but the stylesheet still selects it as a "
         f"direct child of div.user; that rule matches nothing")
-    assert re.search(rf"{CONTAINER} > {leaf}\b", CSS), (
+    assert re.search(rf"{CONTAINER} > {leaf}\b", _css()), (
         f"the stylesheet never reaches {leaf} at its nested depth")
 
 
@@ -81,7 +93,7 @@ def test_the_renderer_knows_the_container_holds_children():
     A container it does not know is rendered as one leaf — the whole catalog flattened
     into a single blob of text, structure gone.
     """
-    match = re.search(r"_CONTAINER_TAGS\s*=\s*new Set\(\[(.*?)\]\)", JS, re.S)
+    match = re.search(r"_CONTAINER_TAGS\s*=\s*new Set\(\[(.*?)\]\)", _js(), re.S)
     assert match, "prompt.js no longer declares _CONTAINER_TAGS"
     assert CONTAINER in match.group(1), (
         f"prompt.js does not treat <{CONTAINER}> as a container; its children would be "
@@ -90,7 +102,7 @@ def test_the_renderer_knows_the_container_holds_children():
 
 @pytest.mark.parametrize("leaf", sorted(LEAVES))
 def test_the_renderer_cards_every_leaf_the_templates_use(leaf):
-    match = re.search(r"_CAPABILITY_TAGS\s*=\s*new Set\(\[(.*?)\]\)", JS, re.S)
+    match = re.search(r"_CAPABILITY_TAGS\s*=\s*new Set\(\[(.*?)\]\)", _js(), re.S)
     assert match, "prompt.js no longer declares _CAPABILITY_TAGS"
     assert leaf in match.group(1), f"prompt.js does not render {leaf} as capability cards"
 
@@ -102,7 +114,7 @@ def test_the_splitter_treats_the_container_as_stable():
     the list was the copy nobody updated, and the split found nothing stable — sending
     the whole catalog past the point a cache can reach.
     """
-    match = re.search(r"for block in \((.*?)\):", SPLITTER, re.S)
+    match = re.search(r"for block in \((.*?)\):", _splitter(), re.S)
     assert match, "the stable-block list moved; this check needs updating with it"
     assert f'"{CONTAINER}"' in match.group(1), (
         f"_split_rendered_turn does not treat <{CONTAINER}> as stable content")
