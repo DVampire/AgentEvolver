@@ -81,7 +81,7 @@ log_path = "agent.log"
 # manager with an unregistered name fails every `_think` instantly instead.
 # Keep this in sync with programbench_agent_baseline.py — the two arms are only
 # comparable while they run the same model.
-model_name = "openrouter/claude-opus-5"
+model_name = "llm_hub/claude-opus-5"
 
 memory_names = [
     "file_system_memory",

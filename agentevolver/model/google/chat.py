@@ -85,6 +85,12 @@ class ChatGoogle(BaseChatModel):
             "prompt_token_count": getattr(u, "prompt_token_count", 0) or 0,
             "candidates_token_count": getattr(u, "candidates_token_count", 0) or 0,
             "total_token_count": getattr(u, "total_token_count", 0) or 0,
+            # Gemini caches implicitly — there is no breakpoint to set, so this count is
+            # the only evidence a hit occurred. Named for the key `TokenUsage.from_raw`
+            # already reads; left out, this provider reports every prompt as a full
+            # re-read and a measurement across providers silently compares one that
+            # counts cache hits against one that cannot.
+            "cache_read_input_tokens": getattr(u, "cached_content_token_count", 0) or 0,
         }
 
     def _get_usage(self, response) -> Optional[Dict[str, Any]]:

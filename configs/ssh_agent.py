@@ -15,7 +15,7 @@ project_root = "output/local"
 log_path = "agent.log"
 
 version = "0.1.0"
-model_name = "openrouter/claude-opus-5"
+model_name = "llm_hub/claude-opus-5"
 
 memory_names = [
     "file_system_memory",
