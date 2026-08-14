@@ -358,7 +358,7 @@ div.user > capability-context::before {
   border-bottom: 1px solid var(--border);
 }
 
-div.user > tool-context,
+div.user capability-context > tool-context,
 div.user capability-context > skill-context,
 div.user capability-context > connector-context,
 div.user capability-context > workflow-context {
