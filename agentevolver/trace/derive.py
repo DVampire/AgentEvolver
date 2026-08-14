@@ -3,7 +3,9 @@
 `Agent._derived_messages` calls this on the request path when `derive_context` is on,
 which is off by default. The switch is opt-in because turning it on changes what every
 step of every agent sees, and the first run with it on failed on every step after the
-first while reporting success — see `docs/postmortem/0001-*`.
+first while reporting success: no serializer knew `ToolMessage`, this projection put each
+step's results *before* the assistant turn that produced them, and `agent_end` hardcoded
+`success=True` so nothing could contradict the measurement.
 
 What it produces is the shape the model was trained on:
 

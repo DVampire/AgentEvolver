@@ -1730,10 +1730,11 @@ class Agent(BaseModel):
 
 
     def _release_session_resources(self, run: "_AgentRun") -> None:
-        """Reap what the run left running: background jobs and persistent terminals.
+        """Reap what the run left running: background jobs, terminals, language servers.
 
-        Both registries had a `forget` and nothing called it. A backgrounded command and
-        a PTY shell outlive the step that started them by design — that is the whole
+        Each registry had a `forget` and nothing called it. A backgrounded command, a
+        PTY shell and an indexing language server outlive the step that started them by
+        design — that is the whole
         point — but nothing outlived the *run* on purpose, and the only reaper was
         `atexit`. In a long-lived host that never fires, so every finished session left
         its processes behind and the machine leaked until the gateway was restarted.
@@ -1746,7 +1747,9 @@ class Agent(BaseModel):
         session_id = str(getattr(run.ctx, "id", "") or "")
         if not session_id:
             return
-        for label, forget in (("jobs", self._forget_jobs), ("terminals", self._forget_terminals)):
+        for label, forget in (("jobs", self._forget_jobs),
+                              ("terminals", self._forget_terminals),
+                              ("language servers", self._forget_language_servers)):
             try:
                 forget(session_id)
             except Exception as error:                              # noqa: BLE001
@@ -1762,6 +1765,11 @@ class Agent(BaseModel):
     def _forget_terminals(session_id: str) -> None:
         from agentevolver.terminal import terminal_manager
         terminal_manager.forget(session_id)
+
+    @staticmethod
+    def _forget_language_servers(session_id: str) -> None:
+        from agentevolver.lsp import lsp_manager
+        lsp_manager.forget(session_id)
 
 
     def _lifecycle_input(self, run: "_AgentRun") -> Dict[str, Any]:
