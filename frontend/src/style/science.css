@@ -162,3 +162,131 @@
 .science-rail-notice { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 18px 16px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.6; }
 .science-rail-notice button { flex: 0 0 auto; border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 2px 8px; color: inherit; background: transparent; font-size: 11px; cursor: pointer; }
 .science-spinner.inline { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 2px; }
+
+/* --- Trajectory ---------------------------------------------------------
+   The whole run, once you want it. The transcript above answers "what came
+   out"; this answers "how" — the reasoning, the arguments, the results, what
+   each step cost and how long it took. A slim row above the thread rather than
+   a card inside it: the thread scrolls and the way in must not scroll away.
+
+   Every colour here is a token or one of the four accents this file already
+   uses, restated once per theme as a variable rather than per rule — the
+   dialog renders in a portal on <body>, outside .app-shell, so the shell's
+   [data-theme] overrides never reach it and only .dark on <html> does. */
+.science-thread-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; padding: 6px 22px 0; }
+.science-thread-bar button { height: 25px; color: hsl(var(--muted-foreground)); font-size: 11.5px; font-weight: 550; }
+.science-thread-bar button:hover { color: hsl(var(--foreground)); }
+.science-thread-bar button svg { width: 13px; height: 13px; }
+
+.trajectory-dialog { --tj-ok: #3f9c72; --tj-fail: #c2606c; --tj-warn: #a8791c; --tj-accent: #5b74c9;
+  display: flex; color: hsl(var(--foreground)); }
+.dark .trajectory-dialog { --tj-ok: #6fbf8f; --tj-fail: #d78b95; --tj-warn: #d8b26a; --tj-accent: #8ea9ff; }
+
+/* Header, summary and toolbar are flex-none; only .trajectory-body scrolls, so
+   at forty steps the stats and the expand-all control stay put. */
+.trajectory-head { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 46px 13px 20px; border-bottom: 1px solid hsl(var(--border)); }
+.trajectory-head-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.trajectory-run-picker { flex: 0 0 auto; max-width: 340px; font-size: 12px; }
+
+.trajectory-summary { flex: 0 0 auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--border)); }
+.trajectory-stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px 11px; background: hsl(var(--background)); }
+.trajectory-stat > span { color: hsl(var(--muted-foreground)); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.trajectory-stat > strong { display: flex; align-items: center; gap: 6px; color: hsl(var(--foreground)); font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+.trajectory-stat > em { overflow: hidden; color: hsl(var(--muted-foreground)); font-size: 10.5px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.trajectory-stat.outcome > strong { font-size: 15px; }
+.trajectory-stat.outcome.ok > strong { color: var(--tj-ok); }
+.trajectory-stat.outcome.failed > strong { color: var(--tj-fail); }
+.trajectory-stat.outcome.running > strong { color: var(--tj-warn); }
+/* Same meter as the Compute panel's — one bar shape in this view, not two. */
+.trajectory-meter { height: 4px; margin-top: 5px; overflow: hidden; border-radius: 2px; background: hsl(var(--muted)); }
+.trajectory-meter i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #8ce4cc, #b0c7ff); transition: width .4s ease; }
+
+.trajectory-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 7px 20px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 11.5px; }
+.trajectory-toolbar-spacer { flex: 1; }
+.trajectory-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid hsl(var(--border)); border-radius: 99px; padding: 3px 9px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 10.5px; cursor: pointer; }
+.trajectory-chip:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+.trajectory-chip.fail { color: var(--tj-fail); border-color: color-mix(in srgb, var(--tj-fail) 45%, transparent); }
+.trajectory-chip.fail.on, .trajectory-chip.fail:hover { color: var(--tj-fail); background: color-mix(in srgb, var(--tj-fail) 16%, transparent); }
+
+.trajectory-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 20px 22px; }
+.trajectory-notice { display: flex; align-items: flex-start; gap: 8px; margin: 16px 2px; color: hsl(var(--muted-foreground)); font-size: 12.5px; line-height: 1.6; }
+.trajectory-notice.error { color: var(--tj-fail); }
+.trajectory-notice.warn { border: 1px dashed hsl(var(--border)); border-radius: 9px; padding: 9px 11px; color: var(--tj-warn); font-size: 11.5px; }
+
+/* --- Turns: the task, the compactions, the final result ------------------- */
+.trajectory-turn { margin: 10px 0; border: 1px solid hsl(var(--border)); border-left: 2px solid hsl(var(--border)); border-radius: 10px; padding: 10px 13px; }
+.trajectory-turn > header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.trajectory-turn > header strong { color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.trajectory-turn > header em { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 10.5px; font-style: normal; }
+/* A final result can be a page of prose; it gets its own scroll rather than
+   the dialog's. */
+.trajectory-turn > p { max-height: 300px; margin: 0; overflow-y: auto; color: hsl(var(--foreground)); font-size: 13px; line-height: 1.62; white-space: pre-wrap; overflow-wrap: anywhere; }
+.trajectory-turn.task { border-left-color: var(--tj-accent); }
+.trajectory-turn.result { border-left-color: var(--tj-ok); }
+.trajectory-turn.result.failed { border-left-color: var(--tj-fail); }
+.trajectory-turn.result.failed > header strong { color: var(--tj-fail); }
+.trajectory-turn.compaction { border-style: dashed; }
+.trajectory-turn > p.trajectory-shadowed { max-height: none; margin-top: 8px; color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+
+/* --- Steps ---------------------------------------------------------------
+   Collapsed by default and rendered as a header only — the body is not in the
+   DOM until it is opened, which is what keeps a forty-step run cheap. */
+.trajectory-step { margin: 6px 0; overflow: hidden; border: 1px solid hsl(var(--border)); border-left: 2px solid hsl(var(--border)); border-radius: 10px; }
+.trajectory-step.open { border-left-color: var(--tj-accent); }
+.trajectory-step.failed { border-left-color: var(--tj-fail); }
+.trajectory-step-head { display: grid; grid-template-columns: 13px 22px minmax(0, 1fr) auto; align-items: center; width: 100%; gap: 9px; border: 0; padding: 8px 12px; color: hsl(var(--foreground)); background: transparent; text-align: left; cursor: pointer; }
+.trajectory-step-head:hover { background: hsl(var(--muted)); }
+.trajectory-caret { color: hsl(var(--muted-foreground)); }
+.trajectory-step-badge { display: grid; height: 19px; place-items: center; border-radius: 6px; color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-weight: 650; }
+.trajectory-step.failed .trajectory-step-badge { color: hsl(var(--background)); background: var(--tj-fail); }
+.trajectory-step-line { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.trajectory-step-meta { display: flex; align-items: center; gap: 11px; color: hsl(var(--muted-foreground)); font-size: 10.5px; }
+.trajectory-step-meta em { display: inline-flex; align-items: center; gap: 4px; font-style: normal; white-space: nowrap; }
+.trajectory-step-meta em.tokens { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.trajectory-step-meta em.tokens i { border-radius: 4px; padding: 1px 5px; color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); font-size: 9px; font-style: normal; }
+/* The eleven-minute step, findable by scanning. */
+.trajectory-step-meta em.slow { color: var(--tj-warn); }
+.trajectory-step-meta em.fail { color: var(--tj-fail); }
+
+.trajectory-step-body { display: flex; flex-direction: column; gap: 9px; border-top: 1px solid hsl(var(--border)); padding: 11px 12px 12px; }
+.trajectory-reasoning { max-height: 320px; overflow-y: auto; border-left: 2px solid var(--tj-accent); padding: 1px 0 1px 10px; color: hsl(var(--foreground)); font-size: 12.5px; line-height: 1.62; white-space: pre-wrap; overflow-wrap: anywhere; }
+.trajectory-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: 11.5px; line-height: 1.5; }
+
+/* --- One call ------------------------------------------------------------ */
+.trajectory-call { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 9px; }
+.trajectory-call.failed { border-color: color-mix(in srgb, var(--tj-fail) 45%, hsl(var(--border))); }
+.trajectory-call > header { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted)); }
+.trajectory-call-icon { display: grid; place-items: center; color: hsl(var(--muted-foreground)); }
+.trajectory-call > header strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-weight: 600; }
+.trajectory-call-args { overflow: hidden; color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.trajectory-call > header em { color: hsl(var(--muted-foreground)); font-size: 10.5px; font-style: normal; white-space: nowrap; }
+.trajectory-pill { border-radius: 99px; padding: 1px 7px; color: hsl(var(--muted-foreground)); background: hsl(var(--background)); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.trajectory-pill.ok { color: var(--tj-ok); background: color-mix(in srgb, var(--tj-ok) 16%, transparent); }
+.trajectory-pill.fail { color: var(--tj-fail); background: color-mix(in srgb, var(--tj-fail) 18%, transparent); }
+.trajectory-call > .trajectory-block { border-width: 0; border-top-width: 1px; border-radius: 0; }
+.trajectory-call > .trajectory-block:first-of-type { border-top-width: 0; }
+
+/* --- A block of logged text ----------------------------------------------
+   Clamped and scrolling inside its own box: a four-thousand-line build log is
+   an ordinary tool result, and letting one set the dialog's height would push
+   the summary off the top of the run. "Show all" raises the cap; Copy always
+   takes the whole thing, including anything trimmed before the DOM. */
+.trajectory-block { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 8px; }
+.trajectory-block > header { display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); }
+.trajectory-block > header strong { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.trajectory-block > header em { margin-left: auto; font-size: 10px; font-style: normal; }
+.trajectory-block > header button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 5px; padding: 2px 6px; color: inherit; background: transparent; font-size: 10px; cursor: pointer; }
+.trajectory-block > header button:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+.trajectory-block pre { max-height: 190px; margin: 0; overflow: auto; padding: 9px 11px; color: hsl(var(--foreground)); background: transparent; font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.trajectory-block.expanded pre { max-height: min(56vh, 640px); }
+.trajectory-block.error > header strong, .trajectory-block.error pre { color: var(--tj-fail); }
+.trajectory-block-more { display: block; width: 100%; border: 0; border-top: 1px solid hsl(var(--border)); padding: 5px; color: hsl(var(--muted-foreground)); background: transparent; font-size: 10.5px; cursor: pointer; }
+.trajectory-block-more:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+
+/* Narrow: the six stat tiles wrap to two rows, and the per-step token figure —
+   the least scannable of the four meta items — is the first thing to go. */
+@media (max-width: 860px) {
+  .trajectory-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .trajectory-step-meta em.tokens { display: none; }
+  .trajectory-head { flex-direction: column; }
+}

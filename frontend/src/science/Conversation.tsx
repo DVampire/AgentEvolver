@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Loader2 } from 'lucide-react';
+import { ArrowUp, Loader2, Route } from 'lucide-react';
 
 import { MessageMarkdown } from '../components/common/Markdown';
+import { Button } from '../components/ui/button';
 import type { RequestFn } from '../canvas/types';
 import type { GatewayEvent } from '../controllers/gateway';
+import { TrajectoryDialog } from './TrajectoryDialog';
 
 interface Entry { id: string; role: 'user' | 'agent' | 'system'; title: string; content: string; timestamp: string }
 interface Step { id: string; label: string; detail?: string }
@@ -34,6 +36,10 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
   // activity stream, which made an identical run feel far slower here.
   const [steps, setSteps] = useState<Step[]>([]);
   const [conversationId, setConversationId] = useState<string>();
+  // The full trace, on demand. `toStep` below keeps this pane thin on purpose;
+  // everything it drops — reasoning, arguments, results, cost, timing — is what
+  // the dialog reads back out of the transcript.
+  const [trajectoryOpen, setTrajectoryOpen] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
 
   // Resume this project's science conversation, so a refresh does not open on
@@ -103,6 +109,13 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
 
   return (
     <section className="science-conversation">
+      {conversationId ? (
+        <div className="science-thread-bar">
+          <Button variant="ghost" size="xs" onClick={() => setTrajectoryOpen(true)}>
+            <Route /> Trajectory
+          </Button>
+        </div>
+      ) : null}
       <div className="science-thread">
         {entries.length ? entries.map((entry) => (
           <article className={`science-message ${entry.role}`} key={entry.id}>
@@ -150,6 +163,15 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
           <ArrowUp size={15} strokeWidth={2.2} />
         </button>
       </div>
+      {trajectoryOpen ? (
+        <TrajectoryDialog
+          request={request}
+          subscribe={subscribe}
+          sessionId={sessionId}
+          conversationId={conversationId}
+          onClose={() => setTrajectoryOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }
