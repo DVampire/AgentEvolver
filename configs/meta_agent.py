@@ -45,7 +45,7 @@ tag = "meta_agent"
 project_root = "output/local"
 log_path = "agent.log"
 
-model_name = "google/gemini-3.1-pro-preview"
+model_name = "llm_hub/claude-opus-5"
 
 memory_names = [
     "file_system_memory",

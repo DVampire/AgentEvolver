@@ -1788,7 +1788,7 @@ class AgentGateway:
 
         if not model.model_name.strip() or not model.model_id.strip():
             raise ValueError("model_name and model_id must not be empty")
-        if model.provider not in {"openai", "openrouter", "anthropic", "google"}:
+        if model.provider not in {"openai", "openrouter", "anthropic", "google", "llm_hub"}:
             raise ValueError(f"Unsupported provider: {model.provider}")
         conflicting = model_manager.get_model_config(model.model_name)
         if conflicting is not None and model.model_name != original_name:

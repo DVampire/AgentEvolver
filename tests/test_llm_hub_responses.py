@@ -24,8 +24,8 @@ from agentevolver.message.types import (
     ToolCall,
     ToolMessage,
 )
-from agentevolver.model.openrouter.response import (
-    ResponseOpenRouter,
+from agentevolver.model.llm_hub.response import (
+    ResponseLLMHub,
     serialize_input,
     serialize_tools,
 )
@@ -43,22 +43,39 @@ def _tool(name="read_file_tool"):
 
 
 def _client(**kwargs):
-    return ResponseOpenRouter(model="gpt-5.6-sol", api_key="k", base_url="http://x/v1", **kwargs)
+    return ResponseLLMHub(model="gpt-5.6-sol", api_key="k", base_url="http://x/v1", **kwargs)
 
 
 # --------------------------------------------------------------------------- #
 # Catalog and dispatch
 # --------------------------------------------------------------------------- #
 def test_the_catalog_routes_the_model_to_responses():
-    from agentevolver.model.config import openrouter_models
+    from agentevolver.model.config import llm_hub_models
 
-    specs = openrouter_models(max_tokens=8192, default_temperature=0.7,
-                              default_timeout=600, default_plugins=None, default_reasoning={})
+    specs = llm_hub_models(max_tokens=8192, default_temperature=0.7, default_timeout=600)
 
-    assert [m["model_name"] for m in specs["response"]] == ["openrouter/gpt-5.6-sol"]
+    assert [m["model_name"] for m in specs["response"]] == ["llm_hub/gpt-5.6-sol"]
     assert specs["response"][0]["model_type"] == "responses"
     # And it must not still be on the surface that refuses its tools.
     assert not any("5.6-sol" in m["model_name"] for m in specs["chat"])
+
+
+def test_the_catalog_omits_temperature_for_opus_5():
+    """Opus 4.7 and later removed the sampling parameters; sending one is a 400."""
+    from agentevolver.model.config import llm_hub_models
+
+    specs = llm_hub_models(max_tokens=8192, default_temperature=0.7, default_timeout=600)
+    opus = next(m for m in specs["chat"] if m["model_name"] == "llm_hub/claude-opus-5")
+
+    assert "temperature" not in opus
+    assert opus["model_id"] == "claude-opus-5", "the relay refuses the prefixed form"
+
+
+def test_the_client_sends_no_temperature_unless_given_one():
+    """A default here would make every Opus 4.7+ model unusable through this provider."""
+    from agentevolver.model.llm_hub.chat import ChatLLMHub
+
+    assert ChatLLMHub(model="claude-opus-5").temperature is None
 
 
 # --------------------------------------------------------------------------- #

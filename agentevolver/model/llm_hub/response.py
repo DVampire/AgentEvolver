@@ -97,10 +97,10 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
 
 def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
     """Tool schemas in the Responses shape — flat, not nested under ``function``."""
-    from agentevolver.model.openrouter.serializer import OpenRouterChatSerializer
+    from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 
     flattened = []
-    for tool in OpenRouterChatSerializer.serialize_tools(tools) or []:
+    for tool in LLMHubChatSerializer.serialize_tools(tools) or []:
         function = tool.get("function") or {}
         flattened.append({
             "type": "function",
@@ -111,7 +111,7 @@ def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
     return flattened
 
 
-class ResponseOpenRouter(BaseModel):
+class ResponseLLMHub(BaseModel):
     """Call a Responses-API model and return the canonical buffered `Response`."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -126,7 +126,7 @@ class ResponseOpenRouter(BaseModel):
 
     @property
     def provider(self) -> str:
-        return "openrouter"
+        return "llm_hub"
 
     @property
     def name(self) -> str:
@@ -158,7 +158,7 @@ class ResponseOpenRouter(BaseModel):
         if self.max_output_tokens:
             params["max_output_tokens"] = self.max_output_tokens
         if self.reasoning:
-            # Accepts either the Responses shape (`{"effort": ...}`) or the OpenRouter
+            # Accepts either the Responses shape (`{"effort": ...}`) or the LLM Hub
             # chat shape (`{"reasoning": {...}}`) the catalog uses elsewhere, so one
             # catalog entry can move between the two surfaces without being rewritten.
             reasoning = self.reasoning.get("reasoning", self.reasoning)
@@ -263,10 +263,10 @@ class ResponseOpenRouter(BaseModel):
         try:
             raw = await client.responses.create(**params)
         except Exception as error:
-            logger.error(f"| 🔴 openrouter responses error (model={self.model}): "
+            logger.error(f"| 🔴 llm_hub responses error (model={self.model}): "
                          f"{type(error).__name__}: {error}")
             raise
         return self._parse(raw)
 
 
-__all__ = ["ResponseOpenRouter", "serialize_input", "serialize_tools"]
+__all__ = ["ResponseLLMHub", "serialize_input", "serialize_tools"]

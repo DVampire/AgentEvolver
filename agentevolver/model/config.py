@@ -147,6 +147,46 @@ def openai_models(
     }
 
 
+def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
+    """LLM Hub catalog — a relay that speaks the OpenAI-compatible API.
+
+    Deliberately tiny. The relay serves 77 of its 79 models under **bare** ids, while
+    the openrouter catalog uses OpenRouter's own `vendor/model` naming; pointing one
+    catalog at both would mean every entry's id depending on which base URL happened to
+    be configured. A separate provider keeps each catalog true to one endpoint.
+
+    Only the two models actually exercised here are registered. Adding an entry means
+    checking that the relay serves it under that id — it answers an unknown one with
+    "没有可用渠道服务模型", not with a fallback.
+    """
+    chat_models = [
+        {
+            "model_name": "llm_hub/claude-opus-5",
+            "model_id": "claude-opus-5",
+            "model_type": "chat/completions",
+            # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
+            # the relay answers a request carrying one with "`temperature` is deprecated
+            # for this model".
+            "max_completion_tokens": max_tokens,
+            "timeout": default_timeout,
+        },
+    ]
+    # gpt-5.6-sol refuses function tools on chat/completions ("use /v1/responses or set
+    # reasoning_effort to 'none'"). An agent loop is tool calling, so giving up
+    # reasoning is not the trade to make — it is routed to the other surface instead.
+    response_models = [
+        {
+            "model_name": "llm_hub/gpt-5.6-sol",
+            "model_id": "gpt-5.6-sol",
+            "model_type": "responses",
+            "reasoning": {"effort": "low"},
+            "max_output_tokens": max_tokens,
+            "timeout": default_timeout,
+        },
+    ]
+    return {"chat": chat_models, "response": response_models}
+
+
 def anthropic_models(*, max_tokens, default_temperature, default_timeout, default_plugins, default_reasoning):
     """anthropic catalog.
 
@@ -540,21 +580,7 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
             "fallback_model": "openrouter/gemini-3.5-flash",
         },
     ]
-    # Models that refuse function tools on chat/completions. gpt-5.6-sol answers a
-    # tools request there with "use /v1/responses or set reasoning_effort to 'none'" —
-    # and an agent loop is tool calling, so dropping reasoning is not the trade to make.
-    response_models = [
-        {
-            "model_name": "openrouter/gpt-5.6-sol",
-            "model_id": "gpt-5.6-sol",
-            "model_type": "responses",
-            "reasoning": {"effort": "low"},
-            "max_output_tokens": max_tokens,
-            "fallback_model": "openrouter/gemini-3.5-flash",
-        },
-    ]
-
-    return {"chat": chat_models, "response": response_models}
+    return {"chat": chat_models}
 
 
 def google_models(*, max_tokens, default_temperature, default_timeout, default_plugins, default_reasoning):

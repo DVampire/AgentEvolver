@@ -530,19 +530,34 @@ class Agent(BaseModel):
 
         # Clean per-section bodies (no "### " prefix) — each is rendered as its own
         # agent_context sub-module (see code_agent.html and the agent prompts).
+        # Four distinct states, said apart. They used to collapse into one line —
+        # "[Memory is disabled.]" was also what an agent saw when memory was enabled and
+        # simply failed, and the failure was swallowed with a bare `except: pass`. An
+        # agent with no history re-derives its situation every step: one run wrote both
+        # its deliverables at step 0 and then spent 29 steps re-reading them, because
+        # every prompt told it there was nothing to remember and nothing said why.
         memory_body = "[Memory is disabled.]"
         if self.use_memory and self.memory_name:
+            memory_body = "[Memory is unavailable — proceed from the task and the workspace.]"
             try:
                 memory_info = await memory_manager.get_info(self.memory_name)
-                if memory_info and memory_info.instance is not None:
+                if memory_info is None or memory_info.instance is None:
+                    logger.warning(
+                        f"| ⚠️ [{self.name}] Memory '{self.memory_name}' is configured but not "
+                        f"registered; this agent runs without history"
+                    )
+                else:
                     session_id = ctx.id if ctx else ""
                     mem_text = await memory_info.instance.get(
                         session_id=session_id,
                         short_term_n=self.review_steps,
                     )
                     memory_body = mem_text if mem_text else "[No memory recorded yet.]"
-            except Exception:
-                pass
+            except Exception as error:  # noqa: BLE001 — a step must still run without memory
+                logger.warning(
+                    f"| ⚠️ [{self.name}] Could not read memory '{self.memory_name}' "
+                    f"(session={getattr(ctx, 'id', None)}): {type(error).__name__}: {error}"
+                )
 
         # Resource budgets collected from the previous step's constraint checks
         constraint_status = kwargs.get("constraint_status") or []

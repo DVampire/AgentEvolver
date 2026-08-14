@@ -297,7 +297,15 @@ class MemoryContextManager(BaseModel):
                 version=memory_version,
                 cls=memory_cls,
                 config=memory_config_dict or {},
-                instance=memory_instance if isinstance(memory, Memory) else None,
+                # Live in both paths: an instance was passed in, or one was built above
+                # ("register is a runtime operation"). Discarding it for the class path
+                # contradicted that — and because `override=True` replaces the stored
+                # config, re-registering a built-in by class left it with no instance and
+                # nothing to rebuild it. Extension loading does exactly that, after
+                # `initialize()` has already built every memory, so every agent then ran
+                # with no history at all: one run wrote its deliverables at step 0 and
+                # spent 29 more re-reading them, each step unable to see the last.
+                instance=memory_instance,
                 metadata=memory_metadata,
                 code=memory_code,
             )
