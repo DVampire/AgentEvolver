@@ -13,6 +13,7 @@ from agentevolver.message.types import (
     HumanMessage,
     Message,
     SystemMessage,
+    ToolMessage,
     ToolCall,
 )
 from typing import TYPE_CHECKING
@@ -315,6 +316,20 @@ class AnthropicChatSerializer:
             result['content'] = content_parts
             
             return result
+
+        elif isinstance(message, ToolMessage):
+            # Anthropic has no `tool` role: a result is a `tool_result` block carried by
+            # a *user* message, paired to the call by `tool_use_id`. `is_error` is passed
+            # through rather than folded into the text, so a failure stays a failure the
+            # model can see rather than prose it has to interpret.
+            block: dict[str, Any] = {
+                "type": "tool_result",
+                "tool_use_id": message.tool_call_id,
+                "content": message.content,
+            }
+            if message.is_error:
+                block["is_error"] = True
+            return {'role': 'user', 'content': [block]}
 
         else:
             raise ValueError(f'Unknown message type: {type(message)}')

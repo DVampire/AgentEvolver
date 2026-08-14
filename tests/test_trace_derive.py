@@ -35,11 +35,24 @@ def _log(*events):
 
 
 def _turn(step, reasoning, calls):
-    """One assistant step: its marker, the calls it made, and their results."""
-    events = [agent_call_event("s", "t", "a", step, reasoning=reasoning)]
+    """One assistant step, in the order a real run writes it.
+
+    The tool events come first and the AGENT_CALL last, because that event is written
+    when the step *closes* — check any `log/trace/*.jsonl` and the step's calls carry the
+    lower sequence numbers.
+
+    This fixture used to emit the marker first. Nothing caught it, because `derive.py`
+    had been written to match the fixture: the two agreed with each other and neither
+    agreed with the log. Against a real session the projection came out as
+    `[user, tool, tool, assistant]`, which every provider rejects — results cannot
+    precede the calls they answer — and `derive_context` failed on every step after the
+    first while reporting success.
+    """
+    events = []
     for i, (name, args, result, ok) in enumerate(calls):
         events.append(tool_start_event("s", "t", "a", step, i, name, args, call_id=f"c{step}_{i}"))
         events.append(tool_call_event("s", "t", "a", step, i, name, result, ok, call_id=f"c{step}_{i}"))
+    events.append(agent_call_event("s", "t", "a", step, reasoning=reasoning))
     return events
 
 
@@ -140,13 +153,14 @@ def test_a_compaction_summary_replaces_what_it_shadowed():
         *_turn(1, "step one", [("bash_tool", {"command": "a"}, "A", True)]),
         *_turn(2, "step two", [("bash_tool", {"command": "b"}, "B", True)]),
     )
-    # seqs: 0 task | 1 step-1 turn, 2 start, 3 result | 4 step-2 turn, 5 start, 6 result.
-    # The `*_start` events are log-only; everything else is on the surface and must be
-    # cited, the assistant turns included.
+    # seqs: 0 task | 1 start, 2 result, 3 step-1 turn | 4 start, 5 result, 6 step-2 turn.
+    # A step's AGENT_CALL is written when the step closes, so it carries the *highest*
+    # seq of its turn. The `*_start` events are log-only; everything else is on the
+    # surface and must be cited, the assistant turns included.
     events.append(TraceEvent(
         event_type=TraceEventType.CUSTOM, session_id="s", seq_no=len(events),
         message="Earlier: ran a and b.", metadata={"kind": "compaction"},
-        surface_op=replace_op(0, 6), source_event_seqs=[0, 1, 3, 4, 6],
+        surface_op=replace_op(0, 6), source_event_seqs=[0, 2, 3, 5, 6],
     ))
 
     messages = derive_messages(events)
@@ -171,7 +185,7 @@ def test_a_summary_shadows_the_reasoning_as_well_as_the_results():
     events.append(TraceEvent(
         event_type=TraceEventType.CUSTOM, session_id="s", seq_no=len(events),
         message="Earlier: ran a.", metadata={"kind": "compaction"},
-        surface_op=replace_op(0, 3), source_event_seqs=[0, 1, 3],
+        surface_op=replace_op(0, 3), source_event_seqs=[0, 2, 3],
     ))
 
     texts = [m.text for m in derive_messages(events)]
@@ -213,3 +227,67 @@ def test_a_log_written_before_call_ids_still_projects():
 
 def test_an_empty_log_projects_to_nothing():
     assert derive_messages([]) == []
+
+
+def test_an_assistant_turn_precedes_the_results_it_produced():
+    """The order a provider requires, and the one the log does not have.
+
+    A step writes its tool events first and its AGENT_CALL last, because the call event
+    is written when the step *closes*. Projecting in log order therefore yields
+    `[user, tool, tool, assistant]` — results before the calls that produced them —
+    which is not a history any provider accepts: "each `tool_result` block must have a
+    corresponding `tool_use` block in the previous message". It failed every step after
+    the first, and reported success, until agent_end stopped hardcoding it.
+    """
+    from agentevolver.trace.derive import derive_messages
+    from agentevolver.trace.types import TraceEvent, TraceEventType
+
+    events = [
+        TraceEvent(event_type=TraceEventType.AGENT_START, seq_no=0, agent_name="a",
+                   step_number=0, input={"task": "do the thing"}, surface_op="append"),
+        TraceEvent(event_type=TraceEventType.TOOL_START, seq_no=1, agent_name="a",
+                   step_number=0, action_name="write_file_tool", action_type="tool",
+                   input={"call_id": "call_1", "action_args": {"path": "a.py"}}),
+        TraceEvent(event_type=TraceEventType.TOOL_CALL, seq_no=2, agent_name="a",
+                   step_number=0, action_name="write_file_tool", action_type="tool",
+                   message="wrote a.py", success=True,
+                   input={"call_id": "call_1"}, surface_op="append"),
+        TraceEvent(event_type=TraceEventType.AGENT_CALL, seq_no=3, agent_name="a",
+                   step_number=0, reasoning="writing the file", surface_op="append"),
+    ]
+    roles = [m.role for m in derive_messages(events)]
+    assert roles == ["user", "assistant", "tool"], roles
+
+
+def test_every_result_pairs_with_a_call_in_the_message_before_it():
+    """The invariant the provider actually enforces, stated directly."""
+    from agentevolver.trace.derive import derive_messages
+    from agentevolver.trace.types import TraceEvent, TraceEventType
+
+    events = [TraceEvent(event_type=TraceEventType.AGENT_START, seq_no=0, agent_name="a",
+                         step_number=0, input={"task": "t"}, surface_op="append")]
+    seq = 1
+    for step in range(3):
+        for i in range(2):
+            call_id = f"call_{step}_{i}"
+            events.append(TraceEvent(event_type=TraceEventType.TOOL_START, seq_no=seq,
+                                     agent_name="a", step_number=step, action_type="tool",
+                                     action_name="t", input={"call_id": call_id}))
+            seq += 1
+            events.append(TraceEvent(event_type=TraceEventType.TOOL_CALL, seq_no=seq,
+                                     agent_name="a", step_number=step, action_type="tool",
+                                     action_name="t", message="ok", success=True,
+                                     input={"call_id": call_id}, surface_op="append"))
+            seq += 1
+        events.append(TraceEvent(event_type=TraceEventType.AGENT_CALL, seq_no=seq,
+                                 agent_name="a", step_number=step, reasoning=f"step {step}",
+                                 surface_op="append"))
+        seq += 1
+
+    offered: set = set()
+    for message in derive_messages(events):
+        if message.role == "assistant":
+            offered = {c.id for c in (message.tool_calls or [])}
+        elif message.role == "tool":
+            assert message.tool_call_id in offered, (
+                f"{message.tool_call_id} answers no call in the preceding assistant turn")

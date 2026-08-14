@@ -108,6 +108,7 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
             messages.append(ToolMessage(
                 content=_text(result.message if result.success else (result.error or result.message)),
                 tool_call_id=_call_id(result),
+                name=getattr(result, "action_name", None),
                 is_error=not bool(result.success),
             ))
         pending = None
@@ -124,12 +125,20 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
             # calls come from log-only `*_start` events — a call is part of this turn,
             # not a message of its own — so they are joined in here rather than
             # projected separately.
-            flush_results()
+            #
+            # The assistant goes in *before* its results. The log records the step's
+            # tool events first and its AGENT_CALL last, because the call event is
+            # written when the step closes — so `pending` here holds this step's
+            # results, not the previous step's. Flushing first inverted every turn:
+            # `[user, tool, tool, assistant]`, which a provider rejects outright
+            # ("each tool_result must have a corresponding tool_use in the previous
+            # message") and which failed every step after the first.
             step = getattr(event, "step_number", 0) or 0
             messages.append(AssistantMessage(
                 content=_text(event.reasoning or event.message),
                 tool_calls=[_tool_call(s) for s in calls_by_step.get(step, [])],
             ))
+            flush_results()
         elif kind == TraceEventType.AGENT_START:
             flush_results()
             messages.append(HumanMessage(content=_text((event.input or {}).get("task"))))

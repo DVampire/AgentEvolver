@@ -13,6 +13,7 @@ from agentevolver.message.types import (
     HumanMessage,
     Message,
     SystemMessage,
+    ToolMessage,
     ToolCall,
 )
 
@@ -242,6 +243,21 @@ class GoogleChatSerializer:
             result['parts'] = parts
             
             return result
+
+        elif isinstance(message, ToolMessage):
+            # Gemini has no `tool` role either: a result is a `function_response` part on
+            # a user turn. It pairs by tool *name*, not by id, so the name is carried on
+            # ToolMessage.name — pairing by position would break the moment compaction
+            # folds a range away.
+            return {
+                "role": "user",
+                "parts": [{
+                    "function_response": {
+                        "name": message.name or message.tool_call_id,
+                        "response": {"result": message.content},
+                    }
+                }],
+            }
 
         else:
             raise ValueError(f'Unknown message type: {type(message)}')

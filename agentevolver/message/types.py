@@ -269,6 +269,7 @@ class ToolMessage(Message):
     role: Literal['tool'] = Field(default='tool', description="The role of the messages author, in this case `tool`.")  # type: ignore
     content: str = Field(description="The tool's result, as the model should see it.")
     tool_call_id: str = Field(description="Id of the assistant tool call this result answers.")
+    name: Optional[str] = Field(default=None, description="The tool's name. Carried because not every provider pairs a result to its call by id: Gemini pairs by declared function name, so a message without it cannot be replayed there at all.")
     is_error: bool = Field(default=False, description="Whether the call failed. Kept out of `content` so a consumer can style or count failures without parsing prose.")
 
     @property

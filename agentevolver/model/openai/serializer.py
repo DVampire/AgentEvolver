@@ -37,6 +37,7 @@ from agentevolver.message.types import (
     HumanMessage,
     Message,
     SystemMessage,
+    ToolMessage,
     ToolCall,
 )
 
@@ -191,6 +192,17 @@ class OpenAIChatSerializer:
                 assistant_result['tool_calls'] = [OpenAIChatSerializer._serialize_tool_call(tc) for tc in message.tool_calls]
             return assistant_result
 
+        elif isinstance(message, ToolMessage):
+            # The turn `derive_context` produces and the rendered path never did: the
+            # rendered transcript folds results into prose inside one user message, so
+            # every serializer could reject this type and nothing noticed. With the
+            # projection they are real turns, and rejecting one fails the whole step —
+            # silently, since the error travelled as an empty decision.
+            return {
+                'role': 'tool',
+                'tool_call_id': message.tool_call_id,
+                'content': message.content,
+            }
         else:
             raise ValueError(f'Unknown message type: {type(message)}')
 
@@ -398,6 +410,15 @@ class OpenAIResponseSerializer:
                 result["name"] = message.name
             return result
 
+        elif isinstance(message, ToolMessage):
+            # The Responses API has no `tool` role. A result is an input *item* echoing
+            # the `call_id` the model issued — not the item's own `id`, which is a
+            # different value and is rejected.
+            return {
+                "type": "function_call_output",
+                "call_id": message.tool_call_id,
+                "output": message.content,
+            }
         else:
             raise ValueError(f'Unknown message type: {type(message)}')
 

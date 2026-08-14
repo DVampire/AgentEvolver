@@ -82,13 +82,20 @@ class TraceHook(Hook):
 
         elif inp_event == HookEvent.ON_STOP:
             elapsed = self._pop_timer(f"{ctx.id}:agent")
+            # The outcome the run reported, not a constant. This was hardcoded to
+            # `success=True, result=None`, so every agent_end claimed success — including
+            # a run that gave up after three consecutive model errors. A measurement
+            # taken from that log counted a failed run as a valid sample, which is how a
+            # broken `derive_context` path was measured and reported as working.
+            result = inp.get("result")
             event = agent_end_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
                 agent_name=agent_name,
-                success=True,
-                result=None,
+                success=bool(inp.get("success", False)),
+                result=str(result) if result is not None else None,
                 duration_ms=elapsed,
+                error=inp.get("error"),
                 usage=self._usage.pop(ctx.id, None),
             )
 
