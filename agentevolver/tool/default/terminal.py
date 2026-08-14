@@ -75,6 +75,13 @@ is still there either way, so silence is the only available evidence.
 - submit (bool, optional): Press Enter afterwards. Default true. Set false to send control
   characters ("\\u0003" is ctrl-C) or a line you are still building.
 - timeout (int, optional): Seconds to wait for quiet. Default 30.
+- run_in_background (bool, optional): Type the command and return at once, watching
+  it as a job instead of holding the turn. Use it for anything that runs for
+  minutes — the foreground wait settles on silence, and silence is the wrong signal
+  there: a build that prints nothing for a stretch looks finished. Collect it with
+  `job_output_tool`, or look at the live screen with `terminal_read_tool`.
+  `job_kill_tool` stops *watching*; the command keeps running, and
+  `terminal_signal_tool` is what stops that. Default false.
 
 ## Example
 {"name": "terminal_send_tool", "args": {"terminal_id": "term_1a2b3c4d", "text": "cd src && ls"}}
@@ -177,6 +184,12 @@ def _screen_message(header: str, body: str) -> str:
     return f"{header}\n\n{clip_output(body)}" if body else header
 
 
+#: How long a backgrounded send keeps watching. Not "forever": a shell that never goes
+#: quiet would hold the waiter for the life of the process, and a job stuck RUNNING
+#: is one the agent waits on and nothing ever finishes. An hour is far past any
+#: foreground budget while still being a bound.
+BACKGROUND_SEND_TIMEOUT = 3600.0
+
 @TOOL.register_module(force=True)
 class TerminalOpenTool(Tool):
     """Start a shell that survives between tool calls."""
@@ -252,8 +265,73 @@ class TerminalSendTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    async def _send_in_background(self, terminal, terminal_id, text, submit,
+                                  session_id) -> Response:
+        """Type the command and register the wait as a job instead of holding the turn.
+
+        The foreground path settles on quiet, and quiet is the wrong signal for work that
+        runs for minutes: a build prints nothing for a while and looks finished, so the
+        caller either waits out the whole budget or reads a completion that has not
+        happened. Backgrounding makes the ambiguity explicit — the job is running until it
+        is not, and the terminal keeps the output either way.
+
+        Registered in the same registry as a background `bash_tool` command, because
+        `job_list_tool` answering "what is outstanding" with only some of the outstanding
+        things is worse than not answering: a parent working out what it is still waiting
+        on would read the gap as nothing.
+        """
+        import asyncio as _asyncio
+
+        from agentevolver.job import job_manager
+
+        job = job_manager.register(
+            kind="terminal", label=f"{terminal_id}: {text[:70]}", session_id=session_id)
+
+        typed = _asyncio.Event()
+
+        async def _wait() -> None:
+            # Set before the send, then awaited below. `ensure_future` only *schedules*:
+            # a caller that kills in the same turn can cancel this task before it has run
+            # a single line, and then the command was never typed at all — the job reports
+            # killed, the terminal never saw the text, and the two agree on a thing that
+            # did not happen. `send` writes to the pty before its first await, so once
+            # this coroutine is running the keystrokes are committed.
+            typed.set()
+            try:
+                # A long budget rather than none. `send` counts a deadline from a float,
+                # so `None` is a TypeError — and, swallowed below, it would have finished
+                # the job as "failed" the instant it started, with the command running on
+                # regardless. Backgrounding still needs *a* bound: without one, a shell
+                # that never goes quiet leaves this waiter alive for the life of the
+                # process. `job_kill_tool` is the way to stop caring sooner.
+                output, reason = await terminal.send(
+                    text, submit=submit, timeout=BACKGROUND_SEND_TIMEOUT)
+                job_manager.append_output(job.id, output or "")
+                job_manager.finish(job.id, exit_code=0 if reason is not None else None)
+            except Exception as error:                              # noqa: BLE001
+                # A waiter that dies silently leaves the job RUNNING for good, and the
+                # agent waits on something nothing will ever finish.
+                job_manager.finish(job.id, error=f"terminal wait failed: {error}")
+
+        # The task is the handle, so `job_kill_tool` cancels the wait. It does not stop
+        # the command — that is `terminal_signal_tool`'s job, and conflating them would
+        # let "stop watching" read as "stop running".
+        job.handle = _asyncio.ensure_future(_wait())
+        await typed.wait()
+        return Response(
+            type=ResponseType.TOOL, success=True,
+            message=(f"Typed into {terminal_id}; watching it as {job.id}.\n"
+                     f"  job_output_tool(job_id=\"{job.id}\")  — what it has printed\n"
+                     f"  terminal_read_tool(terminal_id=\"{terminal_id}\") — the live screen\n"
+                     f"  job_kill_tool(job_id=\"{job.id}\")   — stop watching (the command "
+                     f"keeps running; use terminal_signal_tool to stop it)"),
+            data={"job_id": job.id, "terminal_id": terminal_id},
+        )
+
+
     async def __call__(self, terminal_id: str, text: str = "", submit: bool = True,
-                       timeout: Optional[float] = None, **kwargs) -> Response:
+                       timeout: Optional[float] = None, run_in_background: bool = False,
+                       **kwargs) -> Response:
         terminal, missing = _resolve(terminal_id, _session_of(kwargs))
         if missing is not None:
             return missing
@@ -265,6 +343,10 @@ class TerminalSendTool(Tool):
             if not allowed.allowed:
                 return Response(type=ResponseType.TOOL, success=False,
                                 message=f"Permission denied: {allowed.reason}")
+
+        if run_in_background:
+            return await self._send_in_background(terminal, terminal_id, text, submit,
+                                                  _session_of(kwargs))
 
         try:
             output, reason = await terminal.send(

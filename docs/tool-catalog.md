@@ -57,12 +57,17 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`job_output_tool`](#job_output_tool) | `read_only` | not declared | `JobOutputTool` | `agentevolver.tool.default.job` |
 | [`journal_tool`](#journal_tool) | `workspace_write` | yes | `JournalTool` | `agentevolver.tool.default.journal` |
 | [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
+| [`lsp_tool`](#lsp_tool) | `read_only` | no | `LspTool` | `agentevolver.tool.default.lsp` |
 | [`mdify_tool`](#mdify_tool) | `workspace_write` | not declared | `MdifyTool` | `agentevolver.tool.default.mdify` |
 | [`media_search_tool`](#media_search_tool) | `workspace_write` | yes | `MediaSearchTool` | `agentevolver.tool.default.media_search` |
 | [`read_file_tool`](#read_file_tool) | `read_only` | no | `ReadFileTool` | `agentevolver.tool.default.read_file` |
+| [`read_image_tool`](#read_image_tool) | `read_only` | no | `ReadImageTool` | `agentevolver.tool.default.read_image` |
 | [`reformulator_tool`](#reformulator_tool) | `workspace_write` | not declared | `ReformulatorTool` | `agentevolver.tool.other.reformulator` |
 | [`reply_tool`](#reply_tool) | `read_only` | not declared | `ReplyTool` | `agentevolver.tool.default.reply` |
+| [`report_tool`](#report_tool) | `read_only` | no | `ReportTool` | `agentevolver.tool.default.report` |
+| [`run_code_tool`](#run_code_tool) | `danger_full_access` | not declared | `RunCodeTool` | `agentevolver.tool.default.code_mode.run_code` |
 | [`schedule_create_tool`](#schedule_create_tool) | `workspace_write` | yes | `ScheduleCreateTool` | `agentevolver.tool.default.schedule` |
+| [`send_message_tool`](#send_message_tool) | `workspace_write` | yes | `SendMessageTool` | `agentevolver.tool.default.send_message` |
 | [`serper_search_tool`](#serper_search_tool) | `workspace_write` | not declared | `SerperSearch` | `agentevolver.tool.default.search.serper_search` |
 | [`session_event_read_tool`](#session_event_read_tool) | `read_only` | no | `SessionEventReadTool` | `agentevolver.tool.default.session_query` |
 | [`session_event_search_tool`](#session_event_search_tool) | `read_only` | no | `SessionEventSearchTool` | `agentevolver.tool.default.session_query` |
@@ -81,7 +86,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-52 tools.
+57 tools.
 
 ## `ask_user_question`
 
@@ -408,6 +413,19 @@ Permission mode: `read_only` · reports only · call budget 60s
 | `depth` | `int` | no | `3` |
 | `ignore` | `Optional[List[str]]` | no | `None` |
 
+## `lsp_tool`
+
+Ask a language server for a symbol's definition, references, hover type, or a file's symbols.
+
+Permission mode: `read_only` · reports only · call budget 90s
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `operation` | `str` | yes | — |
+| `path` | `str` | yes | — |
+| `line` | `Optional[int]` | no | `None` |
+| `character` | `int` | no | `1` |
+
 ## `mdify_tool`
 
 Convert various file formats to markdown text using markitdown and save to base_dir folder.
@@ -445,6 +463,16 @@ Permission mode: `read_only` · reports only · call budget 60s
 | `offset` | `int` | no | `1` |
 | `limit` | `Optional[int]` | no | `None` |
 
+## `read_image_tool`
+
+Look at an image file. Requires a model that accepts image input.
+
+Permission mode: `read_only` · reports only · call budget 60s
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `path` | `str` | yes | — |
+
 ## `reformulator_tool`
 
 Reformulate a clean, formatted final answer from an agent conversation transcript.
@@ -467,6 +495,27 @@ Permission mode: `read_only` · does not declare whether it changes state
 | `task_id` | `str` | yes | — |
 | `reply` | `str` | yes | — |
 
+## `report_tool`
+
+Report a finding or result to the agent that started you, without waiting for a reply.
+
+Permission mode: `read_only` · reports only
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `output` | `str` | yes | — |
+
+## `run_code_tool`
+
+Run a Python program that calls your other tools directly, so a batch of tool work costs one turn instead of one turn per call.
+
+Permission mode: `danger_full_access` · does not declare whether it changes state · call budget 660s
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `code` | `str` | yes | — |
+| `description` | `str` | no | `''` |
+
 ## `schedule_create_tool`
 
 Set a reminder that comes due later in this run — after a delay, at a time, or at a fixed interval.
@@ -479,6 +528,17 @@ Permission mode: `workspace_write` · changes state
 | `after_seconds` | `Optional[int]` | no | `None` |
 | `at` | `Optional[str]` | no | `None` |
 | `every_seconds` | `Optional[int]` | no | `None` |
+
+## `send_message_tool`
+
+Give a continuable background sub-agent more work, on the same conversation.
+
+Permission mode: `workspace_write` · changes state
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `job_id` | `str` | yes | — |
+| `message` | `str` | yes | — |
 
 ## `serper_search_tool`
 
@@ -611,6 +671,7 @@ Permission mode: `workspace_write` · does not declare whether it changes state 
 | `text` | `str` | no | `''` |
 | `submit` | `bool` | no | `True` |
 | `timeout` | `Optional[float]` | no | `None` |
+| `run_in_background` | `bool` | no | `False` |
 
 ## `terminal_signal_tool`
 

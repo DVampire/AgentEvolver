@@ -10,6 +10,7 @@ from .read_image import ReadImageTool
 from .write_file import WriteFileTool
 from .edit_file import EditFileTool
 from .list_dir import ListDirTool
+from .lsp import LspTool
 from .git import GitTool
 from .todo import TodoTool
 from .deploy import DeployTool
@@ -72,6 +73,7 @@ __all__ = [
     "JobListTool",
     "MediaSearchTool",
     "JobKillTool",
+    "LspTool",
     "SendMessageTool",
     "ReportTool",
     "ReadImageTool",
