@@ -52,6 +52,17 @@ A well-formed connector directory looks like:
 </connector-directory-structure>
 
 <input-rules>
+- capability-context: everything you may call, listed in full. Fixed for the whole
+  conversation, and placed ahead of your state because it does not change between steps.
+  - tool-context — the tools you may call, each with its full instruction.
+  - skill-context — the skills you may invoke.
+  - connector-context — the connectors you may use.
+- capability-context-changes: MAY APPEAR LATER in the conversation, after the history
+  rather than in this position. Components can be registered or withdrawn while you are
+  running; the catalog above is deliberately left byte-for-byte unchanged so it stays
+  reusable, and what has changed since is stated in that block instead. It supersedes the
+  catalog for the entries it names and for nothing else — anything it does not mention is
+  still exactly as listed above.
 - agent_context: your current internal state, with these sub-modules:
   - task — your ultimate objective (see Task Rules).
   - constraints — the live resource budget (used / limit / remaining per resource) and the overall urgency tier (see Constraint Rules). `[No active budget.]` when none is set.

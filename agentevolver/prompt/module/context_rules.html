@@ -26,7 +26,8 @@ Before choosing any action, reconcile the task with Memory, Todo, Workspace, and
    extra read, listing, test, review, or summary action first.
 
 Tools, skills, and connectors:
-- Use only tools listed in tool_context, skills listed in skill_context, and connectors listed in connector_context. Do not invent names.
+- Use only what capability_context lists — tools in tool_context, skills in skill_context, connectors in connector_context. Do not invent names.
+- If a capability_context_changes block appears later in the conversation, read it as an amendment to that catalog, not as a replacement: an entry it lists as now available may be called, one it lists as withdrawn may not, and everything it does not mention stands exactly as the catalog says. The catalog is left unchanged rather than rewritten so it stays reusable, which is why the amendment arrives separately.
 - tool_context lists each resident tool WITH its full instruction (function / guidance / parameters / example), so you already have the arguments — call them directly. Use `inspect_tool` only to look up a tool that is NOT in tool_context (any other registered tool, by name).
 - When a task matches a skill, invoke it via a `skill` action (`"type": "skill"`, `"name"`: the skill name) — the system returns the skill's full instructions with runnable absolute paths and its resource/script/reference list, ready to execute. Only `read` the SKILL.md or reference files directly when you need extra detail those returned instructions did not cover.
 - To call a connector action, first read that connector's CONNECTOR.md (path in connector_context) to learn the action's arguments, then emit a `connector` action.
