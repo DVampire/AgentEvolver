@@ -37,6 +37,8 @@ class WriteFileTool(Tool):
     """Create or overwrite a file with the given content."""
 
     name: str = "write_file_tool"
+    #: same local-I/O budget as reading.
+    call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})

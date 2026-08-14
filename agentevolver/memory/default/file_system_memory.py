@@ -160,8 +160,22 @@ class FileSystemMemory(TieredMemory):
         """Execution History: Working Memory (compacted summaries) + Recent Steps timeline."""
         lines = ['<div class="mem-section">', "<h2>Execution History</h2>"]
         recent = list(state.recent)[-self.recent_fetch:]
+
+        # Above the empty-history return, not below it. A compaction that died after
+        # emptying `recent` renders exactly as "no history yet" — the one state where
+        # a reader most needs to be told that history was taken and not put back.
+        if state.compaction:
+            lines.append(
+                '<p class="mem-empty">⚠️ A compaction started at '
+                f'{_he(str(state.compaction.get("started_at", "")))} and did not finish '
+                f'({state.compaction.get("chunks", 0)} chunk(s) summarised). History '
+                "below may be incomplete.</p>"
+            )
+
         if not state.working and not recent:
-            return "\n".join(lines + ['<p class="mem-empty">No history yet.</p>', "</div>"])
+            if not state.compaction:
+                lines.append('<p class="mem-empty">No history yet.</p>')
+            return "\n".join(lines + ["</div>"])
 
         if state.working:
             lines.append('<details class="compact-summary">')

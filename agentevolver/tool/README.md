@@ -25,7 +25,8 @@ orchestration belongs to Workflow. The former `tool/workflow/` location has been
 (its `todo` tool now lives under `default/`); it was never a public Workflow registry, so
 define Workflows in the Workflow module rather than here.
 
-`Tool.progress_policy` optionally declares how the Agent runtime treats repeated calls:
-`workspace` invalidates evidence when workspace state changes, `external` and `polling`
-allow repeated observations, and `always` bypasses the no-progress guard. Unspecified
-tools use the guard's conservative name/kind defaults.
+`Tool.call_timeout_seconds` declares what one call of the tool is allowed to cost. The
+dispatch funnel reads it from the registry, so the budget sits next to the code that knows
+the work; a tool that declares nothing takes the manager default. A tool that also bounds
+something internally (`bash_tool.timeout` bounds the child process) should keep the inner
+bound smaller, so it returns its own diagnostic rather than being cut off mid-report.

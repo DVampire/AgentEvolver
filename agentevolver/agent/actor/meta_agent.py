@@ -95,10 +95,15 @@ class MetaAgent(Agent):
                 step_tokens=decision["step_tokens"],
                 done=False,
             )
+            # Appended: `super()._prepare_round` may already have raised a repetition
+            # reminder for this same round, and overwriting would drop it. The two see
+            # different things — that guard counts one call repeating, this one counts
+            # the whole batch — so both are worth the model reading.
             run.action_errors = [
+                *(run.action_errors or []),
                 "No-progress guard: this exact action batch was already executed. "
                 "Do not retry it; delegate, choose a materially different action, or "
-                "call done_tool with the best verified partial result."
+                "call done_tool with the best verified partial result.",
             ]
             run.step += 1
             await self._advance(run)

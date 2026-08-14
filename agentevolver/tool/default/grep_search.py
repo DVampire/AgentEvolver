@@ -45,6 +45,8 @@ class GrepSearchTool(Tool):
     """Search file contents for regex/literal matches, skipping common noise directories."""
 
     name: str = "grep_search_tool"
+    #: a tree walk over a large repository, not an unbounded scan.
+    call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})

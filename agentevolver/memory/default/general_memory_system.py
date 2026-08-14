@@ -33,6 +33,9 @@ class GeneralMemorySystem(TieredMemory):
                     "working_memory": list(state.working),
                     "recent_history": [r.model_dump() for r in state.recent],
                 },
+                # Present only while a compaction is open; a snapshot that still
+                # carries it was written by a run that never closed the bracket.
+                "compaction": state.compaction,
                 "final_result": state.final_result,
                 "result_success": state.result_success,
             },

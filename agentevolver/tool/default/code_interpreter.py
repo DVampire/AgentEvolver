@@ -29,7 +29,7 @@ from agentevolver.kernel import kernel_manager
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.tool.types import Tool, clip_output
+from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Execute code in a persistent interpreter and return everything it produced."
 
@@ -168,7 +168,7 @@ class CodeInterpreterTool(Tool):
             output = stdout.decode("utf-8", errors="replace").strip()
             exit_code = process.returncode
             logger.info(f"| ✅ code_interpreter ran one-shot {language} locally")
-            message = clip_output(output) if output else f"Command completed with exit code: {exit_code}"
+            message = output if output else f"Command completed with exit code: {exit_code}"
             if exit_code:
                 message = f"{message}\n\nExit code: {exit_code}"
             return Response(

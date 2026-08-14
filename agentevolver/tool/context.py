@@ -17,8 +17,10 @@ from agentevolver.utils import (assemble_workspace_path,
                        file_lock,
                        render_capability_card,
                        )
-from agentevolver.tool.types import Tool, ToolConfig, ToolContext
+from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext, clip_output
 from agentevolver.response.types import Response, ResponseType
+from agentevolver.spill import spill_manager
+from agentevolver.spill.types import SpillSource
 from agentevolver.version import version_manager
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import TOOL
@@ -172,7 +174,7 @@ class ToolContextManager(BaseModel):
                 # the tool says about itself. Both were being dropped here, which left them
                 # None on every registered config no matter what a tool declared.
                 tool_mutates = _field_default(tool_cls, "mutates")
-                tool_progress_policy = _field_default(tool_cls, "progress_policy")
+                tool_call_timeout = _field_default(tool_cls, "call_timeout_seconds")
 
                 # Get or generate version from version_manager
                 tool_version = await version_manager.get_version("tool", tool_name)
@@ -203,7 +205,7 @@ class ToolContextManager(BaseModel):
                     metadata=tool_metadata,
                     enable_evolving=tool_enable_evolving,
                     mutates=tool_mutates,
-                    progress_policy=tool_progress_policy,
+                    call_timeout_seconds=tool_call_timeout,
                     code=tool_code,
                     path=tool_path,
                 )
@@ -822,14 +824,71 @@ class ToolContextManager(BaseModel):
             logger.warning(f"| ⚠️ {msg}")
             return Response(type=ResponseType.TOOL, success=False, message=msg)
 
-        # Otherwise, use asyncio.wait_for to enforce timeout
+        timeout = self._call_timeout(tool_instance)
         try:
-            return await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=self.default_timeout)
+            response = await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=timeout)
         except asyncio.TimeoutError:
-            error_msg = f"Tool '{name}' execution timed out after {self.default_timeout} seconds"
+            error_msg = (
+                f"Tool '{name}' execution timed out after {timeout} seconds. "
+                f"Re-issue it with narrower arguments, or split the work into steps that each "
+                f"finish inside that budget."
+            )
             logger.error(f"| ⏱️ {error_msg}")
             return Response(
                 type=ResponseType.TOOL,
                 success=False,
                 message=error_msg,
             )
+
+        return await self._bound_output(response, name=name, ctx=ctx)
+
+    def _call_timeout(self, tool_instance: Tool) -> Optional[float]:
+        """The budget for one call of this tool.
+
+        Read from the tool's own declaration rather than passed in by the caller, so
+        the budget lives next to the code that knows what the work costs and no call
+        site can name a tool that does not exist. A tool that declares nothing gets
+        the manager default, which is what every tool used to get.
+
+        A declared value that is not a positive number is ignored with a warning:
+        the alternative — honouring ``0`` or ``-1`` — turns a typo in an evolved tool
+        into every call of it failing instantly, which reads as the tool being broken
+        rather than as its declaration being wrong.
+        """
+        declared = getattr(tool_instance, "call_timeout_seconds", None)
+        if declared is None:
+            return self.default_timeout
+        if not isinstance(declared, (int, float)) or isinstance(declared, bool) or declared <= 0:
+            logger.warning(
+                f"| ⚠️ Tool '{tool_instance.name}' declares call_timeout_seconds={declared!r}, "
+                f"which is not a positive number; using the default of {self.default_timeout}s"
+            )
+            return self.default_timeout
+        return float(declared)
+
+    async def _bound_output(self, response: Response, *, name: str, ctx: ToolContext) -> Response:
+        """Keep an oversized result out of the prompt without destroying it.
+
+        Every tool call funnels through here, so the size policy is stated once
+        instead of in each tool — and a tool added later inherits it without
+        knowing it exists.
+
+        The full text is written to the spill store first, then the message is
+        replaced by an excerpt that carries the locator. If the store cannot save
+        it, the excerpt goes out alone: a command that ran is still a command that
+        ran, and reporting it as failed because its transcript could not be filed
+        would lose more than the transcript did.
+        """
+        message = response.message
+        if not isinstance(message, str) or len(message) <= OUTPUT_LIMIT:
+            return response
+
+        ref = await spill_manager.save_text(
+            message,
+            SpillSource(tool_name=name, call_id=str(getattr(ctx, "id", "") or ""), label="result"),
+            session_key=str((getattr(ctx, "extra", {}) or {}).get("project_root") or ""),
+            suggested_name=f"{name}.txt",
+        )
+        excerpt = clip_output(message)
+        response.message = excerpt if ref is None else f"{excerpt}\n\n[{ref.retrieval_hint}]"
+        return response

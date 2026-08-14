@@ -480,12 +480,23 @@ def test_clip_output_keeps_the_beginning_and_the_end():
     assert "Narrow the command" in clipped
 
 
-def test_bash_clips_a_flood_of_output(tmp_path):
+def test_bash_flood_is_clipped_by_the_pipeline(tmp_path):
+    """The bound is applied once, in the dispatch funnel, not in each tool.
+
+    The tool returns what it captured; ``ToolContextManager`` is what decides the
+    result is too large to show, spills it, and hands back the excerpt. Asserted
+    through the manager for that reason — a tool called directly is *expected* to
+    return its full output now.
+    """
     from agentevolver.tool.types import OUTPUT_LIMIT
 
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="python3 -c \"print('A' * 3_000_000)\"", ctx=SimpleNamespace(extra={})))
+    manager = _manager_for(tmp_path, BashTool(permission_mode="danger_full_access"))
+    resp = asyncio.run(manager(
+        name="bash_tool",
+        input={"command": "python3 -c \"print('A' * 3_000_000)\""},
+        ctx=SimpleNamespace(id="call-1", extra={}),
+    ))
 
     assert resp.success is True
     assert len(resp.message) < OUTPUT_LIMIT * 2

@@ -75,6 +75,12 @@ class HookResult(BaseModel):
     # (list of ConstraintStatus dumps). The agent renders this into its prompt.
     constraint_status: Optional[List[Dict[str, Any]]] = Field(default=None)
 
+    # Next state of the repeated-call chain, returned by the repeat-tool reminder on
+    # PRE_ACTION. The hook stays stateless — it is handed the previous chain and hands
+    # back the next one — so the state can live on the run and never leak between
+    # concurrent sessions.
+    repeat_chain: Optional[Dict[str, Any]] = Field(default=None)
+
     @classmethod
     def allow(cls) -> "HookResult":
         """Build a result that lets the lifecycle event proceed unchanged."""

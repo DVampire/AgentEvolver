@@ -49,6 +49,14 @@ _FLOW_LABEL_MAX = 80
 #: prompt — what a turn can afford to read once, a prompt cannot afford to carry forever.
 _RECORD_DETAIL_MAX = 8_000
 
+#: Share of that cap given to the head when an entry has to be cut.
+#:
+#: Head-only truncation loses whatever a producer appended last, and what the tool
+#: pipeline appends last is the spill locator — the path to the full output. Cutting it
+#: off leaves the agent holding an excerpt that says text was dropped and no longer says
+#: where it went, which is the exact failure the spill store exists to prevent.
+_RECORD_HEAD_SHARE = 0.8
+
 # MetaAgent subtask lifecycle event name → display status.
 _SUBTASK_STATUS_MAP: Dict[str, str] = {
     "subtask_dispatch": "running",
@@ -121,6 +129,11 @@ class MemoryRecord(BaseModel):
     event: str            # short label, e.g. "tool_x result"
     detail: str = ""
     status: str = ""      # "", "running", "done", "failed"
+    #: Position of the trace event this record came from. Carried so that folding a run
+    #: of records into a summary can say *which* events the summary now stands for —
+    #: without it, memory's history and the durable log drift apart with nothing able to
+    #: relate them. ``None`` for records with no originating event.
+    seq: Optional[int] = None
 
     def as_line(self) -> str:
         s = f" [{self.status}]" if self.status else ""
@@ -152,6 +165,12 @@ class _SessionState:
         self._subtask_flow_index: Dict[str, int] = {}
 
         self._compacting = False
+        #: Open compaction bracket: ``{"started_at", "chunks"}`` while one is running,
+        #: ``None`` otherwise. Unlike ``_compacting`` — a process-local flag that dies
+        #: with the process — this is rendered into the persisted memory artifact, so a
+        #: compaction that never finished stays visible in the file afterwards instead
+        #: of leaving a silently shortened history and no explanation.
+        self.compaction: Optional[Dict[str, Any]] = None
         self._lock = asyncio.Lock()        # guards recent during compaction
         self._write_lock = asyncio.Lock()  # serialises file writes
         self._todos_lock = asyncio.Lock()  # serialises _apply_todos
@@ -207,14 +226,14 @@ class TieredMemory(Memory):
         if ev == TraceEventType.AGENT_START:
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"Agent started: {event.agent_name or ''}",
-                detail=(event.input or {}).get("task", ""), status="running"))
+                detail=(event.input or {}).get("task", ""), status="running", seq=event.seq_no))
 
         elif ev == TraceEventType.AGENT_END:
             ok = event.success if event.success is not None else (event.metadata.get("success", not bool(event.error)))
             result = event.error if not ok else _as_text(event.message)
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"Agent ended: {event.agent_name or ''}",
-                detail=result, status="done" if ok else "failed"))
+                detail=result, status="done" if ok else "failed", seq=event.seq_no))
             if event.metadata.get("is_root", False):
                 state.final_result = result
                 state.result_success = ok
@@ -224,7 +243,7 @@ class TieredMemory(Memory):
             detail = event.error if not ok else _as_text(event.message)
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"{event.action_name or event.action_type or 'action'} result",
-                detail=detail, status="done" if ok else "failed"))
+                detail=detail, status="done" if ok else "failed", seq=event.seq_no))
             # Buffer for the flow chart — flushed on the step's POST_STEP AGENT_CALL.
             if event.step_number is not None:
                 state._pending_step_actions.setdefault(event.step_number, []).append({
@@ -237,7 +256,7 @@ class TieredMemory(Memory):
         elif ev == TraceEventType.ERROR:
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event="Error", detail=event.error or _as_text(event.message),
-                status="failed"))
+                status="failed", seq=event.seq_no))
 
         elif ev == TraceEventType.AGENT_CALL:
             changed = self._apply_agent_call(state, event)
@@ -406,12 +425,19 @@ class TieredMemory(Memory):
         # The tools clip their own output too, which is where it matters most for what the
         # agent reads. This is the backstop, so that no future tool — or a tool whose limit
         # is raised — can make the prompt unsendable.
+        #
+        # Head *and* tail, because the last thing in a bounded tool result is the
+        # reference to where the unbounded original was saved. Keeping only the head
+        # would drop it and leave a note about missing text with no way to reach it.
         if record.detail and len(record.detail) > _RECORD_DETAIL_MAX:
+            head = int(_RECORD_DETAIL_MAX * _RECORD_HEAD_SHARE)
+            tail = _RECORD_DETAIL_MAX - head
             dropped = len(record.detail) - _RECORD_DETAIL_MAX
             record = record.model_copy(update={
                 "detail": (
-                    f"{record.detail[:_RECORD_DETAIL_MAX]}\n"
-                    f"[... {dropped:,} more characters not kept in memory ...]"
+                    f"{record.detail[:head]}\n"
+                    f"[... {dropped:,} more characters not kept in memory ...]\n"
+                    f"{record.detail[-tail:]}"
                 )
             })
         state.recent.append(record)
@@ -419,27 +445,119 @@ class TieredMemory(Memory):
             asyncio.create_task(self._compact(state))
 
     async def _compact(self, state: _SessionState) -> None:
+        """Fold the oldest history into summaries, as one recorded transaction.
+ 
+        The bracket is what makes a crash legible. ``state.compaction`` is set and
+        persisted *before* any records leave ``recent``, and cleared only after the last
+        chunk has been summarised and the result written. A memory artifact carrying an
+        open bracket therefore says exactly one thing: a compaction started and never
+        finished, so the history below it may be short by whatever that run had claimed.
+        Clearing the marker last is the whole point — clearing it first would make a
+        crashed compaction indistinguishable from a completed one.
+
+        This is a diagnostic, not a recovery: these files are written, never read back,
+        so nothing resumes an interrupted compaction. What the bracket buys is that the
+        gap stops being silent, for whoever — operator or agent — reads the memory next.
+
+        Each chunk is summarised before the next is taken, and a chunk whose summary
+        fails is put back, so a partial run leaves history shorter but never holed.
+        """
         state._compacting = True
+        outcome = "ok"
+        chunks_done = 0
         try:
+            state.compaction = {"started_at": _ts(), "chunks": 0}
+            await self._persist(state)
+
             while len(state.recent) > self.recent_max:
                 async with state._lock:
                     k = min(self.compact_chunk, len(state.recent))
                     chunk = [state.recent.popleft() for _ in range(k)]
                 items = [r.as_line() for r in chunk]
                 existing = state.working[-1] if state.working else ""
-                text = await self._summarise(items, existing)
-                if text:
-                    state.working.append(text)
-                else:
+                try:
+                    text = await self._summarise(items, existing)
+                except asyncio.CancelledError:
+                    async with state._lock:
+                        state.recent.extendleft(reversed(chunk))
+                    raise
+                except Exception as error:
+                    # The summariser reaching the model and failing is not the same as
+                    # it returning nothing, and saying so is the difference between
+                    # "the model is unreachable" and "there was nothing worth saying".
+                    async with state._lock:
+                        state.recent.extendleft(reversed(chunk))
+                    outcome = "summary"
+                    logger.warning(f"| ⚠️ {self.name}: summariser failed ({error})")
+                    break
+                if not text:
                     async with state._lock:  # lossless: restore and stop
                         state.recent.extendleft(reversed(chunk))
+                    outcome = "empty"
                     break
-            await self._persist(state)
-            logger.info(f"| 🗜️ {self.name}: compacted history for {state.session_id}")
-        except Exception as e:
-            logger.warning(f"| ⚠️ {self.name}: compaction failed ({e})")
+                state.working.append(text)
+                chunks_done += 1
+                state.compaction = {"started_at": state.compaction["started_at"], "chunks": chunks_done}
+                await self._record_fold(state, chunk, text)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except Exception as error:
+            outcome = "failed"
+            logger.warning(f"| ⚠️ {self.name}: compaction failed ({error})")
         finally:
+            # Released last, and persisted with the release, so the bracket on disk
+            # closes only once the work behind it is durable.
+            state.compaction = None
             state._compacting = False
+            try:
+                await self._persist(state)
+            except Exception as error:  # noqa: BLE001 — the compaction itself already happened
+                logger.warning(f"| ⚠️ {self.name}: could not persist after compaction ({error})")
+            if outcome == "ok":
+                logger.info(
+                    f"| 🗜️ {self.name}: compacted {chunks_done} chunk(s) for {state.session_id}"
+                )
+            else:
+                logger.info(
+                    f"| 🗜️ {self.name}: compaction stopped ({outcome}) after {chunks_done} "
+                    f"chunk(s) for {state.session_id}"
+                )
+
+    async def _record_fold(self, state: _SessionState, chunk: list, summary: str) -> None:
+        """Tell the durable log that one summary now stands for a run of its events.
+
+        Without this the two records of a session disagree after every compaction:
+        memory's history has a summary where a dozen records used to be, and the trace
+        log still has the dozen with nothing marking them as folded. Neither is wrong on
+        its own and there is no way to line them up.
+
+        The event replaces the range on the *surface* while the originals stay in the
+        log untouched, so the folded records remain readable — the summary shadows them
+        rather than deleting them, and cites every seq it shadowed.
+
+        Best-effort: a compaction that already happened must not be undone because its
+        bookkeeping could not be written.
+        """
+        seqs = [r.seq for r in chunk if r.seq is not None]
+        if not seqs:
+            return  # nothing to cite: these records predate sequence numbering
+        try:
+            from agentevolver.trace import replace_op, trace_manager
+            from agentevolver.trace.types import TraceEvent, TraceEventType
+
+            await trace_manager.emit(TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id=state.session_id,
+                label="compaction summary",
+                message=summary,
+                success=True,
+                surface_op=replace_op(min(seqs), max(seqs)),
+                source_event_seqs=sorted(seqs),
+                metadata={"kind": "compaction", "records": len(chunk)},
+            ))
+        except Exception as error:  # noqa: BLE001 — the fold itself already succeeded
+            logger.warning(f"| ⚠️ {self.name}: could not record the fold in the trace ({error})")
 
     async def _summarise(self, items: list[str], existing: str) -> str:
         from agentevolver.hook import hook_manager, HookEvent

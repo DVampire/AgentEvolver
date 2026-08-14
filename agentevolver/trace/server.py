@@ -38,6 +38,10 @@ class TraceManager(metaclass=Singleton):
         self._initialized: bool = False
         self._running: bool = False
         self._subscribers = set()
+        #: session_id → next sequence number. Assigned here rather than in the writer
+        #: because the writer consumes the queue asynchronously: numbering there would
+        #: leave every subscriber holding an event whose position is still unknown.
+        self._next_seq: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -98,9 +102,17 @@ class TraceManager(metaclass=Singleton):
     # ------------------------------------------------------------------
 
     async def emit(self, event: TraceEvent) -> None:
-        """Emit a trace event.  Never blocks on the caller, never raises."""
+        """Emit a trace event.  Never blocks on the caller, never raises.
+
+        Stamps the event's position in its session's log before anyone sees it. The
+        number is what lets one event cite another — a summary naming the range it
+        replaced, a projection naming what the model saw — none of which can be
+        expressed by "somewhere earlier in the file".
+        """
         if not self._running or self._queue is None:
             return
+        if event.seq_no is None:
+            event.seq_no = self._claim_seq(event.session_id or "no_session")
         self._queue.emit(event)
         for subscriber in tuple(self._subscribers):
             try:
@@ -109,6 +121,24 @@ class TraceManager(metaclass=Singleton):
                     await result
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"| ⚠️  Trace subscriber failed: {exc}")
+
+    def _claim_seq(self, session_id: str) -> int:
+        """The next position in one session's log.
+
+        Seeded from the writer's index the first time a session is seen, so a session
+        reopened in a new process continues its numbering instead of restarting at 0 and
+        producing two events that claim the same position.
+        """
+        if session_id not in self._next_seq:
+            written = 0
+            writer = self._writer
+            if writer is not None:
+                meta = getattr(writer, "_session_meta", {}).get(session_id) or {}
+                written = int(meta.get("event_count") or 0)
+            self._next_seq[session_id] = written
+        seq = self._next_seq[session_id]
+        self._next_seq[session_id] = seq + 1
+        return seq
 
     def subscribe(self, callback) -> None:
         """Receive every emitted event without coupling callers to a transport."""

@@ -37,7 +37,8 @@ AgentEvolver/
 │   │                       #   read datasets/ first, else download from HF (ensure_dataset)
 │   ├── extension/          # ExtensionManager — loads/evolves the external extension/ tree
 │   ├── memory/             # Memory systems (tiered per-session)
-│   ├── hook/               # Hook pipeline (compact, memory, trace, ...)
+│   ├── hook/               # Hook pipeline (compact, memory, trace, repeat-call reminder, ...)
+│   ├── spill/              # Oversized tool output parked on disk; the excerpt carries a locator (infra)
 │   ├── trace/              # Observability — raw event log (TraceManager + UI server)
 │   ├── trajectory/         # Trainable projection of a run (SFT/RL records)
 │   ├── runtime/            # Agent runtime: mailbox + pump + lifecycle

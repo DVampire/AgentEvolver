@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from agentevolver.dynamic import dynamic_manager
@@ -32,6 +32,11 @@ def clip_output(text: str, limit: int = OUTPUT_LIMIT) -> str:
 
     What is dropped is stated in place, so the agent knows it is looking at an excerpt and
     can narrow the command rather than wonder why the text stops.
+
+    This builds the excerpt and nothing else. Whether the dropped middle is still
+    reachable is the caller's business: the tool pipeline saves the full text to the
+    spill store before calling this and appends the locator, so in normal operation
+    the middle is one `read_file_tool` away rather than gone.
     """
     if len(text) <= limit:
         return text
@@ -67,12 +72,7 @@ class Tool(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
-    progress_policy: Optional[Literal["workspace", "external", "polling", "always"]] = Field(
-        default=None,
-        description="No-progress policy: workspace / external / polling / always",
-    )
-    #: Whether calling this tool changes state, as opposed to reporting on it. Orthogonal
-    #: to `progress_policy`, which is about repeating an identical action.
+    #: Whether calling this tool changes state, as opposed to reporting on it.
     #:
     #: This exists to make a distinction the agent cannot otherwise see about itself:
     #: measuring always succeeds and never breaks anything, while changing something can
@@ -86,6 +86,22 @@ class Tool(BaseModel):
     mutates: Optional[bool] = Field(
         default=None,
         description="True if the tool changes state, False if it only reports on it, None if it depends.",
+    )
+    #: Budget for one call of this tool, in seconds; ``None`` takes the manager default.
+    #:
+    #: Declared here rather than passed by the caller, because the tool is what knows
+    #: what its work costs: a file read that has not returned in ten seconds is stuck,
+    #: while a build legitimately runs for twenty minutes. One shared default has to be
+    #: generous enough for the build, which means the stuck read holds the agent for
+    #: half an hour before it learns anything.
+    #:
+    #: This is the budget for the *call*. A tool that also bounds something inside
+    #: itself — `bash_tool.timeout` bounds the child process — keeps that separate;
+    #: the inner bound should be the smaller of the two, so the tool returns its own
+    #: diagnostic instead of being cut off mid-report.
+    call_timeout_seconds: Optional[float] = Field(
+        default=None,
+        description="Budget for one call of this tool, in seconds. None uses the manager default.",
     )
 
     async def __call__(self, **kwargs) -> Response:
@@ -102,11 +118,11 @@ class ToolConfig(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
-    progress_policy: Optional[Literal["workspace", "external", "polling", "always"]] = Field(
-        default=None, description="No-progress guard policy"
-    )
     mutates: Optional[bool] = Field(
         default=None, description="True if the tool changes state, False if it only reports on it"
+    )
+    call_timeout_seconds: Optional[float] = Field(
+        default=None, description="Budget for one call of this tool, in seconds; None uses the manager default"
     )
     version: str = Field(default="1.0.0", description="Version of the tool")
 
@@ -147,8 +163,8 @@ class ToolConfig(BaseModel):
             "metadata": self.metadata,
             "enable_evolving": self.enable_evolving,
             "permission_mode": self.permission_mode,
-            "progress_policy": self.progress_policy,
             "mutates": self.mutates,
+            "call_timeout_seconds": self.call_timeout_seconds,
             "version": self.version,
 
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
@@ -173,8 +189,8 @@ class ToolConfig(BaseModel):
         metadata = data.get("metadata")
         enable_evolving = data.get("enable_evolving", False)
         permission_mode = data.get("permission_mode", "workspace_write")
-        progress_policy = data.get("progress_policy")
         mutates = data.get("mutates")
+        call_timeout_seconds = data.get("call_timeout_seconds")
         version = data.get("version")
         
         cls_ = None
@@ -209,8 +225,8 @@ class ToolConfig(BaseModel):
             metadata=metadata,
             enable_evolving=enable_evolving,
             permission_mode=permission_mode,
-            progress_policy=progress_policy,
             mutates=mutates,
+            call_timeout_seconds=call_timeout_seconds,
             version=version,
             cls=cls_,
             config=config,

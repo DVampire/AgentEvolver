@@ -46,6 +46,8 @@ class WebSearcherTool(Tool):
     """Search the web for information using various search engines."""
 
     name: str = "web_searcher_tool"
+    #: one network round trip plus the provider's own latency.
+    call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")

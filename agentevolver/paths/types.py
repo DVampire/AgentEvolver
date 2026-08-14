@@ -31,6 +31,11 @@ class P(str, Enum):
     DEPLOY = "deploy"
     CHECKPOINTS = "checkpoints"
     STAGING = "staging"
+    #: Where an oversized tool result is parked so the agent keeps a way back to
+    #: it. Machine-level rather than per session: the store hashes the session
+    #: into a subdirectory itself, so a caller holding only a tool context — which
+    #: carries no owner or session id — can still resolve the root.
+    SPILL = "spill"
 
     # --- per owner (durable, survives every session) ---------------------
     OWNER = "owner"
@@ -87,6 +92,7 @@ LAYOUT: Dict[P, str] = {
     P.DEPLOY: "output/.runtime/deploy",
     P.CHECKPOINTS: "output/.runtime/checkpoints",
     P.STAGING: "output/.runtime/staging/{project_key}",
+    P.SPILL: "output/.runtime/spill",
 
     P.OWNER: "output/{owner}",
     P.OWNER_STATE: "output/{owner}/state",

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from agentevolver.trace.surface import APPEND
 from agentevolver.utils import make_id
 
 
@@ -87,7 +88,26 @@ class TraceEvent(BaseModel):
 
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    #: Position in this session's log, stamped by ``trace_manager.emit``. Contiguous
+    #: from 0 and continued across restarts from the writer's index, so it names an
+    #: event unambiguously for anything that needs to cite one.
     seq_no:      Optional[int] = Field(default=None)
+
+    #: How this event joins the *surface* — the ordered subset of the log that stands
+    #: for the session's history. ``"append"`` adds it at the tail;
+    #: ``{"op": "replace", "start": s, "end": e}`` puts it in place of the surface
+    #: entries from ``s`` through ``e`` inclusive.
+    #:
+    #: Replacement is what lets compaction be recorded without being destructive: the
+    #: summarised events stay in the log exactly as they were written, and the summary
+    #: shadows them. One log, two readings — the surface for what the history now says,
+    #: the raw append order for what actually happened.
+    surface_op: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
+
+    #: Seq numbers this event was derived from. A replacement MUST cite every surface
+    #: entry it shadows, so a reader can always recover the originals behind a summary.
+    source_event_seqs: Optional[List[int]] = Field(default=None)
+
     fingerprint: Optional[str] = Field(default=None)
     provenance:  EventProvenance  = Field(default=EventProvenance.LIVE)
     confidence:  EventConfidence  = Field(default=EventConfidence.HIGH)
@@ -122,6 +142,7 @@ def agent_start_event(
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         label=f"Agent start: {agent_name}",
         input={"task": task_content},
+        surface_op=APPEND,
     )
 
 
@@ -158,6 +179,7 @@ def agent_end_event(
         error=error,
         duration_ms=duration_ms,
         metadata={"success": success},
+        surface_op=APPEND,
     )
 
 
@@ -197,6 +219,7 @@ def tool_call_event(
         error=error,
         duration_ms=duration_ms,
         metadata=meta,
+        surface_op=APPEND,
     )
 
 
@@ -236,4 +259,5 @@ def skill_call_event(
         error=error,
         duration_ms=duration_ms,
         metadata=meta,
+        surface_op=APPEND,
     )

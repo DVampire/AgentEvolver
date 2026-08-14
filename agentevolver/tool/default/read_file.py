@@ -38,12 +38,13 @@ class ReadFileTool(Tool):
     """Read file contents with optional line range, returning numbered lines."""
 
     name: str = "read_file_tool"
+    #: reading a file is local I/O; a minute means the path is on a wedged mount, not that the file is big.
+    call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = False
-    progress_policy: str = "workspace"
 
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)

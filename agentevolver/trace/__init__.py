@@ -10,6 +10,13 @@ from .types import (
     skill_call_event,
 )
 from .server import trace_manager
+from .surface import (
+    SurfaceError,
+    fold_surface,
+    replace_op,
+    shadowed_by,
+    surface_events,
+)
 
 __all__ = [
     "TraceEvent",
@@ -22,4 +29,9 @@ __all__ = [
     "skill_start_event",
     "skill_call_event",
     "trace_manager",
+    "SurfaceError",
+    "fold_surface",
+    "replace_op",
+    "shadowed_by",
+    "surface_events",
 ]

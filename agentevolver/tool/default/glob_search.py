@@ -42,6 +42,8 @@ class GlobSearchTool(Tool):
     """Find files matching a glob pattern, skipping common noise directories."""
 
     name: str = "glob_search_tool"
+    #: a tree walk over a large repository, not an unbounded scan.
+    call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})

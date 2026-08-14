@@ -38,6 +38,8 @@ class EditFileTool(Tool):
     """Precise string-replace file editor. Requires old_string to be unique in the file."""
 
     name: str = "edit_file_tool"
+    #: same local-I/O budget as reading.
+    call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})

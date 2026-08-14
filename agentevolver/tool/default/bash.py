@@ -10,7 +10,7 @@ from pydantic import Field
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
 from agentevolver.config import config
-from agentevolver.tool.types import OUTPUT_LIMIT, Tool, clip_output
+from agentevolver.tool.types import OUTPUT_LIMIT, Tool
 from agentevolver.utils.terminal import (
     PTY_COLS,
     PTY_DEFAULT_TERM,
@@ -167,8 +167,11 @@ class BashTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
-    progress_policy: str = "workspace"
     timeout: int = Field(default=600, description="Timeout in seconds for command execution")
+    #: Deliberately above `timeout`: the command budget is what should fire, so the tool
+    #: gets to return its own diagnostic — which command, how long, what partial output —
+    #: instead of the pipeline cutting the call off with a message naming neither.
+    call_timeout_seconds: float = 660
 
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
@@ -243,11 +246,11 @@ class BashTool(Tool):
                             f"terminal and was abandoned. A program that holds the "
                             f"terminal will not exit on its own — send it whatever key "
                             f"quits it via `stdin`, or wrap it: `timeout 2 <command>`. "
-                            f"Partial output:\n{clip_output(output)}"
+                            f"Partial output:\n{output}"
                         ),
                         data={"exit_code": None, "command": command, "timed_out": True, "tty": True},
                     )
-                message = warning_prefix + (clip_output(output) or
+                message = warning_prefix + (output or
                                             f"Command completed with exit code: {exit_code}")
                 if exit_code:
                     message = f"{message}\n\nExit code: {exit_code}"
@@ -303,9 +306,9 @@ class BashTool(Tool):
             # agent the stderr that explains why.
             parts = []
             if stdout_str:
-                parts.append(f"STDOUT:\n{clip_output(stdout_str)}")
+                parts.append(f"STDOUT:\n{stdout_str}")
             if stderr_str:
-                parts.append(f"STDERR:\n{clip_output(stderr_str)}")
+                parts.append(f"STDERR:\n{stderr_str}")
 
             exit_code = process.returncode
             if exit_code != 0:

@@ -344,12 +344,14 @@ class _AgentRun:
         # the run (not the Agent singleton) so concurrent sessions never share state.
         self.previous_action_signature: Optional[str] = None
         self.repeated_action_rounds = 0
-        # Successful action evidence used by the shared no-progress guard.  State is
-        # run-local so parallel agents/sessions never suppress one another.
-        self.action_evidence: Dict[str, Dict[str, Any]] = {}
         self.no_progress_rounds = 0
+        #: The run of consecutive identical calls the repeat reminder is tracking:
+        #: ``{"signature", "count", "name"}``. Held here rather than in the hook so
+        #: concurrent runs cannot trip one another's reminder; the hook is handed this
+        #: and hands back its successor.
+        self.repeat_chain: Optional[Dict[str, Any]] = None
         #: Whether this run has ever changed its workspace. Until it has, the
-        #: no-progress guard blocks repeats but does not terminate — see
+        #: no-progress guard widens its strike budget rather than terminating — see
         #: Agent._prepare_round.
         self.produced_change = False
         self.baseline_fingerprint: Optional[str] = None
@@ -1486,7 +1488,7 @@ class Agent(BaseModel):
     async def _on_round_complete(self, run: "_AgentRun") -> None:
         """A round's whole batch has drained: record the step, then advance or conclude."""
         decision = run.decision
-        await self._record_action_evidence(run)
+        await self._record_round_outcome(run)
         await self._post_step(run.task_id, run.round_step, run.ctx, run.messages,
                               reasoning=decision["reasoning"], plan=getattr(run, "step_plan", []),
                               step_tokens=decision["step_tokens"], done=run.round_done)
@@ -1580,23 +1582,27 @@ class Agent(BaseModel):
         return None
 
     async def _prepare_round(self, run: "_AgentRun", decision: Dict[str, Any]) -> Optional[List[Any]]:
-        """Apply the shared no-progress guard before dispatching a round.
+        """Advise on repetition, and stop a run that has stopped changing anything.
 
         Defined on the base ``Agent`` and called on the single round path every agent's
         loop flows through, so the guard applies to all agents uniformly; subclasses that
         override this (only ``MetaAgent``) must chain to ``super()`` to keep it.
 
-        Detection is delegated to a stateless hook (``no_progress_hook``); evidence and
-        escalation counters stay on the run.  The first two blocked proposals are returned
-        to the model as corrective context.  A third unchanged proposal terminates honestly
-        instead of consuming the entire step budget.
+        Repetition is handled by advice, not veto: a stateless hook
+        (``repeat_tool_reminder_hook``) counts consecutive identical calls and returns a
+        reminder, which rides to the model as context while the call proceeds. The model
+        decides what to do about it.
+
+        Blocking is reserved for the one shape advice has demonstrably failed to move: a
+        run whose turns keep changing nothing. That backstop is below, and it is judged on
+        the workspace rather than on any classification of the tools involved.
         """
         calls = decision["tool_calls"]
         if not calls:
             return calls
 
         from agentevolver.hook.server import hook_manager
-        from agentevolver.hook.types import HookDecision, HookEvent
+        from agentevolver.hook.types import HookEvent
 
         routing = decision.get("routing") or {}
         actions = []
@@ -1607,7 +1613,6 @@ class Agent(BaseModel):
                 "name": call.name,
                 "kind": route[0],
                 "signature": signature,
-                "policy": await self._progress_policy(route),
             })
         fingerprint = await self._workspace_fingerprint(run.ctx)
         if run.baseline_fingerprint is None:
@@ -1615,58 +1620,47 @@ class Agent(BaseModel):
         elif fingerprint != run.baseline_fingerprint:
             run.produced_change = True
 
-        guard = await hook_manager(
-            name="no_progress_hook",
+        advice = await hook_manager(
+            name="repeat_tool_reminder_hook",
             input={
                 "event": HookEvent.PRE_ACTION,
                 "agent_name": self.name,
                 "task_id": run.task_id,
                 "actions": actions,
-                "evidence": run.action_evidence,
-                "workspace_fingerprint": fingerprint,
+                "repeat_chain": run.repeat_chain,
             },
             ctx=run.ctx,
         )
-        if guard.decision != HookDecision.BLOCK:
+        if advice.repeat_chain is not None:
+            run.repeat_chain = advice.repeat_chain
+        if advice.additional_context:
+            # Appended, not returned in place of the calls: the batch still runs. The
+            # model reads this alongside the result it was about to fetch again.
+            run.action_errors = [*(run.action_errors or []), advice.additional_context]
+
+        # The idle backstop. Not "this action repeats" — many *different* measurements
+        # with nothing changed between them is the shape that actually consumed runs of
+        # 65, 300 and 650 turns, and no repeat detector can see it because every command
+        # differs. Judged on observable state, so a turn that changes something is never
+        # caught here however much it repeats.
+        idle_turns = getattr(run, "idle_turns", 0)
+        if idle_turns < _IDLE_TURNS_BEFORE_BLOCKING or await self._turn_will_change(run, decision):
             run.no_progress_rounds = 0
             return calls
 
         run.no_progress_rounds += 1
-        reason = guard.reason or "No-progress guard blocked an unchanged successful action."
+        reason = (
+            f"No-progress guard: {idle_turns} turns in a row have changed nothing and this "
+            f"turn proposes only more inspection."
+        )
 
         # Terminating is the right call for an agent circling work it has already
         # done, and the wrong one for an agent that has not produced anything yet:
         # the deliverable is then empty by construction, which is strictly worse
         # than spending a few more of its steps. Observed on ProgramBench — three
         # repeated recon reads ended a 200-step run at step 8 with no source file
-        # written at all. Re-reading docs while forming a plan is normal; the guard
-        # still blocks each repeat and pushes back, it just does not pull the plug
-        # until the agent has changed something at least once.
-        # The other shape of no progress: not one action repeated, but many different
-        # measurements with nothing changed between them. The repeat guard cannot see it —
-        # every command differs — and it is what three runs actually did, for 65, 300 and
-        # 650 turns. Blocked here so the next turn has to be a change.
-        idle_turns = getattr(run, "idle_turns", 0)
-        if idle_turns >= _IDLE_TURNS_BEFORE_BLOCKING and not await self._turn_will_change(run, decision):
-            run.round_step = run.step
-            await self._post_step(
-                run.task_id, run.step, run.ctx, run.messages,
-                reasoning=decision["reasoning"], plan=[],
-                step_tokens=decision["step_tokens"], done=False,
-            )
-            run.action_errors = [
-                f"Blocked: {idle_turns} turns in a row have changed nothing, and this "
-                f"turn proposes only more inspection. You have measured enough to act. "
-                f"Write the change you believe is right — an edit, a file, a build — even "
-                f"if you are not certain; a wrong edit is visible in one turn and "
-                f"reversible, while another measurement tells you what the last one did. "
-                f"If you genuinely cannot name a change to make, this difference is not "
-                f"the one to be working on: record it and move to the next item."
-            ]
-            run.step += 1
-            run.retry_now = True
-            return None
-
+        # written at all. So the strike budget below is widened until the run has
+        # changed something at least once.
         scaled = int(self.max_step * _NO_PROGRESS_STRIKE_BUDGET_FRACTION)
         strikes_allowed = max(_NO_PROGRESS_STRIKES_MIN, min(scaled, _NO_PROGRESS_STRIKES_MAX))
         if not run.produced_change:
@@ -1688,13 +1682,21 @@ class Agent(BaseModel):
             reasoning=decision["reasoning"], plan=[],
             step_tokens=decision["step_tokens"], done=False,
         )
-        suffix = (
-            " This is the second blocked proposal. Stop inspecting: take a state-changing "
-            "action (run/execute your code, edit a file) or call done_tool now — the next "
-            "repeated proposal will terminate this agent."
-            if run.no_progress_rounds == 2 else ""
+        blocked = (
+            f"{reason} You have measured enough to act. Write the change you believe is "
+            f"right — an edit, a file, a build — even if you are not certain; a wrong edit "
+            f"is visible in one turn and reversible, while another measurement only tells "
+            f"you what the last one did. If you genuinely cannot name a change to make, "
+            f"this is not the thing to be working on: record it and move to the next item."
         )
-        run.action_errors = [reason + suffix]
+        if run.no_progress_rounds >= strikes_allowed - 1:
+            blocked += (
+                " This is the last such turn that will be allowed: one more that changes "
+                "nothing terminates this agent."
+            )
+        # Appended: a repetition reminder raised earlier in this same call is still
+        # true, and the model should read both.
+        run.action_errors = [*(run.action_errors or []), blocked]
         run.step += 1
         run.retry_now = True
         return None
@@ -1704,17 +1706,6 @@ class Agent(BaseModel):
         """Return a deterministic signature for one capability invocation."""
         payload = {"kind": kind, "name": name, "args": args}
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-
-    @staticmethod
-    async def _progress_policy(route: Any) -> Optional[str]:
-        """Read an explicit Tool policy; other capability kinds use hook defaults."""
-        if not route or route[0] != "tool":
-            return None
-        info = await tool_manager.get_info(route[1])
-        if info is None:
-            return None
-        instance = getattr(info, "instance", None)
-        return getattr(instance, "progress_policy", None) or getattr(info, "progress_policy", None)
 
     @staticmethod
     async def _workspace_fingerprint(ctx: Optional["AgentContext"]) -> str:
@@ -1812,9 +1803,14 @@ class Agent(BaseModel):
                 return True
         return bool(run.last_fingerprint is not None and fingerprint != run.last_fingerprint)
 
-    async def _record_action_evidence(self, run: "_AgentRun") -> None:
-        """Remember successful results from the drained round at its final workspace state."""
-        plans = {item.get("id"): item for item in run.step_plan}
+    async def _record_round_outcome(self, run: "_AgentRun") -> None:
+        """Update the action mix and the idle streak from the drained round.
+
+        The per-signature evidence this used to accumulate fed the classification guard
+        that blocked repeats. Repetition is now advised on from the proposed batch, so
+        nothing read the evidence — and it retained every successful tool output for the
+        life of the run to answer a question no longer asked.
+        """
         fingerprint = await self._workspace_fingerprint(run.ctx)
 
         # Action mix and the idle streak, updated once per drained round.
@@ -1826,24 +1822,6 @@ class Agent(BaseModel):
             run.observations += 1
             run.idle_turns += 1
         run.last_fingerprint = fingerprint
-        for outcome in run.round_outcomes:
-            if outcome.get("error") or outcome.get("is_done"):
-                continue
-            plan = plans.get(outcome.get("id"))
-            if not plan:
-                continue
-            try:
-                args = json.loads(plan.get("args") or "{}")
-            except (TypeError, ValueError):
-                args = {}
-            signature = self._action_signature(
-                str(plan.get("type") or "tool"), str(plan.get("name") or ""), args,
-            )
-            run.action_evidence[signature] = {
-                "success": True,
-                "workspace_fingerprint": fingerprint,
-                "output": outcome.get("output"),
-            }
 
     async def _handle_extra_event(self, run: "_AgentRun", msg: Any) -> None:
         """Handle a non-action inbox message (escalation, progress). Leaf agents receive

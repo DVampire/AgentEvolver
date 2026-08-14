@@ -31,6 +31,8 @@ class WebFetcherTool(Tool):
     """A tool for fetching web content asynchronously."""
 
     name: str = "web_fetcher_tool"
+    #: one network round trip plus the provider's own latency.
+    call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
