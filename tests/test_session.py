@@ -1,11 +1,13 @@
-"""Session: context conversion, the manifest, and staging a run's attachments.
+"""A context keeps its lineage across module boundaries, and an attachment stays out of the workspace.
 
-Two rules here are load-bearing and easy to break silently. Converting a context
-between module types must preserve lineage — a tool that has lost
-``parent_session_id`` cannot find the parent to escalate to. And an attachment
-from outside the session is copied into ``log_root/inputs``, never the
-workspace: the workspace holds the agent's deliverable, and where a run's
-workspace is packaged up, an ``inputs/`` directory ships with the work.
+Contexts are converted every time work crosses from one module type to another,
+and each conversion is a chance to drop a field that only one subclass declares.
+``parent_session_id`` is the one that matters: a tool that has lost it cannot
+name who dispatched it, and the escalation channel has no other way to find the
+parent. The second rule is about where a run's inputs live — an attachment from
+outside the session is copied into ``log_root/inputs``, never the workspace,
+because the workspace holds the agent's deliverable and anything left there
+ships with the work when a run's workspace is packaged up.
 """
 
 from pathlib import Path
@@ -27,23 +29,56 @@ class WithLineage(BaseContext):
     subtask_id: str = None
 
 
-# ------------------------------------------------------------------ contexts
+# --------------------------------------------------------------------------- #
+# Creating a context
+# --------------------------------------------------------------------------- #
 def test_a_created_context_gets_a_unique_id():
+    """``ctx.id`` is the key memory, budgets and todos are filed under, so two
+    contexts sharing one would silently merge two runs' state into one pile."""
     assert BaseContext.create().id != BaseContext.create().id
 
 
 def test_a_created_context_starts_with_empty_payloads():
+    """Empty *and* not shared. These are dict fields on a model that is created
+    thousands of times; a single mutable default would make one run's ``extra``
+    visible to every other, which reads as memory leaking between sessions."""
     ctx = BaseContext.create(name="thing")
     assert ctx.name == "thing"
     assert ctx.input == {} and ctx.extra == {}
 
 
+def test_a_context_deliberately_has_no_workspace_root_field():
+    """The working directory is owned by the global config, not carried per-context;
+    a field here would let two sources of truth drift apart."""
+    assert "workspace_root" not in BaseContext.model_fields
+
+
+def test_a_session_context_accepts_the_extra_fields_managers_attach():
+    """SessionContext is built by the gateway with fields the model never declared
+    (``workspace_root`` among them). Under the default strict config that raises at
+    session creation — the one moment where a failure looks like the gateway itself
+    being broken."""
+    ctx = SessionContext(id="s1", anything="allowed")
+    assert ctx.anything == "allowed"
+
+
+# --------------------------------------------------------------------------- #
+# Converting one between module types
+# --------------------------------------------------------------------------- #
 def test_converting_from_nothing_produces_a_usable_context():
+    """``from_context(None)`` is the entry point for a direct run with no caller.
+    It has to mint a real context, not a half-built one whose ``extra`` is None."""
     ctx = BaseContext.from_context(None)
     assert ctx.id and ctx.input == {} and ctx.extra == {}
 
 
 def test_conversion_carries_the_identity_and_payload_across():
+    """The id survives, so the trace and memory attached to it stay attached.
+
+    A conversion that minted a fresh id would look harmless — every field still
+    present, nothing raised — and would detach the work from everything already
+    recorded against it.
+    """
     source = BaseContext(id="s1", name="orig", input={"task": "x"}, extra={"k": "v"})
     converted = SessionContext.from_context(source)
     assert converted.id == "s1"
@@ -67,33 +102,37 @@ def test_lineage_survives_conversion_through_extra():
 
 
 def test_an_existing_extra_value_is_not_overwritten_by_lineage():
+    """``extra`` is the more specific answer: it was set deliberately by whoever
+    built this context, while the field is whatever the source class happened to
+    carry. Copying the field over it would rewrite a deliberate hand-off."""
     source = WithLineage(id="s1", parent_session_id="from-field",
                          extra={"parent_session_id": "already-set"})
     assert BaseContext.from_context(source).extra["parent_session_id"] == "already-set"
 
 
 def test_absent_lineage_is_not_invented():
+    """A top-level run has no parent, and ``extra`` carrying a None under that key
+    is not the same as the key being absent — callers test for presence."""
     assert "parent_session_id" not in BaseContext.from_context(BaseContext(id="s1")).extra
 
 
-def test_a_context_deliberately_has_no_workspace_root_field():
-    """The working directory is owned by the global config, not carried per-context;
-    a field here would let two sources of truth drift apart."""
-    assert "workspace_root" not in BaseContext.model_fields
-
-
-def test_a_session_context_accepts_the_extra_fields_managers_attach():
-    ctx = SessionContext(id="s1", anything="allowed")
-    assert ctx.anything == "allowed"
-
-
-# ------------------------------------------------------------------ manifest
+# --------------------------------------------------------------------------- #
+# The manifest that makes a session findable again
+# --------------------------------------------------------------------------- #
 class FakeSandbox:
     def __init__(self, root):
         self.project_root = str(root)
 
 
 def test_the_manifest_records_a_session_s_identity(tmp_path):
+    """This file is the whole reason a session survives a restart.
+
+    The registry is in memory; the manifest on disk is what the gateway globs for
+    when it comes back up. It is written by the shared session layer rather than
+    by the gateway so a locally-started run is exactly as discoverable as one the
+    browser created — when only the gateway wrote it, the same work was silently
+    second-class depending on how it was launched.
+    """
     import json
 
     write_session_manifest(FakeSandbox(tmp_path), session_id="s1", owner="alice", name="my project")
@@ -132,7 +171,9 @@ def test_an_unwritable_project_root_does_not_fail_the_run(tmp_path):
     write_session_manifest(FakeSandbox(blocker / "root"), session_id="s1")  # must not raise
 
 
-# ------------------------------------------------------------------- staging
+# --------------------------------------------------------------------------- #
+# Staging a run's attachments
+# --------------------------------------------------------------------------- #
 @pytest.fixture
 def roots(tmp_path, monkeypatch):
     workspace = tmp_path / "workspace"
@@ -145,6 +186,12 @@ def roots(tmp_path, monkeypatch):
 
 
 def test_an_outside_attachment_is_copied_into_the_inputs_directory(roots, tmp_path):
+    """A task document handed in from a checkout is not readable by the agent.
+
+    ``check_session_path`` allows only the session's own roots, so passing the
+    original path through would give the agent a file it is refused permission to
+    open — reported as a missing file, from a path that plainly exists.
+    """
     workspace, log = roots
     source = tmp_path / "elsewhere" / "task.md"
     source.parent.mkdir()
@@ -176,11 +223,19 @@ def test_a_file_already_inside_the_workspace_is_left_where_it_is(roots):
 
 
 def test_a_missing_path_is_passed_through_so_the_agent_can_report_it(roots, tmp_path):
+    """Staging is not the place to adjudicate a typo: refusing here fails the whole
+    submission, while passing it on lets the agent say which file it could not find."""
     missing = str(tmp_path / "gone.md")
     assert stage_input_files(None, {"files": [missing]})["files"] == [missing]
 
 
 def test_several_attachments_keep_distinct_names_even_when_they_collide(roots, tmp_path):
+    """Two files called ``task.md`` from different directories are ordinary.
+
+    Names are taken from the source, so without the positional prefix the second
+    copy silently overwrites the first and the agent reads the same document
+    twice — with the right number of files and the wrong contents.
+    """
     first = tmp_path / "a" / "task.md"
     second = tmp_path / "b" / "task.md"
     for path in (first, second):
@@ -198,10 +253,18 @@ def test_input_without_files_is_returned_unchanged(roots):
 
 
 def test_a_non_list_files_value_is_left_alone(roots):
+    """Every input reaching a run passes through here, including ones where
+    ``files`` means something else entirely to whoever wrote the caller."""
     assert stage_input_files(None, {"files": "not-a-list"})["files"] == "not-a-list"
 
 
 def test_staging_does_not_mutate_the_caller_s_input(roots, tmp_path):
+    """The caller keeps its dict — to retry with, to log, to submit again.
+
+    Rewriting it in place would make a second submission stage the already-staged
+    copies, and the first one to be retried after a session ended would point at
+    a directory that had been cleaned up.
+    """
     source = tmp_path / "task.md"
     source.write_text("x")
     original = {"files": [str(source)]}

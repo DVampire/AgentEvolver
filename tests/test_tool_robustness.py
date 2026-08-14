@@ -1,25 +1,26 @@
-import os
-"""Regression tests for tool-layer robustness fixes.
+"""A tool result must describe what happened, at a size and a shape the agent can act on.
 
-Three papercuts observed in a real MetaAgent run, each fixed and pinned here:
+Every case here began as a run that went wrong while every component reported success.
+`git commit` exited 1 with "nothing added to commit" — which means the work was *already*
+committed — and, labelled a failed action, sent the agent into eleven retries of the same
+commit, spending about 40 of its 65 commands. A `strings` call against a 31KB binary
+returned 14,419,441 characters, which went into memory and made every later prompt about
+4.3M tokens against a 1,048,576 limit, until the run died of consecutive 400s naming
+neither the command nor the size. A model call that left out one argument arrived as
+"Action failed" with a raw TypeError inside it. A screen-drawing program run without a
+terminal refused to start — and so did the reconstruction being compared against it, so
+the two agreed and the comparison said nothing.
 
-1. A model tool call that omits a required parameter (e.g. ``done_tool`` without
-   ``result``) used to raise a raw ``TypeError`` out of the central dispatch and
-   surface as an opaque "Action failed" — now it returns a clean, recoverable
-   Response naming the missing parameter.
-2. ``bash_tool`` used to mark every non-zero exit code as ``success=False``, so
-   ordinary diagnostics (``grep -c`` with no match → exit 1, ``ls missing`` →
-   exit 2) were mislabeled as failed actions. A command that runs to completion is
-   now a successful observation with the exit code carried in ``data``/message.
-4. That same fix reached only the *local* execution path; commands routed into a
-   peer sandbox still returned ``success=ExecResult.success``, i.e. non-zero exit
-   → failed action. ProgramBench runs entirely through the sandbox path, and the
-   asymmetry cost a real run 11 points: after ``compile.sh`` left an untracked
-   binary, ``git add <files> && git commit`` exited 1 with "nothing added to
-   commit" — the work was *already committed* — and the agent, told its action had
-   failed, retried the same commit 11 times.
+One idea runs through all of them: this layer decides what the agent believes about what
+it just did. A command that ran and returned a verdict is an observation and its exit code
+is data; only being unable to run it at all is a failure. Output is bounded once, in the
+dispatch funnel, and says what it dropped so the next command can be narrower. Terminal
+bytes are rendered into the screen they describe rather than passed on as wire protocol.
+None of these raise when they are wrong. The agent just acts on a false description.
 """
+
 import asyncio
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -27,12 +28,12 @@ import pytest
 from agentevolver.config import config
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.default.bash import BashTool
-from agentevolver.utils.terminal import render_terminal
 from agentevolver.tool.default.done import DoneTool
+from agentevolver.utils.terminal import render_terminal
 
 
 # --------------------------------------------------------------------------- #
-# Fix #2 — missing/invalid arguments become a recoverable tool error
+# A malformed tool call is answered, not raised
 # --------------------------------------------------------------------------- #
 def _manager_for(tmp_path, instance):
     manager = ToolContextManager(base_dir=str(tmp_path))
@@ -45,7 +46,15 @@ def _manager_for(tmp_path, instance):
 
 
 @pytest.mark.asyncio
-async def test_missing_required_arg_returns_clean_error_not_typeerror(tmp_path):
+async def test_a_call_missing_a_parameter_comes_back_as_a_correctable_answer(tmp_path):
+    """A model that forgot an argument can supply it — if it is told which one.
+
+    Binding straight to the tool's signature raises a TypeError out of the central
+    dispatch, and the agent receives "Action failed:" wrapped around
+    "__call__() missing 1 required positional argument". That names an internal frame
+    rather than the mistake, so the next attempt is a guess at what went wrong rather
+    than the same call with one more field.
+    """
     manager = _manager_for(tmp_path, DoneTool())
     # done_tool requires both `reasoning` and `result`; omit `result`.
     resp = await manager(name="done_tool", input={"reasoning": "all conditions met"})
@@ -58,7 +67,9 @@ async def test_missing_required_arg_returns_clean_error_not_typeerror(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_valid_call_still_dispatches(tmp_path):
+async def test_a_well_formed_call_still_reaches_the_tool(tmp_path):
+    """The control. A binding check that rejected everything would satisfy the test above
+    and quietly disable every tool in the system."""
     manager = _manager_for(tmp_path, DoneTool())
     resp = await manager(name="done_tool", input={"reasoning": "r", "result": "ok"})
     assert resp.success is True
@@ -66,7 +77,13 @@ async def test_valid_call_still_dispatches(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_in_body_errors_are_not_masked_by_bind_check(tmp_path):
+async def test_a_failure_inside_the_tool_is_not_reported_as_a_bad_call(tmp_path):
+    """The bind check must catch argument errors and nothing else.
+
+    A tool body that raises TypeError itself — and plenty do, on bad input — would
+    otherwise be described to the model as "invalid arguments", which is advice to change
+    a call that was already correct. Worse, the real exception never reaches the log.
+    """
     class _Boom(DoneTool):
         async def __call__(self, reasoning: str, result: str, **kwargs):
             raise ValueError("boom inside body")
@@ -79,9 +96,9 @@ async def test_in_body_errors_are_not_masked_by_bind_check(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Fix #3 — a bash command that runs is a success, exit code is an observation
+# A command that ran is an observation; its exit code is part of what was observed
 # --------------------------------------------------------------------------- #
-def test_bash_nonzero_exit_is_successful_observation(tmp_path):
+def test_a_nonzero_exit_is_an_observation_not_a_tool_failure(tmp_path):
     config.workspace_root = str(tmp_path)
     tool = BashTool(permission_mode="danger_full_access")
     ctx = SimpleNamespace(extra={})
@@ -93,7 +110,7 @@ def test_bash_nonzero_exit_is_successful_observation(tmp_path):
     assert "Exit code: 1" in resp.message
 
 
-def test_bash_true_failure_still_visible(tmp_path):
+def test_a_command_that_really_failed_is_still_fully_legible(tmp_path):
     config.workspace_root = str(tmp_path)
     tool = BashTool(permission_mode="danger_full_access")
     ctx = SimpleNamespace(extra={})
@@ -106,7 +123,10 @@ def test_bash_true_failure_still_visible(tmp_path):
     assert "STDERR" in resp.message
 
 
-def test_bash_empty_command_is_a_tool_error(tmp_path):
+def test_an_empty_command_is_a_tool_error(tmp_path):
+    """The other side of the line. Nothing ran, so there is no observation to report —
+    and a shell handed whitespace exits 0, which as a "successful observation" would tell
+    the agent its command worked."""
     config.workspace_root = str(tmp_path)
     tool = BashTool(permission_mode="danger_full_access")
     ctx = SimpleNamespace(extra={})
@@ -115,7 +135,7 @@ def test_bash_empty_command_is_a_tool_error(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Fixes #4-#7 — one execution path, and it keeps the contract
+# One execution path, and the contracts the second one used to break
 # --------------------------------------------------------------------------- #
 # These tools each used to carry a second, sandbox-routing branch that decided at call
 # time whether to act on the local filesystem or inside a bound peer container. Each
@@ -173,6 +193,8 @@ def test_search_tools_report_no_matches_as_an_answer(tmp_path):
 
 
 def test_search_tools_find_what_is_there(tmp_path):
+    """The control for the pair above: a search that reported "no matches" for everything
+    would satisfy them and leave the agent unable to find a file it just wrote."""
     from agentevolver.tool.default.glob_search import GlobSearchTool
     from agentevolver.tool.default.grep_search import GrepSearchTool
 
@@ -225,6 +247,9 @@ def test_list_dir_honours_an_explicit_ignore(tmp_path):
 # code_interpreter: kernel by default, one-shot when the kernel is the wrong lens
 # --------------------------------------------------------------------------- #
 def test_code_interpreter_defaults_to_the_kernel():
+    """State across calls is the point of an interpreter — a loaded dataframe survives to
+    the next question. One-shot is the exception a caller asks for, so the default has to
+    stay the kernel or every multi-step analysis starts from nothing."""
     from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
 
     assert CodeInterpreterTool().use_kernel is True
@@ -272,6 +297,9 @@ def test_one_shot_nonzero_exit_is_an_observation(tmp_path):
 
 
 def test_one_shot_rejects_a_language_it_cannot_run(tmp_path):
+    """Refused by name rather than attempted and reported as a syntax error, which is
+    what handing the code to the wrong interpreter would produce — an error about the
+    code, for a problem that has nothing to do with the code."""
     from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
 
     config.workspace_root = str(tmp_path)
@@ -282,7 +310,7 @@ def test_one_shot_rejects_a_language_it_cannot_run(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Fix #7 — a timeout says what happened and what to do about it
+# A timeout says what happened and what to do about it
 # --------------------------------------------------------------------------- #
 def test_a_timeout_names_the_cause_and_suggests_the_fix(tmp_path):
     """A bare TimeoutError once reached the generic handler, whose str() is empty, so
@@ -299,7 +327,9 @@ def test_a_timeout_names_the_cause_and_suggests_the_fix(tmp_path):
     assert "124" in resp.message
 
 
-# --- fix #8: sandbox command output had its line structure destroyed -------------
+# --------------------------------------------------------------------------- #
+# Sandbox output keeps the line structure it was written with
+# --------------------------------------------------------------------------- #
 #
 # opensandbox returns ExecutionLogs.stdout as a list of OutputMessage, one per line
 # with the trailing newline stripped. _logs_to_str joined them with "" on the
@@ -317,6 +347,11 @@ class _Msg:
 
 
 def test_sandbox_logs_rejoin_lines_with_newlines():
+    """The chunks look like stream fragments and are not: they are lines with the
+    terminator already removed. Joining them the way raw chunks would be joined is the
+    single most plausible wrong reading, and it produces text that is not corrupt, merely
+    all on one line — `ls -la` unreadable, a 21-line `--help` collapsed to one, and
+    anything downstream that splits on newlines working from glued-together text."""
     from agentevolver.sandbox.default.base import _logs_to_str
 
     # printf 'A\nB\nC\n' comes back as three chunks, newlines already stripped.
@@ -341,13 +376,19 @@ def test_sandbox_logs_preserve_leading_whitespace():
 
 
 def test_sandbox_logs_pass_through_a_plain_string():
+    """The field is typed as either a string or a list of chunks, and which one arrives
+    depends on the call. A rejoin that assumed the list form would iterate a string
+    character by character and return it with a newline between every letter."""
     from agentevolver.sandbox.default.base import _logs_to_str
 
     assert _logs_to_str("already\njoined") == "already\njoined"
     assert _logs_to_str(None) == ""
 
 
-def test_execution_to_result_keeps_multiline_stdout():
+def test_the_assembled_result_keeps_its_line_breaks():
+    """The rejoin above is only worth anything if the assembly step actually uses it —
+    this is the function every sandboxed command's output travels through on its way to
+    the agent, and it is where a second, naive join would live."""
     from agentevolver.sandbox.default.base import execution_to_result
 
     execution = SimpleNamespace(
@@ -357,7 +398,9 @@ def test_execution_to_result_keeps_multiline_stdout():
     assert execution_to_result(execution).stdout == "line one\nline two"
 
 
-# --- fix #10: sandbox writes produced unreadable files ---------------------------
+# --------------------------------------------------------------------------- #
+# A file a sandbox writes has to be readable by whoever runs it next
+# --------------------------------------------------------------------------- #
 #
 # opensandbox renders the `mode` int in decimal and parses that string as base 8, so a
 # genuine 0o644 arrived as "420" -> 0o420 (-r---w----) and 0o755 arrived as "493",
@@ -366,6 +409,10 @@ def test_execution_to_result_keeps_multiline_stdout():
 # as the non-root user `agent`, so the graded build could not read its own source.
 
 def test_sandbox_write_file_sends_octal_digits_not_the_int():
+    """The wire format is a decimal-looking integer that the server parses as base 8, so
+    the number that has to go out is the one a human would *write*, not the one Python
+    means. Sending `0o644` renders as "420" and arrives as 0o420 — a file the owner
+    cannot read — while `0o755` renders as "493" and fails the call outright."""
     from agentevolver.sandbox.default.base import OpenSandbox
 
     sent = {}
@@ -414,6 +461,9 @@ def test_base_sandbox_write_file_applies_the_mode():
     assert "chmod 777 /workspace/x.c" in ran[0]
 
 
+# --------------------------------------------------------------------------- #
+# A tool hands back results, and keeps its own belongings out of the workspace
+# --------------------------------------------------------------------------- #
 def test_grep_search_skips_binaries(tmp_path):
     """A compiled binary can match any pattern by coincidence, and the hit is a line of
     mojibake. Searching a workspace holding a reference executable for "Usage" returned
@@ -449,7 +499,9 @@ def test_todo_state_lives_with_the_other_tools_state(tmp_path):
     assert os.listdir(config.workspace_root) == []
 
 
-# --- fix #11: one command's output could make the prompt unsendable --------------
+# --------------------------------------------------------------------------- #
+# One command's output cannot cost the run its context window
+# --------------------------------------------------------------------------- #
 #
 # A `strings` call against a 31KB binary returned 14,419,441 characters. That result was
 # handed to the agent whole and stored in its memory, so every turn afterwards asked for
@@ -457,6 +509,9 @@ def test_todo_state_lives_with_the_other_tools_state(tmp_path):
 # reported cause named neither the command nor the size.
 
 def test_clip_output_leaves_short_output_alone():
+    """Almost every command is this case. A clipper that appended its notice
+    unconditionally would tell the agent that ordinary, complete output was an excerpt,
+    and invite it to re-run narrower commands to recover text it already had."""
     from agentevolver.tool.types import clip_output
 
     assert clip_output("short") == "short"
@@ -535,7 +590,9 @@ def test_memory_caps_one_entry_even_if_a_tool_does_not():
     assert _RECORD_DETAIL_MAX < 32_000, "must be tighter than a single tool's own limit"
 
 
-# --- fix #12: a shell with no terminal cannot observe terminal behaviour ----------
+# --------------------------------------------------------------------------- #
+# A shell with no terminal cannot observe terminal behaviour
+# --------------------------------------------------------------------------- #
 #
 # A program that draws a screen, prompts, or colourises takes a different path when its
 # output is not a terminal — usually refusing to start. Comparing two such programs
@@ -555,6 +612,10 @@ def test_tty_is_off_by_default(tmp_path):
 
 
 def test_tty_gives_the_command_a_terminal(tmp_path):
+    """`isatty()` is the check the programs under study make, so it is the one that
+    decides whether a full-screen program draws anything at all. Any weaker arrangement —
+    a pipe, a pty that is not on the program's own stdout — leaves it refusing to start,
+    which reads as "this program does nothing"."""
     config.workspace_root = str(tmp_path)
     resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
         command="python3 -c \"import sys; print(sys.stdout.isatty())\"",
@@ -606,6 +667,10 @@ def test_a_tty_command_that_never_exits_times_out_with_advice(tmp_path):
 
 
 def test_a_per_call_timeout_overrides_the_default(tmp_path):
+    """The tool's own default is generous on purpose — a build needs it. A caller that
+    knows this particular command should finish in a second is the one who can say so,
+    and without the override every probe of a program that hangs costs the full default
+    before the agent learns anything."""
     config.workspace_root = str(tmp_path)
     resp = asyncio.run(BashTool(permission_mode="danger_full_access", timeout=600)(
         command="sleep 30", timeout=1, ctx=SimpleNamespace(extra={})))
@@ -613,7 +678,9 @@ def test_a_per_call_timeout_overrides_the_default(tmp_path):
     assert "timed out after 1 seconds" in resp.message
 
 
-# --- fix #13: a terminal displays a screen, not a byte stream ---------------------
+# --------------------------------------------------------------------------- #
+# A terminal displays a screen, not a byte stream
+# --------------------------------------------------------------------------- #
 #
 # The bytes a full-screen program writes are instructions to a device — move here, set
 # this colour, erase to end of line. What a person sees is the screen those instructions
@@ -622,6 +689,9 @@ def test_a_per_call_timeout_overrides_the_default(tmp_path):
 # sequences, which filled the output budget and got skimmed past as noise.
 
 def test_the_screen_is_returned_not_the_escape_sequences():
+    """The cursor move is why stripping escapes is not enough: "there" is written at row
+    5, column 10, so its position is information a filter would discard while keeping the
+    word. Interpreting the stream is the only way to end up with what was displayed."""
     data = b"\x1b[2J\x1b[H" + b"hello" + b"\x1b[5;10Hthere"
     out = render_terminal(data)
     assert "hello" in out and "there" in out
@@ -646,6 +716,9 @@ def test_colour_and_boldness_are_reported_not_dropped():
 
 
 def test_a_screen_that_uses_no_colour_says_nothing_about_colour():
+    """The colour summary is an observation about the program, so it must not appear for
+    a program that made none. A default that reported the terminal's own foreground would
+    have the agent comparing two programs on an attribute neither one set."""
     out = render_terminal(b"plain text\r\n")
     assert "plain text" in out
     assert "red" not in out and "green" not in out
@@ -660,6 +733,9 @@ def test_output_longer_than_the_screen_keeps_its_scrollback():
 
 
 def test_a_tty_command_reports_the_screen(tmp_path):
+    """End to end through the tool, not the renderer alone: the pty path has to hand its
+    bytes to the renderer, and the dimensions are stated because a screen is only
+    interpretable against the size it was laid out for."""
     config.workspace_root = str(tmp_path)
     resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
         command="printf 'a\\nb\\n'", tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
@@ -679,6 +755,9 @@ def test_a_program_that_clears_on_exit_still_reports_what_it_drew():
 
 
 def test_a_screen_that_ends_with_content_is_not_labelled_as_cleared():
+    """The counterweight to rescuing the fullest frame. An ordinary command's output is
+    its final state, and labelling that "as it appeared while running" would suggest the
+    program cleared up after itself when it never drew a screen at all."""
     out = render_terminal(b"still here\r\n")
     assert "still here" in out
     assert "as it appeared while running" not in out

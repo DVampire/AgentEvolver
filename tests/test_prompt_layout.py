@@ -1,21 +1,24 @@
-"""The capability layout is stated in five places; they must not drift apart.
+"""The capability layout, stated in five places that must not drift apart.
 
-Merging four blocks into `<capability-context>` meant editing 27 templates, a stylesheet
-whose selectors were direct-child, a renderer with a hardcoded container list, a splitter
-with a hardcoded tag list, and two documents that told future agents the old shape. Every
-one was edited by hand, and the renderer was missed — the container was flattened into a
-wall of text, which is a functional break, not a cosmetic one, and no test failed.
+Templates, a stylesheet, a renderer, a splitter, and the documents future agents are
+generated from. Merging four blocks into `<capability-context>` meant editing all of them
+by hand; the renderer was missed, which flattened the catalog into a wall of text — a
+functional break, and nothing went red.
 
-Each check below derives its expectation from the templates rather than restating it, so
-a template that adopts a new leaf drags the stylesheet, the renderer and the splitter
-into the failure with it.
+Expectations are derived from the templates rather than restated, so a template adopting a
+new leaf drags the stylesheet, the renderer and the splitter into the failure with it.
 """
 
-import re
 from pathlib import Path
-
 import pytest
+import re
 
+from agentevolver.prompt.types import parse_prompt_file
+
+
+# ---------------------------------------------------------------------------
+# from test_prompt_structure_agrees_across_files.py
+# ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
             sorted((ROOT / "extension" / "prompt").glob("*.html"))
@@ -144,3 +147,70 @@ def test_the_agent_authoring_guide_describes_the_shape_it_will_be_read_against()
     assert CONTAINER in guide, "the agent-authoring guide never mentions the container"
     assert "as **siblings** of `<agent-context>`" not in guide, \
         "the guide still describes the pre-merge sibling layout"
+
+# ---------------------------------------------------------------------------
+# from test_prompt_documents_capabilities.py
+# ---------------------------------------------------------------------------
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
+            sorted((ROOT / "extension" / "prompt").glob("*.html"))
+
+
+def _inline(text: str, base: Path) -> str:
+    """Resolve `<module src>` includes.
+
+    Shared rules live in modules, so a template can document something without the word
+    appearing in its own file. Checking the raw text alone reports four false failures.
+    """
+    def sub(match):
+        path = (base / match.group(1)).resolve()
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+    return re.sub(r'<module src="([^"]+)"></module>', sub, text)
+
+
+def _with_capabilities():
+    for path in TEMPLATES:
+        config = parse_prompt_file(str(path))
+        if "capability-context" in (config.user_template or ""):
+            yield path, config
+
+
+def test_there_is_something_to_check():
+    """A scan that matches nothing passes vacuously."""
+    assert list(_with_capabilities()), "no template carries a capability catalog"
+
+
+@pytest.mark.parametrize("path", [p for p, _ in _with_capabilities()], ids=lambda p: p.name)
+def test_every_catalog_template_explains_the_changes_block(path):
+    config = parse_prompt_file(str(path))
+    system = _inline(config.system_template or "", path.parent)
+    assert ("capability-context-changes" in system
+            or "capability_context_changes" in system), (
+        f"{path.name} can receive a <capability-context-changes> block but never says so")
+
+
+@pytest.mark.parametrize("path", [p for p, _ in _with_capabilities()], ids=lambda p: p.name)
+def test_the_changes_block_is_described_as_an_amendment(path):
+    """"Supersedes what it names" and "replaces the catalog" are opposite instructions.
+
+    The block lists only what moved, so read as a replacement it would strip the model of
+    every capability the delta happens not to mention.
+    """
+    config = parse_prompt_file(str(path))
+    system = _inline(config.system_template or "", path.parent).lower()
+    assert any(word in system for word in ("amendment", "supersedes", "does not mention")), (
+        f"{path.name} names the block but does not say it amends rather than replaces")
+
+
+@pytest.mark.parametrize("path", [p for p, _ in _with_capabilities()], ids=lambda p: p.name)
+def test_the_explanation_sits_before_the_cache_breakpoint(path):
+    """In the system message, not beside the catalog.
+
+    The breakpoint is at `</capability-context>` in the user turn. Text placed after it
+    is re-read at full price on every step, and this text never changes.
+    """
+    config = parse_prompt_file(str(path))
+    user = config.user_template or ""
+    tail = user[user.index("</capability-context>"):]
+    assert "capability-context-changes" not in tail, (
+        f"{path.name} explains the block after the breakpoint, where it is not cacheable")

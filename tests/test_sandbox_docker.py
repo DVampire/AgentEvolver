@@ -1,8 +1,13 @@
-"""The docker sandbox backend.
+"""The docker backend's guarantees are the arguments it builds, so they are read here.
 
-These assert on the `docker` arguments the backend builds, because that is where its
-guarantees live: no network interface, the identity the image expects, the mounts a task
-needs, and one route out that the sandbox cannot reconfigure.
+`--network none`, `--user`, `--init`, the mounted relay socket: each one is a single
+argument, and dropping any of them removes an isolation property without changing
+anything the caller can see. A sandbox missing `--network none` still runs commands and
+still reports success; it just has the internet the run promised it did not.
+
+These build the argv and read it, so they run anywhere and on every commit. The
+counterpart that starts real containers and checks the same claims against a live daemon
+is `test_sandbox_container.py`, which needs Docker and is deselected by default.
 """
 
 import asyncio
@@ -20,6 +25,9 @@ def _pairs(args, flag):
     return [args[i + 1] for i, a in enumerate(args) if a == flag]
 
 
+# --------------------------------------------------------------------------- #
+# What the container is given, and what it is denied
+# --------------------------------------------------------------------------- #
 def test_network_off_means_no_interface():
     """`--network none` is the guarantee: an unlisted host is not filtered, it is
     unreachable. An allowlist must not quietly restore an interface — allowed traffic
@@ -39,12 +47,18 @@ def test_identity_and_workdir_are_passed_through():
     assert _pairs(_args(), "--user") == []
 
 
-def test_mounts_are_passed_through():
+def test_every_requested_mount_reaches_the_container():
+    """Both shapes matter. A task mount lands somewhere of the caller's choosing; the
+    framework checkout and the interpreter have to appear at their *host* paths, because
+    the forwarder inside the container is started from those paths verbatim."""
     args = _args(mounts={"/host/repo": "/AgentEvolver", "/host/env": "/host/env"})
     assert "/host/repo:/AgentEvolver" in _pairs(args, "-v")
     assert "/host/env:/host/env" in _pairs(args, "-v")
 
 
+# --------------------------------------------------------------------------- #
+# The one route out
+# --------------------------------------------------------------------------- #
 def test_an_egress_socket_brings_the_socket_and_the_proxy_variables():
     """Set for the whole container on purpose: the point is that everything inside it —
     the agent's curl and git as much as the framework's own model calls — has one route
@@ -67,10 +81,17 @@ def test_no_proxy_variables_without_a_policy():
 
 
 def test_caller_env_wins_over_the_injected_proxy():
+    """The injection is a default, not an override. A caller that has already worked out
+    how this container reaches the outside — a corporate proxy, a test double — knows
+    something the backend does not, and silently replacing its value would route traffic
+    somewhere the caller never named."""
     args = _args(network=False, egress_socket="/tmp/x.sock", env={"HTTPS_PROXY": "http://other:1"})
     assert "HTTPS_PROXY=http://other:1" in _pairs(args, "-e")
 
 
+# --------------------------------------------------------------------------- #
+# Naming a container, and keeping it alive long enough to be used
+# --------------------------------------------------------------------------- #
 def test_the_container_outlives_the_image_entrypoint():
     """A sandbox is a place to exec into; an image whose entrypoint exits would otherwise
     take the sandbox down with it."""
@@ -101,6 +122,9 @@ def test_container_name_survives_an_awkward_key():
     assert "-" + "-" not in name and not name.rstrip("0123456789abcdef").endswith((".-", "_-", "--"))
 
 
+# --------------------------------------------------------------------------- #
+# What comes back from a command, and what is torn down afterwards
+# --------------------------------------------------------------------------- #
 def test_removal_is_by_exact_name():
     """Never `--filter ancestor=<image>`: that matches every container built from the
     image, including long-lived ones belonging to someone else."""
@@ -148,6 +172,9 @@ def test_a_nonzero_exit_is_an_answer_not_a_tool_failure():
 
 
 def test_a_timeout_is_reported_as_a_failure_naming_the_limit():
+    """The one case where the tool itself failed: no exit code, no output, nothing
+    observed. Naming the limit is what lets the agent tell "this needs longer" from
+    "this hangs", which are the only two things it can do about it."""
     async def fake_run(*_args, timeout=300.0):
         raise asyncio.TimeoutError
 
@@ -165,6 +192,9 @@ def test_a_timeout_is_reported_as_a_failure_naming_the_limit():
     assert "5s" in (result.error or "")
 
 
+# --------------------------------------------------------------------------- #
+# Starting the forwarder that carries the allowed traffic
+# --------------------------------------------------------------------------- #
 def test_an_egress_policy_without_a_mounted_framework_fails_loudly():
     """The forwarder that carries the traffic runs out of the mounted checkout. Silently
     starting without it would leave the sandbox believing it has a route to the model
@@ -217,6 +247,9 @@ def test_the_forwarder_is_run_as_a_script_with_isolated_sys_path():
     assert "--workdir" in exec_call and "/tmp" in exec_call
 
 
+# --------------------------------------------------------------------------- #
+# Reaping what a command leaves behind
+# --------------------------------------------------------------------------- #
 def test_the_container_gets_a_process_reaper():
     """PID 1 is `sleep infinity`, which does not reap. Without an init, anything a command
     leaves behind — the grandchildren of a killed process group, a backgrounded server, a

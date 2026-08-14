@@ -1,13 +1,16 @@
-"""Logger: session prefixing, the non-blocking file sink, and rebinding.
+"""Logging never blocks a run, and is never the thing that ends one.
 
-File I/O runs on a background thread precisely so logging never blocks the event
-loop, which makes the queue's overflow behaviour part of the contract: a full
-queue drops the *oldest* line rather than stalling the caller. The other rule is
-that logging can never be the thing that kills a run — an uninitialised logger,
-an unformattable message, and a full queue all have to be survivable.
+File writes happen on a background thread so a log line cannot stall the event
+loop, which makes the queue's overflow rule part of the contract rather than an
+implementation detail: a full queue drops its oldest line instead of making the
+caller wait. Every other case here is the same rule wearing a different hat — a
+module that logs at import time before ``initialize`` ran, a message whose
+``__str__`` raises, a ``shutdown`` with no file sink to stop. Session prefixing
+is what makes the resulting file readable at all: concurrent sessions share one
+log, and with no ``[session]`` tag their lines interleave indistinguishably.
 
-The global ``logger`` singleton is deliberately untouched; every test builds its
-own instance.
+The global ``logger`` singleton is deliberately untouched; ``a_logger()`` steps
+around the Singleton metaclass so no test can poison another's.
 """
 
 import logging
@@ -44,6 +47,8 @@ def log(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _clear_session():
+    # The session id is a contextvar, so it outlives the test that set it and
+    # would silently prefix the next one's lines.
     set_session_id(None)
     yield
     set_session_id(None)
@@ -63,7 +68,9 @@ def written(log, timeout=3.0):
     return ""
 
 
-# ------------------------------------------------------------------- session
+# --------------------------------------------------------------------------- #
+# Telling one session's lines from another's
+# --------------------------------------------------------------------------- #
 def test_the_session_id_starts_unset():
     assert get_session_id() is None
 
@@ -94,26 +101,47 @@ def test_a_rich_object_is_not_prefixed():
     assert a_logger()._prefix_msg(table) is table
 
 
-# --------------------------------------------------------------------- levels
+# --------------------------------------------------------------------------- #
+# Levels
+# --------------------------------------------------------------------------- #
 def test_the_level_enum_matches_the_standard_library():
+    """These values are handed straight to ``setLevel`` and to ``getattr(logging, …)``.
+
+    An enum that merely ordered its members correctly would read fine and filter
+    wrongly — a handler set to a home-grown ``ERROR`` would silently swallow
+    everything or nothing, with no error to trace it back from.
+    """
     assert LogLevel.INFO == logging.INFO
     assert LogLevel.ERROR == logging.ERROR
     assert LogLevel.CRITICAL == logging.CRITICAL
 
 
-# ---------------------------------------------------------------- file sink
+# --------------------------------------------------------------------------- #
+# The file sink
+# --------------------------------------------------------------------------- #
 def test_a_message_reaches_the_log_file(log):
+    """The call returning without raising proves nothing: the write happens on
+    another thread, so the file is the only place the outcome is visible."""
     log.info("hello from the test")
     assert "hello from the test" in written(log)
 
 
 @pytest.mark.parametrize("level", ["info", "warning", "error", "critical"])
 def test_every_level_reaches_the_file(log, level):
+    """Each level is a separately hand-written method, not one shared path.
+
+    ``info``/``warning``/``error``/``critical`` each prefix the message and
+    enqueue it themselves, so a level can be added — or edited — without the
+    enqueue, and the console keeps showing it while the file quietly loses it.
+    """
     getattr(log, level)(f"message at {level}")
     assert f"message at {level}" in written(log)
 
 
 def test_the_session_prefix_reaches_the_file(log):
+    """The prefix is applied by the level method, before the queue, not by the
+    writer thread — so a method that skips it produces a file whose lines cannot
+    be attributed even though the console output looked right."""
     set_session_id("sess-7")
     log.info("prefixed line")
     assert "[sess-7] prefixed line" in written(log)
@@ -146,7 +174,9 @@ def test_a_host_can_start_without_creating_a_log_file(tmp_path):
         instance.shutdown()
 
 
-# ---------------------------------------------------------------- resilience
+# --------------------------------------------------------------------------- #
+# Nothing here may take the run down
+# --------------------------------------------------------------------------- #
 def test_logging_before_initialize_is_dropped_not_raised():
     """A module logging at import time must not crash the process."""
     a_logger()._enqueue_log("info", "too early")  # must not raise
@@ -156,6 +186,8 @@ def test_a_full_queue_drops_the_oldest_line_rather_than_blocking(log):
     """Blocking here would stall the event loop the async sink exists to protect."""
     from queue import Queue
 
+    # Two slots and five lines: small enough that the overflow branch is the
+    # only one exercised, and the surviving pair identifies which end was cut.
     log._log_queue = Queue(maxsize=2)
     for n in range(5):
         log._enqueue_log("info", f"line {n}")
@@ -166,6 +198,12 @@ def test_a_full_queue_drops_the_oldest_line_rather_than_blocking(log):
 
 
 def test_an_unformattable_message_does_not_raise(log):
+    """Agents log arbitrary objects, and some of them raise when rendered.
+
+    A log call is not a place a caller checks for errors, so an exception
+    escaping from here surfaces as a failure of whatever was being logged about.
+    """
+
     class Explodes:
         def __str__(self):
             raise RuntimeError("cannot render")
@@ -173,7 +211,9 @@ def test_an_unformattable_message_does_not_raise(log):
     log._enqueue_log("info", "%s", Explodes())  # must not raise
 
 
-# ------------------------------------------------------------------- rebind
+# --------------------------------------------------------------------------- #
+# Moving the file sink under a session
+# --------------------------------------------------------------------------- #
 def test_rebinding_moves_later_lines_to_the_new_file(log, tmp_path):
     """A long-lived host initialises once, then binds a session."""
     log.info("before rebind")
@@ -190,6 +230,12 @@ def test_rebinding_moves_later_lines_to_the_new_file(log, tmp_path):
 
 
 def test_rebinding_to_the_same_path_keeps_the_existing_sink(log):
+    """Rebinding runs on every task, and most of them bind the session already bound.
+
+    Tearing the sink down and building it again would stop the writer thread
+    with lines still queued behind it — so the cost of treating this as a normal
+    rebind is dropped log lines on the busiest path there is.
+    """
     handler = log._file_handler
     thread = log._log_thread
     log.rebind(log._log_path)
@@ -204,12 +250,17 @@ def test_the_console_sink_survives_a_rebind(log, tmp_path):
     assert len(log.handlers) == before
 
 
-# ----------------------------------------------------------------- shutdown
+# --------------------------------------------------------------------------- #
+# Shutdown
+# --------------------------------------------------------------------------- #
 def test_shutdown_is_safe_before_any_file_sink_exists():
     a_logger().shutdown()  # must not raise
 
 
 def test_shutdown_stops_the_writer_thread(log):
+    """The writer is a daemon thread holding an open file handle. It would not keep
+    the process alive, but a shutdown that leaves it running leaves the last lines
+    unflushed and the handle open across a rebind."""
     log.info("last line")
     log.shutdown()
     assert not log._log_thread.is_alive()

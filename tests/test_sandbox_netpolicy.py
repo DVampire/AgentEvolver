@@ -1,8 +1,16 @@
-"""Egress policy and relay.
+"""Where a sandbox may reach is decided outside it, and every attempt is on the record.
 
-The claim these tests protect is "the work in this sandbox had no internet access". That
-is only worth anything if a missing rule fails closed, a denial cannot be talked around,
-and every attempt is on the record.
+The claim these protect is "the work in this sandbox had no internet access" — which a
+results file can only assert if a missing rule fails closed, a denial cannot be talked
+around from inside, and the attempts were counted. The enforcement lives on the host for
+that reason: the sandbox gets no interface at all and one mounted socket, so an unlisted
+host is unreachable rather than filtered.
+
+The failures this catches are quiet ones. A rule that parses wrong matches nothing and
+looks fine in the config file; a relay left running after its sandbox is gone is a
+listener for something that no longer exists; an audit that returns `{}` instead of
+`None` reports isolation that was never applied. None of those change what a run does
+until the day someone reads the run and believes it.
 """
 
 import asyncio
@@ -16,7 +24,7 @@ from agentevolver.sandbox.relay import EgressRelay, _parse_target, default_socke
 from agentevolver.sandbox.types import SandboxConfig
 
 
-# --------------------------------------------------------------------- policy
+# ------------------------------------------------------------ what a rule matches
 def test_unmatched_host_is_denied_when_the_network_is_closed():
     """Forgetting to list a host must fail closed, not open."""
     policy = NetworkPolicy(allow=["api.example.com"], default_allow=False)
@@ -25,6 +33,12 @@ def test_unmatched_host_is_denied_when_the_network_is_closed():
 
 
 def test_deny_beats_allow():
+    """The lists are written at different times by different people. `allow` tends to be
+    broad — a wildcard someone added to unblock themselves — and `deny` is the specific
+    exception carved out of it, so the order of evaluation decides whether the exception
+    means anything. The reason is asserted too: a denial the operator cannot trace back
+    to a rule cannot be corrected.
+    """
     policy = NetworkPolicy(allow=["*.example.com"], deny=["evil.example.com"], default_allow=True)
     assert policy.decide("api.example.com", 443).allowed is True
     decision = policy.decide("evil.example.com", 443)
@@ -42,6 +56,9 @@ def test_wildcard_covers_subdomains_but_not_the_bare_domain():
 
 
 def test_a_port_pinned_rule_does_not_leak_to_other_ports():
+    """Naming a port is the operator saying "this host, for this service". Ignoring the
+    port once a rule carries one turns every pinned entry into a bare host entry, and the
+    config still reads as though the restriction is in force."""
     policy = NetworkPolicy(allow=["api.example.com:443"], default_allow=False)
     assert policy.decide("api.example.com", 443).allowed is True
     assert policy.decide("api.example.com", 8080).allowed is False
@@ -67,7 +84,14 @@ def test_an_ipv6_literal_is_not_mangled_into_a_port():
     assert pinned.decide("2001:db8::1", 80).allowed is False
 
 
-def test_policy_reads_a_sandbox_config():
+def test_a_sandbox_config_becomes_the_policy_it_describes():
+    """`network` is not one more rule: it decides what happens to everything unmatched.
+
+    Off, the allowlist is the only way out; on, the lists are exceptions to an otherwise
+    open connection. The two derived properties are what the manager switches on — a
+    policy that blocks everything or restricts nothing needs no relay standing behind it,
+    and getting either wrong leaves a process serving a sandbox that cannot use it.
+    """
     config = SandboxConfig(network=False, allow_hosts=["api.example.com"], deny_hosts=["x.com"])
     policy = NetworkPolicy.from_config(config)
     assert policy.decide("api.example.com", 443).allowed is True
@@ -95,8 +119,14 @@ def test_model_hosts_come_from_the_environment_not_a_hardcoded_provider():
     assert "openrouter.ai" in model_endpoint_hosts({})
 
 
-# ---------------------------------------------------------------------- relay
-def test_parse_target_handles_connect_and_absolute_uris():
+# ------------------------------------------------- what the relay does with a request
+def test_both_proxy_request_forms_name_the_same_host():
+    """A proxy sees two shapes: `CONNECT host:port` for tunnelled TLS, and an absolute
+    URI for plain HTTP. Only reading one of them leaves the other with no host to decide
+    about — and a request whose host cannot be determined is a request the policy never
+    sees. The relative form is the third case, and it must yield nothing rather than
+    guess: it names a path on a server the proxy was never told about.
+    """
     assert _parse_target("CONNECT api.example.com:443 HTTP/1.1") == ("api.example.com", 443, "CONNECT")
     assert _parse_target("CONNECT api.example.com HTTP/1.1") == ("api.example.com", 443, "CONNECT")
     assert _parse_target("GET http://api.example.com/x HTTP/1.1") == ("api.example.com", 80, "GET")
@@ -117,6 +147,9 @@ def test_socket_path_stays_inside_the_af_unix_limit():
 
 
 def test_relay_refuses_an_overlong_socket_path(tmp_path):
+    """Refusing at start beats letting bind() do it. The error says which limit was hit
+    and where the path should come from instead; the kernel's says "AF_UNIX path too
+    long", which points at nothing and arrives after the sandbox is half built."""
     policy = NetworkPolicy(allow=[], default_allow=False)
     too_long = tmp_path / ("d" * 120) / "egress.sock"
     with pytest.raises(ValueError, match="Unix socket"):
@@ -158,6 +191,12 @@ def test_relay_denies_an_unlisted_host_and_records_it():
 
 
 def test_relay_tunnels_an_allowed_host():
+    """The other half of the barrier, and the easier one to get wrong quietly: a relay
+    that denied everything would pass every refusal test in this file while leaving the
+    agent brain unable to reach the model endpoint. Bytes are pushed through the tunnel
+    rather than stopping at the 200, because a connection that establishes and then
+    carries nothing looks identical to a working one until a request is made.
+    """
     async def scenario():
         host, port, listener = _serve_once(b"")
         listener.setblocking(False)
@@ -238,7 +277,7 @@ def test_forwarder_says_so_when_there_is_no_relay():
     assert b"no egress relay" in response
 
 
-# ------------------------------------------------------- manager-level wiring
+# ------------------------------------ one declared policy, applied to every sandbox
 #
 # The policy is declared once in the run's config and the manager applies it to every
 # sandbox it hands out. An isolation mechanism that depends on each call site remembering
@@ -278,6 +317,13 @@ def _manager(**configured):
 
 
 def test_configured_policy_applies_to_every_sandbox():
+    """Declared once in the run's config, applied by the manager, never by a call site.
+
+    The stamped `egress_socket` is the load-bearing part: it is how the backend learns
+    there is anything to attach. A policy that reached the config object but not the
+    socket would produce a sandbox whose recorded policy and actual reachability
+    disagree, and the recorded one is what a results file would report.
+    """
     manager = _manager(allow_hosts=["api.example.com"], deny_hosts=["github.com"])
 
     async def scenario():
@@ -341,6 +387,10 @@ def test_no_relay_when_there_is_nothing_to_enforce():
 
 
 def test_releasing_a_sandbox_stops_its_relay():
+    """A relay is a live proxy to its allowlist, reachable by anything on the host that
+    can open the socket. Leaving one behind after its sandbox is gone accumulates
+    listeners across a long run, and the audit it still answers describes a container
+    that no longer exists."""
     manager = _manager(allow_hosts=["api.example.com"])
 
     async def scenario():
@@ -356,6 +406,9 @@ def test_releasing_a_sandbox_stops_its_relay():
 
 
 def test_two_sandboxes_get_separate_relays():
+    """One socket shared by two sandboxes merges their audit trails, so neither run can
+    say what *it* reached — and releasing either one takes the other's route out with
+    it."""
     manager = _manager(allow_hosts=["api.example.com"])
 
     async def scenario():

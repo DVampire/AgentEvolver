@@ -8,6 +8,10 @@ The bias is deliberate. What can be tested offline is what *breaks* offline: the
 check that keeps the agent inside its workspace, and the quoting that decides which file a
 path names. Both have already been wrong in this module once — a `~` that became a
 directory literally named `~`, and a `pgrep` pattern that matched the shell carrying it.
+
+Grouped into classes rather than banner sections: each `Test…` class is one claim about
+the environment and its docstring says which, so a failure names its own subject before
+anyone opens the file.
 """
 
 import asyncio
@@ -51,6 +55,12 @@ class TestPathBoundary:
         ],
     )
     def test_paths_inside_the_root_resolve(self, given: str, expected: str) -> None:
+        """Every way a model writes a path inside the workspace lands in the same place.
+
+        The last case is not hypothetical: a model that has read Windows paths writes
+        them, and a backslash left alone becomes part of the filename instead of a
+        separator — creating a file whose name nothing else can refer to.
+        """
         assert _service().resolve(given) == expected
 
     @pytest.mark.parametrize(
@@ -65,6 +75,11 @@ class TestPathBoundary:
         ],
     )
     def test_paths_that_escape_are_refused(self, escape: str) -> None:
+        """Six spellings of "somewhere else", and the refusal must not depend on which
+        one was used. Absolute and relative escapes take different routes through the
+        same function, and a check that normalises only one of them lets the other reach
+        a real file on a machine the agent was lent, not given.
+        """
         with pytest.raises(RemotePathError):
             _service().resolve(escape)
 
@@ -95,7 +110,16 @@ class TestPathBoundary:
 
 
 class TestPurePosixPathish:
+    """The path arithmetic the boundary check is built out of.
+
+    A remote path cannot go through `pathlib`: that answers with the *local* machine's
+    separator and its idea of what is absolute, which is the wrong machine. This is the
+    POSIX-only stand-in, so `resolve` is exactly as trustworthy as these two methods.
+    """
+
     def test_normalise_collapses_dots_and_empty_segments(self) -> None:
+        """Purely textual — no remote lookup happens, and none may. Asking the far end to
+        resolve a path means the path has already been sent there."""
         assert str(PurePosixPathish("/a//b/./c/../d").normalise()) == "/a/b/d"
 
     def test_is_within_compares_segments_not_strings(self) -> None:
@@ -108,13 +132,27 @@ class TestPurePosixPathish:
 
 # --------------------------------------------------------------------- transport args
 class TestConnectionArguments:
+    """What ends up on the `ssh` command line, since every command rides on it.
+
+    Each option is one argument that is either there or not, and a wrong one fails as
+    though the remote host were at fault: a missing port is "connection refused", a
+    dropped identity file is "permission denied", a shared control socket is one
+    session's command arriving on another session's connection.
+    """
+
     def test_defaults_carry_no_port_key_or_jump(self) -> None:
+        """A plain connection carries the multiplexing socket and nothing else. An option
+        emitted with an empty value is not harmless — ssh either rejects the line or
+        applies it, and "-i ''" is a key that does not exist."""
         args = _service()._base_args()
         assert args[0] == "ssh"
         assert "ControlPath=" in args[2]
         assert "-p" not in args and "-i" not in args and "-J" not in args
 
     def test_each_option_appears_only_when_configured(self) -> None:
+        """The identity path is expanded here because ssh does not expand it: `~/.ssh/k`
+        handed over literally is a key that is not found, reported as an authentication
+        failure against a host that is perfectly reachable."""
         args = _service(port=2222, identity_file="~/.ssh/k", jump_host="bastion")._base_args()
         assert args[args.index("-p") + 1] == "2222"
         assert args[args.index("-i") + 1] == os.path.expanduser("~/.ssh/k")
@@ -250,6 +288,14 @@ def env_and_service(monkeypatch):
 
 
 class TestActions:
+    """The surface the model calls, with the transport swapped for a recorder.
+
+    What is read is what each action *decides* before anything leaves the machine: the
+    command it builds, the paths it refuses to send at all, and how it labels what came
+    back. The service is a fake precisely so that a red result here means an action
+    changed its mind, never that a host was down.
+    """
+
     @pytest.mark.asyncio
     async def test_a_nonzero_exit_is_reported_not_treated_as_a_tool_failure(
         self, env_and_service
@@ -277,6 +323,10 @@ class TestActions:
 
     @pytest.mark.asyncio
     async def test_write_quotes_the_path_it_was_given(self, env_and_service) -> None:
+        """A remote command is text handed to a shell, so a path with a space in it is
+        two arguments unless something quotes it. Unquoted, this write does not fail — it
+        creates `/home/u/proj/a` and writes the content somewhere the agent will not look
+        for it."""
         env, fake = env_and_service
         await env.write(path="a file.txt", content="hello", ctx=_Ctx())
         assert any(shlex.quote("/home/u/proj/a file.txt") in c for c in fake.commands)
@@ -334,6 +384,9 @@ class TestActions:
 
     @pytest.mark.asyncio
     async def test_two_sessions_get_different_job_prefixes(self, env_and_service) -> None:
+        """The prefix is what `jobs` and `signal` filter on, so it is also the fence
+        between two conversations' background work. Sharing one would let either session
+        list and kill the other's training run."""
         env, _ = env_and_service
         assert env._job_prefix(_Ctx("aaaaaaaa")) != env._job_prefix(_Ctx("bbbbbbbb"))
 
@@ -386,6 +439,9 @@ class TestActions:
 
     @pytest.mark.asyncio
     async def test_upload_refuses_a_local_file_that_is_not_there(self, env_and_service) -> None:
+        """Checked before the transfer starts, so the agent is told it named the wrong
+        file rather than reading an rsync exit status and concluding the host is
+        unreachable."""
         env, fake = env_and_service
         result = await env.upload(local_path="/nonexistent/file", remote_path="x", ctx=_Ctx())
         assert result["success"] is False
@@ -393,7 +449,11 @@ class TestActions:
 
     @pytest.mark.asyncio
     async def test_upload_enforces_the_size_ceiling(self, env_and_service, tmp_path) -> None:
+        """A directory an agent believes is small is routinely a checkpoint or a dataset,
+        and pushing it saturates the link for the rest of the run. The refusal has to
+        come before the first byte moves, not partway through."""
         env, fake = env_and_service
+        # A ceiling of zero refuses everything: the file's exact size is beside the point.
         env._max_upload_mb = 0
         big = tmp_path / "big.bin"
         big.write_bytes(b"0" * 4096)
@@ -403,8 +463,12 @@ class TestActions:
 
 
 class TestLiveView:
+    """The terminal a human can watch, which must never be able to take the run down."""
+
     @pytest.mark.asyncio
-    async def test_disabled_returns_no_view(self) -> None:
+    async def test_a_view_that_was_switched_off_returns_nothing(self) -> None:
+        """None, not an object that fails on use: the caller decides whether to show a
+        view by whether it got one."""
         from agentevolver.environment.default.ssh.environment import SSHEnvironment
 
         env = SSHEnvironment(host="example", live_view=False)
@@ -520,6 +584,11 @@ class TestHostRegistry:
         monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
 
     def test_config_hosts_come_first_and_runtime_additions_follow(self) -> None:
+        """Order is not cosmetic here: the first entry is the default, and that is the
+        machine every action reaches when nobody named one. A store that sorted its
+        names, or appended config hosts after runtime ones, would move the default
+        without anybody editing a config file.
+        """
         from agentevolver.environment.default.ssh.hosts import HostStore
 
         store = HostStore([{"name": "a", "host": "a.example"}, {"name": "b", "host": "b.example"}])
@@ -574,6 +643,14 @@ class TestHostRegistry:
 
 
 class TestMultiHostRouting:
+    """One agent, several machines, and one choice of machine per session.
+
+    Two conversations working on two clusters at once is the ordinary case, so the
+    selection is per session and the override is per action. Getting that scope wrong
+    produces no error anywhere: one session's `use_host` silently moves another
+    session's next command to a different machine.
+    """
+
     @pytest.fixture(autouse=True)
     def _isolated_store(self, tmp_path, monkeypatch):
         monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
@@ -611,6 +688,10 @@ class TestMultiHostRouting:
 
     @pytest.mark.asyncio
     async def test_naming_a_machine_that_does_not_exist_is_reported_not_raised(self, env) -> None:
+        """A typo in a host name is the model's mistake to fix, so it comes back as a
+        result it can read. Raising would surface as a tool failure with nothing to act
+        on; the message lists the machines that do exist, which is what makes the next
+        call correct rather than another guess."""
         result = await env.run(command="true", host="ghost", ctx=_Ctx())
         assert result["success"] is False
         assert "alpha" in result["message"] and "beta" in result["message"]
@@ -715,6 +796,15 @@ class TestBothRoutesRenderResults:
 
 
 class TestConfig:
+    """The shipped config, prompt and runner, read as the artefacts they are.
+
+    Nothing above touches these, and each fails the same way: the run starts cleanly and
+    misbehaves later. A config block under the wrong key is read as empty, a prompt that
+    never names the local workspace leaves `download` with nowhere to aim, and a runner
+    that starts its managers before binding a session gives the local half of the agent
+    a workspace path that nothing ever creates.
+    """
+
     def test_the_config_block_is_found_under_the_environment_name(self) -> None:
         """`env_names` and the config block agree — they did not have to before.
 
@@ -828,6 +918,9 @@ class TestAgainstARealHost:
 
     @pytest.mark.asyncio
     async def test_a_write_is_readable_back(self, env) -> None:
+        """Write and read are separate command shapes with separate quoting, so each can
+        be right about a path the other is wrong about. Only a real filesystem settles
+        whether they agree."""
         ctx = _Ctx("livetest")
         await env.write(path=".ae-test/roundtrip.txt", content="hello\n", ctx=ctx)
         read = await env.read(path=".ae-test/roundtrip.txt", ctx=ctx)
@@ -836,6 +929,10 @@ class TestAgainstARealHost:
 
     @pytest.mark.asyncio
     async def test_a_launched_job_outlives_the_command_that_started_it(self, env) -> None:
+        """The point of `launch`: the work has to survive the connection that started it,
+        which no offline test can tell you. A job that dies with its ssh channel looks
+        identical here to one that started and finished — until a training run vanishes
+        the moment the agent moves on."""
         ctx = _Ctx("livetest")
         await env.launch(command="sleep 30", name="livejob", ctx=ctx)
         listed = await env.jobs(ctx=ctx)

@@ -1,4 +1,20 @@
-"""Canvas module: graph compilation, the reuse library, drafts, runs."""
+"""What someone draws on the canvas is what the workflow runtime runs.
+
+The canvas keeps a JSON graph as its source of truth and compiles it, on demand, to a
+transient `<workflow>` document that the real `WorkflowCompiler` validates. That is the
+whole safety story: a graph either compiles into a definition the runtime will accept, or
+it fails at compile time with every problem listed. Nothing in between should reach a run.
+
+The compiler decisions pinned here are the ones with no visible symptom when they go
+wrong. An edge wired from the `message` port must become `${node.message}` and not
+`${node}`, or a downstream step is handed the whole `{message, data, files}` record where
+it expected text. Branch and map bodies are derived from which control port reaches a
+node, so a mistake there silently moves a step into or out of a body rather than raising.
+Step order comes from references, not from where boxes sit on the screen — a graph laid
+out bottom-to-top must still run in dependency order. And a capability picker left empty
+must not compile to an empty allowlist, which would scope an agent to no tools at all
+instead of leaving it its defaults.
+"""
 
 from __future__ import annotations
 
@@ -40,7 +56,22 @@ def _review_graph(name: str = "Canvas review") -> FlowGraph:
     )
 
 
-def test_compile_produces_valid_registered_workflow_shape() -> None:
+# --------------------------------------------------------------------------- #
+# Compiling a graph into a runnable definition
+# --------------------------------------------------------------------------- #
+def test_a_drawn_graph_compiles_to_the_workflow_it_depicts() -> None:
+    """The end-to-end shape: names, inputs, outputs, nesting, and republishability.
+
+    This graph is the canvas version of the hand-written `parallel_review` workflow, so
+    it exercises every translation at once — an input node becoming `${inputs.angles}`, a
+    map node keeping its `item_name` for the body to read, an agent landing inside the
+    map's children rather than beside it, and a reduce consuming `${reviews}`.
+
+    `enable_evolving` is asserted because it is not cosmetic: canvas flows republish
+    through `extension_manager.add_component`, whose evolvable gate refuses frozen
+    components. Emitting `false` here would let a flow compile and run and then fail only
+    at publish, with an error about evolution that names nothing to do with the canvas.
+    """
     html, definition = canvas_compiler.compile(_review_graph())
     assert definition.name == "canvas_review"
     assert set(definition.inputs) == {"task", "angles"}
@@ -57,90 +88,14 @@ def test_compile_produces_valid_registered_workflow_shape() -> None:
     assert 'generated-by" content="canvas"' in html
 
 
-def test_catalog_ports_are_typed() -> None:
-    from agentevolver.canvas.catalog import catalog
+def test_branch_bodies_are_derived_from_which_port_reaches_them() -> None:
+    """`then` and `else` membership comes from the graph, and there is nothing else to check it.
 
-    specs = {spec.id: spec for spec in asyncio.run(catalog.build())}
-    io_input = specs["io/input"]
-    assert [(port.name, port.type) for port in io_input.outputs] == [("out", "any")]
-    map_spec = specs["step/map"]
-    assert [port.name for port in map_spec.inputs] == ["items"]
-    assert map_spec.inputs[0].type == "list"
-    # map fans out on ``item`` and collects on ``done``.
-    assert [port.name for port in map_spec.outputs] == ["item", "done"]
-
-
-def test_capability_nodes_expose_message_data_files_ports() -> None:
-    from agentevolver.canvas.catalog import catalog
-
-    agent = next((s for s in asyncio.run(catalog.build()) if s.category == "agent"), None)
-    if agent is None:
-        pytest.skip("no actor agents registered")
-    out = {port.name: port.type for port in agent.outputs}
-    assert out == {"message": "text", "data": "object", "files": "list", "out": "any"}
-
-
-def test_typed_edge_compiles_to_sub_path() -> None:
-    graph = FlowGraph(
-        name="typed",
-        nodes=[
-            _node("ag", step_type="agent", target="general_agent", task="Answer"),
-            _node("out", type="output", name="answer"),
-        ],
-        edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="message")],
-    )
-    _, definition = canvas_compiler.compile(graph)
-    # message output port → ${ag.message} sub-path (not the whole ${ag}).
-    assert definition.outputs == {"answer": "${ag.message}"}
-
-
-def test_out_port_compiles_to_whole_value() -> None:
-    graph = FlowGraph(
-        name="whole",
-        nodes=[
-            _node("ag", step_type="agent", target="general_agent", task="Answer"),
-            _node("out", type="output", name="answer"),
-        ],
-        edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="out")],
-    )
-    _, definition = canvas_compiler.compile(graph)
-    assert definition.outputs == {"answer": "${ag}"}
-
-
-def test_agent_mounts_compile_to_allowlist_args() -> None:
-    graph = FlowGraph(
-        name="mounted",
-        nodes=[
-            _node("q", type="input", name="q", required=True),
-            _node("ag", step_type="agent", target="general_agent", task="Answer: ${inputs.q}",
-                  mounts={"tools": ["bash_tool", "web_searcher_tool"], "skills": ["debug"], "connectors": []}),
-            _node("out", type="output", name="answer"),
-        ],
-        edges=[GraphEdge(id="e", source="ag", target="out", param="value")],
-    )
-    _, definition = canvas_compiler.compile(graph)
-    agent_step = next(step for step in definition.program if step.type == StepType.AGENT)
-    # Non-empty selections become args; the empty one is omitted (agent keeps defaults).
-    assert agent_step.args.get("tools") == "bash_tool,web_searcher_tool"
-    assert agent_step.args.get("skills") == "debug"
-    assert "connectors" not in agent_step.args
-
-
-def test_runtime_lifts_agent_mounts_into_allowlists() -> None:
-    from agentevolver.agent.types import AgentContext
-    from agentevolver.workflow.runtime import workflow_runtime
-
-    ctx = AgentContext(extra={"session_id": "s1"})
-    payload = {"task": "hi", "tools": "bash_tool,web_searcher_tool", "skills": "debug", "connectors": ""}
-    derived = workflow_runtime._apply_agent_mounts(payload, ctx)
-    assert payload == {"task": "hi"}  # mount args popped
-    assert derived.extra["tool_allowlist"] == ["bash_tool", "web_searcher_tool"]
-    assert derived.extra["skill_allowlist"] == ["debug"]
-    assert "connector_allowlist" not in derived.extra  # empty selection ignored
-    assert "tool_allowlist" not in ctx.extra  # shared ctx untouched (parallel-safe)
-
-
-def test_compile_branch_then_else_and_args() -> None:
+    The editor draws ordinary nodes wired by ports; the runtime needs nested children. A
+    node claimed by the wrong slot compiles cleanly and runs — on the wrong side of the
+    condition. That is a flow which does the opposite of what it shows, with no error
+    anywhere, so the assignment is pinned by id rather than by count.
+    """
     graph = FlowGraph(
         name="branchy",
         nodes=[
@@ -161,7 +116,14 @@ def test_compile_branch_then_else_and_args() -> None:
     assert [child.id for child in branch.else_children] == ["no"]
 
 
-def test_compile_orders_steps_by_references() -> None:
+def test_steps_are_ordered_by_what_they_reference_not_by_where_they_sit() -> None:
+    """Layout is a human convenience; running in layout order would resolve `${first}` to nothing.
+
+    Here the two nodes are deliberately placed upside down — the step that reads `${first}`
+    sits at the top of the canvas and the step producing it at y=500 — and the reference is
+    inline in the task text rather than an edge, which is the form a position-based sort
+    would miss.
+    """
     graph = FlowGraph(
         name="ordering",
         nodes=[
@@ -175,7 +137,15 @@ def test_compile_orders_steps_by_references() -> None:
     assert [step.id for step in definition.program] == ["first", "second"]
 
 
-def test_compile_rejects_broken_graphs() -> None:
+def test_a_graph_that_cannot_run_is_refused_at_compile_time() -> None:
+    """Three ways a half-finished canvas would otherwise reach the runtime.
+
+    Drafts are saved incomplete on purpose, so compile is the only gate. A step with no
+    capability chosen, and a graph with inputs but nothing to run, would both fail deep
+    inside a run instead of before it. The third — an argument that is both wired and typed
+    — is the one a user cannot debug alone: the literal is visible in the node while the
+    edge silently overwrites it, so the flow reads as doing one thing and does another.
+    """
     with pytest.raises(CanvasCompileError, match="no capability"):
         canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("a", step_type="tool")]))
     with pytest.raises(CanvasCompileError, match="no steps"):
@@ -191,7 +161,144 @@ def test_compile_rejects_broken_graphs() -> None:
         ))
 
 
-def test_draft_persistence_is_session_scoped(tmp_path) -> None:
+# --------------------------------------------------------------------------- #
+# Ports: what the editor lets you wire, and what a wire compiles to
+# --------------------------------------------------------------------------- #
+def test_the_palette_declares_the_port_types_the_editor_wires_on() -> None:
+    """Port types are what the editor uses to permit or refuse a connection.
+
+    An untyped port (or one typed `any` by accident) makes every wire legal, and the
+    mistake then surfaces as a runtime type error inside a flow the canvas said was
+    valid. `map` is the case worth naming: its input is a `list`, and it has two distinct
+    outputs — `item` fans out into the body, `done` is the collected result — so collapsing
+    them would make a fan-out indistinguishable from its aggregate.
+    """
+    from agentevolver.canvas.catalog import catalog
+
+    specs = {spec.id: spec for spec in asyncio.run(catalog.build())}
+    io_input = specs["io/input"]
+    assert [(port.name, port.type) for port in io_input.outputs] == [("out", "any")]
+    map_spec = specs["step/map"]
+    assert [port.name for port in map_spec.inputs] == ["items"]
+    assert map_spec.inputs[0].type == "list"
+    # map fans out on ``item`` and collects on ``done``.
+    assert [port.name for port in map_spec.outputs] == ["item", "done"]
+
+
+def test_a_capability_node_offers_its_result_split_as_well_as_whole() -> None:
+    """Every capability returns `{message, data, files}`, and the ports mirror that exactly.
+
+    Without the split ports the only way to reach the text of a result would be to wire the
+    whole record into a step expecting a string. Each port name is also the sub-path the
+    compiler emits, so a renamed or missing port breaks the reference, not just the picker.
+    """
+    from agentevolver.canvas.catalog import catalog
+
+    agent = next((s for s in asyncio.run(catalog.build()) if s.category == "agent"), None)
+    if agent is None:
+        pytest.skip("no actor agents registered")
+    out = {port.name: port.type for port in agent.outputs}
+    assert out == {"message": "text", "data": "object", "files": "list", "out": "any"}
+
+
+def test_a_wire_from_the_message_port_compiles_to_that_sub_path() -> None:
+    """The port is not decoration — it decides what the downstream step receives.
+
+    Dropping `source_port` and always emitting `${ag}` is the easy simplification, and it
+    produces a flow that runs: the output is just the whole result record instead of the
+    text. Nothing fails; the answer is simply wrong in a way that reads as the agent
+    having replied strangely.
+    """
+    graph = FlowGraph(
+        name="typed",
+        nodes=[
+            _node("ag", step_type="agent", target="general_agent", task="Answer"),
+            _node("out", type="output", name="answer"),
+        ],
+        edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="message")],
+    )
+    _, definition = canvas_compiler.compile(graph)
+    # message output port → ${ag.message} sub-path (not the whole ${ag}).
+    assert definition.outputs == {"answer": "${ag.message}"}
+
+
+def test_a_wire_from_the_out_port_compiles_to_the_whole_value() -> None:
+    """`out` is the one port with no sub-path, so it must not become `${ag.out}`."""
+    graph = FlowGraph(
+        name="whole",
+        nodes=[
+            _node("ag", step_type="agent", target="general_agent", task="Answer"),
+            _node("out", type="output", name="answer"),
+        ],
+        edges=[GraphEdge(id="e", source="ag", target="out", param="value", source_port="out")],
+    )
+    _, definition = canvas_compiler.compile(graph)
+    assert definition.outputs == {"answer": "${ag}"}
+
+
+# --------------------------------------------------------------------------- #
+# Mounting capabilities on an agent node
+# --------------------------------------------------------------------------- #
+def test_only_a_non_empty_capability_selection_becomes_an_allowlist_arg() -> None:
+    """An empty picker means "no opinion", not "nothing allowed".
+
+    The two are one line apart in the compiler and worlds apart at run time: emitting
+    `connectors=""` would scope the agent to an empty connector allowlist, and it would
+    then fail to do work it was perfectly capable of — while looking configured. Omitting
+    the arg leaves the agent its configured defaults.
+    """
+    graph = FlowGraph(
+        name="mounted",
+        nodes=[
+            _node("q", type="input", name="q", required=True),
+            _node("ag", step_type="agent", target="general_agent", task="Answer: ${inputs.q}",
+                  mounts={"tools": ["bash_tool", "web_searcher_tool"], "skills": ["debug"], "connectors": []}),
+            _node("out", type="output", name="answer"),
+        ],
+        edges=[GraphEdge(id="e", source="ag", target="out", param="value")],
+    )
+    _, definition = canvas_compiler.compile(graph)
+    agent_step = next(step for step in definition.program if step.type == StepType.AGENT)
+    # Non-empty selections become args; the empty one is omitted (agent keeps defaults).
+    assert agent_step.args.get("tools") == "bash_tool,web_searcher_tool"
+    assert agent_step.args.get("skills") == "debug"
+    assert "connectors" not in agent_step.args
+
+
+def test_lifting_mount_args_derives_a_context_instead_of_editing_the_shared_one() -> None:
+    """A map body runs its agents concurrently against one context object.
+
+    The runtime turns the compiled `tools`/`skills` args into `ctx.extra` allowlists. Doing
+    that in place is the obvious implementation and is not parallel-safe: siblings under a
+    map share the context, so one agent's scoping would silently apply to the others, and
+    which one won would depend on scheduling. Popping the args matters for the same reason
+    in the other direction — a leftover `tools` key would be forwarded to the agent as if it
+    were a task parameter.
+    """
+    from agentevolver.agent.types import AgentContext
+    from agentevolver.workflow.runtime import workflow_runtime
+
+    ctx = AgentContext(extra={"session_id": "s1"})
+    payload = {"task": "hi", "tools": "bash_tool,web_searcher_tool", "skills": "debug", "connectors": ""}
+    derived = workflow_runtime._apply_agent_mounts(payload, ctx)
+    assert payload == {"task": "hi"}  # mount args popped
+    assert derived.extra["tool_allowlist"] == ["bash_tool", "web_searcher_tool"]
+    assert derived.extra["skill_allowlist"] == ["debug"]
+    assert "connector_allowlist" not in derived.extra  # empty selection ignored
+    assert "tool_allowlist" not in ctx.extra  # shared ctx untouched (parallel-safe)
+
+
+# --------------------------------------------------------------------------- #
+# Drafts, the reuse library, and running one
+# --------------------------------------------------------------------------- #
+def test_a_draft_is_saved_where_its_session_says_and_may_be_incomplete(tmp_path) -> None:
+    """Saving is not compiling: a flow half-drawn must survive a page reload.
+
+    Refusing to persist a node without a capability chosen — the state every node passes
+    through while being wired — would lose work between the moment it is dropped on the
+    canvas and the moment it is finished. The draft directory is supplied per call by the
+    Gateway, so a second session's listing shows none of this session's drafts.
+    """
     manager = CanvasManagerServer()
     session_a, session_b = tmp_path / "a" / "canvas", tmp_path / "b" / "canvas"
     draft = FlowGraph(name="wip", nodes=[_node("a", step_type="tool")])  # no target yet: still saves
@@ -203,8 +310,15 @@ def test_draft_persistence_is_session_scoped(tmp_path) -> None:
     assert asyncio.run(manager.delete_flow(saved.id, session_a)) is True
 
 
-def test_export_to_library_roundtrip(tmp_path, monkeypatch) -> None:
-    """A draft exported to the library comes back as a fresh, unbound draft."""
+def test_a_flow_exported_to_the_library_comes_back_as_a_fresh_unbound_draft(tmp_path, monkeypatch) -> None:
+    """The library is for reuse, so importing must never alias the copy it came from.
+
+    The failure this rules out is destructive: if the imported graph kept its id, the first
+    save after an import would overwrite the original draft, and every session that
+    imported the same library flow would be editing one shared document. Layout is checked
+    on the way back because a library entry that loses its positions is one nobody reuses
+    — the graph is correct and unreadable.
+    """
     monkeypatch.setenv("AGENTEVOLVER_EXTENSION_ROOT", str(tmp_path / "extension"))
     manager = CanvasManagerServer()
     flows = tmp_path / "session" / "canvas"
@@ -221,6 +335,7 @@ def test_export_to_library_roundtrip(tmp_path, monkeypatch) -> None:
     reopened = manager.import_from_library(name)
     assert reopened.name == "library roundtrip"
     assert {node.id for node in reopened.nodes} == {node.id for node in graph.nodes}
+    # Node 2 is the map step, the first node given an explicit position.
     assert reopened.nodes[2].position == graph.nodes[2].position  # layout survives
     # Importing starts a new draft rather than aliasing the library copy.
     assert not reopened.id
@@ -230,7 +345,14 @@ def test_export_to_library_roundtrip(tmp_path, monkeypatch) -> None:
     assert name not in manager.list_library_names()
 
 
-def test_draft_run_executes_on_workflow_runtime(tmp_path) -> None:
+def test_an_unsaved_draft_runs_on_the_shared_workflow_runtime(tmp_path) -> None:
+    """The canvas owns no executor: a run is an ephemeral definition on the real runtime.
+
+    Everything above checks the compiled shape; this checks that the shape is actually
+    accepted and executed, with the tool's output arriving back through the flow's declared
+    output. A canvas that grew its own execution path would drift from the runtime the rest
+    of the system uses, and the drift would only be visible once behaviour differed.
+    """
     async def run() -> None:
         from agentevolver.tool import tool_manager
         if "bash_tool" not in await tool_manager.list():
@@ -245,6 +367,7 @@ def test_draft_run_executes_on_workflow_runtime(tmp_path) -> None:
             edges=[GraphEdge(id="e", source="say", target="out", param="value")],
         )
         run_id = await manager.run_flow(graph)
+        # Poll for up to 20s (100 × 0.2s) — long enough for a real tool step to finish.
         for _ in range(100):
             status = manager.run_status(run_id)
             if status["state"] in {"succeeded", "failed", "cancelled"}:

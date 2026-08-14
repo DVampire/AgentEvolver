@@ -10,6 +10,14 @@ the session that produced these gates — not hypotheticals. The first draft of 
 serializer gate was itself caught this way, asserting an invariant Gemini does not hold.
 
 Marked slow: each case is a pytest subprocess. Run with `-m "not slow"` to skip.
+
+**Only one test session may run against this checkout at a time.** Each case edits real
+source for the moment it takes the subprocess to finish. Within one session that is safe —
+pytest is serial, so nothing else reads the file in that window — but a second session
+running concurrently will read the mutated file and fail somewhere unrelated. It has
+happened twice: parallel agents each reported an "intermittent, pre-existing" failure in
+a file neither had touched, and both were reading this file's mutations. If you need
+concurrent runs, deselect this module with `-m "not slow"`.
 """
 
 import os
@@ -23,9 +31,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 from tests.conftest import BACKUP_SUFFIX, SKIP_REPAIR_ENV
 
-SERIALIZERS = "tests/test_serializers_cover_every_message_type.py"
-USAGE = "tests/test_usage_spellings_are_all_normalized.py"
-STRUCTURE = "tests/test_prompt_structure_agrees_across_files.py"
+SERIALIZERS = "tests/test_serializer.py"
+USAGE = "tests/test_cache.py"
+STRUCTURE = "tests/test_prompt_layout.py"
 
 # (name, file, find, replace, check that must go red)
 MUTATIONS = [

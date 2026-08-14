@@ -1,10 +1,13 @@
-"""IDE manager: idle bookkeeping, the instance cap, and what leaks to the client.
+"""Time is what frees an IDE container, and the browser is never told where one is.
 
-The gateway has no ``session.close``, so *time* is what frees these containers —
-every path that touches an IDE has to refresh its clock or the reaper takes a
-live editor out from under the user. The other load-bearing rule is that the
-internal opensandbox upstream URL never reaches the browser; the client is only
-ever told a path on its own origin.
+The gateway has no ``session.close``, so nothing announces that an editor is
+finished with — the idle clock is the only signal, and every path that touches an
+IDE has to refresh it or the reaper takes a live editor out from under someone
+mid-keystroke. Each container costs a few hundred MB, which makes the cap real
+rather than advisory and eviction a thing that must actually happen. The other
+rule is about addresses: the internal opensandbox upstream never reaches the
+client, which is only ever handed a path on its own origin, because the browser
+is usually not on the machine the gateway runs on.
 
 Container startup needs a live sandbox and is not exercised here.
 """
@@ -45,6 +48,11 @@ def ide():
 
 
 def attach(manager, session_id, *, sandbox=None, last_seen=None, **kw):
+    """Register a running IDE without starting a container.
+
+    ``start()`` needs a real docker daemon, so the instance is built and inserted
+    directly; everything under test here operates on the registry, not on start.
+    """
     instance = IdeInstance(
         session_id=session_id,
         upstream=f"http://internal-{session_id}:3000",
@@ -59,21 +67,30 @@ def attach(manager, session_id, *, sandbox=None, last_seen=None, **kw):
     return instance
 
 
-# ------------------------------------------------------------------- paths
+# --------------------------------------------------------------------------- #
+# Where the editor is served from
+# --------------------------------------------------------------------------- #
 def test_the_editor_is_served_under_a_per_session_sub_path():
     """A per-session hostname is resolved by the *browser*, so it only ever
     worked when the browser ran on the server; a sub-path works anywhere."""
     assert base_path("abc123") == "/ide/abc123"
 
 
-# ------------------------------------------------------------- idle clock
+# --------------------------------------------------------------------------- #
+# Keeping a live editor alive
+# --------------------------------------------------------------------------- #
 def test_a_proxied_request_refreshes_the_idle_clock(ide):
+    """Traffic is the more trustworthy heartbeat of the two: it keeps working when
+    the frontend's timer is throttled in a background tab or its socket has dropped,
+    and an editor being actively used is exactly the one that must not be reaped."""
     instance = attach(ide, "s1", last_seen=0.0)
     assert ide.upstream("s1") == "http://internal-s1:3000"
     assert instance.last_seen > 0.0
 
 
 def test_a_heartbeat_refreshes_the_idle_clock(ide):
+    """And traffic alone is not enough: an editor left open on screen with nobody
+    typing generates no requests, and is still in use."""
     instance = attach(ide, "s1", last_seen=0.0)
     assert ide.touch("s1") is True
     assert instance.last_seen > 0.0
@@ -88,6 +105,9 @@ async def test_a_port_lookup_also_refreshes_the_idle_clock(ide):
 
 
 def test_lookups_for_an_unknown_session_report_nothing(ide):
+    """The proxy asks on every request, including the ones that arrive from a tab
+    still open after its container was reaped. Raising there turns an ordinary
+    stale request into a 500 on a path that handles thousands of them."""
     assert ide.upstream("ghost") is None
     assert ide.touch("ghost") is False
 
@@ -97,7 +117,9 @@ async def test_a_port_lookup_for_an_unknown_session_reports_nothing(ide):
     assert await ide.upstream_for_port("ghost", 5173) is None
 
 
-# ------------------------------------------------------------ port mapping
+# --------------------------------------------------------------------------- #
+# Reaching a port inside the container
+# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_a_resolved_port_is_cached_for_the_container_s_life(ide):
     """One page load pulls dozens of assets; each must not re-ask opensandbox."""
@@ -110,6 +132,8 @@ async def test_a_resolved_port_is_cached_for_the_container_s_life(ide):
 
 @pytest.mark.asyncio
 async def test_different_ports_resolve_independently(ide):
+    """The cache is keyed by port, not by session. One slot per container would
+    send a preview's traffic to whichever dev server was resolved first."""
     sandbox = FakeSandbox(port_url="http://exposed:1")
     attach(ide, "s1", sandbox=sandbox)
     await ide.upstream_for_port("s1", 5173)
@@ -126,6 +150,12 @@ async def test_a_port_with_nothing_listening_is_reported_as_absent(ide):
 
 @pytest.mark.asyncio
 async def test_a_failed_port_lookup_is_not_cached(ide):
+    """The usual order of events is: open the preview, then start the server.
+
+    Caching the failure would make that order permanently unrecoverable — the
+    port stays dead for the container's whole life, no matter what the user
+    starts on it, and restarting the IDE is the only cure.
+    """
     sandbox = FakeSandbox(port_url=RuntimeError("nope"))
     attach(ide, "s1", sandbox=sandbox)
     await ide.upstream_for_port("s1", 9999)
@@ -133,9 +163,14 @@ async def test_a_failed_port_lookup_is_not_cached(ide):
     assert sandbox.port_calls == [9999, 9999]
 
 
-# --------------------------------------------------------------- teardown
+# --------------------------------------------------------------------------- #
+# Tearing one down
+# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_stopping_destroys_the_container_and_forgets_it(ide):
+    """Both halves, and they fail in opposite directions: a forgotten entry keeps
+    proxying to a container that no longer exists, while a remembered one holds a
+    slot under the cap that nothing will ever release."""
     sandbox = FakeSandbox()
     attach(ide, "s1", sandbox=sandbox)
     assert await ide.stop("s1") is True
@@ -158,6 +193,9 @@ async def test_a_failing_teardown_still_frees_the_slot(ide):
 
 @pytest.mark.asyncio
 async def test_stop_all_tears_everything_down_and_cancels_the_reaper(ide):
+    """The reaper is the part that is easy to forget: it is a task, not an object,
+    so it keeps waking up against an emptied manager after the gateway has shut
+    down and holds the event loop open behind it."""
     sandboxes = [FakeSandbox() for _ in range(3)]
     for n, sandbox in enumerate(sandboxes):
         attach(ide, f"s{n}", sandbox=sandbox)
@@ -169,7 +207,9 @@ async def test_stop_all_tears_everything_down_and_cancels_the_reaper(ide):
     assert ide._reaper is None
 
 
-# -------------------------------------------------------------------- cap
+# --------------------------------------------------------------------------- #
+# The cap on how many run at once
+# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_reaching_the_cap_evicts_the_least_recently_used(ide):
     """Each IDE costs a few hundred MB, so the cap is real, not advisory."""
@@ -183,7 +223,12 @@ async def test_reaching_the_cap_evicts_the_least_recently_used(ide):
 
 @pytest.mark.asyncio
 async def test_eviction_keeps_going_until_there_is_room(ide):
+    """Evicting once is the tempting shape and is not enough — the registry can
+    already be over the cap when a lowered limit or a restore path put it there,
+    and a single eviction leaves it over the cap forever."""
     now = time.time()
+    # Two past the cap, spread across distinct last_seen values so the eviction
+    # order is determined rather than arbitrary.
     for n in range(ide.max_instances + 2):
         attach(ide, f"s{n}", last_seen=now - (100 - n))
     await ide._evict_if_full()
@@ -197,9 +242,15 @@ async def test_nothing_is_evicted_below_the_cap(ide):
     assert "s1" in ide._instances
 
 
-# ------------------------------------------------------------------ reaper
+# --------------------------------------------------------------------------- #
+# The reaper
+# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_an_idle_ide_is_reaped_and_an_active_one_is_not(ide, monkeypatch):
+    """Both directions in one test, because each alone has a trivial wrong answer:
+    reaping nothing passes the second, reaping everything passes the first."""
+    # 0.01s instead of the real 60s, so the loop gets several passes inside the
+    # sleep below; the idle one is placed one second past the real timeout.
     monkeypatch.setattr(ide, "reap_interval_seconds", 0.01)
     sandbox = FakeSandbox()
     attach(ide, "idle", sandbox=sandbox, last_seen=time.time() - ide.idle_timeout_seconds - 1)
@@ -219,8 +270,13 @@ def test_the_container_outlives_the_idle_timeout_by_a_wide_margin(ide):
     assert ide.container_timeout_minutes * 60 > ide.idle_timeout_seconds
 
 
-# ------------------------------------------------------------- credentials
+# --------------------------------------------------------------------------- #
+# Credentials handed into the container
+# --------------------------------------------------------------------------- #
 def test_only_credentials_that_are_actually_set_are_forwarded(monkeypatch):
+    """Forwarding an unset name as an empty string is worse than omitting it: the
+    coding agents treat a present variable as configured and fail authentication
+    instead of falling back to the login they already have on the mounted $HOME."""
     for name in IdeManagerServer.CREDENTIAL_VARS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -239,7 +295,9 @@ def test_the_callback_free_login_token_is_among_the_forwarded_vars():
     assert "CLAUDE_CODE_OAUTH_TOKEN" in IdeManagerServer.CREDENTIAL_VARS
 
 
-# ------------------------------------------------------------------ status
+# --------------------------------------------------------------------------- #
+# What the client is told
+# --------------------------------------------------------------------------- #
 def test_status_never_leaks_the_internal_upstream(ide):
     """The client gets a path on its own origin, so it works over any tunnel."""
     attach(ide, "s1")
@@ -255,11 +313,16 @@ def test_status_for_an_unknown_session_says_not_running(ide):
 
 
 def test_status_reports_how_long_it_has_been_idle(ide):
+    """Idle seconds, not the raw ``last_seen`` timestamp: the client has no way to
+    compare a server clock against its own, and this is what it counts down from."""
     attach(ide, "s1", last_seen=time.time() - 30)
     assert ide.status("s1")["idle_seconds"] == pytest.approx(30, abs=1)
 
 
 def test_the_live_handle_stays_out_of_serialisation(ide):
+    """``IdeInstance`` is a pydantic model carrying a live sandbox object and the
+    resolved port map. Both are excluded, so a dump of one is safe to send: neither
+    is serialisable, and the port map is another list of internal addresses."""
     instance = attach(ide, "s1")
     dumped = instance.model_dump()
     assert "sandbox" not in dumped

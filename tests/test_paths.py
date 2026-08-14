@@ -1,11 +1,23 @@
+"""The layout table is the only place a path is decided, and it has exactly two roots.
+
+Everything the framework writes goes under ``output/`` (generated, disposable
+state) or ``extension/`` (shared, durable components), and both move as one unit
+when ``AGENTEVOLVER_HOME`` is set. The damage from breaking that is quiet rather
+than loud: ``extension/`` once resolved against ``cwd`` while the rest of the
+tree honoured the override, so under a relocated home the skill manager wrote
+components into a directory the config layer never read. A path invented outside
+the table is how a root-owned ``.agentevolver/`` appeared in a third location,
+outside the chown loop that hands ``output/`` back to the host user.
+"""
+
 from pathlib import Path
 
 import pytest
+from mmengine import Config as MMConfig
 
 from agentevolver.config.config import process_general
 from agentevolver.paths import P, path_manager
 from agentevolver.utils.path_utils import data_path, extension_root, home_dir, project_path
-from mmengine import Config as MMConfig
 
 
 def test_agentevolver_home_relocates_the_whole_tree(monkeypatch, tmp_path: Path) -> None:
@@ -27,7 +39,14 @@ def test_agentevolver_home_relocates_the_whole_tree(monkeypatch, tmp_path: Path)
 
 
 def test_extension_root_override_moves_only_that_root(monkeypatch, tmp_path: Path) -> None:
-    """AGENTEVOLVER_EXTENSION_ROOT relocates shared components, nothing else."""
+    """AGENTEVOLVER_EXTENSION_ROOT relocates shared components, nothing else.
+
+    The two variables read like one knob with two names, and the tempting
+    implementation moves the whole tree for either. It must not: several runs
+    share one component library while each keeps its own generated state, so an
+    override that dragged ``output/`` along would file one deployment's sessions
+    inside another deployment's library.
+    """
     home, shared = tmp_path / "agent-home", tmp_path / "shared-components"
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(home))
     monkeypatch.setenv("AGENTEVOLVER_EXTENSION_ROOT", str(shared))
@@ -83,14 +102,25 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
 
 
 def test_missing_placeholder_is_rejected_rather_than_written_literally(monkeypatch, tmp_path: Path) -> None:
-    """A forgotten parameter must fail loudly, not create a dir named '{session_id}'."""
+    """A forgotten parameter must fail loudly, not create a dir named '{session_id}'.
+
+    ``str.format`` leaves an unfilled placeholder alone rather than complaining,
+    so the caller gets a plausible-looking path and the mistake surfaces days
+    later as a literal ``{session_id}`` directory holding one run's files.
+    """
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
     with pytest.raises(ValueError, match="session_id"):
         path_manager.get(P.SESSION_WORKSPACE, owner="local")
 
 
 def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path: Path) -> None:
-    """With no override, everything hangs off the directory the run started in."""
+    """With no override, everything hangs off the directory the run started in.
+
+    The last two assertions are the ones worth keeping: resolving a root must not
+    create it. Directories are made when something is written, so a resolver that
+    calls ``mkdir`` leaves an empty ``workspace/`` and ``log/`` behind for every
+    session a client opens and abandons.
+    """
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.chdir(project)

@@ -1,9 +1,12 @@
-"""Visual: rendering a task document into a standalone, styled page.
+"""A rendered task page is self-contained and opens from wherever it was written.
 
-The page links its CSS/JS by *relative* path, so it opens from wherever it was
-written — including a session tree the browser reaches over a tunnel. That makes
-the relative-path computation the load-bearing part, along with escaping: the
-title is a task's own text and lands inside an HTML attribute.
+``render_task_page`` produces one complete HTML document that links ``task.css``
+and ``task.js`` by a path computed relative to the page's own directory. That
+computation is the load-bearing part: the page is written deep inside a session
+tree and read back through whatever origin the browser reached, so an absolute
+link resolves against the reader's machine and silently produces an unstyled
+page — which looks like a CSS bug, not a path bug. The other half is escaping:
+the title is a task's own text and lands inside an HTML attribute.
 """
 
 import os
@@ -14,25 +17,45 @@ import pytest
 from agentevolver.visual import css_path, js_path, render_task_page
 
 
-# -------------------------------------------------------------------- assets
+# --------------------------------------------------------------------------- #
+# The assets the page expects to find
+# --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("filename", ["task.css", "prompt.css", "workflow.css", "memory.css"])
 def test_the_referenced_stylesheets_exist(filename):
+    """Every stylesheet a renderer names is a bare filename joined onto a directory.
+
+    Nothing resolves it at import time, so a renamed or moved file produces a
+    404 in the reader's browser and no error anywhere near the code that named
+    it. This is the only place the two ends are checked against each other.
+    """
     assert os.path.isfile(css_path(filename))
 
 
 @pytest.mark.parametrize("filename", ["task.js", "prompt.js", "workflow.js"])
 def test_the_referenced_scripts_exist(filename):
+    """``task.js`` renders the Markdown inside the section tags client-side, so a
+    missing script is not a missing flourish — the page shows its raw source."""
     assert os.path.isfile(js_path(filename))
 
 
 def test_asset_paths_are_absolute():
-    """They are resolved against the package, not the caller's cwd."""
+    """They are resolved against the package, not the caller's cwd.
+
+    ``render_task_page`` takes the difference between an asset path and the
+    output directory. If the asset path were relative to wherever the process
+    happened to start, that difference would be meaningless and would still be a
+    plausible-looking string.
+    """
     assert os.path.isabs(css_path("task.css"))
     assert os.path.isabs(js_path("task.js"))
 
 
-# ------------------------------------------------------------------ rendering
+# --------------------------------------------------------------------------- #
+# What lands on disk
+# --------------------------------------------------------------------------- #
 def test_a_rendered_page_is_written_and_its_path_returned(tmp_path):
+    """The return value is what callers hand on — to a log line, a link, a viewer —
+    so returning ``None`` on success would be discovered by the reader, not here."""
     out = str(tmp_path / "task.html")
     assert render_task_page("<div class='task'>body</div>", out) == out
     assert os.path.isfile(out)
@@ -47,6 +70,8 @@ def test_the_body_is_inserted_verbatim(tmp_path):
 
 
 def test_the_page_is_a_complete_document(tmp_path):
+    """Nothing wraps this output later — it is opened directly, as a file or over a
+    tunnel — so a fragment would be rendered in quirks mode with no charset."""
     out = str(tmp_path / "task.html")
     render_task_page("body", out)
     page = open(out, encoding="utf-8").read()
@@ -56,12 +81,16 @@ def test_the_page_is_a_complete_document(tmp_path):
 
 
 def test_a_missing_output_directory_is_created(tmp_path):
+    """Callers name a path inside a session tree that may not exist yet, and a
+    session's directories are made on first write rather than up front."""
     out = str(tmp_path / "deep" / "nested" / "task.html")
     render_task_page("body", out)
     assert os.path.isfile(out)
 
 
-# ------------------------------------------------------------- relative links
+# --------------------------------------------------------------------------- #
+# Links that survive the page being moved or served
+# --------------------------------------------------------------------------- #
 def test_assets_are_linked_relatively_so_the_page_travels(tmp_path):
     """An absolute path would break the moment the tree is moved or served."""
     out = str(tmp_path / "task.html")
@@ -73,6 +102,8 @@ def test_assets_are_linked_relatively_so_the_page_travels(tmp_path):
 
 
 def test_the_linked_assets_resolve_from_the_page_s_own_directory(tmp_path):
+    """Relative is necessary but not sufficient: a link can be relative and still
+    point at nothing. This joins it back the way a browser would and opens it."""
     out = str(tmp_path / "sub" / "task.html")
     render_task_page("body", out)
     page = open(out, encoding="utf-8").read()
@@ -83,6 +114,12 @@ def test_the_linked_assets_resolve_from_the_page_s_own_directory(tmp_path):
 
 
 def test_the_links_track_how_deep_the_page_is_written(tmp_path):
+    """A hard-coded prefix passes both checks above and is still wrong.
+
+    It would be relative, and it would resolve for pages written at one depth —
+    the depth whoever wrote it happened to test with. Comparing two depths is
+    what forces the path to actually be computed from the output directory.
+    """
     shallow = str(tmp_path / "task.html")
     deep = str(tmp_path / "a" / "b" / "c" / "task.html")
     render_task_page("body", shallow)
@@ -92,7 +129,9 @@ def test_the_links_track_how_deep_the_page_is_written(tmp_path):
     assert deep_href.count("..") > shallow_href.count("..")
 
 
-# ------------------------------------------------------------------ escaping
+# --------------------------------------------------------------------------- #
+# Text that came from a task
+# --------------------------------------------------------------------------- #
 def test_a_title_with_markup_cannot_break_out_of_its_attribute(tmp_path):
     """The title is a task's own text — it may contain anything."""
     out = str(tmp_path / "task.html")
@@ -116,6 +155,12 @@ def test_the_title_defaults_when_none_is_given(tmp_path):
 
 
 def test_unicode_in_the_body_survives(tmp_path):
+    """Task text is routinely not ASCII, and both ends have to agree.
+
+    The write must name UTF-8 rather than take the machine's default locale, and
+    the document must declare the charset it was written in — get either wrong
+    and the page is mojibake on someone else's machine while looking fine here.
+    """
     out = str(tmp_path / "task.html")
     render_task_page("<div>修复这个缺陷</div>", out)
     assert "修复这个缺陷" in open(out, encoding="utf-8").read()

@@ -30,11 +30,18 @@ def registry_writes(monkeypatch):
 
 
 def test_building_the_manager_claims_no_port(registry_writes):
+    """Constructing a manager is no evidence that a daemon will ever run."""
     SandboxServerManager()
     assert registry_writes == []
 
 
 def test_the_port_is_claimed_on_first_use(registry_writes):
+    """And it *is* claimed — "never register" would satisfy the test above just as well.
+
+    Reading `domain` is the point at which the daemon needs an address, so that is where
+    the registry entry belongs: the record then names a port something is about to
+    listen on, which is the only claim the registry is allowed to make.
+    """
     manager = SandboxServerManager()
     assert manager.domain.startswith("localhost:")
     assert registry_writes == ["opensandbox"]

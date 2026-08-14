@@ -91,6 +91,9 @@ async def box():
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_started_container_is_alive_and_runs_a_command(box):
+    """The floor everything else in this file stands on. If this fails, nothing below it
+    is telling you anything about isolation — only that the daemon, the image or the exec
+    path is broken."""
     assert await box.is_alive() is True
     result = await box.run_command("echo hello")
     assert result.success is True
@@ -101,6 +104,10 @@ async def test_a_started_container_is_alive_and_runs_a_command(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_destroying_removes_the_container(box):
+    """`is_alive()` reading False is not enough — it can be answered from a flag on the
+    handle. The daemon is asked directly because a container that stops without being
+    removed keeps its name, and the next run of the same task then starts by colliding
+    with its own leftovers."""
     await box.destroy()
     assert await box.is_alive() is False
     listed = subprocess.run(
@@ -146,6 +153,10 @@ async def test_starting_over_a_leftover_container_of_the_same_name():
 @requires_docker
 @pytest.mark.asyncio
 async def test_destroy_is_idempotent(box):
+    """Teardown runs from more than one place — a test's `finally`, the manager's
+    `release`, the run-wide cleanup — and they overlap by design. A second destroy that
+    raised would turn ordinary cleanup into an error that masks whatever the run was
+    actually reporting."""
     await box.destroy()
     await box.destroy()  # must not raise
 
@@ -175,6 +186,9 @@ async def test_a_nonzero_exit_is_an_answer_not_a_failure(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_stdout_and_stderr_come_back_separately(box):
+    """A build that prints its errors to stderr and its progress to stdout is the common
+    case, and merging the two costs the caller the ability to say which is which — for a
+    compiler's output, that is the whole message."""
     result = await box.run_command("echo out; echo err >&2")
     assert result.stdout.strip() == "out"
     assert result.stderr.strip() == "err"
@@ -183,6 +197,10 @@ async def test_stdout_and_stderr_come_back_separately(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_command_that_hangs_is_cut_off_and_says_so(box):
+    """A `docker exec` that never returns holds the caller forever, so the cut-off has to
+    happen here rather than upstream. The limit appears in the text because that is the
+    only thing distinguishing "give it longer" from "this will never finish" — and it is
+    the one case where nothing was observed at all."""
     result = await box.run_command("sleep 60", timeout=3)
     assert result.success is False
     assert "3" in (result.error or "") + result.stderr
@@ -191,6 +209,9 @@ async def test_a_command_that_hangs_is_cut_off_and_says_so(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_the_environment_reaches_the_command(box):
+    """Per-call variables are how a caller passes anything the container was not started
+    with — a token, a build flag, a proxy override. Silently dropping them leaves the
+    command running against the image's defaults and reporting success."""
     result = await box.run_command("echo $MY_VAR", env={"MY_VAR": "from-the-caller"})
     assert result.stdout.strip() == "from-the-caller"
 
@@ -199,6 +220,10 @@ async def test_the_environment_reaches_the_command(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_written_file_reads_back_byte_for_byte(box):
+    """Files here are built on top of shell commands, so every write is a round trip
+    through quoting and an encoding. The content is chosen to break both: a quote the
+    shell would eat, and non-ASCII that a wrong encoding turns into something the caller
+    never wrote and cannot see it never wrote."""
     await box.write_file("/workspace/note.txt", "content with 中文 and 'quotes'")
     assert await box.read_file("/workspace/note.txt") == "content with 中文 and 'quotes'"
 
@@ -206,6 +231,9 @@ async def test_a_written_file_reads_back_byte_for_byte(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_binary_content_survives_the_round_trip(box):
+    """Every byte value, including NUL and the ones no text encoding round-trips. A
+    sandbox that can only carry text cannot deliver a compiled artefact or a tarball,
+    and the corruption shows up wherever the file is finally used rather than here."""
     payload = bytes(range(256))
     await box.write_file("/workspace/blob.bin", payload)
     assert await box.read_bytes("/workspace/blob.bin") == payload
@@ -214,6 +242,8 @@ async def test_binary_content_survives_the_round_trip(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_writing_creates_the_parent_directory(box):
+    """Otherwise every caller has to `mkdir -p` first, and the one that forgets gets a
+    write that reports success on some backends and fails on others."""
     await box.write_file("/workspace/deep/nested/file.txt", "x")
     assert (await box.run_command("cat /workspace/deep/nested/file.txt")).stdout.strip() == "x"
 
@@ -238,6 +268,9 @@ async def test_reading_a_missing_file_raises_rather_than_returning_empty(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_mounted_directory_is_visible_inside(tmp_path):
+    """Both directions, because a mount that only reads is a copy. Work produced inside a
+    container that is about to be destroyed only survives if the writes land on the
+    host — which is how a task's deliverable gets out at all."""
     (tmp_path / "given.txt").write_text("from the host", encoding="utf-8")
     handle = DockerSandbox(SandboxConfig(
         image=IMAGE, network=False, sandbox_key=a_key("mount"),
@@ -264,6 +297,9 @@ async def test_a_closed_network_leaves_no_route_out(box):
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_closed_network_has_only_loopback(box):
+    """Name resolution failing is not proof of isolation — a container with an interface
+    and no DNS fails the same way, and can still reach a literal address. Reading the
+    interface list asks the question the other way round: there is nothing to send on."""
     result = await box.run_command("ip -o addr show 2>/dev/null | awk '{print $2}' | sort -u")
     interfaces = set(result.stdout.split())
     assert interfaces <= {"lo"}, interfaces
@@ -273,6 +309,9 @@ async def test_a_closed_network_has_only_loopback(box):
 @requires_internet
 @pytest.mark.asyncio
 async def test_an_open_network_can_reach_the_internet():
+    """The control for the two above: a backend that had broken *all* networking would
+    pass every isolation test in this file and fail nothing, until a task that legitimately
+    needs to fetch something quietly could not."""
     handle = DockerSandbox(SandboxConfig(
         image=IMAGE, network=True, sandbox_key=a_key("open"),
     ))
@@ -366,6 +405,7 @@ async def test_a_policy_without_a_mounted_checkout_fails_loudly():
             image=IMAGE, network=False, allow_hosts=["example.com"],
         )
 
+
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_failed_start_leaves_no_container_behind():
@@ -378,6 +418,8 @@ async def test_a_failed_start_leaves_no_container_behind():
             "docker", reuse_key=key,
             image=IMAGE, network=False, allow_hosts=["example.com"],
         )
+    # Asked of the daemon, not of the handle: the point is that nothing was left running
+    # under a name nothing holds a reference to any more.
     listed = subprocess.run(
         ["docker", "ps", "-aq", "--filter", f"name=^{_container_name(key)}$"],
         capture_output=True, text=True,
@@ -404,6 +446,10 @@ async def test_a_failed_start_leaves_no_relay_socket_behind():
 @requires_docker
 @pytest.mark.asyncio
 async def test_a_reuse_key_keeps_the_container_warm():
+    """Identity of the handle is only half of it. The marker file is the half that
+    matters: a manager that returned a *new* container for the same key would satisfy
+    every "did I get a sandbox" check while losing the working state — an unpacked
+    source tree, a built object file — between one agent step and the next."""
     key = a_key("warm")
     try:
         first = await sandbox_manager.acquire("docker", reuse_key=key, image=IMAGE, network=False)
@@ -418,6 +464,9 @@ async def test_a_reuse_key_keeps_the_container_warm():
 @requires_docker
 @pytest.mark.asyncio
 async def test_different_keys_get_different_containers():
+    """Two concurrent tasks are the normal case. Sharing one container would let one
+    task's build products satisfy another task's check, and the result would look like
+    a pass earned by the work rather than by the leak."""
     keys = [a_key("sep-a"), a_key("sep-b")]
     try:
         a, b = [
@@ -435,6 +484,9 @@ async def test_different_keys_get_different_containers():
 @requires_docker
 @pytest.mark.asyncio
 async def test_releasing_destroys_the_container():
+    """Dropping the handle from the cache is not the same as removing the container. A
+    release that only forgot would leave one container per task running on the host for
+    the length of a benchmark sweep."""
     key = a_key("released")
     handle = await sandbox_manager.acquire("docker", reuse_key=key, image=IMAGE, network=False)
     await sandbox_manager.release("docker", reuse_key=key)
@@ -475,6 +527,9 @@ async def test_the_requested_user_is_who_the_command_runs_as():
 @requires_docker
 @pytest.mark.asyncio
 async def test_the_workdir_is_where_a_command_starts():
+    """Every relative path an agent writes is resolved against this. If it silently
+    defaults to the image's own directory, `make` builds elsewhere and the files the
+    agent then looks for are not there — with nothing in the output saying why."""
     handle = DockerSandbox(SandboxConfig(
         image=IMAGE, network=False, sandbox_key=a_key("workdir"), workdir="/tmp",
     ))

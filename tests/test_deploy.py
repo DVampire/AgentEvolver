@@ -1,13 +1,20 @@
-"""Deploy: profile resolution, backend selection, and the site registry.
+"""What a deploy resolves to before any container is involved.
 
-The manager's contract is that it never knows React from FastAPI — a profile
-turns intent into a spec, and the manager only executes it. So the parts worth
-pinning down without a container are the ones that decide *what* gets executed:
-spec resolution and its override precedence, which backend is chosen, and
-whether the registry survives a restart.
+The manager never knows React from FastAPI. A profile turns a ``DeployRequest`` into a
+``DeploymentSpec``, and the manager only executes it: upload, build, start, expose,
+health-check. Everything decided ahead of that lives here — and every mistake in it
+surfaces the same unhelpful way, as "service did not become healthy within 120s". A
+start command pinned to ``127.0.0.1`` is unreachable through ``expose_port``; a port in
+the record the start command does not actually serve binds a URL to nothing; a dropped
+override runs the profile's default instead of what the caller asked for. None of those
+say so in the failure.
 
-Everything here is deliberately container-free; the acquire → upload → build →
-start path needs a live sandbox and is not exercised.
+The registry is the other half. It is the only trace of a site that survives a process
+restart, so a record that fails to load is a live server nobody can list, stop, or
+redeploy — the container keeps running and the framework has forgotten it exists.
+
+Nothing here starts a container: the acquire → upload → build → start path needs a live
+sandbox and is not exercised.
 """
 
 import json
@@ -28,6 +35,11 @@ from agentevolver.deploy.types import (
 
 @pytest.fixture
 def manager(tmp_path):
+    """A manager whose registry is a throwaway file, with initialization skipped.
+
+    ``_initialized`` is set by hand because the real ``initialize()`` reconciles every
+    recorded site over HTTP; these tests want the resolution logic, not the network.
+    """
     import agentevolver.deploy.default  # noqa: F401 — registers the built-in profiles
 
     server = DeploymentManagerServer()
@@ -36,29 +48,41 @@ def manager(tmp_path):
     return server
 
 
-# --------------------------------------------------------------- profiles
+# --------------------------------------------------------------------------- #
+# What a profile resolves to
+# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_the_built_in_profiles_are_discoverable(manager):
+    """These four names are what an agent picks from; a profile that fails to register
+    is simply absent, and the deploy fails as "no such profile" long after the mistake."""
     profiles = await manager.list_profiles()
     assert {"static", "node", "python", "custom"} <= set(profiles)
 
 
 def test_an_unknown_profile_names_the_ones_that_exist(manager):
+    """The caller is usually a model guessing at a runtime string.
+
+    "No deploy profile 'nope'" on its own invites another guess; listing the available
+    names turns the second attempt into a correct one.
+    """
     with pytest.raises(ValueError, match="No deploy profile 'nope'"):
         manager._profile("nope")
 
 
 def test_a_static_site_needs_no_build_step(manager):
+    """Pre-built files have nothing to compile, and an empty build list is the way that
+    is said — a profile that invented a step here would fail on every plain HTML site."""
     spec = manager._resolve_spec(DeployRequest(site_id="s", runtime="static"))
     assert spec.build == []
     assert spec.port == 8000
 
 
 @pytest.mark.parametrize("runtime", ["static", "node", "python"])
-def test_no_profile_binds_loopback(manager, runtime):
-    """A server on 127.0.0.1 is unreachable through expose_port — silent breakage.
+def test_no_profile_pins_its_server_to_loopback(manager, runtime):
+    """A server on 127.0.0.1 is unreachable through ``expose_port`` — silent breakage.
 
-    Profiles either say ``0.0.0.0`` outright or use a server that defaults to
+    The site is built, the process starts, the port is bound, and the URL answers
+    nothing. Profiles either say ``0.0.0.0`` outright or use a server that defaults to
     every interface; what none of them may do is pin loopback.
     """
     spec = manager._resolve_spec(DeployRequest(site_id="s", runtime=runtime))
@@ -68,17 +92,27 @@ def test_no_profile_binds_loopback(manager, runtime):
 
 @pytest.mark.parametrize("runtime", ["static", "node", "python"])
 def test_every_profile_serves_the_port_it_reports(manager, runtime):
-    """The recorded port is what becomes the site URL; the start command must agree."""
+    """The recorded port is what gets exposed and becomes the site URL.
+
+    If the start command still carries the profile default while the record carries the
+    requested one, the URL points at a port nothing is listening on. ``$PORT`` counts:
+    the manager exports the chosen port under that name for exactly this reason.
+    """
     spec = manager._resolve_spec(DeployRequest(site_id="s", runtime=runtime, port=7654))
     assert "7654" in spec.start or "$PORT" in spec.start
 
 
 def test_the_custom_profile_refuses_to_guess_a_start_command(manager):
+    """``custom`` exists because nothing generic fits, so there is nothing to fall back
+    on. Inventing a default here would start the wrong process and report it healthy the
+    moment anything answered the port."""
     with pytest.raises(ValueError, match="requires overrides.start"):
         manager._resolve_spec(DeployRequest(site_id="s", runtime="custom"))
 
 
 def test_the_custom_profile_takes_everything_from_overrides(manager):
+    """The escape hatch has to be a complete one: image, build and start all come from
+    the caller, or a Go binary would still be built by a Python profile's defaults."""
     spec = manager._resolve_spec(DeployRequest(
         site_id="s",
         runtime="custom",
@@ -89,13 +123,17 @@ def test_the_custom_profile_takes_everything_from_overrides(manager):
     assert spec.start == "./app"
 
 
-# ------------------------------------------------------- override precedence
+# --------------------------------------------------------------------------- #
+# Which value wins when the request and the profile disagree
+# --------------------------------------------------------------------------- #
 def test_an_explicit_port_beats_the_profile_default(manager):
     spec = manager._resolve_spec(DeployRequest(site_id="s", runtime="static", port=9999))
     assert spec.port == 9999
 
 
 def test_request_env_is_merged_over_the_profile_env(manager):
+    """Merged, not replaced: the profile's own variables have to survive alongside the
+    caller's, or a request that passes one key would strip the rest of the environment."""
     spec = manager._resolve_spec(DeployRequest(
         site_id="s", runtime="static", env={"API_KEY": "secret"},
     ))
@@ -113,6 +151,11 @@ def test_request_env_is_merged_over_the_profile_env(manager):
     ],
 )
 def test_each_overridable_field_wins_over_the_profile(manager, field, value):
+    """One case per field, because the overlay is a hand-written list of field names.
+
+    A field left out of that list is not rejected — it is accepted and ignored, and the
+    site runs the profile's version of whatever the caller thought they had changed.
+    """
     spec = manager._resolve_spec(DeployRequest(
         site_id="s", runtime="static", overrides={field: value},
     ))
@@ -120,6 +163,12 @@ def test_each_overridable_field_wins_over_the_profile(manager, field, value):
 
 
 def test_a_null_override_does_not_erase_the_profile_value(manager):
+    """``None`` means "not specified", not "clear it".
+
+    Callers routinely build overrides by dumping a model, which fills every unset field
+    with ``None``. Treating those as real values would blank the image, the start
+    command and the workspace in one go.
+    """
     spec = manager._resolve_spec(DeployRequest(
         site_id="s", runtime="static", overrides={"image": None},
     ))
@@ -127,6 +176,9 @@ def test_a_null_override_does_not_erase_the_profile_value(manager):
 
 
 def test_a_health_override_is_accepted_as_a_plain_dict(manager):
+    """Overrides arrive as JSON, so the health check arrives as a dict rather than a
+    ``HealthCheck``. Storing the dict unconverted would break the probe loop later, at
+    the point where it reads ``health.type``."""
     spec = manager._resolve_spec(DeployRequest(
         site_id="s", runtime="static", overrides={"health": {"type": "command", "command": "true"}},
     ))
@@ -135,7 +187,9 @@ def test_a_health_override_is_accepted_as_a_plain_dict(manager):
     assert spec.health.command == "true"
 
 
-# ------------------------------------------------------- backend selection
+# --------------------------------------------------------------------------- #
+# Choosing between a container and the bare host
+# --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     "choice, expected",
     [
@@ -148,37 +202,63 @@ def test_a_health_override_is_accepted_as_a_plain_dict(manager):
         ("  host  ", "host"),      # and whitespace-tolerant
     ],
 )
-def test_the_backend_env_var_is_honoured(manager, monkeypatch, choice, expected):
+def test_every_spelling_of_the_backend_choice_lands_on_the_same_backend(manager, monkeypatch, choice, expected):
+    """The value is typed into an env var by a person, so aliases and stray whitespace
+    are the normal case rather than the exotic one.
+
+    An unrecognised spelling does not raise — it falls through to auto-detection, so a
+    dropped alias means the run quietly uses a backend nobody asked for. ``host`` in
+    particular gives up container isolation, which is not something to arrive at by a
+    typo in ``DEPLOY_BACKEND``.
+    """
     monkeypatch.setenv("DEPLOY_BACKEND", choice)
     assert manager._backend_kind() == expected
 
 
 def test_auto_falls_back_to_the_host_when_no_container_runtime_is_reachable(manager, monkeypatch):
-    """A deploy still has to work on a machine without Docker."""
+    """A deploy still has to work on a machine without Docker.
+
+    The host backend gives up isolation, which is why it is never the default — but
+    refusing to deploy at all would make the whole subsystem unusable on the machines
+    where it is most often demonstrated.
+    """
     monkeypatch.setenv("DEPLOY_BACKEND", "auto")
     monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: False))
     assert manager._backend_kind() == "host"
 
 
 def test_auto_prefers_the_container_when_one_is_reachable(manager, monkeypatch):
+    """With no env var set at all, the isolated backend is what a site gets."""
     monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
     monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
     assert manager._backend_kind() == "opensandbox"
 
 
 def test_a_remote_docker_host_counts_as_a_container_runtime(manager, monkeypatch):
+    """Probing only for a local ``/var/run/docker.sock`` would send every deploy on a
+    remote-daemon machine to the unisolated host backend."""
     monkeypatch.setenv("DOCKER_HOST", "tcp://10.0.0.1:2375")
     assert manager._container_runtime_available() is True
 
 
 def test_a_host_site_gets_its_own_directory_under_the_registry(manager, tmp_path):
+    """Host-backend sites share one filesystem, so their source trees must not share a
+    directory — two sites unpacking into the same place would overwrite each other."""
     site_dir = manager._host_site_dir("my-site")
     assert site_dir.startswith(str(tmp_path))
     assert site_dir.endswith(os.path.join("sites", "my-site", "app"))
 
 
-# ---------------------------------------------------------------- registry
+# --------------------------------------------------------------------------- #
+# The registry as the only thing that outlives the process
+# --------------------------------------------------------------------------- #
 def test_the_registry_survives_a_restart(manager, tmp_path):
+    """Sandbox handles die with the process; the JSON file is what is left.
+
+    A second manager reading the same path has to see the URL and the runtime, because
+    those are what ``redeploy`` and ``stop_site`` work from. Without them a running site
+    is unreachable through the framework that started it.
+    """
     manager._sites["a"] = SiteRecord(site_id="a", runtime="static", url="http://x", port=8000)
     manager._save()
 
@@ -190,7 +270,13 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
 
 
 def test_a_corrupt_registry_degrades_to_empty_rather_than_crashing(manager, tmp_path):
-    """A bad registry must not stop the framework from starting."""
+    """A bad registry must not stop the framework from starting.
+
+    The file is rewritten on every deploy, so a process killed mid-write leaves exactly
+    this. Raising here would make one truncated JSON file fatal to the whole framework,
+    for a subsystem most runs never touch. The stale in-memory map is dropped too: half
+    a picture is harder to reason about than none.
+    """
     (tmp_path / "sites.json").write_text("{ not json")
     manager._sites = {"stale": SiteRecord(site_id="stale", runtime="static")}
     manager._load()
@@ -198,12 +284,18 @@ def test_a_corrupt_registry_degrades_to_empty_rather_than_crashing(manager, tmp_
 
 
 def test_saving_without_a_registry_path_is_a_no_op():
+    """An uninitialized manager has no path yet, and ``_save`` is called from paths that
+    do not know whether ``initialize()`` has run."""
     DeploymentManagerServer()._save()  # must not raise
 
 
-# -------------------------------------------------------------- reconcile
+# --------------------------------------------------------------------------- #
+# Recovering sites after a restart
+# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_a_site_still_answering_is_reattached_as_running(manager, monkeypatch):
+    """The handle is gone but the server is not: a detached host process or a container
+    outlives the framework, so a restart must reattach rather than declare it dead."""
     manager._sites["a"] = SiteRecord(site_id="a", runtime="static", url="http://x",
                                      status=SiteStatus.RUNNING)
     monkeypatch.setattr(manager, "_url_reachable", staticmethod(lambda url: _true()))
@@ -213,7 +305,11 @@ async def test_a_site_still_answering_is_reattached_as_running(manager, monkeypa
 
 @pytest.mark.asyncio
 async def test_a_site_that_no_longer_answers_becomes_redeployable(manager, monkeypatch):
-    """The handle dies with the process; the record must say so, not lie."""
+    """The handle dies with the process; the record must say so, not lie.
+
+    ``DETACHED`` is the state ``redeploy`` acts on. Leaving the record as ``RUNNING``
+    would show a working site in every listing and give no way to bring it back.
+    """
     manager._sites["a"] = SiteRecord(site_id="a", runtime="static", url="http://x",
                                      status=SiteStatus.RUNNING)
     monkeypatch.setattr(manager, "_url_reachable", staticmethod(lambda url: _false()))
@@ -223,6 +319,12 @@ async def test_a_site_that_no_longer_answers_becomes_redeployable(manager, monke
 
 @pytest.mark.asyncio
 async def test_deliberately_stopped_sites_are_left_alone(manager, monkeypatch):
+    """``STOPPED`` and ``FAILED`` are decisions, not observations.
+
+    Both are unreachable, so a reconciler that only probes would relabel them
+    ``DETACHED`` and present a site somebody stopped on purpose as one waiting to be
+    brought back.
+    """
     for status in (SiteStatus.STOPPED, SiteStatus.FAILED):
         manager._sites = {"a": SiteRecord(site_id="a", runtime="static", status=status)}
         monkeypatch.setattr(manager, "_url_reachable", staticmethod(lambda url: _false()))
@@ -232,6 +334,8 @@ async def test_deliberately_stopped_sites_are_left_alone(manager, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_site_without_a_url_is_never_considered_reachable(manager):
+    """A record that never got as far as being exposed has nothing to probe; an empty
+    string must not reach the HTTP client and come back as something other than False."""
     assert await DeploymentManagerServer._url_reachable(None) is False
     assert await DeploymentManagerServer._url_reachable("") is False
 
@@ -244,28 +348,42 @@ async def _false():
     return False
 
 
-# ------------------------------------------------------------------- types
+# --------------------------------------------------------------------------- #
+# Defaults the types carry on their own
+# --------------------------------------------------------------------------- #
 def test_a_fresh_site_starts_pending():
     assert SiteRecord(site_id="a", runtime="static").status is SiteStatus.PENDING
 
 
 def test_a_site_record_keeps_the_request_so_it_can_be_redeployed():
+    """``redeploy`` rebuilds from the stored request and nothing else.
+
+    A record that dropped it — or stored it in a shape ``DeployRequest`` cannot read
+    back — leaves the site permanently unrecoverable after a restart.
+    """
     request = DeployRequest(site_id="a", runtime="static", port=8080)
     record = SiteRecord(site_id="a", runtime="static", request=request.model_dump())
     assert DeployRequest(**record.request).port == 8080
 
 
 def test_health_checks_default_to_probing_the_root_over_http():
+    """The intervals matter as much as the type: a zero or negative interval turns the
+    readiness loop into a busy wait against a container that is still building."""
     check = HealthCheck()
     assert (check.type, check.path) == ("http", "/")
     assert check.timeout_s > 0 and check.interval_s > 0
 
 
 def test_gpu_is_off_by_default():
+    """GPU passthrough is a placeholder the sandbox backend does not implement, so any
+    non-zero default would request hardware nothing can supply."""
     assert ResourceSpec().gpu == 0
 
 
 def test_a_spec_requires_the_fields_the_manager_executes():
+    """``start`` and ``port`` have no sensible default — the manager runs one and exposes
+    the other. A spec that validated without them would fail deep inside the deploy, with
+    the container already acquired and the source already uploaded."""
     with pytest.raises(Exception):
         DeploymentSpec(runtime="static", image="x")  # no start, no port
 

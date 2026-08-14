@@ -1,8 +1,15 @@
-"""The Science workstation: notebooks, compute, and the shared kernel.
+"""The Science view answers before a kernel exists, and what it saves is a real notebook.
 
-Kernel execution itself needs a live Jupyter Server, so it is verified by hand
-against the built image. What is pinned here is everything that answers without
-one, plus the conversions that quietly lose data when they are wrong.
+There is one Jupyter Server per project and one kernel inside it, shared by the agent's
+``code_interpreter_tool``, the view's REPL and JupyterLab. What breaks quietly sits
+downstream of that: a notebook list read through the server would be empty until one has
+booted, a save that flattens an output loses the figure it was saving, and an idle clock
+reaps a kernel that is holding a training run on purpose.
+
+Kernel execution itself needs a live server, so it is verified by hand against the built
+image. What is pinned here is everything that answers without one, plus the conversions
+where a wrong answer is lossy rather than an error — nothing raises when a plot becomes
+the string ``<Figure>``.
 """
 
 from __future__ import annotations
@@ -17,6 +24,22 @@ from agentevolver.paths import P, path_manager
 from agentevolver.science import science_manager
 
 
+class _FakeProject:
+    """Just enough of a kernel project for the history conversions.
+
+    Stands in for a live kernel so the conversions can be read without a Jupyter Server:
+    what is under test is what comes *out* of a history, not the execution that filled it.
+    """
+
+    def __init__(self, history) -> None:
+        self.history = history
+        self.busy = False
+        self.workspace = ""
+
+
+# --------------------------------------------------------------------------- #
+# A notebook is a file in the project, not something the kernel owns
+# --------------------------------------------------------------------------- #
 def test_notebooks_are_workspace_files_not_kernel_state() -> None:
     """They list before a kernel exists and after it is gone.
 
@@ -98,6 +121,9 @@ def test_the_history_is_saved_as_a_real_notebook() -> None:
     asyncio.run(run())
 
 
+# --------------------------------------------------------------------------- #
+# What the view can answer before anything has run
+# --------------------------------------------------------------------------- #
 def test_a_machine_without_gpus_reports_none_rather_than_failing() -> None:
     """Plenty of hosts have no NVIDIA card, so the panel says so instead of
     showing a meter with nothing behind it."""
@@ -130,15 +156,9 @@ def test_the_lab_is_served_under_the_projects_own_path() -> None:
     assert base_path("abc123") == "/science/abc123"
 
 
-class _FakeProject:
-    """Just enough of a kernel project for the history conversions."""
-
-    def __init__(self, history) -> None:
-        self.history = history
-        self.busy = False
-        self.workspace = ""
-
-
+# --------------------------------------------------------------------------- #
+# A poll while the agent works costs a status, not the transcript
+# --------------------------------------------------------------------------- #
 def test_the_history_poll_only_sends_what_is_new() -> None:
     """A history holding a few figures is megabytes of base64.
 
@@ -209,6 +229,9 @@ def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
     asyncio.run(run())
 
 
+# --------------------------------------------------------------------------- #
+# Nothing closes a kernel that is still working
+# --------------------------------------------------------------------------- #
 def test_the_reaper_never_closes_a_server_whose_kernel_is_working() -> None:
     """Time alone would kill a training run.
 
