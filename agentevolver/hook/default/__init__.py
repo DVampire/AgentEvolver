@@ -12,6 +12,7 @@ from .workflow_registration import WorkflowRegistrationHook
 from .snapshot_hook import SnapshotHook
 from .trajectory_hook import TrajectoryHook
 from .repeat_tool import RepeatToolReminderHook
+from .plan_mode import PlanModeHook
 
 __all__ = [
     "CompactHook",
@@ -28,4 +29,5 @@ __all__ = [
     "SnapshotHook",
     "TrajectoryHook",
     "RepeatToolReminderHook",
+    "PlanModeHook",
 ]

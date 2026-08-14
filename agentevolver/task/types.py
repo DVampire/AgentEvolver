@@ -114,3 +114,118 @@ class Task(BaseModel):
     def mark_cancelled(self) -> None:
         self.status = TaskStatus.CANCELLED
         self.updated_at = datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Goals — the standing objective a session is judged against
+# ---------------------------------------------------------------------------
+#
+# A Task is one submission: it is created, it runs, it ends, and the run ends
+# with it. A Goal outlives every task in the session and says what the session
+# is *for*. The two differ in who may change them, which is the whole point of
+# the type: a task is the agent's to run, a goal is the human's to set.
+
+
+class GoalPhase(str, Enum):
+    """Where a goal stands.
+
+    ``BLOCKED`` is not a failure and not an ending — the objective still holds
+    and something outside the agent has to move. Collapsing it into ``COMPLETE``
+    would let a stuck run report the goal as met.
+    """
+
+    ACTIVE = "active"
+    PAUSED = "paused"
+    BLOCKED = "blocked"
+    COMPLETE = "complete"
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the goal still stands. Only completion closes it."""
+        return self is not GoalPhase.COMPLETE
+
+
+class GoalAuthority(str, Enum):
+    """Who is asking for a change.
+
+    Never a tool argument. The model can write anything into its own arguments,
+    so an authority it can name is an authority it holds; this value is derived
+    from the calling context by :func:`agentevolver.task.goal.authority_of` and
+    passed in by the host.
+    """
+
+    HUMAN = "human"
+    AGENT = "agent"
+
+
+class GoalAction(str, Enum):
+    """The changes an existing goal admits."""
+
+    EDIT = "edit"
+    PAUSE = "pause"
+    RESUME = "resume"
+    COMPLETE = "complete"
+    BLOCKED = "blocked"
+
+
+#: Actions that require a direct human, alongside creating a goal at all.
+#:
+#: This is the line the whole feature exists to draw. An agent that may rewrite
+#: its objective has a note, not a goal: whenever the work got hard it could
+#: edit the target to whatever it had already achieved, and its own trajectory
+#: would read as success. Reporting *progress* is different — the agent is the
+#: only party that knows whether the objective was met or whether it is stuck —
+#: so ``COMPLETE`` and ``BLOCKED`` are open to it, and are claims a human can
+#: still read and overturn.
+HUMAN_ONLY_ACTIONS = frozenset({GoalAction.EDIT, GoalAction.PAUSE, GoalAction.RESUME})
+
+
+class Goal(BaseModel):
+    """One standing objective, as it is persisted.
+
+    ``revision`` is the compare-and-set token. Every mutation increments it, and
+    a mutation must name the revision it read, so a caller working from a stale
+    view is told rather than silently overwriting a change it never saw.
+    """
+
+    id: str = Field(default_factory=lambda: f"goal_{make_id()}",
+                    description="Stable identity across every revision of this goal.")
+    session_id: str = Field(default="", description="The session this goal belongs to.")
+    objective: str = Field(description="What the human asked for, in their words.")
+    phase: GoalPhase = Field(default=GoalPhase.ACTIVE)
+    revision: int = Field(default=1, description="Incremented by every durable change; the compare-and-set token.")
+    priority: TaskPriority = Field(default=TaskPriority.NORMAL,
+                                   description="Same scale tasks use, so a goal and the tasks under it can be compared.")
+    blocked_reason: Optional[str] = Field(
+        default=None,
+        description="Set only while phase is blocked: the concrete condition that has to change.",
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def summary(self) -> str:
+        """One line, for a listing or a tool result."""
+        state = self.phase.value
+        if self.phase is GoalPhase.BLOCKED and self.blocked_reason:
+            state = f"blocked: {self.blocked_reason[:60]}"
+        return f"{self.id} (rev {self.revision})  {state}  {self.objective[:80]}"
+
+
+class GoalError(Exception):
+    """Base for every refusal the goal store issues."""
+
+
+class GoalAuthorityError(GoalError):
+    """The caller may not make this change. Raised, never returned as a value.
+
+    A refusal that came back as an ordinary result would be one `if` away from
+    being ignored by a caller that only checks for exceptions.
+    """
+
+
+class GoalRevisionError(GoalError):
+    """The caller wrote against a revision that is no longer current."""
+
+
+class GoalStateError(GoalError):
+    """The change does not apply to the goal in its current phase."""

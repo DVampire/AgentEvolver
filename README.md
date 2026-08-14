@@ -433,6 +433,7 @@ Framework writes are resolved centrally through `agentevolver.paths`. The main w
 | [`docs/workflows.md`](docs/workflows.md) | Dynamic HTML workflows |
 | [`docs/canvas.md`](docs/canvas.md) | Visual Canvas flows |
 | [`docs/capability-schemas.md`](docs/capability-schemas.md) | Capability schema protocol |
+| [`docs/tool-catalog.md`](docs/tool-catalog.md) | Generated: every registered tool, its parameters and its permission mode |
 | [`agentevolver/trajectory/README.md`](agentevolver/trajectory/README.md) | Trajectory capture, persistence, and SFT/RL export contract |
 
 ## Project status

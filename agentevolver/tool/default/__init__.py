@@ -16,6 +16,25 @@ from .evolution import EvolutionTool
 from .journal import JournalTool
 from .escalate import EscalateTool
 from .job import JobKillTool, JobListTool, JobOutputTool
+from .ask_user import AskUserTool
+from .exit_plan_mode import ExitPlanModeTool
+from .goal import CreateGoalTool, GetGoalTool, UpdateGoalTool
+from .schedule import ScheduleCreateTool
+from .session_query import (
+    SessionEventReadTool,
+    SessionEventSearchTool,
+    SessionReadTool,
+    SessionSearchTool,
+    SessionTraceTool,
+)
+from .terminal import (
+    TerminalCloseTool,
+    TerminalListTool,
+    TerminalOpenTool,
+    TerminalReadTool,
+    TerminalSendTool,
+    TerminalSignalTool,
+)
 from .reply import ReplyTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
@@ -47,7 +66,25 @@ __all__ = [
     "EscalateTool",
     "JobOutputTool",
     "JobListTool",
+    "MediaSearchTool",
     "JobKillTool",
+    "TerminalCloseTool",
+    "TerminalSignalTool",
+    "TerminalListTool",
+    "TerminalReadTool",
+    "TerminalSendTool",
+    "TerminalOpenTool",
+    "SessionTraceTool",
+    "SessionEventReadTool",
+    "SessionReadTool",
+    "SessionEventSearchTool",
+    "SessionSearchTool",
+    "ScheduleCreateTool",
+    "UpdateGoalTool",
+    "CreateGoalTool",
+    "GetGoalTool",
+    "ExitPlanModeTool",
+    "AskUserTool",
     "ReplyTool",
     "GlobSearchTool",
     "GrepSearchTool",

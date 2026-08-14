@@ -13,9 +13,16 @@ import os
 import signal
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 
-from agentevolver.job.types import Job, JobStatus
+from agentevolver.job.types import (
+    Job,
+    JobStatus,
+    ScheduleError,
+    next_occurrence,
+    resolve_due,
+)
 from agentevolver.logger import logger
 from agentevolver.utils import Singleton
 
@@ -31,10 +38,14 @@ MAX_FINISHED_PER_SESSION = 50
 
 
 class JobManagerServer(metaclass=Singleton):
-    """Starts, tracks, reads, and kills background work."""
+    """Starts, tracks, reads, and kills background work — including work not started yet."""
 
     def __init__(self) -> None:
         self._jobs: Dict[str, Job] = {}
+        #: Wall clock, read through an attribute so a test can pin it. Every
+        #: comparison against ``due_at`` goes through here; a test that proved
+        #: scheduling by sleeping would prove it slowly and flake under load.
+        self.clock: Callable[[], float] = time.time
 
     # ------------------------------------------------------------------
     # Starting
@@ -86,6 +97,83 @@ class JobManagerServer(metaclass=Singleton):
                       else JobStatus.FAILED if exit_code is not None
                       else JobStatus.EXITED)
         logger.info(f"| 🧵 Job {job_id} {job.status.value} after {job.elapsed:.1f}s")
+
+    # ------------------------------------------------------------------
+    # Scheduling — work that has not started yet
+    # ------------------------------------------------------------------
+
+    def schedule(self, *, session_id: str, prompt: str,
+                 after_seconds: Optional[int] = None,
+                 at: Optional[str] = None,
+                 every_seconds: Optional[int] = None) -> Job:
+        """Register a reminder for later. Raises ``ScheduleError`` on a bad selector.
+
+        Session-local, and that is a property rather than a shortfall: the registry
+        lives in this process and dies with it, so a reminder is a way to come back
+        to something inside one run, not a way to reach the user tomorrow. Anything
+        that must outlive the run belongs in the workspace or in a goal.
+        """
+        text = (prompt or "").strip()
+        if not text:
+            raise ScheduleError("A reminder needs something to say; the prompt was empty.")
+
+        now = self.clock()
+        due_at, interval = resolve_due(now=now, after_seconds=after_seconds,
+                                       at=at, every_seconds=every_seconds)
+        job = Job(id=f"job_{uuid.uuid4().hex[:8]}", kind="reminder", label=text,
+                  session_id=session_id, status=JobStatus.SCHEDULED,
+                  due_at=due_at, every_seconds=interval)
+        self._jobs[job.id] = job
+        self._evict(session_id)
+        logger.info(f"| ⏰ Reminder {job.id} due in {due_at - now:.0f}s"
+                    f"{f' every {interval}s' if interval else ''}: {text[:80]}")
+        return job
+
+    def reminders(self, session_id: str = "") -> List[Job]:
+        """Scheduled reminders for one session, soonest first."""
+        pending = [j for j in self._jobs.values()
+                   if j.is_reminder and j.status is JobStatus.SCHEDULED
+                   and (not session_id or j.session_id == session_id)]
+        return sorted(pending, key=lambda j: (j.due_at or 0, j.started_at))
+
+    def due(self, session_id: str = "") -> List[Job]:
+        """Reminders whose time has come and which nothing has collected yet."""
+        now = self.clock()
+        return [j for j in self.reminders(session_id) if (j.due_at or 0) <= now]
+
+    def claim_due(self, session_id: str = "") -> List[Job]:
+        """Take every due reminder, exactly once, and advance the repeating ones.
+
+        Returns a snapshot of each record as it came due — the caller needs the
+        occurrence it is delivering, and the stored record has already moved on.
+        Claiming is what makes delivery at-most-once: two callers polling the same
+        session must not both announce the same reminder.
+
+        A repeating reminder advances to its next aligned occurrence and skips the
+        ones that were missed. Coming back from an hour offline should say "this is
+        due", not repeat the last twelve times it was.
+        """
+        now = self.clock()
+        claimed: List[Job] = []
+        for job in self.due(session_id):
+            occurrence = job.due_at or now
+            claimed.append(job.model_copy())
+            stamp = datetime.fromtimestamp(occurrence, timezone.utc).isoformat(timespec="seconds")
+            self.append_output(job.id, f"[reminder due {stamp}] {job.label}\n")
+            job.deliveries += 1
+            if job.every_seconds:
+                # Stepped from the occurrence just delivered, which is itself
+                # aligned to creation, so the alignment survives every advance
+                # without keeping a second copy of the anchor to disagree with.
+                job.due_at = next_occurrence(anchor=occurrence,
+                                             every_seconds=job.every_seconds, now=now)
+            else:
+                job.due_at = None
+                job.ended_at = time.monotonic()
+                job.status = JobStatus.EXITED
+                job.exit_code = 0
+            logger.info(f"| ⏰ Reminder {job.id} delivered ({job.deliveries}): {job.label[:60]}")
+        return claimed
 
     # ------------------------------------------------------------------
     # Collecting

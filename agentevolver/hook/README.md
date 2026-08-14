@@ -29,6 +29,7 @@ Built-in hooks (`default/`):
 | `memory_hook` | Feeds lifecycle events into the memory systems |
 | `constraint_hook` | Enforces per-step resource budgets |
 | `repeat_tool_reminder_hook` | Advises, never blocks, when a whole action batch repeats verbatim |
+| `plan_mode_hook` | Refuses actions not declared free of effects until a person approves the plan |
 | `snapshot_hook` | Saves each step's rendered messages as HTML |
 | `compact` | Generic summariser for compressing record lists |
 | `tool_registration_hook` | Registers a generated tool file |

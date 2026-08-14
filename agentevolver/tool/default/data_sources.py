@@ -23,7 +23,8 @@ class HttpRequestTool(Tool):
     instruction: str = (
         "## Function\nCall a REST endpoint and return the response.\n\n"
         "## Parameters\n- url (str): the request URL.\n- method (str): GET (default) / POST / PUT / DELETE / PATCH.\n"
-        "- headers (object): optional request headers.\n- body (str): optional request body (JSON or text).\n\n"
+        "- headers (object): optional request headers.\n- body (str): optional request body (JSON or text).\n"
+        "- timeout (float): seconds to wait for the response. Defaults to 30.\n\n"
         "## Example\n{\"name\": \"http_request_tool\", \"args\": {\"url\": \"https://api.example.com/x\", \"method\": \"GET\"}}"
     )
     metadata: Dict[str, Any] = Field(default={"canvas_category": "data"})

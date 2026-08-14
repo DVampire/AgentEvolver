@@ -97,7 +97,11 @@ class JobListTool(Tool):
             return Response(type=ResponseType.TOOL, success=True,
                             message="No background jobs in this session.")
         running = sum(1 for j in jobs if not j.status.is_final)
-        body = "\n".join(j.summary() for j in jobs)
+        # One clock for the listing and for the registry's own due-ness decisions:
+        # rendering "in 30s" from a different clock than the one that fires the
+        # reminder is how a listing shows work as pending after it has already fired.
+        now = job_manager.clock()
+        body = "\n".join(j.summary(now) for j in jobs)
         return Response(
             type=ResponseType.TOOL, success=True,
             message=f"{len(jobs)} job(s), {running} still running:\n{body}",
@@ -180,8 +184,17 @@ class JobKillTool(Tool):
                          f"readable with job_output_tool."),
             )
 
+        was_reminder = job.is_reminder and not job.deliveries
         killed = job_manager.kill(job_id)
         logger.info(f"| 🧵 job_kill_tool stopped {job_id}: {killed}")
+        if was_reminder:
+            # A reminder printed nothing, so "output before the kill is kept" would be
+            # an offer of nothing. What the agent needs to know is that it will not fire.
+            return Response(
+                type=ResponseType.TOOL, success=True,
+                message=f"Cancelled {job_id}. It will not come due: {job.label[:80]}",
+                data={"job_id": job_id, "status": job.status.value},
+            )
         return Response(
             type=ResponseType.TOOL, success=True,
             message=(f"Stopped {job_id} after {job.elapsed:.1f}s. Output printed before "

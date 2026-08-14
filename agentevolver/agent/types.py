@@ -1403,6 +1403,21 @@ class Agent(BaseModel):
             logger.warning(f"| 🚫 [{self.name}] Action blocked by hook: {pre_result.reason}")
             return {"name": call.name, "done": False, "result": None, "reasoning": None, "error": None}
 
+        # The plan-mode gate. Dispatched by name like every other hook, and separate
+        # from the trace hook above because its refusal has to reach the *model*: the
+        # reason names `exit_plan_mode` as the way out, and a block returned with
+        # `error: None` would leave the agent re-issuing the same call against a wall
+        # it cannot see. Allows everything when no run is in plan mode.
+        plan_gate = await hook_manager(
+            name="plan_mode_hook",
+            input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
+            ctx=ctx,
+        )
+        if plan_gate.decision == HookDecision.BLOCK:
+            logger.warning(f"| 🚫 [{self.name}] {plan_gate.reason}")
+            return {"name": call.name, "done": False, "result": None, "reasoning": None,
+                    "error": plan_gate.reason}
+
         try:
             if route is None:
                 raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
@@ -1651,6 +1666,41 @@ class Agent(BaseModel):
     # The event-driven loop body (shared by every agent)
     # ------------------------------------------------------------------
 
+    def _release_session_resources(self, run: "_AgentRun") -> None:
+        """Reap what the run left running: background jobs and persistent terminals.
+
+        Both registries had a `forget` and nothing called it. A backgrounded command and
+        a PTY shell outlive the step that started them by design — that is the whole
+        point — but nothing outlived the *run* on purpose, and the only reaper was
+        `atexit`. In a long-lived host that never fires, so every finished session left
+        its processes behind and the machine leaked until the gateway was restarted.
+
+        Best-effort and never fatal. A run is already over by the time this is called;
+        raising here would turn a completed task into a failed one over cleanup, which
+        is the worst possible trade — the work is done and the caller would never learn
+        it. A registry that cannot reap says so in the log and the process still exits.
+        """
+        session_id = str(getattr(run.ctx, "id", "") or "")
+        if not session_id:
+            return
+        for label, forget in (("jobs", self._forget_jobs), ("terminals", self._forget_terminals)):
+            try:
+                forget(session_id)
+            except Exception as error:                              # noqa: BLE001
+                logger.warning(f"| ⚠️ [{self.name}] could not release {label} for "
+                               f"{session_id}: {error}")
+
+    @staticmethod
+    def _forget_jobs(session_id: str) -> None:
+        from agentevolver.job import job_manager
+        job_manager.forget(session_id)
+
+    @staticmethod
+    def _forget_terminals(session_id: str) -> None:
+        from agentevolver.terminal import terminal_manager
+        terminal_manager.forget(session_id)
+
+
     def _lifecycle_input(self, run: "_AgentRun") -> Dict[str, Any]:
         """Assemble the common identity payload shared by ON_START/ON_STOP hook calls.
 
@@ -1831,6 +1881,8 @@ class Agent(BaseModel):
                 input={"event": HookEvent.ON_STOP, "result": run.result, "success": success, **self._lifecycle_input(run)},
                 ctx=run.ctx,
             )
+        self._release_session_resources(run)
+
         # "✅ completed" for a force-stop reads as success in the logs and hides the
         # very runs worth looking at — a no-progress termination and a finished task
         # looked identical while the former had written no source at all.

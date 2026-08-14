@@ -24,7 +24,7 @@ conversation id, while anything that costs a container stays keyed by project.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -91,4 +91,101 @@ def title_from(text: str) -> str:
     return line[:TITLE_LIMIT].rstrip() + "…"
 
 
-__all__ = ["Conversation", "ConversationView", "title_from", "TITLE_LIMIT"]
+# ---------------------------------------------------------------------------
+# Asking the human
+# ---------------------------------------------------------------------------
+#
+# A conversation is the only place in the system where a person is present, so a
+# question addressed to one belongs here rather than in the tool that asks it.
+# ``escalate_tool`` already had this shape — a caller blocks, someone else answers
+# — but the answerer there is the parent MetaAgent. Nothing could reach a human.
+
+
+class QuestionOption(BaseModel):
+    """One selectable answer offered to the person."""
+
+    label: str = Field(description="Short label the UI shows and the answer echoes back.")
+    description: str = Field(default="", description="One sentence on the tradeoff, for a UI that has room for it.")
+
+
+class QuestionIntent(BaseModel):
+    """A caller's claim that this question *is* a known kind of decision.
+
+    A UI that recognises ``kind`` may render the question as that decision instead
+    of as a generic menu. It changes presentation only: the answer that comes back
+    names the same option labels either way, so the asker reads one shape of reply
+    whether or not the UI understood the tag.
+    """
+
+    kind: Literal["plan-review"] = Field(description="Which known decision this is.")
+    #: Which label approves, named rather than inferred from option order — no UI
+    #: should have to guess the verdict from a position in a list.
+    approve: str = Field(description="The option label that approves; every other option declines.")
+
+
+class UserQuestion(BaseModel):
+    """One question put to a person."""
+
+    id: str = Field(default_factory=make_id, description="Caller-chosen id, echoed in the answer so a batch can be matched up.")
+    question: str = Field(description="The question itself.")
+    #: Supporting text shown beside the question. Separate from the options because a
+    #: plan under review is not a thing you can pick — it is what you are picking about.
+    detail: str = Field(default="", description="Supporting text rendered with the question, kept out of the option labels.")
+    header: str = Field(default="", description="Short heading, e.g. 'Confirm' or 'Choose mode'.")
+    options: List[QuestionOption] = Field(default_factory=list, description="Choices a UI can render as a menu.")
+    multi_select: bool = Field(default=False, description="Whether more than one option may be chosen.")
+    intent: Optional[QuestionIntent] = Field(default=None, description="Presentation intent for a UI that knows the tag.")
+
+
+class UserAnswer(BaseModel):
+    """What the person answered for one question.
+
+    ``selected`` and ``custom`` are both present because free text is not always a
+    replacement for the menu: on a multi-select it supplements the chosen labels,
+    and on a single-select it overrides them. An empty ``selected`` with no
+    ``custom`` is a skip, which is a real answer — the person saw it and moved on.
+    """
+
+    id: str = Field(description="The question this answers.")
+    selected: List[str] = Field(default_factory=list, description="Chosen option labels.")
+    custom: str = Field(default="", description="Free-text answer, if the person typed one.")
+
+
+class PendingQuestion(BaseModel):
+    """A question that has been asked and not yet answered.
+
+    Held so a UI that connects *after* the question was asked can still find it. A
+    live event stream alone would strand the agent whenever the browser reloaded
+    between the question and the answer.
+    """
+
+    id: str = Field(default_factory=make_id, description="Request id; what an answer is addressed to.")
+    session_id: str = Field(default="", description="Which run is waiting.")
+    task_id: str = Field(default="", description="Which task is waiting. Routes the event to a conversation.")
+    agent_name: str = Field(default="", description="Who is asking.")
+    asked_at: str = Field(default_factory=_now)
+    questions: List[UserQuestion] = Field(default_factory=list)
+
+    def public(self) -> Dict[str, Any]:
+        """The record as a UI receives it."""
+        return {
+            "request_id": self.id,
+            "session_id": self.session_id,
+            "task_id": self.task_id,
+            "agent_name": self.agent_name,
+            "asked_at": self.asked_at,
+            "questions": [q.model_dump(mode="json") for q in self.questions],
+        }
+
+
+__all__ = [
+    "Conversation",
+    "ConversationView",
+    "title_from",
+    "TITLE_LIMIT",
+    "QuestionOption",
+    "QuestionIntent",
+    "UserQuestion",
+    "UserAnswer",
+    "PendingQuestion",
+]

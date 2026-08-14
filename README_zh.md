@@ -414,6 +414,7 @@ AgentEvolver/
 | [`docs/workflows.md`](docs/workflows.md) | 动态 HTML 工作流 |
 | [`docs/canvas.md`](docs/canvas.md) | 可视化 Canvas 流程 |
 | [`docs/capability-schemas.md`](docs/capability-schemas.md) | 能力 schema 协议 |
+| [`docs/tool-catalog.md`](docs/tool-catalog.md) | 自动生成：每个已注册工具的参数与权限模式 |
 | [`agentevolver/trajectory/README.md`](agentevolver/trajectory/README.md) | trajectory 采集、持久化与 SFT/RL 导出契约 |
 
 ## 项目状态

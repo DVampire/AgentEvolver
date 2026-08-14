@@ -52,6 +52,23 @@ class ModelConfig(BaseModel):
     )
 
 
+#: How long a cached prefix stays readable, for every provider that takes a breakpoint.
+#:
+#: Defined once. It was copied into three serializers, and three copies of a constant are
+#: three chances to change two of them — the kind of drift that shows up as one provider
+#: quietly losing its cache while the others keep theirs, with no error anywhere.
+#:
+#: An hour rather than the five-minute default because an orchestrator's steps are minutes
+#: apart by construction: it delegates, the sub-agent runs, and by its next step a
+#: five-minute entry has expired. Measured on `penguins_analysis`, meta_agent wrote 308,469
+#: input tokens across three steps and read back zero, while agents whose steps are seconds
+#: apart hit 36-49% in the same run.
+#:
+#: The write costs 2x base against 1.25x, and reads are 0.1x either way — so a single
+#: otherwise-missed hit already pays for it, and the case this fixes missed every one.
+CACHE_TTL = "1h"
+
+
 class TokenUsage(BaseModel):
     """Structured token usage from a single LLM API call."""
     input_tokens: int = 0

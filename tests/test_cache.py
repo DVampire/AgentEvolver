@@ -199,3 +199,37 @@ def test_every_cache_field_is_reachable_from_some_surface():
     assert reached == {"input_tokens", "output_tokens",
                        "cache_read_tokens", "cache_write_tokens"}, \
         f"no catalogued surface exercises {sorted({'input_tokens','output_tokens','cache_read_tokens','cache_write_tokens'} - reached)}"
+
+
+# --------------------------------------------------------------------------- #
+# One definition, not three
+# --------------------------------------------------------------------------- #
+def test_the_ttl_is_defined_in_exactly_one_place():
+    """It was copied into three serializers, and nothing compared them.
+
+    Three copies of a constant are three chances to change two of them. The drift would
+    show up as one provider quietly losing its cache while the others keep theirs — no
+    error, no failing test, just a bill that stops going down. A grep is the whole check
+    because the failure is textual: the moment someone writes the literal again, this
+    goes red and points at the single source.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "agentevolver" / "model"
+    definitions = [p for p in root.rglob("*.py")
+                   if re.search(r"^CACHE_TTL\s*=", p.read_text(encoding="utf-8"), re.M)]
+
+    assert [p.name for p in definitions] == ["types.py"], (
+        f"CACHE_TTL is defined in {[str(p.relative_to(root)) for p in definitions]}; it "
+        f"belongs in model/types.py alone, and every serializer imports it from there")
+
+
+def test_every_serializer_that_sets_a_breakpoint_uses_that_one_value():
+    """Importing the constant is not enough — a literal could sit beside the import."""
+    from agentevolver.model.types import CACHE_TTL
+
+    for serializer in SERIALIZERS:
+        blocks = serializer.serialize_message(HumanMessage(content=TURN))["content"]
+        assert blocks[0]["cache_control"]["ttl"] == CACHE_TTL, (
+            f"{serializer.__name__} sends a TTL that is not the shared constant")

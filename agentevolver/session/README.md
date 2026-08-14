@@ -15,6 +15,7 @@ Defines shared invocation context and session-scoped project state.
 |---|---|
 | `types.py` | `BaseContext` and `SessionContext` contracts |
 | `project.py` | Session project helpers |
+| `query/` | Reads finished runs' trace logs back — find, outline, search, read one event |
 
 Capability-specific contexts extend these base contracts while retaining consistent session,
 workspace, and extra-data semantics.

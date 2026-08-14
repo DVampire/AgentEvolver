@@ -34,6 +34,9 @@ from tests.conftest import BACKUP_SUFFIX, SKIP_REPAIR_ENV
 SERIALIZERS = "tests/test_serializer.py"
 USAGE = "tests/test_cache.py"
 STRUCTURE = "tests/test_prompt_layout.py"
+CATALOG = "tests/test_tool_catalog.py"
+LINKS = "tests/test_doc_links.py"
+PAIRING = "tests/test_translation_pairing.py"
 
 # (name, file, find, replace, check that must go red)
 MUTATIONS = [
@@ -68,6 +71,23 @@ MUTATIONS = [
      "agentevolver/prompt/default/code_agent.html",
      '<div class="user">\n<capability-context>',
      '<div class="user">\n<agent-context></agent-context>\n<capability-context>', STRUCTURE),
+
+    # A tool's description is one of the facts the committed catalog copies out of the
+    # code. Changing it and leaving the document alone is what "the generated file went
+    # stale" looks like from the inside.
+    ("a tool's description changes and the catalog is not regenerated",
+     "agentevolver/tool/default/read_file.py",
+     '_DESCRIPTION = "Read the contents of a file."',
+     '_DESCRIPTION = "Read a file."', CATALOG),
+
+    # The everyday rename: a document moves and the pages pointing at it do not.
+    ("a document a README links to is renamed",
+     "README.md", "](docs/canvas.md)", "](docs/canvas-moved.md)", LINKS),
+
+    # The everyday translation drift: a section is added on one side only. Nothing about
+    # the file is malformed, and no other check in the suite has an opinion about it.
+    ("a section is added to one language and not the other",
+     "README.md", "## Project status", "## Project status\n\n## Extra section", PAIRING),
 ]
 
 

@@ -26,6 +26,17 @@ with read_base():
     from .agents.connector_optimize_agent import connector_optimize_agent
     from .agents.connector_evaluate_agent import connector_evaluate_agent
     from .tools.bash import bash_tool
+    from .tools.ask_user import ask_user_question
+    from .tools.exit_plan_mode import exit_plan_mode
+    from .tools.get_goal import get_goal_tool
+    from .tools.create_goal import create_goal_tool
+    from .tools.update_goal import update_goal_tool
+    from .tools.schedule_create import schedule_create_tool
+    from .tools.session_search import session_search_tool
+    from .tools.session_event_search import session_event_search_tool
+    from .tools.session_read import session_read_tool
+    from .tools.session_event_read import session_event_read_tool
+    from .tools.session_trace import session_trace_tool
     from .tools.job_list import job_list_tool
     from .tools.job_output import job_output_tool
     from .tools.job_kill import job_kill_tool
@@ -83,6 +94,17 @@ agent_names = [
 ]
 tool_names = [
     "bash_tool",
+    "ask_user_question",
+    "exit_plan_mode",
+    "get_goal_tool",
+    "create_goal_tool",
+    "update_goal_tool",
+    "schedule_create_tool",
+    "session_search_tool",
+    "session_event_search_tool",
+    "session_read_tool",
+    "session_event_read_tool",
+    "session_trace_tool",
     # background work — start something long with bash_tool(run_in_background),
     # then keep working and collect it instead of spending a step waiting
     "job_list_tool",

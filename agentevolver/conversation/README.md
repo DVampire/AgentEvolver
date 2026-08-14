@@ -54,6 +54,41 @@ submitted in it. The title comes from the opening message rather than a prompt:
 sessions used to be named `web` or `interactive` by whoever created them, and a
 sidebar of ten of them said nothing about any of them.
 
+## Asking the person
+
+A conversation is the only place in the system where a human is present, so a
+question addressed to one lives here — `question.py`, alongside the transcript.
+
+```python
+from agentevolver.conversation import question_manager, UserQuestion
+
+answers = await question_manager.ask(         # blocks until someone answers
+    [UserQuestion(id="db", question="Which store?", options=[...])],
+    session_id=ctx.id,
+)
+question_manager.answer(request_id, [{"id": "db", "selected": ["SQLite"]}])
+```
+
+The rendezvous is the runtime's `suspend`/`resume`, the same primitive escalation
+uses. What differs is who answers. Escalation's answerer is the parent MetaAgent,
+which already has the question in its inbox; a person has to be *shown* it, and
+their answer arrives from outside the run. So two things are added and nothing
+else:
+
+- **Asking emits a trace event.** The Gateway republishes it as `trace.event`,
+  tagged with the conversation that submitted the task, exactly as it republishes
+  a tool call. A UI that already renders trace events sees the question with no
+  second subscription.
+- **The pending question is held and listable.** `question_manager.pending()`
+  backs `question.list` at the Gateway, so a browser that reloaded between the
+  question and the answer can still find it. A broadcast alone would strand the
+  agent on an answer nobody can see they owe.
+
+Held in memory and session-local: a question outlives neither the run that asked
+it nor the person who was there to answer. The model-facing tool is
+`ask_user_question`; `exit_plan_mode` asks through the same path with a
+`plan-review` intent.
+
 ## Views
 
 A conversation records which view opened it (`chat` / `science` / `canvas`).

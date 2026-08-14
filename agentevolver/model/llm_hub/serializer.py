@@ -31,6 +31,7 @@ except ImportError:
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel
 
+from agentevolver.model.types import CACHE_TTL
 from agentevolver.message.types import (
     AssistantMessage,
     ContentPartAudio,
@@ -76,17 +77,6 @@ def _strict_incompatible(o: Any) -> bool:
         return any(_strict_incompatible(v) for v in o)
     return False
 
-
-#: How long a cached prefix stays readable. The default is five minutes, which is
-#: shorter than the gap between an orchestrator's own steps: it delegates, the sub-agent
-#: runs for minutes, and by the orchestrator's next step the entry has expired. Measured
-#: on `penguins_analysis`, meta_agent wrote 308,469 input tokens across three steps and
-#: read back zero, while agents whose steps are seconds apart hit 36-49% on the same run.
-#:
-#: An hour costs 2x base on the write against 1.25x, and reads are 0.1x either way — so
-#: one extra hit that would otherwise have missed already pays for it, and the case this
-#: fixes is missing *every* hit.
-CACHE_TTL = "1h"
 
 class LLMHubChatSerializer:
     """

@@ -49,7 +49,10 @@ class JournalTool(Tool):
     instruction: str = _INSTRUCTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
-    mutates: bool = False
+    # This appends rounds to the journal on disk — the earlier `False` was
+    # not merely an inaccurate label: plan mode allows an action solely on
+    # `mutates is False`, so it walked through the gate that exists to hold it.
+    mutates: bool = True
     permission_mode: str = Field(default="workspace_write", description="Writes the evolution journal under extension/.journal/.")
 
     def __init__(self, enable_evolving: bool = False, **kwargs):

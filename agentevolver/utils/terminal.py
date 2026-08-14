@@ -36,6 +36,11 @@ PTY_DEFAULT_TERM = "xterm"
 #: output is shorter than one slice.
 _ERASE_SEQUENCES = (b"\x1b[2J", b"\x1b[3J", b"\x1b[J", b"\x1b[?1049l", b"\x1b[?47l", b"\x1b[?1047l")
 
+#: How many lines of scrolled-off output a terminal that outlives one call keeps. What a
+#: persistent shell showed three commands ago is routinely the thing worth going back to,
+#: and the screen itself holds only 24 lines.
+PTY_SCROLLBACK_LINES = 1000
+
 #: How long a `tty: true` command is left alone before its keystrokes are sent. Keys are
 #: input to a program that is ready for input, and a full-screen program is not ready until
 #: it has drawn: sending `q` at once quits it before it paints, and the screen that comes
@@ -43,6 +48,82 @@ _ERASE_SEQUENCES = (b"\x1b[2J", b"\x1b[3J", b"\x1b[J", b"\x1b[?1049l", b"\x1b[?4
 #: on a program that had 34,420 bytes of drawing to show. Capped against short timeouts so
 #: the keys are always actually sent.
 PTY_KEYSTROKE_DELAY = 1.0
+
+
+def _row_to_text(row, cols: int) -> str:
+    """One emulator row as the characters standing on it."""
+    return "".join(row[x].data for x in range(cols)).rstrip()
+
+
+def open_pty() -> tuple:
+    """Open a pseudo-terminal pair sized the way a real one is. Returns (master, slave).
+
+    The size is the whole reason this is not a bare `pty.openpty()`: a program that asks
+    the terminal how big it is and hears 0x0 either lays itself out into nothing or
+    refuses to start, and that reads as a defect in the program rather than in how it was
+    handed its terminal. A size that cannot be set is not worth failing over — the
+    terminal still works, the program just picks its own default.
+    """
+    import fcntl
+    import pty
+    import struct
+    import termios
+
+    master, slave = pty.openpty()
+    try:
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", PTY_ROWS, PTY_COLS, 0, 0))
+    except OSError:
+        pass
+    return master, slave
+
+
+class LiveScreen:
+    """A terminal screen that stays open, fed byte by byte as a program writes.
+
+    `render_terminal` below answers "what did this command display", replaying a finished
+    stream and keeping the fullest frame it ever showed. That is the wrong question for a
+    terminal that outlives one call: there the answer is "what is on screen *now*", and
+    the fullest-frame rule would resurrect the output of a command three prompts ago every
+    time the screen was cleared.
+
+    So the emulator is kept rather than rebuilt. Feeding it incrementally is also what
+    makes the state correct at all — a shell's screen is the product of every byte since
+    it started, and re-rendering only the newest chunk would lose the cursor position,
+    the scroll region, and anything drawn before it.
+
+    Not thread-safe on its own; the caller feeding it from a reader thread owns the lock.
+    """
+
+    def __init__(self, rows: int = PTY_ROWS, cols: int = PTY_COLS,
+                 scrollback: int = PTY_SCROLLBACK_LINES) -> None:
+        import pyte
+
+        self.rows, self.cols = rows, cols
+        self._screen = pyte.HistoryScreen(cols, rows, history=scrollback)
+        self._stream = pyte.ByteStream(self._screen)
+
+    def feed(self, data: bytes) -> None:
+        self._stream.feed(data)
+
+    def frame(self) -> tuple:
+        """(scrolled-off lines, the 24 lines currently on screen).
+
+        Returned apart rather than concatenated because they age differently: a line in
+        history is settled and will never change again, while every line on screen can be
+        overwritten by the next byte. A caller working out what is new since it last
+        looked needs that distinction — the two halves are compared in different ways.
+        """
+        history = [_row_to_text(row, self.cols) for row in self._screen.history.top]
+        display = [line.rstrip() for line in self._screen.display]
+        return history, display
+
+    def lines(self) -> list:
+        """Everything the terminal holds, oldest first, with trailing blanks dropped."""
+        history, display = self.frame()
+        lines = history + display
+        while lines and not lines[-1]:
+            lines.pop()
+        return lines
 
 
 def _offsets_of(data: bytes, sequence: bytes) -> list:
@@ -80,7 +161,7 @@ def render_terminal(data: bytes) -> str:
     stream = pyte.ByteStream(screen)
 
     def row_text(row) -> str:
-        return "".join(row[x].data for x in range(PTY_COLS)).rstrip()
+        return _row_to_text(row, PTY_COLS)
 
     def styles_on_screen() -> list:
         """Distinct styles in first-seen order — a handful describes, a hundred is noise."""
@@ -146,8 +227,11 @@ def render_terminal(data: bytes) -> str:
 
 __all__ = [
     "render_terminal",
+    "LiveScreen",
+    "open_pty",
     "PTY_ROWS",
     "PTY_COLS",
     "PTY_DEFAULT_TERM",
     "PTY_KEYSTROKE_DELAY",
+    "PTY_SCROLLBACK_LINES",
 ]

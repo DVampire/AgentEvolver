@@ -1,9 +1,9 @@
 """Project a session's log into the message history a model would be sent.
 
-Nothing calls this on the request path yet. It exists so the question "can the log
-stand in for the rendered history?" stops being a guess and becomes something a test
-can answer against a real trace file — and so the switch, when it is made, is a
-projection swap rather than a rewrite.
+`Agent._derived_messages` calls this on the request path when `derive_context` is on,
+which is off by default. The switch is opt-in because turning it on changes what every
+step of every agent sees, and the first run with it on failed on every step after the
+first while reporting success — see `docs/postmortem/0001-*`.
 
 What it produces is the shape the model was trained on:
 

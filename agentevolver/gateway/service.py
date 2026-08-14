@@ -24,7 +24,13 @@ from lxml import etree, html as lxml_html
 from agentevolver.agent import agent_manager
 from agentevolver.benchmark import benchmark_manager
 from agentevolver.canvas import canvas_manager
-from agentevolver.conversation import Conversation, conversation_manager, title_from
+from agentevolver.conversation import (
+    Conversation,
+    conversation_manager,
+    question_manager,
+    title_from,
+)
+from agentevolver.plan import plan_manager
 from agentevolver.canvas.types import FlowGraph
 from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
@@ -58,7 +64,7 @@ from agentevolver.session.types import SessionContext
 from agentevolver.session.project import bind_session_roots
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.skill import skill_manager
-from agentevolver.task import TaskCategory, TaskPriority, TaskRecord, task_manager
+from agentevolver.task import HUMAN_TURN_KEY, TaskCategory, TaskPriority, TaskRecord, task_manager
 from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
 from agentevolver.utils import make_id
@@ -662,6 +668,59 @@ class AgentGateway:
         conversation_id = str(params.get("conversation_id") or "")
         deleted = conversation_manager.delete(session.owner, session.context.id, conversation_id)
         return {"conversation_id": conversation_id, "deleted": deleted}
+
+    # ------------------------------------------------------------------ asking the human
+    #
+    # An agent that asks a question suspends until someone answers it. The question
+    # itself reaches the browser on the ordinary trace stream — `question.asked` is a
+    # trace event like any other — so these commands only cover what a stream cannot
+    # do: find a question that was asked before this client connected, and send an
+    # answer back into a run the client is not inside.
+
+    async def _command_question_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Questions this project is still waiting on.
+
+        A client that reloads between the question and the answer has missed the
+        event, and the agent is suspended on an answer nobody can see they owe.
+        """
+        session_id = self._require_session_id(params)
+        return {"questions": [record.public()
+                              for record in question_manager.pending(session_id)]}
+
+    async def _command_question_answer(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Deliver a person's answer, resuming whoever is suspended on it.
+
+        ``delivered: false`` is an ordinary outcome, not an error: the question may
+        have timed out, or another tab may have answered it first.
+        """
+        self._require_session_id(params)
+        request_id = str(params.get("request_id") or "")
+        if not request_id:
+            raise ValueError("request_id is required")
+        answers = params.get("answers") or []
+        if not isinstance(answers, list):
+            raise ValueError("answers must be a list")
+        delivered = question_manager.answer(request_id, answers)
+        return {"request_id": request_id, "delivered": delivered}
+
+    async def _command_plan_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Whether this project is holding its agent to planning."""
+        session = self._sessions[self._require_session_id(params)]
+        return plan_manager.state(session.context.id).summary()
+
+    async def _command_plan_set(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Turn plan mode on or off for this project.
+
+        Turning it off here is the person calling it off, which is not the same as
+        approving a plan — `plan_manager.leave` records no approval, so nothing
+        downstream can read a cancelled plan mode as an agreed plan.
+        """
+        session = self._sessions[self._require_session_id(params)]
+        active = bool(params.get("active", True))
+        state = (plan_manager.enter(session.context.id) if active
+                 else plan_manager.leave(session.context.id))
+        await self._publish("plan.mode.changed", state.summary(), session_id=session.context.id)
+        return state.summary()
 
     async def _command_session_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
@@ -2007,7 +2066,16 @@ class AgentGateway:
         # scope of memory, token budget and todos, and two lines of dialogue in
         # one project must not inherit each other's. Resources keyed elsewhere
         # (the workspace, any container) stay shared — they hang off config.
-        ctx = session.context.model_copy(update={"id": conversation_id}) if conversation_id else session.context
+        # Goal authority rides on the context and nowhere else. Only a task a person
+        # actually submitted (TaskCategory.USER) carries it; an evolver task reaches
+        # the agent as the same kind of string, so nothing downstream could tell them
+        # apart, and the party that took the request in is the only one that can say.
+        update = {"extra": {**session.context.extra,
+                            HUMAN_TURN_KEY: record.category is TaskCategory.USER,
+                            "owner": session.owner}}
+        if conversation_id:
+            update["id"] = conversation_id
+        ctx = session.context.model_copy(update=update)
         self._run_conversations[record.task.id] = conversation_id
         await self._publish("task.started", {"content": record.task.content},
                             session_id=session_id, conversation_id=conversation_id, task_id=record.task.id)

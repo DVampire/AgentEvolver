@@ -53,6 +53,11 @@ class P(str, Enum):
     SESSION = "session"
     SESSION_WORKSPACE = "session_workspace"
     SESSION_MANIFEST = "session_manifest"
+    #: Where trace writes one JSONL file per run, plus its `index.json`. A session
+    #: directory holds several: the run the session was opened for and every
+    #: sub-agent run it spawned, each under its own trace session id. This is the
+    #: durable record cross-session retrieval reads.
+    SESSION_TRACE = "session_trace"
     #: Canvas drafts belong to the session that drew them; a finished flow is
     #: promoted to the shared library under ``extension/canvas``.
     SESSION_FLOWS = "session_flows"
@@ -66,6 +71,11 @@ class P(str, Enum):
     CONVERSATION_META = "conversation_meta"
     #: All conversations of one project.
     CONVERSATIONS = "conversations"
+    #: The session's goals — what a human asked for and where it stands. Beside
+    #: the session manifest rather than in the workspace: a goal outlives the
+    #: process and must not be reachable by the file tools the agent uses on its
+    #: own work, or the agent could rewrite the objective it is measured against.
+    SESSION_GOALS = "session_goals"
     #: Editor state — open tabs, layout. Per session, unlike the extensions and
     #: agent logins beside it, which are worth sharing across all of them.
     SESSION_IDE_USER_DATA = "session_ide_user_data"
@@ -106,11 +116,13 @@ LAYOUT: Dict[P, str] = {
     P.SESSION: "output/{owner}/sessions/{session_id}",
     P.SESSION_WORKSPACE: "output/{owner}/sessions/{session_id}/workspace",
     P.SESSION_MANIFEST: "output/{owner}/sessions/{session_id}/session.json",
+    P.SESSION_TRACE: "output/{owner}/sessions/{session_id}/log/trace",
     P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",
     P.SESSION_RUNS: "output/{owner}/sessions/{session_id}/runs",
     P.CONVERSATIONS: "output/{owner}/sessions/{session_id}/conversations",
     P.CONVERSATION_EVENTS: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.jsonl",
     P.CONVERSATION_META: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.json",
+    P.SESSION_GOALS: "output/{owner}/sessions/{session_id}/goals.json",
     P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
     P.SESSION_NOTEBOOKS: "output/{owner}/sessions/{session_id}/workspace/notebooks",
     P.RUN: "output/{owner}/runs/{run_id}",

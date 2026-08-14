@@ -10,6 +10,14 @@ with read_base():
     from .base import memory_config, window_size, max_tokens, model_roles
     from .agents.general_agent import general_agent
     from .tools.bash import bash_tool
+    from .tools.terminal_open import terminal_open_tool
+    from .tools.terminal_send import terminal_send_tool
+    from .tools.terminal_read import terminal_read_tool
+    from .tools.terminal_list import terminal_list_tool
+    from .tools.terminal_signal import terminal_signal_tool
+    from .tools.terminal_close import terminal_close_tool
+    from .tools.ask_user import ask_user_question
+    from .tools.exit_plan_mode import exit_plan_mode
     from .tools.job_list import job_list_tool
     from .tools.job_output import job_output_tool
     from .tools.job_kill import job_kill_tool
@@ -32,6 +40,14 @@ memory_names = ["file_system_memory"]
 agent_names = ["general_agent"]
 tool_names = [
     "bash_tool",
+    "terminal_open_tool",
+    "terminal_send_tool",
+    "terminal_read_tool",
+    "terminal_list_tool",
+    "terminal_signal_tool",
+    "terminal_close_tool",
+    "ask_user_question",
+    "exit_plan_mode",
     # background work — start something long with bash_tool(run_in_background),
     # then keep working and collect it instead of spending a step waiting
     "job_list_tool",

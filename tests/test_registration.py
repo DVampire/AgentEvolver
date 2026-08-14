@@ -27,6 +27,7 @@ import agentevolver.model as model_package
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
 TOOL_DIR = ROOT / "agentevolver" / "tool" / "default"
+TOOL_ROOT = ROOT / "agentevolver" / "tool"
 CONFIG_DIR = ROOT / "configs"
 
 
@@ -37,7 +38,10 @@ def _registered_tools() -> dict:
     would empty this mapping and turn every check below green by accident.
     """
     found = {}
-    for path in sorted(TOOL_DIR.glob("*.py")):
+    # rglob, not glob. Five tools live in `default/search/` and `tool/other/`, and a
+    # top-level scan never saw them — so the export check that this file is named for
+    # was silently not covering them at all.
+    for path in sorted(TOOL_ROOT.rglob("*.py")):
         if path.name == "__init__.py":
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -65,10 +69,15 @@ def test_the_tools_were_actually_found():
 def test_every_registered_tool_is_exported(tool_name):
     """An unexported class is never imported, so the registry never sees it."""
     module, cls = REGISTERED[tool_name]
-    exports = (TOOL_DIR / "__init__.py").read_text(encoding="utf-8")
-    assert cls in exports, (
-        f"{cls} ({tool_name}) is not exported from tool/default/__init__.py; nothing "
-        f"imports it, so it is never registered")
+    # From its own package, not from one fixed file. `default/search/` and `tool/other/`
+    # carry their own `__init__.py`, and demanding the top-level one would report five
+    # correctly-exported tools as broken — the shape of an over-narrow check, which is
+    # how the previous version came to skip those directories entirely instead.
+    exported_from = [init for init in TOOL_ROOT.rglob("__init__.py")
+                     if cls in init.read_text(encoding="utf-8")]
+    assert exported_from, (
+        f"{cls} ({tool_name}) is exported from no __init__.py under agentevolver/tool/; "
+        f"nothing imports it, so it is never registered")
 
 
 def test_no_config_lists_a_tool_that_does_not_exist():
@@ -266,3 +275,52 @@ def test_the_serializer_gate_covers_every_serializer_that_exists():
     assert on_disk == covered, (
         f"serializer.py exists for {sorted(on_disk)} but the walk collected "
         f"{sorted(covered)}; the difference is unguarded")
+
+
+# --------------------------------------------------------------------------- #
+# A declaration that is not true
+# --------------------------------------------------------------------------- #
+def test_no_tool_claims_not_to_mutate_while_writing_to_disk():
+    """`mutates` is load-bearing now, so an inaccurate one is a hole, not a label.
+
+    Plan mode allows an action on `mutates is False` alone. Two tools claimed it while
+    writing — `media_search_tool` downloads into the workspace, `journal_tool` appends
+    rounds — so both walked straight through the gate that exists to hold them until a
+    human approves the plan.
+
+    The scan is deliberately crude: a literal write in the tool's own module. It cannot
+    see a write behind a helper, so passing is not proof of purity — but the two real
+    cases were both plainly visible, and a check that catches the obvious lie is worth
+    more than one nobody writes because it cannot catch every lie.
+    """
+    import ast
+    import re
+
+    WRITES = re.compile(r"""open\([^)]*['"][wa]b?['"]|\.write_text\(|\.write_bytes\(|"""
+                        r"""shutil\.(copy|move)|os\.(remove|unlink|rename|makedirs)|"""
+                        r"""\.mkdir\(|urlretrieve\(""")
+
+    liars = []
+    for path in sorted(TOOL_DIR.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        source = path.read_text(encoding="utf-8")
+        if not WRITES.search(source):
+            continue
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any("register_module" in ast.dump(d) for d in node.decorator_list):
+                continue
+            for stmt in node.body:
+                if (isinstance(stmt, ast.AnnAssign)
+                        and getattr(stmt.target, "id", None) == "mutates"
+                        and isinstance(stmt.value, ast.Constant)
+                        and stmt.value.value is False):
+                    liars.append(f"{path.name}:{node.name}")
+
+    assert not liars, (
+        "these declare `mutates = False` in a module that writes to disk:\n  "
+        + "\n  ".join(liars)
+        + "\nPlan mode admits an action on that declaration alone, so an untrue one is "
+          "a way past the gate.")
