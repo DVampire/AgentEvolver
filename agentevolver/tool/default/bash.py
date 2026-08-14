@@ -63,10 +63,18 @@ Execute bash commands in the shell.
   it drew is what you get back, even though its exit path clears the screen.
 - timeout (int, optional): Seconds before the command is abandoned. Keep it small for
   anything that may not exit on its own.
+- run_in_background (bool, optional): Start the command and return a job id immediately
+  instead of waiting for it. Use it for anything that takes minutes — a build, a training
+  run, a long download — then keep working and collect it with `job_output_tool` when you
+  need the result. A foreground call spends a whole step doing nothing but waiting, and a
+  step spent waiting is a decision you did not get to make. `timeout` does not apply; the
+  job runs until it exits or you call `job_kill_tool`. Not available with `tty`, which
+  needs a live terminal to interact with. Default false.
 
 ## Example
 {"name": "bash_tool", "args": {"command": "ls -l /path/to/file.txt"}}
 {"name": "bash_tool", "args": {"command": "./viewer --colour red", "tty": true, "stdin": "q", "timeout": 3}}
+{"name": "bash_tool", "args": {"command": "python train.py", "run_in_background": true}}
 """
 
 
@@ -176,12 +184,68 @@ class BashTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    async def _start_background(self, command, cwd, env, ctx, warning_prefix) -> Response:
+        """Start the command, register it, and return its handle without waiting.
+
+        Output is drained by a reader task rather than left in the pipe. A pipe holds
+        about 64 KB before the writer blocks, so a chatty command left undrained does not
+        merely lose output — it stops making progress, and looks to the agent exactly like
+        a slow one. The registry is the only place output accumulates.
+        """
+        import asyncio as _asyncio
+        import subprocess
+
+        from agentevolver.job import job_manager
+
+        process = subprocess.Popen(
+            command, shell=True, cwd=cwd, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            # Its own process group, so `job_kill_tool` can signal the whole tree. A
+            # shell command is usually a shell that spawned the real work; signalling
+            # only the leader leaves that work running while the registry calls it dead.
+            start_new_session=True, close_fds=True, text=True, bufsize=1,
+        )
+        job = job_manager.register(
+            kind="bash", label=command,
+            session_id=str(getattr(ctx, "id", "") or ""), handle=process,
+        )
+
+        async def _drain() -> None:
+            loop = _asyncio.get_running_loop()
+            try:
+                while True:
+                    line = await loop.run_in_executor(None, process.stdout.readline)
+                    if not line:
+                        break
+                    job_manager.append_output(job.id, line)
+                code = await loop.run_in_executor(None, process.wait)
+                job_manager.finish(job.id, exit_code=code)
+            except Exception as error:                              # noqa: BLE001
+                # A reader that dies silently leaves the job RUNNING forever, and the
+                # agent waits on something nothing will ever finish.
+                job_manager.finish(job.id, error=f"output reader failed: {error}")
+
+        _asyncio.ensure_future(_drain())
+        return Response(
+            type=ResponseType.TOOL, success=True,
+            message=(
+                f"{warning_prefix}Started in the background as {job.id}.\n"
+                f"It is running now; keep working and collect it when you need the "
+                f"result:\n"
+                f"  job_output_tool(job_id=\"{job.id}\")  — what it has printed so far\n"
+                f"  job_list_tool()                      — every job and its state\n"
+                f"  job_kill_tool(job_id=\"{job.id}\")    — stop it"
+            ),
+            data={"job_id": job.id, "status": job.status.value},
+        )
+
     async def __call__(
         self,
         command: str,
         tty: bool = False,
         stdin: str = "",
         timeout: Optional[int] = None,
+        run_in_background: bool = False,
         **kwargs,
     ) -> Response:
         """Execute a bash command asynchronously.
@@ -195,6 +259,8 @@ class BashTool(Tool):
             stdin:   Text fed to the command. Keystrokes, when `tty` is set.
             timeout: Seconds before the command is abandoned; the tool's own default
                      otherwise.
+            run_in_background: Return a job id at once instead of waiting. The command
+                     outlives the call and is collected through the `job_*` tools.
         """
         limit = int(timeout) if timeout else self.timeout
         if not command.strip():
@@ -233,6 +299,21 @@ class BashTool(Tool):
                     success=False,
                     message=f"Workspace directory does not exist: {cwd}",
                 )
+            if run_in_background:
+                if tty:
+                    return Response(
+                        type=ResponseType.TOOL, success=False,
+                        message=(
+                            "Error: `tty` and `run_in_background` cannot be combined. A "
+                            "terminal exists to be interacted with, and a backgrounded "
+                            "one has nobody to type at it — the program would draw its "
+                            "screen and wait forever. Run it in the foreground with a "
+                            "small `timeout`, or drop `tty` and background it."
+                        ),
+                    )
+                return await self._start_background(command, cwd, command_env, ctx,
+                                                    warning_prefix)
+
             if tty:
                 loop = asyncio.get_running_loop()
                 output, exit_code, timed_out = await loop.run_in_executor(

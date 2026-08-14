@@ -67,7 +67,7 @@ def test_nothing_reported_is_not_the_same_as_nothing_spent():
 def test_the_gemini_provider_still_maps_its_protobuf_field():
     """`from_raw` never sees Gemini's own name, so the mapping lives at the provider.
 
-    Checked here too: this gate would otherwise pass on a payload the provider had
+    Checked here too: this would otherwise pass on a payload the provider had
     stopped producing.
     """
     import agentevolver.model.google.chat as google_chat

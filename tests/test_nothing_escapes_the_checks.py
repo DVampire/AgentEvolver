@@ -17,7 +17,7 @@ from pathlib import Path
 
 import agentevolver.model as model_package
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 #: Provider packages with no serializer, and why. A package that grows one must be
 #: removed from here — the serializer gate then covers it automatically.
@@ -78,15 +78,15 @@ def test_every_gate_file_states_the_defect_it_guards():
 def test_the_serializer_gate_covers_every_serializer_that_exists():
     """Cross-check by a different route than the gate's own discovery.
 
-    Counting the modules on disk and the subjects the gate collected must agree. If the
+    Counting the modules on disk and the subjects the walk collected must agree. If the
     gate's import-based walk starts silently skipping one — a renamed module, an import
     error swallowed somewhere — the two numbers diverge and this says so.
     """
-    from tests.gates.test_serializers_cover_every_message_type import SERIALIZERS
+    from tests.test_serializers_cover_every_message_type import SERIALIZERS
 
     on_disk = {p.parent.name
                for p in (ROOT / "agentevolver" / "model").glob("*/serializer.py")}
     covered = {label.split(".")[0] for label, _, _ in SERIALIZERS}
     assert on_disk == covered, (
-        f"serializer.py exists for {sorted(on_disk)} but the gate collected "
+        f"serializer.py exists for {sorted(on_disk)} but the walk collected "
         f"{sorted(covered)}; the difference is unguarded")

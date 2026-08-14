@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
             sorted((ROOT / "extension" / "prompt").glob("*.html"))
 CSS = (ROOT / "agentevolver" / "visual" / "css" / "prompt.css").read_text(encoding="utf-8")
@@ -24,6 +24,20 @@ JS = (ROOT / "agentevolver" / "visual" / "js" / "prompt.js").read_text(encoding=
 SPLITTER = (ROOT / "agentevolver" / "agent" / "types.py").read_text(encoding="utf-8")
 
 CONTAINER = "capability-context"
+
+
+def _inline(text: str, base: Path) -> str:
+    """Resolve `<module src>` includes.
+
+    Most templates pull their state block in as `<module src="agent_context.html">`
+    rather than writing `<agent-context>`, so a check reading the raw file skips them.
+    The ordering check below did exactly that for 28 of 29 templates — it looked like it
+    was guarding the layout and was guarding one file.
+    """
+    def sub(match):
+        path = (base / match.group(1)).resolve()
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+    return re.sub(r'<module src="([^"]+)"></module>', sub, text)
 
 
 def _leaves_used_in_templates() -> set:
@@ -39,7 +53,7 @@ def _leaves_used_in_templates() -> set:
 LEAVES = _leaves_used_in_templates()
 
 
-def test_the_gate_found_the_layout_it_guards():
+def test_the_layout_was_actually_found():
     assert LEAVES, "no template nests anything in <capability-context>"
     assert len(TEMPLATES) > 20, f"only {len(TEMPLATES)} templates found"
 
@@ -86,7 +100,7 @@ def test_the_splitter_treats_the_container_as_stable():
     the whole catalog past the point a cache can reach.
     """
     match = re.search(r"for block in \((.*?)\):", SPLITTER, re.S)
-    assert match, "the stable-block list moved; this gate needs updating with it"
+    assert match, "the stable-block list moved; this check needs updating with it"
     assert f'"{CONTAINER}"' in match.group(1), (
         f"_split_rendered_turn does not treat <{CONTAINER}> as stable content")
 
@@ -99,7 +113,7 @@ def test_a_template_puts_its_capabilities_before_its_state(path):
     not, so state placed first invalidates everything behind it — which is what the
     templates did, and why 63% of the prompt was re-read at full price every step.
     """
-    text = path.read_text(encoding="utf-8")
+    text = _inline(path.read_text(encoding="utf-8"), path.parent)
     if f"<{CONTAINER}>" not in text or "<agent-context>" not in text:
         pytest.skip("template carries no capability catalog")
     assert text.index(f"<{CONTAINER}>") < text.index("<agent-context>"), (

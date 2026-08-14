@@ -52,6 +52,9 @@ with read_base():
     from .agents.skill_optimize_agent import skill_optimize_agent
     from .agents.skill_evaluate_agent import skill_evaluate_agent
     from .tools.bash import bash_tool
+    from .tools.job_list import job_list_tool
+    from .tools.job_output import job_output_tool
+    from .tools.job_kill import job_kill_tool
     from .tools.code_interpreter import code_interpreter_tool
     from .tools.evolution import evolution_tool
     from .tools.escalate import escalate_tool
@@ -113,6 +116,11 @@ tool_names = [
     # Kept in step with the other arm — the two differ only in evolution
     # capability, so any tool asymmetry would confound the comparison.
     "bash_tool",
+    # background work — start something long with bash_tool(run_in_background),
+    # then keep working and collect it instead of spending a step waiting
+    "job_list_tool",
+    "job_output_tool",
+    "job_kill_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",

@@ -10,6 +10,9 @@ with read_base():
     from .base import memory_config, window_size, max_tokens, model_roles
     from .agents.general_agent import general_agent
     from .tools.bash import bash_tool
+    from .tools.job_list import job_list_tool
+    from .tools.job_output import job_output_tool
+    from .tools.job_kill import job_kill_tool
     from .memory.file_system_memory import file_system_memory
     from .benchmarks.hle import hle_benchmark
 
@@ -29,6 +32,11 @@ memory_names = ["file_system_memory"]
 agent_names = ["general_agent"]
 tool_names = [
     "bash_tool",
+    # background work — start something long with bash_tool(run_in_background),
+    # then keep working and collect it instead of spending a step waiting
+    "job_list_tool",
+    "job_output_tool",
+    "job_kill_tool",
     "code_interpreter_tool",
     "done_tool",
     "inspect_tool",

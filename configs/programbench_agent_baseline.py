@@ -37,6 +37,9 @@ with read_base():
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
     from .tools.bash import bash_tool
+    from .tools.job_list import job_list_tool
+    from .tools.job_output import job_output_tool
+    from .tools.job_kill import job_kill_tool
     from .tools.code_interpreter import code_interpreter_tool
     from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
@@ -86,6 +89,11 @@ tool_names = [
     # or routes its IO into a container — the isolation comes from the agent being
     # started *inside* the task container, not from the tools knowing about one.
     "bash_tool",
+    # background work — start something long with bash_tool(run_in_background),
+    # then keep working and collect it instead of spending a step waiting
+    "job_list_tool",
+    "job_output_tool",
+    "job_kill_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",

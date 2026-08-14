@@ -3,6 +3,9 @@ with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.code_agent import code_agent
     from .tools.bash import bash_tool
+    from .tools.job_list import job_list_tool
+    from .tools.job_output import job_output_tool
+    from .tools.job_kill import job_kill_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
@@ -32,6 +35,11 @@ agent_names = [
 ]
 tool_names = [
     "bash_tool",
+    # background work — start something long with bash_tool(run_in_background),
+    # then keep working and collect it instead of spending a step waiting
+    "job_list_tool",
+    "job_output_tool",
+    "job_kill_tool",
     "done_tool",
     "read_file_tool",
     "write_file_tool",

@@ -1,6 +1,6 @@
-"""Each gate is re-checked against the bug it exists for.
+"""Each consistency check is re-checked against the bug it exists for.
 
-A gate that cannot fail is worse than no gate: it reports the invariant as held. The
+A check that cannot fail is worse than no gate: it reports the invariant as held. The
 failure is silent and permanent, and an assertion loosened during an unrelated refactor
 is exactly how it happens — nothing goes red, so nobody looks.
 
@@ -12,19 +12,22 @@ serializer gate was itself caught this way, asserting an invariant Gemini does n
 Marked slow: each case is a pytest subprocess. Run with `-m "not slow"` to skip.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
-SERIALIZERS = "tests/gates/test_serializers_cover_every_message_type.py"
-USAGE = "tests/gates/test_usage_spellings_are_all_normalized.py"
-STRUCTURE = "tests/gates/test_prompt_structure_agrees_across_files.py"
+from tests.conftest import BACKUP_SUFFIX, SKIP_REPAIR_ENV
 
-# (name, file, find, replace, gate that must go red)
+SERIALIZERS = "tests/test_serializers_cover_every_message_type.py"
+USAGE = "tests/test_usage_spellings_are_all_normalized.py"
+STRUCTURE = "tests/test_prompt_structure_agrees_across_files.py"
+
+# (name, file, find, replace, check that must go red)
 MUTATIONS = [
     ("a serializer forgets ToolMessage",
      "agentevolver/model/llm_hub/serializer.py",
@@ -61,24 +64,32 @@ MUTATIONS = [
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("name,path,find,replace,gate", MUTATIONS,
+@pytest.mark.parametrize("name,path,find,replace,check", MUTATIONS,
                          ids=[m[0] for m in MUTATIONS])
-def test_the_gate_goes_red_when_the_defect_returns(name, path, find, replace, gate):
+def test_the_check_goes_red_when_the_defect_returns(name, path, find, replace, check):
     target = ROOT / path
+    backup = Path(str(target) + BACKUP_SUFFIX)
     original = target.read_text(encoding="utf-8")
     mutated = original.replace(find, replace, 1)
     assert mutated != original, (
         f"the mutation for {name!r} no longer applies — its anchor moved, so this case "
         f"has been testing nothing. Re-point it at the current code.")
 
+    # Park the original first. If this process dies between here and the restore, the
+    # autouse fixture puts it back on the next run.
+    backup.write_text(original, encoding="utf-8")
     target.write_text(mutated, encoding="utf-8")
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", gate, "-q", "--no-header", "-p", "no:cacheprovider"],
-            capture_output=True, text=True, cwd=ROOT, timeout=300)
+            [sys.executable, "-m", "pytest", check, "-q", "--no-header",
+             "-p", "no:cacheprovider"],
+            capture_output=True, text=True, cwd=ROOT, timeout=300,
+            # The child must not repair the defect this test just introduced.
+            env={**os.environ, SKIP_REPAIR_ENV: "1"})
     finally:
-        target.write_text(original, encoding="utf-8")   # always, including on timeout
+        target.write_text(original, encoding="utf-8")
+        backup.unlink(missing_ok=True)
 
     assert result.returncode != 0, (
-        f"{gate} stayed green with {name!r} reintroduced — the gate does not guard what "
-        f"it claims to.\n{result.stdout[-1500:]}")
+        f"{check} stayed green with {name!r} reintroduced — the check does not verify "
+        f"what it claims to.\n{result.stdout[-1500:]}")

@@ -73,8 +73,8 @@ def _serializers():
 SERIALIZERS = _serializers()
 
 
-def test_the_gate_found_something_to_check():
-    """A discovery gate that discovers nothing passes vacuously and guards nothing."""
+def test_something_was_actually_found():
+    """A test that discovers nothing passes vacuously and checks nothing."""
     assert len(SERIALIZERS) >= 5, f"expected every provider; found {SERIALIZERS}"
     assert _message_subclasses(), "no Message subclasses found"
 
@@ -118,7 +118,7 @@ def test_a_tool_result_keeps_whatever_pairs_it(label, serializer, entry):
 
     What does the pairing is provider-specific, and stating it as "the id must appear"
     is wrong: Gemini matches a `function_response` by declared function *name* and never
-    sees the id. This gate caught that on its first run, against its own first draft. So
+    sees the id. This caught that on its first run, against its own first draft. So
     the invariant is the weaker true one — one of the two identifiers survives — and each
     provider's exact shape is pinned in `test_tool_message_roundtrip.py`.
     """
