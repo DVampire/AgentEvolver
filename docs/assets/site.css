@@ -115,6 +115,11 @@ th{background:var(--panel-strong);color:var(--text);font-weight:650}
 .mod-h b{font-family:var(--mono);font-size:13.5px;color:var(--text);font-weight:650}
 .mod-h span{margin-left:auto;color:var(--muted-2);font-size:11px;font-family:var(--mono)}
 .mod p{margin:0;font-size:13px;line-height:1.6;color:var(--muted)}
+.doc-destination{display:block;text-decoration:none;padding-right:48px;min-height:128px}
+.doc-destination .go{position:absolute;right:17px;top:16px;color:var(--muted-2);font-family:var(--mono);font-size:18px;transition:transform .18s,color .18s}
+.doc-destination:hover{border-color:rgba(124,92,255,.5);background:linear-gradient(135deg,rgba(124,92,255,.11),rgba(34,211,238,.045));transform:translateY(-2px)}
+.doc-destination:hover .go{color:var(--brand-2);transform:translateX(3px)}
+.doc-destination:focus-visible{outline:2px solid var(--brand-2);outline-offset:3px}
 .fam{display:flex;align-items:center;gap:10px;margin:0 0 6px}
 .fam .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
 .module-tools{position:sticky;top:62px;z-index:8;display:flex;align-items:center;gap:12px;padding:13px 0 16px;background:linear-gradient(var(--bg) 72%,transparent);margin-bottom:10px}
