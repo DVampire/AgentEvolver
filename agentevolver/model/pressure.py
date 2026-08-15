@@ -18,12 +18,33 @@ from typing import Any, Callable, Iterable, Optional
 from agentevolver.message.types import ToolMessage
 
 
-REQUEST_PRESSURE_VERSION = 1
+#: 2 adds ``over_capacity`` — whether the prepared request still exceeds what the model
+#: can accept, as opposed to ``unresolved``, which only says pruning did not reach the
+#: trigger. A reader of version 1 records cannot infer it: a request may sit above the
+#: trigger and still fit.
+REQUEST_PRESSURE_VERSION = 2
 ESTIMATE_METHOD = "canonical_json_utf8_bytes_div_4"
 DEFAULT_CONTEXT_WINDOW = 128_000
 DEFAULT_PRUNE_RATIO = 0.85
 DEFAULT_TARGET_RATIO = 0.75
 MIN_TOOL_RESULT_CHARS = 512
+
+
+class ContextOverflowError(RuntimeError):
+    """A prepared request still exceeds the model's context window.
+
+    Distinguished from an ordinary provider failure because the two want opposite
+    handling. A timeout or a rate limit is worth retrying; this is not — the same request
+    is sent each time, and the provider rejects it identically, so a retry policy spends
+    its whole budget and its backoff on an outcome that was decided before the first call.
+
+    A *different* model is another matter: fallbacks exist partly because context windows
+    differ, so this ends one model's attempts rather than the request.
+    """
+
+    def __init__(self, message: str, *, pressure: Optional[dict[str, Any]] = None):
+        super().__init__(message)
+        self.pressure = pressure or {}
 
 
 def _jsonable(value: Any) -> Any:
@@ -246,13 +267,23 @@ def prepare_messages(
         "triggered": before > trigger,
         "pruned_message_indices": pruned_indices,
         "removed_chars": removed_chars,
+        # Pruning ran and did not get back under the trigger. Observability, not a
+        # verdict: a request between the trigger and the capacity is large but valid.
         "unresolved": after > trigger,
+        # The verdict. Only tool results may be reduced here — rewriting user, system or
+        # assistant messages would change instructions or sever tool-call structure — so a
+        # history that is mostly reasoning and instructions can exceed the window with
+        # nothing left that this layer is allowed to shrink. Reducing *that* is
+        # conversation compaction's job, one level up, and this flag is how the boundary
+        # says it could not do the job alone.
+        "over_capacity": after > input_capacity,
     }
     return PreparedRequest(messages=prepared, pressure=pressure)
 
 
 __all__ = [
     "REQUEST_PRESSURE_VERSION",
+    "ContextOverflowError",
     "ESTIMATE_METHOD",
     "DEFAULT_CONTEXT_WINDOW",
     "DEFAULT_PRUNE_RATIO",

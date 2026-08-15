@@ -8,7 +8,7 @@ import pytest
 
 from agentevolver.message import AssistantMessage, HumanMessage, ToolMessage
 from agentevolver.model.context import ModelContextManager
-from agentevolver.model.pressure import ESTIMATE_METHOD, prepare_messages
+from agentevolver.model.pressure import ESTIMATE_METHOD, estimate_tokens, prepare_messages
 from agentevolver.model.pressure import (
     RequestTokenEstimator,
     RequestTokenEstimatorRegistrationError,
@@ -167,3 +167,162 @@ def test_old_estimator_disposer_cannot_remove_its_replacement():
         assert resolve_request_token_estimator(provider="private", model="m") is new
     finally:
         remove_new()
+
+
+# --------------------------------------------------------------------------- #
+# When pruning cannot make it fit
+# --------------------------------------------------------------------------- #
+# Only tool results may be reduced at this boundary; a history that is mostly
+# instructions and reasoning can exceed the window with nothing left to shrink. That
+# fact was computed and recorded as `unresolved` from the start — and read by nobody,
+# so the oversized request went out anyway and came back as a provider error.
+
+
+def _unprunable(chars: int = 40_000):
+    """A history too large to send and with nothing this layer is allowed to shrink."""
+    return [HumanMessage(content="q" * chars), AssistantMessage(content="a" * chars)]
+
+
+def _manager(window: int = 2_500, *, fallback: str = "") -> ModelContextManager:
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main", model_type="chat/completions", model_id="provider/model",
+        provider="provider", max_completion_tokens=500, context_window=window,
+        fallback_model=fallback,
+    )
+    return manager
+
+
+class _Client:
+    """Records what it was asked to send, so 'never sent' is observable.
+
+    ``rejects_over`` makes it behave the way a real endpoint does with an oversized
+    request: a plain exception, indistinguishable to the retry policy from a rate limit.
+    A stub that accepts anything would let a test about not retrying pass without the
+    code that prevents it.
+    """
+
+    def __init__(self, reply: str = "answer", rejects_over: int = 0):
+        self.calls: list = []
+        self.reply = reply
+        self.rejects_over = rejects_over
+
+    async def __call__(self, **kwargs):
+        self.calls.append(kwargs["messages"])
+        if self.rejects_over and estimate_tokens(kwargs["messages"]) > self.rejects_over:
+            raise RuntimeError("maximum context length exceeded")
+        return Response(type=ResponseType.LLM, success=True, message=self.reply)
+
+    def set_api_key(self, _key):
+        pass
+
+
+def test_a_request_that_still_does_not_fit_is_marked_over_capacity():
+    """`unresolved` cannot carry this: a request above the trigger may still fit.
+
+    The two answer different questions — "did pruning reach its target" and "can this be
+    sent at all" — and only the second one has an action attached to it.
+    """
+    prepared = prepare_messages(
+        _unprunable(), context_window=2_500, reserved_output_tokens=500,
+    )
+    assert prepared.pressure["over_capacity"] is True
+    assert prepared.pressure["estimated_tokens_after"] > prepared.pressure["input_capacity_tokens"]
+
+
+def test_a_large_request_that_does_fit_is_not_marked_over_capacity():
+    """The guard has to stay narrow. Refusing a request merely for being large would
+    turn a working long conversation into a failure."""
+    prepared = prepare_messages(
+        [HumanMessage(content="q" * 100)], context_window=2_500, reserved_output_tokens=500,
+    )
+    assert prepared.pressure["over_capacity"] is False
+
+
+@pytest.mark.asyncio
+async def test_an_unsendable_request_is_never_dispatched():
+    """It was being sent, rejected, and reported as though the provider had failed."""
+    manager = _manager()
+    manager.model_clients["main"] = client = _Client()
+
+    result = await manager(
+        name="main",
+        input={"messages": _unprunable(), "max_retries": 3},
+        ctx=ModelContext(id="overflow-session"),
+    )
+
+    assert client.calls == [], "an oversized request reached the provider"
+    assert result.success is False
+
+
+@pytest.mark.asyncio
+async def test_an_unsendable_request_does_not_spend_its_retries():
+    """The cost of treating this as an ordinary failure.
+
+    Every attempt sends the identical request and is rejected identically, so a retry
+    policy spends its whole budget — and its backoff — on an outcome that was decided
+    before the first call.
+    """
+    manager = _manager()
+    manager.model_clients["main"] = _Client(rejects_over=2_000)
+    retries = []
+
+    async def record(**kwargs):
+        retries.append(kwargs)
+
+    with patch("agentevolver.model.context._record_retry", side_effect=record):
+        await manager(
+            name="main",
+            input={"messages": _unprunable(), "max_retries": 3},
+            ctx=ModelContext(id="overflow-session"),
+        )
+
+    assert retries == [], f"retried an unsendable request {len(retries)} times"
+
+
+@pytest.mark.asyncio
+async def test_a_context_that_will_not_fit_one_model_still_tries_a_larger_one():
+    """Windows differ, which is part of why a fallback exists.
+
+    Ending the whole call here would make the guard worse than the bug: the fallback
+    could have taken the request unchanged.
+    """
+    manager = _manager(fallback="roomy")
+    manager.models["roomy"] = ModelConfig(
+        model_name="roomy", model_type="chat/completions", model_id="provider/roomy",
+        provider="provider", max_completion_tokens=500, context_window=200_000,
+    )
+    manager.model_clients["main"] = small = _Client()
+    manager.model_clients["roomy"] = large = _Client(reply="from the larger model")
+
+    result = await manager(
+        name="main",
+        input={"messages": _unprunable(), "max_retries": 3},
+        ctx=ModelContext(id="overflow-session"),
+    )
+
+    assert small.calls == []
+    assert len(large.calls) == 1
+    assert result.success and result.message == "from the larger model"
+
+
+@pytest.mark.asyncio
+async def test_the_refusal_says_what_has_to_happen_next():
+    """"Provider rejected the request" sends a reader to the provider's status page.
+
+    What is actually true is that the conversation has outgrown the window and only
+    compaction, one level up, can reduce what is left — this boundary may not touch
+    instructions or reasoning.
+    """
+    manager = _manager()
+    manager.model_clients["main"] = _Client()
+
+    result = await manager(
+        name="main",
+        input={"messages": _unprunable(), "max_retries": 1},
+        ctx=ModelContext(id="overflow-session"),
+    )
+
+    assert result.success is False
+    assert "does not fit main" in result.message
+    assert "compacted" in result.message

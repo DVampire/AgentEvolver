@@ -26,6 +26,7 @@ from agentevolver.model.google.chat import ChatGoogle
 from agentevolver.message.types import Message
 from agentevolver.model.pressure import (
     DEFAULT_CONTEXT_WINDOW,
+    ContextOverflowError,
     prepare_messages,
     resolve_request_token_estimator,
 )
@@ -68,8 +69,15 @@ def _prepare_request_messages(
     request_input: Dict[str, Any],
     default_output_tokens: int,
     call_kwargs: Optional[Dict[str, Any]] = None,
+    model_name: str = "",
 ):
-    """Apply the same deterministic pressure policy to buffered and streamed routes."""
+    """Apply the same deterministic pressure policy to buffered and streamed routes.
+
+    Raises ``ContextOverflowError`` when the prepared request still exceeds the window.
+    Raising rather than returning a flag for the reason this repository keeps rediscovering:
+    three routes prepare a request here, and a flag only two of them read is a check that
+    the third silently does not have.
+    """
     configured_window = (
         request_input.get("context_window")
         or (getattr(model_config, "context_window", None) if model_config else None)
@@ -89,7 +97,7 @@ def _prepare_request_messages(
         )
     if reserved_output is None:
         reserved_output = default_output_tokens
-    return prepare_messages(
+    prepared = prepare_messages(
         messages,
         tools=tools,
         response_format=response_format,
@@ -102,6 +110,20 @@ def _prepare_request_messages(
             model=getattr(model_config, "model_id", "") if model_config else "",
         ),
     )
+    pressure = prepared.pressure
+    if pressure.get("over_capacity"):
+        raise ContextOverflowError(
+            f"The request does not fit {model_name or 'this model'}: about "
+            f"{pressure['estimated_tokens_after']} tokens against an input capacity of "
+            f"{pressure['input_capacity_tokens']}"
+            + (f", after excerpting {len(pressure['pruned_message_indices'])} tool "
+               f"result(s)" if pressure["pruned_message_indices"] else
+               ", and no tool result was large enough to excerpt")
+            + ". Only tool results may be reduced at this boundary, so what remains is "
+              "instructions and reasoning; the conversation itself has to be compacted.",
+            pressure=pressure,
+        )
+    return prepared
 
 
 async def _record_retry(
@@ -856,18 +878,26 @@ class ModelContextManager:
             )
 
         model_config = self.models.get(name)
-        primary_request = _prepare_request_messages(
-            messages=messages,
-            tools=tools,
-            response_format=response_format,
-            model_config=model_config,
-            request_input=input,
-            call_kwargs=kwargs,
-            default_output_tokens=self.max_tokens,
-        )
         last_exc: Exception = None
+        try:
+            primary_request = _prepare_request_messages(
+                messages=messages,
+                tools=tools,
+                response_format=response_format,
+                model_config=model_config,
+                request_input=input,
+                call_kwargs=kwargs,
+                default_output_tokens=self.max_tokens,
+                model_name=name,
+            )
+        except ContextOverflowError as overflow:
+            # Skipping straight to the fallback, without spending an attempt. Sending it
+            # anyway would cost `max_retries` identical rejections and their backoff, and
+            # would report a context that cannot fit as a provider failure.
+            logger.error(f"| ❌ {overflow}")
+            primary_request, last_exc = None, overflow
 
-        for attempt in range(max_retries):
+        for attempt in range(max_retries if primary_request is not None else 0):
             _start = _t.time()
             try:
                 client = await self._get_client(name)
@@ -961,15 +991,22 @@ class ModelContextManager:
                     message=f"Primary model {name} failed and fallback {fallback} not found. Error: {last_exc}",
                 )
             fallback_config = self.models.get(fallback)
-            fallback_request = _prepare_request_messages(
-                messages=messages,
-                tools=tools,
-                response_format=response_format,
-                model_config=fallback_config,
-                request_input=input,
-                call_kwargs=kwargs,
-                default_output_tokens=self.max_tokens,
-            )
+            try:
+                fallback_request = _prepare_request_messages(
+                    messages=messages,
+                    tools=tools,
+                    response_format=response_format,
+                    model_config=fallback_config,
+                    request_input=input,
+                    call_kwargs=kwargs,
+                    default_output_tokens=self.max_tokens,
+                    model_name=fallback,
+                )
+            except ContextOverflowError as overflow:
+                return Response(
+                    type=ResponseType.LLM, success=False, message=str(overflow),
+                    data={"pressure": overflow.pressure},
+                )
             try:
                 fb_client = await self._get_client(fallback)
                 await _record_request_snapshot(
@@ -1093,6 +1130,7 @@ class ModelContextManager:
                         model_config=self.models.get(target),
                         request_input=input,
                         call_kwargs=kwargs,
+                        model_name=target,
                         default_output_tokens=self.max_tokens,
                     )
                     await _record_request_snapshot(
@@ -1115,6 +1153,14 @@ class ModelContextManager:
                         started = True
                         yield ev
                     return  # stream completed cleanly
+                except ContextOverflowError as overflow:
+                    # Not a failed attempt: the request was never sent, and re-sending it
+                    # to this same model would be rejected identically every time. Its
+                    # remaining attempts are given up so the next model in the plan — which
+                    # may have a larger window — gets its turn immediately.
+                    logger.error(f"| ❌ {overflow}")
+                    last_exc = overflow
+                    break
                 except Exception as e:
                     from agentevolver.trace.checkpoint import TraceIntegrityError
                     if isinstance(e, TraceIntegrityError):
