@@ -137,7 +137,12 @@ export function DocsView({ request }: { request: RequestFn }) {
   headingCounter.current = new Map();
 
   const components = useMemo(() => ({
-    code: CodeBlock,
+    // `pre`, not `code`. react-markdown gives `code` to inline spans as well as to fenced
+    // blocks, so mapping it here wrapped every `like this` in the full block chrome —
+    // header, language label, Copy button — inside the paragraph containing it. React
+    // reported it as a stream of validateDOMNesting warnings and the prose rendered as a
+    // column of code cards.
+    pre: ({ children }: { children?: React.ReactNode }) => <CodeBlock>{children}</CodeBlock>,
     h2: (props: { children?: React.ReactNode }) => renderHeading('h2', props.children),
     h3: (props: { children?: React.ReactNode }) => renderHeading('h3', props.children),
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
