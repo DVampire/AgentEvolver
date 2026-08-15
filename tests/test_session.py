@@ -270,3 +270,88 @@ def test_staging_does_not_mutate_the_caller_s_input(roots, tmp_path):
     original = {"files": [str(source)]}
     stage_input_files(None, original)
     assert original["files"] == [str(source)]
+
+
+# --------------------------------------------------------------------------- #
+# A manifest nothing read
+# --------------------------------------------------------------------------- #
+def test_a_written_manifest_can_be_read_back(tmp_path):
+    """`write_session_manifest` had no reader anywhere in the tree.
+
+    Its own docstring gives two reasons for existing: so a locally-started run is not
+    second-class, and so a listing can lead with what was touched last. The gateway
+    ordered its list from `self._sessions` — memory — so "what have I been working on"
+    answered with whatever this process had seen, and a restart emptied it while the
+    manifests sat on disk beside every project.
+    """
+    import json
+
+    from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
+
+    (tmp_path / SESSION_MANIFEST).write_text(json.dumps({
+        "session_id": "s1", "name": "interactive", "owner": "local",
+        "created_at": "2026-08-14T10:00:00+00:00",
+        "updated_at": "2026-08-15T09:00:00+00:00",
+    }), encoding="utf-8")
+
+    manifest = read_session_manifest(tmp_path)
+
+    assert manifest is not None
+    assert manifest["session_id"] == "s1"
+
+
+def test_a_directory_without_a_manifest_is_not_a_fault(tmp_path):
+    """An older project simply predates the manifest; that is not an error to report."""
+    from agentevolver.session.project import read_session_manifest
+
+    assert read_session_manifest(tmp_path) is None
+
+
+def test_a_manifest_that_will_not_parse_is_reported(monkeypatch, tmp_path):
+    """Absent and corrupt both return None, so only the log separates them.
+
+    A caller walking a tree cannot tell the two apart from the return value, and a
+    corrupt manifest is a real fault where a missing one is not.
+    """
+    import agentevolver.logger as logger_module
+    from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
+
+    said = []
+    monkeypatch.setattr(logger_module.logger, "warning", lambda message: said.append(message))
+    (tmp_path / SESSION_MANIFEST).write_text("{ not json", encoding="utf-8")
+
+    assert read_session_manifest(tmp_path) is None
+    assert said, "a corrupt manifest was indistinguishable from an absent one"
+
+
+def test_projects_are_listed_by_what_was_touched_last(tmp_path):
+    """The order the manifest was written for.
+
+    `created_at` would put a project someone has lived in all week below one opened once
+    and abandoned.
+    """
+    import json
+
+    from agentevolver.session.project import SESSION_MANIFEST, list_session_manifests
+
+    for name, created, updated in (("old", "2026-01-01T00:00:00+00:00", "2026-08-15T09:00:00+00:00"),
+                                   ("new", "2026-08-14T00:00:00+00:00", "2026-08-14T01:00:00+00:00")):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / SESSION_MANIFEST).write_text(json.dumps({
+            "session_id": name, "created_at": created, "updated_at": updated,
+        }), encoding="utf-8")
+
+    assert [m["session_id"] for m in list_session_manifests(tmp_path)] == ["old", "new"]
+
+
+def test_a_manifest_with_no_session_id_is_refused(tmp_path):
+    """Identity is the one field the record exists to carry."""
+    import json
+
+    from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
+
+    (tmp_path / SESSION_MANIFEST).write_text(json.dumps({"name": "nameless"}),
+                                             encoding="utf-8")
+
+    assert read_session_manifest(tmp_path) is None

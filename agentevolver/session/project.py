@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import json
 from datetime import datetime, timezone
@@ -175,3 +175,53 @@ def stage_input_files(ctx: Any, input: Dict[str, Any]) -> Dict[str, Any]:
         staged.append(str(destination))
     prepared["files"] = staged
     return prepared
+
+
+def read_session_manifest(project_root: str | Path) -> Optional[Dict[str, Any]]:
+    """Read one project's manifest back, or ``None`` when there is not one to read.
+
+    `write_session_manifest` says it exists so a locally-started run is not second-class,
+    and so a listing can lead with what was touched last. Nothing read it. The gateway
+    orders its list from `self._sessions`, which is memory — so the answer to "what have I
+    been working on" was whatever this process happened to have seen, and a restart
+    emptied it while the manifests sat on disk beside every project.
+
+    `None` covers absent, unreadable and malformed alike, and each is logged: a directory
+    with no manifest is an ordinary older project, not a fault, but a manifest that will
+    not parse is one, and a caller scanning a tree cannot tell them apart from the return
+    value.
+    """
+    path = Path(project_root) / SESSION_MANIFEST
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        logger.warning(f"| ⚠️ Could not read session manifest at {path}: {error}")
+        return None
+    if not isinstance(payload, dict) or not payload.get("session_id"):
+        logger.warning(f"| ⚠️ Session manifest at {path} has no session_id; ignoring it")
+        return None
+    return payload
+
+
+def list_session_manifests(sessions_root: str | Path) -> List[Dict[str, Any]]:
+    """Every project under a root, most recently touched first.
+
+    The order the manifest was written for. `updated_at` is rewritten whenever work
+    happens, while `created_at` would put a project someone has lived in all week below
+    one opened once and abandoned.
+    """
+    root = Path(sessions_root)
+    if not root.is_dir():
+        return []
+    found = []
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        manifest = read_session_manifest(child)
+        if manifest is not None:
+            found.append(manifest)
+    return sorted(found,
+                  key=lambda m: str(m.get("updated_at") or m.get("created_at") or ""),
+                  reverse=True)
