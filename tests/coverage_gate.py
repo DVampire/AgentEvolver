@@ -45,18 +45,11 @@ NEVER_EXECUTED: Dict[str, str] = {
     # a test that covered this line would start a gateway as a side effect of collection.
     "agentevolver/gateway/__main__.py": "module entry point — import executes it",
 
-    # --- Real debt: reachable in production, reached by no test ---------------
-    # These are live. Each is imported by shipping code, so none of them is dead; what is
-    # missing is coverage, and the entry stays until someone writes it.
-    "agentevolver/gateway/transport.py":
-        "stdio + WebSocket adapters (cli.py serve_stdio / create_websocket_app); "
-        "needs a live gateway process on both ends",
-    "agentevolver/extension/journal.py":
-        "evolution journal (tool/default/journal.py); needs a completed evolution round",
-    "agentevolver/extension/smoke_gate.py":
-        "post-evolution replay gate (extension/server.py); needs a recorded session to replay",
-    "agentevolver/hook/promotion.py":
-        "promotion bridge behind five registration hooks; needs a staged component accepted",
+    # The four entries that stood here — gateway/transport.py, extension/journal.py,
+    # extension/smoke_gate.py, hook/promotion.py — were reachable in production and
+    # reached by no test. They are covered now (tests/test_gateway_transport.py,
+    # test_evolution_journal.py, test_smoke_gate.py, test_promotion.py) and the gate
+    # would fail this file if their entries were left behind.
 }
 
 
