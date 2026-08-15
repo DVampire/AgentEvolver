@@ -184,3 +184,53 @@ def test_a_runtime_registered_tool_keeps_its_declarations():
         + "\n  ".join(dropped)
         + "\nThat tool reaches the plan gate or the executor describing itself as "
           "something it is not.")
+
+
+# --------------------------------------------------------------------------- #
+# A background task must not take its failure with it
+# --------------------------------------------------------------------------- #
+def test_no_background_task_is_started_without_somewhere_for_its_error_to_go():
+    """`create_task(...)` as a bare statement drops the handle, and the exception with it.
+
+    asyncio then reports "Task exception was never retrieved" at interpreter shutdown:
+    after the run is over, with nothing naming what failed. Two memory writes were started
+    this way — todos the agent believed it had recorded, and the compaction that keeps
+    history bounded.
+
+    A detached task is fine; a detached task nobody can hear from is not. Either keep the
+    handle, or hand the coroutine to something that reports for it — `_detached` in
+    `memory/default/tiered.py` is the shape.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "agentevolver"
+    unheard = []
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in str(path):
+            continue
+        source = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            # A bare expression statement: the returned Task is not bound to anything.
+            if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+                continue
+            func = node.value.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name not in ("create_task", "ensure_future"):
+                continue
+            # The coroutine's own body may catch everything, which is equally good.
+            called = node.value.args[0] if node.value.args else None
+            inner = getattr(getattr(called, "func", None), "attr", "") or \
+                getattr(getattr(called, "func", None), "id", "")
+            guarded = bool(inner) and f"async def {inner}" in source and \
+                "try:" in source.split(f"async def {inner}", 1)[1][:2000]
+            if not guarded:
+                unheard.append(f"{path.relative_to(root.parent)}:{node.lineno}")
+
+    assert not unheard, (
+        "these start a task and drop the handle, so a failure inside is reported only at "
+        "interpreter shutdown:\n  " + "\n  ".join(unheard))

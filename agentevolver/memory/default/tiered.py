@@ -107,6 +107,31 @@ def _parse_message_dict(message: Any) -> Dict[str, Any]:
 # Data holders
 # ---------------------------------------------------------------------------
 
+def _detached(coro, what: str) -> None:
+    """Run a background memory task and say so when it fails.
+
+    A task whose handle is dropped takes its exception with it: asyncio reports
+    "Task exception was never retrieved" at interpreter shutdown, long after the run that
+    lost the data has ended and with nothing naming what was lost. Both of these write
+    memory — todos the agent believes it recorded, and the compaction that keeps history
+    from growing without bound — so silence here is a run acting on a memory it does not
+    have.
+
+    Deliberately does not re-raise. These are fire-and-forget by design: the caller has
+    already returned, and there is nobody left to fail.
+    """
+    task = asyncio.ensure_future(coro)
+
+    def _report(finished: asyncio.Future) -> None:
+        if finished.cancelled():
+            return
+        error = finished.exception()
+        if error is not None:
+            logger.warning(f"| ⚠️ Memory {what} failed: {error!r}")
+
+    task.add_done_callback(_report)
+
+
 class TodoEntry(BaseModel):
     id: str = ""
     description: str = ""
@@ -357,7 +382,7 @@ class TieredMemory(Memory):
 
         # ── Explicit snapshots (legacy / external override) ──
         if "todos" in md:
-            asyncio.create_task(self._apply_todos(state, md["todos"]))
+            _detached(self._apply_todos(state, md["todos"]), "todo update")
             changed = True
         if "flow_steps" in md:
             state.flow_steps = [
@@ -442,7 +467,7 @@ class TieredMemory(Memory):
             })
         state.recent.append(record)
         if len(state.recent) > self.recent_max and not state._compacting:
-            asyncio.create_task(self._compact(state))
+            _detached(self._compact(state), "compaction")
 
     async def _compact(self, state: _SessionState) -> None:
         """Fold the oldest history into summaries, as one recorded transaction.

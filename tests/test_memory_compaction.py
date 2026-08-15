@@ -211,3 +211,80 @@ def test_memory_truncation_keeps_the_spill_locator():
     assert stored.startswith("XXX")                       # head still leads
     assert "more characters not kept in memory" in stored  # and says what it dropped
     assert len(stored) < _RECORD_DETAIL_MAX + 200
+
+
+# --------------------------------------------------------------------------- #
+# A background write that fails must say so
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_a_detached_memory_task_reports_its_failure(monkeypatch):
+    """A dropped task handle takes the exception with it.
+
+    asyncio reports "Task exception was never retrieved" at interpreter shutdown — long
+    after the run that lost the data has ended, and with nothing naming what was lost.
+    Both callers write memory: todos the agent believes it recorded, and the compaction
+    that keeps history bounded. Silence there is a run acting on a memory it does not
+    have.
+    """
+    import asyncio
+
+    import agentevolver.logger as logger_module
+    from agentevolver.memory.default.tiered import _detached
+
+    said = []
+    monkeypatch.setattr(logger_module.logger, "warning", lambda message: said.append(message))
+
+    async def fails():
+        raise RuntimeError("persist failed")
+
+    _detached(fails(), "todo update")
+    await asyncio.sleep(0.05)
+
+    assert said, "the failure vanished with the task handle"
+    assert "todo update" in said[0], "the report does not name what was lost"
+    assert "persist failed" in said[0]
+
+
+@pytest.mark.asyncio
+async def test_a_detached_task_that_succeeds_stays_quiet(monkeypatch):
+    """Reporting success would make the log useless for finding the failures."""
+    import asyncio
+
+    import agentevolver.logger as logger_module
+    from agentevolver.memory.default.tiered import _detached
+
+    said = []
+    monkeypatch.setattr(logger_module.logger, "warning", lambda message: said.append(message))
+
+    async def works():
+        return 1
+
+    _detached(works(), "compaction")
+    await asyncio.sleep(0.05)
+
+    assert said == []
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_detached_task_is_not_a_failure(monkeypatch):
+    """Shutdown cancels outstanding tasks; a warning per task would be noise at exit."""
+    import asyncio
+
+    import agentevolver.logger as logger_module
+    from agentevolver.memory.default.tiered import _detached
+
+    said = []
+    monkeypatch.setattr(logger_module.logger, "warning", lambda message: said.append(message))
+
+    async def slow():
+        await asyncio.sleep(10)
+
+    coro = slow()
+    _detached(coro, "compaction")
+    await asyncio.sleep(0)
+    for task in asyncio.all_tasks():
+        if task is not asyncio.current_task():
+            task.cancel()
+    await asyncio.sleep(0.05)
+
+    assert said == []
