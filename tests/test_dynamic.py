@@ -547,3 +547,58 @@ def test_dynamically_loaded_classes_are_recognized_as_such(dynamic):
     cls = dynamic.load_class("class Generated:\n    pass\n")
     assert dynamic.is_dynamic_class(cls) is True
     assert dynamic.is_dynamic_class(DynamicModuleManager) is False
+
+
+# --------------------------------------------------------------------------- #
+# Unreadable is not empty
+# --------------------------------------------------------------------------- #
+def test_unreadable_source_is_none_rather_than_an_empty_string():
+    """This is the path self-evolution reads a component through before rewriting it.
+
+    It returned `""` when neither the module file nor `inspect.getsource` could be read.
+    Callers test `code is not None` — an empty string passes that test — so a component
+    whose source could not be read was described as a component with no source, and an
+    optimiser asked to improve it would have been improving a blank file over the real
+    one.
+    """
+    from agentevolver.dynamic import dynamic_manager
+
+    # Defined by `exec`, so it belongs to no file on disk: `inspect.getfile` raises and
+    # `inspect.getsource` has nothing to fall back to. This is what a class built from a
+    # string at runtime looks like — which is exactly what this framework generates.
+    namespace: dict = {}
+    exec("class Generated:\n    pass\n", namespace)
+
+    assert dynamic_manager.get_full_module_source(namespace["Generated"]) is None
+
+
+def test_a_readable_component_still_returns_its_whole_module():
+    """The fallback must not have cost the normal path.
+
+    The module rather than the class, deliberately: a component rewritten without its
+    imports does not run.
+    """
+    from agentevolver.dynamic import dynamic_manager
+    from agentevolver.tool.default.read_file import ReadFileTool
+
+    source = dynamic_manager.get_full_module_source(ReadFileTool)
+
+    assert source and "class ReadFileTool" in source
+    assert "import" in source, "the class alone was returned; its imports are missing"
+
+
+def test_a_failure_to_read_source_is_reported(monkeypatch):
+    """Silence here is what made it look like an empty component rather than a broken read."""
+    import agentevolver.logger as logger_module
+    from agentevolver.dynamic import dynamic_manager
+
+    said = []
+    monkeypatch.setattr(logger_module.logger, "warning", lambda message: said.append(message))
+
+    namespace: dict = {}
+    exec("class Unreadable:\n    pass\n", namespace)
+
+    dynamic_manager.get_full_module_source(namespace["Unreadable"])
+
+    assert said, "the read failed and nothing said so"
+    assert "Unreadable" in said[0], "the report does not name the component"

@@ -12,6 +12,8 @@ from copy import deepcopy
 from typing import Type, Optional, TypeVar, Any, Dict, List, Set, Callable, Union, get_type_hints, Tuple
 
 import inflection
+
+from agentevolver.logger import logger
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 T = TypeVar('T')
@@ -406,7 +408,7 @@ class DynamicModuleManager:
                 pass
         return None
     
-    def get_full_module_source(self, cls: Type) -> str:
+    def get_full_module_source(self, cls: Type) -> Optional[str]:
         """Get the full source code of the module containing the class, including all imports.
         
         This is more reliable than inspect.getsource() which only gets the class definition.
@@ -417,7 +419,9 @@ class DynamicModuleManager:
             cls: The class to get module source for
             
         Returns:
-            Full module source code as string, or class source if file reading fails
+            The module's full source, the class's own source when the file cannot be
+            read, or ``None`` when neither is available — a different fact from a
+            component whose source is genuinely empty.
         """
         try:
             # Get the module object
@@ -432,12 +436,22 @@ class DynamicModuleManager:
             # Read the entire file to preserve all imports and context
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        except (OSError, TypeError, IOError, AttributeError) as e:
+        except (OSError, TypeError, IOError, AttributeError) as error:
             # Fallback to inspect.getsource if file reading fails
             try:
                 return inspect.getsource(cls)
-            except Exception:
-                return ""
+            except Exception as inner:                              # noqa: BLE001
+                # `None`, not `""`. The signature already offers a value meaning "could
+                # not be read", and callers test `code is not None` — an empty string
+                # passes that test and then describes the component as having no source.
+                # This is the path self-evolution reads a component through before
+                # rewriting it, so "unreadable" arriving as "empty" is an optimiser
+                # improving a blank file over the real one.
+                logger.warning(
+                    f"| ⚠️ Could not read source for {getattr(cls, '__name__', cls)!r}: "
+                    f"{error!r}; and inspect.getsource also failed: {inner!r}"
+                )
+                return None
     
     def extract_class_name_from_code(self, code: str) -> Optional[str]:
         """Extract the first class name from source code.
