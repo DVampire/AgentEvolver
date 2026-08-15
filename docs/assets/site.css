@@ -17,13 +17,21 @@
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;-webkit-font-smoothing:antialiased}
+body{margin:0;background:
+  radial-gradient(1100px 620px at 12% -8%,rgba(124,92,255,.16),transparent 62%),
+  radial-gradient(900px 560px at 96% 8%,rgba(34,211,238,.10),transparent 58%),
+  var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.34;background-image:
+  linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:54px 54px;
+  -webkit-mask-image:linear-gradient(to bottom,#000,transparent 72%);mask-image:linear-gradient(to bottom,#000,transparent 72%)}
 a{color:inherit}
 code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.07);border-radius:5px;padding:1px 6px}
 .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
 
 /* ---------------- nav ---------------- */
 nav{position:sticky;top:0;z-index:50;background:rgba(5,6,15,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+nav::after{content:"";position:absolute;left:0;bottom:-1px;width:var(--read-progress,0%);height:2px;background:linear-gradient(90deg,var(--brand),var(--brand-2));box-shadow:0 0 12px rgba(34,211,238,.5)}
 .nav-inner{display:flex;align-items:center;gap:20px;height:62px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:750;text-decoration:none;letter-spacing:-.02em}
 .mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--brand),var(--brand-2));font-size:14px}
@@ -40,11 +48,15 @@ nav{position:sticky;top:0;z-index:50;background:rgba(5,6,15,.82);backdrop-filter
 .btn.primary{background:linear-gradient(135deg,var(--brand),var(--brand-2));border-color:transparent;color:#fff}
 
 /* ---------------- page header ---------------- */
-header.page{padding:70px 0 44px;border-bottom:1px solid var(--border);background:radial-gradient(900px 380px at 18% -10%,rgba(124,92,255,.20),transparent 60%)}
+header.page{padding:78px 0 50px;border-bottom:1px solid var(--border);background:
+  radial-gradient(900px 420px at 18% -10%,rgba(124,92,255,.22),transparent 60%),
+  radial-gradient(640px 340px at 88% 4%,rgba(34,211,238,.08),transparent 65%)}
 .eyebrow{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border-strong);border-radius:999px;padding:5px 14px;font-size:12.5px;color:var(--muted);letter-spacing:.03em}
 h1{margin:20px 0 14px;font-size:clamp(33px,5vw,50px);line-height:1.12;letter-spacing:-.035em}
 .grad{background:linear-gradient(120deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent}
-.lede{max-width:72ch;color:var(--muted);font-size:16.5px;margin:0}
+.lede{max-width:78ch;color:var(--muted);font-size:17px;margin:0;line-height:1.75}
+.page-meta{display:flex;gap:9px;flex-wrap:wrap;margin-top:24px}
+.page-meta span{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--border);background:rgba(255,255,255,.025);border-radius:8px;padding:6px 10px}
 
 /* ---------------- shell ---------------- */
 .shell{display:grid;grid-template-columns:238px minmax(0,1fr);gap:52px;padding:44px 0 100px}
@@ -60,6 +72,7 @@ section{scroll-margin-top:82px;margin-bottom:56px}
 h2{margin:0 0 8px;font-size:27px;letter-spacing:-.025em}
 h2 .num{margin-right:11px;color:var(--brand);font-family:var(--mono);font-size:16px;font-weight:600}
 h3{margin:30px 0 8px;font-size:17.5px;letter-spacing:-.012em}
+h4{margin:20px 0 7px;font-size:14.5px;color:var(--text)}
 p{margin:0 0 14px;color:var(--muted);max-width:76ch}
 main strong{color:var(--text);font-weight:650}
 ul,ol{margin:0 0 14px;padding-left:22px;color:var(--muted);max-width:76ch}
@@ -76,6 +89,19 @@ pre code{background:none;padding:0;font-size:inherit}
 .card.why b.tag{color:var(--brand)}
 .card.trap b.tag{color:var(--warn)}
 .card p:last-child{margin-bottom:0}
+.card.ok{border-left:3px solid var(--ok)}
+.card.info{border-left:3px solid var(--brand-2)}
+.card.warn{border-left:3px solid var(--brand-3)}
+.card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}
+.card-grid .card{margin:0}
+.checklist{list-style:none;padding:0}
+.checklist li{position:relative;padding-left:27px}
+.checklist li::before{content:"✓";position:absolute;left:0;top:0;color:var(--ok);font-weight:800}
+.steps{counter-reset:docstep;display:grid;gap:13px;margin:18px 0 22px}
+.step{counter-increment:docstep;display:grid;grid-template-columns:38px minmax(0,1fr);gap:13px;padding:16px;border:1px solid var(--border);border-radius:13px;background:var(--panel)}
+.step::before{content:counter(docstep);display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,rgba(124,92,255,.35),rgba(34,211,238,.22));font-family:var(--mono);font-size:12px;color:var(--text)}
+.step b{display:block;color:var(--text);margin-bottom:3px}.step p{margin:0;font-size:13.5px}
+.path-tree{font-family:var(--mono);font-size:12.5px;line-height:1.8;color:#cbd3f3;white-space:pre;overflow:auto;border:1px solid var(--border);border-radius:13px;padding:18px;background:rgba(0,0,0,.28)}
 
 table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:13.6px}
 th,td{border:1px solid var(--border);padding:9px 12px;text-align:left;vertical-align:top;color:var(--muted)}
@@ -91,6 +117,22 @@ th{background:var(--panel-strong);color:var(--text);font-weight:650}
 .mod p{margin:0;font-size:13px;line-height:1.6;color:var(--muted)}
 .fam{display:flex;align-items:center;gap:10px;margin:0 0 6px}
 .fam .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.module-tools{position:sticky;top:62px;z-index:8;display:flex;align-items:center;gap:12px;padding:13px 0 16px;background:linear-gradient(var(--bg) 72%,transparent);margin-bottom:10px}
+.module-search{width:100%;border:1px solid var(--border-strong);border-radius:11px;background:rgba(9,11,25,.94);color:var(--text);font:inherit;font-size:13.5px;padding:11px 14px;outline:none}
+.module-search:focus{border-color:rgba(34,211,238,.55);box-shadow:0 0 0 3px rgba(34,211,238,.08)}
+.module-count{white-space:nowrap;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.mod{position:relative}
+.mod.has-detail{cursor:pointer;padding-bottom:13px}
+.mod.has-detail::after{content:"＋";position:absolute;right:15px;bottom:10px;color:var(--muted-2);font-family:var(--mono);font-size:13px}
+.mod.has-detail.open{grid-column:1/-1;background:linear-gradient(135deg,rgba(124,92,255,.09),rgba(34,211,238,.035));border-color:var(--border-strong);cursor:default}
+.mod.has-detail.open::after{content:"−"}
+.module-detail{display:none;border-top:1px solid var(--border);margin-top:13px;padding-top:15px}
+.mod.open .module-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px}
+.module-detail div{min-width:0}.module-detail b{display:block;font-family:var(--sans);font-size:11px;text-transform:uppercase;letter-spacing:.11em;color:var(--brand-2);margin-bottom:4px}
+.module-detail p{font-size:13.5px}.module-detail code{overflow-wrap:anywhere}
+.module-detail .wide{grid-column:1/-1}
+.module-link{display:inline-flex;margin-top:7px;color:#b9c7ff;font-size:12.5px;text-decoration:none}.module-link:hover{color:#fff}
+.mod[hidden],section.family-empty{display:none}
 
 /* ---------------- diagrams ---------------- */
 figure{margin:0 0 22px}
@@ -118,4 +160,12 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--muted-2);fo
   aside{position:static;max-height:none;margin-bottom:28px;border-bottom:1px solid var(--border);padding-bottom:16px}
   aside .grp{display:inline-block;margin-right:22px;vertical-align:top}
   .nav-links{display:none}
+}
+@media(max-width:620px){
+  .wrap{padding-left:18px;padding-right:18px}
+  header.page{padding:56px 0 36px}
+  .card-grid{grid-template-columns:1fr}
+  .mod.open .module-detail{grid-template-columns:1fr}
+  .module-detail .wide{grid-column:auto}
+  .foot-links{flex-wrap:wrap;gap:10px 16px}
 }

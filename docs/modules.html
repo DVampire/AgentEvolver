@@ -34,7 +34,8 @@
   <div class="wrap">
     <span class="eyebrow" data-i18n="hdr_pill">Module reference</span>
     <h1 data-i18n="hdr_title_html">Fifty-six modules, <span class="grad">seven families</span></h1>
-    <p class="lede" data-i18n="hdr_lede">Every capability is its own top-level module. There is no shared core that things get added to — a new capability is a new directory with the same four files, and nothing else changes. The number beside each is its size in lines, which is a rough guide to how much is really there.</p>
+    <p class="lede" data-i18n="hdr_lede">A searchable source map of all 56 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.</p>
+    <div class="page-meta"><span data-i18n="meta_1">56 source modules</span><span data-i18n="meta_2">7 responsibility families</span><span data-i18n="meta_3">Open any card for its contract</span></div>
   </div>
 </header>
 
@@ -267,7 +268,8 @@ window.I18N = {
  "nav_ui": "Web UI",
  "hdr_pill": "Module reference",
  "hdr_title_html": "Fifty-six modules, <span class=\"grad\">seven families</span>",
- "hdr_lede": "Every capability is its own top-level module. There is no shared core that things get added to — a new capability is a new directory with the same four files, and nothing else changes. The number beside each is its size in lines, which is a rough guide to how much is really there.",
+ "hdr_lede": "A searchable source map of all 56 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.",
+ "meta_1": "56 source modules", "meta_2": "7 responsibility families", "meta_3": "Open any card for its contract",
  "side_a": "Families",
  "shape_h": "The shape they share",
  "shape_p": "Reading one module tells you how to read the rest. Four files, and the manager always spells removal the same way — <code>unregister(name)</code> — which is what lets one scope own registrations across several of them and take them all back out.",
@@ -352,7 +354,8 @@ window.I18N = {
  "nav_ui": "Web 界面",
  "hdr_pill": "模块参考",
  "hdr_title_html": "五十六个模块，<span class=\"grad\">七个族</span>",
- "hdr_lede": "每个能力都是自己的一个顶层模块。没有一个大家往里加东西的公共核心——新增能力就是新增一个目录、同样四个文件，别处一行不改。每个名字旁边的数字是它的行数，大致说明里面到底有多少东西。",
+ "hdr_lede": "全部 56 个顶层模块的可搜索源码地图。展开任意卡片，即可查看它在运行中的位置、职责边界、主要公共接口与源码目录。",
+ "meta_1": "56 个源码模块", "meta_2": "7 个职责族", "meta_3": "展开任意卡片查看完整契约",
  "side_a": "分族",
  "shape_h": "它们共享的形状",
  "shape_p": "读懂一个模块，就知道怎么读其余的。四个文件，而且 manager 卸载的写法永远一样——<code>unregister(name)</code>——正因如此，一个作用域才能同时持有跨多个模块的注册并把它们一起取回。",
@@ -361,5 +364,6 @@ window.I18N = {
 };
 </script>
 <script src="assets/site.js"></script>
+<script src="assets/module-reference.js"></script>
 </body>
 </html>

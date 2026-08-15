@@ -34,27 +34,52 @@
   <div class="wrap">
     <span class="eyebrow" data-i18n="hdr_pill">Tutorial</span>
     <h1 data-i18n="hdr_title_html">From nothing to <span class="grad">a trajectory</span></h1>
-    <p class="lede" data-i18n="hdr_lede">Six steps, each verifiable before the next. By the end you will have run a task, added a capability the agent can use, and read the record the run left behind — which is the part that makes this different from a chat window.</p>
+    <p class="lede" data-i18n="hdr_lede">A complete path from first principles to a real run: install, choose an entry point, understand the session tree, extend a capability, inspect and export training data, operate the Web UI safely, and know exactly what the system does—and does not—do today.</p>
+    <div class="page-meta"><span data-i18n="meta_1">13 chapters</span><span data-i18n="meta_2">CLI + Web UI</span><span data-i18n="meta_3">SFT/RL trajectory export</span><span data-i18n="meta_4">Troubleshooting included</span></div>
   </div>
 </header>
 
 <div class="wrap shell">
   <aside>
     <div class="grp">
-      <b data-i18n="side_a">Get it running</b>
+      <b data-i18n="side_a">Understand &amp; run</b>
+      <a href="#mental" data-i18n="nav_mental">0 · Mental model</a>
       <a href="#install" data-i18n="nav_install">1 · Install</a>
       <a href="#model" data-i18n="nav_model">2 · Configure a model</a>
-      <a href="#first" data-i18n="nav_first">3 · Run a task</a>
+      <a href="#entry" data-i18n="nav_entry">3 · Choose an entry point</a>
+      <a href="#first" data-i18n="nav_first">4 · Run a task</a>
+      <a href="#outputs" data-i18n="nav_outputs">5 · Read the output tree</a>
     </div>
     <div class="grp">
-      <b data-i18n="side_b">Make it yours</b>
-      <a href="#tool" data-i18n="nav_tool">4 · Add a tool</a>
-      <a href="#read" data-i18n="nav_read">5 · Read the trajectory</a>
-      <a href="#next" data-i18n="nav_next">6 · Where to go next</a>
+      <b data-i18n="side_b">Extend &amp; operate</b>
+      <a href="#tool" data-i18n="nav_tool">6 · Add a tool</a>
+      <a href="#read" data-i18n="nav_read">7 · Export trajectories</a>
+      <a href="#webui" data-i18n="nav_webui">8 · Use the Web UI</a>
+      <a href="#safety" data-i18n="nav_safety">9 · Sandbox &amp; permissions</a>
+      <a href="#evolve" data-i18n="nav_evolve">10 · Evolve a component</a>
+      <a href="#trouble" data-i18n="nav_trouble">11 · Troubleshoot</a>
+      <a href="#next" data-i18n="nav_next">12 · Continue learning</a>
     </div>
   </aside>
 
   <main>
+
+  <!-- 0 -->
+  <section id="mental">
+    <h2><span class="num">00</span><span data-i18n="s0_h">Build the right mental model first</span></h2>
+    <p data-i18n="s0_p1">AgentEvolver is not just a chat interface and not a trainer. It is an agent runtime that connects four loops: execute work, observe every important event, evaluate the result, and preserve reusable improvements. The current release evolves capabilities and produces training-ready records; integrated weight training and model feedback are the destination, not a hidden feature.</p>
+    <div class="card-grid">
+      <div class="card ok"><b class="tag" data-i18n="now_tag">Available now</b><p data-i18n="s0_now">Multi-agent execution; tools, skills, environments, connectors and workflows; evaluation; staged/versioned extension promotion and rollback; trace plus reward-annotated trajectory capture; SFT and pluggable RL export.</p></div>
+      <div class="card warn"><b class="tag" data-i18n="road_tag">Roadmap</b><p data-i18n="s0_road">A trainer provider, tokenizer annotation, dataset curation, checkpoint registry, automated train/evaluate gates, and feeding an approved model version back into serving.</p></div>
+    </div>
+    <h3 data-i18n="s0_flow_h">The end-to-end direction</h3>
+    <div class="steps">
+      <div class="step"><div><b data-i18n="s0_f1h">Run real tasks</b><p data-i18n="s0_f1p">The MetaAgent delegates to specialists, capabilities act in a shared project, and review may send weak work back.</p></div></div>
+      <div class="step"><div><b data-i18n="s0_f2h">Collect faithful trajectories</b><p data-i18n="s0_f2p">Keep the exact effective prompt, reasoning, native calls, observations, usage, failures, and late reward.</p></div></div>
+      <div class="step"><div><b data-i18n="s0_f3h">Train and evaluate</b><p data-i18n="s0_f3p">Export today; later, invoke an in-system SFT/RL provider, register checkpoints, and compare them on versioned benchmarks.</p></div></div>
+      <div class="step"><div><b data-i18n="s0_f4h">Serve only an approved winner</b><p data-i18n="s0_f4p">The future feedback gate should update a model role only after evaluation and human/policy approval, with rollback retained.</p></div></div>
+    </div>
+  </section>
 
   <!-- 1 -->
   <section id="install">
@@ -81,11 +106,27 @@ OPENAI_API_KEY=sk-...
   </section>
 
   <!-- 3 -->
+  <section id="entry">
+    <h2><span class="num">03</span><span data-i18n="sentry_h">Choose the entry point that matches your goal</span></h2>
+    <p data-i18n="sentry_p">All interactive surfaces converge on one Gateway backend, but they serve different workflows. Start with the smallest surface that can prove your setup.</p>
+    <table>
+      <thead><tr><th data-i18n="entry_col1">Entry</th><th data-i18n="entry_col2">Use it for</th><th data-i18n="entry_col3">Command</th></tr></thead>
+      <tbody>
+        <tr><td>Control command</td><td data-i18n="entry_1">Inspecting the registry, checkpoints, and framework state</td><td><code>agentevolver /registry</code></td></tr>
+        <tr><td>TUI</td><td data-i18n="entry_2">An interactive terminal session without Node.js</td><td><code>agentevolver tui --config configs/meta_agent.py</code></td></tr>
+        <tr><td>Example runner</td><td data-i18n="entry_3">Reproducible experiments and task documents</td><td><code>python examples/run_meta_agent.py --task "..."</code></td></tr>
+        <tr><td>Web UI</td><td data-i18n="entry_4">Chat, Canvas, IDE and Science in one project</td><td><code>bash scripts/serve-ui.sh</code></td></tr>
+      </tbody>
+    </table>
+    <div class="card info"><b class="tag" data-i18n="verify_tag">First verification</b><p data-i18n="sentry_verify">Run <code>agentevolver /registry</code>. If the Gateway can initialize the configured managers and print their registered names, installation, imports and base configuration are already connected.</p></div>
+  </section>
+
+  <!-- 3 -->
   <section id="first">
-    <h2><span class="num">03</span><span data-i18n="s3_h">Run a task</span></h2>
-    <p data-i18n="s3_p1">Two processes: the gateway is the runtime, and the dev server is the UI. The UI proxies to the gateway, so only one port is ever exposed.</p>
+    <h2><span class="num">04</span><span data-i18n="s3_h">Run a task</span></h2>
+    <p data-i18n="s3_p1">Two development processes, one backend path: Gateway owns runtime state and the Vite server serves the UI. The browser opens the UI port and connects to Gateway's WebSocket port; the convenience script starts and shuts down both together.</p>
 <pre><code># terminal 1
-python -m agentevolver.cli serve --transport websocket --port 9876
+agentevolver serve --transport websocket --port 9876
 
 # terminal 2
 cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
@@ -141,9 +182,32 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
     </figure>
   </section>
 
+  <!-- 5 -->
+  <section id="outputs">
+    <h2><span class="num">05</span><span data-i18n="sout_h">Read the session output tree</span></h2>
+    <p data-i18n="sout_p1">A run should be inspectable without the UI that created it. Paths are resolved centrally and rebound to the session, so generated state stays under <code>output/</code> while promoted, shareable extensions stay under <code>extension/</code>.</p>
+    <div class="path-tree">output/&lt;owner&gt;/sessions/&lt;session-id&gt;/
+    ├── workspace/            files the agent and IDE edit
+    ├── log/
+    │   ├── trajectory/       one &lt;task-id&gt;.jsonl per recorded run
+    │   └── tasks/            durable task status and results
+    ├── conversations/        transcript events and metadata
+    ├── flows/ · runs/        Canvas drafts and run indexes
+    └── session.json          identity, roots and staged inputs
+
+extension/
+├── agent/ · tool/ · skill/ · environment/ …
+└── canvas/                   reusable visual flow graphs</div>
+    <ul class="checklist">
+      <li data-i18n="sout_l1"><strong>Use identifiers, not timestamps, to correlate.</strong> Session id groups a project interaction; task id names one run and is the key used for trajectory reward/export.</li>
+      <li data-i18n="sout_l2"><strong>Do not edit generated state as configuration.</strong> Change <code>configs/*.py</code> or versioned extensions; <code>output/</code> is evidence and runtime state.</li>
+      <li data-i18n="sout_l3"><strong>Do not put promoted extensions in the package tree.</strong> Separation keeps generated changes reviewable and reversible.</li>
+    </ul>
+  </section>
+
   <!-- 4 -->
   <section id="tool">
-    <h2><span class="num">04</span><span data-i18n="s4_h">Add a tool</span></h2>
+    <h2><span class="num">06</span><span data-i18n="s4_h">Add a tool</span></h2>
     <p data-i18n="s4_p1">One file, one export, one test. The agent can use it on the next run — there is no registry file to edit.</p>
 <pre><code># agentevolver/tool/default/word_count.py
 class WordCountTool(Tool):
@@ -174,7 +238,7 @@ print('word_count' in asyncio.run(tool_manager.list()))"</code></pre>
 
   <!-- 5 -->
   <section id="read">
-    <h2><span class="num">05</span><span data-i18n="s5_h">Read the trajectory</span></h2>
+    <h2><span class="num">07</span><span data-i18n="s5_h">Read and export the trajectory</span></h2>
     <p data-i18n="s5_p1">This is the step that explains the project. A run leaves a step-level record — what the model saw, what it decided, what came back, what it cost, and what the attempt was ultimately worth.</p>
 <pre><code>output/&lt;owner&gt;/sessions/&lt;session&gt;/log/trajectory/&lt;task&gt;.jsonl
 
@@ -185,11 +249,89 @@ line 2+  one step each: messages sent · reasoning · actions · usage</code></p
       <li data-i18n="s5_l1"><strong>Failures are in there.</strong> A model call that failed twice and succeeded on the third try records all three. A record that showed only the success would describe a model that got it right first time — a sample that lies about what happened.</li>
       <li data-i18n="s5_l2"><strong>The reward reaches every step.</strong> A benchmark scores a run after it ends, and the score is backfilled to the steps that produced it. A trajectory with no reward is a run the corpus counts as worth nothing.</li>
     </ul>
+    <h3 data-i18n="s5_schema_h">What one step means</h3>
+<pre><code>{
+  "step_number": 2,
+  "messages_sent": [...],   // z_t: effective prompt, after hooks/compaction
+  "reasoning": "...",       // model text/thinking used as assistant target
+  "actions": [...],         // a_t: native tool calls, names + JSON arguments
+  "observations": [...],    // o_t: result/error for every attempted action
+  "usage": {...},           // input/output/cache tokens and cost when available
+  "reward": 0.8             // r_t: task score, backfilled after evaluation
+}</code></pre>
+    <h3 data-i18n="s5_export_h">Load a finished run and export both formats</h3>
+<pre><code>import json
+from agentevolver.trajectory import trajectory_manager, VerlFormat
+
+trajectory = trajectory_manager.load("output/.../log/trajectory/&lt;task-id&gt;.jsonl")
+assert trajectory is not None
+
+# One OpenAI-chat record per step; assistant tool_calls stay native.
+sft_records = trajectory.to_sft_records()
+
+# Text-level VERL episodes. A trainer provider adds tokenizer-specific ids/masks.
+rl_records = trajectory.to_rl_records(VerlFormat())
+
+print(json.dumps(sft_records[0], ensure_ascii=False, indent=2))</code></pre>
+    <div class="card trap"><b class="tag" data-i18n="privacy_tag">Data governance</b><p data-i18n="s5_privacy">A faithful trajectory may contain user text, file content, tool arguments, external responses and model reasoning. Before turning logs into a corpus, add task-specific redaction, consent/retention rules, deduplication, quality filters and train/eval leakage checks. “Exportable” does not automatically mean “safe to train on.”</p></div>
+  </section>
+
+  <!-- 8 -->
+  <section id="webui">
+    <h2><span class="num">08</span><span data-i18n="s8_h">Operate the Web UI</span></h2>
+    <p data-i18n="s8_p">The four surfaces are views of one project, not four copies. Chat observes the event log, Canvas authors workflows, IDE edits the workspace, and Science shares a live Jupyter kernel.</p>
+    <table><thead><tr><th data-i18n="s8_c1">Surface</th><th data-i18n="s8_c2">State it owns</th><th data-i18n="s8_c3">Typical use</th></tr></thead><tbody>
+      <tr><td>Chat</td><td data-i18n="s8_r1a">Conversation and streamed Gateway events</td><td data-i18n="s8_r1b">Submit tasks, answer questions, inspect actions/results</td></tr>
+      <tr><td>Canvas</td><td data-i18n="s8_r2a">JSON FlowGraph</td><td data-i18n="s8_r2b">Compose and run visual workflows on WorkflowRuntime</td></tr>
+      <tr><td>IDE</td><td data-i18n="s8_r3a">The same session workspace</td><td data-i18n="s8_r3b">Review or edit files beside the agent</td></tr>
+      <tr><td>Science</td><td data-i18n="s8_r4a">The shared project kernel</td><td data-i18n="s8_r4b">Explore data, keep variables, open notebooks</td></tr>
+    </tbody></table>
+    <p><a href="ui.html" data-i18n="s8_more">Open the complete Web UI guide, including startup, state model, Canvas, IDE and Science →</a></p>
+  </section>
+
+  <!-- 9 -->
+  <section id="safety">
+    <h2><span class="num">09</span><span data-i18n="s9_h">Choose sandbox and permission boundaries deliberately</span></h2>
+    <p data-i18n="s9_p">Permission answers whether an operation is allowed; Sandbox contains where it can act; Plan mode prevents mutation before approval. These layers complement one another and should not be treated as aliases.</p>
+    <div class="card-grid">
+      <div class="card"><b class="tag">Permission</b><p data-i18n="s9_perm">Classifies command/filesystem intent with explicit modes and composable rules. Use it for policy and approval decisions.</p></div>
+      <div class="card"><b class="tag">Sandbox</b><p data-i18n="s9_sand">Selects a backend, binds project paths, controls egress and records resources for cleanup. Use it for containment.</p></div>
+      <div class="card"><b class="tag">Plan</b><p data-i18n="s9_plan">Allows reading and reasoning while refusing mutating capabilities until a person approves the plan.</p></div>
+      <div class="card"><b class="tag">Constraint</b><p data-i18n="s9_cons">Enforces step/token/time budgets and tells the model when remaining capacity is tight or critical.</p></div>
+    </div>
+    <div class="card why"><b class="tag" data-i18n="remote_tag">Remote serving</b><p data-i18n="s9_remote">Binding Gateway to a non-loopback host requires <code>--token</code> or <code>AGENTEVOLVER_GATEWAY_TOKEN</code>. Set explicit allowed origins as well; do not expose a development Gateway as an unauthenticated public service.</p></div>
+  </section>
+
+  <!-- 10 -->
+  <section id="evolve">
+    <h2><span class="num">10</span><span data-i18n="s10_h">Understand a component evolution round</span></h2>
+    <p data-i18n="s10_p">Evolution is evidence-driven component engineering, not arbitrary self-modification. A recurring or measured gap justifies a candidate; the candidate stays outside the core and must cross explicit gates.</p>
+    <div class="steps">
+      <div class="step"><div><b data-i18n="s10_f1h">Establish the gap</b><p data-i18n="s10_f1p">Use a failing task, benchmark delta or repeated structural defect. A first ordinary bug should normally be fixed directly.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f2h">Generate into staging</b><p data-i18n="s10_f2p">Dynamic loading derives metadata, while Version records lineage and Extension owns the manifest.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f3h">Register under a Scope</b><p data-i18n="s10_f3p">Every registration gains a reverse operation, so a partial failure can still uninstall what succeeded.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f4h">Evaluate and replay</b><p data-i18n="s10_f4p">Tests, task evaluation and replay smoke checks produce evidence before promotion.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f5h">Promote or roll back</b><p data-i18n="s10_f5p">Promotion is journaled; rejection or later regression restores the prior registered version.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="trouble">
+    <h2><span class="num">11</span><span data-i18n="s11_h">Troubleshoot from the boundary inward</span></h2>
+    <table><thead><tr><th data-i18n="s11_c1">Symptom</th><th data-i18n="s11_c2">Check first</th><th data-i18n="s11_c3">Why</th></tr></thead><tbody>
+      <tr><td data-i18n="s11_r1a">A capability never appears</td><td><code>agentevolver /registry</code>, config whitelist, module export</td><td data-i18n="s11_r1b">Imported code and registered capability are not the same fact.</td></tr>
+      <tr><td data-i18n="s11_r2a">The run loops with no useful observation</td><td>Capability return type and Trace POST_ACTION event</td><td data-i18n="s11_r2b">A missing normalized Response breaks the agent/capability boundary.</td></tr>
+      <tr><td data-i18n="s11_r3a">Trajectory file is absent</td><td>Session log root; trajectory_manager and hook_manager initialization</td><td data-i18n="s11_r3b">Capture is fed by hooks and persistence is session-bound.</td></tr>
+      <tr><td data-i18n="s11_r4a">Reward remains zero</td><td>Use task_id with set_reward, or set_reward_by_session</td><td data-i18n="s11_r4b">Evaluation arrives after finalize and must correlate to the recorded run.</td></tr>
+      <tr><td data-i18n="s11_r5a">Web UI connects but shows no run</td><td>Gateway URL/token/origin and session.create response</td><td data-i18n="s11_r5b">The UI is a client; it cannot invent backend session state.</td></tr>
+      <tr><td data-i18n="s11_r6a">Sandbox cannot reach a service</td><td>network flag, allow/deny hosts, model endpoint allowance</td><td data-i18n="s11_r6b">Deny wins; network=false with an allowlist uses the relay only for listed hosts.</td></tr>
+    </tbody></table>
+    <p data-i18n="s11_order"><strong>Recommended order:</strong> reproduce with the smallest entry point → inspect Gateway/manager initialization → inspect Trace → inspect the owning module’s README and schema → then inspect provider or sandbox logs.</p>
   </section>
 
   <!-- 6 -->
   <section id="next">
-    <h2><span class="num">06</span><span data-i18n="s6_h">Where to go next</span></h2>
+    <h2><span class="num">12</span><span data-i18n="s6_h">Where to go next</span></h2>
     <div class="mods">
       <div class="mod"><div class="mod-h"><b><a href="architecture.html" style="text-decoration:none">architecture</a></b></div>
         <p data-i18n="n_arch">The four mechanisms the whole system rests on, with diagrams — including why one log has two readings.</p></div>
@@ -223,13 +365,14 @@ line 2+  one step each: messages sent · reasoning · actions · usage</code></p
 window.I18N = {
  en:{
   nav_home:"Home", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_ui:"Web UI",
-  nav_install:"1 · Install", nav_model:"2 · Configure a model", nav_first:"3 · Run a task",
-  nav_tool:"4 · Add a tool", nav_read:"5 · Read the trajectory", nav_next:"6 · Where to go next",
-  side_a:"Get it running", side_b:"Make it yours",
+  nav_mental:"0 · Mental model", nav_install:"1 · Install", nav_model:"2 · Configure a model", nav_entry:"3 · Choose an entry point", nav_first:"4 · Run a task", nav_outputs:"5 · Read the output tree",
+  nav_tool:"6 · Add a tool", nav_read:"7 · Export trajectories", nav_webui:"8 · Use the Web UI", nav_safety:"9 · Sandbox & permissions", nav_evolve:"10 · Evolve a component", nav_trouble:"11 · Troubleshoot", nav_next:"12 · Continue learning",
+  side_a:"Understand & run", side_b:"Extend & operate",
   t_why:"Why", t_trap:"Trap",
   hdr_pill:"Tutorial",
   hdr_title_html:'From nothing to <span class="grad">a trajectory</span>',
-  hdr_lede:"Six steps, each verifiable before the next. By the end you will have run a task, added a capability the agent can use, and read the record the run left behind — which is the part that makes this different from a chat window.",
+  hdr_lede:"A complete path from first principles to a real run: install, choose an entry point, understand the session tree, extend a capability, inspect and export training data, operate the Web UI safely, and know exactly what the system does—and does not—do today.",
+  meta_1:"13 chapters", meta_2:"CLI + Web UI", meta_3:"SFT/RL trajectory export", meta_4:"Troubleshooting included",
 
   s1_h:"Install",
   s1_p1:"Python 3.11 or newer. The editable install is the one to use while reading the code, because every module is discovered by import and an editable tree keeps that honest.",
@@ -240,7 +383,7 @@ window.I18N = {
   s2_why:"Retries are deliberately <em>not</em> configured here. Every provider adapter passes <code>max_retries=0</code> to its SDK, because two retry layers multiply — three application attempts over five SDK attempts is fifteen requests nobody chose — and the SDK's attempts reach neither the log nor the trajectory.",
 
   s3_h:"Run a task",
-  s3_p1:"Two processes: the gateway is the runtime, and the dev server is the UI. The UI proxies to the gateway, so only one port is ever exposed.",
+  s3_p1:"Two development processes, one backend path: Gateway owns runtime state and the Vite server serves the UI. The browser opens the UI port and connects to Gateway's WebSocket port; the convenience script starts and shuts down both together.",
   s3_p2:"Open the UI, type a task, and watch the middle column. What you are seeing is not a transcript being streamed at you — it is the log being rendered as it is written.",
   fig_cap:"A run that is sent back and retried produces a trajectory too. Failed attempts are the part of the record that a training set most needs and most often lacks.",
 
@@ -249,7 +392,7 @@ window.I18N = {
   s4_p2:"<strong>Verify.</strong> Registration is what to check, not the import:",
   s4_trap:"Three things silently produce a tool the model can never call: a <code>name</code> passed to the constructor instead of declared as a class field, a class that is written but never exported, and a <code>__call__</code> that returns something other than a <code>Response</code> — the last leaves the agent holding <code>None</code>, so the run spins with no observation and no error.",
 
-  s5_h:"Read the trajectory",
+  s5_h:"Read and export the trajectory",
   s5_p1:"This is the step that explains the project. A run leaves a step-level record — what the model saw, what it decided, what came back, what it cost, and what the attempt was ultimately worth.",
   s5_p2:"Two properties are worth checking yourself, because they are what make the record usable as training data rather than as telemetry:",
   s5_l1:"<strong>Failures are in there.</strong> A model call that failed twice and succeeded on the third try records all three. A record that showed only the success would describe a model that got it right first time — a sample that lies about what happened.",
@@ -264,13 +407,72 @@ window.I18N = {
  },
  zh:{
   nav_home:"首页", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_ui:"Web 界面",
-  nav_install:"1 · 安装", nav_model:"2 · 配置模型", nav_first:"3 · 跑一个任务",
-  nav_tool:"4 · 加一个工具", nav_read:"5 · 读懂轨迹", nav_next:"6 · 接下来看什么",
-  side_a:"先跑起来", side_b:"改成你自己的",
+  nav_mental:"0 · 先建立正确认知", nav_install:"1 · 安装", nav_model:"2 · 配置模型", nav_entry:"3 · 选择入口", nav_first:"4 · 跑一个任务", nav_outputs:"5 · 读懂输出目录",
+  nav_tool:"6 · 加一个工具", nav_read:"7 · 导出轨迹", nav_webui:"8 · 使用 Web UI", nav_safety:"9 · 沙箱与权限", nav_evolve:"10 · 进化组件", nav_trouble:"11 · 排障", nav_next:"12 · 继续学习",
+  side_a:"理解并运行", side_b:"扩展与运维",
   t_why:"为什么", t_trap:"坑",
   hdr_pill:"教程",
   hdr_title_html:'从零到<span class="grad">一条轨迹</span>',
-  hdr_lede:"六步，每一步在进入下一步之前都能验证。走完你会跑过一个任务、加过一个 agent 能用的能力，并读懂这次运行留下的记录——而那正是它区别于一个聊天窗口的地方。",
+  hdr_lede:"从基本概念到真实运行的完整路径：安装、选择入口、理解 Session 目录、扩展能力、检查并导出训练数据、安全使用 Web UI，并准确区分系统今天已经做到的与仍在路线图上的部分。",
+  meta_1:"13 个章节", meta_2:"CLI + Web UI", meta_3:"SFT/RL 轨迹导出", meta_4:"包含完整排障表",
+
+  s0_h:"先建立正确的系统认知",
+  s0_p1:"AgentEvolver 不只是聊天界面，也还不是训练器。它是把四个环节连接起来的 Agent Runtime：执行真实工作、观测关键事件、评估结果、保留可复用改进。当前版本已经能进化能力并生成面向训练的数据；系统内权重训练与模型回灌是明确目标，不是已经隐藏实现的功能。",
+  now_tag:"当前已经具备", road_tag:"后续路线图",
+  s0_now:"多智能体执行；Tool、Skill、Environment、Connector 与 Workflow；评测；扩展的暂存、版本、晋升和回滚；Trace 与带 Reward 的 Trajectory 采集；SFT 及可插拔 RL 格式导出。",
+  s0_road:"Trainer Provider、Tokenizer 标注、数据集治理、Checkpoint Registry、自动 Train/Evaluate Gate，以及把获批模型版本重新接入 Serving。",
+  s0_flow_h:"端到端闭环的目标形态",
+  s0_f1h:"执行真实任务", s0_f1p:"MetaAgent 把工作委派给专精 Agent，各能力在共享 Project 中行动，Review 可将质量不足的结果打回。",
+  s0_f2h:"采集忠实轨迹", s0_f2p:"保留实际 Prompt、Reasoning、原生调用、Observation、Usage、失败过程以及后置 Reward。",
+  s0_f3h:"训练并评测", s0_f3p:"今天先导出数据；未来由系统内 SFT/RL Provider 训练、注册 Checkpoint，并在版本化 Benchmark 上比较。",
+  s0_f4h:"只服务获批胜者", s0_f4p:"未来的反馈门禁应在评测与人工/策略审批通过后才更新模型角色，并始终保留回滚能力。",
+
+  sentry_h:"选择符合目标的入口",
+  sentry_p:"所有交互界面最终都汇合到同一个 Gateway 后端，但各自适合的工作方式不同。先使用能够证明配置正确的最小入口。",
+  entry_col1:"入口", entry_col2:"适合场景", entry_col3:"命令",
+  entry_1:"检查 Registry、Checkpoint 与框架状态", entry_2:"不依赖 Node.js 的交互式终端 Session", entry_3:"可复现实验与 Task Document", entry_4:"在同一 Project 中使用 Chat、Canvas、IDE 与 Science",
+  verify_tag:"首次验证", sentry_verify:"先运行 <code>agentevolver /registry</code>。如果 Gateway 能初始化配置中的 Manager 并打印注册名称，说明安装、导入和基础配置已经连通。",
+
+  sout_h:"读懂 Session 输出目录",
+  sout_p1:"一次运行应当脱离创建它的 UI 也能检查。所有路径由中心统一解析并绑定到 Session：生成状态位于 <code>output/</code>，晋升后可共享的扩展位于 <code>extension/</code>。",
+  sout_l1:"<strong>使用 ID 而非时间戳关联。</strong>Session ID 对应一次项目交互；Task ID 对应一次具体运行，也是 Trajectory Reward 与导出的关联键。",
+  sout_l2:"<strong>不要把生成状态当配置编辑。</strong>配置应修改 <code>configs/*.py</code> 或版本化扩展；<code>output/</code> 保存证据与运行态。",
+  sout_l3:"<strong>不要把晋升扩展写进 Package 源码树。</strong>分离存放才能保证生成变更可审阅、可撤销。",
+
+  s5_h:"读懂并导出轨迹", s5_schema_h:"一条 Step 中每个字段的含义", s5_export_h:"加载已结束的运行，并导出两种格式",
+  privacy_tag:"数据治理", s5_privacy:"忠实 Trajectory 可能包含用户文本、文件内容、工具参数、外部响应和模型 Reasoning。把日志变成语料前，应增加按任务设计的脱敏、同意与保留规则、去重、质量过滤及训练/评测泄漏检查。“能够导出”不等于“可以安全训练”。",
+
+  s8_h:"使用 Web UI", s8_p:"四个 Surface 是同一 Project 的不同视图，不是四份副本。Chat 观察事件日志，Canvas 编写 Workflow，IDE 编辑 Workspace，Science 共享存活的 Jupyter Kernel。",
+  s8_c1:"界面", s8_c2:"它拥有的状态", s8_c3:"典型用途",
+  s8_r1a:"Conversation 与流式 Gateway Event", s8_r1b:"提交任务、回答问题、查看动作与结果",
+  s8_r2a:"JSON FlowGraph", s8_r2b:"在 WorkflowRuntime 上组合并运行可视流程",
+  s8_r3a:"同一个 Session Workspace", s8_r3b:"与 Agent 并排审阅或编辑文件",
+  s8_r4a:"共享 Project Kernel", s8_r4b:"探索数据、保留变量、打开 Notebook",
+  s8_more:"查看完整 Web UI 指南：包括启动方式、状态模型、Canvas、IDE 与 Science →",
+
+  s9_h:"有意识地选择 Sandbox 与 Permission 边界",
+  s9_p:"Permission 回答某项操作是否允许；Sandbox 限制它能在哪里产生影响；Plan Mode 在批准前阻止变更。三层互补，不能互相替代。",
+  s9_perm:"使用显式 Mode 和组合规则判断命令/文件意图，适合策略与审批决策。",
+  s9_sand:"选择 Backend、绑定 Project 路径、控制 Egress，并记录资源以便清理，适合实现 Containment。",
+  s9_plan:"允许读取和推理，但在人类批准 Plan 之前拒绝会产生变更的能力。",
+  s9_cons:"执行 Step、Token、时间预算，并告诉模型剩余资源何时进入紧张或危险状态。",
+  remote_tag:"远程服务", s9_remote:"Gateway 绑定到非回环地址时，必须提供 <code>--token</code> 或 <code>AGENTEVOLVER_GATEWAY_TOKEN</code>。同时应显式配置允许的 Origin；不要把开发 Gateway 当作无认证公共服务暴露。",
+
+  s10_h:"理解一次组件进化 Round", s10_p:"进化是由证据驱动的组件工程，而不是任意自我修改。重复出现或经过度量的缺口才证明候选组件有必要；候选始终位于 Core 之外，并必须通过显式 Gate。",
+  s10_f1h:"证明缺口", s10_f1p:"使用失败任务、Benchmark 差值或重复结构缺陷作为证据。首次出现的普通 Bug 通常应直接修复。",
+  s10_f2h:"生成到 Staging", s10_f2p:"Dynamic 负责推导元数据，Version 记录谱系，Extension 管理 Manifest。",
+  s10_f3h:"在 Scope 下注册", s10_f3p:"每项注册都获得逆操作，使部分失败后仍能卸载已经成功的部分。",
+  s10_f4h:"评测与回放", s10_f4p:"测试、任务评测与 Replay Smoke Check 在晋升前产生证据。",
+  s10_f5h:"晋升或回滚", s10_f5p:"晋升过程写入 Journal；拒绝或后续回归会恢复此前注册版本。",
+
+  s11_h:"从边界向内排障", s11_c1:"现象", s11_c2:"先检查", s11_c3:"原因",
+  s11_r1a:"能力从未出现", s11_r1b:"代码已 Import 与能力已 Register 不是同一事实。",
+  s11_r2a:"运行空转且没有有效 Observation", s11_r2b:"缺失统一 Response 会破坏 Agent/Capability 边界。",
+  s11_r3a:"没有生成 Trajectory 文件", s11_r3b:"采集由 Hook 供给，落盘位置绑定到 Session。",
+  s11_r4a:"Reward 一直为零", s11_r4b:"Evaluation 在 Finalize 后到达，必须与已记录运行正确关联。",
+  s11_r5a:"Web UI 已连接却看不到运行", s11_r5b:"UI 只是 Client，不能自行创造后端 Session 状态。",
+  s11_r6a:"Sandbox 无法访问服务", s11_r6b:"Deny 优先；network=false 配合 Allowlist 时，Relay 也只转发列出的 Host。",
+  s11_order:"<strong>推荐顺序：</strong>用最小入口复现 → 检查 Gateway/Manager 初始化 → 检查 Trace → 查看所属模块 README 与 Schema → 最后检查 Provider 或 Sandbox 日志。",
 
   s1_h:"安装",
   s1_p1:"Python 3.11 或更新。读代码期间用可编辑安装，因为每个模块都是靠导入被发现的，可编辑的源码树能让这件事保持诚实。",
@@ -281,7 +483,7 @@ window.I18N = {
   s2_why:"重试在这里是<em>刻意</em>不配置的。每个 provider 适配器都给 SDK 传 <code>max_retries=0</code>，因为两层重试会相乘——三次应用层尝试叠五次 SDK 尝试就是十五次请求，没有人选过这个数——而且 SDK 那几次既不进日志也不进轨迹。",
 
   s3_h:"跑一个任务",
-  s3_p1:"两个进程：网关是运行时，开发服务器是界面。界面代理到网关，所以对外始终只暴露一个端口。",
+  s3_p1:"开发时有两个进程，但只有一条后端路径：Gateway 拥有 Runtime 状态，Vite Server 提供 UI。浏览器打开 UI 端口并连接 Gateway 的 WebSocket 端口；便捷脚本会统一启动和关闭两者。",
   s3_p2:"打开界面、输入任务、看中间那一栏。你看到的不是有人把一份记录流式推给你——那是日志正在被写入的同时被渲染出来。",
   fig_cap:"被打回重做的运行同样产出轨迹。失败的尝试恰恰是训练集最需要、也最常缺失的那部分记录。",
 
@@ -290,7 +492,7 @@ window.I18N = {
   s4_p2:"<strong>验证。</strong>该查的是注册，不是导入：",
   s4_trap:"有三件事会静默地产出一个模型永远调不到的工具：把 <code>name</code> 当构造参数传而不是声明为类字段；类写了却从没导出；以及 <code>__call__</code> 返回了 <code>Response</code> 以外的东西——最后这个会让 agent 拿到 <code>None</code>，于是运行空转，既没有观察也没有错误。",
 
-  s5_h:"读懂轨迹",
+  s5_h:"读懂并导出轨迹",
   s5_p1:"这一步才解释了这个项目。一次运行会留下步级的记录——模型看到了什么、决定了什么、回来了什么、花了多少，以及这次尝试最终值多少。",
   s5_p2:"有两个性质值得你自己去核对，因为正是它们让这份记录能当训练数据用，而不只是遥测：",
   s5_l1:"<strong>失败在里面。</strong>一次失败两次、第三次才成功的模型调用会把三次都记下来。只显示成功的记录，描述的是一个一次就做对的模型——一条对发生过什么撒谎的样本。",

@@ -8,13 +8,20 @@
 
 (function () {
   const DICTS = window.I18N || { en: {}, zh: {} };
+  const authoredEnglish = new WeakMap();
+  document.querySelectorAll('[data-i18n]').forEach((el) => authoredEnglish.set(el, el.innerHTML));
 
   function applyLang(lang) {
     const dict = DICTS[lang] || DICTS.en || {};
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       const value = dict[el.dataset.i18n];
-      if (value === undefined) return;
+      if (value === undefined) {
+        // New prose can use its authored English as the canonical fallback. This keeps
+        // long reference pages maintainable: only the non-English variant must repeat it.
+        if (lang === 'en' && authoredEnglish.has(el)) el.innerHTML = authoredEnglish.get(el);
+        return;
+      }
       // Values carry inline markup (<code>, <strong>) authored in the page itself, never
       // user input, so innerHTML is the correct sink. A page that took translations from
       // anywhere else would need to escape them.
@@ -37,6 +44,16 @@
   // browser is consulted only when there is none.
   const preferred = (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
   applyLang(saved === 'zh' || saved === 'en' ? saved : preferred);
+
+  // A two-pixel reading line makes long reference pages feel finite without adding
+  // another widget to the chrome. CSS reads this custom property on nav::after.
+  const updateProgress = () => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = max > 0 ? Math.min(100, Math.max(0, window.scrollY / max * 100)) : 0;
+    document.documentElement.style.setProperty('--read-progress', progress.toFixed(2) + '%');
+  };
+  updateProgress();
+  window.addEventListener('scroll', updateProgress, { passive: true });
 
   // The reading rail. The section a reader is "at" is the last heading already past the
   // top edge, not the nearest one — nearest flickers between two entries on a slow scroll.

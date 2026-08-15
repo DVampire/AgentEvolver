@@ -456,7 +456,11 @@ Framework writes are resolved centrally through `agentevolver.paths`. The main w
 | Document | Contents |
 | --- | --- |
 | [Website](https://dvampire.github.io/AgentEvolver/) | Positioning, architecture, characteristics, trade-offs, and quick start |
+| [Complete tutorial](https://dvampire.github.io/AgentEvolver/tutorial.html) | Thirteen chapters: mental model, installation, entry points, first run, output tree, extensions, SFT/RL trajectory export, Web UI, safety, evolution, and troubleshooting |
+| [Architecture guide](https://dvampire.github.io/AgentEvolver/architecture.html) | Runtime boundaries, event log projections, extension lifecycle, and the training-data flywheel |
+| [Module reference](https://dvampire.github.io/AgentEvolver/modules.html) | Searchable and expandable guide to all 56 modules, their runtime placement, public API, and source |
 | [Web UI tour](https://dvampire.github.io/AgentEvolver/ui.html) | Eleven short clips showing the workbench feature by feature |
+| [Contributor guide](https://dvampire.github.io/AgentEvolver/development.html) | Module contracts, verification gates, invariants, and safe extension patterns |
 | [`PROJECT.md`](PROJECT.md) | Full repository map, concepts, and development conventions |
 | [`scripts/INSTALL.md`](scripts/INSTALL.md) | Installation, optional extras, Vault, and environment setup |
 | [`frontend/README.md`](frontend/README.md) | Gateway and Web UI development and deployment |
