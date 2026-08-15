@@ -119,7 +119,6 @@ class ToolExecution:
     action_index: Optional[int]
     tool_name: str
     tool_version: str
-    world_json: str
     arguments_json: str
 
     @classmethod
@@ -159,10 +158,6 @@ class ToolExecution:
             action_index=_optional_int(supplied.get("action_index")),
             tool_name=str(name),
             tool_version=str(version or ""),
-            world_json=json.dumps(
-                supplied.get("world") or {}, ensure_ascii=False, sort_keys=True,
-                separators=(",", ":"), default=_json_default,
-            ),
             arguments_json=json.dumps(
                 arguments or {}, ensure_ascii=False, sort_keys=True,
                 separators=(",", ":"), default=_json_default,
@@ -173,11 +168,6 @@ class ToolExecution:
     def arguments(self) -> Dict[str, Any]:
         """A detached argument snapshot; mutating it cannot change this execution."""
         return json.loads(self.arguments_json)
-
-    @property
-    def world(self) -> Dict[str, Any]:
-        """A detached snapshot of the selected execution provider."""
-        return json.loads(self.world_json)
 
     def identity_dict(self) -> Dict[str, Any]:
         return {
@@ -194,7 +184,6 @@ class ToolExecution:
             "action_index": self.action_index,
             "tool_name": self.tool_name,
             "tool_version": self.tool_version,
-            "world": self.world,
         }
 
 

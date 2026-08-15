@@ -177,8 +177,7 @@ the watermark and reconciles the cursor without counting the same events twice; 
 behind a watermark is refused because it would mean data was skipped.
 
 The projection reports event counts, agent/task identities, routed model/provider counts,
-tool and skill outcomes, non-secret execution-world groups, per-event duration totals,
-errors, and terminal outcome. `usage` sums `agent_call` step usage. The independently
+tool and skill outcomes, per-event duration totals, errors, and terminal outcome. `usage` sums `agent_call` step usage. The independently
 reported `agent_end` total is retained as `reported_run_usage` for reconciliation rather
 than added a second time. A difference between those values is evidence of incomplete
 step capture, not a reason to hide it with arithmetic.

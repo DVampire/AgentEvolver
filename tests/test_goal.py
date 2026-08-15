@@ -142,7 +142,7 @@ def test_authority_comes_from_the_host_stamp_and_not_from_the_run_being_a_run():
     assert authority_of(_Ctx("s", human=True)) is HUMAN
 
 
-def test_a_subagent_does_not_inherit_the_authority_of_the_turn_that_spawned_it():
+def test_a_child_agent_does_not_inherit_the_authority_of_the_turn_that_spawned_it():
     """A sub-agent's context is seeded from its parent's, which is the trap.
 
     The parent may well have been serving a human. The sub-agent is still the system

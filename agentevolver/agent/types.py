@@ -628,10 +628,10 @@ class Agent(BaseModel):
         """Get the environment context, the same way tools get theirs.
 
         On the base class rather than on a mixin, and reading from the manager rather than
-        walking `info.actions`, because both of those were the same mistake: two agents
-        inherited `EnvironmentBound` to assemble this text themselves, which meant every
-        other agent got no environment context at all — including agents whose environments
-        were in their own `env_names`.
+        walking `info.actions`, because both of those were the same mistake: a mixin only
+        two agents inherited assembled this text themselves, which meant every other agent
+        got no environment context at all — including agents whose environments were in
+        their own `env_names`.
 
         The text is each environment's `ENVIRONMENT.md`, which is where its rules and its
         actions' arguments are written for the model to read.
@@ -1965,7 +1965,7 @@ class Agent(BaseModel):
         # how to stop one — cancel its driver, which stops its pump — and only then does
         # the job registry drop the record. The other order would forget the record while
         # the child was still calling a model, with nothing left that could name it.
-        for label, forget in (("sub-agents", self._forget_subagents),
+        for label, forget in (("delegated children", self._forget_delegated),
                               ("jobs", self._forget_jobs),
                               ("terminals", self._forget_terminals),
                               ("language servers", self._forget_language_servers),
@@ -1983,7 +1983,7 @@ class Agent(BaseModel):
         attachment_manager.release(session_id)
 
     @staticmethod
-    def _forget_subagents(session_id: str) -> None:
+    def _forget_delegated(session_id: str) -> None:
         from agentevolver.runtime import runtime_manager
         runtime_manager.forget(session_id)
 

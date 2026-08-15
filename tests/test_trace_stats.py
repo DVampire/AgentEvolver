@@ -63,9 +63,7 @@ def test_stats_projector_aggregates_without_double_counting_run_usage(tmp_path):
     tool = tool_call_event(
         "s1", "t1", "a1", 1, 0, "bash", "ok", True, duration_ms=5,
     )
-    tool.metadata["execution"] = {
-        "world": {"kind": "ssh", "provider": "builtin", "name": "worker"}
-    }
+    tool.metadata["execution"] = {"tool_name": "bash", "stage": "finalize"}
     end = agent_end_event(
         "s1", "t1", "a1", True, "done", duration_ms=20,
         usage={"input_tokens": 10, "output_tokens": 3, "cost": 0.25},

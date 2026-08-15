@@ -494,8 +494,8 @@ def test_backgrounding_does_not_smuggle_a_dispatch_past_the_plan_gate():
 async def test_the_dispatch_schema_offers_backgrounding_to_the_model():
     """A capability the schema does not mention cannot be reached.
 
-    Backgrounding rides on the existing sub-agent dispatch rather than a second
-    `subagent` tool, so the schema is the only place a model learns it exists — and the
+    Backgrounding rides on the existing dispatch rather than a tool of its own, so the
+    schema is the only place a model learns it exists — and the
     schema is `strict` with `additionalProperties: false`, which means an argument
     missing from it is not ignored but rejected.
     """

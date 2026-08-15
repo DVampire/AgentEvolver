@@ -135,10 +135,10 @@ class AgentManagerServer(BaseModel):
         a callable (``task`` plus optional files, evolution target, and per-capability
         allowlists), so every agent is projected with the same strict function schema.
 
-        Backgrounding is a parameter here rather than a separate ``subagent`` tool. Every
-        registered agent is already projected as a callable, so a second, tool-shaped way
-        to reach the same children would give the model two names for one act and let the
-        two schemas drift.
+        Backgrounding is a parameter here rather than a tool of its own. Every registered
+        agent is already projected as a callable, so a second, tool-shaped way to reach the
+        same children would give the model two names for one act and let the two schemas
+        drift.
         """
         return {
             "type": "object",

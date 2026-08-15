@@ -949,8 +949,8 @@ class TestAgainstARealHost:
 class TestEnvironmentInstruction:
     """Environment context reaches every agent, from the file written for the model.
 
-    It used to reach two. `EnvironmentBound` assembled the text by walking `info.actions`,
-    so only the agents that inherited it had environment context at all — an agent with
+    It used to reach two. A mixin assembled the text by walking `info.actions`, so only
+    the agents that inherited it had environment context at all — an agent with
     environments in its own `env_names` and no mixin was told nothing about them.
 
     The manager owns the text now, like `tool_manager.get_instruction` always has, and it

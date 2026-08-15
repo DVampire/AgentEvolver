@@ -1,19 +1,19 @@
 """Remote host as an ECP environment — a machine the agent operates, not one it lives in.
 
-This class has two compatible faces. As an ECP environment it exposes explicit remote
-actions such as upload, launch and logs. As a complete ``ExecutionWorld`` it supplies the
-ordinary file/search/process operations behind the standard tools. ``SSHAgent`` binds the
-whole provider to its session before the first step, so read/write/bash move together and
-the model does not choose a host on every tool call.
+Everything remote happens through this environment's actions. The ordinary tools —
+`read_file`, `bash`, `grep_search` — act on the local sandbox, always, and no argument
+moves one of them here. Data crosses only through the explicit `upload` and `download`
+actions.
 
-That atomic binding prevents the recorded failure this design is meant to exclude: writes
-landing on one machine while commands run on another, giving the agent an inconsistent
-view of its own environment. Local/remote transfer remains an explicit environment action;
-ordinary work stays inside one world.
+That separation is the point. A step that reads on one machine and executes on another
+looks perfectly coherent to the model, and to anyone reading the transcript afterwards,
+which is exactly why it must not be expressible: writes landing on one machine while
+commands run on another gives the agent an inconsistent view of its own environment and
+leaves no evidence of how.
 
-Completeness matters for the same reason. The remote side carries the whole surface —
-execute, read, write, edit, search, transfer, and long-running jobs — so work on the far
-machine never has to borrow a local tool and land in the wrong place.
+Completeness is what makes the separation liveable. The remote side carries the whole
+surface — execute, read, write, edit, search, transfer, and long-running jobs — so work on
+the far machine never has to borrow a local tool and land in the wrong place.
 """
 
 from __future__ import annotations
@@ -756,9 +756,9 @@ class SSHEnvironment(Environment):
             return _fail(f"no job named {safe!r} in this session", job=safe)
         return _ok({"job": safe, "stopped": True})
 
-    # Tool-facing aliases form the optional background-job capability.  Keeping them
-    # explicit is important: generic job tools must never fall back to the gateway's
-    # local registry merely because an execution world uses different action names.
+    # Aliases for the background-job actions. Keeping them explicit is important: a
+    # generic job tool must never fall back to the gateway's local registry merely
+    # because this environment names its equivalents differently.
     async def job_start(
         self, command: str, *, name: str = "", ctx=None, **kwargs: Any
     ) -> Dict[str, Any]:

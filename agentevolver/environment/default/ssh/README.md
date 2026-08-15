@@ -14,7 +14,7 @@ A remote machine the agent *operates*, reached over one multiplexed SSH connecti
 defines the actions and `service.py` owns the transport, the path boundary and the
 persistent shell.
 
-## Environment actions and execution-world provider
+## The actions are the whole interface
 
 Everything remote happens through this environment's actions: `run`, `read`, `write`,
 `edit`, `list`, `grep`, `glob`, `remove`, plus host selection, transfer, long-running jobs,

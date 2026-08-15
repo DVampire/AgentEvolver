@@ -100,7 +100,7 @@
         <text class="d-t" x="775" y="118" text-anchor="middle">agent</text>
         <text class="d-s" x="775" y="135" text-anchor="middle">dispatched as a callable</text>
 
-        <!-- execution world -->
+        <!-- where work happens -->
         <rect class="d-box-w" x="292" y="188" width="578" height="94" rx="12"/>
         <text class="d-t" x="581" y="212" text-anchor="middle">Where work happens</text>
         <text class="d-s" x="581" y="232" text-anchor="middle">sandbox · terminal · kernel · lsp · docker · e2b · ssh</text>
@@ -341,7 +341,7 @@
         <tr><td data-i18n="s6_r2a">Budgets</td><td data-i18n="s6_r2b">Step, token, and wall-clock ceilings stop a run rather than letting it spend. A stop is reported as a stop, never as a completed task.</td></tr>
         <tr><td data-i18n="s6_r3a">Promotion containment</td><td data-i18n="s6_r3b">A component is promoted only from inside the session's staging root, checked after both paths are resolved — so <code>..</code> and symlinks cannot spell a way out.</td></tr>
         <tr><td data-i18n="s6_r4a">Plan mode</td><td data-i18n="s6_r4b">Holds a run to reading and reasoning until a person approves what it intends to do.</td></tr>
-        <tr><td data-i18n="s6_r5a">Sandboxing</td><td data-i18n="s6_r5b">Commands run under an isolated execution world, with the filesystem fenced by the session's mode.</td></tr>
+        <tr><td data-i18n="s6_r5a">Sandboxing</td><td data-i18n="s6_r5b">Commands run inside the session's sandbox, with the filesystem fenced by its mode.</td></tr>
       </tbody>
     </table>
   </section>
@@ -392,7 +392,7 @@ window.I18N = {
   s6_r2a:"Budgets", s6_r2b:"Step, token, and wall-clock ceilings stop a run rather than letting it spend. A stop is reported as a stop, never as a completed task.",
   s6_r3a:"Promotion containment", s6_r3b:"A component is promoted only from inside the session's staging root, checked after both paths are resolved — so <code>..</code> and symlinks cannot spell a way out.",
   s6_r4a:"Plan mode", s6_r4b:"Holds a run to reading and reasoning until a person approves what it intends to do.",
-  s6_r5a:"Sandboxing", s6_r5b:"Commands run under an isolated execution world, with the filesystem fenced by the session's mode.",
+  s6_r5a:"Sandboxing", s6_r5b:"Commands run inside the session's sandbox, with the filesystem fenced by its mode.",
 
   foot_tag:"A self-evolving multi-agent framework · MIT License"
  },

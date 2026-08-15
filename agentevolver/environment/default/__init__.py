@@ -1,9 +1,9 @@
 """The shipped ECP environments.
 
 Every entry here is an `Environment` subclass with `@action`-registered actions and an
-`ENVIRONMENT.md` beside it. Execution-world providers are not environments and live at
-`environment/world_*.py` — `E2BExecutionWorld` was here once, and being listed among
-these implied a fifth environment that `environment_manager.list()` never returns.
+`ENVIRONMENT.md` beside it. Something with no actions is not an environment and does not
+belong here: listing one implies an environment that `environment_manager.list()` never
+returns, which is how a name reaches the model that nothing can dispatch.
 """
 
 from .browser.environment import BrowserEnvironment

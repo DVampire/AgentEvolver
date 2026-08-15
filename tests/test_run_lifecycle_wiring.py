@@ -73,10 +73,10 @@ def test_a_finished_run_also_stops_the_sub_agents_it_started():
     """
     # Read from the source rather than from the calls: the reapers are named in a list
     # and invoked through the loop variable, so none of them appears as a call here.
-    assert "_forget_subagents" in _source_of("_release_session_resources"), (
+    assert "_forget_delegated" in _source_of("_release_session_resources"), (
         "the release path no longer stops background sub-agents; one will keep running "
         "after the run that started it has ended")
-    assert "forget" in _calls_in("_forget_subagents")
+    assert "forget" in _calls_in("_forget_delegated")
 
 
 def test_releasing_resources_cannot_fail_a_finished_run():

@@ -79,9 +79,7 @@ def _label(reward=0.8):
 
 def test_trace_replay_recovers_the_trainable_step_and_outcome():
     facts = _facts()
-    facts[3].metadata["execution"] = {
-        "world": {"kind": "local", "name": "local", "workspace_root": "/workspace"}
-    }
+    facts[3].metadata["execution"] = {"tool_name": "bash", "stage": "finalize"}
     trajectory = project_trajectory(facts, reward_labels=[_label()])
 
     assert trajectory.task_description == "Fix it"

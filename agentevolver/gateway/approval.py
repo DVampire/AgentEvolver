@@ -74,7 +74,6 @@ class PendingToolApproval:
             "parent_call_id": execution.parent_call_id,
             "tool_name": execution.tool_name,
             "tool_version": execution.tool_version,
-            "world": execution.world,
             "argument_names": sorted(execution.arguments),
             "arguments_sha256": hashlib.sha256(
                 execution.arguments_json.encode("utf-8")
