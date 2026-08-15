@@ -130,9 +130,34 @@ function CapIcon({ kind, size = 16 }: { kind: CapabilityKind; size?: number }) {
 // mistaken for a bad address, short enough that nobody sits staring at "Connecting".
 const ENDPOINT_FALLBACK_MS = 12_000;
 const LEGACY_ENDPOINTS = new Set(['ws://127.0.0.1:9876/ws', 'ws://localhost:9876/ws']);
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** Whether a stored endpoint is this machine's dev server on some *other* port.
+ *
+ * The default endpoint is same-origin, so what gets stored while the page is served from
+ * one dev port keeps pointing at that port after the page moves to another. Both proxy to
+ * a gateway, so everything keeps working — against the wrong backend. The symptom is a
+ * fully populated UI in which one newer method is "unknown", which reads as a broken
+ * feature rather than a stale address.
+ *
+ * Only loopback-to-loopback is migrated. An endpoint naming a remote host was typed on
+ * purpose, and moving it because a port changed would disconnect someone from the gateway
+ * they meant to use.
+ */
+function isStaleLocalEndpoint(stored: string): boolean {
+  try {
+    const saved = new URL(stored);
+    return LOOPBACK.has(saved.hostname)
+      && LOOPBACK.has(location.hostname)
+      && saved.host !== location.host;
+  } catch {
+    return false;      // unparseable: leave it alone and let the connection attempt report
+  }
+}
+
 function initialEndpoint(): string {
   const stored = localStorage.getItem('agentevolver.gateway.endpoint');
-  if (!stored || LEGACY_ENDPOINTS.has(stored)) {
+  if (!stored || LEGACY_ENDPOINTS.has(stored) || isStaleLocalEndpoint(stored)) {
     localStorage.removeItem('agentevolver.gateway.endpoint');
     return DEFAULT_ENDPOINT;
   }
