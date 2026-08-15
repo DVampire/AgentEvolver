@@ -76,12 +76,23 @@ AgentEvolver makes those methods first-class components:
 | **Evidence-driven self-evolution** | Detect a gap → generate or optimize → evaluate under a read-only guard → compare with a baseline → adopt or roll back. “It looks better” is not validation. |
 | **Immutable core, mutable extensions** | Hand-written capabilities live in `agentevolver/`; evolved content lives in external `extension/`. Versions are archived and restorable. |
 | **One multi-agent runtime** | `spawn`, `send`, `ask`, `suspend/resume`, and `publish/subscribe` support delegation, progress, control, and escalation. |
+| **A step is a decision, not a wait** | A long command, a terminal send, or a delegated child can be started in the background and collected later by job id; reminders that come due are kept in the same registry. A step spent blocking is a decision the agent never got to make. |
+| **State that survives the call that made it** | A terminal keeps its shell between calls — a directory change, an activated environment, an ssh hop, a REPL. A continuable sub-agent keeps its own session and can be handed more work. An image the agent read is re-attached to later requests instead of vanishing with the step that read it. |
+| **Code mode** | Instead of one call per turn, the model can write a program whose calls are bridged back through a guarded dispatch, so a batch of tool work costs one turn. The program runs in its own interpreter, where no framework object is one `import` away from model-written code. |
+| **Plan mode** | A person can hold a run to reading and reasoning until they approve what it intends to do. The gate reads each capability's own `mutates` / `permission_mode` declaration and never its name; a capability that declares neither is refused. |
 | **Training-oriented data interface** | `TrajectoryHook` captures the effective context, reasoning and tool calls, observations, token use, and reward for every step; it exports OpenAI Chat SFT records and pluggable RL formats, including a built-in text-level VERL episode format. |
 | **Inspectable, HTML-native artifacts** | Prompts, dynamic workflows, task documents, memory reports, and step snapshots are used by the runtime and readable by people. |
 | **Budgets inside the agent context** | Step, token, and wall-time budgets appear as `NORMAL / TIGHT / CRITICAL`, helping agents converge before a hard limit is reached. |
+| **A prompt prefix a cache can keep** | The capability catalogs are frozen at their first render and placed ahead of the volatile agent state, with a cache breakpoint after them, so a component generated mid-session does not invalidate the conversation behind it. |
 | **Four views over one project** | Chat, Canvas, browser-based VS Code, and Science/Jupyter share a session workspace and Gateway protocol. |
 | **Layered safety boundaries** | Sandbox isolation, host-side egress policy, command-intent authorization, and crash cleanup address different risks. |
 | **Registry-driven extension surface** | Agents, tools, skills, environments, memory systems, and related components follow consistent registration, schema, and lifecycle conventions. |
+
+The model reaches most of this by calling tools itself: starting a job and collecting it
+later, opening a terminal and typing into it, backgrounding a sub-agent and picking its
+answer up, asking a language server where a symbol is defined, reading an image, searching
+what earlier runs tried. [`docs/tool-catalog.md`](docs/tool-catalog.md) is generated from
+the live registry and lists every one of them with its parameters and permission mode.
 
 ## Fit and trade-offs
 
@@ -343,6 +354,14 @@ export foundation; it should not imply that the in-system trainer is complete to
 | **Science** | Share a Jupyter kernel with the agent and inspect execution history, MIME output, and compute state |
 | **Machines** | Watch browser/desktop environments over noVNC or manage explicitly configured SSH hosts |
 
+The conversation column carries what is true *now*, not only what was said: the goal the
+session is working toward sits above the thread and stays there while the transcript
+scrolls; a bar above it counts the background jobs and opens the list of what is still
+running or coming due; and the plan-mode control sits against the composer, because what
+it decides is what the next message will be allowed to do. From the same bar, any run in
+the conversation opens as a trajectory — every step with its reasoning, arguments, results
+and errors, wall time, token use, and the share of the prompt that was served from cache.
+
 The capability catalog, model manager, file editor, extension staging/promotion, and deployment status
 all use the same versioned Gateway protocol. See [`frontend/README.md`](frontend/README.md) and
 [`docs/canvas.md`](docs/canvas.md).
@@ -367,8 +386,19 @@ their threat model.
 - `constraint/` tracks step, token, and wall-time budgets and renders the remaining budget into agent context;
 - `trace/` persists structured events and streams them through the Gateway;
 - `trajectory/` projects runs into reward-annotated step records and exports OpenAI Chat SFT or RL formats such as VERL;
+- `session/query/` reads those trace logs back after a run ends, so an agent can search what an earlier run tried and read the steps around a hit;
 - `memory/` maintains recent history, compacted working memory, todos, call paths, and final results;
+- `spill/` writes an oversized tool result to a file whole and puts the locator in the excerpt, so the part that did not fit can still be read;
 - `benchmark/` provides entry points for AIME, GPQA, GSM8K, HLE, LeetCode, DeepWeb, ProgramBench, and related evaluations.
+
+Input tokens are the largest recurring cost, so the prompt is arranged for a cache: the
+capability catalogs are byte-identical on every step and are sent ahead of the volatile
+agent state, with the cache breakpoint after them. Measured on a real run, an orchestrator
+went from reading nothing back to 72,647 of about 98,800 input tokens per step served from
+cache once the prefix was warm. `agentevolver/model/types.py` and
+`agentevolver/agent/types.py` carry the reasoning, including why the entry lives for an
+hour and why a mid-session capability change is announced after the catalog rather than
+rewritten into it.
 
 ## Extending the framework
 

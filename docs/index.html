@@ -417,7 +417,7 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <div class="eyebrow" data-i18n="feat_eyebrow">Design choices</div>
-      <h2 data-i18n="feat_h">Six decisions that shape the system</h2>
+      <h2 data-i18n="feat_h">Ten decisions that shape the system</h2>
       <p data-i18n="feat_p">The value is not a large capability count. It is the way orchestration, evaluation, inspectability, and rollback fit together.</p>
     </div>
     <div class="features">
@@ -427,6 +427,10 @@
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-gauge"/></svg></div><h3 data-i18n="f4_h">Budgets the model can see</h3><p data-i18n="f4_p">Step, token and wall-time limits aren't just kill-switches: the remaining budget is rendered into the prompt every step as NORMAL / TIGHT / CRITICAL, so the agent plans around it instead of being cut off.</p></div>
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-panels"/></svg></div><h3 data-i18n="f5_h">Four views, one project</h3><p data-i18n="f5_p">Chat, a visual flow canvas, real VS Code in the browser, and a Science workstation with a live Jupyter kernel — all editing the same workspace, over one WebSocket protocol.</p></div>
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-database"/></svg></div><h3 data-i18n="f6_h">Execution becomes training data</h3><p data-i18n="f6_p"><code>TrajectoryHook</code> records the effective prompt, native tool-calling target, observations, token use, and late-arriving reward—then exports SFT or pluggable RL formats such as VERL.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-terminal"/></svg></div><h3 data-i18n="f7_h">A step is a decision, not a wait</h3><p data-i18n="f7_p">A long command, a terminal send, or a delegated sub-agent starts in the background and hands back a job id; the agent collects the output when it wants it. A step spent blocking is a decision the agent never got to make.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-cpu"/></svg></div><h3 data-i18n="f8_h">Code mode: one program, one turn</h3><p data-i18n="f8_p">The model can write a program instead of emitting one tool call per turn. Its calls return through a guarded dispatch, and the program runs in its own interpreter — no framework object is one <code>import</code> away from model-written code.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-scale"/></svg></div><h3 data-i18n="f9_h">Nothing changes until a person says go</h3><p data-i18n="f9_p">In plan mode a run may read, search and reason, and nothing else. The gate reads what a capability declared about itself — <code>mutates: false</code>, or a read-only permission mode — never its name. One that declared neither is refused, <code>bash_tool</code> included.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-layers"/></svg></div><h3 data-i18n="f10_h">A prompt prefix a cache can keep</h3><p data-i18n="f10_p">The capability catalogs are frozen at their first render and sent ahead of the volatile agent state, with a cache breakpoint after them. Measured on one run: 72,647 of about 98,800 input tokens per step served from cache, against none before.</p></div>
     </div>
   </div>
 </section>
@@ -708,10 +712,10 @@
         <h4><span data-i18n="cap1">Agent</span> <em>29</em></h4>
         <p data-i18n="cap1_d">Reasoning + execution loop: 8 actors, 7 generators, 7 evaluators, 7 optimizers.</p></div></div>
       <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-wrench"/></svg></div><div>
-        <h4><span data-i18n="cap2">Tool</span> <em>27</em></h4>
-        <p data-i18n="cap2_d">One atomic operation — bash, file r/w/edit, git, grep, web fetch, code interpreter, deploy.</p></div></div>
+        <h4><span data-i18n="cap2">Tool</span> <em>57</em></h4>
+        <p data-i18n="cap2_d">One atomic operation — bash, file r/w/edit, git, grep, web fetch, background jobs, persistent terminals, language-server queries, deploy.</p></div></div>
       <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-book"/></svg></div><div>
-        <h4><span data-i18n="cap3">Skill</span> <em>83</em></h4>
+        <h4><span data-i18n="cap3">Skill</span> <em>84</em></h4>
         <p data-i18n="cap3_d">Filesystem-backed SOPs (<code>SKILL.md</code> + scripts) across 11 categories.</p></div></div>
       <div class="cap"><div class="ci"><svg class="ic ic-sm"><use href="#i-plug"/></svg></div><div>
         <h4><span data-i18n="cap4">Connector</span> <em>25</em></h4>
@@ -755,7 +759,7 @@
     <div class="sec-head reveal">
       <div class="eyebrow" data-i18n="ui_eyebrow">The workbench</div>
       <h2 data-i18n="ui_h">Drive it from the browser</h2>
-      <p data-i18n="ui_p">A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, and a desktop the agent can actually use.</p>
+      <p data-i18n="ui_p">A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, a desktop the agent can actually use, and a conversation column carrying the goal, the jobs still running, and every step of a run.</p>
     </div>
 
     <figure class="ui-stage reveal">
@@ -948,7 +952,7 @@ const I18N = {
     def_not_label:"What it is not", def_not_h:"Uncontrolled mutation—or a finished trainer",
     def_not_p:"Evolution is constrained and evaluated. The current release captures training-oriented SFT/RL records but does not yet update weights, manage checkpoints, and feed a trained model back into serving inside one run.",
     def_not_1:"Tasks already produce reward-annotated SFT/RL trajectories", def_not_2:"In-system training and model feedback are the next-stage roadmap", def_not_3:"Tests, benchmarks, and human approval remain part of the loop",
-    feat_eyebrow:"Design choices", feat_h:"Six decisions that shape the system",
+    feat_eyebrow:"Design choices", feat_h:"Ten decisions that shape the system",
     feat_p:"The value is not a large capability count. It is the way orchestration, evaluation, inspectability, and rollback fit together.",
     f1_h:"Evidence before evolution", f1_p:"A failed check, recurring structural defect, or measured quality ceiling must establish the need. The normal response to a first fixable error is still to fix it.",
     f2_h:"Everything is HTML you can open", f2_p:"Prompts, workflows, task documents, memory reports and per-step snapshots are complete HTML documents — executable by the runtime <em>and</em> browsable, diffable, reviewable by a human.",
@@ -956,6 +960,10 @@ const I18N = {
     f4_h:"Budgets the model can see", f4_p:"Step, token and wall-time limits aren't just kill-switches: the remaining budget is rendered into the prompt every step as NORMAL / TIGHT / CRITICAL, so the agent plans around it instead of being cut off.",
     f5_h:"Four views, one project", f5_p:"Chat, a visual flow canvas, real VS Code in the browser, and a Science workstation with a live Jupyter kernel — all editing the same workspace, over one WebSocket protocol.",
     f6_h:"Execution becomes training data", f6_p:"<code>TrajectoryHook</code> records the effective prompt, native tool-calling target, observations, token use, and late-arriving reward—then exports SFT or pluggable RL formats such as VERL.",
+    f7_h:"A step is a decision, not a wait", f7_p:"A long command, a terminal send, or a delegated sub-agent starts in the background and hands back a job id; the agent collects the output when it wants it. A step spent blocking is a decision the agent never got to make.",
+    f8_h:"Code mode: one program, one turn", f8_p:"The model can write a program instead of emitting one tool call per turn. Its calls return through a guarded dispatch, and the program runs in its own interpreter — no framework object is one <code>import</code> away from model-written code.",
+    f9_h:"Nothing changes until a person says go", f9_p:"In plan mode a run may read, search and reason, and nothing else. The gate reads what a capability declared about itself — <code>mutates: false</code>, or a read-only permission mode — never its name. One that declared neither is refused, <code>bash_tool</code> included.",
+    f10_h:"A prompt prefix a cache can keep", f10_p:"The capability catalogs are frozen at their first render and sent ahead of the volatile agent state, with a cache breakpoint after them. Measured on one run: 72,647 of about 98,800 input tokens per step served from cache, against none before.",
     fit_eyebrow:"Fit & trade-offs", fit_h:"Powerful when the task justifies the machinery",
     fit_p:"AgentEvolver is designed for work where reusable methods, specialist coordination, and auditability matter more than minimum latency.",
     fit_yes_h:"A good fit", fit_yes_1:"Long-running engineering, data, or scientific tasks with several specialist roles", fit_yes_2:"Teams that want task-specific methods to become reusable capabilities", fit_yes_3:"Research on agent runtimes, SFT/RL data flywheels, evaluation loops, and human oversight", fit_yes_4:"Projects that need detailed artifacts, visual control, and reversible extension changes",
@@ -971,7 +979,7 @@ const I18N = {
     html_r4:"Memory report", html_r4d:"a JSON twin backs the runtime, the HTML is for you",
     html_r5:"Step snapshot", html_r5d:"every step, in the <em>same</em> stylesheet as the prompt",
     cap1:"Agent", cap1_d:"Reasoning + execution loop: 8 actors, 7 generators, 7 evaluators, 7 optimizers.",
-    cap2:"Tool", cap2_d:"One atomic operation — bash, file r/w/edit, git, grep, web fetch, code interpreter, deploy.",
+    cap2:"Tool", cap2_d:"One atomic operation — bash, file r/w/edit, git, grep, web fetch, background jobs, persistent terminals, language-server queries, deploy.",
     cap3:"Skill", cap3_d:"Filesystem-backed SOPs (<code>SKILL.md</code> + scripts) across 11 categories.",
     cap4:"Connector", cap4_d:"An external MCP server, each action projected as its own function.",
     cap5:"Environment", cap5_d:"Stateful worlds with <code>@action</code> methods — browser, Linux desktop, SSH, artifact renderer.",
@@ -1043,7 +1051,7 @@ const I18N = {
     reg_eyebrow:"The capability ecosystem", reg_h:"Nine kinds of capability, one contract",
     reg_p:"Every callable manager implements the same <code>get_schema()</code> — <code>json</code> returns the exact function-calling object sent to the model, <code>md</code> returns a human-readable contract. The prompt carries only a compact roster; full schemas travel in the request.",
     ui_eyebrow:"The workbench", ui_h:"Drive it from the browser",
-    ui_p:"A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, and a desktop the agent can actually use.",
+    ui_p:"A React workbench talks to the Python Gateway over a WebSocket: four workspaces on one session, a live capability catalogue, a desktop the agent can actually use, and a conversation column carrying the goal, the jobs still running, and every step of a run.",
     ui_t1:"Canvas flow editor", ui_t2:"Editor on the workspace", ui_t3:"Notebook & compute", ui_t4:"Machines over noVNC",
     ui_cta:"Take the full tour →",
     bench_eyebrow:"Evaluate everything", bench_h:"Benchmarks out of the box",
@@ -1070,7 +1078,7 @@ const I18N = {
     def_not_label:"它尚未是什么", def_not_h:"不是无约束改写；训练执行闭环仍在建设",
     def_not_p:"进化受到组件边界和评估约束。当前版本已经产生面向训练的 SFT/RL 记录，但还没有在同一次系统闭环内完成权重更新、checkpoint 管理和训练后模型回流。",
     def_not_1:"任务已经产出带奖励的 SFT/RL trajectory", def_not_2:"系统内训练和模型回流是下一阶段路线图", def_not_3:"测试、基准与人工审批仍然属于闭环的一部分",
-    feat_eyebrow:"设计取向", feat_h:"塑造系统的六个关键决定",
+    feat_eyebrow:"设计取向", feat_h:"塑造系统的十个关键决定",
     feat_p:"价值不在于堆出庞大的能力数量，而在于让编排、评估、可审查性与回滚真正形成闭环。",
     f1_h:"先有证据，再谈进化", f1_p:"必须由失败的检查、重复的结构性缺陷或经测量的质量上限证明需求。第一次可修复的错误，默认动作仍然是直接修好。",
     f2_h:"一切都是可直接打开的 HTML", f2_p:"提示词、工作流、任务文档、记忆报告和每一步快照，都是完整的 HTML 文档——既能被运行时执行，<em>也能</em>被人打开、diff、评审。",
@@ -1078,6 +1086,10 @@ const I18N = {
     f4_h:"模型看得见的预算", f4_p:"步数、token、墙钟时间不只是断路器：剩余预算每一步都以 NORMAL / TIGHT / CRITICAL 渲染进提示词，让智能体主动绕着它规划，而不是被一刀切断。",
     f5_h:"四个视图，同一个工程", f5_p:"Chat、可视化流程画布、浏览器里的真 VS Code，以及带实时 Jupyter 内核的 Science 工作台——全都编辑同一份 workspace，走同一条 WebSocket 协议。",
     f6_h:"执行过程直接成为训练数据", f6_p:"<code>TrajectoryHook</code> 记录实际 prompt、原生工具调用 target、观察、token 与后到奖励，再导出 SFT 或 VERL 等可插拔 RL 格式。",
+    f7_h:"一步是一次决策，不是一次等待", f7_p:"耗时命令、往终端里的输入、派出去的子智能体都在后台启动，当场拿到一个 job id；输出等智能体想看的时候再收。一步花在干等上，就等于这一步没轮到它做决定。",
+    f8_h:"代码模式：一段程序，一轮调用", f8_p:"模型可以直接写一段程序，而不是一轮只发一次工具调用。程序里的调用经受控派发返回，程序本身跑在自己的解释器里——模型写的代码与框架对象之间，隔着的不是一个 <code>import</code>。",
+    f9_h:"没有人点头，就什么都不会被改动", f9_p:"计划模式下，一次运行只能读、搜和推理，别的都不行。闸门看的是能力自己声明过什么——<code>mutates: false</code>，或者只读的权限模式——而不是它叫什么名字。两样都没声明的一律拦下，<code>bash_tool</code> 也不例外。",
+    f10_h:"能被缓存留住的提示词前缀", f10_p:"能力目录在首次渲染后冻结，放在易变的 agent 状态之前，缓存断点落在它们之后。实测的一次运行：每一步约 98,800 个输入 token 里有 72,647 个来自缓存，而在此之前是零。",
     fit_eyebrow:"适用性与取舍", fit_h:"任务足够复杂时，这套机制才值得",
     fit_p:"AgentEvolver 面向重视方法复用、专精协作与过程可审查性的工作，而不是追求最低延迟的每一个场景。",
     fit_yes_h:"适合", fit_yes_1:"包含多个专精角色的长链路工程、数据或科研任务", fit_yes_2:"希望把任务方法沉淀为可复用能力的团队", fit_yes_3:"研究 Agent 运行时、SFT/RL 数据飞轮、评估闭环和人类监督", fit_yes_4:"需要详细产物、可视化控制和可逆扩展变更的项目",
@@ -1093,7 +1105,7 @@ const I18N = {
     html_r4:"记忆报告", html_r4d:"运行时读的是 JSON 孪生体，HTML 是给你看的",
     html_r5:"步骤快照", html_r5d:"每一步一份，用的是和提示词<em>同一套</em>样式表",
     cap1:"智能体", cap1_d:"推理 + 执行闭环：8 个执行者、7 个生成器、7 个评估器、7 个优化器。",
-    cap2:"工具", cap2_d:"单一原子操作——bash、文件读写编辑、git、grep、网页抓取、代码解释器、部署。",
+    cap2:"工具", cap2_d:"单一原子操作——bash、文件读写编辑、git、grep、网页抓取、后台任务、常驻终端、语言服务器查询、部署。",
     cap3:"技能", cap3_d:"以文件系统承载的 SOP（<code>SKILL.md</code> + 脚本），共 11 个类别。",
     cap4:"连接器", cap4_d:"一个外部 MCP 服务器，每个 action 投影成独立的函数。",
     cap5:"环境", cap5_d:"带 <code>@action</code> 方法的有状态世界——浏览器、Linux 桌面、SSH、产物渲染器。",
@@ -1165,7 +1177,7 @@ const I18N = {
     reg_eyebrow:"能力生态", reg_h:"九类能力，同一套契约",
     reg_p:"每个可调用的 manager 都实现同一个 <code>get_schema()</code>——<code>json</code> 返回发给模型的函数调用对象原文，<code>md</code> 返回给人读的契约。提示词里只带一份紧凑名册，完整 schema 随请求走。",
     ui_eyebrow:"浏览器工作台", ui_h:"在浏览器里直接驱动它",
-    ui_p:"React 工作台通过 WebSocket 与 Python Gateway 通信：同一个会话四种工作视图、实时的能力目录，以及一块 agent 真能上手操作的桌面。",
+    ui_p:"React 工作台通过 WebSocket 与 Python Gateway 通信：同一个会话四种工作视图、实时的能力目录、一块 agent 真能上手操作的桌面，还有一栏承载着目标、仍在跑的后台任务和一次运行每一步的对话。",
     ui_t1:"Canvas 流程编辑器", ui_t2:"工作区编辑器", ui_t3:"Notebook 与算力", ui_t4:"noVNC 机器环境",
     ui_cta:"看完整功能演示 →",
     bench_eyebrow:"全面评测", bench_h:"开箱即用的基准测试",
