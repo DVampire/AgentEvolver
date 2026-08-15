@@ -145,28 +145,42 @@ def test_the_plan_notice_stays_out_of_the_cached_prefix():
 # A declaration that does not survive registration
 # --------------------------------------------------------------------------- #
 def test_a_runtime_registered_tool_keeps_its_declarations():
-    """`register()` dropped `mutates` and `permission_mode`; `_load_from_registry` kept them.
+    """`register`, `update` and `copy` built a ToolConfig from a live instance and dropped
+    the fields that decide how that tool is treated.
 
-    Plan mode refuses whatever has not declared itself, so a tool that lost its
-    declaration on the way in was refused — safe in direction, wrong in effect, and worst
-    of all specific to the tools this framework generates. Self-evolution produced
-    capabilities that could not be used in the mode whose whole purpose is reviewing what
-    the agent is about to do.
+    `mutates` and `permission_mode` are what the plan gate reads, so a tool that lost them
+    arrived undeclared and was refused — safe in direction, wrong in effect, and specific
+    to the tools this framework generates: self-evolution produced the only capabilities
+    that could not be reviewed in the mode built to review them.
 
-    Read from the source rather than by registering a tool: `register` is async, touches
-    the version manager and the on-disk registry, and the fact under test is one line.
+    `call_timeout_seconds` was the same omission found later on the same three paths, and
+    is why this checks a *list* rather than one field. A declaration that reaches the
+    registry through one path and not another is the shape that keeps recurring here; the
+    fix is to name every field a caller downstream depends on, so adding the next one
+    fails here rather than in a run.
     """
     import inspect
     import re
 
     from agentevolver.tool.context import ToolContextManager
 
+    # Every field something downstream reads off the config rather than the instance.
+    CARRIED = ("mutates", "permission_mode", "call_timeout_seconds")
+
     source = inspect.getsource(ToolContextManager)
     constructions = re.findall(r"ToolConfig\((.*?)\n            \)", source, re.S)
     assert constructions, "ToolConfig is no longer built here; this check needs updating"
 
-    undeclared = [i for i, body in enumerate(constructions)
-                  if "instance=tool_instance" in body and "mutates=" not in body]
-    assert not undeclared, (
-        "a ToolConfig is built from a live instance without carrying `mutates`; that "
-        "tool reaches the plan gate undeclared and is refused")
+    dropped = []
+    for index, body in enumerate(constructions):
+        if "instance=tool_instance" not in body:
+            continue                       # built from a class, not a live instance
+        for field in CARRIED:
+            if f"{field}=" not in body:
+                dropped.append(f"construction #{index}: {field}")
+
+    assert not dropped, (
+        "a ToolConfig is built from a live instance without carrying:\n  "
+        + "\n  ".join(dropped)
+        + "\nThat tool reaches the plan gate or the executor describing itself as "
+          "something it is not.")

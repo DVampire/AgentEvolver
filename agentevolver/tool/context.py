@@ -380,6 +380,7 @@ class ToolContextManager(BaseModel):
                 # capabilities that could not be used in the mode that reviews them.
                 mutates=tool_instance.mutates,
                 permission_mode=tool_instance.permission_mode,
+                call_timeout_seconds=tool_instance.call_timeout_seconds,
             )
 
             # --- Persist current config and history ---
@@ -522,6 +523,7 @@ class ToolContextManager(BaseModel):
                 # framework produces were the only ones it could not review.
                 mutates=tool_instance.mutates,
                 permission_mode=tool_instance.permission_mode,
+                call_timeout_seconds=tool_instance.call_timeout_seconds,
             )
             
             # Update the tool config (replaces current version)
@@ -640,6 +642,7 @@ class ToolContextManager(BaseModel):
                 # framework produces were the only ones it could not review.
                 mutates=tool_instance.mutates,
                 permission_mode=tool_instance.permission_mode,
+                call_timeout_seconds=tool_instance.call_timeout_seconds,
             )
             
             # Register new tool
