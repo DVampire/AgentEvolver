@@ -64,6 +64,19 @@ class ExtensionManagerServer(BaseModel):
         self.base_dir = os.path.abspath(base_dir) if base_dir else get_extension_root()
         os.makedirs(self.base_dir, exist_ok=True)
 
+    def _scopes(self) -> Dict[str, "Scope"]:
+        """``module:name`` → the scope owning everything that component installed.
+
+        Built lazily rather than in ``__init__``: this class is a ``Singleton``, so an
+        instance created before this attribute existed never runs ``__init__`` again and
+        would raise on every access. The same shape bit ``plan_manager`` once already.
+        """
+        existing = getattr(self, "_component_scopes", None)
+        if existing is None:
+            existing = {}
+            object.__setattr__(self, "_component_scopes", existing)
+        return existing
+
     def set_base_dir(self, base_dir: str) -> None:
         """Select the configured project's durable extension directory."""
         self.base_dir = os.path.abspath(base_dir)
@@ -650,13 +663,52 @@ class ExtensionManagerServer(BaseModel):
         )
         return (definition.name, definition.version) if return_version else definition.name
 
-    async def _unload_component(self, module: str, name: str) -> bool:
-        try:
+    def _adopt(self, module: str, name: str) -> "Scope":
+        """The scope that owns what ``module:name`` installed, seeded with its own entry.
+
+        A component's registrations are made by the per-module loaders, which call their
+        manager directly. Rather than threading a scope through five of them, the scope is
+        opened here and the loader's one registration is recorded into it — so the unload
+        path is scope-based from now on, and a loader that later installs a second thing
+        adds it to the same scope instead of leaking it.
+        """
+        from agentevolver.scope import Scope
+
+        key = f"{module}:{name}"
+        scopes = self._scopes()
+        scope = scopes.get(key)
+        if scope is None or scope.disposed:
+            scope = Scope(name=key)
             manager = self._manager(module)
-            result = manager.unregister(name)
-            ok = await result if isawaitable(result) else result
+            scope.add(f"{type(manager).__name__}:{name}", lambda: manager.unregister(name))
+            scopes[key] = scope
+        return scope
+
+    def scope_for(self, module: str, name: str):
+        """The live scope for a component, for a loader that has more to contribute.
+
+        Registering through it is what makes the extra contribution removable; registering
+        around it produces exactly the leak this exists to end.
+        """
+        scope = self._scopes().get(f"{module}:{name}")
+        return None if scope is None or scope.disposed else scope
+
+    async def _unload_component(self, module: str, name: str) -> bool:
+        """Remove everything this component installed, not only its headline registration.
+
+        This used to unregister from the single registry named by ``module``, which was
+        correct only because a component was not allowed to be more than one thing. The
+        scope holds whatever was actually installed, so unloading no longer has to assume.
+        """
+        try:
+            scope = self._adopt(module, name)
+            failed = await scope.dispose()
+            self._scopes().pop(f"{module}:{name}", None)
+            if failed:
+                logger.warning(f"| ⚠️ ExtensionManager: {module}:{name} left {failed} installed")
+                return False
             logger.info(f"| 🧹 ExtensionManager: unregistered {module}:{name}")
-            return bool(ok)
+            return True
         except Exception as e:
             logger.warning(f"| ⚠️ ExtensionManager: failed to unregister {module}:{name}: {e}")
             return False

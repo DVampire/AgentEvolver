@@ -20,6 +20,7 @@ contains two answers with no way to tell which is current.
 | [tests/README.md](../tests/README.md) | How a test in this repo is written, and why | What any individual test asserts |
 | [decisions/](decisions/README.md) | Why it is like this and what was given up | Plans, migration steps, acceptance checklists |
 | [postmortems/](postmortems/README.md) | Incident stories — **the only tier where narrative belongs** | Design rationale that was never an incident |
+| [cookbook/](cookbook/adding-a-tool.md) | Step-by-step procedures, ending in a verify step | Design rationale — link the decision record instead |
 | `docs/<topic>.md` | A reference for one subject: current behaviour, lookup-shaped | Teaching sequences that belong in a tutorial |
 
 Placement, in one line: **bug → postmortem; rationale → decision record; contract → docstring
