@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpen, FileText, Hash, Search, X } from 'lucide-react';
+import { BookOpen, ExternalLink, FileText, Hash, Search, X } from 'lucide-react';
 
 import type { RequestFn } from '../canvas/types';
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, reactNodeText } from '../components/common/Markdown';
 import '../style/docs.css';
+
+//: The published documentation site. The written guide lives there rather than in this
+//: viewer because it is a page — bilingual, laid out, and readable without a running
+//: gateway — while everything this viewer serves is repository Markdown.
+const SITE = 'https://dvampire.github.io/AgentEvolver/';
 
 export interface DocEntry { path: string; section: string; title: string; }
 interface DocContent extends DocEntry { content: string; }
@@ -175,6 +180,14 @@ export function DocsView({ request, endpoint }: { request: RequestFn; endpoint?:
   return (
     <div className="docs-view">
       <nav className="docs-nav" aria-label="Documents">
+        {/* The written guide first. What follows it is the repository's own Markdown —
+            useful when you are already in a module, and not a substitute for a document
+            somebody composed. Keeping the two visibly separate is the point. */}
+        <a className="docs-guide" href={`${SITE}development.html`} target="_blank" rel="noreferrer">
+          <BookOpen size={14} strokeWidth={1.9} />
+          <span><strong>Development guide</strong><em>Hand-written · EN / 中文</em></span>
+          <ExternalLink size={12} strokeWidth={1.9} />
+        </a>
         <div className="docs-search">
           <Search size={13} strokeWidth={2} />
           <input

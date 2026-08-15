@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Development — AgentEvolver</title>
+<meta name="description" content="How AgentEvolver is built: the module contract, how to add a capability, how the work is verified, and the invariants that were paid for.">
+<style>
+  :root{
+    --bg:#05060f; --bg-2:#0a0c1c;
+    --panel:rgba(255,255,255,.035); --panel-strong:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.16);
+    --text:#eef1ff; --muted:#9aa3c7; --muted-2:#6f7aa6;
+    --brand:#7c5cff; --brand-2:#22d3ee; --brand-3:#ff5c9d;
+    --ok:#34d399; --warn:#fbbf24;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.07);border-radius:5px;padding:1px 6px}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* ---------- nav ---------- */
+  nav{position:sticky;top:0;z-index:50;background:rgba(5,6,15,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex;align-items:center;gap:20px;height:62px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:750;text-decoration:none;letter-spacing:-.02em}
+  .mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--brand),var(--brand-2));font-size:15px}
+  .nav-links{display:flex;gap:19px;margin-left:12px;font-size:13.5px;color:var(--muted)}
+  .nav-links a{text-decoration:none;transition:.2s}
+  .nav-links a:hover{color:var(--text)}
+  .nav-right{display:flex;align-items:center;gap:12px;margin-left:auto}
+  .lang{display:flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;font-size:13px;font-weight:600}
+  .lang button{background:none;border:0;color:var(--muted);padding:6px 13px;cursor:pointer;font-family:inherit;font-weight:inherit;transition:.2s}
+  .lang button.active{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff}
+  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border-strong);border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:600;text-decoration:none;transition:.2s}
+  .btn:hover{border-color:rgba(255,255,255,.35);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(135deg,var(--brand),var(--brand-2));border-color:transparent;color:#fff}
+
+  /* ---------- header ---------- */
+  header.page{padding:74px 0 46px;border-bottom:1px solid var(--border);background:radial-gradient(900px 380px at 18% -10%,rgba(124,92,255,.20),transparent 60%)}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border-strong);border-radius:999px;padding:5px 14px;font-size:12.5px;color:var(--muted);letter-spacing:.03em}
+  h1{margin:20px 0 14px;font-size:clamp(34px,5vw,52px);line-height:1.1;letter-spacing:-.035em}
+  .grad{background:linear-gradient(120deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{max-width:70ch;color:var(--muted);font-size:16.5px}
+
+  /* ---------- layout ---------- */
+  .shell{display:grid;grid-template-columns:236px minmax(0,1fr);gap:52px;padding:44px 0 96px}
+  aside{position:sticky;top:86px;align-self:start;max-height:calc(100vh - 110px);overflow-y:auto;font-size:13.5px}
+  aside .grp{margin-bottom:20px}
+  aside .grp b{display:block;margin-bottom:7px;color:var(--muted-2);font-size:11px;text-transform:uppercase;letter-spacing:.11em}
+  aside a{display:block;padding:5px 11px;border-left:2px solid transparent;color:var(--muted);text-decoration:none;transition:.15s}
+  aside a:hover{color:var(--text)}
+  aside a.on{border-left-color:var(--brand);color:var(--text);font-weight:600}
+
+  main{min-width:0}
+  section{scroll-margin-top:82px;margin-bottom:58px}
+  h2{margin:0 0 8px;font-size:27px;letter-spacing:-.025em}
+  h2 .num{margin-right:11px;color:var(--brand);font-family:var(--mono);font-size:16px;font-weight:600}
+  h3{margin:30px 0 8px;font-size:17.5px;letter-spacing:-.012em}
+  p{margin:0 0 14px;color:var(--muted);max-width:76ch}
+  main strong{color:var(--text);font-weight:650}
+  ul,ol{margin:0 0 14px;padding-left:22px;color:var(--muted);max-width:76ch}
+  li{margin:6px 0}
+
+  pre{margin:0 0 18px;overflow-x:auto;border:1px solid var(--border);border-radius:12px;padding:16px 18px;background:rgba(0,0,0,.34);font-family:var(--mono);font-size:12.6px;line-height:1.62;color:#d7def0}
+  pre code{background:none;padding:0;font-size:inherit}
+
+  .card{border:1px solid var(--border);border-radius:14px;padding:19px 21px;background:var(--panel);margin:0 0 16px}
+  .card.why{border-left:3px solid var(--brand)}
+  .card.trap{border-left:3px solid var(--warn)}
+  .card b.tag{display:block;margin-bottom:6px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)}
+  .card.why b.tag{color:var(--brand)}
+  .card.trap b.tag{color:var(--warn)}
+  .card p:last-child{margin-bottom:0}
+
+  table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:13.6px}
+  th,td{border:1px solid var(--border);padding:9px 12px;text-align:left;vertical-align:top;color:var(--muted)}
+  th{background:var(--panel-strong);color:var(--text);font-weight:650}
+  td code{white-space:nowrap}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:14px;margin-bottom:18px}
+  .kv{border:1px solid var(--border);border-radius:12px;padding:15px 17px;background:var(--panel)}
+  .kv b{display:block;margin-bottom:4px;color:var(--text);font-size:14px}
+  .kv span{color:var(--muted);font-size:13.2px}
+
+  footer{border-top:1px solid var(--border);padding:34px 0;color:var(--muted-2);font-size:13.5px}
+  .foot-inner{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center}
+  .foot-links{display:flex;gap:18px}
+  .foot-links a{text-decoration:none;color:var(--muted)}
+  .foot-links a:hover{color:var(--text)}
+
+  @media(max-width:940px){
+    .shell{grid-template-columns:minmax(0,1fr);gap:0}
+    aside{position:static;max-height:none;margin-bottom:30px;border-bottom:1px solid var(--border);padding-bottom:18px}
+    aside .grp{display:inline-block;margin-right:22px;vertical-align:top}
+    .nav-links{display:none}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="mark">◆</span> AgentEvolver</a>
+    <div class="nav-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="ui.html" data-i18n="nav_ui">Web UI</a>
+      <a href="#start" data-i18n="nav_start">Setup</a>
+      <a href="#layout" data-i18n="nav_layout">Layout</a>
+      <a href="#capability" data-i18n="nav_cap">Add a capability</a>
+      <a href="#verify" data-i18n="nav_verify">Verification</a>
+      <a href="#invariants" data-i18n="nav_inv">Invariants</a>
+    </div>
+    <div class="nav-right">
+      <div class="lang" role="group" aria-label="language">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="zh">中文</button>
+      </div>
+      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page">
+  <div class="wrap">
+    <span class="eyebrow" data-i18n="hdr_pill">For contributors</span>
+    <h1 data-i18n="hdr_title_html">Building on <span class="grad">AgentEvolver</span></h1>
+    <p class="lede" data-i18n="hdr_lede">How the codebase is organised, how to add a capability, how the work is checked, and the rules that were paid for in defects. Written for someone about to change something — not a tour.</p>
+  </div>
+</header>
+
+<div class="wrap shell">
+  <aside>
+    <div class="grp">
+      <b data-i18n="side_a">Getting in</b>
+      <a href="#start" data-i18n="nav_start">Setup</a>
+      <a href="#layout" data-i18n="nav_layout">Repository layout</a>
+      <a href="#module" data-i18n="nav_module">The module contract</a>
+    </div>
+    <div class="grp">
+      <b data-i18n="side_b">Changing things</b>
+      <a href="#capability" data-i18n="nav_cap">Add a capability</a>
+      <a href="#gateway" data-i18n="nav_gw">Gateway &amp; frontend</a>
+      <a href="#extend" data-i18n="nav_ext">Extensions at runtime</a>
+    </div>
+    <div class="grp">
+      <b data-i18n="side_c">Keeping it true</b>
+      <a href="#verify" data-i18n="nav_verify">Verification</a>
+      <a href="#records" data-i18n="nav_rec">Decisions &amp; postmortems</a>
+      <a href="#invariants" data-i18n="nav_inv">Invariants</a>
+    </div>
+  </aside>
+
+  <main>
+
+  <!-- ============ SETUP ============ -->
+  <section id="start">
+    <h2><span class="num">01</span><span data-i18n="s1_h">Setup</span></h2>
+    <p data-i18n="s1_p1">One environment, two commands. The gateway serves the runtime; the Vite dev server serves the UI and reverse-proxies to the gateway, so only one port ever needs forwarding.</p>
+<pre><code>pip install -e ".[dev]"
+
+# terminal 1 — the runtime
+python -m agentevolver.cli serve --transport websocket --port 9876
+
+# terminal 2 — the UI (proxies /ws to the gateway)
+cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
+    <div class="card trap">
+      <b class="tag" data-i18n="t_trap">Trap</b>
+      <p data-i18n="s1_trap">The UI stores its gateway address. Move the dev server to another port and the stored address still names the old one — both proxy to <em>a</em> gateway, so everything looks connected while you talk to the wrong backend. The symptom is one newer method reported as unknown. Loopback addresses now migrate automatically; if you see it, the Docs view prints the address it used.</p>
+    </div>
+  </section>
+
+  <!-- ============ LAYOUT ============ -->
+  <section id="layout">
+    <h2><span class="num">02</span><span data-i18n="s2_h">Repository layout</span></h2>
+    <p data-i18n="s2_p1">Every capability lives in its own top-level module under <code>agentevolver/</code>. There is no shared "core" that things get added to — a new capability is a new directory, and nothing else changes.</p>
+    <table>
+      <thead><tr><th data-i18n="s2_th1">Area</th><th data-i18n="s2_th2">What it owns</th></tr></thead>
+      <tbody>
+        <tr><td><code>agent/</code></td><td data-i18n="s2_r1">The loop: steps, tool dispatch, hooks, plan mode, delegation.</td></tr>
+        <tr><td><code>model/</code></td><td data-i18n="s2_r2">Provider adapters and one canonical stream vocabulary they all speak.</td></tr>
+        <tr><td><code>tool/</code>, <code>skill/</code>, <code>environment/</code>, <code>connector/</code></td><td data-i18n="s2_r3">The four capability families a model can be given.</td></tr>
+        <tr><td><code>trace/</code></td><td data-i18n="s2_r4">The append-only session log and the two readings of it.</td></tr>
+        <tr><td><code>memory/</code></td><td data-i18n="s2_r5">What a run carries forward, and how it is compacted.</td></tr>
+        <tr><td><code>gateway/</code></td><td data-i18n="s2_r6">The one door the browser talks through.</td></tr>
+        <tr><td><code>extension/</code>, <code>scope/</code>, <code>dynamic/</code></td><td data-i18n="s2_r7">Components created at runtime, and how they are removed again.</td></tr>
+        <tr><td><code>tests/</code></td><td data-i18n="s2_r8">Every gate. There is no separate CI configuration that checks something else.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============ MODULE CONTRACT ============ -->
+  <section id="module">
+    <h2><span class="num">03</span><span data-i18n="s3_h">The module contract</span></h2>
+    <p data-i18n="s3_p1">A module is four files, and the shape is uniform enough that finding your way around an unfamiliar one takes no reading.</p>
+<pre><code>agentevolver/&lt;module&gt;/
+  README.md      # YAML frontmatter + what this module owns  (gated)
+  types.py       # the data and the contract — no I/O
+  server.py      # the singleton manager: register / get / list / unregister
+  __init__.py    # the public surface</code></pre>
+    <div class="card why">
+      <b class="tag" data-i18n="t_why">Why</b>
+      <p data-i18n="s3_why">Every manager spells removal the same way — <code>unregister(name)</code>. That uniformity is not cosmetic: it is what lets one scope own registrations across several managers and take them all back out, which is what makes a contributor removable.</p>
+    </div>
+    <h3 data-i18n="s3_h2">Registration is by class field</h3>
+    <p data-i18n="s3_p2">A tool, agent, or environment is discovered by its <code>name</code> <em>class field</em>, not by an argument passed to a constructor. Passing it any other way registers as <code>None</code>, and nothing complains until the model cannot find the capability.</p>
+  </section>
+
+  <!-- ============ ADD A CAPABILITY ============ -->
+  <section id="capability">
+    <h2><span class="num">04</span><span data-i18n="s4_h">Adding a capability</span></h2>
+    <p data-i18n="s4_p1">A tool is one thing an agent can do. The procedure below is the whole of it; agents, skills, and environments follow the same three steps against their own manager.</p>
+<pre><code>class WordCountTool(Tool):
+    """Count the words in a file."""
+
+    name: str = Field(default="word_count")            # class field — see above
+    description: str = Field(default="Count words in a UTF-8 text file.")
+    mutates: bool = Field(default=False)               # three-valued; see below
+
+    async def __call__(self, path: str, ctx=None, **kwargs) -&gt; Response:
+        with open(path, encoding="utf-8") as handle:
+            count = len(handle.read().split())
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=f"{count} words", data={"words": count})</code></pre>
+    <ol>
+      <li data-i18n="s4_l1"><strong>Write the class</strong> in <code>agentevolver/tool/default/</code>.</li>
+      <li data-i18n="s4_l2"><strong>Export it</strong> from that package's <code>__init__.py</code>. Discovery is by import; a tool that is written and not exported is invisible and nothing reports it.</li>
+      <li data-i18n="s4_l3"><strong>Test it</strong>, covering the failure path — a model cannot tell "this file does not exist" from "this tool is broken" unless the message says so.</li>
+    </ol>
+    <div class="card trap">
+      <b class="tag" data-i18n="t_trap">Trap</b>
+      <p data-i18n="s4_trap"><code>mutates</code> is three-valued and the third value matters. <code>True</code> changes state, <code>False</code> only reports, and <code>None</code> means <em>depends on the arguments</em> — which is what a shell tool declares, and a shell command is the most likely way an agent destroys something. Anything but an explicit <code>False</code> makes the runtime flush its log before dispatch.</p>
+    </div>
+    <p data-i18n="s4_p2">The description is a model-facing contract, not a label. "Count the words in a UTF-8 text file" tells a model when to reach for it; "Word counting utility" does not.</p>
+  </section>
+
+  <!-- ============ GATEWAY ============ -->
+  <section id="gateway">
+    <h2><span class="num">05</span><span data-i18n="s5_h">Gateway and frontend</span></h2>
+    <p data-i18n="s5_p1">The browser reaches the runtime through one WebSocket and nothing else. A command is <code>{id, method, params, protocol_version}</code>; the server answers with a response of the same id, and pushes ordered events alongside.</p>
+    <p data-i18n="s5_p2">Adding a method is one function. The dispatcher maps <code>method</code> to <code>_command_&lt;name&gt;</code>, so <code>docs.list</code> is served by <code>_command_docs_list</code>. No table to register in.</p>
+    <div class="card why">
+      <b class="tag" data-i18n="t_why">Why</b>
+      <p data-i18n="s5_why">The frontend declares the same wire types by hand, in another language and another build. Drift is silent in both directions — a field the client declares and the server never sends arrives as <code>undefined</code> with the type checker satisfied. A gate compares the two field sets on every run; it found three fields that had been sent for months and declared nowhere.</p>
+    </div>
+  </section>
+
+  <!-- ============ EXTENSIONS ============ -->
+  <section id="extend">
+    <h2><span class="num">06</span><span data-i18n="s6_h">Extensions at runtime</span></h2>
+    <p data-i18n="s6_p1">Components can be created, versioned, promoted, and rolled back while the system runs. Two mechanisms make that safe rather than merely possible.</p>
+    <div class="grid2">
+      <div class="kv"><b data-i18n="s6_k1">Scopes</b><span data-i18n="s6_v1">Everything a contributor registers goes through one handle that removes all of it — newest first, surviving a failure partway, and reporting what is still installed.</span></div>
+      <div class="kv"><b data-i18n="s6_k2">The smoke gate</b><span data-i18n="s6_v2">A newly evolved component runs a synthetic task through the real loop before it reaches the manifest. It never raises: a failure in the gate must not break the path it guards.</span></div>
+    </div>
+    <p data-i18n="s6_p2">Promotion — turning a file an agent wrote into a file the next session loads as code — checks containment after resolving both paths, so a traversal cannot be spelled with <code>..</code> or hidden behind a symlink.</p>
+  </section>
+
+  <!-- ============ VERIFICATION ============ -->
+  <section id="verify">
+    <h2><span class="num">07</span><span data-i18n="s7_h">Verification</span></h2>
+    <p data-i18n="s7_p1">Two lanes. The ordinary one is fast; the measured one costs about 30% more wall-clock and answers a question no individual test can.</p>
+<pre><code>pytest              # the ordinary run
+pytest --cov        # measures, then applies the coverage gate</code></pre>
+    <h3 data-i18n="s7_h2">The gate is a dark-file register, not a percentage</h3>
+    <p data-i18n="s7_p2">The rule is not the number. It is the set of files the whole suite never executes a line of — a set that holds two things wearing the same clothes: code nothing tests, and code nothing <em>calls</em>. Every file at zero must be named in a register with the reason a test cannot reach it.</p>
+    <div class="card why">
+      <b class="tag" data-i18n="t_why">Why</b>
+      <p data-i18n="s7_why">The register is enforced in <strong>both</strong> directions. A file that goes dark without an entry fails the run; a registered file that starts being covered <em>also</em> fails, until its entry is deleted. Without the second direction the list only grows, and a file whose tests were written stays permanently exempt from the check it just started passing.</p>
+    </div>
+    <h3 data-i18n="s7_h3">A check that cannot fail is worse than no check</h3>
+    <p data-i18n="s7_p3">Consistency checks are themselves guarded: a suite reintroduces each real defect in a subprocess and requires the check to go red. A check that always passes reports the invariant as held, silently, forever.</p>
+  </section>
+
+  <!-- ============ RECORDS ============ -->
+  <section id="records">
+    <h2><span class="num">08</span><span data-i18n="s8_h">Decisions and postmortems</span></h2>
+    <p data-i18n="s8_p1">Code says what happens; tests say what must keep happening. Neither says why the third option lost, and that is what gets re-litigated.</p>
+    <table>
+      <thead><tr><th data-i18n="s8_th1">Record</th><th data-i18n="s8_th2">Answers</th><th data-i18n="s8_th3">Rule</th></tr></thead>
+      <tbody>
+        <tr><td data-i18n="s8_r1a">Decision</td><td data-i18n="s8_r1b">Why is it like this, and what did we give up?</td><td data-i18n="s8_r1c">Alternatives are mandatory and are recorded, never invented. Present tense only.</td></tr>
+        <tr><td data-i18n="s8_r2a">Postmortem</td><td data-i18n="s8_r2b">Why did the process let this through?</td><td data-i18n="s8_r2c">Subtle, systemic, and costly to rediscover — all three, or it does not belong.</td></tr>
+      </tbody>
+    </table>
+    <p data-i18n="s8_p2">The test for writing one is simple: would someone reasonably ask "why was this done this way?" in six months? That is a lower bar than "was this hard" and a much higher one than "did I change something".</p>
+  </section>
+
+  <!-- ============ INVARIANTS ============ -->
+  <section id="invariants">
+    <h2><span class="num">09</span><span data-i18n="s9_h">Invariants that were paid for</span></h2>
+    <p data-i18n="s9_p1">Each of these is a rule that exists because its absence produced a defect. They are collected here because every one of them is easy to undo by accident.</p>
+
+    <div class="card">
+      <b class="tag">01</b>
+      <p data-i18n="s9_i1"><strong>Disposal must reach quiescence, not request it.</strong> Sending a signal and immediately marking something stopped reports a process that ignores the signal as dead while it is still running. Wait, escalate, wait again, and say so if it survives both.</p>
+    </div>
+    <div class="card">
+      <b class="tag">02</b>
+      <p data-i18n="s9_i2"><strong>The log reaches disk before a mutation.</strong> Events are queued, not written, so the log trails the run. That is free until the process dies inside the lag — and then nobody can tell whether the destructive command executed.</p>
+    </div>
+    <div class="card">
+      <b class="tag">03</b>
+      <p data-i18n="s9_i3"><strong>Retries happen in one place, and every attempt is recorded.</strong> The product here is trajectories. A call that failed twice and succeeded on the third try must not be indistinguishable from one that got it right immediately — that is a training sample that lies.</p>
+    </div>
+    <div class="card">
+      <b class="tag">04</b>
+      <p data-i18n="s9_i4"><strong>The model's history is not the human transcript.</strong> Compaction shadows the range it replaces, which is correct for a model request and deletes conversation a person has already read. Two readings of one log; picking the wrong one renders perfectly until the first compaction.</p>
+    </div>
+    <div class="card">
+      <b class="tag">05</b>
+      <p data-i18n="s9_i5"><strong>Enforce a decision in the operation that makes it.</strong> Omitting something from a schema, filtering a prompt, or wrapping a facade is not enforcement when another caller can bypass it. Test the denial through the executor.</p>
+    </div>
+    <div class="card">
+      <b class="tag">06</b>
+      <p data-i18n="s9_i6"><strong>An action's result must be text the model can read.</strong> Returning a bare object leaves the agent holding <code>None</code>, and the run spins with no observation and no error.</p>
+    </div>
+    <div class="card">
+      <b class="tag">07</b>
+      <p data-i18n="s9_i7"><strong>A gate is verified by its exit code, not its output.</strong> A check can print a red banner and still exit zero, in which case CI walks straight past it. This one cost a full round of debugging; it has its own postmortem.</p>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>
+      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:13px">◆</span> AgentEvolver</div>
+      <div style="margin-top:8px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
+    </div>
+    <div class="foot-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="ui.html" data-i18n="nav_ui">Web UI</a>
+      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+const I18N = {
+  en:{
+    nav_home:"Home", nav_ui:"Web UI", nav_start:"Setup", nav_layout:"Layout", nav_cap:"Add a capability",
+    nav_verify:"Verification", nav_inv:"Invariants", nav_module:"The module contract", nav_gw:"Gateway & frontend",
+    nav_ext:"Extensions at runtime", nav_rec:"Decisions & postmortems",
+    side_a:"Getting in", side_b:"Changing things", side_c:"Keeping it true",
+    t_why:"Why", t_trap:"Trap",
+    hdr_pill:"For contributors",
+    hdr_title_html:'Building on <span class="grad">AgentEvolver</span>',
+    hdr_lede:"How the codebase is organised, how to add a capability, how the work is checked, and the rules that were paid for in defects. Written for someone about to change something — not a tour.",
+
+    s1_h:"Setup",
+    s1_p1:"One environment, two commands. The gateway serves the runtime; the Vite dev server serves the UI and reverse-proxies to the gateway, so only one port ever needs forwarding.",
+    s1_trap:"The UI stores its gateway address. Move the dev server to another port and the stored address still names the old one — both proxy to <em>a</em> gateway, so everything looks connected while you talk to the wrong backend. The symptom is one newer method reported as unknown. Loopback addresses now migrate automatically; if you see it, the Docs view prints the address it used.",
+
+    s2_h:"Repository layout",
+    s2_p1:"Every capability lives in its own top-level module under <code>agentevolver/</code>. There is no shared \"core\" that things get added to — a new capability is a new directory, and nothing else changes.",
+    s2_th1:"Area", s2_th2:"What it owns",
+    s2_r1:"The loop: steps, tool dispatch, hooks, plan mode, delegation.",
+    s2_r2:"Provider adapters and one canonical stream vocabulary they all speak.",
+    s2_r3:"The four capability families a model can be given.",
+    s2_r4:"The append-only session log and the two readings of it.",
+    s2_r5:"What a run carries forward, and how it is compacted.",
+    s2_r6:"The one door the browser talks through.",
+    s2_r7:"Components created at runtime, and how they are removed again.",
+    s2_r8:"Every gate. There is no separate CI configuration that checks something else.",
+
+    s3_h:"The module contract",
+    s3_p1:"A module is four files, and the shape is uniform enough that finding your way around an unfamiliar one takes no reading.",
+    s3_why:"Every manager spells removal the same way — <code>unregister(name)</code>. That uniformity is not cosmetic: it is what lets one scope own registrations across several managers and take them all back out, which is what makes a contributor removable.",
+    s3_h2:"Registration is by class field",
+    s3_p2:"A tool, agent, or environment is discovered by its <code>name</code> <em>class field</em>, not by an argument passed to a constructor. Passing it any other way registers as <code>None</code>, and nothing complains until the model cannot find the capability.",
+
+    s4_h:"Adding a capability",
+    s4_p1:"A tool is one thing an agent can do. The procedure below is the whole of it; agents, skills, and environments follow the same three steps against their own manager.",
+    s4_l1:"<strong>Write the class</strong> in <code>agentevolver/tool/default/</code>.",
+    s4_l2:"<strong>Export it</strong> from that package's <code>__init__.py</code>. Discovery is by import; a tool that is written and not exported is invisible and nothing reports it.",
+    s4_l3:"<strong>Test it</strong>, covering the failure path — a model cannot tell \"this file does not exist\" from \"this tool is broken\" unless the message says so.",
+    s4_trap:"<code>mutates</code> is three-valued and the third value matters. <code>True</code> changes state, <code>False</code> only reports, and <code>None</code> means <em>depends on the arguments</em> — which is what a shell tool declares, and a shell command is the most likely way an agent destroys something. Anything but an explicit <code>False</code> makes the runtime flush its log before dispatch.",
+    s4_p2:"The description is a model-facing contract, not a label. \"Count the words in a UTF-8 text file\" tells a model when to reach for it; \"Word counting utility\" does not.",
+
+    s5_h:"Gateway and frontend",
+    s5_p1:"The browser reaches the runtime through one WebSocket and nothing else. A command is <code>{id, method, params, protocol_version}</code>; the server answers with a response of the same id, and pushes ordered events alongside.",
+    s5_p2:"Adding a method is one function. The dispatcher maps <code>method</code> to <code>_command_&lt;name&gt;</code>, so <code>docs.list</code> is served by <code>_command_docs_list</code>. No table to register in.",
+    s5_why:"The frontend declares the same wire types by hand, in another language and another build. Drift is silent in both directions — a field the client declares and the server never sends arrives as <code>undefined</code> with the type checker satisfied. A gate compares the two field sets on every run; it found three fields that had been sent for months and declared nowhere.",
+
+    s6_h:"Extensions at runtime",
+    s6_p1:"Components can be created, versioned, promoted, and rolled back while the system runs. Two mechanisms make that safe rather than merely possible.",
+    s6_k1:"Scopes", s6_v1:"Everything a contributor registers goes through one handle that removes all of it — newest first, surviving a failure partway, and reporting what is still installed.",
+    s6_k2:"The smoke gate", s6_v2:"A newly evolved component runs a synthetic task through the real loop before it reaches the manifest. It never raises: a failure in the gate must not break the path it guards.",
+    s6_p2:"Promotion — turning a file an agent wrote into a file the next session loads as code — checks containment after resolving both paths, so a traversal cannot be spelled with <code>..</code> or hidden behind a symlink.",
+
+    s7_h:"Verification",
+    s7_p1:"Two lanes. The ordinary one is fast; the measured one costs about 30% more wall-clock and answers a question no individual test can.",
+    s7_h2:"The gate is a dark-file register, not a percentage",
+    s7_p2:"The rule is not the number. It is the set of files the whole suite never executes a line of — a set that holds two things wearing the same clothes: code nothing tests, and code nothing <em>calls</em>. Every file at zero must be named in a register with the reason a test cannot reach it.",
+    s7_why:"The register is enforced in <strong>both</strong> directions. A file that goes dark without an entry fails the run; a registered file that starts being covered <em>also</em> fails, until its entry is deleted. Without the second direction the list only grows, and a file whose tests were written stays permanently exempt from the check it just started passing.",
+    s7_h3:"A check that cannot fail is worse than no check",
+    s7_p3:"Consistency checks are themselves guarded: a suite reintroduces each real defect in a subprocess and requires the check to go red. A check that always passes reports the invariant as held, silently, forever.",
+
+    s8_h:"Decisions and postmortems",
+    s8_p1:"Code says what happens; tests say what must keep happening. Neither says why the third option lost, and that is what gets re-litigated.",
+    s8_th1:"Record", s8_th2:"Answers", s8_th3:"Rule",
+    s8_r1a:"Decision", s8_r1b:"Why is it like this, and what did we give up?", s8_r1c:"Alternatives are mandatory and are recorded, never invented. Present tense only.",
+    s8_r2a:"Postmortem", s8_r2b:"Why did the process let this through?", s8_r2c:"Subtle, systemic, and costly to rediscover — all three, or it does not belong.",
+    s8_p2:"The test for writing one is simple: would someone reasonably ask \"why was this done this way?\" in six months? That is a lower bar than \"was this hard\" and a much higher one than \"did I change something\".",
+
+    s9_h:"Invariants that were paid for",
+    s9_p1:"Each of these is a rule that exists because its absence produced a defect. They are collected here because every one of them is easy to undo by accident.",
+    s9_i1:"<strong>Disposal must reach quiescence, not request it.</strong> Sending a signal and immediately marking something stopped reports a process that ignores the signal as dead while it is still running. Wait, escalate, wait again, and say so if it survives both.",
+    s9_i2:"<strong>The log reaches disk before a mutation.</strong> Events are queued, not written, so the log trails the run. That is free until the process dies inside the lag — and then nobody can tell whether the destructive command executed.",
+    s9_i3:"<strong>Retries happen in one place, and every attempt is recorded.</strong> The product here is trajectories. A call that failed twice and succeeded on the third try must not be indistinguishable from one that got it right immediately — that is a training sample that lies.",
+    s9_i4:"<strong>The model's history is not the human transcript.</strong> Compaction shadows the range it replaces, which is correct for a model request and deletes conversation a person has already read. Two readings of one log; picking the wrong one renders perfectly until the first compaction.",
+    s9_i5:"<strong>Enforce a decision in the operation that makes it.</strong> Omitting something from a schema, filtering a prompt, or wrapping a facade is not enforcement when another caller can bypass it. Test the denial through the executor.",
+    s9_i6:"<strong>An action's result must be text the model can read.</strong> Returning a bare object leaves the agent holding <code>None</code>, and the run spins with no observation and no error.",
+    s9_i7:"<strong>A gate is verified by its exit code, not its output.</strong> A check can print a red banner and still exit zero, in which case CI walks straight past it. This one cost a full round of debugging; it has its own postmortem.",
+
+    foot_tag:"A self-evolving multi-agent framework · MIT License"
+  },
+  zh:{
+    nav_home:"首页", nav_ui:"Web 界面", nav_start:"环境搭建", nav_layout:"仓库结构", nav_cap:"新增能力",
+    nav_verify:"验证体系", nav_inv:"不变式", nav_module:"模块契约", nav_gw:"网关与前端",
+    nav_ext:"运行时扩展", nav_rec:"决策与事后分析",
+    side_a:"上手", side_b:"动手改", side_c:"保持正确",
+    t_why:"为什么", t_trap:"坑",
+    hdr_pill:"写给贡献者",
+    hdr_title_html:'在 <span class="grad">AgentEvolver</span> 上开发',
+    hdr_lede:"代码怎么组织、怎么新增一个能力、工作怎么被检验，以及那些用缺陷换来的规矩。写给正要动手改点什么的人，不是导览。",
+
+    s1_h:"环境搭建",
+    s1_p1:"一套环境，两条命令。网关提供运行时；Vite 开发服务器提供界面并把请求反向代理到网关，所以对外只需要转发一个端口。",
+    s1_trap:"界面会把网关地址存下来。把开发服务器换到另一个端口，存下的地址仍然指着旧的那个——两边都代理到<em>某个</em>网关，所以看起来一切正常，实际连的是错的后端。症状是某个较新的方法被报为「未知」。回环地址现在会自动迁移；万一还是遇到，Docs 页面会把它用的地址打出来。",
+
+    s2_h:"仓库结构",
+    s2_p1:"每个能力都是 <code>agentevolver/</code> 下自己的一个顶层模块。没有一个大家往里加东西的公共「核心」——新增能力就是新增一个目录，别处一行不改。",
+    s2_th1:"位置", s2_th2:"它负责什么",
+    s2_r1:"循环本身：步骤、工具派发、钩子、计划模式、委派。",
+    s2_r2:"各家模型适配器，以及它们共同说的那一套规范流式词汇。",
+    s2_r3:"可以交给模型的四类能力。",
+    s2_r4:"只追加的会话日志，以及对它的两种读法。",
+    s2_r5:"一次运行带着往前走的东西，以及它怎么被压缩。",
+    s2_r6:"浏览器唯一的那道门。",
+    s2_r7:"运行时创建的组件，以及它们怎么被撤下来。",
+    s2_r8:"全部门禁。没有另一份 CI 配置在检查别的东西。",
+
+    s3_h:"模块契约",
+    s3_p1:"一个模块就是四个文件，形状统一到进入一个陌生模块几乎不用读代码。",
+    s3_why:"每个 manager 的卸载写法都一样——<code>unregister(name)</code>。这个统一不是装饰：正因如此，一个作用域才能同时持有跨多个 manager 的注册并把它们一起取回，这才是「一个贡献者可以被移除」的前提。",
+    s3_h2:"注册靠的是类字段",
+    s3_p2:"工具、agent、环境是靠它的 <code>name</code> <em>类字段</em>被发现的，不是靠构造函数参数。用别的方式传进去会注册成 <code>None</code>，而且在模型找不到这个能力之前，没有任何地方会抱怨。",
+
+    s4_h:"新增能力",
+    s4_p1:"一个工具就是 agent 能做的一件事。下面就是全部流程；agent、skill、环境对着各自的 manager 走同样三步。",
+    s4_l1:"<strong>写这个类</strong>，放在 <code>agentevolver/tool/default/</code>。",
+    s4_l2:"<strong>导出它</strong>，在该包的 <code>__init__.py</code> 里。发现是靠导入的；写了却没导出的工具是隐形的，而且没有任何地方会报告。",
+    s4_l3:"<strong>写测试</strong>，要覆盖失败路径——除非消息说清楚，模型分不清「这个文件不存在」和「这个工具坏了」。",
+    s4_trap:"<code>mutates</code> 是三态的，而第三个值最要紧。<code>True</code> 改变状态，<code>False</code> 只做汇报，<code>None</code> 表示<em>取决于参数</em>——正是 shell 工具的声明，而 shell 命令是 agent 毁掉东西最可能的方式。只要不是显式的 <code>False</code>，运行时都会在派发前先把日志落盘。",
+    s4_p2:"description 是面向模型的契约，不是标签。「Count the words in a UTF-8 text file」告诉模型什么时候该用它；「文字统计工具」不能。",
+
+    s5_h:"网关与前端",
+    s5_p1:"浏览器只通过一条 WebSocket 触达运行时，别无他路。命令是 <code>{id, method, params, protocol_version}</code>；服务端用同一个 id 回复，并在旁边推送有序事件。",
+    s5_p2:"加一个方法就是加一个函数。分发器把 <code>method</code> 映射到 <code>_command_&lt;name&gt;</code>，所以 <code>docs.list</code> 由 <code>_command_docs_list</code> 服务。没有需要登记的表。",
+    s5_why:"前端用另一种语言、在另一套构建里，手写了同一份线上类型。两个方向的漂移都是静默的——客户端声明了而服务端从不发送的字段，运行时是 <code>undefined</code>，而类型检查器很满意。有一条门禁在每次运行时比对两边的字段集；它抓到了三个已经发了好几个月、却从没被声明过的字段。",
+
+    s6_h:"运行时扩展",
+    s6_p1:"组件可以在系统运行时被创建、版本化、晋升和回滚。有两个机制让这件事从「能做」变成「安全」。",
+    s6_k1:"作用域", s6_v1:"一个贡献者注册的全部东西都经由同一个句柄，由它统一撤销——从新到旧，中途失败也继续，并报告还有什么留在系统里。",
+    s6_k2:"冒烟门禁", s6_v2:"新演化出的组件要先把一个合成任务跑过真实循环，才能进入清单。它永不抛异常：门禁自身的失败不能把它守护的路径搞崩。",
+    s6_p2:"晋升——把 agent 写的一个文件变成下一次会话当作代码加载的文件——是在两条路径都解析之后才做包容性检查的，所以路径穿越既不能用 <code>..</code> 拼出来，也不能藏在符号链接后面。",
+
+    s7_h:"验证体系",
+    s7_p1:"两条道。普通那条快；测量那条多花大约 30% 的墙钟时间，回答一个任何单个测试都回答不了的问题。",
+    s7_h2:"门禁是一份「暗文件登记册」，不是一个百分比",
+    s7_p2:"规则不是那个数字，而是<strong>整套测试一行都没执行过</strong>的文件集合——这个集合里混着两种穿着同样衣服的东西：没人测的代码，和没人<em>调用</em>的代码。每个零覆盖的文件都必须登记在册，并写明为什么测试到不了它。",
+    s7_why:"登记册是<strong>双向</strong>强制的。没登记却变黑的文件会让本次运行失败；已登记却开始被覆盖的文件<em>同样</em>失败，直到它的条目被删掉。少了第二个方向，册子就只会变长，而一个已经写好测试的文件会永久豁免于它刚刚开始通过的那项检查。",
+    s7_h3:"一个不会失败的检查比没有检查更糟",
+    s7_p3:"一致性检查自身也被守护着：有一套测试在子进程里把每个真实缺陷重新引入，并要求对应的检查变红。一个永远通过的检查会一直、静默地报告「不变式成立」。",
+
+    s8_h:"决策与事后分析",
+    s8_p1:"代码说的是发生了什么，测试说的是什么必须继续成立。两者都不说第三个方案为什么输了——而那恰恰是会被反复重新争论的东西。",
+    s8_th1:"记录类型", s8_th2:"回答什么", s8_th3:"规矩",
+    s8_r1a:"决策记录", s8_r1b:"为什么是这样，我们放弃了什么？", s8_r1c:"备选方案是强制的，而且是记录下来的，绝不是编的。只用现在时。",
+    s8_r2a:"事后分析", s8_r2b:"为什么我们的流程放它过去了？", s8_r2c:"机制不显然、逃逸原因是系统性缺口、重新发现代价高昂——三条全中，否则不该写。",
+    s8_p2:"要不要写的判据很简单：半年后会不会有人合理地问「这为什么这么做」？这个门槛比「这事难不难」低，比「我是不是改了点什么」高得多。",
+
+    s9_h:"用缺陷换来的不变式",
+    s9_p1:"下面每一条之所以存在，都是因为它缺席时产生过缺陷。把它们汇总在这里，是因为每一条都很容易在无意中被推翻。",
+    s9_i1:"<strong>拆卸必须到达静默，而不只是请求静默。</strong>发个信号就立刻标记为「已停止」，会把一个忽略该信号的进程报告成已死，而它还在跑。要等待、要升级、再等待，两次都活下来就得说出来。",
+    s9_i2:"<strong>日志要在发生变更之前落盘。</strong>事件是排队的、不是直接写的，所以日志落后于运行。这个滞后不花钱，直到进程死在滞后里——然后就没人能说清那条破坏性命令到底跑没跑。",
+    s9_i3:"<strong>重试只在一个地方发生，而且每次尝试都要记录。</strong>这个项目的产品是轨迹。一次失败两次、第三次才成功的调用，绝不能和一次就做对的调用长得一样——那是一条在撒谎的训练样本。",
+    s9_i4:"<strong>模型的历史不是人看的对话记录。</strong>压缩会遮蔽它替换掉的那一段，这对模型请求是对的，但对人来说是删掉了他已经读过的对话。同一份日志两种读法；选错了，在第一次压缩之前一切正常。",
+    s9_i5:"<strong>在做出决定的那个操作里执行这个决定。</strong>从 schema 里省略、在提示里过滤、包一层门面——只要还有别的调用方能绕过去，这些都不是执行。要通过执行器去测那个拒绝。",
+    s9_i6:"<strong>动作的返回值必须是模型能读的文本。</strong>返回一个裸对象会让 agent 拿到 <code>None</code>，于是运行空转，既没有观察也没有错误。",
+    s9_i7:"<strong>门禁是靠退出码验证的，不是靠输出。</strong>一个检查可以打印红色横幅却依然退出 0，那样 CI 会径直走过去。这一条花掉了整整一轮排查，它有自己的事后分析。",
+
+    foot_tag:"一个自进化的多智能体框架 · MIT 许可证"
+  }
+};
+
+function applyLang(lang){
+  const dict = I18N[lang] || I18N.en;
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const value = dict[el.dataset.i18n];
+    if(value === undefined) return;
+    // Keys carrying markup are named *_html or contain tags the copy needs; both are
+    // authored in this file, never user input, so innerHTML is the correct sink here.
+    el.innerHTML = value;
+  });
+  document.querySelectorAll(".lang button").forEach(b=>{
+    b.classList.toggle("active", b.dataset.lang === lang);
+  });
+  try{ localStorage.setItem("ae_lang", lang); }catch(e){}
+}
+
+document.querySelectorAll(".lang button").forEach(b=>{
+  b.addEventListener("click", ()=>applyLang(b.dataset.lang));
+});
+
+// Shared with index.html so a reader who chose 中文 there does not choose it again here.
+let saved = null;
+try{ saved = localStorage.getItem("ae_lang"); }catch(e){}
+// Parenthesised: `saved || cond ? a : b` groups as `(saved || cond) ? a : b`, which turns a
+// stored "en" — truthy — into 中文. The stored choice wins; the browser only decides when
+// there is none.
+const preferred = (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+applyLang(saved === "zh" || saved === "en" ? saved : preferred);
+
+// Highlight the section being read. Last heading past the top edge, not the nearest —
+// nearest flickers between two entries on a slow scroll.
+const links = [...document.querySelectorAll("aside a")];
+const targets = links.map(a=>document.querySelector(a.getAttribute("href"))).filter(Boolean);
+function mark(){
+  let current = targets[0];
+  for(const t of targets){ if(t.getBoundingClientRect().top <= 96) current = t; }
+  links.forEach(a=>a.classList.toggle("on", a.getAttribute("href") === "#" + current.id));
+}
+mark();
+window.addEventListener("scroll", mark, {passive:true});
+</script>
+</body>
+</html>

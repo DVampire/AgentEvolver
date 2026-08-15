@@ -1215,9 +1215,15 @@ class AgentGateway:
     _DOC_SECTIONS: tuple = (
         ("Getting started", ("README.md", "README_zh.md"), None),
         ("Working here", ("PROJECT.md", "docs/DOC-STANDARD.md", "tests/README.md"), None),
-        ("Reference", (), "docs/*.md"),
+        ("How to", (), "docs/cookbook/*.md"),
         ("Decisions", (), "docs/decisions/*.md"),
         ("Postmortems", (), "docs/postmortems/*.md"),
+        ("Reference", (), "docs/*.md"),
+        # Last on purpose. A module README states that module's contract and is worth
+        # reading when you are in it; fifty-six of them at the top of a sidebar is a
+        # directory listing, and reads as though the project's documentation *is* the
+        # file tree. The written guide is `docs/development.html`, which this browser
+        # links to rather than serves — it is a page, not Markdown.
         ("Modules", (), "agentevolver/*/README.md"),
     )
 

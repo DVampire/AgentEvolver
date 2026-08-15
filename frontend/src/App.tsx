@@ -1262,7 +1262,7 @@ export function App() {
         </div>
         {/* Pinned to the bottom rather than scrolling away with the sections
             above it: theme and connection are settings, always reachable. */}
-        <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button></div>
+        <div className="sidebar-footer"><button className="text-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <><Sun size={14} /> Light theme</> : <><Moon size={14} /> Dark theme</>}</button><button className="text-button" onClick={() => setSettingsOpen(true)}><Settings size={14} /> Connection</button><a className="text-button" href="https://dvampire.github.io/AgentEvolver/" target="_blank" rel="noreferrer"><Globe size={14} /> Project site</a></div>
       </aside>
 
       {/* The terminal. Closing it only hides it: the shell is a tmux session on the far
