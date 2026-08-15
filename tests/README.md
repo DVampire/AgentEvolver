@@ -89,3 +89,27 @@ the code rather than listing them, so something added later is covered by existi
 `test_consistency_checks_can_fail.py` guards that set the only way that means anything:
 it reintroduces each real defect and requires the check to go red. A check that cannot
 fail reports the invariant as held, which is worse than no check and silent forever.
+
+## The coverage lane
+
+```sh
+pytest                # the ordinary run — no measurement, no gate
+pytest --cov          # the gated run: measures, then applies tests/coverage_gate.py
+```
+
+The second one adds roughly 30% wall-clock, which is why it is not the default. What it
+buys is the one question no individual test can ask: **which files did the entire suite
+never execute a line of?** That set holds two things that look identical from the outside
+— code nothing tests, and code nothing *calls* — and only reading them tells which. The
+first file it was ever pointed at, `utils/text_compress.py`, turned out to be the second
+kind: 83 lines, written, never wired to anything, green in every run for months.
+
+Every dark file must be named in `NEVER_EXECUTED` in [coverage_gate.py](coverage_gate.py)
+with the reason a test cannot reach it. The list is enforced in both directions — a file
+that starts being covered has to *leave* it — so it can only shrink. Treat an addition as
+a small debt taken on, not a checkbox.
+
+The gate stands down on a subset (`-k`, an explicit path) and on a run with failures, and
+says so: in both cases the zeroes are artifacts of what did not run, not findings about
+the code. `test_coverage_gate.py` drives the rule directly, so the gate's own logic is
+proven without paying for a measured run.

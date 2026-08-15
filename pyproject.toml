@@ -85,6 +85,46 @@ markers = [
 ]
 asyncio_mode = "strict"
 
+# --------------------------------------------------------------------------- #
+# Coverage
+# --------------------------------------------------------------------------- #
+# Not in `addopts`: measuring costs ~30% wall-clock on every run, and the gate that
+# reads this data (tests/test_coverage_floor.py) only needs it refreshed when the
+# floor is being checked. Produce it explicitly:
+#
+#     pytest --cov --cov-report=json --cov-report=term-missing
+#
+# What the numbers are *for*: a line no test reaches is either untested behaviour or
+# dead code, and the two are told apart by reading it, not by the percentage. Several
+# defects found by hand in this repo — a reward never written, a `forget()` with no
+# call site, a `mutates` flag dropped in three registration paths — were all visible
+# here as zero-coverage code before anyone read the file.
+[tool.coverage.run]
+source = ["agentevolver"]
+# Subprocess coverage is deliberately not collected. The `slow` tests run a mutated
+# checkout under a fresh interpreter to prove a gate goes red; measuring those would
+# credit lines to a source tree that no longer matches the one on disk.
+omit = [
+    "*/__pycache__/*",
+    "*/node_modules/*",
+]
+
+[tool.coverage.report]
+# Every exclusion here is a line that *cannot* run in a test process, not a line we
+# would rather not test. Anything else stays in the denominator on purpose.
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+]
+show_missing = true
+skip_empty = true
+
+[tool.coverage.json]
+output = "output/.coverage.json"
+
 [project.scripts]
 agentevolver = "agentevolver.cli:main"
 

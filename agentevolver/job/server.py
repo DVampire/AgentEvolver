@@ -37,6 +37,26 @@ MAX_OUTPUT_CHARS = 200_000
 MAX_FINISHED_PER_SESSION = 50
 
 
+#: How long a kill waits for the process to actually go, at each escalation. Short: this
+#: runs on the event loop, and a job that needs longer than this to die after SIGKILL is
+#: not going to die at all.
+KILL_GRACE_SECONDS = 2.0
+
+
+def _reap(handle, timeout: float) -> bool:
+    """Wait for a signalled process to exit. True when it did.
+
+    `Popen.wait` also reaps the zombie, which matters for a long-lived host: a session
+    that kills its jobs and never waits leaves one defunct entry per job in the process
+    table for the life of the gateway.
+    """
+    try:
+        handle.wait(timeout=timeout)
+        return True
+    except Exception:                                               # noqa: BLE001
+        return False
+
+
 class JobManagerServer(metaclass=Singleton):
     """Starts, tracks, reads, and kills background work — including work not started yet."""
 
@@ -222,10 +242,7 @@ class JobManagerServer(metaclass=Singleton):
         handle = job.handle
         try:
             if hasattr(handle, "pid") and handle.pid:
-                try:
-                    os.killpg(os.getpgid(handle.pid), signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
-                    handle.terminate()
+                self._stop_process(job_id, handle)
             elif isinstance(handle, asyncio.Task):
                 handle.cancel()
         except Exception as error:                                  # noqa: BLE001
@@ -235,6 +252,41 @@ class JobManagerServer(metaclass=Singleton):
         job.status = JobStatus.KILLED
         logger.info(f"| 🧵 Job {job_id} killed after {job.elapsed:.1f}s")
         return True
+
+    @staticmethod
+    def _stop_process(job_id: str, handle) -> None:
+        """Signal the group and wait for it to actually stop.
+
+        Sending SIGTERM and returning is a request, not an ending. A process that traps
+        the signal — or a shell whose child ignores it — keeps running while the registry
+        reports it killed, which is the same lie the group-signal above exists to prevent,
+        arriving through a different door.
+
+        So: term the group, wait briefly, and escalate to SIGKILL for whatever is still
+        there. SIGKILL cannot be trapped, so the second wait is the one that settles it.
+        """
+        pid = handle.pid
+        try:
+            group = os.getpgid(pid)
+        except (ProcessLookupError, PermissionError, OSError):
+            handle.terminate()
+            _reap(handle, KILL_GRACE_SECONDS)
+            return
+
+        os.killpg(group, signal.SIGTERM)
+        if _reap(handle, KILL_GRACE_SECONDS):
+            return
+
+        logger.warning(f"| ⚠️ Job {job_id} ignored SIGTERM; sending SIGKILL")
+        try:
+            os.killpg(group, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            handle.kill()
+        if not _reap(handle, KILL_GRACE_SECONDS):
+            # Uninterruptible sleep — a wedged mount, usually. Nothing more to send, and
+            # saying so beats a log that implies the process stopped.
+            logger.warning(f"| ⚠️ Job {job_id} did not exit after SIGKILL; it is unkillable "
+                           f"from here (pid {pid})")
 
     def forget(self, session_id: str) -> None:
         """Drop a finished session's jobs. Running ones are killed first."""

@@ -204,3 +204,72 @@ async def test_an_unknown_job_id_names_the_ones_that_exist(workspace):
     result = await JobOutputTool()(job_id="job_nope", ctx=_Ctx())
     assert not result.success
     assert job.id in result.message
+
+
+# --------------------------------------------------------------------------- #
+# Disposal must reach quiescence, not request it
+# --------------------------------------------------------------------------- #
+def test_a_process_that_ignores_sigterm_is_still_stopped():
+    """Sending a signal and returning is a request, not an ending.
+
+    `kill` used to signal the group and mark the job KILLED immediately. A process that
+    traps SIGTERM then kept running while the registry reported it dead — the same lie
+    the group-signal exists to prevent, arriving through a different door.
+
+    SIGKILL cannot be trapped, so the escalation is what settles it.
+    """
+    import subprocess
+    import sys
+    import time
+
+    ignores_term = ("import signal, time; "
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)")
+    process = subprocess.Popen([sys.executable, "-c", ignores_term], start_new_session=True)
+    job = job_manager.register(kind="test", label="ignores SIGTERM",
+                               session_id="quiescence", handle=process)
+    # The handler is installed by the interpreter at startup; signalling before it exists
+    # kills the process on the first SIGTERM and tests nothing.
+    time.sleep(0.5)
+
+    try:
+        job_manager.kill(job.id)
+        assert process.poll() is not None, "kill returned while the process was still running"
+    finally:
+        if process.poll() is None:
+            process.kill()
+        job_manager.forget("quiescence")
+
+
+def test_killing_reaps_the_process_rather_than_leaving_a_zombie():
+    """A long-lived host accumulates one defunct entry per job otherwise.
+
+    `Popen.wait` is what reaps; signalling alone leaves the exit status uncollected for
+    the life of the gateway.
+    """
+    import subprocess
+    import sys
+
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                               start_new_session=True)
+    job = job_manager.register(kind="test", label="sleeper", session_id="reap",
+                               handle=process)
+    try:
+        job_manager.kill(job.id)
+        assert process.returncode is not None, "the exit status was never collected"
+    finally:
+        job_manager.forget("reap")
+
+
+def test_killing_a_job_whose_process_is_already_gone_does_not_raise():
+    """The common race: the command finished between the listing and the kill."""
+    import subprocess
+    import sys
+
+    process = subprocess.Popen([sys.executable, "-c", ""], start_new_session=True)
+    process.wait()
+    job = job_manager.register(kind="test", label="already gone", session_id="gone",
+                               handle=process)
+    try:
+        assert job_manager.kill(job.id) is True
+    finally:
+        job_manager.forget("gone")
