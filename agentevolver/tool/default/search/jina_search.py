@@ -63,10 +63,20 @@ class JinaSearch(Tool):
         self,
         query: str,
         num_results: int = 10,
+        country: Optional[str] = None,
+        lang: Optional[str] = None,
+        filter_year: Optional[int] = None,
     ) -> List[SearchItem]:
         """
         Perform a Jina AI search using the provided parameters.
         Returns a list of SearchItem objects.
+
+        `country` and `lang` reach the API as the `X-Site-Locale` headers it reads;
+        `filter_year` has no API parameter, so it is folded into the query the way a
+        person would type it. All three were previously accepted and dropped between
+        `__call__` and here — the tool told the model it could narrow a search and then
+        ran the unnarrowed one, which is worse than not offering the parameter: the model
+        reads the results as having been filtered.
         """
         results = []
 
@@ -74,8 +84,15 @@ class JinaSearch(Tool):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        url = f"https://s.jina.ai/{quote(query)}"
+        # No API parameter for a year, so it goes where a person would put it. Jina
+        # searches the web; the web's own convention for this is a term in the query.
+        effective = f"{query} {filter_year}" if filter_year else query
+        url = f"https://s.jina.ai/{quote(effective)}"
         params = {"count": num_results}
+        if country:
+            headers["X-Site-Country"] = country
+        if lang:
+            headers["X-Site-Locale"] = lang
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -157,7 +174,9 @@ class JinaSearch(Tool):
             filter_year (Optional[int]): The year to filter results by.
         """
         try:
-            search_items = await self._search_jina(query, num_results=num_results)
+            search_items = await self._search_jina(
+                query, num_results=num_results,
+                country=country, lang=lang, filter_year=filter_year)
 
             results_json = json.dumps([{
                 "title": item.title,

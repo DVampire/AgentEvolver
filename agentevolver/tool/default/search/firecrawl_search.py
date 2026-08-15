@@ -122,8 +122,15 @@ class FirecrawlSearch(Tool):
             )
 
         try:
+            # Firecrawl has no year parameter, so the year goes into the query the way a
+            # person would type it. It was accepted and dropped before — the tool told the
+            # model it could narrow a search by year and then ran the unnarrowed one,
+            # which is worse than not offering it: the model reads the results as filtered.
+            searched = query.strip()
+            if filter_year:
+                searched = f"{searched} {filter_year}"
             payload: Dict[str, Any] = {
-                "query": query.strip(),
+                "query": searched,
                 "limit": num_results or 10,
                 "categories": ["research", "pdf"],
             }

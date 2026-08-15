@@ -33,8 +33,12 @@ Search Google Lens with an image file and an optional text query.
 ## Parameters
 - query (str): Text query to combine with the image search.
 - image (str): Path to the image file to search with.
-- num_results (int, optional): Number of results to return (default: 10).
-- filter_year (int, optional): Filter results by year (default: None).
+- num_results (int, optional): Accepted and ignored. This search drives a real browser
+  session and reads back the single best match, so there is no result count to ask for.
+  Kept in the signature only so a call written for the other search tools does not fail.
+- filter_year (int, optional): Accepted and ignored. Google Lens matches an image; it has
+  no date filter to apply. Use `serper_search_tool` or `jina_search_tool` for a
+  year-narrowed text search.
 - screenshot_dir (str, optional): Directory to save step screenshots into (default: None).
 
 ## Example

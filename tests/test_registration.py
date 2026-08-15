@@ -324,3 +324,63 @@ def test_no_tool_claims_not_to_mutate_while_writing_to_disk():
         + "\n  ".join(liars)
         + "\nPlan mode admits an action on that declaration alone, so an untrue one is "
           "a way past the gate.")
+
+
+# --------------------------------------------------------------------------- #
+# A parameter the model is offered must do something
+# --------------------------------------------------------------------------- #
+def test_no_tool_documents_a_parameter_its_body_ignores():
+    """A dropped parameter is worse than an absent one.
+
+    `jina_search_tool` documented `country`, `lang` and `filter_year` and passed none of
+    them past `__call__`; `firecrawl_search_tool` documented a year filter and searched
+    without it. The model asks for 2024 results, gets everything, and reads the answer as
+    having been filtered — so it draws a conclusion about a narrowed search it never ran.
+
+    A parameter genuinely without an implementation is fine when the instruction says so;
+    what is not fine is the instruction claiming an effect. So the rule is: unused is
+    allowed, unused-and-advertised is not.
+    """
+    import ast
+    import re
+
+    IGNORED = re.compile(r"(?i)\b(unused|accepted and ignored|no effect|not implemented)\b")
+
+    liars = []
+    for path in sorted(TOOL_ROOT.rglob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        source = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any("register_module" in ast.dump(d) for d in node.decorator_list):
+                continue
+            for member in node.body:
+                if not isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if member.name != "__call__":
+                    continue
+                declared = [a.arg for a in (member.args.args + member.args.kwonlyargs)
+                            if a.arg not in ("self", "kwargs", "args")]
+                # Nested scopes count: a parameter forwarded into an inner helper is used.
+                used = {n.id for n in ast.walk(member) if isinstance(n, ast.Name)}
+                for name in declared:
+                    if name in used:
+                        continue
+                    # The instruction line for this parameter, if it has one.
+                    documented = [line for line in source.splitlines()
+                                  if line.strip().startswith(f"- {name} ")]
+                    if documented and not any(IGNORED.search(line) for line in documented):
+                        liars.append(f"{path.name}:{node.name}.{name}")
+
+    assert not liars, (
+        "these document a parameter the body never reads, without saying it is ignored:\n  "
+        + "\n  ".join(liars)
+        + "\nEither use it, or say in the instruction that it is accepted and ignored — "
+          "a model that asks for a narrowed search and is not told it did not get one "
+          "reads the unnarrowed results as narrowed.")
