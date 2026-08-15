@@ -1,17 +1,15 @@
 """Remote host as an ECP environment — a machine the agent operates, not one it lives in.
 
-The distinction is the whole design. A *sandbox* answers "where does the agent's own shell
-run"; an *environment* answers "what peer does the agent act on". Reaching another machine
-over SSH is the second question, so this is shaped like ``browser_environment``: an action
-surface plus observable state, with the transport underneath.
+This class has two compatible faces. As an ECP environment it exposes explicit remote
+actions such as upload, launch and logs. As a complete ``ExecutionWorld`` it supplies the
+ordinary file/search/process operations behind the standard tools. ``SSHAgent`` binds the
+whole provider to its session before the first step, so read/write/bash move together and
+the model does not choose a host on every tool call.
 
-That shape is what keeps ``bash_tool`` untouched. It stays the local shell, with the same
-signature and the same schema the model has always seen; the remote is a separate, named
-set of actions. Nothing has to be told which machine it is on, because the action names
-already say. The alternative — one shell tool with a target argument — makes every call a
-routing decision for the model and gives it two filesystems it can silently confuse. The
-failure is on record in this repo: a run whose writes landed on the host while its commands
-ran in a container "gave the agent an inconsistent view of its own environment".
+That atomic binding prevents the recorded failure this design is meant to exclude: writes
+landing on one machine while commands run on another, giving the agent an inconsistent
+view of its own environment. Local/remote transfer remains an explicit environment action;
+ordinary work stays inside one world.
 
 Completeness matters for the same reason. The remote side carries the whole surface —
 execute, read, write, edit, search, transfer, and long-running jobs — so work on the far
@@ -20,6 +18,7 @@ machine never has to borrow a local tool and land in the wrong place.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
 from typing import Any, Dict, List, Optional
@@ -155,6 +154,33 @@ class SSHEnvironment(Environment):
         sid = self._session_id(ctx)
         chosen = self._hosts.get(self._active.get(sid, ""))
         return chosen or self._hosts.default()
+
+    def world_identity(self, ctx=None) -> Dict[str, Any]:
+        """Non-secret lineage for Tool/Trace records using this SSH world.
+
+        The host address, user, jump host and key path are operational configuration,
+        not training data.  A fingerprint still lets two exports distinguish targets
+        without disclosing that topology.
+        """
+        host = self.active_host(ctx)
+        if host is None:
+            return {
+                "kind": "ssh",
+                "provider": f"{type(self).__module__}.{type(self).__qualname__}",
+                "name": "unconfigured",
+                "workspace_root": "",
+            }
+        target = f"{host.user}@{host.host}:{host.port}"
+        fingerprint = hashlib.sha256(target.encode()).hexdigest()
+        return {
+            "kind": "ssh",
+            "provider": f"{type(self).__module__}.{type(self).__qualname__}",
+            # A host handle often *is* its DNS name. A synthetic lineage name avoids
+            # leaking it while remaining stable and human-comparable within an export.
+            "name": f"remote:{fingerprint[:12]}",
+            "workspace_root": host.workspace_root,
+            "target_fingerprint": fingerprint,
+        }
 
     def select_host(self, ctx, name: str) -> RemoteHost:
         """Point this session at `name`. Raises ``KeyError`` when there is no such host."""
@@ -452,7 +478,8 @@ class SSHEnvironment(Environment):
     )
     async def grep(
         self, pattern: str, path: str = "", glob: str = "", max_results: int = 100,
-        host: str = "", ctx=None, **kwargs: Any,
+        case_sensitive: bool = True, ignored_dirs=None, host: str = "", ctx=None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         try:
             service = await self._svc(ctx, host)
@@ -461,8 +488,12 @@ class SSHEnvironment(Environment):
             return _fail(str(exc))
 
         include = f"--include={shlex.quote(glob)} " if glob else ""
+        excludes = "".join(
+            f"--exclude-dir={shlex.quote(str(name))} " for name in (ignored_dirs or [])
+        )
+        case_flag = "" if case_sensitive else "-i "
         command = (
-            f"grep -rnI {include}-e {shlex.quote(pattern)} {shlex.quote(target)} "
+            f"grep -rnI {case_flag}{include}{excludes}-e {shlex.quote(pattern)} {shlex.quote(target)} "
             f"2>/dev/null | head -{max(1, int(max_results))}"
         )
         result = await service.run(command, timeout=120)
@@ -484,7 +515,10 @@ class SSHEnvironment(Environment):
             return _fail(str(exc))
 
         command = (
-            f"find {shlex.quote(target)} -name {shlex.quote(pattern)} -printf '%T@\\t%p\\n' "
+            f"find {shlex.quote(target)} -type f "
+            f"\\( -name {shlex.quote(pattern)} -o "
+            f"-path {shlex.quote(target.rstrip('/') + '/' + pattern)} \\) "
+            f"-printf '%T@\\t%p\\n' "
             f"2>/dev/null | sort -rn | head -{max(1, int(max_results))} | cut -f2"
         )
         result = await service.run(command, timeout=120)
@@ -721,6 +755,38 @@ class SSHEnvironment(Environment):
         if state != "killed":
             return _fail(f"no job named {safe!r} in this session", job=safe)
         return _ok({"job": safe, "stopped": True})
+
+    # Tool-facing aliases form the optional background-job capability.  Keeping them
+    # explicit is important: generic job tools must never fall back to the gateway's
+    # local registry merely because an execution world uses different action names.
+    async def job_start(
+        self, command: str, *, name: str = "", ctx=None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        observed = await self.launch(command=command, name=name or "job", ctx=ctx)
+        if observed.get("success") and "job" in observed:
+            observed = {**observed, "job_id": observed["job"], "status": "running"}
+        return observed
+
+    async def job_list(self, *, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        return await self.jobs(ctx=ctx)
+
+    async def job_output(
+        self, job_id: str, *, tail: Optional[int] = None, ctx=None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        observed = await self.logs(job=job_id, lines=tail or 100, ctx=ctx)
+        if observed.get("success"):
+            observed = {
+                **observed,
+                "job_id": observed.get("job", job_id),
+                "output": observed.get("tail", ""),
+            }
+        return observed
+
+    async def job_kill(self, job_id: str, *, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        observed = await self.signal(job=job_id, ctx=ctx)
+        if observed.get("success"):
+            observed = {**observed, "job_id": observed.get("job", job_id), "status": "killed"}
+        return observed
 
     # ------------------------------------------------------------------ machines
     @environment_manager.action(

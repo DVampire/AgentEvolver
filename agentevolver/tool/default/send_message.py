@@ -8,7 +8,7 @@ it mutates and `reply_tool` does not — plan mode refuses an agent dispatch out
 exactly the same reason, and sending new work to a child is one.
 
 Delivery is a queue, not an interrupt. The message becomes the child's next turn; a child
-mid-turn finishes that turn first. See `agentevolver/subagent/README.md`.
+mid-turn finishes that turn first. See `agentevolver/runtime/README.md`.
 """
 
 from typing import Any, Dict
@@ -68,24 +68,18 @@ class SendMessageTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, job_id: str, message: str, **kwargs) -> Response:
-        from agentevolver.subagent import subagent_manager
+        from agentevolver.runtime import runtime_manager
 
         ctx = kwargs.get("ctx")
         session_id = str(getattr(ctx, "id", "") or "")
         try:
-            when = await subagent_manager.send(job_id, message, session_id=session_id)
-        except ValueError as error:
-            # Not delivered. Returned as a failure rather than a message, so the model
-            # cannot read it as an acknowledgement and go on waiting for a turn that
-            # will never start.
-            return Response(type=ResponseType.TOOL, success=False, message=str(error))
+            # An undelivered message comes back as an unsuccessful Response, not as an
+            # exception: the model must not be able to read "not delivered" as an
+            # acknowledgement and go on waiting for a turn that will never start.
+            sent = await runtime_manager.send_to_child(job_id, message, session_id=session_id)
         except Exception as error:                                  # noqa: BLE001
             logger.error(f"| ❌ send_message_tool failed: {error}")
             return Response(type=ResponseType.TOOL, success=False,
                             message=f"The message was NOT delivered to {job_id}: {error}")
-        return Response(
-            type=ResponseType.TOOL, success=True,
-            message=(f"Delivered to {job_id}. {when}\nIt does not answer here — read the "
-                     f'result with job_output_tool(job_id="{job_id}").'),
-            data={"job_id": job_id},
-        )
+        return Response(type=ResponseType.TOOL, success=sent.success,
+                        message=sent.message, data=sent.data)

@@ -24,6 +24,11 @@ from agentevolver.model.llm_hub.response import ResponseLLMHub
 from agentevolver.model.anthropic.chat import ChatAnthropic
 from agentevolver.model.google.chat import ChatGoogle
 from agentevolver.message.types import Message
+from agentevolver.model.pressure import (
+    DEFAULT_CONTEXT_WINDOW,
+    prepare_messages,
+    resolve_request_token_estimator,
+)
 from agentevolver.logger import logger
 from agentevolver.utils import hvac_client
 
@@ -52,6 +57,51 @@ def _retry_delay(attempt: int) -> float:
     exponential = min(_RETRY_INITIAL_DELAY * (2 ** max(attempt - 1, 0)), _RETRY_MAX_DELAY)
     jitter = 1.0 - _RETRY_JITTER + 2 * _RETRY_JITTER * random.random()
     return min(exponential * jitter, _RETRY_MAX_DELAY)
+
+
+def _prepare_request_messages(
+    *,
+    messages: List[Any],
+    tools: Optional[List[Any]],
+    response_format: Any,
+    model_config: Optional[ModelConfig],
+    request_input: Dict[str, Any],
+    default_output_tokens: int,
+    call_kwargs: Optional[Dict[str, Any]] = None,
+):
+    """Apply the same deterministic pressure policy to buffered and streamed routes."""
+    configured_window = (
+        request_input.get("context_window")
+        or (getattr(model_config, "context_window", None) if model_config else None)
+        or DEFAULT_CONTEXT_WINDOW
+    )
+    call_kwargs = call_kwargs or {}
+    reserved_output = request_input.get("reserved_output_tokens")
+    if reserved_output is None:
+        reserved_output = next((
+            call_kwargs.get(name)
+            for name in ("max_completion_tokens", "max_output_tokens", "max_tokens")
+            if call_kwargs.get(name) is not None
+        ), None)
+    if reserved_output is None and model_config is not None:
+        reserved_output = (
+            model_config.max_completion_tokens or model_config.max_output_tokens
+        )
+    if reserved_output is None:
+        reserved_output = default_output_tokens
+    return prepare_messages(
+        messages,
+        tools=tools,
+        response_format=response_format,
+        context_window=int(configured_window),
+        reserved_output_tokens=int(reserved_output),
+        prune_ratio=float(request_input.get("request_prune_ratio", 0.85)),
+        target_ratio=float(request_input.get("request_target_ratio", 0.75)),
+        token_estimator=resolve_request_token_estimator(
+            provider=getattr(model_config, "provider", "") if model_config else "",
+            model=getattr(model_config, "model_id", "") if model_config else "",
+        ),
+    )
 
 
 async def _record_retry(
@@ -93,6 +143,104 @@ async def _record_retry(
         ))
     except Exception as trace_error:  # noqa: BLE001 — recording must not break the call
         logger.debug(f"| model retry not recorded in the trace: {trace_error}")
+
+
+async def _record_request_snapshot(
+    *,
+    session_id: Optional[str],
+    requested_model: str,
+    routed_model: str,
+    model_config: Optional[ModelConfig],
+    client: Any,
+    messages: List[Any],
+    tools: Optional[List[Any]],
+    response_format: Any,
+    request_input: Dict[str, Any],
+    call_kwargs: Dict[str, Any],
+    stream: bool,
+    attempt: int,
+    route_index: int,
+    pressure: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Commit the effective model request before provider dispatch.
+
+    This is intentionally centralized beside retry/fallback. Recording in ``Agent``
+    would capture the requested alias but miss the provider route selected after a
+    fallback; recording in each provider would duplicate redaction and schema logic.
+
+    Interactive Trace remains a side channel. Training/high-risk profiles make this
+    boundary required: the provider is not called unless the request fact is durable.
+    """
+    profile = request_input.get("trace_integrity_profile")
+    if not session_id:
+        from agentevolver.trace.checkpoint import (
+            TraceIntegrityError,
+            resolve_integrity_profile,
+        )
+
+        selected = resolve_integrity_profile(profile)
+        if selected.required:
+            raise TraceIntegrityError(
+                "Trace integrity checkpoint 'before_model_request' requires a real "
+                f"session id under profile {selected.value!r}"
+            )
+        return None
+    try:
+        from agentevolver.trace.request import RequestSnapshot
+        from agentevolver.trace.server import trace_manager
+        from agentevolver.trace.types import model_request_event
+
+        snapshot = RequestSnapshot.capture(
+            requested_model=requested_model,
+            routed_model=routed_model,
+            model_config=model_config,
+            client=client,
+            messages=messages,
+            tools=tools,
+            response_format=response_format,
+            request_input=request_input,
+            call_kwargs=call_kwargs,
+            stream=stream,
+            pressure=pressure,
+        )
+        coordinates = request_input.get("trace_context") or {}
+        await trace_manager.emit(model_request_event(
+            session_id=session_id,
+            snapshot=snapshot,
+            task_id=coordinates.get("task_id"),
+            agent_name=coordinates.get("agent_name"),
+            step_number=coordinates.get("step_number"),
+            attempt=attempt,
+            route_index=route_index,
+        ))
+    except Exception as trace_error:  # noqa: BLE001 - integrity policy settles failure
+        from agentevolver.trace.checkpoint import (
+            TraceCheckpointBoundary,
+            report_trace_integrity_failure,
+        )
+
+        await report_trace_integrity_failure(
+            session_id,
+            TraceCheckpointBoundary.MODEL_REQUEST,
+            trace_error,
+            profile=profile,
+            metadata={"requested_model": requested_model, "routed_model": routed_model},
+        )
+        logger.debug(f"| model request snapshot not recorded: {trace_error}")
+        return None
+    from agentevolver.trace.checkpoint import TraceCheckpointBoundary, checkpoint_trace
+
+    await checkpoint_trace(
+        session_id,
+        TraceCheckpointBoundary.MODEL_REQUEST,
+        profile=profile,
+        metadata={
+            "requested_model": requested_model,
+            "routed_model": routed_model,
+            "request_snapshot_id": snapshot.snapshot_id,
+        },
+    )
+    return snapshot.snapshot_id
 
 
 # ---------------------------------------------------------------------------
@@ -679,6 +827,10 @@ class ModelContextManager:
         import time as _t
         import httpx
 
+        # ``from_context(None)`` creates an id for local bookkeeping. It must not turn a
+        # health check with no session into a durable session of its own, so provenance
+        # uses the caller-supplied id captured before conversion.
+        session_id = getattr(ctx, "id", None)
         ctx = ModelContext.from_context(ctx)
         if not ctx.name:
             ctx = ctx.model_copy(update={"name": name})
@@ -704,16 +856,41 @@ class ModelContextManager:
             )
 
         model_config = self.models.get(name)
+        primary_request = _prepare_request_messages(
+            messages=messages,
+            tools=tools,
+            response_format=response_format,
+            model_config=model_config,
+            request_input=input,
+            call_kwargs=kwargs,
+            default_output_tokens=self.max_tokens,
+        )
         last_exc: Exception = None
 
         for attempt in range(max_retries):
             _start = _t.time()
             try:
                 client = await self._get_client(name)
+                await _record_request_snapshot(
+                    session_id=session_id,
+                    requested_model=name,
+                    routed_model=name,
+                    model_config=model_config,
+                    client=client,
+                    messages=primary_request.messages,
+                    tools=tools,
+                    response_format=response_format,
+                    request_input=input,
+                    call_kwargs=kwargs,
+                    stream=stream,
+                    attempt=attempt + 1,
+                    route_index=0,
+                    pressure=primary_request.pressure,
+                )
                 result = await self._call_client(
                     client,
                     model_config,
-                    messages,
+                    primary_request.messages,
                     tools,
                     response_format,
                     stream,
@@ -741,6 +918,11 @@ class ModelContextManager:
                 )
                 break
             except Exception as e:
+                from agentevolver.trace.checkpoint import TraceIntegrityError
+                if isinstance(e, TraceIntegrityError):
+                    # Retrying or falling back cannot repair a missing source fact, and
+                    # must never turn a fail-closed profile into another provider route.
+                    raise
                 last_exc = e
                 _elapsed = _t.time() - _start
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
@@ -749,7 +931,7 @@ class ModelContextManager:
                 # not merely that there was one.
                 delay = _retry_delay(attempt + 1) if more else None
                 await _record_retry(
-                    getattr(ctx, "id", None), name, attempt + 1, max_retries,
+                    session_id, name, attempt + 1, max_retries,
                     str(e), delay, self._current_caller,
                 )
                 if more:
@@ -779,12 +961,37 @@ class ModelContextManager:
                     message=f"Primary model {name} failed and fallback {fallback} not found. Error: {last_exc}",
                 )
             fallback_config = self.models.get(fallback)
+            fallback_request = _prepare_request_messages(
+                messages=messages,
+                tools=tools,
+                response_format=response_format,
+                model_config=fallback_config,
+                request_input=input,
+                call_kwargs=kwargs,
+                default_output_tokens=self.max_tokens,
+            )
             try:
                 fb_client = await self._get_client(fallback)
+                await _record_request_snapshot(
+                    session_id=session_id,
+                    requested_model=name,
+                    routed_model=fallback,
+                    model_config=fallback_config,
+                    client=fb_client,
+                    messages=fallback_request.messages,
+                    tools=tools,
+                    response_format=response_format,
+                    request_input=input,
+                    call_kwargs=kwargs,
+                    stream=stream,
+                    attempt=1,
+                    route_index=1,
+                    pressure=fallback_request.pressure,
+                )
                 result = await self._call_client(
                     fb_client,
                     fallback_config,
-                    messages,
+                    fallback_request.messages,
                     tools,
                     response_format,
                     stream,
@@ -803,6 +1010,9 @@ class ModelContextManager:
                 logger.info(f"| Fallback model {fallback} succeeded")
                 return result
             except Exception as fallback_error:
+                from agentevolver.trace.checkpoint import TraceIntegrityError
+                if isinstance(fallback_error, TraceIntegrityError):
+                    raise
                 logger.error(
                     f"| Fallback model {fallback} also failed: {fallback_error}"
                 )
@@ -837,6 +1047,7 @@ class ModelContextManager:
         import httpx
         from agentevolver.model.types import buffered_response_to_events
 
+        session_id = getattr(ctx, "id", None)
         ctx = ModelContext.from_context(ctx)
         messages = input.get("messages", [])
         tools = input.get("tools")
@@ -846,18 +1057,17 @@ class ModelContextManager:
         if name not in self.model_clients:
             raise ValueError(f"Model {name} not found. Available: {list(self.models.keys())}")
 
-        async def _events(target: str):
+        async def _events(target: str, client: Any, effective_messages: List[Any]):
             """Canonical events for one model (true stream, or buffered→events)."""
-            client = await self._get_client(target)
             if hasattr(client, "stream"):
                 async for ev in client.stream(
-                    messages=messages, tools=tools, response_format=response_format, **kwargs
+                    messages=effective_messages, tools=tools, response_format=response_format, **kwargs
                 ):
                     yield ev
             else:
                 # Providers without a stream(): buffer one call, re-emit as events.
                 resp = await client(
-                    messages=messages, tools=tools, response_format=response_format, **kwargs
+                    messages=effective_messages, tools=tools, response_format=response_format, **kwargs
                 )
                 async for ev in buffered_response_to_events(resp):
                     yield ev
@@ -875,11 +1085,40 @@ class ModelContextManager:
             for attempt in range(attempts):
                 started = False
                 try:
-                    async for ev in _events(target):
+                    client = await self._get_client(target)
+                    effective = _prepare_request_messages(
+                        messages=messages,
+                        tools=tools,
+                        response_format=response_format,
+                        model_config=self.models.get(target),
+                        request_input=input,
+                        call_kwargs=kwargs,
+                        default_output_tokens=self.max_tokens,
+                    )
+                    await _record_request_snapshot(
+                        session_id=session_id,
+                        requested_model=name,
+                        routed_model=target,
+                        model_config=self.models.get(target),
+                        client=client,
+                        messages=effective.messages,
+                        tools=tools,
+                        response_format=response_format,
+                        request_input=input,
+                        call_kwargs=kwargs,
+                        stream=True,
+                        attempt=attempt + 1,
+                        route_index=ci,
+                        pressure=effective.pressure,
+                    )
+                    async for ev in _events(target, client, effective.messages):
                         started = True
                         yield ev
                     return  # stream completed cleanly
                 except Exception as e:
+                    from agentevolver.trace.checkpoint import TraceIntegrityError
+                    if isinstance(e, TraceIntegrityError):
+                        raise
                     last_exc = e
                     if started:
                         # Already emitted output downstream — restarting would

@@ -97,15 +97,15 @@
         <text class="d-s" x="574" y="135" text-anchor="middle">HTML → program</text>
 
         <rect class="d-box" x="680" y="96" width="190" height="52" rx="10"/>
-        <text class="d-t" x="775" y="118" text-anchor="middle">subagent</text>
-        <text class="d-s" x="775" y="135" text-anchor="middle">delegation</text>
+        <text class="d-t" x="775" y="118" text-anchor="middle">agent</text>
+        <text class="d-s" x="775" y="135" text-anchor="middle">dispatched as a callable</text>
 
         <!-- execution world -->
         <rect class="d-box-w" x="292" y="188" width="578" height="94" rx="12"/>
-        <text class="d-t" x="581" y="212" text-anchor="middle">Execution world</text>
+        <text class="d-t" x="581" y="212" text-anchor="middle">Where work happens</text>
         <text class="d-s" x="581" y="232" text-anchor="middle">sandbox · terminal · kernel · lsp · docker · e2b · ssh</text>
-        <text class="d-s" x="581" y="252" text-anchor="middle">run · read · write · edit · list · grep · glob · remove</text>
-        <text class="d-s" x="581" y="270" text-anchor="middle">— the same operations, here or on another machine —</text>
+        <text class="d-s" x="581" y="252" text-anchor="middle">tools act here · environment actions act on their own machine</text>
+        <text class="d-s" x="581" y="270" text-anchor="middle">— no argument moves a tool between the two —</text>
 
         <!-- persistence -->
         <rect class="d-box" x="30" y="312" width="840" height="60" rx="11"/>
@@ -124,7 +124,7 @@
           </marker>
         </defs>
       </svg>
-      <figcaption data-i18n="fig1_cap">Dependencies point one way. The runtime knows the capability registries; no capability knows the runtime. The execution world is where file and process work actually happens — swapping it moves an agent to another machine without changing a single tool.</figcaption>
+      <figcaption data-i18n="fig1_cap">Dependencies point one way. The runtime knows the capability registries; no capability knows the runtime. The ordinary tools act on the local sandbox, always; work on another machine goes through that environment&#39;s own actions, so one step cannot read here and execute there while looking like a single coherent task.</figcaption>
     </figure>
   </section>
 
@@ -365,7 +365,7 @@ window.I18N = {
 
   s1_h:"Layers",
   s1_p1:"Four layers, and the direction of dependency is strict: a capability never reaches up into the loop, and the loop never imports a specific capability. That is what makes a capability replaceable without touching anything else.",
-  fig1_cap:"Dependencies point one way. The runtime knows the capability registries; no capability knows the runtime. The execution world is where file and process work actually happens — swapping it moves an agent to another machine without changing a single tool.",
+  fig1_cap:"Dependencies point one way. The runtime knows the capability registries; no capability knows the runtime. The ordinary tools act on the local sandbox, always; work on another machine goes through that environment&#39;s own actions, so one step cannot read here and execute there while looking like a single coherent task.",
 
   s2_h:"The one door",
   s2_p1:"The browser reaches the runtime through a single WebSocket and nothing else — not a second port, not a direct call into a manager. Live views that need another protocol, such as a terminal or a VNC screen, are relayed <em>through</em> the gateway rather than exposed beside it.",
@@ -408,7 +408,7 @@ window.I18N = {
 
   s1_h:"分层",
   s1_p1:"四层，而且依赖方向是严格的：能力从不向上够到循环，循环也从不 import 某个具体能力。正因如此，换掉一个能力不需要动别处任何东西。",
-  fig1_cap:"依赖是单向的。运行时认识各能力注册表；没有任何能力认识运行时。执行世界是文件与进程操作真正发生的地方——把它换掉，agent 就搬到了另一台机器上，而一个工具都不用改。",
+  fig1_cap:"依赖是单向的。运行时认识各能力注册表；没有任何能力认识运行时。普通工具永远作用在本地沙箱上；要在别的机器上干活，走那个环境自己的动作——所以一步之内不可能「在这台读、在那台执行」却看起来像一个连贯的任务。",
 
   s2_h:"唯一的门",
   s2_p1:"浏览器只通过一条 WebSocket 触达运行时，别无他路——没有第二个端口，也不能直接调某个 manager。需要别的协议的实时视图（终端、VNC 画面）是<em>经由</em>网关中转的，而不是在它旁边另开一个口。",
@@ -435,7 +435,7 @@ window.I18N = {
   s6_r2a:"预算", s6_r2b:"步数、token、墙钟三种上限会让运行停下，而不是任它花下去。停了就报告为停了，绝不报告成任务完成。",
   s6_r3a:"晋升包容性", s6_r3b:"组件只能从本会话的暂存根目录里晋升，而且是在两条路径都解析之后才检查——所以 <code>..</code> 和符号链接都拼不出一条出路。",
   s6_r4a:"计划模式", s6_r4b:"把运行限制在阅读与推理，直到有人批准它打算做的事。",
-  s6_r5a:"沙箱", s6_r5b:"命令在隔离的执行世界里运行，文件系统按本会话的模式围栏。",
+  s6_r5a:"沙箱", s6_r5b:"命令在隔离的本地沙箱里运行，文件系统按本会话的模式围栏。",
 
   foot_tag:"一个自进化的多智能体框架 · MIT 许可证"
  }

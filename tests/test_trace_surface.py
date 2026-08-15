@@ -109,7 +109,9 @@ def test_numbering_continues_after_a_restart():
         def emit(self, event): pass
 
     class _Writer:
-        _session_meta = {"s": {"event_count": 42}}
+        def next_seq(self, session_id):
+            assert session_id == "s"
+            return 42
 
     manager._queue, manager._running, manager._writer = _Q(), True, _Writer()
     event = TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s")

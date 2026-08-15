@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from pathlib import Path
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -9,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.config import config
+from agentevolver.response.types import Response, ResponseType
 from agentevolver.logger import logger
 from agentevolver.utils import assemble_workspace_path
 
@@ -107,6 +110,31 @@ class WorkflowManagerServer(BaseModel):
         return await workflow_runtime.run(
             self._require(name), input=input, ctx=ctx, depth=depth, _budget=_budget,
         )
+
+    async def __call__(self, name: str, *, input=None, ctx=None, **kwargs) -> Response:
+        """Run a workflow and return its outcome the way every capability does.
+
+        `run` returns a `WorkflowRun` and keeps doing so: that is a run *record* — state
+        machine, frames, checkpoint path, token cost — and something that can be paused
+        and resumed is not a return value. But a caller that only wants the outcome had
+        to know all of that, and the agent loop did: it read `.successful`, raised on
+        `.error`, and JSON-encoded `.output` itself, which is the one branch in that
+        dispatch doing its own serialization.
+
+        This is the model-facing face of the same execution. `data` carries the run id
+        so a caller that does want the record can still fetch it.
+        """
+        run = await self.run(name, input=input, ctx=ctx, **kwargs)
+        if not run.successful:
+            return Response(type=ResponseType.WORKFLOW, success=False,
+                            message=run.error or f"Workflow {name!r} did not succeed",
+                            data={"run_id": run.id, "state": run.state})
+        output = run.output
+        message = output if isinstance(output, str) else json.dumps(
+            output, ensure_ascii=False, default=str,
+        )
+        return Response(type=ResponseType.WORKFLOW, success=True, message=message,
+                        data={"run_id": run.id, "output": output})
 
     def start(self, name: str, *, input=None, ctx=None, depth=0) -> str:
         """Start a registered workflow in the background and return its run id immediately."""

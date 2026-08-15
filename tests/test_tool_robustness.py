@@ -82,17 +82,24 @@ async def test_a_failure_inside_the_tool_is_not_reported_as_a_bad_call(tmp_path)
 
     A tool body that raises TypeError itself — and plenty do, on bad input — would
     otherwise be described to the model as "invalid arguments", which is advice to change
-    a call that was already correct. Worse, the real exception never reaches the log.
+    a call that was already correct. The execution boundary must preserve its real type
+    and message under a distinct code so Trace records the actual failure.
     """
     class _Boom(DoneTool):
         async def __call__(self, reasoning: str, result: str, **kwargs):
             raise ValueError("boom inside body")
 
     manager = _manager_for(tmp_path, _Boom())
-    # The bind check must only catch argument-binding errors; a genuine error
-    # raised inside the tool body must still propagate untouched.
-    with pytest.raises(ValueError, match="boom inside body"):
-        await manager(name="done_tool", input={"reasoning": "r", "result": "ok"})
+    # The bind check catches only binding errors. The authoritative execution boundary
+    # then normalizes a body exception with a different stable code, so direct callers,
+    # Agent, Workflow, and Code Mode all observe the same failure contract.
+    response = await manager(
+        name="done_tool", input={"reasoning": "r", "result": "ok"},
+    )
+    assert response.success is False
+    assert "boom inside body" in response.message
+    assert "Invalid arguments" not in response.message
+    assert response.extra["execution"]["error_code"] == "execution_error"
 
 
 # --------------------------------------------------------------------------- #

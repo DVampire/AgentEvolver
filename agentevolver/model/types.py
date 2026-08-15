@@ -37,6 +37,10 @@ class ModelConfig(BaseModel):
     plugins: Optional[List[Dict[str, Any]]] = Field(default=None, description="Plugins to use for the model.")
     max_completion_tokens: Optional[int] = Field(default=None, description="Maximum completion tokens for chat/completions models.")
     max_output_tokens: Optional[int] = Field(default=None, description="Maximum output tokens for responses API models.")
+    context_window: Optional[int] = Field(
+        default=None,
+        description="Provider context capacity used for deterministic request-pressure accounting.",
+    )
     supports_streaming: bool = Field(default=True, description="Whether streaming is supported.")
     supports_functions: bool = Field(default=False, description="Whether tool/function calling is supported.")
     supports_vision: bool = Field(default=False, description="Whether multimodal inputs are supported.")

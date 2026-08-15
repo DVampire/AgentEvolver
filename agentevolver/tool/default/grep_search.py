@@ -61,6 +61,11 @@ class GrepSearchTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    def permission_request(self, arguments, ctx=None):
+            return PermissionRequest(
+                op=Operation.READ, target=str(arguments.get("root") or "")
+            )
+
     async def __call__(
         self,
         pattern: str,

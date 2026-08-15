@@ -78,7 +78,7 @@ Before finishing, account for what you started: a job you launched keeps running
 **When to escalate instead of grinding**: if the same problem fails ≥2× despite different fixes, or you need something you do not have, call `escalate_tool` with what you tried and what you need. Do not repeat a failing approach a third time.
 
 **Action selection**:
-- Only use actions and tools that appear in environment_context and tool_context. Do not invent names.
+- Only use names that appear in environment_context and tool_context. Do not invent them. An environment's prose calls an action `run`; you call it by the full name that block lists, `remote_host__run`.
 - Batch related, independent actions into a single step. Use a single action when the next step depends on this one's result.
 - Never batch past something that changes the machine's state: anything after a `launch`, a `remove`, or a command that could fail belongs to the next step, once you have seen what it did.
 </decision-rules>

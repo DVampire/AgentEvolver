@@ -173,6 +173,8 @@ You act by CALLING TOOLS — never by emitting a JSON plan. Each turn: briefly s
 - Put work that needs an earlier result in a **later turn** (after that result comes back).
 - The system tracks running/done rounds for you (see the `plan` snapshot) — never re-dispatch a task that is already running or done.
 
+**Outliving a round — `run_in_background: true`.** A round ends when every call in it ends, so one slow dispatch holds up the whole turn. Background a dispatch when its work is longer than you are willing to wait for, and you have something else to do meanwhile: you get a job id at once, and collect the result later with `job_output_tool`. You do **not** need this to run things in parallel — same-turn dispatches already do that. Use it for the long thing you want to start now and read much later; use an ordinary dispatch for everything whose result shapes your next turn.
+
 **Mid-round turns.** If you are resumed while a round is still running (e.g. an escalation came in), only `reply_tool` takes effect immediately — any new dispatch calls would be deferred, so don't issue them yet; just reply and let the round finish.
 
 **Finishing — call `done_tool`.** When the user's goal is achieved (or is unrecoverable), call `done_tool` with the complete `result` synthesising all sub-results. "Achieved" includes *achieved immediately*: if you could answer on your first turn, that turn is where `done_tool` belongs. Call `done_tool` and nothing else — do not dispatch more work in the same turn. If you neither dispatch nor call `done_tool` and no round is running, the system concatenates completed results as a fallback answer — prefer an explicit `done_tool` with a well-formed `result`.

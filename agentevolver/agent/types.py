@@ -30,6 +30,7 @@ from agentevolver.prompt import prompt_manager
 from agentevolver.tool import tool_manager
 from agentevolver.skill import skill_manager
 from agentevolver.connector import connector_manager
+from agentevolver.environment import environment_manager
 from agentevolver.constraint import (
     constraint_manager,
     render_status_text,
@@ -623,6 +624,26 @@ class Agent(BaseModel):
         tool_context = f"### Available Tools\n{available_tools}" + (f"\n\n{sdk}" if sdk else "")
         return {"tool_context": tool_context, "available_tools": available_tools}
 
+    async def _get_environment_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """Get the environment context, the same way tools get theirs.
+
+        On the base class rather than on a mixin, and reading from the manager rather than
+        walking `info.actions`, because both of those were the same mistake: two agents
+        inherited `EnvironmentBound` to assemble this text themselves, which meant every
+        other agent got no environment context at all — including agents whose environments
+        were in their own `env_names`.
+
+        The text is each environment's `ENVIRONMENT.md`, which is where its rules and its
+        actions' arguments are written for the model to read.
+        """
+        allowlist = ctx.extra.get("environment_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
+        content = await environment_manager.get_instruction(allowlist=allowlist)
+        available_environments = content if content else "[No environments loaded.]"
+        return {
+            "environment_context": f"### Available Environments\n{available_environments}",
+            "available_environments": available_environments,
+        }
+
     async def _code_mode_section(self, allowlist: Optional[List[str]]) -> str:
         """Declare the visible tools as functions, for agents that hold `run_code_tool`.
 
@@ -793,6 +814,7 @@ class Agent(BaseModel):
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         agent_message_modules.update(await self._get_connector_context(ctx=ctx))
+        agent_message_modules.update(await self._get_environment_context(ctx=ctx))
         agent_message_modules.update(await self._get_workflow_context(ctx=ctx))
         
         response = await prompt_manager(
@@ -1089,20 +1111,6 @@ class Agent(BaseModel):
 
         return _turn("\n".join(stable_parts)), _turn(text)
 
-    async def _handle_env_action(
-        self,
-        action_name: str,
-        action_args: Dict[str, Any],
-        ctx: "AgentContext",
-    ) -> Any:
-        """Execute an `env`-type action. Agents bound to an environment override this.
-
-        Implementations should raise on failure so the error reaches
-        `action_errors` and is surfaced to the LLM in the next step.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support env actions"
-        )
 
     # ------------------------------------------------------------------
     # Shared execution loop — all tool-calling agents use this
@@ -1244,6 +1252,20 @@ class Agent(BaseModel):
                    "plan": plan, "step_tokens": step_tokens, "step_usage": step_usage},
             ctx=ctx,
         )
+        from agentevolver.trace.checkpoint import (
+            TraceCheckpointBoundary,
+            checkpoint_trace,
+        )
+        await checkpoint_trace(
+            str(ctx.id),
+            TraceCheckpointBoundary.STEP_END,
+            ctx=ctx,
+            metadata={
+                "task_id": task_id,
+                "agent_name": self.name,
+                "step_number": step_number,
+            },
+        )
         self._pending_step_tokens[task_id] = step_tokens
         if done and self.constraints:
             for c in self.constraints:
@@ -1300,7 +1322,22 @@ class Agent(BaseModel):
             acc = await accumulate_stream(
                 model_manager.stream(
                     name=self.model_name,
-                    input={"messages": messages, "tools": tools},
+                    input={
+                        "messages": messages,
+                        "tools": tools,
+                        # ModelContext knows the session, but not which agent step owns
+                        # the call. These coordinates let the request snapshot become a
+                        # precise trace fact that trajectory can cite instead of guessing
+                        # from timestamps or call order.
+                        "trace_context": {
+                            "task_id": task_id,
+                            "agent_name": self.name,
+                            "step_number": step_number,
+                        },
+                        **({
+                            "trace_integrity_profile": ctx.extra["trace_integrity_profile"],
+                        } if (ctx.extra or {}).get("trace_integrity_profile") else {}),
+                    },
                     ctx=ctx,
                 )
             )
@@ -1318,6 +1355,9 @@ class Agent(BaseModel):
             reasoning = acc.get("thinking") or acc.get("text") or ""
             tool_calls = acc.get("tool_calls") or []
         except Exception as e:
+            from agentevolver.trace.checkpoint import TraceIntegrityError
+            if isinstance(e, TraceIntegrityError):
+                raise
             think_error = str(e)
             logger.error(f"| ❌ [{self.name}] Error in _think: {e}")
 
@@ -1411,40 +1451,6 @@ class Agent(BaseModel):
                     reasoning = o["reasoning"]
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
 
-    async def _checkpoint_before_effects(self, kind: str, route: Any) -> None:
-        """Get the log to disk before a call that may change the world.
-
-        Trace events are queued, not written, so the log trails the run by however long the
-        writer is behind. That lag costs nothing until the process dies inside it — and then
-        it decides an unanswerable question. A run killed between "about to run this
-        command" and "the writer caught up" leaves no record of the command at all, so
-        afterwards nobody can tell whether the destructive one executed.
-
-        Only for calls that may have effects. A read-only tool that is lost from the log
-        costs a gap in the transcript; a mutation that is lost costs a question with no
-        answer, and paying a flush on every `read` to protect the `write` would put the
-        writer on the hot path of the most frequent call in the system.
-
-        `mutates` is three-valued and the test is `is not False` on purpose: `None` means
-        "depends on the arguments", which is what a shell tool declares, and a shell
-        command is the single most likely way an agent destroys something.
-        """
-        if kind != "tool" or not route:
-            # Agents and skills reach their own tools, and checkpoint there.
-            return
-        try:
-            from agentevolver.tool.server import tool_manager
-            from agentevolver.trace.server import trace_manager
-
-            tool = await tool_manager.get(route[1])
-            if getattr(tool, "mutates", None) is False:
-                return
-            await trace_manager.flush()
-        except Exception as error:      # noqa: BLE001
-            # Never block a call because the checkpoint could not be taken: an agent that
-            # stops working when logging is unavailable is a worse outcome than a gap.
-            logger.debug(f"| checkpoint before {route[1] if route else '?'} skipped: {error}")
-
     async def _run_one(
         self,
         call: Any,
@@ -1454,6 +1460,7 @@ class Agent(BaseModel):
         step_number: int,
         ctx: "AgentContext",
         parent_ref: Any = None,
+        parent_call_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Dispatch ONE tool_call, wrapped in its PRE_ACTION → invoke → POST_ACTION hooks.
 
@@ -1475,9 +1482,14 @@ class Agent(BaseModel):
         action_dict = {
             "index": index, "id": call.id, "description": "", "type": kind,
             "name": call.name, "args": args_str, "args_parsed": call.input,
+            # Code Mode sub-calls execute through this same method, but they were not
+            # emitted by the model. The parent id lets a training projector keep their
+            # observations while excluding them from the assistant target's tool_calls.
+            "parent_call_id": parent_call_id,
         }
 
         done, result, reasoning, error, action_result = False, None, None, None, None
+        execution_meta: Optional[Dict[str, Any]] = None
 
         pre_result = await hook_manager(
             name="trace_hook",
@@ -1498,27 +1510,29 @@ class Agent(BaseModel):
             input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
             ctx=ctx,
         )
+        guard_denials: List[str] = []
         if plan_gate.decision == HookDecision.BLOCK:
             logger.warning(f"| 🚫 [{self.name}] {plan_gate.reason}")
-            return {"name": call.name, "done": False, "result": None, "reasoning": None,
-                    "error": plan_gate.reason}
+            # Tool refusals enter the same execution pipeline as allowed calls. That
+            # produces a classified, correlated result without invoking the body. Other
+            # capability kinds do not use ToolExecution and retain their existing gate.
+            if kind == "tool" and route is not None:
+                guard_denials.append(str(plan_gate.reason or "Blocked by plan mode."))
+            else:
+                return {"name": call.name, "done": False, "result": None,
+                        "reasoning": None, "error": plan_gate.reason}
 
-        # The call is recorded and both gates have allowed it; from the next line it may
-        # change the world. Getting the log to disk first is what makes "did that command
-        # run?" answerable after a run is killed — see `_checkpoint_before_effects`.
-        await self._checkpoint_before_effects(kind, route)
+        if (route is not None and self.permission_mode == "read_only" and kind == "tool"
+                and route[1] in _READ_ONLY_DENIED_TOOLS
+                and not self._allow_read_only_tool_call(route[1], call.input or {})):
+            guard_denials.append(
+                f"read_only agent '{self.name}' may not invoke framework-mutating "
+                f"tool '{route[1]}'. Report findings instead of modifying anything."
+            )
 
         try:
             if route is None:
                 raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
-            # read_only agents may not invoke framework-mutating tools.
-            if (self.permission_mode == "read_only" and kind == "tool"
-                    and route[1] in _READ_ONLY_DENIED_TOOLS
-                    and not self._allow_read_only_tool_call(route[1], call.input or {})):
-                raise PermissionError(
-                    f"read_only agent '{self.name}' may not invoke framework-mutating "
-                    f"tool '{route[1]}'. Report findings instead of modifying anything."
-                )
             # `run_code_tool` carries a program whose tool calls come back through THIS
             # method. It is the only dispatch handed a way to dispatch, and it is handed
             # one bound to this turn — so a call from inside a program is checked against
@@ -1528,9 +1542,31 @@ class Agent(BaseModel):
             if kind == "tool" and route[1] == RUN_CODE_TOOL:
                 bridge = self._guarded_dispatch(routing, task_id, step_number, ctx,
                                                 parent_ref, call.id)
-            action_result, done, result, reasoning = await self._invoke_capability(
-                route, call, ctx, parent_ref, bridge)
+            tool_execution_context = {
+                "call_id": str(call.id or ""),
+                "root_call_id": str(parent_call_id or call.id or ""),
+                "parent_call_id": parent_call_id,
+                "session_id": str(ctx.id or ""),
+                "task_id": task_id,
+                "agent_name": self.name,
+                "step_number": step_number,
+                "action_index": index,
+                "guard_denials": guard_denials,
+            }
+            (action_result, done, result, reasoning, capability_error,
+             execution_meta) = await self._invoke_capability(
+                route, call, ctx, parent_ref, bridge,
+                tool_execution_context=tool_execution_context,
+            )
+            if capability_error:
+                error = capability_error
         except Exception as e:
+            from agentevolver.trace.checkpoint import TraceIntegrityError
+            if isinstance(e, TraceIntegrityError):
+                # Tool Manager performs this after every guard and any approval, directly
+                # before the body. Strict integrity failures are run-level failures, not
+                # ordinary Tool observations that the model may retry around.
+                raise
             error = str(e)
             logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
 
@@ -1541,16 +1577,16 @@ class Agent(BaseModel):
         )
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "execution_meta": execution_meta},
             ctx=ctx,
         )
         await hook_manager(
             name="trajectory_hook",
-            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error},
+            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "execution_meta": execution_meta},
             ctx=ctx,
         )
         return {"name": call.name, "done": done, "result": result, "reasoning": reasoning,
-                "error": error, "output": action_result}
+                "error": error, "output": action_result, "execution": execution_meta}
 
     def _guarded_dispatch(
         self,
@@ -1592,7 +1628,7 @@ class Agent(BaseModel):
             # unattributed calls.
             sub_call = ToolCall(id=f"{parent_call_id}#{next(served)}", name=name, input=args or {})
             outcome = await self._run_one(sub_call, 0, routing, task_id, step_number, ctx,
-                                          parent_ref=parent_ref)
+                                          parent_ref=parent_ref, parent_call_id=parent_call_id)
             if outcome.get("error"):
                 raise RuntimeError(str(outcome["error"]))
             output = outcome.get("output")
@@ -1605,11 +1641,18 @@ class Agent(BaseModel):
 
         return GuardedDispatch(names=names, call=dispatch)
 
-    async def _invoke_capability(self, route: Any, call: Any, ctx: "AgentContext", parent_ref: Any = None,
-                                 bridge: Optional[GuardedDispatch] = None):
+    async def _invoke_capability(
+        self,
+        route: Any,
+        call: Any,
+        ctx: "AgentContext",
+        parent_ref: Any = None,
+        bridge: Optional[GuardedDispatch] = None,
+        tool_execution_context: Optional[Dict[str, Any]] = None,
+    ):
         """Route ONE call to the manager that owns it — the single dispatch table that
         knows how each capability kind executes. Returns
-        ``(action_result, done, result, reasoning)``.
+        ``(action_result, done, result, reasoning, error, execution_metadata)``.
 
         ``bridge`` is set only for `run_code_tool`, and is that tool's only way to reach
         another capability.
@@ -1628,7 +1671,7 @@ class Agent(BaseModel):
         kind = route[0]
         if kind == "agent":
             from agentevolver.agent.server import agent_manager
-            from agentevolver.subagent import subagent_manager
+            from agentevolver.runtime import runtime_manager
             child = await agent_manager.get(route[1])
             if child is None:
                 raise ValueError(f"No registered agent named {route[1]!r}")
@@ -1655,57 +1698,59 @@ class Agent(BaseModel):
                 parent_ctx=ctx,
             )
             if inp.get("run_in_background"):
-                started = await subagent_manager.start(
+                started = await runtime_manager.delegate_background(
                     child, inp.get("task", ""), continuable=bool(inp.get("continuable")), **brief)
-                logger.info(f"| 🚀 [{self.name}] Sub-agent '{route[1]}' backgrounded as {started.job_id}")
-                return started.handoff(), False, None, None
-            resp = await subagent_manager.run(child, inp.get("task", ""), **brief)
+                logger.info(f"| 🚀 [{self.name}] Sub-agent '{route[1]}' backgrounded as "
+                            f"{(started.data or {}).get('job_id')}")
+                return started.message, False, None, None, None, None
+            resp = await runtime_manager.delegate(child, inp.get("task", ""), **brief)
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
-            return resp.message, False, None, None
+            return resp.message, False, None, None, None, None
         if kind == "workflow":
             from agentevolver.workflow import workflow_manager
-            workflow_run = await workflow_manager.run(route[1], input=call.input or {}, ctx=ctx)
-            if not workflow_run.successful:
-                raise RuntimeError(workflow_run.error or f"Workflow {route[1]!r} failed")
+            response = await workflow_manager(route[1], input=call.input or {}, ctx=ctx)
+            if not response.success:
+                raise RuntimeError(response.message or f"Workflow {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Workflow '{route[1]}' completed")
-            return json.dumps(workflow_run.output, ensure_ascii=False, default=str), False, None, None
+            return response.message, False, None, None, None, None
         if kind == "skill":
             response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
             if not response.success:
                 raise RuntimeError(response.message or f"Skill {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
-            return response.message, False, None, None
+            return response.message, False, None, None, None, None
         if kind == "connector":
             response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
             if not response.success:
                 raise RuntimeError(response.message or f"Connector {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
-            return response.message, False, None, None
+            return response.message, False, None, None, None, None
         if kind == "environment":
-            from agentevolver.agent.env_binding import render_action_result
             from agentevolver.environment.server import environment_manager
-            action_result = await environment_manager(name=route[1], action=route[2], input=call.input, ctx=ctx)
-            # Rendered, not returned raw. The rest of the loop takes text; handing it the
-            # environment's result dict stops the run dead with no error and no next step.
-            action_result = render_action_result(action_result)
+            response = await environment_manager(name=route[1], action=route[2], input=call.input, ctx=ctx)
+            if not response.success:
+                raise RuntimeError(response.message or f"Environment {route[1]!r} action {route[2]!r} failed")
+            action_result = response.message
             logger.info(f"| ✅ [{self.name}] Environment '{route[1]}' action '{route[2]}' completed")
-            return action_result, False, None, None
-        if kind == "env":
-            action_result = await self._handle_env_action(route[1], call.input, ctx)
-            logger.info(f"| ✅ [{self.name}] Env action '{route[1]}' completed")
-            return action_result, False, None, None
+            return action_result, False, None, None, None, None
         if kind == "tool":
             passthrough = {"sub_dispatch": bridge} if bridge is not None else {}
-            tool_response = await tool_manager(name=route[1], input=call.input, ctx=ctx, **passthrough)
+            tool_response = await tool_manager(
+                name=route[1], input=call.input, ctx=ctx,
+                execution_context=tool_execution_context, **passthrough,
+            )
+            execution_meta = dict((tool_response.extra or {}).get("execution") or {})
             if not tool_response.success:
-                raise RuntimeError(tool_response.message or f"Tool {route[1]!r} failed")
+                message = tool_response.message or f"Tool {route[1]!r} failed"
+                return message, False, None, None, message, execution_meta
             logger.info(f"| ✅ [{self.name}] Tool '{route[1]}' completed")
             if route[1] == "done_tool":
                 reasoning = (tool_response.data or {}).get("reasoning") if hasattr(tool_response, "data") else None
-                return tool_response.message, True, tool_response.message, reasoning
-            return tool_response.message, False, None, None
+                return (tool_response.message, True, tool_response.message, reasoning,
+                        None, execution_meta)
+            return tool_response.message, False, None, None, None, execution_meta
         raise ValueError(f"Unknown route kind {kind!r}")
 
     # ------------------------------------------------------------------
@@ -1939,8 +1984,8 @@ class Agent(BaseModel):
 
     @staticmethod
     def _forget_subagents(session_id: str) -> None:
-        from agentevolver.subagent import subagent_manager
-        subagent_manager.forget(session_id)
+        from agentevolver.runtime import runtime_manager
+        runtime_manager.forget(session_id)
 
     @staticmethod
     def _forget_jobs(session_id: str) -> None:

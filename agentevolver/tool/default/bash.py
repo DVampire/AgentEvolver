@@ -239,6 +239,12 @@ class BashTool(Tool):
             data={"job_id": job.id, "status": job.status.value},
         )
 
+    def permission_request(self, arguments, ctx=None):
+            """Classify the exact shell string before the execution body is entered."""
+            return PermissionRequest(
+                op=Operation.BASH, target=str(arguments.get("command") or "")
+            )
+
     async def __call__(
         self,
         command: str,

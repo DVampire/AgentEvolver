@@ -14,23 +14,20 @@ A remote machine the agent *operates*, reached over one multiplexed SSH connecti
 defines the actions and `service.py` owns the transport, the path boundary and the
 persistent shell.
 
-## Why an environment and not a tool
+## Environment actions and execution-world provider
 
-A **sandbox** answers "where does the agent's own shell run". An **environment**
-answers "what peer does the agent act on". Reaching another machine is the second
-question, so this is shaped like the browser environment: an action surface plus
-observable state, with the transport underneath.
+Everything remote happens through this environment's actions: `run`, `read`, `write`,
+`edit`, `list`, `grep`, `glob`, `remove`, plus host selection, transfer, long-running jobs,
+logs and live views.
 
-That shape is what keeps `bash_tool` untouched. It stays the local shell with the
-same schema the model has always seen, and the remote is a separate, named set of
-actions. Nothing has to be told which machine it is on, because the action names
-already say.
+The ordinary tools stay local. No argument moves one of them to the remote machine, and
+data crosses only through `upload` and `download`. The separation is the safety property:
+a step that read on one machine and executed on the other would look like a single
+coherent task, to the model and to anyone reading the transcript afterwards.
 
-The alternative — one shell tool with a `host` or `sandbox` argument — makes every
-call a routing decision for the model and gives it two filesystems it can silently
-confuse. That failure is on record in this repo: a run whose writes landed on the
-host while its commands ran in a container "gave the agent an inconsistent view of
-its own environment".
+Transfer between worlds is still explicit through `upload` and `download`. The model does
+not get a `host` argument on every ordinary tool call; it works in the selected world and
+uses environment actions only when it intentionally crosses that boundary.
 
 ## Which machines, and who decides
 

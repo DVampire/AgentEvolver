@@ -7,7 +7,10 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, Callable
 import os
 from pydantic import BaseModel, ConfigDict, Field
 
+import json
+
 from agentevolver.logger import logger
+from agentevolver.response.types import Response, ResponseType
 from agentevolver.config import config
 from agentevolver.environment.context import EnvironmentContextManager
 from agentevolver.environment.types import Environment, EnvironmentConfig, EnvironmentContext
@@ -185,7 +188,52 @@ class EnvironmentManagerServer(BaseModel):
             Optional[Dict[str, Any]]: State of the environment or None if not found
         """
         return await self.environment_context_manager.get_state(env_name, ctx, **kwargs)
-    
+
+    async def get_instruction(self, allowlist: Optional[List[str]] = None) -> str:
+        """Assemble the environment instruction text for prompt injection.
+
+        Mirrors `tool_manager.get_instruction`, and for the same reason: the manager owns
+        the facts, so the agent side is a wrapper rather than something that has to know
+        what an environment is made of. Without it, an agent that wanted this text had to
+        walk `info.actions` itself — which is why two agents once inherited a mixin to do
+        it, and why environment context reached only those two rather than every agent.
+
+        The text is each environment's own `ENVIRONMENT.md` body, already parsed at load
+        into `EnvironmentConfig.rules`. That file is written for the model: it states the
+        environment's rules and its actions with their arguments, in one place a human
+        edits and reviews.
+
+        Each environment's block ends with the names its actions are actually callable
+        under. The prose names an action `run`; the schema a model is given calls it
+        `remote_host__run`, because two environments may both have a `run` and the tool
+        namespace is flat. A prompt that says "use the actions described here" while the
+        only callable names are qualified is telling the model to use something it does
+        not have — so the qualified names are appended, read from the same schemas the
+        model is sent rather than rebuilt, which is what keeps them from drifting apart.
+
+        `allowlist` (list of environment names) selects which to include: None = all
+        registered; [] = none; [names] = only those — the same contract every other
+        capability manager uses.
+        """
+        names = allowlist if allowlist is not None else await self.list()
+        parts: List[str] = []
+        for env_name in names:
+            info = await self.get_info(env_name)
+            if info is None:
+                continue
+            rules = (getattr(info, "rules", "") or "").strip()
+            # Falling back to the description keeps an environment with no ENVIRONMENT.md
+            # — a generated one, say — visible in the prompt rather than silently absent.
+            block = rules or f"### {env_name}\n{getattr(info, 'description', '') or ''}".strip()
+            callable_names = sorted(
+                f"{env_name}__{action}" for action in (getattr(info, "actions", {}) or {})
+            )
+            if callable_names:
+                block += ("\n\nCall these by their full names: "
+                          + ", ".join(f"`{name}`" for name in callable_names))
+            parts.append(block)
+        return "\n\n".join(part for part in parts if part)
+
     async def cleanup(self):
         """Cleanup all environments"""
         await self.environment_context_manager.cleanup()
@@ -270,7 +318,7 @@ class EnvironmentManagerServer(BaseModel):
                        action: str, 
                        input: Dict[str, Any], 
                        ctx: EnvironmentContext = None,
-                       **kwargs) -> Any:
+                       **kwargs) -> Response:
         """Call an environment action
 
         Args:
@@ -280,7 +328,7 @@ class EnvironmentManagerServer(BaseModel):
             ctx (EnvironmentContext): Environment context
             
         Returns:
-            Any: Action result
+            Response: the action's outcome, in the shape every capability returns
         """
         if ctx is None:
             ctx = EnvironmentContext(name=name, action=action, input=input)
@@ -292,7 +340,38 @@ class EnvironmentManagerServer(BaseModel):
         # headful browser's noVNC socket) so the frontend can watch it. Generic:
         # any environment that implements live_view() streams with no manager change.
         await self._announce_live_view(name, ctx)
-        return result
+
+        # One return type, the same one tool / skill / connector give back. Actions may
+        # return a plain dict because that is convenient to write — the SSH helpers are
+        # literally `{"success": True, **payload}` — and converting it here is what keeps
+        # every caller identical.
+        #
+        # Both of this boundary's bugs came from not doing it. One caller read
+        # `result["message"]` and nothing else, and not one of sixteen SSH actions sets
+        # `message`, so the agent saw None from everything it did and re-ran the same
+        # actions step after step. Another passed the dict down a chain that takes text,
+        # and the run went silent mid-task with no error and no next step.
+        if isinstance(result, Response):
+            return result
+        if not isinstance(result, dict):
+            return Response(type=ResponseType.ENVIRONMENT, success=True,
+                            message="" if result is None else str(result))
+
+        success = bool(result.get("success", True))
+        payload = {k: v for k, v in result.items() if k != "success"}
+        message = payload.pop("message", None)
+        if message is None:
+            # No prose, so the payload IS the answer. Serializing it is the step the
+            # message-only reading skipped, and skipping it is what made a directory
+            # listing, a file read and a job list all arrive as nothing at all.
+            try:
+                message = json.dumps(payload, ensure_ascii=False, indent=2, default=str) if payload else ""
+            except (TypeError, ValueError):
+                message = str(payload)
+            if not message:
+                message = "(no output)" if success else f"{name}.{action} failed"
+        return Response(type=ResponseType.ENVIRONMENT, success=success,
+                        message=message, data=payload or None)
 
     async def _announce_live_view(self, name: str, ctx: EnvironmentContext) -> None:
         """Announce this environment's live-view endpoint on change (idempotent)."""

@@ -14,9 +14,7 @@ from typing import Dict, Any, List, Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 
 from agentevolver.logger import logger
-from agentevolver.environment.types import ActionResult
-
-
+from agentevolver.response.types import Response, ResponseType
 # Scans the page for visible interactive elements and collects scroll/focus info.
 # Coordinates are CSS pixels relative to the viewport, matching page.mouse coordinates.
 _OBSERVE_JS = """
@@ -282,16 +280,16 @@ class BrowserService:
         """Return URLs of all open pages in the page's context."""
         return [p.url for p in page.context.pages]
 
-    def _unavailable(self, action: str) -> ActionResult:
-        return ActionResult(
+    def _unavailable(self, action: str) -> Response:
+        return Response(type=ResponseType.ENVIRONMENT, 
             success=False,
             message="Browser not available",
-            extra={"error": "Browser not available", "action": action},
+            data={"error": "Browser not available", "action": action},
         )
 
     # ------------------------------------------------------------------ actions
 
-    async def goto(self, url: str, wait_until: str = "domcontentloaded", session_id: str = "default") -> ActionResult:
+    async def goto(self, url: str, wait_until: str = "domcontentloaded", session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("goto")
@@ -300,16 +298,16 @@ class BrowserService:
                 url = "https://" + url
             await page.goto(url, wait_until=wait_until, timeout=30000)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Navigated to {page.url}",
-                extra={"screenshot": screenshot, "url": page.url},
+                data={"screenshot": screenshot, "url": page.url},
             )
         except Exception as e:
             logger.error(f"| ❌ goto failed: {e}")
-            return ActionResult(success=False, message=f"Failed to navigate to {url}: {e}", extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Failed to navigate to {url}: {e}", data={"error": str(e)})
 
-    async def search(self, query: str, num_results: int = 5) -> ActionResult:
+    async def search(self, query: str, num_results: int = 5) -> Response:
         """Web search via Firecrawl (server-side crawl, bypasses local IP blocks).
 
         Returns title/url/description per result so the agent can pick a link and
@@ -320,9 +318,9 @@ class BrowserService:
         api_key = hvac_client.get("FIRECRAWL_API_KEY") or ""
         api_base = hvac_client.get("FIRECRAWL_API_BASE") or "https://api.firecrawl.dev/v2"
         if not api_key:
-            return ActionResult(success=False, message="FIRECRAWL_API_KEY not set", extra={"error": "no_api_key"})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message="FIRECRAWL_API_KEY not set", data={"error": "no_api_key"})
         if not query or not query.strip():
-            return ActionResult(success=False, message="Search query cannot be empty", extra={"error": "empty_query"})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message="Search query cannot be empty", data={"error": "empty_query"})
 
         import httpx
         try:
@@ -345,54 +343,54 @@ class BrowserService:
                 for i, it in enumerate(web[:num_results])
             ]
             if not results:
-                return ActionResult(success=True, message=f"No search results for: {query}", extra={"query": query, "results": []})
+                return Response(type=ResponseType.ENVIRONMENT, success=True, message=f"No search results for: {query}", data={"query": query, "results": []})
 
             lines = [f"[{r['position']}] {r['title']}\n    {r['url']}\n    {r['description']}" for r in results]
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Search results for '{query}':\n" + "\n".join(lines),
-                extra={"query": query, "results": results},
+                data={"query": query, "results": results},
             )
         except httpx.HTTPStatusError as e:
             logger.error(f"| ❌ search HTTP error: {e.response.status_code}")
-            return ActionResult(success=False, message=f"Search failed: HTTP {e.response.status_code} — {e.response.text}", extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Search failed: HTTP {e.response.status_code} — {e.response.text}", data={"error": str(e)})
         except Exception as e:
             logger.error(f"| ❌ search failed: {e}")
-            return ActionResult(success=False, message=f"Search failed: {e}", extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Search failed: {e}", data={"error": str(e)})
 
-    async def click(self, x: int, y: int, button: str = "left", session_id: str = "default") -> ActionResult:
+    async def click(self, x: int, y: int, button: str = "left", session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("click")
         try:
             await page.mouse.click(x, y, button=button)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Clicked at ({x}, {y}) with {button} button",
-                extra={"screenshot": screenshot, "x": x, "y": y, "button": button},
+                data={"screenshot": screenshot, "x": x, "y": y, "button": button},
             )
         except Exception as e:
             logger.error(f"| ❌ click failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def double_click(self, x: int, y: int, session_id: str = "default") -> ActionResult:
+    async def double_click(self, x: int, y: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("double_click")
         try:
             await page.mouse.dblclick(x, y)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Double-clicked at ({x}, {y})",
-                extra={"screenshot": screenshot, "x": x, "y": y},
+                data={"screenshot": screenshot, "x": x, "y": y},
             )
         except Exception as e:
             logger.error(f"| ❌ double_click failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int, session_id: str = "default") -> ActionResult:
+    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("scroll")
@@ -400,64 +398,64 @@ class BrowserService:
             await page.mouse.move(x, y)
             await page.mouse.wheel(scroll_x, scroll_y)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Scrolled at ({x}, {y}) by ({scroll_x}, {scroll_y})",
-                extra={"screenshot": screenshot, "x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y},
+                data={"screenshot": screenshot, "x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y},
             )
         except Exception as e:
             logger.error(f"| ❌ scroll failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def type(self, text: str, session_id: str = "default") -> ActionResult:
+    async def type(self, text: str, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("type")
         try:
             await page.keyboard.type(text)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Typed: {text}",
-                extra={"screenshot": screenshot, "text": text},
+                data={"screenshot": screenshot, "text": text},
             )
         except Exception as e:
             logger.error(f"| ❌ type failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def wait(self, ms: int, session_id: str = "default") -> ActionResult:
+    async def wait(self, ms: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("wait")
         try:
             await asyncio.sleep(ms / 1000.0)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Waited {ms}ms",
-                extra={"screenshot": screenshot, "ms": ms},
+                data={"screenshot": screenshot, "ms": ms},
             )
         except Exception as e:
             logger.error(f"| ❌ wait failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def move(self, x: int, y: int, session_id: str = "default") -> ActionResult:
+    async def move(self, x: int, y: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("move")
         try:
             await page.mouse.move(x, y)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Moved to ({x}, {y})",
-                extra={"screenshot": screenshot, "x": x, "y": y},
+                data={"screenshot": screenshot, "x": x, "y": y},
             )
         except Exception as e:
             logger.error(f"| ❌ move failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def keypress(self, keys: List[str], session_id: str = "default") -> ActionResult:
+    async def keypress(self, keys: List[str], session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("keypress")
@@ -465,16 +463,16 @@ class BrowserService:
             combo = "+".join(keys)
             await page.keyboard.press(combo)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Pressed {keys}",
-                extra={"screenshot": screenshot, "keys": keys},
+                data={"screenshot": screenshot, "keys": keys},
             )
         except Exception as e:
             logger.error(f"| ❌ keypress failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def drag(self, path: List[List[int]], session_id: str = "default") -> ActionResult:
+    async def drag(self, path: List[List[int]], session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("drag")
@@ -488,16 +486,16 @@ class BrowserService:
                 await page.mouse.move(point[0], point[1])
             await page.mouse.up()
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Dragged along {len(path)} points",
-                extra={"screenshot": screenshot, "path": path},
+                data={"screenshot": screenshot, "path": path},
             )
         except Exception as e:
             logger.error(f"| ❌ drag failed: {e}")
-            return ActionResult(success=False, message=str(e), extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
 
-    async def command(self, code: str, timeout: float = 30.0, session_id: str = "default") -> ActionResult:
+    async def command(self, code: str, timeout: float = 30.0, session_id: str = "default") -> Response:
         """Run a Playwright Python snippet with `page` and `context` in scope.
 
         The code is wrapped into an async function, so it may use `await`
@@ -513,22 +511,22 @@ class BrowserService:
             result = await asyncio.wait_for(ns["__cmd__"](page, page.context), timeout=timeout)
             result_repr = repr(result)
             screenshot = await self._screenshot_b64(page)
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Command executed. Return value: {result_repr}",
-                extra={"screenshot": screenshot, "result": result_repr},
+                data={"screenshot": screenshot, "result": result_repr},
             )
         except asyncio.TimeoutError:
             logger.error(f"| ❌ command timed out after {timeout}s")
-            return ActionResult(
+            return Response(type=ResponseType.ENVIRONMENT, 
                 success=False,
                 message=f"Command timed out after {timeout}s. Locators auto-wait up to 30s by default; "
                         f"pass a shorter timeout in the code, e.g. page.locator(...).click(timeout=5000).",
-                extra={"error": "timeout"},
+                data={"error": "timeout"},
             )
         except Exception as e:
             logger.error(f"| ❌ command failed: {e}")
-            return ActionResult(success=False, message=f"Command failed: {e}", extra={"error": str(e)})
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Command failed: {e}", data={"error": str(e)})
 
     async def observe(self, page: Page) -> Dict[str, Any]:
         """Scan the page for interactive elements, scroll position, and focus.

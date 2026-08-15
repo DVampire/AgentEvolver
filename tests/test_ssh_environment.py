@@ -18,7 +18,9 @@ import asyncio
 import json
 import os
 import shlex
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -488,92 +490,128 @@ class TestLiveView:
         assert await env.live_view(ctx=_Ctx()) is None
 
 
-class TestEnvironmentBinding:
-    """The mixin that projects env actions into tools, shared by browser and ssh."""
+async def _call_env_action(action):
+    """Drive the real manager over one stand-in action.
 
-    def test_both_bound_agents_use_the_one_implementation(self) -> None:
-        from agentevolver.agent.actor.browser_agent import BrowserAgent
-        from agentevolver.agent.actor.ssh_agent import SSHAgent
-        from agentevolver.agent.env_binding import EnvironmentBound
+    Only the action is replaced. Normalization is the manager's own, which is the whole
+    point — a test that normalized the dict itself would be asserting against a copy of
+    the code under test.
+    """
+    from unittest.mock import patch
 
-        for agent_cls in (BrowserAgent, SSHAgent):
-            assert issubclass(agent_cls, EnvironmentBound)
-            for method in ("_native_env_tools", "_handle_env_action", "_get_environment_context"):
-                owner = next(c for c in agent_cls.__mro__ if method in c.__dict__)
-                assert owner is EnvironmentBound, f"{agent_cls.__name__}.{method} was re-implemented"
+    from agentevolver.environment.server import environment_manager
 
-    def test_only_bound_agents_advertise_env_tools(self) -> None:
-        """`assemble_native_tools` decides by `hasattr`, so this attribute is the switch.
+    class _Manager:
+        """A callable stand-in. `SimpleNamespace(__call__=...)` does not work: Python
+        looks dunders up on the type, not the instance, so the attribute is ignored."""
 
-        On the base class it would hand env tools to every agent in the system.
+        async def __call__(self, name, act, input, ctx, **kwargs):
+            return await action(**input)
+
+    with patch.object(type(environment_manager), "environment_context_manager",
+                      _Manager(), create=True):
+        with patch.object(type(environment_manager), "_announce_live_view",
+                          AsyncMock(return_value=None)):
+            return await environment_manager(
+                name="remote_host", action="run", input={}, ctx=None,
+            )
+
+
+class TestEnvironmentResults:
+    """An environment action comes back as the response every other capability returns.
+
+    It used to come back as a bare dict, and each caller worked out for itself what had
+    happened. Two did, and each guessed differently. One read `result["message"]` and
+    nothing else — not one of sixteen SSH actions sets `message`, so the agent saw `None`
+    from everything it did and re-ran the same actions step after step. The other passed
+    the dict down a chain that takes text, and the run went silent mid-task: no error, no
+    next step, ten minutes until it was killed.
+
+    The fix was not a shared renderer for the two callers, which is what was tried first.
+    It was for the manager to return what it had always declared — `success` / `message` /
+    `data`, the contract tool, skill and connector had all along.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_structured_result_arrives_as_text_the_model_can_read(self) -> None:
+        """The failure this exists for: an action that reports data, not prose.
+
+        `_ok(payload)` produces `{"success": True, **payload}` with no `message` at all.
+        Reading only `message` returns nothing, and nothing is what the agent then saw
+        from a directory listing, a file read, and a job list alike.
         """
-        from agentevolver.agent.actor.general_agent import GeneralAgent
-        from agentevolver.agent.types import Agent
+        async def action(**kwargs):
+            return {"success": True, "jobs": [{"job": "train"}], "count": 1}
 
-        assert not hasattr(Agent, "_native_env_tools")
-        assert not hasattr(GeneralAgent, "_native_env_tools")
+        response = await _call_env_action(action)
 
-    @pytest.mark.asyncio
-    async def test_structured_results_reach_the_model(self) -> None:
-        """Not every action has prose to return, and the ones that do not still said something.
-
-        Reading only `message` handed the agent `None` for every listing, read and job
-        query this environment performs — so nothing it did appeared to have any effect,
-        and it re-ran the same actions step after step.
-        """
-        from agentevolver.agent.env_binding import EnvironmentBound
-        import agentevolver.agent.env_binding as binding
-
-        async def _call(**kwargs):
-            return {"success": True, "entries": ["a", "b"], "count": 2}
-
-        bound = EnvironmentBound()
-        bound.env_name = "remote_host"
-        original = binding.environment_manager
-        binding.environment_manager = _call
-        try:
-            result = await bound._handle_env_action("list", {}, None)
-        finally:
-            binding.environment_manager = original
-        # Text, not a dict: everything downstream treats an action result as text.
-        assert isinstance(result, str)
-        assert json.loads(result) == {"entries": ["a", "b"], "count": 2}
+        assert response.success
+        assert json.loads(response.message) == {"jobs": [{"job": "train"}], "count": 1}
+        assert response.data == {"jobs": [{"job": "train"}], "count": 1}
 
     @pytest.mark.asyncio
-    async def test_a_message_still_wins_when_the_action_wrote_one(self) -> None:
-        from agentevolver.agent.env_binding import EnvironmentBound
-        import agentevolver.agent.env_binding as binding
+    async def test_prose_wins_when_the_action_wrote_some(self) -> None:
+        """An action that says something in words should not have it replaced by JSON."""
+        async def action(**kwargs):
+            return {"success": True, "message": "Navigated to example.com", "url": "..."}
 
-        async def _call(**kwargs):
-            return {"success": True, "message": "done", "extra": 1}
+        response = await _call_env_action(action)
 
-        bound = EnvironmentBound()
-        bound.env_name = "browser_environment"
-        original = binding.environment_manager
-        binding.environment_manager = _call
-        try:
-            assert await bound._handle_env_action("click", {}, None) == "done"
-        finally:
-            binding.environment_manager = original
+        assert response.message == "Navigated to example.com"
 
     @pytest.mark.asyncio
-    async def test_a_failed_action_raises_so_the_model_is_told(self) -> None:
-        """Swallowing the failure would leave the agent building on a step that never ran."""
-        from agentevolver.agent.env_binding import EnvironmentBound
-        import agentevolver.agent.env_binding as binding
-
-        async def _call(**kwargs):
+    async def test_a_failure_is_reported_as_one(self) -> None:
+        """`success=False` has to survive the boundary, or the loop treats a refusal as
+        an observation and carries on as though the action worked."""
+        async def action(**kwargs):
             return {"success": False, "message": "path outside the workspace"}
 
-        bound = EnvironmentBound()
-        bound.env_name = "remote_host"
-        original = binding.environment_manager
-        binding.environment_manager = _call
-        try:
-            with pytest.raises(RuntimeError, match="outside"):
-                await bound._handle_env_action("write", {}, None)
-        finally:
-            binding.environment_manager = original
+        response = await _call_env_action(action)
+
+        assert not response.success
+        assert "outside" in response.message
+
+    @pytest.mark.asyncio
+    async def test_an_action_with_nothing_to_say_still_says_so(self) -> None:
+        """Empty is a real outcome — a `remove` that removed nothing.
+
+        Returning an empty message would put a blank observation in front of the model,
+        which reads as a broken tool rather than as an action that had no output.
+        """
+        async def action(**kwargs):
+            return {"success": True}
+
+        assert (await _call_env_action(action)).message == "(no output)"
+
+    @pytest.mark.asyncio
+    async def test_a_response_from_an_action_is_passed_through(self) -> None:
+        """The browser environment already builds `Response` itself; wrapping it again
+        would nest a response inside a response and lose `data`."""
+        from agentevolver.response.types import Response, ResponseType
+
+        original = Response(type=ResponseType.ENVIRONMENT, success=True,
+                            message="already normalized", data={"a": 1})
+
+        async def action(**kwargs):
+            return original
+
+        assert await _call_env_action(action) is original
+
+    def test_no_agent_carries_a_second_way_to_reach_an_environment(self) -> None:
+        """Actions reach the model through one projection, not two.
+
+        There were two: `environment_manager.function_callings()` for every agent, and an
+        `env__*` projection a mixin added for the bound ones — the same actions under two
+        names, dispatched by two branches. That duplication is what let one branch render
+        its result and the other not.
+        """
+        from agentevolver.agent.actor.browser_agent import BrowserAgent
+        from agentevolver.agent.actor.ssh_agent import SSHAgent
+        from agentevolver.agent.types import Agent
+
+        for cls in (Agent, BrowserAgent, SSHAgent):
+            assert not hasattr(cls, "_native_env_tools")
+            assert not hasattr(cls, "_handle_env_action")
 
 
 class TestHostRegistry:
@@ -763,38 +801,6 @@ class TestEditingAHostTakesEffect:
         assert "close_host" in source, "an edit that does not reconnect does not take effect"
 
 
-class TestBothRoutesRenderResults:
-    """An env action reaches the loop by two routes; both must produce text.
-
-    A bound agent projects `env__<action>`; `environment_manager.function_callings()`
-    separately projects a namespace-qualified name for every agent. They are dispatched by
-    different branches, and only one of them was rendering its result — so the same action
-    worked under one name and hung the run under the other.
-    """
-
-    def test_the_two_dispatch_branches_share_one_renderer(self) -> None:
-        import inspect
-
-        from agentevolver.agent import types as agent_types
-
-        source = inspect.getsource(agent_types.Agent._invoke_capability)
-        environment_branch = source[source.index('if kind == "environment"'):source.index('if kind == "env"')]
-        assert "render_action_result" in environment_branch
-
-    def test_a_structured_result_renders_the_same_either_way(self) -> None:
-        from agentevolver.agent.env_binding import render_action_result
-
-        rendered = render_action_result({"success": True, "jobs": [{"job": "train"}], "count": 1})
-        assert isinstance(rendered, str)
-        assert json.loads(rendered) == {"jobs": [{"job": "train"}], "count": 1}
-
-    def test_a_failure_raises_on_both_routes(self) -> None:
-        from agentevolver.agent.env_binding import render_action_result
-
-        with pytest.raises(RuntimeError, match="outside"):
-            render_action_result({"success": False, "message": "path outside the workspace"})
-
-
 class TestConfig:
     """The shipped config, prompt and runner, read as the artefacts they are.
 
@@ -938,3 +944,61 @@ class TestAgainstARealHost:
         listed = await env.jobs(ctx=ctx)
         assert "livejob" in {job["job"] for job in listed["jobs"]}
         await env.signal(job="livejob", ctx=ctx)
+
+
+class TestEnvironmentInstruction:
+    """Environment context reaches every agent, from the file written for the model.
+
+    It used to reach two. `EnvironmentBound` assembled the text by walking `info.actions`,
+    so only the agents that inherited it had environment context at all — an agent with
+    environments in its own `env_names` and no mixin was told nothing about them.
+
+    The manager owns the text now, like `tool_manager.get_instruction` always has, and it
+    returns each environment's `ENVIRONMENT.md` body: the file where its rules and its
+    actions' arguments are written in one place a human edits and reviews. Walking
+    `actions` produced a second, thinner description that had to be kept in step with it —
+    and printed action names (`run`) the model cannot call, rather than the schema names
+    (`remote_host__run`) it can.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_instruction_is_the_environment_md_body(self) -> None:
+        """Not a summary rebuilt from the registry. The file is the source."""
+        from agentevolver.environment import environment_manager
+
+        await environment_manager.initialize(env_names=["remote_host"])
+        text = await environment_manager.get_instruction()
+
+        assert "## The machines" in text          # a heading only the md has
+        assert "upload" in text and "download" in text
+
+    @pytest.mark.asyncio
+    async def test_an_allowlist_selects_environments_the_way_every_manager_does(self) -> None:
+        """`None` = all, `[]` = none, `[names]` = those.
+
+        The same contract as tools, skills and connectors, so a caller does not have to
+        remember which capability spells selection differently.
+        """
+        from agentevolver.environment import environment_manager
+
+        await environment_manager.initialize(env_names=["remote_host"])
+
+        assert await environment_manager.get_instruction(allowlist=[]) == ""
+        assert await environment_manager.get_instruction(allowlist=["remote_host"])
+        assert await environment_manager.get_instruction(allowlist=["no_such_env"]) == ""
+
+    @pytest.mark.asyncio
+    async def test_every_agent_gets_environment_context_not_only_bound_ones(self) -> None:
+        """The regression that motivated moving this off a mixin.
+
+        `_get_environment_context` sits beside `_get_tool_context` on the base class, so
+        an ordinary agent is told about its environments. When it was inherited, it was
+        not — silently, because an absent prompt section looks like an environment with
+        nothing to say.
+        """
+        from agentevolver.agent.types import Agent
+
+        assert hasattr(Agent, "_get_environment_context")
+        for name in ("_get_tool_context", "_get_skill_context", "_get_connector_context"):
+            sibling = getattr(Agent, name)
+            assert sibling.__qualname__.split(".")[0] == Agent._get_environment_context.__qualname__.split(".")[0]

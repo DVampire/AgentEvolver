@@ -24,6 +24,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.session import BaseContext
 
 
+TRAJECTORY_SCHEMA_VERSION = 3
+SFT_EXPORT_VERSION = 2
+RL_EXPORT_VERSION = 2
+
+
 class TrajectoryContext(BaseContext):
     """Context identifying one agent run's trajectory (parallel to HookContext).
 
@@ -81,6 +86,9 @@ class TrajectoryStep(BaseModel):
     actions: List[Dict[str, Any]] = Field(default_factory=list)
     # o_t — one entry per executed action.
     observations: List[Dict[str, Any]] = Field(default_factory=list)
+    #: Distinct execution providers observed in the step's authoritative Tool results.
+    #: Kept in provenance rather than model messages: the trainer must be able to filter
+    #: local/SSH/container rollouts without teaching infrastructure metadata as content.
     token_usage: int = 0
     # The same step's full cost — input / output / cache_write / cache_read / cost.
     # `token_usage` above stays the completion count because the reward pipeline reads
@@ -90,6 +98,13 @@ class TrajectoryStep(BaseModel):
     usage: Optional[Dict[str, Any]] = None
     # r_t — backfilled from the task-level reward at finalize.
     reward: float = 0.0
+    #: Content-addressed model request that produced this step. The snapshot itself lives
+    #: in trace; duplicating it here would let the two copies drift.
+    request_snapshot_id: Optional[str] = None
+    #: Inclusive trace range that supplied this projection. It names the evidence a
+    #: dataset builder must revisit when the projector changes.
+    source_trace_seq_start: Optional[int] = None
+    source_trace_seq_end: Optional[int] = None
 
     def _assistant_message(self) -> Dict[str, Any]:
         """The assistant's trainable target as a NATIVE tool-calling turn.
@@ -126,7 +141,19 @@ class TrajectoryStep(BaseModel):
         """
         messages = [_message_to_dict(m) for m in self.messages_sent]
         messages.append(self._assistant_message())
-        return {"messages": messages, "reward": self.reward, "step": self.step_number}
+        return {
+            "messages": messages,
+            "reward": self.reward,
+            "step": self.step_number,
+            "provenance": {
+                "export_format": "sft",
+                "export_version": SFT_EXPORT_VERSION,
+                "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+                "request_snapshot_id": self.request_snapshot_id,
+                "source_trace_seq_start": self.source_trace_seq_start,
+                "source_trace_seq_end": self.source_trace_seq_end,
+            },
+        }
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -138,6 +165,9 @@ class TrajectoryStep(BaseModel):
             "token_usage": self.token_usage,
             "usage": self.usage,
             "reward": self.reward,
+            "request_snapshot_id": self.request_snapshot_id,
+            "source_trace_seq_start": self.source_trace_seq_start,
+            "source_trace_seq_end": self.source_trace_seq_end,
         }
 
 
@@ -146,6 +176,7 @@ class Trajectory(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    schema_version: int = TRAJECTORY_SCHEMA_VERSION
     session_id: str
     task_id: str
     agent_name: str = ""
@@ -157,6 +188,9 @@ class Trajectory(BaseModel):
     # Multi-agent causal links: sub-agent task_ids spawned during this run.
     subtask_ids: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_trace_format_version: int = 1
+    source_trace_seq_start: Optional[int] = None
+    source_trace_seq_end: Optional[int] = None
 
     def backfill_reward(self, reward: float) -> None:
         """Propagate a task-level reward to the trajectory and every step."""
@@ -166,7 +200,17 @@ class Trajectory(BaseModel):
 
     def to_sft_records(self) -> List[Dict[str, Any]]:
         """One SFT record per step (OpenAI chat format + reward)."""
-        return [step.to_sft_record() for step in self.steps]
+        records = []
+        for step in self.steps:
+            record = step.to_sft_record()
+            record["provenance"].update({
+                "session_id": self.session_id,
+                "task_id": self.task_id,
+                "trajectory_source_trace_seq_start": self.source_trace_seq_start,
+                "trajectory_source_trace_seq_end": self.source_trace_seq_end,
+            })
+            records.append(record)
+        return records
 
     def to_rl_records(self, fmt: "RLFormat") -> List[Dict[str, Any]]:
         """Delegate to a framework-specific RL format (e.g. VERL)."""
@@ -174,6 +218,7 @@ class Trajectory(BaseModel):
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "schema_version": self.schema_version,
             "session_id": self.session_id,
             "task_id": self.task_id,
             "agent_name": self.agent_name,
@@ -183,6 +228,9 @@ class Trajectory(BaseModel):
             "reward": self.reward,
             "subtask_ids": self.subtask_ids,
             "metadata": self.metadata,
+            "source_trace_format_version": self.source_trace_format_version,
+            "source_trace_seq_start": self.source_trace_seq_start,
+            "source_trace_seq_end": self.source_trace_seq_end,
             "steps": [s.to_dict() for s in self.steps],
         }
 
@@ -201,4 +249,12 @@ class RLFormat(Protocol):
         ...
 
 
-__all__ = ["TrajectoryContext", "TrajectoryStep", "Trajectory", "RLFormat"]
+__all__ = [
+    "TRAJECTORY_SCHEMA_VERSION",
+    "SFT_EXPORT_VERSION",
+    "RL_EXPORT_VERSION",
+    "TrajectoryContext",
+    "TrajectoryStep",
+    "Trajectory",
+    "RLFormat",
+]

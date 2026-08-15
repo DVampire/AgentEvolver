@@ -49,6 +49,13 @@ class EditFileTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    def permission_request(self, arguments, ctx=None):
+            return PermissionRequest(
+                op=Operation.WRITE,
+                target=str(arguments.get("path") or ""),
+                content=str(arguments.get("new_string") or ""),
+            )
+
     async def __call__(
         self,
         path: str,

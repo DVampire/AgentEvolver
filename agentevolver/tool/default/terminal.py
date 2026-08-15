@@ -213,6 +213,12 @@ class TerminalOpenTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    def permission_request(self, arguments, ctx=None):
+            return PermissionRequest(
+                op=Operation.BASH,
+                target=str(arguments.get("command") or "bash -i"),
+            )
+
     async def __call__(self, name: str = "", command: Optional[str] = None,
                        cwd: Optional[str] = None, **kwargs) -> Response:
         request = PermissionRequest(op=Operation.BASH, target=command or "bash -i")
@@ -328,6 +334,10 @@ class TerminalSendTool(Tool):
             data={"job_id": job.id, "terminal_id": terminal_id},
         )
 
+
+    def permission_request(self, arguments, ctx=None):
+            text = str(arguments.get("text") or "")
+            return PermissionRequest(op=Operation.BASH, target=text) if text else None
 
     async def __call__(self, terminal_id: str, text: str = "", submit: bool = True,
                        timeout: Optional[float] = None, run_in_background: bool = False,

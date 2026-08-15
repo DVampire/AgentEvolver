@@ -179,6 +179,12 @@ class LspTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    def permission_request(self, arguments, ctx=None):
+        workspace = config.workspace_root or os.getcwd()
+        path = str(arguments.get("path") or "")
+        target = path if os.path.isabs(path) else str(Path(workspace) / path)
+        return PermissionRequest(op=Operation.READ, target=target)
+
     async def __call__(self, operation: str, path: str, line: Optional[int] = None,
                        character: int = 1, **kwargs) -> Response:
         try:

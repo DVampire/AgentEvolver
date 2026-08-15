@@ -6,10 +6,17 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from agentevolver.trace.surface import APPEND
 from agentevolver.utils import make_id
+
+
+TRACE_FORMAT_VERSION = 1
+
+
+class UnsupportedTraceEvent(ValueError):
+    """A trace line cannot be interpreted without changing the reconstructed truth."""
 
 
 class TraceEventType(str, Enum):
@@ -19,6 +26,10 @@ class TraceEventType(str, Enum):
     AGENT_START = "agent_start"   # agent begins
     AGENT_CALL  = "agent_call"    # mid-execution step / state update
     AGENT_END   = "agent_end"     # agent finishes (success or failure)
+
+    # Model lifecycle. Unlike AGENT_CALL (the assistant decision after a step), this is
+    # the exact request state committed immediately before provider dispatch.
+    MODEL_REQUEST = "model_request"
 
     # Tool lifecycle
     TOOL_START  = "tool_start"
@@ -61,6 +72,13 @@ class EventConfidence(str, Enum):
 class TraceEvent(BaseModel):
     """A single, immutable trace record produced during agent execution."""
 
+    #: Version of the event envelope, independent from the event vocabulary. Old logs
+    #: have no field and validate as version 1, preserving backward compatibility.
+    schema_version: int = Field(default=TRACE_FORMAT_VERSION)
+    #: Whether a reader that does not recognise this event may skip it safely. Request
+    #: snapshots are non-ignorable because skipping one changes training provenance;
+    #: observational custom events may explicitly opt in.
+    ignorable: bool = Field(default=False)
     id: str = Field(default_factory=lambda: make_id())
     event_type: TraceEventType
 
@@ -125,6 +143,32 @@ class TraceEvent(BaseModel):
         return d
 
 
+def parse_trace_event(payload: Dict[str, Any]) -> Optional[TraceEvent]:
+    """Validate one event under the explicit compatibility contract.
+
+    Unknown ignorable vocabulary may be skipped, but an unknown envelope version or a
+    non-ignorable event is refused. This distinction prevents the most dangerous reader
+    behaviour: returning a well-formed, incomplete training projection.
+    """
+    try:
+        version = int(payload.get("schema_version", 1))
+    except (TypeError, ValueError) as error:
+        raise UnsupportedTraceEvent("trace event has an invalid schema_version") from error
+    if version < 1 or version > TRACE_FORMAT_VERSION:
+        raise UnsupportedTraceEvent(
+            f"trace envelope {version} is unsupported; reader supports "
+            f"1..{TRACE_FORMAT_VERSION}"
+        )
+    try:
+        return TraceEvent.model_validate(payload)
+    except ValidationError as error:
+        if payload.get("ignorable") is True:
+            return None
+        raise UnsupportedTraceEvent(
+            f"non-ignorable trace event cannot be parsed: {payload.get('event_type')!r}"
+        ) from error
+
+
 def compute_event_fingerprint(event: TraceEvent) -> str:
     import hashlib
     parts = [
@@ -135,6 +179,43 @@ def compute_event_fingerprint(event: TraceEvent) -> str:
         event.action_name or "",
     ]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+def model_request_event(
+    session_id: str,
+    snapshot: "Any",
+    *,
+    task_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    step_number: Optional[int] = None,
+    attempt: int = 1,
+    route_index: int = 0,
+) -> TraceEvent:
+    """Record the request facts before anything crosses the provider boundary.
+
+    The full snapshot lives in ``input`` because it is durable evidence, not display
+    metadata. Its content-addressed id is repeated in metadata so projections can locate
+    it without deserializing the entire request.
+    """
+    snapshot_dict = snapshot.model_dump(mode="json")
+    return TraceEvent(
+        event_type=TraceEventType.MODEL_REQUEST,
+        session_id=session_id,
+        task_id=task_id,
+        agent_name=agent_name,
+        step_number=step_number,
+        label=f"model request: {snapshot.routed_model}",
+        input=snapshot_dict,
+        metadata={
+            "kind": "model_request",
+            "request_snapshot_id": snapshot.snapshot_id,
+            "attempt": attempt,
+            "route_index": route_index,
+        },
+        # A reader that drops this event can still render a conversation, but cannot
+        # truthfully rebuild the request or its training lineage.
+        ignorable=False,
+    )
 
 
 # ---------------------------------------------------------------------------

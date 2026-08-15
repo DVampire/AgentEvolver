@@ -141,6 +141,8 @@ class TraceHook(Hook):
                 action_args=aargs,
                 call_id=str(action.get("id") or ""),
             )
+            if action.get("parent_call_id"):
+                event.metadata["parent_call_id"] = str(action["parent_call_id"])
             self._timers[f"{ctx.id}:action:{step}:{idx}"] = time.monotonic()
 
         elif inp_event == HookEvent.POST_ACTION:
@@ -166,6 +168,14 @@ class TraceHook(Hook):
                 error=error,
                 call_id=str(action.get("id") or ""),
             )
+            if action.get("parent_call_id"):
+                event.metadata["parent_call_id"] = str(action["parent_call_id"])
+            execution_meta = inp.get("execution_meta")
+            if isinstance(execution_meta, dict) and execution_meta:
+                # The Tool pipeline owns this classified outcome. Keep it nested so its
+                # versioned vocabulary cannot collide with generic Trace metadata, while
+                # call/root/parent ids remain queryable without parsing model-facing text.
+                event.metadata["execution"] = dict(execution_meta)
 
         if event is not None:
             await trace_manager.emit(event)

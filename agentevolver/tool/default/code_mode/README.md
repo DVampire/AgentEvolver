@@ -28,16 +28,30 @@ program: await tools.write_file_tool(...)
   → code_runtime serves it by invoking the binding
   → binding is GuardedDispatch.call, built by the agent for this turn
   → Agent._run_one:  trace_hook PRE_ACTION
-                     plan_mode_hook  (refuses anything not declared effect-free)
-                     read_only refusal for framework-mutating tools
-                     _invoke_capability → tool_manager → the tool's own
-                                          permission_manager.check
+                     plan_mode_hook  (a refusal becomes a monotonic guard denial)
+                     read_only policy (same denial path)
+                     _invoke_capability → tool_manager execution pipeline
+                                          → immutable call snapshot
+                                          → permission intent / guards / approval
+                                          → timeout + tool body
+                                          → normalized authoritative result
                      memory / trace / trajectory POST_ACTION
   → result text back down the same wire
 ```
 
 Nothing is skipped and nothing is duplicated, because it is not a second implementation of
 dispatch — it is the same method, called again.
+
+The nested call's `root_call_id` identifies the outer model-emitted `run_code_tool` call;
+`parent_call_id` identifies its immediate program. These IDs and the Tool pipeline's stable
+failure code are copied into Trace. A denied binding raises inside the program, while the
+durable result remains a normal failed Tool observation—Code Mode cannot mistake refusal
+for an empty successful return.
+
+Built-ins that can also be instantiated directly temporarily retain their internal
+`permission_manager.check` as defense in depth. The manager-level `permission_request`
+guard is authoritative for Agent/Workflow/Code Mode calls and classifies denial before
+the body; the duplicate internal check protects legacy direct-instance callers.
 
 ## Why there is no fallback
 

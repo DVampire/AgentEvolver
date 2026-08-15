@@ -15,7 +15,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Deque, Dict, Optional
+from typing import Any, Callable, Deque, Dict, Optional
 
 from argparse import Namespace
 
@@ -49,6 +49,7 @@ from agentevolver.gateway.protocol import (
     GatewayResponse,
     error_response,
 )
+from agentevolver.gateway.approval import GatewayApprovalRendezvous, PendingToolApproval
 from agentevolver.hook import hook_manager
 from agentevolver.paths import P, path_manager
 from agentevolver.session import project as session_project
@@ -167,6 +168,11 @@ class AgentGateway:
         # ever say "refused to connect". Requests come to /env/term/<token>/… on the
         # gateway's own origin instead and are proxied from here.
         self._terminal_targets: Dict[str, int] = {}
+        # Human consent for ToolPolicyDecision.ASK. The record is project-scoped and
+        # listable, so a reconnecting client can recover the dialog instead of leaving
+        # the Tool suspended on an event that disappeared with its socket.
+        self._approvals = GatewayApprovalRendezvous(self._publish_approval_event)
+        self._approval_disposer: Optional[Callable[[], None]] = None
         self._initialized = False
         self._stopping = False
         self._workspace_source = (
@@ -206,6 +212,12 @@ class AgentGateway:
         await prompt_manager.initialize(prompt_names=getattr(config, "prompt_names", None))
         await memory_manager.initialize(memory_names=getattr(config, "memory_names", None))
         await tool_manager.initialize(tool_names=getattr(config, "tool_names", None))
+        self._approvals.set_timeout(
+            getattr(config, "approval_timeout_seconds", self._approvals.timeout_seconds)
+        )
+        self._approval_disposer = tool_manager.set_approval_resolver(
+            self._approvals.request
+        )
         await skill_manager.initialize(skill_names=getattr(config, "skill_names", None))
         await connector_manager.initialize(connector_names=getattr(config, "connector_names", None))
         await plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None))
@@ -254,6 +266,10 @@ class AgentGateway:
         if not self._initialized or self._stopping:
             return
         self._stopping = True
+        if self._approval_disposer is not None:
+            self._approval_disposer()
+            self._approval_disposer = None
+        await self._approvals.cancel_all("gateway_stopped")
         for task in tuple(self._active_agent_tasks.values()):
             task.cancel()
         await asyncio.gather(*self._active_agent_tasks.values(), return_exceptions=True)
@@ -784,13 +800,24 @@ class AgentGateway:
         import asyncio as _asyncio
 
         try:
-            _asyncio.get_running_loop().create_task(
+            task = _asyncio.get_running_loop().create_task(
                 self._publish("plan.mode.changed", state.summary(),
                               session_id=state.session_id))
+            task.add_done_callback(self._report_background_publish_failure)
         except RuntimeError:
             # No loop running — a state change from a synchronous context outside the
             # gateway's own. Nothing to publish to; `plan.get` still reads the truth.
             pass
+
+    @staticmethod
+    def _report_background_publish_failure(task: asyncio.Task) -> None:
+        """Retrieve and report a detached publish exception before loop shutdown."""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:  # noqa: BLE001 - notification cannot undo the state
+            logger.warning(f"| ⚠️ Gateway background publish failed: {exc}")
 
 
     async def _command_plan_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2103,14 +2130,88 @@ class AgentGateway:
         await self._publish("command.executed", payload, session_id=session_id)
         return payload
 
+    async def _command_approval_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Outstanding one-shot Tool approvals for a reconnecting client."""
+        session_id = self._require_session_id(params)
+        return {
+            "approvals": [
+                record.public() for record in self._approvals.pending(session_id)
+            ]
+        }
+
     async def _command_approval_respond(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = self._require_session_id(params)
         approval_id = str(params.get("approval_id") or "")
         if not approval_id:
             raise ValueError("approval_id is required")
-        # The existing runtime does not yet expose a user-approval rendezvous.
-        # Accepting the command keeps the protocol stable while permissions migrate here.
-        await self._publish("approval.responded", dict(params), session_id=params.get("session_id"))
-        return {"approval_id": approval_id, "accepted": True}
+        decision = str(params.get("decision") or "")
+        if decision not in {"allow_once", "reject"}:
+            raise ValueError("decision must be 'allow_once' or 'reject'")
+        comment = str(params.get("comment") or "")
+        if len(comment) > 2_000:
+            raise ValueError("approval comment must be at most 2000 characters")
+        delivered = await self._approvals.respond(
+            session_id=session_id,
+            approval_id=approval_id,
+            approved=decision == "allow_once",
+            decision=decision,
+            comment=comment,
+        )
+        return {
+            "approval_id": approval_id,
+            "decision": decision,
+            "approved": decision == "allow_once",
+            "delivered": delivered,
+        }
+
+    async def _publish_approval_event(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        record: PendingToolApproval,
+    ) -> None:
+        """Write approval evidence to Trace, then deliver the client event.
+
+        Raw Tool arguments never enter either event. The immutable argument digest binds
+        the response to the call; the guard reason is the statement a person approved.
+        """
+        from agentevolver.trace.types import TraceEvent, TraceEventType
+
+        execution = record.execution
+        await trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id=execution.session_id or None,
+            task_id=execution.task_id,
+            agent_name=execution.agent_name,
+            step_number=execution.step_number,
+            label=event_type,
+            action_type="approval",
+            action_name=event_type,
+            input=record.public(),
+            output={
+                key: payload[key]
+                for key in ("approved", "decision", "comment") if key in payload
+            } or None,
+            metadata={
+                "kind": "tool_approval",
+                "approval_id": record.id,
+                "execution_token": execution.token,
+                "call_id": execution.call_id,
+            },
+            # Approval changes whether the effect was authorized. A training reader that
+            # does not understand this event may not silently discard it.
+            ignorable=False,
+        ))
+        await self._publish(
+            event_type,
+            payload,
+            session_id=execution.project_id,
+            conversation_id=(
+                execution.session_id
+                if execution.session_id != execution.project_id else None
+            ),
+            task_id=execution.task_id,
+        )
 
     def _bind_runtime_to_session(self, session: GatewaySession) -> None:
         """Point the shared runtime at ``session``'s own project roots.

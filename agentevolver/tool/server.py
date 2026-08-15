@@ -260,9 +260,10 @@ class ToolManagerServer(BaseModel):
                        name: str, 
                        input: Dict[str, Any], 
                        ctx: ToolContext = None,
+                       execution_context: Optional[Dict[str, Any]] = None,
                        **kwargs
                        ) -> Response:
-        """Call a tool by name with optional timeout and context
+        """Call a tool through the single execution pipeline.
         
         Args:
             name: Tool name
@@ -273,9 +274,31 @@ class ToolManagerServer(BaseModel):
         Returns:
             Response: Tool result
         """
-        # Ensure ctx is always an ToolContext instance
+        # Give the tool a call-local view rather than the caller's ambient AgentContext.
+        # The session id and ambient resources survive conversion, while name/input now
+        # describe this exact invocation for permission, spill, and provenance code.
         ctx = ToolContext.from_context(ctx) if ctx else ToolContext(name=name, input=input)
-        return await self._ensure_context_manager()(name, input, ctx=ctx, **kwargs)
+        ctx.name = name
+        ctx.input = dict(input or {})
+        return await self._ensure_context_manager()(
+            name, input, ctx=ctx, execution_context=execution_context, **kwargs
+        )
+
+    def guard(self, guard):
+        """Register a monotonic Tool guard and return its exact disposer."""
+        return self._ensure_context_manager().guard(guard)
+
+    def postprocess(self, processor):
+        """Register an ordered Tool result processor and return its disposer."""
+        return self._ensure_context_manager().postprocess(processor)
+
+    def observe(self, observer):
+        """Observe authoritative Tool outcomes without being able to rewrite them."""
+        return self._ensure_context_manager().observe(observer)
+
+    def set_approval_resolver(self, resolver):
+        """Install/remove the optional one-shot resolver and return its disposer."""
+        return self._ensure_context_manager().set_approval_resolver(resolver)
 
 
 # Global tool manager instance

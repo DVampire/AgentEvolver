@@ -85,14 +85,6 @@ async def assemble_native_tools(
     # selected environment actions; names are namespace-qualified to avoid collisions.
     pairs += await environment_manager.function_callings(extra.get("environment_allowlist"))
 
-    # environment actions — hook, default none (env-bound agents override)
-    if hasattr(agent, "_native_env_tools"):
-        try:
-            for ns, params, desc, route in await agent._native_env_tools(ctx):
-                pairs.append((_fc(ns, desc, params), route))
-        except Exception:
-            pass
-
     # Sub-agents are MetaAgent-only. Workflow projection is a separate seam because
     # a read-only Workflow evaluator must execute the target without gaining access
     # to arbitrary sub-agent delegation.

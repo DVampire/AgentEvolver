@@ -11,6 +11,8 @@ class ResponseType(str, Enum):
     AGENT = "agent"
     SKILL = "skill"
     CONNECTOR = "connector"
+    ENVIRONMENT = "environment"
+    WORKFLOW = "workflow"
     LLM = "llm"
     CONSTRAINT = "constraint"
     PROMPT = "prompt"

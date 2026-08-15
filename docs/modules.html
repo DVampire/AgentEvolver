@@ -18,9 +18,9 @@
 <header class="page">
   <div class="wrap">
     <span class="eyebrow" data-i18n="hdr_pill">Module reference</span>
-    <h1 data-i18n="hdr_title_html">Fifty-six modules, <span class="grad">seven families</span></h1>
-    <p class="lede" data-i18n="hdr_lede">A searchable source map of all 56 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.</p>
-    <div class="page-meta"><span data-i18n="meta_1">56 source modules</span><span data-i18n="meta_2">7 responsibility families</span><span data-i18n="meta_3">Open any card for its contract</span></div>
+    <h1 data-i18n="hdr_title_html">Fifty-five modules, <span class="grad">seven families</span></h1>
+    <p class="lede" data-i18n="hdr_lede">A searchable source map of all 55 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.</p>
+    <div class="page-meta"><span data-i18n="meta_1">55 source modules</span><span data-i18n="meta_2">7 responsibility families</span><span data-i18n="meta_3">Open any card for its contract</span></div>
   </div>
 </header>
 
@@ -44,7 +44,7 @@
     <p data-i18n="gb_core">One step, and the things that make a step possible. Nothing here knows about a specific tool or model.</p>
     <div class="mods">
       <div class="mod"><div class="mod-h"><b>agent</b><span>6,748</span></div><p data-i18n="m_agent">Defines executable agents and their lifecycle.</p></div>
-      <div class="mod"><div class="mod-h"><b>runtime</b><span>373</span></div><p data-i18n="m_runtime">Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances registered Agent instances.</p></div>
+      <div class="mod"><div class="mod-h"><b>runtime</b><span>735</span></div><p data-i18n="m_runtime">Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances them — and delegation, since one agent running another is a ref plus a job rather than a separate kind of agent.</p></div>
       <div class="mod"><div class="mod-h"><b>session</b><span>1,010</span></div><p data-i18n="m_session">Defines shared invocation context and session-scoped project state.</p></div>
       <div class="mod"><div class="mod-h"><b>message</b><span>323</span></div><p data-i18n="m_message">Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads.</p></div>
       <div class="mod"><div class="mod-h"><b>response</b><span>36</span></div><p data-i18n="m_response">Defines the normalized `Response` and `ResponseType` returned across Agents, Tools, Skills, Connectors, and Environments.</p></div>
@@ -104,7 +104,6 @@
       <div class="mod"><div class="mod-h"><b>canvas</b><span>1,578</span></div><p data-i18n="m_canvas">Visual flow editor.</p></div>
       <div class="mod"><div class="mod-h"><b>task</b><span>1,356</span></div><p data-i18n="m_task">Models tasks and goals — their priorities, statuses and authority — loads task documents, and resolves CLI task input into normalized records.</p></div>
       <div class="mod"><div class="mod-h"><b>job</b><span>568</span></div><p data-i18n="m_job">Runs work in the background and lets the agent collect it later — and holds reminders that come due — so a long command costs a step to start rather than a step spent waiting.</p></div>
-      <div class="mod"><div class="mod-h"><b>subagent</b><span>459</span></div><p data-i18n="m_subagent">Delegation the parent does not have to sit through: a child agent runs in the background as a job, and a continuable one stays alive to be given more work.</p></div>
       <div class="mod"><div class="mod-h"><b>plan</b><span>274</span></div><p data-i18n="m_plan">Holds a run to reading and reasoning until a person approves what it intends to do, so an approach is agreed before it is carried out rather than after.</p></div>
       <div class="mod"><div class="mod-h"><b>constraint</b><span>1,372</span></div><p data-i18n="m_constraint">Defines enforceable runtime budgets and status reporting.</p></div>
     </div>
@@ -164,7 +163,7 @@ window.I18N = {
  "g_core": "Core loop",
  "gb_core": "One step, and the things that make a step possible. Nothing here knows about a specific tool or model.",
  "m_agent": "Defines executable agents and their lifecycle.",
- "m_runtime": "Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances registered Agent instances.",
+ "m_runtime": "Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances them — and delegation, since one agent running another is a ref plus a job rather than a separate kind of agent.",
  "m_session": "Defines shared invocation context and session-scoped project state.",
  "m_message": "Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads.",
  "m_response": "Defines the normalized `Response` and `ResponseType` returned across Agents, Tools, Skills, Connectors, and Environments.",
@@ -204,7 +203,6 @@ window.I18N = {
  "m_canvas": "Visual flow editor.",
  "m_task": "Models tasks and goals — their priorities, statuses and authority — loads task documents, and resolves CLI task input into normalized records.",
  "m_job": "Runs work in the background and lets the agent collect it later — and holds reminders that come due — so a long command costs a step to start rather than a step spent waiting.",
- "m_subagent": "Delegation the parent does not have to sit through: a child agent runs in the background as a job, and a continuable one stays alive to be given more work.",
  "m_plan": "Holds a run to reading and reasoning until a person approves what it intends to do, so an approach is agreed before it is carried out rather than after.",
  "m_constraint": "Defines enforceable runtime budgets and status reporting.",
  "g_evolution": "Evolution",
@@ -238,9 +236,9 @@ window.I18N = {
  "nav_dev": "Development",
  "nav_ui": "Web UI",
  "hdr_pill": "Module reference",
- "hdr_title_html": "Fifty-six modules, <span class=\"grad\">seven families</span>",
- "hdr_lede": "A searchable source map of all 56 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.",
- "meta_1": "56 source modules", "meta_2": "7 responsibility families", "meta_3": "Open any card for its contract",
+ "hdr_title_html": "Fifty-five modules, <span class=\"grad\">seven families</span>",
+ "hdr_lede": "A searchable source map of all 55 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.",
+ "meta_1": "55 source modules", "meta_2": "7 responsibility families", "meta_3": "Open any card for its contract",
  "side_a": "Families",
  "shape_h": "The shape they share",
  "shape_p": "Reading one module tells you how to read the rest. Four files, and the manager always spells removal the same way — <code>unregister(name)</code> — which is what lets one scope own registrations across several of them and take them all back out.",
@@ -250,7 +248,7 @@ window.I18N = {
  "g_core": "核心循环",
  "gb_core": "一步，以及让一步成为可能的东西。这里没有任何代码知道某个具体的工具或模型。",
  "m_agent": "定义可执行的 agent 及其生命周期。`Agent` 提供事件驱动的运行循环。",
- "m_runtime": "持有活的 Agent 引用、邮箱、生命周期状态，以及推进它们的事件泵。",
+ "m_runtime": "持有活的 Agent 引用、邮箱、生命周期状态与推进它们的事件泵；委派也在这里 —— 一个 agent 跑另一个，是一个 ref 加一个 job，不是另一种 agent。",
  "m_session": "定义共享的调用上下文与会话级的项目状态。",
  "m_message": "定义与提供商无关的对话消息、多模态内容片段、工具调用与函数声明。",
  "m_response": "定义 Agent、Tool、Skill 等各处统一返回的 `Response` 与 `ResponseType`。",
@@ -290,7 +288,6 @@ window.I18N = {
  "m_canvas": "可视化流程编辑器。流程图是 JSON（唯一真相源），在共享工作流运行时上临时执行。",
  "m_task": "建模任务与目标——它们的优先级、状态与权限，并加载任务文档。",
  "m_job": "把工作放到后台去跑、之后再让 agent 收取，同时也持有提醒。",
- "m_subagent": "父级不必坐等的委派：子 agent 在后台运行。",
  "m_plan": "把一次运行限制在阅读与推理，直到有人批准它打算做的事。",
  "m_constraint": "定义可强制执行的运行时预算与状态上报。内置覆盖步数、token 和墙钟。",
  "g_evolution": "进化",
@@ -324,9 +321,9 @@ window.I18N = {
  "nav_dev": "开发文档",
  "nav_ui": "Web 界面",
  "hdr_pill": "模块参考",
- "hdr_title_html": "五十六个模块，<span class=\"grad\">七个族</span>",
- "hdr_lede": "全部 56 个顶层模块的可搜索源码地图。展开任意卡片，即可查看它在运行中的位置、职责边界、主要公共接口与源码目录。",
- "meta_1": "56 个源码模块", "meta_2": "7 个职责族", "meta_3": "展开任意卡片查看完整契约",
+ "hdr_title_html": "五十五个模块，<span class=\"grad\">七个族</span>",
+ "hdr_lede": "全部 55 个顶层模块的可搜索源码地图。展开任意卡片，即可查看它在运行中的位置、职责边界、主要公共接口与源码目录。",
+ "meta_1": "55 个源码模块", "meta_2": "7 个职责族", "meta_3": "展开任意卡片查看完整契约",
  "side_a": "分族",
  "shape_h": "它们共享的形状",
  "shape_p": "读懂一个模块，就知道怎么读其余的。四个文件，而且 manager 卸载的写法永远一样——<code>unregister(name)</code>——正因如此，一个作用域才能同时持有跨多个模块的注册并把它们一起取回。",

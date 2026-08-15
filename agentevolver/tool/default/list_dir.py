@@ -122,6 +122,11 @@ class ListDirTool(Tool):
                 lines.append(f"{prefix}{connector}{entry.name}")
                 file_count[0] += 1
 
+    def permission_request(self, arguments, ctx=None):
+            return PermissionRequest(
+                op=Operation.READ, target=str(arguments.get("path") or "")
+            )
+
     async def __call__(
         self,
         path: str,

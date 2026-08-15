@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
 from datetime import datetime
 import inflection
 import json
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 from agentevolver.logger import logger
@@ -18,6 +18,11 @@ from agentevolver.utils import (assemble_workspace_path,
                        render_capability_card,
                        )
 from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext, clip_output
+from agentevolver.tool.execution import (
+    ToolErrorCode,
+    ToolExecution,
+    ToolExecutionPipeline,
+)
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.spill import spill_manager
 from agentevolver.spill.types import SpillSource
@@ -37,6 +42,13 @@ def _field_default(tool_cls, name):
 class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # One authoritative pipeline per registry/context manager. It is private rather
+    # than serialized configuration: guards and observers are live callables owned by
+    # the process and cannot be meaningfully reconstructed from JSON.
+    _execution_pipeline: ToolExecutionPipeline = PrivateAttr(
+        default_factory=ToolExecutionPipeline
+    )
     
     base_dir: str = Field(default=None, description="The base directory to use for the tools")
     
@@ -796,9 +808,10 @@ class ToolContextManager(BaseModel):
                        name: str,
                        input: Dict[str, Any],
                        ctx: ToolContext = None,
+                       execution_context: Optional[Dict[str, Any]] = None,
                        **kwargs
                        ) -> Response:
-        """Call a tool by name with optional timeout
+        """Execute one tool through the authoritative, versioned pipeline.
 
         Args:
             name: Tool name
@@ -808,13 +821,33 @@ class ToolContextManager(BaseModel):
             Response: Tool result
         """
         tool_info = await self.get_info(name)
-        
+        version = str(getattr(tool_info, "version", "") or "")
+        effective_execution_context = dict(execution_context or {})
+        execution = ToolExecution.create(
+            name=name,
+            version=version,
+            arguments=input,
+            ctx=ctx,
+            context=effective_execution_context,
+        )
+        # Validate and invoke the exact canonical snapshot the guards inspect. Tool
+        # arguments are a JSON contract; keeping a caller-owned dict on the policy/body
+        # boundary would let another coroutine rewrite it after approval.
+        call_input = execution.arguments
+        if ctx is not None:
+            ctx.input = dict(call_input)
+
         if tool_info is None:
             error_msg = f"Tool '{name}' is not registered. Available tools: {list(self._tool_configs.keys())}"
             logger.error(f"| ❌ {error_msg}")
-            return Response(type=ResponseType.TOOL, success=False, message=error_msg)
-        
-        version = tool_info.version
+            return await self._execution_pipeline.execute(
+                execution,
+                self._unreachable_tool_body,
+                timeout=None,
+                preflight_error=(ToolErrorCode.NOT_FOUND, error_msg),
+                initial_denials=list((execution_context or {}).get("guard_denials") or []),
+            )
+
         tool_instance = tool_info.instance
         logger.info(f"| ✅ Using tool {name}@{version}")
 
@@ -828,10 +861,11 @@ class ToolContextManager(BaseModel):
         # cannot act on cleanly. Validate the binding first and, on failure, hand back a
         # structured, recoverable error that names the offending call and the parameters
         # the tool actually expects, so the agent can simply re-issue the call. The real
-        # invocation below is unchanged, so any TypeError raised *inside* the tool body
-        # still surfaces normally.
+        # invocation below is separate, so a TypeError raised *inside* the body is
+        # classified as ``execution_error`` rather than mislabeled as bad arguments.
+        validation_error = None
         try:
-            inspect.signature(tool_instance.__call__).bind(**input, **tool_kwargs)
+            inspect.signature(tool_instance.__call__).bind(**call_input, **tool_kwargs)
         except TypeError as bind_error:
             required = [
                 p.name
@@ -845,25 +879,89 @@ class ToolContextManager(BaseModel):
                 f"Required parameter(s): {required}. Re-issue the call with all required parameters."
             )
             logger.warning(f"| ⚠️ {msg}")
-            return Response(type=ResponseType.TOOL, success=False, message=msg)
+            validation_error = (ToolErrorCode.INVALID_ARGUMENTS, msg)
 
         timeout = self._call_timeout(tool_instance)
-        try:
-            response = await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=timeout)
-        except asyncio.TimeoutError:
-            error_msg = (
-                f"Tool '{name}' execution timed out after {timeout} seconds. "
-                f"Re-issue it with narrower arguments, or split the work into steps that each "
-                f"finish inside that budget."
+        permission_guard = self._permission_guard(tool_instance, ctx)
+        return await self._execution_pipeline.execute(
+            execution,
+            lambda: tool_instance(**call_input, **tool_kwargs),
+            timeout=timeout,
+            preflight_error=validation_error,
+            initial_denials=list((execution_context or {}).get("guard_denials") or []),
+            call_guards=[permission_guard],
+            before_invoke=lambda: self._checkpoint_before_invoke(
+                execution, tool_instance, ctx,
+            ),
+            finalize=lambda response: self._bound_output(response, name=name, ctx=ctx),
+        )
+
+    @staticmethod
+    async def _checkpoint_before_invoke(
+        execution: ToolExecution, tool_instance: Tool, ctx: ToolContext,
+    ) -> None:
+        """Commit policy/approval evidence after guards and before a possible effect."""
+        if getattr(tool_instance, "mutates", None) is False:
+            return
+        from agentevolver.trace.checkpoint import (
+            TraceCheckpointBoundary,
+            checkpoint_trace,
+        )
+
+        await checkpoint_trace(
+            execution.session_id,
+            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            ctx=ctx,
+            metadata={
+                "tool_name": execution.tool_name,
+                "call_id": execution.call_id,
+                "root_call_id": execution.root_call_id,
+            },
+        )
+
+    @staticmethod
+    def _permission_guard(tool_instance: Tool, ctx: ToolContext):
+        """Translate one Tool-owned permission intent into a monotonic guard.
+
+        The closure is evaluated by ``ToolExecutionPipeline`` so an exception fails
+        closed as ``guard_error``. Keeping intent construction on the Tool avoids an
+        unsafe executor table that guesses semantics from argument names.
+        """
+        def guard(execution):
+            request = tool_instance.permission_request(execution.arguments, ctx)
+            if request is None:
+                return None
+            result = permission_manager.check(
+                tool_instance.name,
+                request,
+                workspace=(config.workspace_root or ""),
             )
-            logger.error(f"| ⏱️ {error_msg}")
-            return Response(
-                type=ResponseType.TOOL,
-                success=False,
-                message=error_msg,
+            return None if result.allowed else (
+                f"Permission denied: {result.reason or 'operation is not allowed'}"
             )
 
-        return await self._bound_output(response, name=name, ctx=ctx)
+        return guard
+
+    @staticmethod
+    async def _unreachable_tool_body() -> Response:
+        """A body placeholder for preflight failures; the pipeline never calls it."""
+        raise RuntimeError("unreachable tool body")
+
+    def guard(self, guard):
+        """Register a monotonic execution guard and return its disposer."""
+        return self._execution_pipeline.guard(guard)
+
+    def postprocess(self, processor):
+        """Register an ordered result processor and return its disposer."""
+        return self._execution_pipeline.postprocess(processor)
+
+    def observe(self, observer):
+        """Observe frozen final execution summaries; failures are contained."""
+        return self._execution_pipeline.observe(observer)
+
+    def set_approval_resolver(self, resolver):
+        """Install/remove the one-shot approval seam and return its disposer."""
+        return self._execution_pipeline.set_approval_resolver(resolver)
 
     def _call_timeout(self, tool_instance: Tool) -> Optional[float]:
         """The budget for one call of this tool.

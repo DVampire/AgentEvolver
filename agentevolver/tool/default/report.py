@@ -66,7 +66,7 @@ class ReportTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, output: str, **kwargs) -> Response:
-        from agentevolver.subagent import subagent_manager
+        from agentevolver.job import job_manager
 
         ctx = kwargs.get("ctx")
         extra = getattr(ctx, "extra", None) or {}
@@ -84,8 +84,16 @@ class ReportTool(Tool):
             # The name is read from the context rather than from ``ctx.name``: by the
             # time a tool is called the context has been converted, and ``name`` on the
             # converted one is the tool's, not the agent's.
-            accepted = subagent_manager.report(
-                job_id, output, agent_name=str(extra.get("report_agent_name") or ""))
+            # Written into the child's own job output — the same place its result lands,
+            # deliberately. A parent collecting a child then has one thing to read, in the
+            # order the child said it, whether that is a finding halfway through or the
+            # answer at the end.
+            name = str(extra.get("report_agent_name") or "")
+            accepted = job_manager.get(job_id) is not None
+            if accepted:
+                job_manager.append_output(
+                    job_id, f"\n[report{f' from {name}' if name else ''}]\n{output.strip()}\n")
+                logger.info(f"| 📣 Sub-agent report on {job_id}: {output.strip()[:80]}")
         except Exception as error:                                  # noqa: BLE001
             logger.error(f"| ❌ report_tool failed: {error}")
             return Response(type=ResponseType.TOOL, success=False,

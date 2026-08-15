@@ -7,20 +7,20 @@ from pydantic import ConfigDict, Field
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.registry import AGENT
+from agentevolver.environment.server import environment_manager
 from agentevolver.hook.server import hook_manager
 from agentevolver.hook.types import HookEvent
 from agentevolver.agent.types import (
     Agent,
     AgentContext,
 )
-from agentevolver.agent.env_binding import EnvironmentBound
 from agentevolver.message import ContentPartImage, ContentPartText, ImageURL, Message
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.utils.name_utils import make_id
 
 
 @AGENT.register_module(force=True)
-class BrowserAgent(EnvironmentBound, Agent):
+class BrowserAgent(Agent):
     """Agent dedicated to the browser environment.
 
     Each step it observes the environment state (text + screenshots), plans a
@@ -104,7 +104,6 @@ class BrowserAgent(EnvironmentBound, Agent):
         action_errors = kwargs.get("action_errors") or []
         base["errors"] = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
 
-        base.update(await self._get_environment_context())
         return base
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
@@ -168,6 +167,16 @@ class BrowserAgent(EnvironmentBound, Agent):
         """BrowserAgent keeps its own bespoke loop (browser-action turns), so it runs
         via ``__call__`` rather than the base event-driven round loop. Returning the
         Response here lets the runtime resolve the caller synchronously."""
+        # `env_name` and the config's `env_names` name the same environment in two
+        # places, and nothing made them agree. A mismatch — a typo, or a roster that
+        # dropped this environment — degraded silently: state came back empty, the
+        # prompt block was absent, and the agent behaved like a browser agent with no
+        # browser rather than reporting that it had none.
+        if await environment_manager.get_info(self.env_name) is None:
+            raise RuntimeError(
+                f"environment {self.env_name!r} is not registered; "
+                f"add it to this config's `env_names`"
+            )
         return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
 
     async def __call__(
@@ -220,7 +229,7 @@ class BrowserAgent(EnvironmentBound, Agent):
                             "action_errors": [], "stopped_by_constraint": True}
                 break
             # Observe the fresh page before reasoning over it
-            browser_state = await self._observe(ctx)
+            browser_state = await environment_manager.get_state(self.env_name, ctx=ctx)
             messages = await self._get_messages(
                 enhanced_task,
                 ctx=ctx,

@@ -19,6 +19,7 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -901,3 +902,77 @@ def test_the_registration_hook_finds_the_artifact_even_when_its_path_has_spaces(
     assert WorkflowRegistrationHook._resolve(
         None, None, f"created `{artifact}`", str(tmp_path),
     ) == str(artifact)
+
+
+class TestWorkflowResponse:
+    """A workflow's outcome comes back as the response every capability returns.
+
+    `workflow_manager.run` still hands back a `WorkflowRun`, and should: that is a run
+    *record* — state machine, frames, checkpoint path, token cost — and something that can
+    be paused and resumed is not a return value.
+
+    But a caller that only wants the outcome had to know all of it. The agent loop did:
+    alone among its five dispatch branches it read `.successful`, raised on `.error`, and
+    JSON-encoded `.output` itself. Serializing in the caller is how the environment branch
+    got two different renderings of one action, one of which returned `None` and one of
+    which hung the run.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_successful_run_returns_text_the_model_can_read(self) -> None:
+        from agentevolver.response.types import ResponseType
+        from agentevolver.workflow import workflow_manager
+
+        run = SimpleNamespace(successful=True, output={"answer": 4}, id="run-1",
+                              state="SUCCEEDED", error=None)
+        with patch.object(type(workflow_manager), "run", AsyncMock(return_value=run)):
+            response = await workflow_manager("adder", input={})
+
+        assert response.success
+        assert response.type == ResponseType.WORKFLOW
+        assert json.loads(response.message) == {"answer": 4}
+        assert response.data["run_id"] == "run-1"
+
+    @pytest.mark.asyncio
+    async def test_string_output_is_not_json_encoded_again(self) -> None:
+        """A workflow that already returned prose should not reach the model in quotes."""
+        from agentevolver.workflow import workflow_manager
+
+        run = SimpleNamespace(successful=True, output="done", id="r", state="SUCCEEDED", error=None)
+        with patch.object(type(workflow_manager), "run", AsyncMock(return_value=run)):
+            response = await workflow_manager("w", input={})
+
+        assert response.message == "done"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_run_is_reported_not_raised(self) -> None:
+        """The caller decides what a failure means, exactly as it does for a tool.
+
+        Raising from the manager would make a workflow the one capability whose failure
+        arrives as an exception rather than as an unsuccessful response.
+        """
+        from agentevolver.workflow import workflow_manager
+
+        run = SimpleNamespace(successful=False, output=None, id="r", state="FAILED",
+                              error="step 2 timed out")
+        with patch.object(type(workflow_manager), "run", AsyncMock(return_value=run)):
+            response = await workflow_manager("w", input={})
+
+        assert not response.success
+        assert response.message == "step 2 timed out"
+        assert response.data["state"] == "FAILED"
+
+    @pytest.mark.asyncio
+    async def test_the_run_record_is_still_reachable(self) -> None:
+        """`data.run_id` is what keeps this from throwing away the record.
+
+        A caller that wants the frames, the checkpoint, or the token cost still can —
+        the response is a second face on the same execution, not a replacement.
+        """
+        from agentevolver.workflow import workflow_manager
+
+        run = SimpleNamespace(successful=True, output=1, id="run-42", state="SUCCEEDED", error=None)
+        with patch.object(type(workflow_manager), "run", AsyncMock(return_value=run)):
+            response = await workflow_manager("w", input={})
+
+        assert response.data["run_id"] == "run-42"

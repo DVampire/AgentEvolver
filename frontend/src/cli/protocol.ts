@@ -27,6 +27,7 @@ export interface GatewayEvent {
   type: string;
   payload: Record<string, unknown>;
   session_id?: string;
+  conversation_id?: string;
   task_id?: string;
   seq_no: number;
   timestamp: string;

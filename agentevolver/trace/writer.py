@@ -35,6 +35,7 @@ class TraceWriter:
 
         self._index_path = os.path.join(log_root, "index.json")
         self._task: Optional[asyncio.Task] = None
+        self._durability_errors: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -83,6 +84,8 @@ class TraceWriter:
             try:
                 await self._write_event(event)
             except Exception as e:
+                session_id = event.session_id or "no_session"
+                self._durability_errors.setdefault(session_id, str(e))
                 logger.warning(f"| ⚠️  TraceWriter error: {e}")
             finally:
                 self._queue.task_done()
@@ -110,6 +113,8 @@ class TraceWriter:
             "task_ids": [],
         })
         meta["event_count"] += 1
+        if event.seq_no is not None:
+            meta["last_seq_no"] = int(event.seq_no)
         meta["last_event_at"] = event.timestamp.isoformat()
         if event.agent_name and event.agent_name not in meta["agent_names"]:
             meta["agent_names"].append(event.agent_name)
@@ -175,6 +180,26 @@ class TraceWriter:
     def list_sessions(self) -> list:
         return list(self._session_meta.values())
 
+    def event_count(self, session_id: str) -> int:
+        """Number of durably indexed events for sequence continuation."""
+        return int((self._session_meta.get(session_id) or {}).get("event_count") or 0)
+
+    def next_seq(self, session_id: str) -> int:
+        """Next durable sequence, surviving gaps left by an unwritable event."""
+        meta = self._session_meta.get(session_id) or {}
+        if meta.get("last_seq_no") is not None:
+            return int(meta["last_seq_no"]) + 1
+        # Compatibility for indexes written before ``last_seq_no`` existed. Scan once
+        # rather than trusting event_count: an unwritable event may have left a gap.
+        events = self.read_from(session_id, after_seq=-1)
+        if events:
+            return max(int(event["seq_no"]) for event in events) + 1
+        return 0
+
+    def durability_error(self, session_id: str) -> Optional[str]:
+        """First permanent write failure for this session, if any."""
+        return self._durability_errors.get(session_id)
+
     def read_session(self, session_id: str) -> list:
         """Return all events for a session as a list of dicts."""
         path = self._session_path(session_id)
@@ -189,4 +214,48 @@ class TraceWriter:
                         events.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
+        return events
+
+    def read_from(
+        self, session_id: str, *, after_seq: int = -1, limit: Optional[int] = None
+    ) -> list:
+        """Stream events whose sequence is greater than ``after_seq``.
+
+        This is the durable boundary used by incremental projections.  It deliberately
+        does not load the whole JSONL file before filtering.  Version-1 logs that predate
+        ``seq_no`` use their zero-based line position as a compatibility sequence; the
+        returned copy contains that effective value so a caller can persist a watermark.
+
+        Malformed JSON lines retain the historical reader behaviour and are skipped.
+        Schema compatibility is enforced one layer up by ``parse_trace_event``.
+        """
+        if limit is not None and int(limit) <= 0:
+            return []
+        path = self._session_path(session_id)
+        if not os.path.exists(path):
+            return []
+        events = []
+        with open(path, "r", encoding="utf-8") as handle:
+            for line_index, line in enumerate(handle):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                raw_seq = payload.get("seq_no")
+                try:
+                    seq = line_index if raw_seq is None else int(raw_seq)
+                except (TypeError, ValueError):
+                    continue
+                if seq <= int(after_seq):
+                    continue
+                if raw_seq is None:
+                    payload = {**payload, "seq_no": seq}
+                events.append(payload)
+                if limit is not None and len(events) >= int(limit):
+                    break
         return events

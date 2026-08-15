@@ -51,6 +51,24 @@ def validate_assembly(config: Any, *, strict: bool = False) -> List[str]:
         if dups:
             problems.append(f"{key} has duplicate entries: {dups}")
 
+    integrity_profile = getattr(config, "trace_integrity_profile", "interactive")
+    if integrity_profile not in ("interactive", "training", "high_risk"):
+        problems.append(
+            "trace_integrity_profile must be one of: interactive, training, high_risk "
+            f"(got {integrity_profile!r})"
+        )
+
+    approval_timeout = getattr(config, "approval_timeout_seconds", 300.0)
+    if (
+        not isinstance(approval_timeout, (int, float))
+        or isinstance(approval_timeout, bool)
+        or approval_timeout <= 0
+    ):
+        problems.append(
+            "approval_timeout_seconds must be a positive number "
+            f"(got {approval_timeout!r})"
+        )
+
     if problems and strict:
         raise ValueError("Config assembly validation failed:\n  - " + "\n  - ".join(problems))
     return problems

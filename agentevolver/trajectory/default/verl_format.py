@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from agentevolver.trajectory.types import Trajectory
+from agentevolver.trajectory.types import RL_EXPORT_VERSION, Trajectory
 
 
 class VerlFormat:
@@ -33,6 +33,16 @@ class VerlFormat:
                 "step": step.step_number,
                 "task_id": trajectory.task_id,
                 "agent_name": trajectory.agent_name,
+                "provenance": {
+                    "export_format": self.name,
+                    "export_version": RL_EXPORT_VERSION,
+                    "trajectory_schema_version": trajectory.schema_version,
+                    "session_id": trajectory.session_id,
+                    "task_id": trajectory.task_id,
+                    "request_snapshot_id": step.request_snapshot_id,
+                    "source_trace_seq_start": step.source_trace_seq_start,
+                    "source_trace_seq_end": step.source_trace_seq_end,
+                },
                 # Token-level fields — populated by an RL provider's annotate_trajectory.
                 "prompt_ids": [],
                 "response_ids": [],

@@ -112,7 +112,7 @@ class BenchmarkManager(BaseModel):
                     )
                     evaluated_task = await benchmark.eval(task)
                     score = evaluated_task.score if evaluated_task else 0.0
-                    _record_reward(t_id, res, score)
+                    _record_reward(t_id, res, score, evaluator=benchmark_name)
                     return score
                 except Exception as e:
                     logger.error(f"| ❌ Eval failed for task {t_id}: {e}")
@@ -135,7 +135,13 @@ class BenchmarkManager(BaseModel):
 benchmark_manager = BenchmarkManager()
 
 
-def _record_reward(task_id: str, result: dict, score: float) -> None:
+def _record_reward(
+    task_id: str,
+    result: dict,
+    score: float,
+    *,
+    evaluator: str = "benchmark",
+) -> None:
     """Backfill the score onto the run that earned it.
 
     The score was computed per task and then averaged away, so every trajectory this
@@ -155,7 +161,9 @@ def _record_reward(task_id: str, result: dict, score: float) -> None:
     from agentevolver.trajectory import trajectory_manager
 
     try:
-        if trajectory_manager.set_reward(task_id, score) is not None:
+        if trajectory_manager.set_reward(
+            task_id, score, evaluator=evaluator,
+        ) is not None:
             return
     except Exception as error:                                      # noqa: BLE001
         logger.warning(f"| ⚠️ could not record reward for task {task_id}: {error}")
@@ -166,6 +174,8 @@ def _record_reward(task_id: str, result: dict, score: float) -> None:
     session_id = str(result.get("session_id") or "")
     if session_id:
         try:
-            trajectory_manager.set_reward_by_session(session_id, score)
+            trajectory_manager.set_reward_by_session(
+                session_id, score, evaluator=evaluator,
+            )
         except Exception as error:                                  # noqa: BLE001
             logger.warning(f"| ⚠️ could not record reward for session {session_id}: {error}")

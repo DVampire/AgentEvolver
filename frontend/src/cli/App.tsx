@@ -58,12 +58,19 @@ export function App({ options }: { options: GatewayClientOptions }) {
   const respondToApproval = useCallback(async (decision: 'allow_once' | 'reject') => {
     const approval = stateRef.current.approval;
     if (!approval) return;
-    await clientRef.current?.request('approval.respond', {
-      approval_id: approval.id,
-      session_id: approval.sessionId,
-      decision,
-    });
-    dispatch({ type: 'approval.clear' });
+    try {
+      const response = await clientRef.current?.request('approval.respond', {
+        approval_id: approval.id,
+        session_id: approval.sessionId,
+        decision,
+      });
+      if (!response?.ok) throw new Error(response?.error?.message ?? 'Approval response failed');
+      // `delivered: false` means another tab or the timeout settled it first. Either way
+      // this dialog is stale and must not keep claiming the Tool is waiting.
+      dispatch({ type: 'approval.clear' });
+    } catch (error) {
+      dispatch({ type: 'notice', value: error instanceof Error ? error.message : String(error) });
+    }
   }, []);
 
   useInput((character, key) => {

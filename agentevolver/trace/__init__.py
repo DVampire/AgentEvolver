@@ -1,4 +1,6 @@
 from .types import (
+    TRACE_FORMAT_VERSION,
+    UnsupportedTraceEvent,
     TraceEvent,
     TraceEventType,
     agent_start_event,
@@ -8,6 +10,37 @@ from .types import (
     tool_call_event,
     skill_start_event,
     skill_call_event,
+    model_request_event,
+    parse_trace_event,
+)
+from .request import REQUEST_SNAPSHOT_VERSION, RequestSnapshot
+from .projection import (
+    PROJECTION_WATERMARK_VERSION,
+    ProjectionVersionMismatch,
+    ProjectionWatermark,
+    ProjectionWatermarkError,
+    ProjectionWatermarkStore,
+    ProjectionRegistration,
+    ProjectionRegistrationError,
+    ProjectionRegistry,
+    ProjectionRunner,
+    get_default_projection_registry,
+)
+from .stats import STATS_SCHEMA_VERSION, TraceStats, TraceStatsProjector
+from .checkpoint import (
+    INTEGRITY_POLICY_VERSION,
+    TRACE_INTEGRITY_PROFILE_KEY,
+    TraceCheckpointBoundary,
+    TraceIntegrityError,
+    TraceIntegrityProfile,
+    checkpoint_trace,
+    report_trace_integrity_failure,
+    resolve_integrity_profile,
+)
+from .persistence import (
+    TracePersistence,
+    SQLiteTracePersistence,
+    create_trace_persistence,
 )
 from .server import trace_manager
 from .derive import derive_messages
@@ -23,6 +56,34 @@ from .surface import (
 __all__ = [
     "TraceEvent",
     "TraceEventType",
+    "TRACE_FORMAT_VERSION",
+    "UnsupportedTraceEvent",
+    "REQUEST_SNAPSHOT_VERSION",
+    "RequestSnapshot",
+    "PROJECTION_WATERMARK_VERSION",
+    "ProjectionWatermark",
+    "ProjectionWatermarkError",
+    "ProjectionVersionMismatch",
+    "ProjectionWatermarkStore",
+    "ProjectionRegistration",
+    "ProjectionRegistrationError",
+    "ProjectionRegistry",
+    "ProjectionRunner",
+    "get_default_projection_registry",
+    "STATS_SCHEMA_VERSION",
+    "TraceStats",
+    "TraceStatsProjector",
+    "INTEGRITY_POLICY_VERSION",
+    "TRACE_INTEGRITY_PROFILE_KEY",
+    "TraceCheckpointBoundary",
+    "TraceIntegrityError",
+    "TraceIntegrityProfile",
+    "checkpoint_trace",
+    "report_trace_integrity_failure",
+    "resolve_integrity_profile",
+    "TracePersistence",
+    "SQLiteTracePersistence",
+    "create_trace_persistence",
     "agent_start_event",
     "agent_call_event",
     "agent_end_event",
@@ -30,6 +91,8 @@ __all__ = [
     "tool_call_event",
     "skill_start_event",
     "skill_call_event",
+    "model_request_event",
+    "parse_trace_event",
     "trace_manager",
     "derive_messages",
     "SurfaceError",

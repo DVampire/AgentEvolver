@@ -15,12 +15,20 @@ step of an already-finalized, already-written trajectory and re-persist it.
 """
 
 import json
+from unittest.mock import patch
 
 import pytest
 
 from agentevolver.message import AssistantMessage, Function, HumanMessage, ToolCall
 from agentevolver.trajectory.server import TrajectoryManagerServer
-from agentevolver.trajectory.types import Trajectory, TrajectoryContext, TrajectoryStep
+from agentevolver.trajectory.types import (
+    SFT_EXPORT_VERSION,
+    TRAJECTORY_SCHEMA_VERSION,
+    Trajectory,
+    TrajectoryContext,
+    TrajectoryStep,
+)
+from agentevolver.trace.types import TraceEvent, TraceEventType
 
 TASK = "task-1"
 SESSION = "session-1"
@@ -86,6 +94,34 @@ def test_a_step_carries_the_prompt_decision_and_observations(trajectories):
     assert step.actions[0]["name"] == "bash"
     assert step.observations[0]["result"] == "a.txt"
     assert step.token_usage == 100
+
+
+def test_a_step_cites_the_trace_request_and_event_range_it_projects(trajectories):
+    """Training provenance must point back to facts instead of copying request metadata.
+
+    Retry and fallback can put several model requests in one step. The last request is
+    the route that produced the decision, while the inclusive range names all evidence
+    — request, actions, results, and the closing assistant turn — used by the projection.
+    """
+    events = [
+        TraceEvent(event_type=TraceEventType.MODEL_REQUEST, session_id=SESSION,
+                   task_id=TASK, step_number=0, seq_no=4,
+                   metadata={"request_snapshot_id": "primary"}),
+        TraceEvent(event_type=TraceEventType.MODEL_REQUEST, session_id=SESSION,
+                   task_id=TASK, step_number=0, seq_no=5,
+                   metadata={"request_snapshot_id": "fallback"}),
+        TraceEvent(event_type=TraceEventType.TOOL_CALL, session_id=SESSION,
+                   task_id=TASK, step_number=0, seq_no=8),
+        TraceEvent(event_type=TraceEventType.AGENT_CALL, session_id=SESSION,
+                   task_id=TASK, step_number=0, seq_no=9),
+    ]
+    trajectories.begin(ctx(task="t"))
+    with patch("agentevolver.trace.server.trace_manager.events", return_value=events):
+        trajectories.close_step(ctx(step_number=0))
+
+    step = trajectories.get(TASK).steps[0]
+    assert step.request_snapshot_id == "fallback"
+    assert (step.source_trace_seq_start, step.source_trace_seq_end) == (4, 9)
 
 
 def test_a_step_materializes_from_its_first_observation(trajectories):
@@ -192,6 +228,7 @@ def test_finalizing_records_the_outcome_and_writes_the_file(trajectories):
     header = json.loads(lines[0])
     assert header["__header__"] is True
     assert header["task_id"] == TASK
+    assert header["schema_version"] == TRAJECTORY_SCHEMA_VERSION
     assert "steps" not in header          # steps are their own lines
     assert len(lines) == 3                # header + two steps
 
@@ -216,6 +253,23 @@ def test_a_task_id_with_slashes_stays_inside_the_trajectory_directory(trajectori
     """
     traj = Trajectory(session_id=SESSION, task_id="a/../b")
     assert "/" not in trajectories._path(traj).rsplit("/", 1)[1]
+
+
+def test_a_future_trajectory_schema_is_refused_instead_of_partly_loaded(trajectories, tmp_path):
+    """Parseable fields do not prove semantic compatibility for a training sample.
+
+    A future writer may change reward or action meaning while retaining valid JSON. An
+    old reader that loads the familiar fields would silently train on a projection it
+    does not understand, so refusing the whole file is the only safe default.
+    """
+    path = tmp_path / "future.jsonl"
+    path.write_text(json.dumps({
+        "__header__": True,
+        "schema_version": 999,
+        "session_id": SESSION,
+        "task_id": TASK,
+    }) + "\n", encoding="utf-8")
+    assert trajectories.load(str(path)) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -291,6 +345,27 @@ def test_an_sft_record_ends_with_a_native_tool_calling_turn(trajectories):
     assert call["type"] == "function"
     assert call["function"]["name"] == "bash"
     assert json.loads(call["function"]["arguments"]) == {"cmd": "ls"}
+
+
+def test_an_export_names_its_schema_and_source_trace_lineage():
+    """A dataset row without exporter and source versions cannot be reproduced later."""
+    trajectory = Trajectory(
+        session_id=SESSION,
+        task_id=TASK,
+        source_trace_seq_start=1,
+        source_trace_seq_end=12,
+        steps=[TrajectoryStep(
+            step_number=0,
+            request_snapshot_id="sha256:request",
+            source_trace_seq_start=3,
+            source_trace_seq_end=10,
+        )],
+    )
+    provenance = trajectory.to_sft_records()[0]["provenance"]
+    assert provenance["trajectory_schema_version"] == TRAJECTORY_SCHEMA_VERSION
+    assert provenance["export_version"] == SFT_EXPORT_VERSION
+    assert provenance["request_snapshot_id"] == "sha256:request"
+    assert provenance["trajectory_source_trace_seq_end"] == 12
 
 
 def test_arguments_already_serialized_are_left_alone():

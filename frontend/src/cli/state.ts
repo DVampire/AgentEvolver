@@ -62,6 +62,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       },
     };
   }
+  if (['approval.responded', 'approval.expired', 'approval.cancelled'].includes(event.type)) {
+    const approvalId = String(event.payload.approval_id ?? '');
+    return !state.approval || state.approval.id === approvalId
+      ? { ...state, approval: undefined }
+      : state;
+  }
   const entry = eventToEntry(event);
   if (!entry) return state;
   const activeTaskId = ['task.completed', 'task.failed', 'task.cancelled'].includes(event.type)

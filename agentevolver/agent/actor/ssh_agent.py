@@ -4,21 +4,21 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
-from agentevolver.agent.env_binding import EnvironmentBound
 from agentevolver.agent.types import Agent, AgentContext
+from agentevolver.environment.server import environment_manager
 from agentevolver.registry import AGENT
 from agentevolver.response.types import Response
 
 
 @AGENT.register_module(force=True)
-class SSHAgent(EnvironmentBound, Agent):
-    """An agent operating a remote host over SSH, while still standing on the local one.
+class SSHAgent(Agent):
+    """An agent that operates a remote machine through the SSH environment's actions.
 
-    It keeps its local tools, which is the one place it deliberately parts company with
-    ``BrowserAgent``. A browser agent has no use for a local shell; this one does — the
-    common shape of the work is *prepare here, run there*: read a local file, `upload` it,
-    `launch` the job, `logs` it back. Taking the local tools away would leave that first
-    step with nothing to do it.
+    Two sets of names, and the split is the point. The environment's actions — `run`,
+    `read`, `edit`, `launch` — act on the remote machine; the ordinary tools act on this
+    one. No action does both and no argument moves a tool between them, so a step cannot
+    read on one machine and execute on the other by accident. Data crosses only through
+    `upload` and `download`.
 
     Everything else is the standard loop. The only bespoke part is that the remote's state
     is observed before each step, the same way the browser's page is.
@@ -29,8 +29,8 @@ class SSHAgent(EnvironmentBound, Agent):
     name: str = Field(default="ssh_agent")
     description: str = Field(
         default="An agent that operates a remote machine over SSH: running commands, "
-                "managing long-running jobs, editing files and moving data, while "
-                "keeping its local tools for the work that belongs on this side."
+                "managing long-running jobs, editing files and moving data through its "
+                "environment actions, while its ordinary tools act on the local machine."
     )
     metadata: Dict[str, Any] = Field(default={})
     enable_evolving: bool = Field(default=False)
@@ -82,12 +82,11 @@ class SSHAgent(EnvironmentBound, Agent):
         reason the browser agent re-reads the page.
         """
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-        state = await self._observe(ctx)
+        state = await environment_manager.get_state(self.env_name, ctx=ctx)
         base["remote_state"] = (
             state.get("state") if state else "[Remote state unavailable — the host may be "
                                              "unreachable; try a `run` to confirm.]"
         )
-        base.update(await self._get_environment_context())
         return base
 
     async def __call__(
@@ -99,3 +98,21 @@ class SSHAgent(EnvironmentBound, Agent):
     ) -> Response:
         """Entry point — runs the base-class standard think-and-act loop unchanged."""
         return await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
+
+    async def on_start(
+        self, task: str, files: Optional[List[str]], ctx: Optional[AgentContext], ref: Any,
+        **kwargs,
+    ) -> Optional[Response]:
+        """Select the SSH provider before the first prompt or ToolContext is built."""
+        if ctx is None:
+            ctx = AgentContext()
+        # `env_name` and the config's `env_names` name the same environment in two places,
+        # and nothing else makes them agree. A mismatch degrades silently: state comes back
+        # empty and the prompt block is absent, so the agent behaves like an SSH agent with
+        # no machine rather than reporting that it has none.
+        if await environment_manager.get_info(self.env_name) is None:
+            raise RuntimeError(
+                f"environment {self.env_name!r} is not registered; "
+                f"add it to this config's `env_names`"
+            )
+        return await super().on_start(task=task, files=files, ctx=ctx, ref=ref, **kwargs)

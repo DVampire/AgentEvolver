@@ -24,8 +24,7 @@ from agentevolver.plan.server import action_is_allowed
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.runtime import runtime_manager
 from agentevolver.runtime.types import TaskMessage
-from agentevolver.subagent import subagent_manager
-from agentevolver.subagent.types import ChildState
+from agentevolver.tool.default.report import ReportTool
 
 SESSION = "parent-session"
 
@@ -78,8 +77,31 @@ def _reap():
     """
     yield
     for session in (SESSION, "other-session"):
-        subagent_manager.forget(session)
+        runtime_manager.forget(session)
         job_manager.forget(session)
+
+
+async def _start(child, task, **brief):
+    """Background one child and hand back the ref the runtime holds for it.
+
+    There is no sub-agent type to return: a delegated child is an ``AgentRef`` like any
+    other running agent, and the delegation shows up as fields on it.
+    """
+    started = await runtime_manager.delegate_background(child, task, **brief)
+    assert started.success, started.message
+    return runtime_manager.child(started.data["job_id"])
+
+
+async def _report(job_id: str, output: str):
+    """What a child does when it calls `report_tool`, driven through the tool itself.
+
+    Going through the tool rather than re-implementing its one line is what stops these
+    assertions from passing while the thing that actually writes the transcript is broken.
+    """
+    class _Ctx:
+        extra = {"report_job_id": job_id, "report_agent_name": ""}
+
+    return await ReportTool()(output=output, ctx=_Ctx())
 
 
 async def _until(predicate, timeout=5.0):
@@ -109,7 +131,7 @@ async def test_a_background_child_is_a_job_rather_than_a_second_registry():
     list/read/stop tools for the same three questions.
     """
     child = _Child(delay=0.05)
-    sub = await subagent_manager.start(child, "investigate the parser", parent_ctx=_Parent())
+    sub = await _start(child, "investigate the parser", parent_ctx=_Parent())
 
     job = job_manager.get(sub.job_id)
     assert job is not None and job.kind == "agent"
@@ -122,9 +144,9 @@ async def test_backgrounding_returns_before_the_child_has_answered():
     """The whole point. If `start` waited for the first turn, the parent would have paid
     for the delegation it was trying not to pay for."""
     child = _Child(delay=0.5)
-    sub = await subagent_manager.start(child, "a slow job", parent_ctx=_Parent())
+    sub = await _start(child, "a slow job", parent_ctx=_Parent())
 
-    assert sub.state is ChildState.WORKING
+    assert sub.busy
     assert job_manager.get(sub.job_id).status is JobStatus.RUNNING
 
 
@@ -137,7 +159,7 @@ async def test_what_the_child_returns_is_collectable_afterwards():
     `job/README.md` gives for collecting rather than delivering.
     """
     child = _Child()
-    sub = await subagent_manager.start(child, "count the tests", parent_ctx=_Parent())
+    sub = await _start(child, "count the tests", parent_ctx=_Parent())
 
     assert await _until(lambda: job_manager.get(sub.job_id).status.is_final)
     assert "answer 1" in job_manager.output(sub.job_id)
@@ -151,7 +173,7 @@ async def test_a_child_that_ends_without_finishing_is_not_reported_as_success():
     only "it ended" would file an unfinished job under done.
     """
     child = _Child(succeed=False)
-    sub = await subagent_manager.start(child, "an impossible job", parent_ctx=_Parent())
+    sub = await _start(child, "an impossible job", parent_ctx=_Parent())
 
     assert await _until(lambda: job_manager.get(sub.job_id).status.is_final)
     assert job_manager.get(sub.job_id).status is JobStatus.FAILED
@@ -169,10 +191,10 @@ async def test_a_one_shot_child_is_over_once_it_answers():
     job is final, so the reaper walks past it.
     """
     child = _Child()
-    sub = await subagent_manager.start(child, "one question", parent_ctx=_Parent())
-    ref_name = sub.ref.name
+    sub = await _start(child, "one question", parent_ctx=_Parent())
+    ref_name = sub.name
 
-    assert await _until(lambda: sub.state is ChildState.GONE)
+    assert await _until(lambda: not sub.alive)
     assert runtime_manager.get(ref_name) is None
 
 
@@ -184,10 +206,10 @@ async def test_a_continuable_child_outlives_its_own_answer():
     running and the parent can still reach it.
     """
     child = _Child()
-    sub = await subagent_manager.start(child, "first task", continuable=True,
+    sub = await _start(child, "first task", continuable=True,
                                        parent_ctx=_Parent())
 
-    assert await _until(lambda: sub.state is ChildState.IDLE)
+    assert await _until(lambda: sub.alive and not sub.busy)
     assert sub.alive
     assert job_manager.get(sub.job_id).status is JobStatus.RUNNING
 
@@ -195,11 +217,11 @@ async def test_a_continuable_child_outlives_its_own_answer():
 @pytest.mark.asyncio
 async def test_a_message_becomes_the_continuable_child_s_next_turn():
     child = _Child()
-    sub = await subagent_manager.start(child, "first task", continuable=True,
+    sub = await _start(child, "first task", continuable=True,
                                        parent_ctx=_Parent())
-    assert await _until(lambda: sub.state is ChildState.IDLE)
+    assert await _until(lambda: sub.alive and not sub.busy)
 
-    await subagent_manager.send(sub.job_id, "second task", session_id=SESSION)
+    await runtime_manager.send_to_child(sub.job_id, "second task", session_id=SESSION)
 
     assert await _until(lambda: sub.turns == 2)
     assert [task for task, _ in child.turns] == ["first task", "second task"]
@@ -215,9 +237,9 @@ async def test_a_continuable_child_keeps_one_session_across_turns():
     identity that has to survive — not merely the fact that the same object was reused.
     """
     child = _Child()
-    sub = await subagent_manager.start(child, "first", continuable=True, parent_ctx=_Parent())
-    assert await _until(lambda: sub.state is ChildState.IDLE)
-    await subagent_manager.send(sub.job_id, "second", session_id=SESSION)
+    sub = await _start(child, "first", continuable=True, parent_ctx=_Parent())
+    assert await _until(lambda: sub.alive and not sub.busy)
+    await runtime_manager.send_to_child(sub.job_id, "second", session_id=SESSION)
     assert await _until(lambda: sub.turns == 2)
 
     first_ctx, second_ctx = child.turns[0][1], child.turns[1][1]
@@ -234,10 +256,10 @@ async def test_two_messages_never_put_two_turns_on_one_child_at_once():
     logged. Queueing makes "your message becomes its next turn" true rather than a hope.
     """
     child = _Child(delay=0.05)
-    sub = await subagent_manager.start(child, "first", continuable=True, parent_ctx=_Parent())
+    sub = await _start(child, "first", continuable=True, parent_ctx=_Parent())
 
-    await subagent_manager.send(sub.job_id, "second", session_id=SESSION)
-    await subagent_manager.send(sub.job_id, "third", session_id=SESSION)
+    await runtime_manager.send_to_child(sub.job_id, "second", session_id=SESSION)
+    await runtime_manager.send_to_child(sub.job_id, "third", session_id=SESSION)
 
     assert await _until(lambda: sub.turns == 3)
     assert not child.overlapped, "two turns ran on one child at the same time"
@@ -253,10 +275,10 @@ async def test_a_message_to_a_working_child_says_it_will_wait():
     flight as the answer to it.
     """
     child = _Child(delay=0.3)
-    sub = await subagent_manager.start(child, "first", continuable=True, parent_ctx=_Parent())
+    sub = await _start(child, "first", continuable=True, parent_ctx=_Parent())
 
-    assert "waits its turn" in await subagent_manager.send(sub.job_id, "second",
-                                                           session_id=SESSION)
+    sent = await runtime_manager.send_to_child(sub.job_id, "second", session_id=SESSION)
+    assert sent.success and "waits its turn" in sent.message
 
 
 @pytest.mark.asyncio
@@ -264,24 +286,24 @@ async def test_a_one_shot_child_refuses_a_message_rather_than_swallowing_it():
     """Accepting a message no child will ever read is the worst outcome available: the
     parent waits for a turn that was never queued, on a child that has already ended."""
     child = _Child()
-    sub = await subagent_manager.start(child, "one question", parent_ctx=_Parent())
-    assert await _until(lambda: sub.state is ChildState.GONE)
+    sub = await _start(child, "one question", parent_ctx=_Parent())
+    assert await _until(lambda: not sub.alive)
 
-    with pytest.raises(ValueError, match="one-shot"):
-        await subagent_manager.send(sub.job_id, "more work", session_id=SESSION)
+    sent = await runtime_manager.send_to_child(sub.job_id, "more work", session_id=SESSION)
+    assert not sent.success and "one-shot" in sent.message
 
 
 @pytest.mark.asyncio
 async def test_a_message_to_a_stopped_child_is_a_failure_not_a_silence():
     """A continuable child can still be gone — killed, or reaped with its run."""
     child = _Child()
-    sub = await subagent_manager.start(child, "first", continuable=True, parent_ctx=_Parent())
-    assert await _until(lambda: sub.state is ChildState.IDLE)
+    sub = await _start(child, "first", continuable=True, parent_ctx=_Parent())
+    assert await _until(lambda: sub.alive and not sub.busy)
     job_manager.kill(sub.job_id)
-    assert await _until(lambda: sub.state is ChildState.GONE)
+    assert await _until(lambda: not sub.alive)
 
-    with pytest.raises(ValueError, match="already ended"):
-        await subagent_manager.send(sub.job_id, "more work", session_id=SESSION)
+    sent = await runtime_manager.send_to_child(sub.job_id, "more work", session_id=SESSION)
+    assert not sent.success and "already ended" in sent.message
 
 
 @pytest.mark.asyncio
@@ -292,11 +314,12 @@ async def test_one_session_cannot_send_work_into_another_session_s_child():
     child would take a turn nobody in that run asked for.
     """
     child = _Child()
-    sub = await subagent_manager.start(child, "first", continuable=True, parent_ctx=_Parent())
-    assert await _until(lambda: sub.state is ChildState.IDLE)
+    sub = await _start(child, "first", continuable=True, parent_ctx=_Parent())
+    assert await _until(lambda: sub.alive and not sub.busy)
 
-    with pytest.raises(ValueError, match="another session"):
-        await subagent_manager.send(sub.job_id, "more work", session_id="other-session")
+    sent = await runtime_manager.send_to_child(sub.job_id, "more work",
+                                               session_id="other-session")
+    assert not sent.success and "another session" in sent.message
 
 
 # --------------------------------------------------------------------------- #
@@ -310,9 +333,9 @@ async def test_a_report_and_a_result_land_in_one_transcript_in_order():
     what the child said on the way — which is most of what a long-running child is for.
     """
     child = _Child(delay=0.1)
-    sub = await subagent_manager.start(child, "investigate", parent_ctx=_Parent())
+    sub = await _start(child, "investigate", parent_ctx=_Parent())
 
-    subagent_manager.report(sub.job_id, "the fixture is reversed, not the parser")
+    await _report(sub.job_id, "the fixture is reversed, not the parser")
     assert await _until(lambda: job_manager.get(sub.job_id).status.is_final)
 
     transcript = job_manager.output(sub.job_id)
@@ -331,10 +354,10 @@ async def test_a_report_from_a_foreground_child_still_reaches_its_parent():
         async def handle(self, msg, ref):
             if isinstance(msg, TaskMessage):
                 ctx = msg.kwargs.get("ctx")
-                subagent_manager.report(ctx.extra["report_job_id"], "found it in config.json")
+                await _report(ctx.extra["report_job_id"], "found it in config.json")
             await super().handle(msg, ref)
 
-    response = await subagent_manager.run(_Reporting(), "look for it", parent_ctx=_Parent())
+    response = await runtime_manager.delegate(_Reporting(), "look for it", parent_ctx=_Parent())
 
     assert "answer 1" in response.message
     assert "found it in config.json" in response.message
@@ -348,7 +371,7 @@ async def test_a_child_is_told_where_to_report_without_having_to_guess():
     invented id writes a report into nothing.
     """
     child = _Child(delay=0.2)
-    sub = await subagent_manager.start(child, "anything", parent_ctx=_Parent())
+    sub = await _start(child, "anything", parent_ctx=_Parent())
 
     assert await _until(lambda: child.turns)
     assert child.turns[0][1].extra["report_job_id"] == sub.job_id
@@ -366,13 +389,13 @@ async def test_killing_the_job_actually_stops_the_child():
     without stopping the pump leaves exactly that lie behind.
     """
     child = _Child(delay=5.0)
-    sub = await subagent_manager.start(child, "a long job", continuable=True,
+    sub = await _start(child, "a long job", continuable=True,
                                        parent_ctx=_Parent())
-    ref_name = sub.ref.name
+    ref_name = sub.name
 
     assert job_manager.kill(sub.job_id) is True
     assert await _until(lambda: runtime_manager.get(ref_name) is None)
-    assert sub.state is ChildState.GONE
+    assert not sub.alive
     assert job_manager.get(sub.job_id).status is JobStatus.KILLED
 
 
@@ -381,8 +404,8 @@ async def test_what_the_child_said_before_a_kill_survives_it():
     """Stopping a child that was going nowhere must not destroy what it had already
     worked out — that is usually why the parent is stopping it."""
     child = _Child(delay=5.0)
-    sub = await subagent_manager.start(child, "a long job", parent_ctx=_Parent())
-    subagent_manager.report(sub.job_id, "the build is broken upstream")
+    sub = await _start(child, "a long job", parent_ctx=_Parent())
+    await _report(sub.job_id, "the build is broken upstream")
 
     job_manager.kill(sub.job_id)
 
@@ -398,14 +421,14 @@ async def test_a_background_child_does_not_outlive_the_run_that_started_it():
     tokens against a run that is over.
     """
     child = _Child(delay=5.0)
-    sub = await subagent_manager.start(child, "a long job", continuable=True,
+    sub = await _start(child, "a long job", continuable=True,
                                        parent_ctx=_Parent())
-    ref_name = sub.ref.name
+    ref_name = sub.name
 
-    subagent_manager.forget(SESSION)
+    runtime_manager.forget(SESSION)
 
     assert await _until(lambda: runtime_manager.get(ref_name) is None)
-    assert subagent_manager.list(SESSION) == []
+    assert runtime_manager.children(SESSION) == []
 
 
 @pytest.mark.asyncio
@@ -415,16 +438,16 @@ async def test_reaping_one_session_leaves_another_session_s_children_alone():
     A reaper that walked every child would end a concurrent run's worker the moment any
     other run finished.
     """
-    mine = await subagent_manager.start(_Child(delay=5.0), "mine", continuable=True,
+    mine = await _start(_Child(delay=5.0), "mine", continuable=True,
                                         parent_ctx=_Parent())
-    theirs = await subagent_manager.start(_Child(delay=5.0), "theirs", continuable=True,
+    theirs = await _start(_Child(delay=5.0), "theirs", continuable=True,
                                           parent_ctx=_Parent(id="other-session"))
 
-    subagent_manager.forget(SESSION)
+    runtime_manager.forget(SESSION)
 
-    assert await _until(lambda: mine.state is ChildState.GONE)
+    assert await _until(lambda: not mine.alive)
     assert theirs.alive
-    assert [s.job_id for s in subagent_manager.list("other-session")] == [theirs.job_id]
+    assert [s.job_id for s in runtime_manager.children("other-session")] == [theirs.job_id]
 
 
 # --------------------------------------------------------------------------- #

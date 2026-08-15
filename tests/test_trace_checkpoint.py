@@ -7,9 +7,10 @@ nobody can answer afterwards: a run killed between "about to run this command" a
 writer caught up" leaves no record of the command, so whether the destructive one executed
 is unknowable.
 
-`Agent._checkpoint_before_effects` closes that window, and only for calls that can have
-effects — paying a flush on every `read` to protect the `write` would put the writer on the
-hot path of the most frequent call in the system.
+The authoritative Tool pipeline closes that window after policy and approval settle and
+immediately before the body. It does so only for calls that can have effects — paying a
+flush on every `read` to protect the `write` would put the writer on the hot path of the
+most frequent call in the system.
 
 The three-valued `mutates` flag is the subtle part. `None` means "depends on the arguments",
 which is exactly what a shell tool declares, and a shell command is the most likely way an
@@ -19,12 +20,15 @@ agent destroys something. Anything but an explicit `False` checkpoints.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agentevolver.agent.types import Agent
 from agentevolver.queue import AsyncQueue
+from agentevolver.response import Response, ResponseType
+from agentevolver.tool.context import ToolContextManager
+from agentevolver.tool.types import Tool, ToolContext
 
 
 # --------------------------------------------------------------------------- #
@@ -91,12 +95,7 @@ def test_a_flush_with_no_writer_running_returns_immediately(borrowed_trace):
 
 
 def test_a_flush_that_does_not_drain_gives_up_rather_than_hanging(borrowed_trace):
-    """Deliberately not fail-closed, and the trade is worth stating.
-
-    deepseek-harness refuses to invoke the tool when its checkpoint fails. A wedged writer
-    is far rarer than an interrupted run, and an agent that stops working because logging
-    is slow is a worse product than one that acts with a gap in its log and says so.
-    """
+    """The primitive reports timeout; the selected integrity profile settles policy."""
     borrowed_trace._running = True
     borrowed_trace._queue = AsyncQueue(maxsize=4)
     borrowed_trace._queue.emit(1)               # queued, never consumed
@@ -108,14 +107,26 @@ def test_a_flush_that_does_not_drain_gives_up_rather_than_hanging(borrowed_trace
 # When the checkpoint is taken
 # --------------------------------------------------------------------------- #
 def _checkpointed(mutates, kind: str = "tool", route=("tool", "some_tool")) -> bool:
-    """Whether a call with this tool shape flushes the trace before dispatch."""
-    agent = Agent.model_construct(name="probe")
-    flush = AsyncMock(return_value=True)
-    tool = type("StubTool", (), {"mutates": mutates})()
+    """Whether this registered Tool flushes after guards and before its body."""
+    class StubTool(Tool):
+        name: str = "some_tool"
+        description: str = "Test checkpoint placement."
 
-    with patch("agentevolver.tool.server.tool_manager.get", AsyncMock(return_value=tool)):
-        with patch("agentevolver.trace.server.trace_manager.flush", flush):
-            asyncio.run(agent._checkpoint_before_effects(kind, route))
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.TOOL, success=True, message="ran")
+
+    manager = ToolContextManager()
+    tool = StubTool(mutates=mutates)
+
+    async def get_info(name):
+        return SimpleNamespace(version="1.0.0", instance=tool)
+
+    manager.get_info = get_info
+    flush = AsyncMock(return_value=True)
+    with patch("agentevolver.trace.server.trace_manager.flush", flush):
+        asyncio.run(manager(
+            name="some_tool", input={}, ctx=ToolContext(id="session-1"),
+        ))
     return flush.await_count == 1
 
 
@@ -143,27 +154,36 @@ def test_a_read_only_tool_does_not_pay_for_the_flush():
     assert not _checkpointed(False)
 
 
-def test_a_tool_the_registry_cannot_resolve_does_not_block_the_call():
-    """A checkpoint that could not be taken is a gap; a checkpoint that raises is an outage.
-
-    The dispatch path must survive a registry lookup that fails, so the guard degrades to
-    "no flush" rather than to "no tool call".
-    """
-    agent = Agent.model_construct(name="probe")
-    with patch("agentevolver.tool.server.tool_manager.get", AsyncMock(side_effect=KeyError("gone"))):
-        asyncio.run(agent._checkpoint_before_effects("tool", ("tool", "missing")))   # must not raise
-
-
-@pytest.mark.parametrize("kind,route", [("agent", ("agent", "child")), ("skill", ("skill", "s")), ("tool", None)])
-def test_only_tool_calls_checkpoint_here(kind: str, route):
-    """A delegated agent runs its own dispatch and checkpoints there.
-
-    Flushing again at the delegation point would double the cost and record nothing new —
-    the child's own tool calls are the ones with effects.
-    """
-    flush = AsyncMock()
-    agent = Agent.model_construct(name="probe")
+def test_an_unresolved_tool_does_not_checkpoint_or_enter_a_body():
+    manager = ToolContextManager()
+    manager.get_info = AsyncMock(return_value=None)
+    flush = AsyncMock(return_value=True)
     with patch("agentevolver.trace.server.trace_manager.flush", flush):
-        asyncio.run(agent._checkpoint_before_effects(kind, route))
-
+        response = asyncio.run(manager(
+            name="missing", input={}, ctx=ToolContext(id="session-1"),
+        ))
     flush.assert_not_awaited()
+    assert response.extra["execution"]["error_code"] == "not_found"
+
+
+def test_a_preflight_denial_does_not_pay_for_a_checkpoint():
+    class StubTool(Tool):
+        name: str = "some_tool"
+        description: str = "Must not run."
+        mutates: bool = True
+
+        async def __call__(self, **kwargs):  # pragma: no cover - denial owns the claim
+            raise AssertionError("denied body ran")
+
+    manager = ToolContextManager()
+    manager.get_info = AsyncMock(
+        return_value=SimpleNamespace(version="1.0.0", instance=StubTool())
+    )
+    flush = AsyncMock(return_value=True)
+    with patch("agentevolver.trace.server.trace_manager.flush", flush):
+        response = asyncio.run(manager(
+            name="some_tool", input={}, ctx=ToolContext(id="session-1"),
+            execution_context={"guard_denials": ["plan mode is active"]},
+        ))
+    flush.assert_not_awaited()
+    assert response.extra["execution"]["error_code"] == "policy_denied"

@@ -108,6 +108,23 @@ class Tool(BaseModel):
         """Call the tool with the given arguments."""
         raise NotImplementedError("All tools must implement __call__")
 
+    def permission_request(
+        self, arguments: Dict[str, Any], ctx: Optional[ToolContext] = None,
+    ) -> Any:
+        """Describe the concrete operation for the central permission guard.
+
+        Return a ``permission.PermissionRequest`` when the arguments map to a generic
+        read/write/bash operation, or ``None`` when this tool has no such mapping. The
+        manager evaluates the request before entering ``__call__``. Implementations may
+        temporarily retain an internal check as defense in depth for callers that invoke
+        a Tool instance directly instead of using ``tool_manager``.
+
+        This is intentionally a method of the Tool rather than a name-based table in the
+        executor: only the implementation knows whether an argument is a path, command,
+        content payload, or a harmless identifier.
+        """
+        return None
+
 class ToolConfig(BaseModel):
     """Tool configuration"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

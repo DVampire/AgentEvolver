@@ -18,14 +18,17 @@ available for offline inspection.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
+import json
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
 from agentevolver.logger import logger
 from agentevolver.queue import AsyncQueue
-from agentevolver.trace.types import TraceEvent
-from agentevolver.trace.writer import TraceWriter
+from agentevolver.trace.types import TraceEvent, parse_trace_event
+from agentevolver.trace.persistence import TracePersistence, create_trace_persistence
 from agentevolver.utils import Singleton
 
 
@@ -35,7 +38,8 @@ class TraceManager(metaclass=Singleton):
     def __init__(self) -> None:
         self._log_root: Optional[str] = None
         self._queue: Optional[AsyncQueue[TraceEvent]] = None
-        self._writer: Optional[TraceWriter] = None
+        self._writer: Optional[TracePersistence] = None
+        self._persistence_backend: str = "jsonl"
         self._initialized: bool = False
         self._running: bool = False
         self._subscribers = set()
@@ -58,12 +62,19 @@ class TraceManager(metaclass=Singleton):
         #: rather than as a missing one. `events()` then returns nothing, and a caller
         #: that needs the whole log can tell "not retained" from "nothing happened".
         self._max_retained: int = 20_000
+        #: Session-level permanent gaps. Queue overflow loses an event before the writer
+        #: can see it; persistence providers separately retain their first write error.
+        #: Neither condition can be repaired by a later flush.
+        self._dropped_events: dict[str, dict[str, object]] = {}
+        self._reported_integrity_gaps: set[tuple[str, str, str]] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def initialize(self, log_root: Optional[str] = None) -> None:
+    async def initialize(
+        self, log_root: Optional[str] = None, *, persistence: str = "jsonl"
+    ) -> None:
         """Set log_root and create queue / writer.  Idempotent.
 
         If log_root is omitted, defaults to ``{config.log_root}/trace``.
@@ -76,9 +87,15 @@ class TraceManager(metaclass=Singleton):
         self._log_root = log_root
 
         self._queue = AsyncQueue[TraceEvent](maxsize=20_000)
-        self._writer = TraceWriter(log_root=log_root, queue=self._queue)
+        self._persistence_backend = str(persistence or "jsonl").lower()
+        self._writer = create_trace_persistence(
+            self._persistence_backend, log_root, self._queue,
+        )
         self._initialized = True
-        logger.info(f"| 🔍 TraceManager initialised (log_root={log_root})")
+        logger.info(
+            f"| 🔍 TraceManager initialised "
+            f"(log_root={log_root}, persistence={self._persistence_backend})"
+        )
 
     def rebind(self, log_root: str) -> None:
         """Re-point the trace root at ``<log_root>/trace`` for a newly bound session.
@@ -115,11 +132,10 @@ class TraceManager(metaclass=Singleton):
         tell whether the destructive command executed. Calling this before an irreversible
         act closes that window.
 
-        On timeout it gives up and returns ``False`` rather than waiting indefinitely. The
-        trade is deliberate and it is not the one deepseek-harness makes — their equivalent
-        is fail-closed, refusing to invoke the tool. A wedged writer is far rarer than an
-        interrupted run, and an agent that stops working because logging is slow is a worse
-        product than one that acts with a gap in its log and says so loudly.
+        On timeout it gives up and returns ``False`` rather than waiting indefinitely.
+        ``flush`` only reports persistence state; the semantic checkpoint policy decides
+        what that state means. Interactive runs record degradation and continue, while
+        training and high-risk runs fail closed before the downstream request or effect.
 
         Args:
             timeout: Seconds to wait; :attr:`FLUSH_TIMEOUT_SECONDS` when omitted.
@@ -154,8 +170,11 @@ class TraceManager(metaclass=Singleton):
     # Public API
     # ------------------------------------------------------------------
 
-    async def emit(self, event: TraceEvent) -> None:
-        """Emit a trace event.  Never blocks on the caller, never raises.
+    async def emit(self, event: TraceEvent) -> bool:
+        """Emit a trace event and report whether it entered the persistence queue.
+
+        Never blocks and never raises. Most observational callers may ignore the return
+        value; integrity checkpoints consult the manager's permanent Session gap state.
 
         Stamps the event's position in its session's log before anyone sees it. The
         number is what lets one event cite another — a summary naming the range it
@@ -163,13 +182,27 @@ class TraceManager(metaclass=Singleton):
         expressed by "somewhere earlier in the file".
         """
         if not self._running or self._queue is None:
-            return
+            return False
         session = event.session_id or "no_session"
         if event.seq_no is None:
             event.seq_no = self._claim_seq(session)
         self._apply_surface(session, event)
         self._retain(session, event)
-        self._queue.emit(event)
+        accepted = self._queue.emit(event)
+        if not accepted:
+            gap = self._dropped_events.setdefault(session, {
+                "count": 0,
+                "first_seq": event.seq_no,
+                "last_seq": event.seq_no,
+                "event_type": event.event_type.value,
+            })
+            gap["count"] = int(gap["count"]) + 1
+            gap["last_seq"] = event.seq_no
+            logger.error(
+                f"| ❌ Trace queue full: dropped {event.event_type.value} "
+                f"for session {session} at seq {event.seq_no}"
+            )
+            self._persist_integrity_issue(session, self._format_dropped_issue(gap))
         for subscriber in tuple(self._subscribers):
             try:
                 result = subscriber(event)
@@ -177,6 +210,103 @@ class TraceManager(metaclass=Singleton):
                     await result
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"| ⚠️  Trace subscriber failed: {exc}")
+        return accepted
+
+    @property
+    def running(self) -> bool:
+        return self._running
+
+    def integrity_issue(self, session_id: str) -> Optional[str]:
+        """Describe a permanent gap that makes this Session incomplete."""
+        session_id = str(session_id)
+        stored = self._read_integrity_issue(session_id)
+        if stored:
+            return stored
+        dropped = self._dropped_events.get(session_id)
+        if dropped:
+            issue = self._format_dropped_issue(dropped)
+            self._persist_integrity_issue(session_id, issue)
+            return issue
+        writer = self._writer
+        inspect_error = getattr(writer, "durability_error", None)
+        if callable(inspect_error):
+            error = inspect_error(session_id)
+            if error:
+                issue = f"trace persistence previously failed: {error}"
+                self._persist_integrity_issue(session_id, issue)
+                return issue
+        return None
+
+    @staticmethod
+    def _format_dropped_issue(gap: dict[str, object]) -> str:
+        return (
+            f"trace queue dropped {gap['count']} event(s), sequence "
+            f"{gap['first_seq']}..{gap['last_seq']}"
+        )
+
+    def _integrity_marker_path(self, session_id: str) -> Optional[str]:
+        """Return a collision-resistant path without exposing Session ids as filenames."""
+        if not self._log_root:
+            return None
+        digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+        return os.path.join(self._log_root, "integrity", f"{digest}.json")
+
+    def _persist_integrity_issue(self, session_id: str, issue: str) -> None:
+        """Seal the first known data gap so a process restart cannot forget it."""
+        path = self._integrity_marker_path(session_id)
+        if path is None or os.path.exists(path):
+            return
+        directory = os.path.dirname(path)
+        temporary = f"{path}.{os.getpid()}.tmp"
+        payload = {
+            "schema_version": 1,
+            "session_id": session_id,
+            "issue": issue,
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            os.makedirs(directory, exist_ok=True)
+            with open(temporary, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            directory_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except Exception as exc:  # noqa: BLE001 - preserve the in-memory fail-closed flag
+            logger.error(f"| ❌ Could not persist Trace integrity marker: {exc}")
+            try:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            except OSError:
+                pass
+
+    def _read_integrity_issue(self, session_id: str) -> Optional[str]:
+        path = self._integrity_marker_path(session_id)
+        if path is None or not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if payload.get("session_id") != session_id:
+                return "Trace integrity marker does not match the requested session"
+            issue = payload.get("issue")
+            return str(issue) if issue else "Trace integrity marker is missing its issue"
+        except Exception as exc:  # noqa: BLE001 - corruption cannot be treated as clean
+            return f"Trace integrity marker is unreadable: {type(exc).__name__}: {exc}"
+
+    def should_report_integrity_gap(
+        self, session_id: str, boundary: str, issue: str,
+    ) -> bool:
+        """Deduplicate degradation facts without ever clearing the underlying gap."""
+        key = (str(session_id), str(boundary), str(issue))
+        if key in self._reported_integrity_gaps:
+            return False
+        self._reported_integrity_gaps.add(key)
+        return True
 
     def _claim_seq(self, session_id: str) -> int:
         """The next position in one session's log.
@@ -189,8 +319,7 @@ class TraceManager(metaclass=Singleton):
             written = 0
             writer = self._writer
             if writer is not None:
-                meta = getattr(writer, "_session_meta", {}).get(session_id) or {}
-                written = int(meta.get("event_count") or 0)
+                written = writer.next_seq(session_id)
             self._next_seq[session_id] = written
         seq = self._next_seq[session_id]
         self._next_seq[session_id] = seq + 1
@@ -251,6 +380,36 @@ class TraceManager(metaclass=Singleton):
         """
         return list(self._events.get(session_id) or [])
 
+    def read_from(
+        self,
+        session_id: str,
+        *,
+        after_seq: int = -1,
+        limit: Optional[int] = None,
+        durable: bool = True,
+    ) -> list[TraceEvent]:
+        """Read a version-checked suffix for an incremental consumer.
+
+        ``durable=True`` reads only flushed JSONL state.  A caller that needs events just
+        emitted must await :meth:`flush` first; silently mixing queued and written state
+        would make a watermark claim durability the source log does not yet have.
+        """
+        if durable and self._writer is not None:
+            payloads = self._writer.read_from(
+                session_id, after_seq=after_seq, limit=limit,
+            )
+            parsed = []
+            for payload in payloads:
+                event = parse_trace_event(payload)
+                if event is not None:
+                    parsed.append(event)
+            return parsed
+        events = [
+            event for event in self.events(session_id)
+            if event.seq_no is not None and event.seq_no > after_seq
+        ]
+        return events if limit is None else events[:max(0, int(limit))]
+
     def forget(self, session_id: str) -> None:
         """Release a finished session's in-memory log, surface, and numbering."""
         self._events.pop(session_id, None)
@@ -289,8 +448,13 @@ class TraceManager(metaclass=Singleton):
         self._subscribers.discard(callback)
 
     @property
-    def writer(self) -> Optional[TraceWriter]:
+    def writer(self) -> Optional[TracePersistence]:
         return self._writer
+
+    @property
+    def log_root(self) -> Optional[str]:
+        """Durable root used by persistence providers and projection state."""
+        return self._log_root
 
 
 # ---------------------------------------------------------------------------

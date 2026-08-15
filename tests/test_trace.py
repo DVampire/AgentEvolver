@@ -282,6 +282,17 @@ async def test_the_index_summarises_what_each_session_contains(writer):
 
 
 @pytest.mark.asyncio
+async def test_jsonl_next_sequence_uses_last_committed_seq_not_event_count(writer):
+    """A dropped event leaves a gap; restart must continue past it, not reuse a seq."""
+    event = an_event(seq_no=9)
+    writer._queue.emit(event)
+    await drain(writer)
+
+    assert writer.event_count(SESSION) == 1
+    assert writer.next_seq(SESSION) == 10
+
+
+@pytest.mark.asyncio
 async def test_reading_a_session_that_was_never_written_is_empty(writer):
     """A session with no file is a normal read, not a missing-file error.
 
