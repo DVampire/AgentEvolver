@@ -189,6 +189,73 @@ class TrajectoryManagerServer:
         return traj.to_rl_records(fmt) if traj else []
 
     # ------------------------------------------------------------------
+    # Reading back — a run that has already ended
+    # ------------------------------------------------------------------
+
+    def load(self, path: str) -> Optional[Trajectory]:
+        """Read one persisted trajectory back into memory.
+
+        `_persist` wrote these and nothing read them. Every export — `export_sft`,
+        `export_rl` — looks in `self._trajectories`, which holds only what *this* process
+        built, so the moment a run ended the data it produced could no longer be turned
+        into the training records the module exists to produce. The JSONL was an artifact
+        nothing could open.
+
+        Line 1 is the header, the rest are steps, exactly as `_persist` writes them. A
+        line that will not parse is skipped rather than failing the file: a truncated
+        tail is the normal shape of a log from a run that was killed, and losing the
+        whole trajectory over its last line would discard every step before it.
+        """
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                lines = [line for line in handle.read().splitlines() if line.strip()]
+        except OSError as error:
+            logger.warning(f"| ⚠️ Could not read trajectory {path}: {error}")
+            return None
+        if not lines:
+            return None
+
+        try:
+            header = json.loads(lines[0])
+        except ValueError as error:
+            logger.warning(f"| ⚠️ Trajectory {path} has no readable header: {error}")
+            return None
+        header.pop("__header__", None)
+
+        steps: List[TrajectoryStep] = []
+        for index, line in enumerate(lines[1:], start=2):
+            try:
+                steps.append(TrajectoryStep(**json.loads(line)))
+            except (ValueError, TypeError) as error:
+                logger.warning(f"| ⚠️ {path} line {index} skipped: {error}")
+        try:
+            return Trajectory(**header, steps=steps)
+        except (ValueError, TypeError) as error:
+            logger.warning(f"| ⚠️ Trajectory {path} header does not fit: {error}")
+            return None
+
+    def load_all(self, directory: Optional[str] = None) -> List[Trajectory]:
+        """Every trajectory under a directory, newest last.
+
+        Defaults to this manager's own persistence root, so the common case — "give me
+        what this project has recorded" — needs no path. Ordering is by name, which for
+        these files is by task id rather than by time; a caller that needs chronology
+        should sort on the header rather than trusting the directory.
+        """
+        root = directory or self.base_dir
+        if not root or not os.path.isdir(root):
+            return []
+        loaded = []
+        for name in sorted(os.listdir(root)):
+            if not name.endswith(".jsonl"):
+                continue
+            trajectory = self.load(os.path.join(root, name))
+            if trajectory is not None:
+                loaded.append(trajectory)
+        return loaded
+
+
+    # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 

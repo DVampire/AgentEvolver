@@ -97,3 +97,75 @@ def test_recording_a_reward_never_costs_the_benchmark_its_answer():
 
     recorder = inspect.getsource(bench._record_reward)
     assert "try:" in recorder and "logger.warning" in recorder
+
+
+# --------------------------------------------------------------------------- #
+# What was written can be read
+# --------------------------------------------------------------------------- #
+def test_a_persisted_trajectory_can_be_read_back(trajectories, tmp_path):
+    """`_persist` wrote these and nothing read them.
+
+    Every export looks in `self._trajectories`, which holds only what *this* process
+    built — so the moment a run ended, the data it produced could no longer be turned
+    into the training records this module exists to produce. The JSONL on disk was an
+    artifact nothing could open.
+    """
+    original = _traj("t9", "s9")
+    original.steps[0].reasoning = "considered the options"
+    original.success = True
+    trajectories._trajectories["t9"] = original
+    trajectories._persist(original)
+
+    written = tmp_path / "t9.jsonl"
+    assert written.exists(), "the fixture's base_dir is not where _persist writes"
+
+    reloaded = trajectories.load(str(written))
+
+    assert reloaded is not None
+    assert reloaded.task_id == "t9"
+    assert reloaded.session_id == "s9"
+    assert reloaded.success is True
+    assert [s.reasoning for s in reloaded.steps] == ["considered the options"]
+
+
+def test_a_reloaded_trajectory_still_exports(trajectories, tmp_path):
+    """Reading it back is only worth anything if the records come out the other side."""
+    original = _traj("t10", "s10")
+    trajectories._trajectories["t10"] = original
+    trajectories.set_reward("t10", 0.5)
+
+    reloaded = trajectories.load(str(tmp_path / "t10.jsonl"))
+
+    records = reloaded.to_sft_records()
+    assert len(records) == 1
+    assert records[0]["reward"] == 0.5, "the reward did not survive the round trip"
+
+
+def test_a_truncated_last_line_does_not_lose_the_whole_run(trajectories, tmp_path):
+    """A killed run leaves a half-written final line — the normal shape of a crash log.
+
+    Failing the file over its last line would discard every step before it, which is the
+    part worth having.
+    """
+    original = _traj("t11", "s11")
+    original.steps.append(TrajectoryStep(step_number=1))
+    trajectories._trajectories["t11"] = original
+    trajectories._persist(original)
+
+    path = tmp_path / "t11.jsonl"
+    path.write_text(path.read_text(encoding="utf-8") + '{"step_number": 2, "acti',
+                    encoding="utf-8")
+
+    reloaded = trajectories.load(str(path))
+
+    assert reloaded is not None
+    assert len(reloaded.steps) == 2, "the intact steps were dropped along with the torn one"
+
+
+def test_loading_a_directory_skips_what_is_not_a_trajectory(trajectories, tmp_path):
+    """A log directory holds more than trajectories; a stray file is not a failure."""
+    trajectories._trajectories["t12"] = _traj("t12", "s12")
+    trajectories._persist(trajectories._trajectories["t12"])
+    (tmp_path / "notes.txt").write_text("not json", encoding="utf-8")
+
+    assert [t.task_id for t in trajectories.load_all(str(tmp_path))] == ["t12"]
