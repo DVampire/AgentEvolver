@@ -5,7 +5,13 @@ export interface GatewayResponse {
   id: string;
   ok: boolean;
   result: Record<string, unknown>;
-  error?: { code: string; message: string };
+  // `details` is where a refusal says what was wrong, as opposed to that something was.
+  // A client that only reads `message` can report the failure but never explain it.
+  error?: { code: string; message: string; details?: Record<string, unknown> | null };
+  // Echoed on every response. Declared so a client can tell a server it no longer
+  // understands from one that merely refused this command; tests/test_gateway_contract.py
+  // keeps this constant and the server's in step.
+  protocol_version: number;
 }
 
 export interface GatewayEvent {
@@ -20,6 +26,7 @@ export interface GatewayEvent {
   task_id?: string;
   seq_no: number;
   timestamp: string;
+  protocol_version: number;
 }
 
 type PendingRequest = {

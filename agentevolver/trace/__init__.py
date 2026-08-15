@@ -17,6 +17,7 @@ from .surface import (
     replace_op,
     shadowed_by,
     surface_events,
+    transcript_events,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "replace_op",
     "shadowed_by",
     "surface_events",
+    "transcript_events",
 ]

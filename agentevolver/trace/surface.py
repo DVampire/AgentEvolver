@@ -106,6 +106,29 @@ def surface_events(events: Sequence[Any]) -> List[Any]:
     return [by_seq[seq] for seq in fold_surface(events)["nodes"] if seq in by_seq]
 
 
+def transcript_events(events: Sequence[Any]) -> List[Any]:
+    """Every event that joined the surface by *appending*, in history order.
+
+    This is what a human transcript is built from, and it is **not** what
+    :func:`surface_events` returns.
+
+    The surface is the model's history, and a replacement deliberately shadows the range it
+    replaced — that is the whole mechanism behind compaction. Rendering a conversation from
+    it therefore deletes messages the user has already read: the summary arrives and the ten
+    turns it stands for disappear from the screen. The events that appended never get
+    shadowed, so they remain the durable record of what was actually said; replacement
+    copies stay model-only.
+
+    The distinction is easy to miss because both readings are correct for their own
+    consumer, and the wrong one fails silently — a transcript that renders perfectly right
+    up until the first compaction.
+    """
+    # No fold is needed: an append is a transcript event whether or not a later
+    # replacement shadowed it. Filtering by the folded surface is the tempting mistake —
+    # it would reintroduce exactly the deletion this function exists to avoid.
+    return [event for event in events if getattr(event, "surface_op", None) == APPEND]
+
+
 def shadowed_by(events: Sequence[Any], seq: int) -> List[int]:
     """The seqs one replacement shadowed — the way back from a summary to its originals."""
     for replacement in fold_surface(events)["replacements"]:
@@ -141,4 +164,5 @@ __all__ = [
     "replace_op",
     "shadowed_by",
     "surface_events",
+    "transcript_events",
 ]

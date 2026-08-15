@@ -28,6 +28,7 @@ from agentevolver.trace.surface import (
     replace_op,
     shadowed_by,
     surface_events,
+    transcript_events,
 )
 from agentevolver.trace.types import TraceEvent, TraceEventType
 
@@ -470,3 +471,56 @@ def test_the_live_surface_keeps_a_malformed_replacement_rather_than_dropping_it(
         surface_op=replace_op(50, 60))))          # names a range that does not exist
 
     assert manager.surface("s") == [0, 1]
+
+
+# --------------------------------------------------------------------------- #
+# Two readings, two consumers
+# --------------------------------------------------------------------------- #
+def test_a_compaction_removes_turns_from_the_model_history_and_not_from_the_transcript():
+    """The distinction the two readers exist for, and the one that fails silently.
+
+    `surface_events` is what the model is shown: a replacement shadows the range it stands
+    for, which is the whole mechanism behind compaction. `transcript_events` is what a
+    person is shown, and a person has already read those turns — rendering their view from
+    the surface deletes conversation off the screen the moment a summary lands.
+
+    Nothing catches that in a short session, because both readings agree exactly until the
+    first compaction.
+    """
+    events = [_event(0), _event(1), _event(2),
+              _event(3, op=replace_op(1, 2), cites=[1, 2])]
+
+    model_history = [event.seq_no for event in surface_events(events)]
+    human_transcript = [event.seq_no for event in transcript_events(events)]
+
+    assert model_history == [0, 3]              # 1 and 2 are shadowed by the summary
+    assert human_transcript == [0, 1, 2]        # and still on the reader's screen
+
+
+def test_the_transcript_keeps_an_event_a_later_summary_shadowed():
+    """Stated on its own because it is the property a fold would quietly destroy.
+
+    Filtering transcript events by the folded surface is the obvious implementation and it
+    reintroduces exactly the deletion being prevented.
+    """
+    events = [_event(0), _event(1), _event(2, op=replace_op(0, 1), cites=[0, 1])]
+
+    assert [event.seq_no for event in transcript_events(events)] == [0, 1]
+
+
+def test_the_transcript_excludes_the_summary_itself():
+    """A summary is context assembled for the model, not something anyone said.
+
+    Showing it in the conversation would put words on screen that no participant produced.
+    """
+    events = [_event(0), _event(1, op=replace_op(0, 0), cites=[0])]
+
+    assert 1 not in [event.seq_no for event in transcript_events(events)]
+
+
+def test_log_only_events_are_in_neither_reading():
+    """A bookkeeping record never stood for history in either sense."""
+    events = [_event(0), _event(1, op=None), _event(2)]
+
+    assert [event.seq_no for event in transcript_events(events)] == [0, 2]
+    assert [event.seq_no for event in surface_events(events)] == [0, 2]
