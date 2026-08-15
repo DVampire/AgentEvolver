@@ -193,6 +193,11 @@ pytest --cov        # measures, then applies the coverage gate</code></pre>
       </tbody>
     </table>
     <p data-i18n="s8_p2">The test for writing one is simple: would someone reasonably ask "why was this done this way?" in six months? That is a lower bar than "was this hard" and a much higher one than "did I change something".</p>
+    <p data-i18n="s8_read">Both trees live beside the code and are checked by the same gates as everything else:
+      <a href="decisions/README.md" style="color:#8ea9ff">decisions/</a> ·
+      <a href="postmortems/README.md" style="color:#8ea9ff">postmortems/</a> ·
+      <a href="cookbook/adding-a-tool.md" style="color:#8ea9ff">cookbook/</a> ·
+      <a href="DOC-STANDARD.md" style="color:#8ea9ff">DOC-STANDARD.md</a></p>
   </section>
 
   <!-- ============ INVARIANTS ============ -->
@@ -315,7 +320,8 @@ window.I18N = {
     s8_r2a:"Postmortem", s8_r2b:"Why did the process let this through?", s8_r2c:"Subtle, systemic, and costly to rediscover — all three, or it does not belong.",
     s8_p2:"The test for writing one is simple: would someone reasonably ask \"why was this done this way?\" in six months? That is a lower bar than \"was this hard\" and a much higher one than \"did I change something\".",
 
-    s9_h:"Invariants that were paid for",
+    s8_read:'Both trees live beside the code and are checked by the same gates as everything else: <a href="decisions/README.md" style="color:#8ea9ff">decisions/</a> · <a href="postmortems/README.md" style="color:#8ea9ff">postmortems/</a> · <a href="cookbook/adding-a-tool.md" style="color:#8ea9ff">cookbook/</a> · <a href="DOC-STANDARD.md" style="color:#8ea9ff">DOC-STANDARD.md</a>',
+  s9_h:"Invariants that were paid for",
     s9_p1:"Each of these is a rule that exists because its absence produced a defect. They are collected here because every one of them is easy to undo by accident.",
     s9_i1:"<strong>Disposal must reach quiescence, not request it.</strong> Sending a signal and immediately marking something stopped reports a process that ignores the signal as dead while it is still running. Wait, escalate, wait again, and say so if it survives both.",
     s9_i2:"<strong>The log reaches disk before a mutation.</strong> Events are queued, not written, so the log trails the run. That is free until the process dies inside the lag — and then nobody can tell whether the destructive command executed.",
@@ -393,7 +399,8 @@ window.I18N = {
     s8_r2a:"事后分析", s8_r2b:"为什么我们的流程放它过去了？", s8_r2c:"机制不显然、逃逸原因是系统性缺口、重新发现代价高昂——三条全中，否则不该写。",
     s8_p2:"要不要写的判据很简单：半年后会不会有人合理地问「这为什么这么做」？这个门槛比「这事难不难」低，比「我是不是改了点什么」高得多。",
 
-    s9_h:"用缺陷换来的不变式",
+    s8_read:'这两棵树就放在代码旁边，并且和其他一切一样被同一批门禁检查： <a href="decisions/README.md" style="color:#8ea9ff">decisions/</a> · <a href="postmortems/README.md" style="color:#8ea9ff">postmortems/</a> · <a href="cookbook/adding-a-tool.md" style="color:#8ea9ff">cookbook/</a> · <a href="DOC-STANDARD.md" style="color:#8ea9ff">DOC-STANDARD.md</a>',
+  s9_h:"用缺陷换来的不变式",
     s9_p1:"下面每一条之所以存在，都是因为它缺席时产生过缺陷。把它们汇总在这里，是因为每一条都很容易在无意中被推翻。",
     s9_i1:"<strong>拆卸必须到达静默，而不只是请求静默。</strong>发个信号就立刻标记为「已停止」，会把一个忽略该信号的进程报告成已死，而它还在跑。要等待、要升级、再等待，两次都活下来就得说出来。",
     s9_i2:"<strong>日志要在发生变更之前落盘。</strong>事件是排队的、不是直接写的，所以日志落后于运行。这个滞后不花钱，直到进程死在滞后里——然后就没人能说清那条破坏性命令到底跑没跑。",

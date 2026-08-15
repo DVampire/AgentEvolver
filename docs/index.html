@@ -351,13 +351,13 @@
       <a href="#training" data-i18n="nav_training">Training Loop</a>
       <a href="#webui" data-i18n="nav_ui">Web UI</a>
       <a href="#safety" data-i18n="nav_safe">Safety</a>
-      <a href="development.html" data-i18n="nav_dev">Development</a>
     </div>
     <div class="nav-actions">
       <div class="lang" role="group" aria-label="language">
         <button data-lang="en" class="active">EN</button>
         <button data-lang="zh">中文</button>
       </div>
+      <a class="btn" href="tutorial.html" data-i18n="nav_docs">Docs</a>
       <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">
         <svg class="ic ic-sm"><use href="#i-sparkles"/></svg> GitHub</a>
     </div>
@@ -481,6 +481,7 @@
       <div class="eyebrow" data-i18n="arch_eyebrow">Architecture</div>
       <h2 data-i18n="arch_h">One planner, many specialists</h2>
       <p data-i18n="arch_p">The MetaAgent plans and dispatches work over the Agent Bus to specialist sub-agents that run in parallel and return results for evaluation.</p>
+      <p style="margin-top:10px"><a href="architecture.html" data-i18n="arch_more" style="color:#8ea9ff;font-weight:600;font-size:14px">Read the full architecture, with diagrams →</a></p>
     </div>
 
     <figure class="diagram reveal" style="margin:0;text-align:center">
@@ -861,6 +862,35 @@
   </div>
 </section>
 
+<!-- ============ DOCUMENTATION ============ -->
+<section id="docs">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow" data-i18n="doc_eyebrow">Documentation</div>
+      <h2 data-i18n="doc_h">Four pages, in reading order</h2>
+      <p data-i18n="doc_p">Everything above is what this is and why. These are how — written, bilingual, and kept next to the code they describe.</p>
+    </div>
+    <div class="features">
+      <a class="card reveal" href="tutorial.html" style="text-decoration:none;display:block">
+        <div class="ico"><svg class="ic ic-lg"><use href="#i-rocket"/></svg></div>
+        <h3 data-i18n="doc1_h">Tutorial</h3>
+        <p data-i18n="doc1_p">Six steps from an empty machine to reading the trajectory a run produced — each one verifiable before the next.</p></a>
+      <a class="card reveal" href="architecture.html" style="text-decoration:none;display:block">
+        <div class="ico"><svg class="ic ic-lg"><use href="#i-loop"/></svg></div>
+        <h3 data-i18n="doc2_h">Architecture</h3>
+        <p data-i18n="doc2_p">The four mechanisms the system rests on, with diagrams — including why one append-only log has two different readings.</p></a>
+      <a class="card reveal" href="modules.html" style="text-decoration:none;display:block">
+        <div class="ico"><svg class="ic ic-lg"><use href="#i-shield"/></svg></div>
+        <h3 data-i18n="doc3_h">Modules</h3>
+        <p data-i18n="doc3_p">All fifty-six modules and what each one owns, grouped into seven families.</p></a>
+      <a class="card reveal" href="development.html" style="text-decoration:none;display:block">
+        <div class="ico"><svg class="ic ic-lg"><use href="#i-file-code"/></svg></div>
+        <h3 data-i18n="doc4_h">Development</h3>
+        <p data-i18n="doc4_p">The contributor guide: the module contract, how work is verified, and the invariants that were paid for in defects.</p></a>
+    </div>
+  </div>
+</section>
+
 <!-- ============ QUICK START ============ -->
 <section id="quickstart">
   <div class="wrap">
@@ -868,6 +898,7 @@
       <div class="eyebrow" data-i18n="qs_eyebrow">Quick Start</div>
       <h2 data-i18n="qs_h">Start with the shortest working path</h2>
       <p data-i18n="qs_p">Install the core, configure one model provider, and run locally. Add Docker, browser automation, or the Web UI only when you need them.</p>
+      <p style="margin-top:10px"><a href="tutorial.html" data-i18n="qs_more" style="color:#8ea9ff;font-weight:600;font-size:14px">Follow the step-by-step tutorial →</a></p>
     </div>
     <div class="qs reveal">
       <div class="code">
@@ -939,7 +970,14 @@ python examples/run_meta_agent.py <span class="k">\</span>
 const I18N = {
   en:{
     page_title:"AgentEvolver · From Multi-Agent Execution to Trainable Trajectories", page_desc:"AgentEvolver orchestrates complex multi-agent tasks, evolves versioned capabilities, and captures reward-annotated trajectories for SFT/RL—building toward an end-to-end train, evaluate, and serve loop.",
-    nav_overview:"Overview", nav_features:"Design", nav_fit:"Fit", nav_arch:"Architecture", nav_rt:"Runtime", nav_evo:"Self-Evolution", nav_training:"Training Loop", nav_caps:"Capabilities", nav_ui:"Web UI", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start", nav_dev:"Development",
+    nav_overview:"Overview", nav_features:"Design", nav_fit:"Fit", nav_arch:"Architecture", nav_rt:"Runtime", nav_evo:"Self-Evolution", nav_training:"Training Loop", nav_caps:"Capabilities", nav_ui:"Web UI", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start", nav_docs:"Docs", nav_docs_sec:"Docs",
+    arch_more:"Read the full architecture, with diagrams →", qs_more:"Follow the step-by-step tutorial →",
+    doc_eyebrow:"Documentation", doc_h:"Four pages, in reading order",
+    doc_p:"Everything above is what this is and why. These are how — written, bilingual, and kept next to the code they describe.",
+    doc1_h:"Tutorial", doc1_p:"Six steps from an empty machine to reading the trajectory a run produced — each one verifiable before the next.",
+    doc2_h:"Architecture", doc2_p:"The four mechanisms the system rests on, with diagrams — including why one append-only log has two different readings.",
+    doc3_h:"Modules", doc3_p:"All fifty-six modules and what each one owns, grouped into seven families.",
+    doc4_h:"Development", doc4_p:"The contributor guide: the module contract, how work is verified, and the invariants that were paid for in defects.",
     hero_pill:"Capability evolution today · end-to-end model evolution ahead",
     hero_title_html:'Finish the task.<br><span class="grad">Grow the system.</span>',
     hero_sub:"AgentEvolver orchestrates specialist agents, evolves reusable components, and captures reward-annotated trajectories for SFT/RL—connecting task execution to a future train, evaluate, and serve loop.",
@@ -1065,7 +1103,14 @@ const I18N = {
   },
   zh:{
     page_title:"AgentEvolver · 从多智能体执行到可训练轨迹", page_desc:"AgentEvolver 编排复杂多智能体任务、进化版本化能力，并采集带奖励的 SFT/RL trajectory，最终走向训练、评测与应用一体化的端到端闭环。",
-    nav_overview:"项目定位", nav_features:"设计", nav_fit:"适用性", nav_arch:"架构", nav_rt:"运行时", nav_evo:"自进化", nav_training:"训练闭环", nav_caps:"能力", nav_ui:"Web 界面", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始", nav_dev:"开发文档",
+    nav_overview:"项目定位", nav_features:"设计", nav_fit:"适用性", nav_arch:"架构", nav_rt:"运行时", nav_evo:"自进化", nav_training:"训练闭环", nav_caps:"能力", nav_ui:"Web 界面", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始", nav_docs:"文档", nav_docs_sec:"文档",
+    arch_more:"阅读完整架构（含图解）→", qs_more:"跟着分步教程走一遍 →",
+    doc_eyebrow:"文档", doc_h:"四个页面，按阅读顺序",
+    doc_p:"以上讲的是它是什么、为什么。下面讲怎么用——手写、中英双语，并且和它描述的代码放在一起。",
+    doc1_h:"教程", doc1_p:"六步，从一台空机器到读懂一次运行产出的轨迹——每一步在进入下一步之前都能验证。",
+    doc2_h:"架构", doc2_p:"整个系统赖以成立的四个机制，配图——包括为什么一份只追加的日志有两种不同的读法。",
+    doc3_h:"模块", doc3_p:"全部五十六个模块各自负责什么，按七个族分组。",
+    doc4_h:"开发文档", doc4_p:"贡献者指南：模块契约、工作如何被检验，以及那些用缺陷换来的不变式。",
     hero_pill:"当前：能力进化与训练数据闭环 · 目标：端到端模型进化",
     hero_title_html:'完成这次任务，<br><span class="grad">也让系统为下一次变强。</span>',
     hero_sub:"AgentEvolver 编排专精智能体、进化可复用组件，并采集带奖励的 SFT/RL trajectory，把任务执行连接到未来的训练、评测与模型应用闭环。",
