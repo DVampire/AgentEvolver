@@ -122,7 +122,13 @@ class ResponseLLMHub(BaseModel):
     reasoning: Optional[Dict[str, Any]] = None
     max_output_tokens: Optional[int] = 16384
     timeout: Optional[Union[float, httpx.Timeout]] = 600.0
-    max_retries: int = 3
+    #: Retries live in one place: `ModelContextManager.__call__`, which backs off, records
+    #: each failed attempt in the trace, and knows the caller. Handing the SDK a budget of
+    #: its own multiplies with that one — three application attempts over five SDK attempts
+    #: is fifteen requests nobody chose — and those inner attempts are invisible to both the
+    #: log and the trajectory. Raise this only for a provider whose SDK retry does something
+    #: ours cannot.
+    max_retries: int = 0
 
     @property
     def provider(self) -> str:

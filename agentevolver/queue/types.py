@@ -63,6 +63,16 @@ class AsyncQueue(Generic[T]):
         """Inject stop sentinel so consumers exit cleanly."""
         await self._queue.put(_SENTINEL)
 
+    async def join(self) -> None:
+        """Wait until every item queued so far has been marked done by the consumer.
+
+        Only meaningful when the consumer calls :meth:`task_done` for each item — the
+        documented loop above does. A producer that wants to know its item reached
+        durable storage has no other signal: :meth:`emit` returns once the item is
+        *queued*, which is exactly the property that makes it non-blocking.
+        """
+        await self._queue.join()
+
     def qsize(self) -> int:
         return self._queue.qsize()
 

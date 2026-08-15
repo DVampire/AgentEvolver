@@ -31,6 +31,70 @@ if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
 
 
+# --------------------------------------------------------------------------- #
+# Retry timing
+# --------------------------------------------------------------------------- #
+#: First wait after a failed attempt, doubling from there.
+_RETRY_INITIAL_DELAY = 1.0
+#: Cap on one wait. A provider that is down stays down; waiting five minutes between
+#: attempts turns a failed call into a hung agent.
+_RETRY_MAX_DELAY = 30.0
+#: Fraction of the computed delay that is randomised, in both directions. Without it every
+#: agent that hit the same rate limit retries in lockstep and re-creates the burst that
+#: caused it.
+_RETRY_JITTER = 0.25
+
+
+def _retry_delay(attempt: int) -> float:
+    """Seconds to wait before ``attempt`` (1-based), with exponential backoff and jitter."""
+    import random
+
+    exponential = min(_RETRY_INITIAL_DELAY * (2 ** max(attempt - 1, 0)), _RETRY_MAX_DELAY)
+    jitter = 1.0 - _RETRY_JITTER + 2 * _RETRY_JITTER * random.random()
+    return min(exponential * jitter, _RETRY_MAX_DELAY)
+
+
+async def _record_retry(
+    session_id: Optional[str], model: str, attempt: int, total: int,
+    error: str, delay: Optional[float], caller: Optional[str],
+) -> None:
+    """Write one failed model attempt into the trace.
+
+    A retried call reports the outcome of its last attempt and nothing else, so a
+    trajectory that says ``success`` can be the third try of three. That matters more here
+    than in most systems: these trajectories are training data, and a sample labelled
+    "the model got it right" when the model actually failed twice first is not the sample
+    it claims to be.
+
+    Never raises and never blocks the call it is recording — a trace that cannot be written
+    is worth strictly less than the request in flight.
+    """
+    if not session_id:
+        return
+    try:
+        from agentevolver.trace.server import trace_manager
+        from agentevolver.trace.types import TraceEvent, TraceEventType
+
+        await trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id=session_id,
+            label="model retry",
+            message=f"{model} attempt {attempt}/{total} failed: {error}",
+            success=False,
+            error=error,
+            metadata={
+                "kind": "llm_retry",
+                "model": model,
+                "attempt": attempt,
+                "max_attempts": total,
+                "delay_seconds": delay,
+                "caller": caller,
+            },
+        ))
+    except Exception as trace_error:  # noqa: BLE001 — recording must not break the call
+        logger.debug(f"| model retry not recorded in the trace: {trace_error}")
+
+
 # ---------------------------------------------------------------------------
 # ApiKeyPool
 # ---------------------------------------------------------------------------
@@ -680,10 +744,24 @@ class ModelContextManager:
                 last_exc = e
                 _elapsed = _t.time() - _start
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
-                if attempt < max_retries - 1:
+                more = attempt < max_retries - 1
+                # Computed before the record so the trace says how long the wait will be,
+                # not merely that there was one.
+                delay = _retry_delay(attempt + 1) if more else None
+                await _record_retry(
+                    getattr(ctx, "id", None), name, attempt + 1, max_retries,
+                    str(e), delay, self._current_caller,
+                )
+                if more:
                     logger.warning(
-                        f"| ⚠️ Model {name} attempt {attempt+1}/{max_retries} failed ({_elapsed:.0f}s{tag}): {e}, retrying..."
+                        f"| ⚠️ Model {name} attempt {attempt+1}/{max_retries} failed ({_elapsed:.0f}s{tag}): {e}, "
+                        f"retrying in {delay:.1f}s..."
                     )
+                    # Backing off is the whole reason a retry helps. Retrying instantly
+                    # re-sends into the same rate limit or the same half-open connection,
+                    # which is why the previous loop's three attempts so often failed three
+                    # times for one reason.
+                    await asyncio.sleep(delay)
                 else:
                     logger.error(
                         f"| ❌ Model {name} failed after {max_retries} attempts ({_elapsed:.0f}s{tag}): {e}"

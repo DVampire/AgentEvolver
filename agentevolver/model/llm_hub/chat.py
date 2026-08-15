@@ -73,6 +73,12 @@ class ChatLLMHub(BaseChatModel):
     api_key: Optional[str] = None
     base_url: Optional[Union[str, httpx.URL]] = None
     timeout: Optional[Union[float, httpx.Timeout]] = httpx.Timeout(1800.0, connect=30.0)
+    #: Retries live in one place: `ModelContextManager.__call__`, which backs off, records
+    #: each failed attempt in the trace, and knows the caller. Handing the SDK a budget of
+    #: its own multiplies with that one — three application attempts over five SDK attempts
+    #: is fifteen requests nobody chose — and those inner attempts are invisible to both the
+    #: log and the trajectory. Raise this only for a provider whose SDK retry does something
+    #: ours cannot.
     max_retries: int = 0
     default_headers: Optional[Mapping[str, str]] = None
     default_query: Optional[Mapping[str, object]] = None

@@ -1411,6 +1411,40 @@ class Agent(BaseModel):
                     reasoning = o["reasoning"]
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
 
+    async def _checkpoint_before_effects(self, kind: str, route: Any) -> None:
+        """Get the log to disk before a call that may change the world.
+
+        Trace events are queued, not written, so the log trails the run by however long the
+        writer is behind. That lag costs nothing until the process dies inside it — and then
+        it decides an unanswerable question. A run killed between "about to run this
+        command" and "the writer caught up" leaves no record of the command at all, so
+        afterwards nobody can tell whether the destructive one executed.
+
+        Only for calls that may have effects. A read-only tool that is lost from the log
+        costs a gap in the transcript; a mutation that is lost costs a question with no
+        answer, and paying a flush on every `read` to protect the `write` would put the
+        writer on the hot path of the most frequent call in the system.
+
+        `mutates` is three-valued and the test is `is not False` on purpose: `None` means
+        "depends on the arguments", which is what a shell tool declares, and a shell
+        command is the single most likely way an agent destroys something.
+        """
+        if kind != "tool" or not route:
+            # Agents and skills reach their own tools, and checkpoint there.
+            return
+        try:
+            from agentevolver.tool.server import tool_manager
+            from agentevolver.trace.server import trace_manager
+
+            tool = await tool_manager.get(route[1])
+            if getattr(tool, "mutates", None) is False:
+                return
+            await trace_manager.flush()
+        except Exception as error:      # noqa: BLE001
+            # Never block a call because the checkpoint could not be taken: an agent that
+            # stops working when logging is unavailable is a worse outcome than a gap.
+            logger.debug(f"| checkpoint before {route[1] if route else '?'} skipped: {error}")
+
     async def _run_one(
         self,
         call: Any,
@@ -1468,6 +1502,11 @@ class Agent(BaseModel):
             logger.warning(f"| 🚫 [{self.name}] {plan_gate.reason}")
             return {"name": call.name, "done": False, "result": None, "reasoning": None,
                     "error": plan_gate.reason}
+
+        # The call is recorded and both gates have allowed it; from the next line it may
+        # change the world. Getting the log to disk first is what makes "did that command
+        # run?" answerable after a run is killed — see `_checkpoint_before_effects`.
+        await self._checkpoint_before_effects(kind, route)
 
         try:
             if route is None:

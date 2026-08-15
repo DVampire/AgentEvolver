@@ -44,7 +44,13 @@ class TranscribeOpenAI(BaseModel):
     base_url: Optional[Union[str, httpx.URL]] = None
     websocket_base_url: Optional[Union[str, httpx.URL]] = None
     timeout: Optional[Union[float, httpx.Timeout]] = None
-    max_retries: int = 5
+    #: Retries live in one place: `ModelContextManager.__call__`, which backs off, records
+    #: each failed attempt in the trace, and knows the caller. Handing the SDK a budget of
+    #: its own multiplies with that one — three application attempts over five SDK attempts
+    #: is fifteen requests nobody chose — and those inner attempts are invisible to both the
+    #: log and the trajectory. Raise this only for a provider whose SDK retry does something
+    #: ours cannot.
+    max_retries: int = 0
     default_headers: Optional[Mapping[str, str]] = None
     default_query: Optional[Mapping[str, object]] = None
     http_client: Optional[httpx.AsyncClient] = None

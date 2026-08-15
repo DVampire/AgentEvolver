@@ -78,6 +78,13 @@ when it shipped. Cross-reference other records with relative Markdown links so
 
 ## Index
 
+**Verification**
+
 - [The coverage gate is a dark-file register, not a percentage](2026-08-15-coverage-gate-is-a-dark-file-register.md)
 - [The dark-file register is enforced in both directions](2026-08-15-the-register-is-enforced-both-ways.md)
 - [The measured lane excludes the slow tests](2026-08-15-the-measured-lane-excludes-slow-tests.md)
+
+**What a run records**
+
+- [Retries happen in one place, and every attempt is recorded](2026-08-15-retries-happen-in-one-place-and-are-recorded.md)
+- [The log reaches disk before a mutation, and nowhere else](2026-08-15-the-log-reaches-disk-before-a-mutation.md)

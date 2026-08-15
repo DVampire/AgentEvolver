@@ -17,6 +17,7 @@ available for offline inspection.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 from typing import Optional
@@ -100,6 +101,43 @@ class TraceManager(metaclass=Singleton):
 
         self._writer.start()
         self._running = True
+
+    #: How long :meth:`flush` waits before giving up and letting the caller proceed.
+    FLUSH_TIMEOUT_SECONDS = 5.0
+
+    async def flush(self, timeout: Optional[float] = None) -> bool:
+        """Wait until everything emitted so far has been written.
+
+        ``emit`` returns as soon as an event is *queued*, which is what keeps it off the
+        hot path and also means the log lags the world. That lag is invisible until the
+        process dies inside it, and then it decides an unanswerable question: a run that
+        was killed mid-step leaves no record of the tool it was about to run, so nobody can
+        tell whether the destructive command executed. Calling this before an irreversible
+        act closes that window.
+
+        On timeout it gives up and returns ``False`` rather than waiting indefinitely. The
+        trade is deliberate and it is not the one deepseek-harness makes — their equivalent
+        is fail-closed, refusing to invoke the tool. A wedged writer is far rarer than an
+        interrupted run, and an agent that stops working because logging is slow is a worse
+        product than one that acts with a gap in its log and says so loudly.
+
+        Args:
+            timeout: Seconds to wait; :attr:`FLUSH_TIMEOUT_SECONDS` when omitted.
+
+        Returns:
+            Whether the queue drained in time. ``True`` when there was nothing to wait for.
+        """
+        if not self._running or self._queue is None:
+            return True
+        try:
+            await asyncio.wait_for(self._queue.join(), timeout or self.FLUSH_TIMEOUT_SECONDS)
+            return True
+        except asyncio.TimeoutError:
+            logger.error(
+                f"| ❌ Trace flush timed out with {self._queue.qsize()} events still queued — "
+                f"the log is behind the run from here"
+            )
+            return False
 
     async def stop(self) -> None:
         """Drain queue and flush the writer."""

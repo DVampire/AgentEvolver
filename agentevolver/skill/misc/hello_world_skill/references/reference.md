@@ -5,6 +5,7 @@
 ### Constructor
 
 ```python
+# fragment — the constructor signature, not a call
 HelloGreeter(
     default_name: str = None,     # fallback target name
     default_style: str = None,    # fallback greeting style
