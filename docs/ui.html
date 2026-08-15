@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AgentEvolver · The Web UI, feature by feature</title>
 <meta name="description" content="A guided tour of the AgentEvolver browser workbench — four workspaces, a live capability catalogue, session panels, machines over noVNC, and the model registry. One short clip per feature." />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E" />
 <style>
   :root{
     --bg:#05060f; --bg-2:#0a0c1c;
@@ -130,31 +129,17 @@
   .reveal.in{opacity:1;transform:none}
   @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
 </style>
+<link rel="stylesheet" href="assets/chrome.css">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#05060f">
 </head>
 <body>
 <div class="bg-fx"></div>
 <div class="grid-fx"></div>
 
 <!-- ============ NAV ============ -->
-<nav>
-  <div class="wrap nav-inner">
-    <a class="brand" href="index.html"><span class="mark">🧬</span> AgentEvolver</a>
-    <div class="nav-links">
-      <a href="index.html#features" data-i18n="nav_features">Features</a>
-      <a href="index.html#architecture" data-i18n="nav_arch">Architecture</a>
-      <a href="index.html#benchmarks" data-i18n="nav_bench">Benchmarks</a>
-      <a href="ui.html" class="here" data-i18n="nav_ui">Web UI</a>
-      <a href="index.html#quickstart" data-i18n="nav_start">Quick Start</a>
-    </div>
-    <div class="nav-actions">
-      <div class="lang" role="group" aria-label="language">
-        <button data-lang="en" class="active">EN</button>
-        <button data-lang="zh">中文</button>
-      </div>
-      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener"><span>★</span> GitHub</a>
-    </div>
-  </div>
-</nav>
+<nav data-ae-nav="ui"></nav>
+<script src="assets/chrome.js"></script>
 
 <!-- ============ HERO ============ -->
 <header class="hero" id="top">
@@ -438,26 +423,13 @@
   </div>
 </section>
 
-<footer>
-  <div class="wrap foot-inner">
-    <div>
-      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:14px">🧬</span> AgentEvolver</div>
-      <div style="margin-top:8px;font-size:13px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
-    </div>
-    <div class="foot-links">
-      <a href="index.html" data-i18n="foot_home">Overview</a>
-      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/DVampire/AgentEvolver/blob/main/frontend/README.md" target="_blank" rel="noopener" data-i18n="foot_fe">Frontend README</a>
-      <a href="#top" data-i18n="foot_top">Back to top ↑</a>
-    </div>
-  </div>
-</footer>
+<ae-footer></ae-footer>
 
 <script>
 /* ---------------- i18n ---------------- */
 const I18N = {
   en:{
-    nav_features:"Features", nav_arch:"Architecture", nav_bench:"Benchmarks", nav_ui:"Web UI", nav_start:"Quick Start",
+    nav_home:"Home", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_ui:"Web UI", nav_features:"Features", nav_bench:"Benchmarks", nav_start:"Quick Start",
     hero_pill:"Recorded from a live gateway session",
     hero_title_html:'The workbench, <span class="grad">one feature at a time</span>',
     hero_sub:"AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Eleven short clips below, one per feature — the layout, each of the four workspaces in turn, the capability catalogue, the session panels, the machines, and the model registry.",
@@ -547,7 +519,7 @@ const I18N = {
     foot_home:"Overview", foot_fe:"Frontend README", foot_top:"Back to top ↑"
   },
   zh:{
-    nav_features:"特性", nav_arch:"架构", nav_bench:"基准", nav_ui:"Web 界面", nav_start:"快速开始",
+    nav_home:"首页", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_ui:"Web 界面", nav_features:"特性", nav_bench:"基准", nav_start:"快速开始",
     hero_pill:"录自一次真实的 Gateway 会话",
     hero_title_html:'界面功能，<span class="grad">逐个看过来</span>',
     hero_sub:"AgentEvolver 自带一个浏览器工作台，通过 WebSocket 与 Python Gateway 通信。下面十一段短视频，一个功能一段——整体布局、四种工作视图各自展开、能力目录、会话面板、机器环境，以及模型注册表。",

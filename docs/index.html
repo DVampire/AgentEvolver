@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AgentEvolver · From Multi-Agent Execution to Trainable Trajectories</title>
 <meta name="description" content="AgentEvolver orchestrates complex multi-agent tasks, evolves versioned capabilities, and captures reward-annotated trajectories for SFT/RL—building toward an end-to-end train, evaluate, and serve loop." />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E" />
 <style>
   :root{
     --bg:#05060f;
@@ -331,6 +330,9 @@
   .reveal{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s ease}
   .reveal.in{opacity:1;transform:none}
 </style>
+<link rel="stylesheet" href="assets/chrome.css">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#05060f">
 </head>
 <body>
 
@@ -365,30 +367,8 @@
 <div class="blob b2"></div>
 
 <!-- ============ NAV ============ -->
-<nav>
-  <div class="wrap nav-inner">
-    <a class="brand" href="#top"><span class="mark"><svg class="ic ic-sm" style="stroke-width:2"><use href="#i-loop"/></svg></span> AgentEvolver</a>
-    <div class="nav-links">
-      <a href="#overview" data-i18n="nav_overview">Overview</a>
-      <a href="#features" data-i18n="nav_features">Design</a>
-      <a href="#fit" data-i18n="nav_fit">Fit</a>
-      <a href="#architecture" data-i18n="nav_arch">Architecture</a>
-      <a href="#evolution" data-i18n="nav_evo">Evolution</a>
-      <a href="#training" data-i18n="nav_training">Training</a>
-      <a href="#webui" data-i18n="nav_ui">UI</a>
-      <a href="#safety" data-i18n="nav_safe">Safety</a>
-    </div>
-    <div class="nav-actions">
-      <div class="lang" role="group" aria-label="language">
-        <button data-lang="en" class="active">EN</button>
-        <button data-lang="zh">中文</button>
-      </div>
-      <a class="btn" href="tutorial.html" data-i18n="nav_docs">Docs</a>
-      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">
-        <svg class="ic ic-sm"><use href="#i-sparkles"/></svg> GitHub</a>
-    </div>
-  </div>
-</nav>
+<nav data-ae-nav="home"></nav>
+<script src="assets/chrome.js"></script>
 
 <!-- ============ HERO ============ -->
 <header class="hero" id="top">
@@ -992,27 +972,14 @@ python examples/run_meta_agent.py <span class="k">\</span>
 </section>
 
 <!-- ============ FOOTER ============ -->
-<footer>
-  <div class="wrap foot-inner">
-    <div>
-      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px"><svg class="ic" style="width:15px;height:15px;stroke-width:2"><use href="#i-loop"/></svg></span> AgentEvolver</div>
-      <div style="margin-top:8px;font-size:13px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
-    </div>
-    <div class="foot-links">
-      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/DVampire/AgentEvolver/blob/main/README.md" target="_blank" rel="noopener" data-i18n="foot_readme">README</a>
-      <a href="https://github.com/DVampire/AgentEvolver/blob/main/README_zh.md" target="_blank" rel="noopener">中文</a>
-      <a href="#top" data-i18n="foot_top">Back to top ↑</a>
-    </div>
-  </div>
-</footer>
+<ae-footer></ae-footer>
 
 <script>
 /* ---------------- i18n ---------------- */
 const I18N = {
   en:{
     page_title:"AgentEvolver · From Multi-Agent Execution to Trainable Trajectories", page_desc:"AgentEvolver orchestrates complex multi-agent tasks, evolves versioned capabilities, and captures reward-annotated trajectories for SFT/RL—building toward an end-to-end train, evaluate, and serve loop.",
-    nav_overview:"Overview", nav_features:"Design", nav_fit:"Fit", nav_arch:"Architecture", nav_rt:"Runtime", nav_evo:"Evolution", nav_training:"Training", nav_caps:"Capabilities", nav_ui:"UI", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start", nav_docs:"Docs", nav_docs_sec:"Docs",
+    nav_home:"Home", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_ui:"Web UI", nav_overview:"Overview", nav_features:"Design", nav_fit:"Fit", nav_rt:"Runtime", nav_evo:"Evolution", nav_training:"Training", nav_caps:"Capabilities", nav_safe:"Safety", nav_bench:"Benchmarks", nav_start:"Quick Start", nav_docs:"Docs", nav_docs_sec:"Docs",
     arch_more:"Read the full architecture, with diagrams →", qs_more:"Follow the step-by-step tutorial →",
     doc_eyebrow:"Documentation", doc_h:"A guided path, not a link dump",
     doc_p:"Everything above is what this is and why. These are how — written, bilingual, and kept next to the code they describe.",
@@ -1147,7 +1114,7 @@ const I18N = {
   },
   zh:{
     page_title:"AgentEvolver · 从多智能体执行到可训练轨迹", page_desc:"AgentEvolver 编排复杂多智能体任务、进化版本化能力，并采集带奖励的 SFT/RL trajectory，最终走向训练、评测与应用一体化的端到端闭环。",
-    nav_overview:"项目定位", nav_features:"设计", nav_fit:"适用性", nav_arch:"架构", nav_rt:"运行时", nav_evo:"自进化", nav_training:"训练闭环", nav_caps:"能力", nav_ui:"Web 界面", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始", nav_docs:"文档", nav_docs_sec:"文档",
+    nav_home:"首页", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_ui:"Web 界面", nav_overview:"项目定位", nav_features:"设计", nav_fit:"适用性", nav_rt:"运行时", nav_evo:"自进化", nav_training:"训练闭环", nav_caps:"能力", nav_safe:"安全", nav_bench:"基准测试", nav_start:"快速开始", nav_docs:"文档", nav_docs_sec:"文档",
     arch_more:"阅读完整架构（含图解）→", qs_more:"跟着分步教程走一遍 →",
     doc_eyebrow:"文档", doc_h:"一条学习路径，而不是链接堆砌",
     doc_p:"以上讲的是它是什么、为什么。下面讲怎么用——手写、中英双语，并且和它描述的代码放在一起。",

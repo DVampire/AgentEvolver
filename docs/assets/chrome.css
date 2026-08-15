@@ -1,0 +1,57 @@
+/* One global header for every GitHub Pages surface. Page-local styles must not
+   redefine this contract; the ae- prefix deliberately keeps it isolated. */
+.ae-nav{
+  position:sticky;top:0;z-index:1000;width:100%;height:66px;
+  background:rgba(5,6,15,.88);border-bottom:1px solid rgba(255,255,255,.09);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  color:#eef1ff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+.ae-nav-inner{max-width:1320px;height:100%;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:22px}
+.ae-brand{display:flex;align-items:center;gap:10px;flex:0 0 auto;color:#eef1ff;text-decoration:none;font-size:18px;font-weight:760;letter-spacing:-.025em;white-space:nowrap}
+.ae-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#7c5cff,#22d3ee);box-shadow:0 7px 22px rgba(124,92,255,.35)}
+.ae-mark svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ae-links{display:flex;align-items:center;justify-content:center;gap:clamp(14px,1.55vw,25px);margin-left:auto;min-width:0}
+.ae-link{position:relative;padding:22px 0 20px;color:#9aa3c7;text-decoration:none;font-size:14px;line-height:24px;white-space:nowrap;transition:color .18s}
+.ae-link:hover{color:#eef1ff}
+.ae-link.current{color:#eef1ff;font-weight:650}
+.ae-link.current::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,#7c5cff,#22d3ee)}
+.ae-actions{display:flex;align-items:center;gap:11px;flex:0 0 auto}
+.ae-lang{display:flex!important;border:1px solid rgba(255,255,255,.16)!important;border-radius:999px!important;overflow:hidden!important;background:rgba(255,255,255,.02)!important;font-size:12.5px!important;font-weight:650!important}
+.ae-lang button{appearance:none!important;border:0!important;border-radius:0!important;background:transparent!important;color:#9aa3c7!important;padding:6px 11px!important;margin:0!important;min-width:0!important;font:inherit!important;line-height:20px!important;white-space:nowrap!important;cursor:pointer!important;box-shadow:none!important}
+.ae-lang button.active{background:linear-gradient(135deg,#7c5cff,#22d3ee)!important;color:#fff!important}
+.ae-github{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(255,255,255,.035);color:#eef1ff;text-decoration:none;font-size:13.5px;font-weight:650;white-space:nowrap;transition:transform .18s,border-color .18s,background .18s}
+.ae-github:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.32);background:rgba(255,255,255,.065)}
+.ae-github svg{width:16px;height:16px;fill:currentColor}
+.ae-menu-toggle{display:none;width:38px;height:38px;padding:0;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.035);cursor:pointer}
+.ae-menu-toggle span{display:block;width:17px;height:1.5px;margin:4px auto;background:#eef1ff;border-radius:2px;transition:transform .18s,opacity .18s}
+.ae-menu-toggle[aria-expanded="true"] span:first-child{transform:translateY(5.5px) rotate(45deg)}
+.ae-menu-toggle[aria-expanded="true"] span:nth-child(2){opacity:0}
+.ae-menu-toggle[aria-expanded="true"] span:last-child{transform:translateY(-5.5px) rotate(-45deg)}
+
+@media(max-width:1040px){
+  .ae-nav-inner{gap:14px}
+  .ae-menu-toggle{display:block;order:2}
+  .ae-links{display:none;position:absolute;left:18px;right:18px;top:72px;margin:0;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:15px;background:rgba(8,10,23,.98);box-shadow:0 22px 55px rgba(0,0,0,.5)}
+  .ae-links.open{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+  .ae-link{padding:11px 13px;border-radius:9px;line-height:20px}
+  .ae-link:hover,.ae-link.current{background:rgba(255,255,255,.055)}
+  .ae-link.current::after{display:none}
+  .ae-actions{margin-left:auto;order:3}
+}
+@media(max-width:620px){
+  .ae-nav-inner{padding:0 17px}.ae-brand{font-size:16px}.ae-mark{width:29px;height:29px}
+  .ae-links.open{grid-template-columns:1fr 1fr}
+  .ae-github{display:none}
+}
+@media(max-width:390px){.ae-lang button{padding:5px 8px!important}.ae-nav-inner{gap:9px}}
+
+ae-footer{display:block}
+.ae-footer{border-top:1px solid rgba(255,255,255,.09);padding:36px 0;background:rgba(5,6,15,.5);color:#6f7aa6;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px}
+.ae-footer-inner{max-width:1320px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.ae-footer-copy{display:flex;align-items:center;gap:13px;min-width:0}
+.ae-footer-brand{display:flex;align-items:center;gap:9px;color:#eef1ff;text-decoration:none;font-size:15.5px;font-weight:740;white-space:nowrap}
+.ae-footer-brand .ae-mark{width:27px;height:27px;border-radius:8px;box-shadow:none}.ae-footer-brand .ae-mark svg{width:15px;height:15px}
+.ae-footer-tag{color:#6f7aa6;white-space:nowrap}
+.ae-footer-links{display:flex;align-items:center;justify-content:flex-end;gap:18px;flex-wrap:wrap}
+.ae-footer-links a{color:#9aa3c7;text-decoration:none;white-space:nowrap}.ae-footer-links a:hover{color:#eef1ff}
+@media(max-width:820px){.ae-footer-inner{align-items:flex-start;flex-direction:column}.ae-footer-copy{align-items:flex-start;flex-direction:column;gap:8px}.ae-footer-links{justify-content:flex-start;gap:10px 17px}.ae-footer-tag{white-space:normal}}
