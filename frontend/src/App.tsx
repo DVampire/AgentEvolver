@@ -1292,7 +1292,7 @@ export function App() {
           own slim toolbar carries the title, status and controls instead. */}
       {mainView === 'docs' ? <section className="conversation docs-mode">
         <Suspense fallback={<div className="workspace-placeholder">Loading documentation…</div>}>
-          <DocsView request={gatewayRequest} />
+          <DocsView request={gatewayRequest} endpoint={activeEndpoint} />
         </Suspense>
       </section> : mainView === 'science' ? <section className="conversation science-mode">
         <Suspense fallback={<div className="workspace-placeholder">Loading workstation…</div>}>

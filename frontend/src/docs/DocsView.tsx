@@ -35,7 +35,7 @@ function resolveRelative(from: string, href: string): string {
   return base.join('/');
 }
 
-export function DocsView({ request }: { request: RequestFn }) {
+export function DocsView({ request, endpoint }: { request: RequestFn; endpoint?: string }) {
   const [entries, setEntries] = useState<DocEntry[]>([]);
   const [active, setActive] = useState<string>();
   const [doc, setDoc] = useState<DocContent>();
@@ -208,7 +208,25 @@ export function DocsView({ request }: { request: RequestFn }) {
 
       <div className="docs-article" ref={articleRef}>
         {error ? (
-          <div className="docs-placeholder"><strong>Could not load</strong><p>{error}</p></div>
+          <div className="docs-placeholder">
+            <strong>Could not load</strong>
+            <p>{error}</p>
+            {/* The address, because this failure is almost never about the documents.
+                `docs.list` is newer than most gateways anyone has running, so "unknown
+                method" means the page is talking to an older one — and the endpoint is
+                stored, so it survives moving the app to a different port. Without the
+                address on screen, that reads as a broken feature and the search starts in
+                the wrong layer entirely. It did once. */}
+            {endpoint ? (
+              <p className="docs-endpoint">
+                connected to <code>{endpoint}</code>
+                {endpoint !== `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+                  ? <> — not this page’s origin. Open <strong>Connection</strong> in the sidebar
+                      and clear it to use <code>{`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`}</code>.</>
+                  : null}
+              </p>
+            ) : null}
+          </div>
         ) : loading && !doc ? (
           <div className="docs-placeholder"><p>Loading…</p></div>
         ) : doc ? (

@@ -109,3 +109,9 @@
   .docs-nav { border-right: 0; border-bottom: 1px solid hsl(var(--border)); max-height: 40vh; }
   .docs-body { padding: 28px 20px 72px; }
 }
+
+/* The address the failing request went to. Small and quiet — it is diagnostic, not the
+   headline — but present, because "unknown method" almost always means the page is talking
+   to an older gateway rather than that the feature is broken. */
+.docs-endpoint { max-width: 46ch; margin-top: 10px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.6; }
+.docs-endpoint code { border-radius: 4px; padding: 1px 5px; background: hsl(var(--muted)); font-size: 11.5px; }
