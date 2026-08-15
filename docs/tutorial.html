@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tutorial — AgentEvolver</title>
+<meta name="description" content="From an empty machine to reading the trajectory a run produced: install, configure a model, run a task, add a tool, and see what the system kept.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="mark">◆</span> AgentEvolver</a>
+    <div class="nav-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="tutorial.html" class="here" data-i18n="nav_tut">Tutorial</a>
+      <a href="architecture.html" data-i18n="nav_arch">Architecture</a>
+      <a href="modules.html" data-i18n="nav_mod">Modules</a>
+      <a href="development.html" data-i18n="nav_dev">Development</a>
+      <a href="ui.html" data-i18n="nav_ui">Web UI</a>
+    </div>
+    <div class="nav-right">
+      <div class="lang" role="group" aria-label="language">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="zh">中文</button>
+      </div>
+      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page">
+  <div class="wrap">
+    <span class="eyebrow" data-i18n="hdr_pill">Tutorial</span>
+    <h1 data-i18n="hdr_title_html">From nothing to <span class="grad">a trajectory</span></h1>
+    <p class="lede" data-i18n="hdr_lede">Six steps, each verifiable before the next. By the end you will have run a task, added a capability the agent can use, and read the record the run left behind — which is the part that makes this different from a chat window.</p>
+  </div>
+</header>
+
+<div class="wrap shell">
+  <aside>
+    <div class="grp">
+      <b data-i18n="side_a">Get it running</b>
+      <a href="#install" data-i18n="nav_install">1 · Install</a>
+      <a href="#model" data-i18n="nav_model">2 · Configure a model</a>
+      <a href="#first" data-i18n="nav_first">3 · Run a task</a>
+    </div>
+    <div class="grp">
+      <b data-i18n="side_b">Make it yours</b>
+      <a href="#tool" data-i18n="nav_tool">4 · Add a tool</a>
+      <a href="#read" data-i18n="nav_read">5 · Read the trajectory</a>
+      <a href="#next" data-i18n="nav_next">6 · Where to go next</a>
+    </div>
+  </aside>
+
+  <main>
+
+  <!-- 1 -->
+  <section id="install">
+    <h2><span class="num">01</span><span data-i18n="s1_h">Install</span></h2>
+    <p data-i18n="s1_p1">Python 3.11 or newer. The editable install is the one to use while reading the code, because every module is discovered by import and an editable tree keeps that honest.</p>
+<pre><code>git clone https://github.com/DVampire/AgentEvolver.git
+cd AgentEvolver
+pip install -e ".[dev]"</code></pre>
+    <p data-i18n="s1_p2"><strong>Verify.</strong> The suite should be green before you change anything, so that the first red you see is yours:</p>
+<pre><code>pytest -q</code></pre>
+  </section>
+
+  <!-- 2 -->
+  <section id="model">
+    <h2><span class="num">02</span><span data-i18n="s2_h">Configure a model</span></h2>
+    <p data-i18n="s2_p1">Models are selected by <em>role</em> rather than by name at each call site, so swapping the model behind "the main one" is a config change and not a search-and-replace.</p>
+<pre><code># .env
+OPENAI_API_KEY=sk-...
+# or any provider the model registry knows — see agentevolver/model/</code></pre>
+    <div class="card why">
+      <b class="tag" data-i18n="t_why">Why</b>
+      <p data-i18n="s2_why">Retries are deliberately <em>not</em> configured here. Every provider adapter passes <code>max_retries=0</code> to its SDK, because two retry layers multiply — three application attempts over five SDK attempts is fifteen requests nobody chose — and the SDK's attempts reach neither the log nor the trajectory.</p>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="first">
+    <h2><span class="num">03</span><span data-i18n="s3_h">Run a task</span></h2>
+    <p data-i18n="s3_p1">Two processes: the gateway is the runtime, and the dev server is the UI. The UI proxies to the gateway, so only one port is ever exposed.</p>
+<pre><code># terminal 1
+python -m agentevolver.cli serve --transport websocket --port 9876
+
+# terminal 2
+cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
+    <p data-i18n="s3_p2">Open the UI, type a task, and watch the middle column. What you are seeing is not a transcript being streamed at you — it is the log being rendered as it is written.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 250" role="img" aria-labelledby="figt">
+        <title id="figt">What happens when you send a task</title>
+
+        <rect class="d-box-c" x="24" y="96" width="132" height="58" rx="11"/>
+        <text class="d-t" x="90" y="121" text-anchor="middle">You</text>
+        <text class="d-s" x="90" y="139" text-anchor="middle">a task, in words</text>
+
+        <path class="d-l-b" d="M156 125 L200 125" marker-end="url(#t1)"/>
+
+        <rect class="d-box-b" x="200" y="96" width="132" height="58" rx="11"/>
+        <text class="d-t" x="266" y="121" text-anchor="middle">MetaAgent</text>
+        <text class="d-s" x="266" y="139" text-anchor="middle">plans · delegates</text>
+
+        <path class="d-l-b" d="M332 125 L376 125" marker-end="url(#t1)"/>
+
+        <rect class="d-box-b" x="376" y="60" width="150" height="52" rx="11"/>
+        <text class="d-t" x="451" y="82" text-anchor="middle">Specialist agent</text>
+        <text class="d-s" x="451" y="99" text-anchor="middle">tools · skills · env</text>
+
+        <rect class="d-box-b" x="376" y="132" width="150" height="52" rx="11"/>
+        <text class="d-t" x="451" y="154" text-anchor="middle">Specialist agent</text>
+        <text class="d-s" x="451" y="171" text-anchor="middle">runs in parallel</text>
+
+        <path class="d-l-b" d="M526 86 L580 86 L580 118 L610 118" marker-end="url(#t1)"/>
+        <path class="d-l-b" d="M526 158 L580 158 L580 132 L610 132" marker-end="url(#t1)"/>
+
+        <rect class="d-box-b" x="610" y="96" width="132" height="58" rx="11"/>
+        <text class="d-t" x="676" y="121" text-anchor="middle">Review</text>
+        <text class="d-s" x="676" y="139" text-anchor="middle">accept or send back</text>
+
+        <path class="d-l-d" d="M676 154 L676 208 L266 208 L266 154" marker-end="url(#t2)"/>
+        <text class="d-s" x="471" y="202" text-anchor="middle">not good enough — go round again</text>
+
+        <rect class="d-box-w" x="762" y="96" width="114" height="58" rx="11"/>
+        <text class="d-t" x="819" y="121" text-anchor="middle">Trajectory</text>
+        <text class="d-s" x="819" y="139" text-anchor="middle">kept either way</text>
+        <path class="d-l" d="M742 125 L762 125" marker-end="url(#t2)"/>
+
+        <defs>
+          <marker id="t1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(124,92,255,.85)"/></marker>
+          <marker id="t2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(255,255,255,.4)"/></marker>
+        </defs>
+      </svg>
+      <figcaption data-i18n="fig_cap">A run that is sent back and retried produces a trajectory too. Failed attempts are the part of the record that a training set most needs and most often lacks.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 4 -->
+  <section id="tool">
+    <h2><span class="num">04</span><span data-i18n="s4_h">Add a tool</span></h2>
+    <p data-i18n="s4_p1">One file, one export, one test. The agent can use it on the next run — there is no registry file to edit.</p>
+<pre><code># agentevolver/tool/default/word_count.py
+class WordCountTool(Tool):
+    """Count the words in a file."""
+
+    name: str = Field(default="word_count")          # a CLASS field
+    description: str = Field(default="Count words in a UTF-8 text file.")
+    mutates: bool = Field(default=False)             # reports only; never writes
+
+    async def __call__(self, path: str, ctx=None, **kwargs) -&gt; Response:
+        with open(path, encoding="utf-8") as handle:
+            count = len(handle.read().split())
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=f"{count} words", data={"words": count})</code></pre>
+<pre><code># agentevolver/tool/default/__init__.py
+from .word_count import WordCountTool</code></pre>
+    <p data-i18n="s4_p2"><strong>Verify.</strong> Registration is what to check, not the import:</p>
+<pre><code>python -c "
+import asyncio
+from agentevolver.tool import tool_manager
+asyncio.run(tool_manager.initialize())
+print('word_count' in asyncio.run(tool_manager.list()))"</code></pre>
+    <div class="card trap">
+      <b class="tag" data-i18n="t_trap">Trap</b>
+      <p data-i18n="s4_trap">Three things silently produce a tool the model can never call: a <code>name</code> passed to the constructor instead of declared as a class field, a class that is written but never exported, and a <code>__call__</code> that returns something other than a <code>Response</code> — the last leaves the agent holding <code>None</code>, so the run spins with no observation and no error.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="read">
+    <h2><span class="num">05</span><span data-i18n="s5_h">Read the trajectory</span></h2>
+    <p data-i18n="s5_p1">This is the step that explains the project. A run leaves a step-level record — what the model saw, what it decided, what came back, what it cost, and what the attempt was ultimately worth.</p>
+<pre><code>output/&lt;owner&gt;/sessions/&lt;session&gt;/log/trajectory/&lt;task&gt;.jsonl
+
+line 1   the header: session, task, agent, outcome, reward
+line 2+  one step each: messages sent · reasoning · actions · usage</code></pre>
+    <p data-i18n="s5_p2">Two properties are worth checking yourself, because they are what make the record usable as training data rather than as telemetry:</p>
+    <ul>
+      <li data-i18n="s5_l1"><strong>Failures are in there.</strong> A model call that failed twice and succeeded on the third try records all three. A record that showed only the success would describe a model that got it right first time — a sample that lies about what happened.</li>
+      <li data-i18n="s5_l2"><strong>The reward reaches every step.</strong> A benchmark scores a run after it ends, and the score is backfilled to the steps that produced it. A trajectory with no reward is a run the corpus counts as worth nothing.</li>
+    </ul>
+  </section>
+
+  <!-- 6 -->
+  <section id="next">
+    <h2><span class="num">06</span><span data-i18n="s6_h">Where to go next</span></h2>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b><a href="architecture.html" style="text-decoration:none">architecture</a></b></div>
+        <p data-i18n="n_arch">The four mechanisms the whole system rests on, with diagrams — including why one log has two readings.</p></div>
+      <div class="mod"><div class="mod-h"><b><a href="modules.html" style="text-decoration:none">modules</a></b></div>
+        <p data-i18n="n_mod">All fifty-six modules and what each one owns, grouped into seven families.</p></div>
+      <div class="mod"><div class="mod-h"><b><a href="development.html" style="text-decoration:none">development</a></b></div>
+        <p data-i18n="n_dev">The contributor guide: the module contract, how work is verified, and the invariants that were paid for in defects.</p></div>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>
+      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:13px">◆</span> AgentEvolver</div>
+      <div style="margin-top:8px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
+    </div>
+    <div class="foot-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="architecture.html" data-i18n="nav_arch">Architecture</a>
+      <a href="modules.html" data-i18n="nav_mod">Modules</a>
+      <a href="development.html" data-i18n="nav_dev">Development</a>
+      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+window.I18N = {
+ en:{
+  nav_home:"Home", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_ui:"Web UI",
+  nav_install:"1 · Install", nav_model:"2 · Configure a model", nav_first:"3 · Run a task",
+  nav_tool:"4 · Add a tool", nav_read:"5 · Read the trajectory", nav_next:"6 · Where to go next",
+  side_a:"Get it running", side_b:"Make it yours",
+  t_why:"Why", t_trap:"Trap",
+  hdr_pill:"Tutorial",
+  hdr_title_html:'From nothing to <span class="grad">a trajectory</span>',
+  hdr_lede:"Six steps, each verifiable before the next. By the end you will have run a task, added a capability the agent can use, and read the record the run left behind — which is the part that makes this different from a chat window.",
+
+  s1_h:"Install",
+  s1_p1:"Python 3.11 or newer. The editable install is the one to use while reading the code, because every module is discovered by import and an editable tree keeps that honest.",
+  s1_p2:"<strong>Verify.</strong> The suite should be green before you change anything, so that the first red you see is yours:",
+
+  s2_h:"Configure a model",
+  s2_p1:"Models are selected by <em>role</em> rather than by name at each call site, so swapping the model behind \"the main one\" is a config change and not a search-and-replace.",
+  s2_why:"Retries are deliberately <em>not</em> configured here. Every provider adapter passes <code>max_retries=0</code> to its SDK, because two retry layers multiply — three application attempts over five SDK attempts is fifteen requests nobody chose — and the SDK's attempts reach neither the log nor the trajectory.",
+
+  s3_h:"Run a task",
+  s3_p1:"Two processes: the gateway is the runtime, and the dev server is the UI. The UI proxies to the gateway, so only one port is ever exposed.",
+  s3_p2:"Open the UI, type a task, and watch the middle column. What you are seeing is not a transcript being streamed at you — it is the log being rendered as it is written.",
+  fig_cap:"A run that is sent back and retried produces a trajectory too. Failed attempts are the part of the record that a training set most needs and most often lacks.",
+
+  s4_h:"Add a tool",
+  s4_p1:"One file, one export, one test. The agent can use it on the next run — there is no registry file to edit.",
+  s4_p2:"<strong>Verify.</strong> Registration is what to check, not the import:",
+  s4_trap:"Three things silently produce a tool the model can never call: a <code>name</code> passed to the constructor instead of declared as a class field, a class that is written but never exported, and a <code>__call__</code> that returns something other than a <code>Response</code> — the last leaves the agent holding <code>None</code>, so the run spins with no observation and no error.",
+
+  s5_h:"Read the trajectory",
+  s5_p1:"This is the step that explains the project. A run leaves a step-level record — what the model saw, what it decided, what came back, what it cost, and what the attempt was ultimately worth.",
+  s5_p2:"Two properties are worth checking yourself, because they are what make the record usable as training data rather than as telemetry:",
+  s5_l1:"<strong>Failures are in there.</strong> A model call that failed twice and succeeded on the third try records all three. A record that showed only the success would describe a model that got it right first time — a sample that lies about what happened.",
+  s5_l2:"<strong>The reward reaches every step.</strong> A benchmark scores a run after it ends, and the score is backfilled to the steps that produced it. A trajectory with no reward is a run the corpus counts as worth nothing.",
+
+  s6_h:"Where to go next",
+  n_arch:"The four mechanisms the whole system rests on, with diagrams — including why one log has two readings.",
+  n_mod:"All fifty-six modules and what each one owns, grouped into seven families.",
+  n_dev:"The contributor guide: the module contract, how work is verified, and the invariants that were paid for in defects.",
+
+  foot_tag:"A self-evolving multi-agent framework · MIT License"
+ },
+ zh:{
+  nav_home:"首页", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_ui:"Web 界面",
+  nav_install:"1 · 安装", nav_model:"2 · 配置模型", nav_first:"3 · 跑一个任务",
+  nav_tool:"4 · 加一个工具", nav_read:"5 · 读懂轨迹", nav_next:"6 · 接下来看什么",
+  side_a:"先跑起来", side_b:"改成你自己的",
+  t_why:"为什么", t_trap:"坑",
+  hdr_pill:"教程",
+  hdr_title_html:'从零到<span class="grad">一条轨迹</span>',
+  hdr_lede:"六步，每一步在进入下一步之前都能验证。走完你会跑过一个任务、加过一个 agent 能用的能力，并读懂这次运行留下的记录——而那正是它区别于一个聊天窗口的地方。",
+
+  s1_h:"安装",
+  s1_p1:"Python 3.11 或更新。读代码期间用可编辑安装，因为每个模块都是靠导入被发现的，可编辑的源码树能让这件事保持诚实。",
+  s1_p2:"<strong>验证。</strong>动手改之前套件应该是绿的，这样你看到的第一个红色才是你自己的：",
+
+  s2_h:"配置模型",
+  s2_p1:"模型是按<em>角色</em>选的，而不是在每个调用点写死名字，所以换掉「主模型」背后的那个模型是改配置，不是全局替换。",
+  s2_why:"重试在这里是<em>刻意</em>不配置的。每个 provider 适配器都给 SDK 传 <code>max_retries=0</code>，因为两层重试会相乘——三次应用层尝试叠五次 SDK 尝试就是十五次请求，没有人选过这个数——而且 SDK 那几次既不进日志也不进轨迹。",
+
+  s3_h:"跑一个任务",
+  s3_p1:"两个进程：网关是运行时，开发服务器是界面。界面代理到网关，所以对外始终只暴露一个端口。",
+  s3_p2:"打开界面、输入任务、看中间那一栏。你看到的不是有人把一份记录流式推给你——那是日志正在被写入的同时被渲染出来。",
+  fig_cap:"被打回重做的运行同样产出轨迹。失败的尝试恰恰是训练集最需要、也最常缺失的那部分记录。",
+
+  s4_h:"加一个工具",
+  s4_p1:"一个文件、一处导出、一个测试。下一次运行 agent 就能用上它——没有需要编辑的注册表文件。",
+  s4_p2:"<strong>验证。</strong>该查的是注册，不是导入：",
+  s4_trap:"有三件事会静默地产出一个模型永远调不到的工具：把 <code>name</code> 当构造参数传而不是声明为类字段；类写了却从没导出；以及 <code>__call__</code> 返回了 <code>Response</code> 以外的东西——最后这个会让 agent 拿到 <code>None</code>，于是运行空转，既没有观察也没有错误。",
+
+  s5_h:"读懂轨迹",
+  s5_p1:"这一步才解释了这个项目。一次运行会留下步级的记录——模型看到了什么、决定了什么、回来了什么、花了多少，以及这次尝试最终值多少。",
+  s5_p2:"有两个性质值得你自己去核对，因为正是它们让这份记录能当训练数据用，而不只是遥测：",
+  s5_l1:"<strong>失败在里面。</strong>一次失败两次、第三次才成功的模型调用会把三次都记下来。只显示成功的记录，描述的是一个一次就做对的模型——一条对发生过什么撒谎的样本。",
+  s5_l2:"<strong>奖励要落到每一步。</strong>基准在运行结束后打分，而这个分数会回填到产生它的那些步骤上。一条没有奖励的轨迹，在语料里等于这次运行一文不值。",
+
+  s6_h:"接下来看什么",
+  n_arch:"整个系统赖以成立的四个机制，配图——包括为什么一份日志有两种读法。",
+  n_mod:"全部五十六个模块各自负责什么，按七个族分组。",
+  n_dev:"贡献者指南：模块契约、工作如何被检验，以及那些用缺陷换来的不变式。",
+
+  foot_tag:"一个自进化的多智能体框架 · MIT 许可证"
+ }
+};
+</script>
+<script src="assets/site.js"></script>
+</body>
+</html>

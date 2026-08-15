@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
-import { BookOpen, Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
+import { Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -61,13 +61,12 @@ interface HostDraft {
 interface DeploySite { site_id: string; runtime: string; status: string; url?: string | null; port?: number | null; }
 interface EnvironmentViewInfo { env_name: string; type: string; url: string; label?: string; password?: string | null; }
 type InspectorTab = 'files' | 'activity' | 'inspector';
-type MainView = 'chat' | 'canvas' | 'code' | 'science' | 'docs';
+type MainView = 'chat' | 'canvas' | 'code' | 'science';
 const WorkspaceEditor = lazy(() => import('./workspace/WorkspaceEditor'));
 const VncView = lazy(() => import('./vnc/VncView'));
 const CanvasView = lazy(() => import('./canvas'));
 const IdeView = lazy(() => import('./ide/IdeView').then((module) => ({ default: module.IdeView })));
 const ScienceView = lazy(() => import('./science/ScienceView').then((module) => ({ default: module.ScienceView })));
-const DocsView = lazy(() => import('./docs/DocsView').then((module) => ({ default: module.DocsView })));
 interface CapabilityDetail { kind: CapabilityKind; name: string; description: string; version: string; permission_mode: string; type?: string | string[]; enable_evolving: boolean; actions: string[]; parameter_schema?: Record<string, unknown>; usage?: string; configuration: Record<string, unknown>; editable: boolean; document: string; preview_document?: string; document_path?: string; language: 'markdown' | 'schema' | 'source'; }
 
 // Same-origin by default: the page is served by the Vite dev server, which
@@ -1097,7 +1096,6 @@ export function App() {
           <button className={mainView === 'canvas' ? 'view-active' : ''} onClick={() => setMainView('canvas')}><span><Waypoints size={16} strokeWidth={1.9} /></span><strong>Canvas</strong></button>
           <button className={mainView === 'code' ? 'view-active' : ''} onClick={() => setMainView('code')}><span><Code2 size={16} strokeWidth={1.9} /></span><strong>Code</strong></button>
           <button className={mainView === 'science' ? 'view-active' : ''} onClick={() => setMainView('science')}><span><FlaskConical size={16} strokeWidth={1.9} /></span><strong>Science</strong></button>
-          <button className={mainView === 'docs' ? 'view-active' : ''} onClick={() => setMainView('docs')}><span><BookOpen size={16} strokeWidth={1.9} /></span><strong>Docs</strong></button>
         </nav>
         </div>
         {/* Everything below is reference, not navigation: it takes whatever
@@ -1290,11 +1288,7 @@ export function App() {
       {/* No page header here: VS Code brings its own full chrome, so the usual
           eyebrow+title bar would be a second wasted strip above it. IdeView's
           own slim toolbar carries the title, status and controls instead. */}
-      {mainView === 'docs' ? <section className="conversation docs-mode">
-        <Suspense fallback={<div className="workspace-placeholder">Loading documentation…</div>}>
-          <DocsView request={gatewayRequest} endpoint={activeEndpoint} />
-        </Suspense>
-      </section> : mainView === 'science' ? <section className="conversation science-mode">
+      {mainView === 'science' ? <section className="conversation science-mode">
         <Suspense fallback={<div className="workspace-placeholder">Loading workstation…</div>}>
           <ScienceView request={gatewayRequest} subscribe={subscribeEvents} sessionId={sessionId} connected={status === 'connected'}
             status={status} statusText={statusText} onOpenNav={() => setMobileNavOpen(true)} />

@@ -5,100 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Development — AgentEvolver</title>
 <meta name="description" content="How AgentEvolver is built: the module contract, how to add a capability, how the work is verified, and the invariants that were paid for.">
-<style>
-  :root{
-    --bg:#05060f; --bg-2:#0a0c1c;
-    --panel:rgba(255,255,255,.035); --panel-strong:rgba(255,255,255,.06);
-    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.16);
-    --text:#eef1ff; --muted:#9aa3c7; --muted-2:#6f7aa6;
-    --brand:#7c5cff; --brand-2:#22d3ee; --brand-3:#ff5c9d;
-    --ok:#34d399; --warn:#fbbf24;
-    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-    --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;-webkit-font-smoothing:antialiased}
-  a{color:inherit}
-  code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.07);border-radius:5px;padding:1px 6px}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
-
-  /* ---------- nav ---------- */
-  nav{position:sticky;top:0;z-index:50;background:rgba(5,6,15,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
-  .nav-inner{display:flex;align-items:center;gap:20px;height:62px}
-  .brand{display:flex;align-items:center;gap:9px;font-weight:750;text-decoration:none;letter-spacing:-.02em}
-  .mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--brand),var(--brand-2));font-size:15px}
-  .nav-links{display:flex;gap:19px;margin-left:12px;font-size:13.5px;color:var(--muted)}
-  .nav-links a{text-decoration:none;transition:.2s}
-  .nav-links a:hover{color:var(--text)}
-  .nav-right{display:flex;align-items:center;gap:12px;margin-left:auto}
-  .lang{display:flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;font-size:13px;font-weight:600}
-  .lang button{background:none;border:0;color:var(--muted);padding:6px 13px;cursor:pointer;font-family:inherit;font-weight:inherit;transition:.2s}
-  .lang button.active{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff}
-  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border-strong);border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:600;text-decoration:none;transition:.2s}
-  .btn:hover{border-color:rgba(255,255,255,.35);transform:translateY(-1px)}
-  .btn.primary{background:linear-gradient(135deg,var(--brand),var(--brand-2));border-color:transparent;color:#fff}
-
-  /* ---------- header ---------- */
-  header.page{padding:74px 0 46px;border-bottom:1px solid var(--border);background:radial-gradient(900px 380px at 18% -10%,rgba(124,92,255,.20),transparent 60%)}
-  .eyebrow{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border-strong);border-radius:999px;padding:5px 14px;font-size:12.5px;color:var(--muted);letter-spacing:.03em}
-  h1{margin:20px 0 14px;font-size:clamp(34px,5vw,52px);line-height:1.1;letter-spacing:-.035em}
-  .grad{background:linear-gradient(120deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .lede{max-width:70ch;color:var(--muted);font-size:16.5px}
-
-  /* ---------- layout ---------- */
-  .shell{display:grid;grid-template-columns:236px minmax(0,1fr);gap:52px;padding:44px 0 96px}
-  aside{position:sticky;top:86px;align-self:start;max-height:calc(100vh - 110px);overflow-y:auto;font-size:13.5px}
-  aside .grp{margin-bottom:20px}
-  aside .grp b{display:block;margin-bottom:7px;color:var(--muted-2);font-size:11px;text-transform:uppercase;letter-spacing:.11em}
-  aside a{display:block;padding:5px 11px;border-left:2px solid transparent;color:var(--muted);text-decoration:none;transition:.15s}
-  aside a:hover{color:var(--text)}
-  aside a.on{border-left-color:var(--brand);color:var(--text);font-weight:600}
-
-  main{min-width:0}
-  section{scroll-margin-top:82px;margin-bottom:58px}
-  h2{margin:0 0 8px;font-size:27px;letter-spacing:-.025em}
-  h2 .num{margin-right:11px;color:var(--brand);font-family:var(--mono);font-size:16px;font-weight:600}
-  h3{margin:30px 0 8px;font-size:17.5px;letter-spacing:-.012em}
-  p{margin:0 0 14px;color:var(--muted);max-width:76ch}
-  main strong{color:var(--text);font-weight:650}
-  ul,ol{margin:0 0 14px;padding-left:22px;color:var(--muted);max-width:76ch}
-  li{margin:6px 0}
-
-  pre{margin:0 0 18px;overflow-x:auto;border:1px solid var(--border);border-radius:12px;padding:16px 18px;background:rgba(0,0,0,.34);font-family:var(--mono);font-size:12.6px;line-height:1.62;color:#d7def0}
-  pre code{background:none;padding:0;font-size:inherit}
-
-  .card{border:1px solid var(--border);border-radius:14px;padding:19px 21px;background:var(--panel);margin:0 0 16px}
-  .card.why{border-left:3px solid var(--brand)}
-  .card.trap{border-left:3px solid var(--warn)}
-  .card b.tag{display:block;margin-bottom:6px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)}
-  .card.why b.tag{color:var(--brand)}
-  .card.trap b.tag{color:var(--warn)}
-  .card p:last-child{margin-bottom:0}
-
-  table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:13.6px}
-  th,td{border:1px solid var(--border);padding:9px 12px;text-align:left;vertical-align:top;color:var(--muted)}
-  th{background:var(--panel-strong);color:var(--text);font-weight:650}
-  td code{white-space:nowrap}
-
-  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:14px;margin-bottom:18px}
-  .kv{border:1px solid var(--border);border-radius:12px;padding:15px 17px;background:var(--panel)}
-  .kv b{display:block;margin-bottom:4px;color:var(--text);font-size:14px}
-  .kv span{color:var(--muted);font-size:13.2px}
-
-  footer{border-top:1px solid var(--border);padding:34px 0;color:var(--muted-2);font-size:13.5px}
-  .foot-inner{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center}
-  .foot-links{display:flex;gap:18px}
-  .foot-links a{text-decoration:none;color:var(--muted)}
-  .foot-links a:hover{color:var(--text)}
-
-  @media(max-width:940px){
-    .shell{grid-template-columns:minmax(0,1fr);gap:0}
-    aside{position:static;max-height:none;margin-bottom:30px;border-bottom:1px solid var(--border);padding-bottom:18px}
-    aside .grp{display:inline-block;margin-right:22px;vertical-align:top}
-    .nav-links{display:none}
-  }
-</style>
+<link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
 
@@ -107,12 +14,11 @@
     <a class="brand" href="index.html"><span class="mark">◆</span> AgentEvolver</a>
     <div class="nav-links">
       <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="tutorial.html" data-i18n="nav_tut">Tutorial</a>
+      <a href="architecture.html" data-i18n="nav_arch">Architecture</a>
+      <a href="modules.html" data-i18n="nav_mod">Modules</a>
+      <a href="development.html" class="here" data-i18n="nav_dev">Development</a>
       <a href="ui.html" data-i18n="nav_ui">Web UI</a>
-      <a href="#start" data-i18n="nav_start">Setup</a>
-      <a href="#layout" data-i18n="nav_layout">Layout</a>
-      <a href="#capability" data-i18n="nav_cap">Add a capability</a>
-      <a href="#verify" data-i18n="nav_verify">Verification</a>
-      <a href="#invariants" data-i18n="nav_inv">Invariants</a>
     </div>
     <div class="nav-right">
       <div class="lang" role="group" aria-label="language">
@@ -169,7 +75,7 @@ python -m agentevolver.cli serve --transport websocket --port 9876
 cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
     <div class="card trap">
       <b class="tag" data-i18n="t_trap">Trap</b>
-      <p data-i18n="s1_trap">The UI stores its gateway address. Move the dev server to another port and the stored address still names the old one — both proxy to <em>a</em> gateway, so everything looks connected while you talk to the wrong backend. The symptom is one newer method reported as unknown. Loopback addresses now migrate automatically; if you see it, the Docs view prints the address it used.</p>
+      <p data-i18n="s1_trap">The UI stores its gateway address. Move the dev server to another port and the stored address still names the old one — both proxy to <em>a</em> gateway, so everything looks connected while you talk to the wrong backend. The symptom is one newer method reported as unknown. Loopback addresses now migrate automatically; the Connection dialog in the sidebar shows and clears the stored one.</p>
     </div>
   </section>
 
@@ -342,9 +248,9 @@ pytest --cov        # measures, then applies the coverage gate</code></pre>
 </footer>
 
 <script>
-const I18N = {
+window.I18N = {
   en:{
-    nav_home:"Home", nav_ui:"Web UI", nav_start:"Setup", nav_layout:"Layout", nav_cap:"Add a capability",
+    nav_home:"Home", nav_ui:"Web UI", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_start:"Setup", nav_layout:"Layout", nav_cap:"Add a capability",
     nav_verify:"Verification", nav_inv:"Invariants", nav_module:"The module contract", nav_gw:"Gateway & frontend",
     nav_ext:"Extensions at runtime", nav_rec:"Decisions & postmortems",
     side_a:"Getting in", side_b:"Changing things", side_c:"Keeping it true",
@@ -355,7 +261,7 @@ const I18N = {
 
     s1_h:"Setup",
     s1_p1:"One environment, two commands. The gateway serves the runtime; the Vite dev server serves the UI and reverse-proxies to the gateway, so only one port ever needs forwarding.",
-    s1_trap:"The UI stores its gateway address. Move the dev server to another port and the stored address still names the old one — both proxy to <em>a</em> gateway, so everything looks connected while you talk to the wrong backend. The symptom is one newer method reported as unknown. Loopback addresses now migrate automatically; if you see it, the Docs view prints the address it used.",
+    s1_trap:"The UI stores its gateway address. Move the dev server to another port and the stored address still names the old one — both proxy to <em>a</em> gateway, so everything looks connected while you talk to the wrong backend. The symptom is one newer method reported as unknown. Loopback addresses now migrate automatically; the Connection dialog in the sidebar shows and clears the stored one.",
 
     s2_h:"Repository layout",
     s2_p1:"Every capability lives in its own top-level module under <code>agentevolver/</code>. There is no shared \"core\" that things get added to — a new capability is a new directory, and nothing else changes.",
@@ -422,7 +328,7 @@ const I18N = {
     foot_tag:"A self-evolving multi-agent framework · MIT License"
   },
   zh:{
-    nav_home:"首页", nav_ui:"Web 界面", nav_start:"环境搭建", nav_layout:"仓库结构", nav_cap:"新增能力",
+    nav_home:"首页", nav_ui:"Web 界面", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_start:"环境搭建", nav_layout:"仓库结构", nav_cap:"新增能力",
     nav_verify:"验证体系", nav_inv:"不变式", nav_module:"模块契约", nav_gw:"网关与前端",
     nav_ext:"运行时扩展", nav_rec:"决策与事后分析",
     side_a:"上手", side_b:"动手改", side_c:"保持正确",
@@ -433,7 +339,7 @@ const I18N = {
 
     s1_h:"环境搭建",
     s1_p1:"一套环境，两条命令。网关提供运行时；Vite 开发服务器提供界面并把请求反向代理到网关，所以对外只需要转发一个端口。",
-    s1_trap:"界面会把网关地址存下来。把开发服务器换到另一个端口，存下的地址仍然指着旧的那个——两边都代理到<em>某个</em>网关，所以看起来一切正常，实际连的是错的后端。症状是某个较新的方法被报为「未知」。回环地址现在会自动迁移；万一还是遇到，Docs 页面会把它用的地址打出来。",
+    s1_trap:"界面会把网关地址存下来。把开发服务器换到另一个端口，存下的地址仍然指着旧的那个——两边都代理到<em>某个</em>网关，所以看起来一切正常，实际连的是错的后端。症状是某个较新的方法被报为「未知」。回环地址现在会自动迁移；侧栏的 Connection 对话框可以查看并清除存下来的那个。",
 
     s2_h:"仓库结构",
     s2_p1:"每个能力都是 <code>agentevolver/</code> 下自己的一个顶层模块。没有一个大家往里加东西的公共「核心」——新增能力就是新增一个目录，别处一行不改。",
@@ -501,46 +407,7 @@ const I18N = {
   }
 };
 
-function applyLang(lang){
-  const dict = I18N[lang] || I18N.en;
-  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
-  document.querySelectorAll("[data-i18n]").forEach(el=>{
-    const value = dict[el.dataset.i18n];
-    if(value === undefined) return;
-    // Keys carrying markup are named *_html or contain tags the copy needs; both are
-    // authored in this file, never user input, so innerHTML is the correct sink here.
-    el.innerHTML = value;
-  });
-  document.querySelectorAll(".lang button").forEach(b=>{
-    b.classList.toggle("active", b.dataset.lang === lang);
-  });
-  try{ localStorage.setItem("ae_lang", lang); }catch(e){}
-}
-
-document.querySelectorAll(".lang button").forEach(b=>{
-  b.addEventListener("click", ()=>applyLang(b.dataset.lang));
-});
-
-// Shared with index.html so a reader who chose 中文 there does not choose it again here.
-let saved = null;
-try{ saved = localStorage.getItem("ae_lang"); }catch(e){}
-// Parenthesised: `saved || cond ? a : b` groups as `(saved || cond) ? a : b`, which turns a
-// stored "en" — truthy — into 中文. The stored choice wins; the browser only decides when
-// there is none.
-const preferred = (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
-applyLang(saved === "zh" || saved === "en" ? saved : preferred);
-
-// Highlight the section being read. Last heading past the top edge, not the nearest —
-// nearest flickers between two entries on a slow scroll.
-const links = [...document.querySelectorAll("aside a")];
-const targets = links.map(a=>document.querySelector(a.getAttribute("href"))).filter(Boolean);
-function mark(){
-  let current = targets[0];
-  for(const t of targets){ if(t.getBoundingClientRect().top <= 96) current = t; }
-  links.forEach(a=>a.classList.toggle("on", a.getAttribute("href") === "#" + current.id));
-}
-mark();
-window.addEventListener("scroll", mark, {passive:true});
 </script>
+<script src="assets/site.js"></script>
 </body>
 </html>

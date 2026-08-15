@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modules — AgentEvolver</title>
+<meta name="description" content="Every module in AgentEvolver and what it owns, grouped into seven families.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="mark">&#9670;</span> AgentEvolver</a>
+    <div class="nav-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="tutorial.html" data-i18n="nav_tut">Tutorial</a>
+      <a href="architecture.html" data-i18n="nav_arch">Architecture</a>
+      <a href="modules.html" class="here" data-i18n="nav_mod">Modules</a>
+      <a href="development.html" data-i18n="nav_dev">Development</a>
+      <a href="ui.html" data-i18n="nav_ui">Web UI</a>
+    </div>
+    <div class="nav-right">
+      <div class="lang" role="group" aria-label="language">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="zh">&#20013;&#25991;</button>
+      </div>
+      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page">
+  <div class="wrap">
+    <span class="eyebrow" data-i18n="hdr_pill">Module reference</span>
+    <h1 data-i18n="hdr_title_html">Fifty-six modules, <span class="grad">seven families</span></h1>
+    <p class="lede" data-i18n="hdr_lede">Every capability is its own top-level module. There is no shared core that things get added to — a new capability is a new directory with the same four files, and nothing else changes. The number beside each is its size in lines, which is a rough guide to how much is really there.</p>
+  </div>
+</header>
+
+<div class="wrap shell">
+  <aside>
+    <div class="grp">
+      <b data-i18n="side_a">Families</b>
+      <a href="#core" data-i18n="g_core">Core loop</a>
+      <a href="#context" data-i18n="g_context">Context &amp; memory</a>
+      <a href="#capability" data-i18n="g_capability">Capabilities</a>
+      <a href="#execution" data-i18n="g_execution">Execution world</a>
+      <a href="#orchestr" data-i18n="g_orchestr">Orchestration</a>
+      <a href="#evolution" data-i18n="g_evolution">Evolution</a>
+      <a href="#infra" data-i18n="g_infra">Infrastructure</a>
+    </div>
+  </aside>
+
+  <main>
+  <section id="core">
+    <div class="fam"><span class="dot" style="background:#7c5cff"></span><h2 style="margin:0"><span data-i18n="g_core">Core loop</span></h2></div>
+    <p data-i18n="gb_core">One step, and the things that make a step possible. Nothing here knows about a specific tool or model.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>agent</b><span>6,748</span></div><p data-i18n="m_agent">Defines executable agents and their lifecycle.</p></div>
+      <div class="mod"><div class="mod-h"><b>runtime</b><span>373</span></div><p data-i18n="m_runtime">Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances registered Agent instances.</p></div>
+      <div class="mod"><div class="mod-h"><b>session</b><span>1,010</span></div><p data-i18n="m_session">Defines shared invocation context and session-scoped project state.</p></div>
+      <div class="mod"><div class="mod-h"><b>message</b><span>323</span></div><p data-i18n="m_message">Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads.</p></div>
+      <div class="mod"><div class="mod-h"><b>response</b><span>36</span></div><p data-i18n="m_response">Defines the normalized `Response` and `ResponseType` returned across Agents, Tools, Skills, Connectors, and Environments.</p></div>
+      <div class="mod"><div class="mod-h"><b>queue</b><span>83</span></div><p data-i18n="m_queue">Provides the reusable `AsyncQueue` primitive used by asynchronous framework components.</p></div>
+      <div class="mod"><div class="mod-h"><b>protocol</b><span>288</span></div><p data-i18n="m_protocol">Defines typed agent-to-agent conversations over Runtime delivery.</p></div>
+    </div>
+  </section>
+
+  <section id="context">
+    <div class="fam"><span class="dot" style="background:#22d3ee"></span><h2 style="margin:0"><span data-i18n="g_context">Context &amp; memory</span></h2></div>
+    <p data-i18n="gb_context">What the model is shown, and what a finished run leaves behind.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>model</b><span>9,890</span></div><p data-i18n="m_model">Provides the model registry, role-based selection, API-key pooling, and provider-neutral generation interface.</p></div>
+      <div class="mod"><div class="mod-h"><b>prompt</b><span>738</span></div><p data-i18n="m_prompt">Loads, versions, and renders HTML-native prompts and reusable prompt modules.</p></div>
+      <div class="mod"><div class="mod-h"><b>memory</b><span>2,304</span></div><p data-i18n="m_memory">Stores and retrieves durable context derived from agent execution history.</p></div>
+      <div class="mod"><div class="mod-h"><b>trace</b><span>1,158</span></div><p data-i18n="m_trace">Captures structured lifecycle events, persists them, and fans them out to subscribers.</p></div>
+      <div class="mod"><div class="mod-h"><b>trajectory</b><span>576</span></div><p data-i18n="m_trajectory">Projects agent runs into reward-annotated, step-level training records and exports formats used by supervised fine-tuning or reinforcement learning pipelines.</p></div>
+    </div>
+  </section>
+
+  <section id="capability">
+    <div class="fam"><span class="dot" style="background:#34d399"></span><h2 style="margin:0"><span data-i18n="g_capability">Capabilities</span></h2></div>
+    <p data-i18n="gb_capability">The families of thing a model can be given. Each is a registry with the same shape.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>tool</b><span>10,523</span></div><p data-i18n="m_tool">Defines atomic callable capabilities backed by Python implementations.</p></div>
+      <div class="mod"><div class="mod-h"><b>skill</b><span>15,645</span></div><p data-i18n="m_skill">Discovers and executes reusable, filesystem-backed instructions stored as `SKILL.md` plus optional scripts, references, resources, and examples.</p></div>
+      <div class="mod"><div class="mod-h"><b>environment</b><span>5,277</span></div><p data-i18n="m_environment">Defines stateful execution environments and their callable actions.</p></div>
+      <div class="mod"><div class="mod-h"><b>connector</b><span>6,906</span></div><p data-i18n="m_connector">Integrates external capability providers, primarily MCP servers.</p></div>
+      <div class="mod"><div class="mod-h"><b>plugins</b><span>9,834</span></div><p data-i18n="m_plugins">Outside services — OpenAI, Chroma, Tavily, YouTube, Composio — wrapped as plugins.</p></div>
+      <div class="mod"><div class="mod-h"><b>command</b><span>798</span></div><p data-i18n="m_command">Models user-facing commands, their contexts, and command dispatch.</p></div>
+      <div class="mod"><div class="mod-h"><b>knowledge</b><span>336</span></div><p data-i18n="m_knowledge">Retrieval-augmented generation (RAG) over named knowledge bases.</p></div>
+      <div class="mod"><div class="mod-h"><b>code</b><span>676</span></div><p data-i18n="m_code">Runs a model-written program in its own interpreter and bridges the calls it makes back into this process, so a batch of tool work costs one turn instead of one turn per call.</p></div>
+    </div>
+  </section>
+
+  <section id="execution">
+    <div class="fam"><span class="dot" style="background:#fbbf24"></span><h2 style="margin:0"><span data-i18n="g_execution">Execution world</span></h2></div>
+    <p data-i18n="gb_execution">Where file and process work actually happens — here, in a container, or on another machine.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>sandbox</b><span>3,025</span></div><p data-i18n="m_sandbox">Defines isolated command execution, managed sandbox processes, and staged project validation.</p></div>
+      <div class="mod"><div class="mod-h"><b>terminal</b><span>657</span></div><p data-i18n="m_terminal">Keeps a shell alive between tool calls, so a directory change, an activated environment, an ssh hop or a REPL survives the call that made it.</p></div>
+      <div class="mod"><div class="mod-h"><b>process</b><span>760</span></div><p data-i18n="m_process">Pure record/text transforms — the transform stage of a data pipeline.</p></div>
+      <div class="mod"><div class="mod-h"><b>kernel</b><span>649</span></div><p data-i18n="m_kernel">One Jupyter Server per project, and one kernel the agent, the Science REPL and JupyterLab all share.</p></div>
+      <div class="mod"><div class="mod-h"><b>lsp</b><span>1,468</span></div><p data-i18n="m_lsp">Asks a language server what a symbol is — its definition, its references, its type — so an edit rests on what the code means rather than on where its name happens to appear.</p></div>
+      <div class="mod"><div class="mod-h"><b>docker</b><span>39</span></div><p data-i18n="m_docker">Provides the Docker backend integration point through `docker_manager`.</p></div>
+      <div class="mod"><div class="mod-h"><b>e2b</b><span>39</span></div><p data-i18n="m_e2b">Provides the E2B backend integration point through `e2b_manager`.</p></div>
+      <div class="mod"><div class="mod-h"><b>ide</b><span>334</span></div><p data-i18n="m_ide">Full VS Code (openvscode-server) in the browser, one container per gateway session, editing the same workspace the agent edits.</p></div>
+      <div class="mod"><div class="mod-h"><b>science</b><span>350</span></div><p data-i18n="m_science">The workstation half of a project: a conversation with the agent, over one kernel the agent, the REPL and JupyterLab all share.</p></div>
+    </div>
+  </section>
+
+  <section id="orchestr">
+    <div class="fam"><span class="dot" style="background:#ff5c9d"></span><h2 style="margin:0"><span data-i18n="g_orchestr">Orchestration</span></h2></div>
+    <p data-i18n="gb_orchestr">Work that is more than one step, and the limits on how far it may go.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>workflow</b><span>2,519</span></div><p data-i18n="m_workflow">This package turns reviewable HTML into a dynamic multi-agent program.</p></div>
+      <div class="mod"><div class="mod-h"><b>canvas</b><span>1,578</span></div><p data-i18n="m_canvas">Visual flow editor.</p></div>
+      <div class="mod"><div class="mod-h"><b>task</b><span>1,356</span></div><p data-i18n="m_task">Models tasks and goals — their priorities, statuses and authority — loads task documents, and resolves CLI task input into normalized records.</p></div>
+      <div class="mod"><div class="mod-h"><b>job</b><span>568</span></div><p data-i18n="m_job">Runs work in the background and lets the agent collect it later — and holds reminders that come due — so a long command costs a step to start rather than a step spent waiting.</p></div>
+      <div class="mod"><div class="mod-h"><b>subagent</b><span>459</span></div><p data-i18n="m_subagent">Delegation the parent does not have to sit through: a child agent runs in the background as a job, and a continuable one stays alive to be given more work.</p></div>
+      <div class="mod"><div class="mod-h"><b>plan</b><span>274</span></div><p data-i18n="m_plan">Holds a run to reading and reasoning until a person approves what it intends to do, so an approach is agreed before it is carried out rather than after.</p></div>
+      <div class="mod"><div class="mod-h"><b>constraint</b><span>1,372</span></div><p data-i18n="m_constraint">Defines enforceable runtime budgets and status reporting.</p></div>
+    </div>
+  </section>
+
+  <section id="evolution">
+    <div class="fam"><span class="dot" style="background:#a78bfa"></span><h2 style="margin:0"><span data-i18n="g_evolution">Evolution</span></h2></div>
+    <p data-i18n="gb_evolution">How a component is created at runtime, versioned, judged, and removed again.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>extension</b><span>1,112</span></div><p data-i18n="m_extension">Manages generated extension manifests and their promotion into the active framework.</p></div>
+      <div class="mod"><div class="mod-h"><b>dynamic</b><span>1,065</span></div><p data-i18n="m_dynamic">Loads generated Python source into controlled runtime modules and derives callable metadata such as parameters, argument models, and function-calling schemas.</p></div>
+      <div class="mod"><div class="mod-h"><b>version</b><span>372</span></div><p data-i18n="m_version">Tracks versions of evolvable framework entities and generates validated next versions.</p></div>
+      <div class="mod"><div class="mod-h"><b>scope</b><span>144</span></div><p data-i18n="m_scope">A registration scope owns every registration made through it and removes them as a unit — in reverse order, surviving a failure partway through, and reporting what is still installed.</p></div>
+      <div class="mod"><div class="mod-h"><b>capability</b><span>112</span></div><p data-i18n="m_capability">Every callable Manager exposes `get_schema(name, action=None, format=&quot;json&quot;)`.</p></div>
+      <div class="mod"><div class="mod-h"><b>benchmark</b><span>3,172</span></div><p data-i18n="m_benchmark">Provides versioned benchmark definitions and the manager used to load and execute them.</p></div>
+      <div class="mod"><div class="mod-h"><b>data</b><span>767</span></div><p data-i18n="m_data">Contains dataset adapters used by the Benchmark module, including AIME, GPQA, GSM8K, LeetCode, HLE, DeepWeb, and ProgramBench.</p></div>
+    </div>
+  </section>
+
+  <section id="infra">
+    <div class="fam"><span class="dot" style="background:#9aa3c7"></span><h2 style="margin:0"><span data-i18n="g_infra">Infrastructure</span></h2></div>
+    <p data-i18n="gb_infra">The parts every other module leans on, and the one door the outside world uses.</p>
+    <div class="mods">
+      <div class="mod"><div class="mod-h"><b>gateway</b><span>3,239</span></div><p data-i18n="m_gateway">Defines the versioned boundary used by interactive clients to communicate with AgentEvolver.</p></div>
+      <div class="mod"><div class="mod-h"><b>config</b><span>234</span></div><p data-i18n="m_config">Loads Python configuration files into the global `config` object and validates assembled framework configuration before runtime initialization.</p></div>
+      <div class="mod"><div class="mod-h"><b>paths</b><span>273</span></div><p data-i18n="m_paths">Single source of truth for the on-disk layout: one table declaring every path the framework writes, resolved through path_manager.</p></div>
+      <div class="mod"><div class="mod-h"><b>port</b><span>183</span></div><p data-i18n="m_port">Central port registry — names the framework&#x27;s well-known default ports and hands out / records host ports, persisted to output/.runtime so bindings are de-conflicted and discoverable.</p></div>
+      <div class="mod"><div class="mod-h"><b>logger</b><span>332</span></div><p data-i18n="m_logger">Provides the framework logger, log levels, display colors, and session-ID context used to correlate output across asynchronous operations.</p></div>
+      <div class="mod"><div class="mod-h"><b>permission</b><span>719</span></div><p data-i18n="m_permission">Evaluates command and filesystem operations against explicit permission modes and policies.</p></div>
+      <div class="mod"><div class="mod-h"><b>hook</b><span>2,387</span></div><p data-i18n="m_hook">Provides lifecycle interception points for tracing, compaction, registration, promotion, and other cross-cutting behavior.</p></div>
+      <div class="mod"><div class="mod-h"><b>utils</b><span>1,708</span></div><p data-i18n="m_utils">Contains dependency-light helpers shared across modules: path assembly, file locking, concurrency, names, strings, URLs, screenshots, tokens, argument parsing, and plan models.</p></div>
+      <div class="mod"><div class="mod-h"><b>spill</b><span>258</span></div><p data-i18n="m_spill">Parks an oversized tool result on disk and hands the agent a locator plus a retrieval hint, so output too large to show is bounded rather than lost.</p></div>
+      <div class="mod"><div class="mod-h"><b>attachment</b><span>212</span></div><p data-i18n="m_attachment">Pins the bytes of an image the agent read and re-attaches it to every later request, so an image enters the model&#x27;s context and stays there instead of vanishing with the step that read it.</p></div>
+      <div class="mod"><div class="mod-h"><b>deploy</b><span>769</span></div><p data-i18n="m_deploy">Deploys web artifacts from controlled source directories and records their URLs, health, resources, and lifecycle state.</p></div>
+      <div class="mod"><div class="mod-h"><b>conversation</b><span>612</span></div><p data-i18n="m_conversation">Lines of dialogue inside a project — their transcripts and their identity.</p></div>
+      <div class="mod"><div class="mod-h"><b>visual</b><span>46</span></div><p data-i18n="m_visual">This directory contains dependency-free browser renderers for AgentEvolver&#x27;s HTML-native artifacts.</p></div>
+    </div>
+  </section>
+
+  <section id="shape">
+    <h2><span data-i18n="shape_h">The shape they share</span></h2>
+    <p data-i18n="shape_p">Reading one module tells you how to read the rest. Four files, and the manager always spells removal the same way — <code>unregister(name)</code> — which is what lets one scope own registrations across several of them and take them all back out.</p>
+<pre><code>agentevolver/&lt;module&gt;/
+  README.md      # YAML frontmatter + what this module owns  (gated)
+  types.py       # the data and the contract — no I/O
+  server.py      # the singleton manager: register / get / list / unregister
+  __init__.py    # the public surface</code></pre>
+  </section>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>
+      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:13px">&#9670;</span> AgentEvolver</div>
+      <div style="margin-top:8px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
+    </div>
+    <div class="foot-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="tutorial.html" data-i18n="nav_tut">Tutorial</a>
+      <a href="architecture.html" data-i18n="nav_arch">Architecture</a>
+      <a href="development.html" data-i18n="nav_dev">Development</a>
+      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+window.I18N = {
+ en:{
+ "g_core": "Core loop",
+ "gb_core": "One step, and the things that make a step possible. Nothing here knows about a specific tool or model.",
+ "m_agent": "Defines executable agents and their lifecycle.",
+ "m_runtime": "Owns live Agent references, mailboxes, lifecycle state, and the event pump that advances registered Agent instances.",
+ "m_session": "Defines shared invocation context and session-scoped project state.",
+ "m_message": "Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads.",
+ "m_response": "Defines the normalized `Response` and `ResponseType` returned across Agents, Tools, Skills, Connectors, and Environments.",
+ "m_queue": "Provides the reusable `AsyncQueue` primitive used by asynchronous framework components.",
+ "m_protocol": "Defines typed agent-to-agent conversations over Runtime delivery.",
+ "g_context": "Context &amp; memory",
+ "gb_context": "What the model is shown, and what a finished run leaves behind.",
+ "m_model": "Provides the model registry, role-based selection, API-key pooling, and provider-neutral generation interface.",
+ "m_prompt": "Loads, versions, and renders HTML-native prompts and reusable prompt modules.",
+ "m_memory": "Stores and retrieves durable context derived from agent execution history.",
+ "m_trace": "Captures structured lifecycle events, persists them, and fans them out to subscribers.",
+ "m_trajectory": "Projects agent runs into reward-annotated, step-level training records and exports formats used by supervised fine-tuning or reinforcement learning pipelines.",
+ "g_capability": "Capabilities",
+ "gb_capability": "The families of thing a model can be given. Each is a registry with the same shape.",
+ "m_tool": "Defines atomic callable capabilities backed by Python implementations.",
+ "m_skill": "Discovers and executes reusable, filesystem-backed instructions stored as `SKILL.md` plus optional scripts, references, resources, and examples.",
+ "m_environment": "Defines stateful execution environments and their callable actions.",
+ "m_connector": "Integrates external capability providers, primarily MCP servers.",
+ "m_plugins": "Outside services — OpenAI, Chroma, Tavily, YouTube, Composio — wrapped as plugins.",
+ "m_command": "Models user-facing commands, their contexts, and command dispatch.",
+ "m_knowledge": "Retrieval-augmented generation (RAG) over named knowledge bases.",
+ "m_code": "Runs a model-written program in its own interpreter and bridges the calls it makes back into this process, so a batch of tool work costs one turn instead of one turn per call.",
+ "g_execution": "Execution world",
+ "gb_execution": "Where file and process work actually happens — here, in a container, or on another machine.",
+ "m_sandbox": "Defines isolated command execution, managed sandbox processes, and staged project validation.",
+ "m_terminal": "Keeps a shell alive between tool calls, so a directory change, an activated environment, an ssh hop or a REPL survives the call that made it.",
+ "m_process": "Pure record/text transforms — the transform stage of a data pipeline.",
+ "m_kernel": "One Jupyter Server per project, and one kernel the agent, the Science REPL and JupyterLab all share.",
+ "m_lsp": "Asks a language server what a symbol is — its definition, its references, its type — so an edit rests on what the code means rather than on where its name happens to appear.",
+ "m_docker": "Provides the Docker backend integration point through `docker_manager`.",
+ "m_e2b": "Provides the E2B backend integration point through `e2b_manager`.",
+ "m_ide": "Full VS Code (openvscode-server) in the browser, one container per gateway session, editing the same workspace the agent edits.",
+ "m_science": "The workstation half of a project: a conversation with the agent, over one kernel the agent, the REPL and JupyterLab all share.",
+ "g_orchestr": "Orchestration",
+ "gb_orchestr": "Work that is more than one step, and the limits on how far it may go.",
+ "m_workflow": "This package turns reviewable HTML into a dynamic multi-agent program.",
+ "m_canvas": "Visual flow editor.",
+ "m_task": "Models tasks and goals — their priorities, statuses and authority — loads task documents, and resolves CLI task input into normalized records.",
+ "m_job": "Runs work in the background and lets the agent collect it later — and holds reminders that come due — so a long command costs a step to start rather than a step spent waiting.",
+ "m_subagent": "Delegation the parent does not have to sit through: a child agent runs in the background as a job, and a continuable one stays alive to be given more work.",
+ "m_plan": "Holds a run to reading and reasoning until a person approves what it intends to do, so an approach is agreed before it is carried out rather than after.",
+ "m_constraint": "Defines enforceable runtime budgets and status reporting.",
+ "g_evolution": "Evolution",
+ "gb_evolution": "How a component is created at runtime, versioned, judged, and removed again.",
+ "m_extension": "Manages generated extension manifests and their promotion into the active framework.",
+ "m_dynamic": "Loads generated Python source into controlled runtime modules and derives callable metadata such as parameters, argument models, and function-calling schemas.",
+ "m_version": "Tracks versions of evolvable framework entities and generates validated next versions.",
+ "m_scope": "A registration scope owns every registration made through it and removes them as a unit — in reverse order, surviving a failure partway through, and reporting what is still installed.",
+ "m_capability": "Every callable Manager exposes `get_schema(name, action=None, format=\"json\")`.",
+ "m_benchmark": "Provides versioned benchmark definitions and the manager used to load and execute them.",
+ "m_data": "Contains dataset adapters used by the Benchmark module, including AIME, GPQA, GSM8K, LeetCode, HLE, DeepWeb, and ProgramBench.",
+ "g_infra": "Infrastructure",
+ "gb_infra": "The parts every other module leans on, and the one door the outside world uses.",
+ "m_gateway": "Defines the versioned boundary used by interactive clients to communicate with AgentEvolver.",
+ "m_config": "Loads Python configuration files into the global `config` object and validates assembled framework configuration before runtime initialization.",
+ "m_paths": "Single source of truth for the on-disk layout: one table declaring every path the framework writes, resolved through path_manager.",
+ "m_port": "Central port registry — names the framework's well-known default ports and hands out / records host ports, persisted to output/.runtime so bindings are de-conflicted and discoverable.",
+ "m_logger": "Provides the framework logger, log levels, display colors, and session-ID context used to correlate output across asynchronous operations.",
+ "m_permission": "Evaluates command and filesystem operations against explicit permission modes and policies.",
+ "m_hook": "Provides lifecycle interception points for tracing, compaction, registration, promotion, and other cross-cutting behavior.",
+ "m_utils": "Contains dependency-light helpers shared across modules: path assembly, file locking, concurrency, names, strings, URLs, screenshots, tokens, argument parsing, and plan models.",
+ "m_spill": "Parks an oversized tool result on disk and hands the agent a locator plus a retrieval hint, so output too large to show is bounded rather than lost.",
+ "m_attachment": "Pins the bytes of an image the agent read and re-attaches it to every later request, so an image enters the model's context and stays there instead of vanishing with the step that read it.",
+ "m_deploy": "Deploys web artifacts from controlled source directories and records their URLs, health, resources, and lifecycle state.",
+ "m_conversation": "Lines of dialogue inside a project — their transcripts and their identity.",
+ "m_visual": "This directory contains dependency-free browser renderers for AgentEvolver's HTML-native artifacts.",
+ "nav_home": "Home",
+ "nav_tut": "Tutorial",
+ "nav_arch": "Architecture",
+ "nav_mod": "Modules",
+ "nav_dev": "Development",
+ "nav_ui": "Web UI",
+ "hdr_pill": "Module reference",
+ "hdr_title_html": "Fifty-six modules, <span class=\"grad\">seven families</span>",
+ "hdr_lede": "Every capability is its own top-level module. There is no shared core that things get added to — a new capability is a new directory with the same four files, and nothing else changes. The number beside each is its size in lines, which is a rough guide to how much is really there.",
+ "side_a": "Families",
+ "shape_h": "The shape they share",
+ "shape_p": "Reading one module tells you how to read the rest. Four files, and the manager always spells removal the same way — <code>unregister(name)</code> — which is what lets one scope own registrations across several of them and take them all back out.",
+ "foot_tag": "A self-evolving multi-agent framework · MIT License"
+},
+ zh:{
+ "g_core": "核心循环",
+ "gb_core": "一步，以及让一步成为可能的东西。这里没有任何代码知道某个具体的工具或模型。",
+ "m_agent": "定义可执行的 agent 及其生命周期。`Agent` 提供事件驱动的运行循环。",
+ "m_runtime": "持有活的 Agent 引用、邮箱、生命周期状态，以及推进它们的事件泵。",
+ "m_session": "定义共享的调用上下文与会话级的项目状态。",
+ "m_message": "定义与提供商无关的对话消息、多模态内容片段、工具调用与函数声明。",
+ "m_response": "定义 Agent、Tool、Skill 等各处统一返回的 `Response` 与 `ResponseType`。",
+ "m_queue": "提供框架内异步组件复用的 `AsyncQueue` 原语。",
+ "m_protocol": "定义经由 Runtime 投递的、带类型的 agent 间对话。",
+ "g_context": "上下文与记忆",
+ "gb_context": "模型被展示了什么，以及一次跑完的运行留下了什么。",
+ "m_model": "提供模型注册表、按角色选型、API key 池，以及与提供商无关的生成接口。",
+ "m_prompt": "加载、版本化并渲染 HTML 原生的提示词与可复用提示模块。",
+ "m_memory": "存储并取回从 agent 执行历史中提炼的持久上下文。",
+ "m_trace": "捕获结构化的生命周期事件，持久化，并分发给订阅者。",
+ "m_trajectory": "把 agent 运行投影成带奖励标注的、步级的训练记录，并导出可用格式。",
+ "g_capability": "能力",
+ "gb_capability": "可以交给模型的几类东西。每一类都是一个形状相同的注册表。",
+ "m_tool": "定义由 Python 实现支撑的原子可调用能力。",
+ "m_skill": "发现并执行以 `SKILL.md` 加可选脚本形式存放在文件系统上的可复用指令。",
+ "m_environment": "定义有状态的执行环境及其可调用动作。",
+ "m_connector": "接入外部能力提供方，主要是 MCP 服务器。",
+ "m_plugins": "把外部服务——OpenAI、Chroma、Tavily、YouTube、Composio——包装成插件。",
+ "m_command": "建模面向用户的命令、它们的上下文，以及命令分发。",
+ "m_knowledge": "在具名知识库上做检索增强生成（RAG）。",
+ "m_code": "在自己的解释器里运行模型写的程序，并把它发起的调用桥接回框架。",
+ "g_execution": "执行世界",
+ "gb_execution": "文件与进程操作真正发生的地方——本机、容器里，或者另一台机器上。",
+ "m_sandbox": "定义隔离的命令执行、受管的沙箱进程，以及暂存项目的校验。",
+ "m_terminal": "让 shell 在多次工具调用之间保持存活，于是切换目录、激活环境都能延续。",
+ "m_process": "纯粹的记录/文本变换——数据管线里的变换阶段。",
+ "m_kernel": "一个项目一个 Jupyter Server，一个内核被 agent、Science REPL 和 JupyterLab 共用。",
+ "m_lsp": "向语言服务器询问一个符号是什么——定义、引用、类型。",
+ "m_docker": "通过 `docker_manager` 提供 Docker 后端的接入点。",
+ "m_e2b": "通过 `e2b_manager` 提供 E2B 后端的接入点。",
+ "m_ide": "浏览器里的完整 VS Code，一个网关会话一个容器。",
+ "m_science": "项目的工作台那一半：与 agent 的对话，跑在同一个内核上。",
+ "g_orchestr": "编排",
+ "gb_orchestr": "超过一步的工作，以及它能走多远的限制。",
+ "m_workflow": "把可评审的 HTML 变成一个动态的多智能体程序。",
+ "m_canvas": "可视化流程编辑器。流程图是 JSON（唯一真相源），在共享工作流运行时上临时执行。",
+ "m_task": "建模任务与目标——它们的优先级、状态与权限，并加载任务文档。",
+ "m_job": "把工作放到后台去跑、之后再让 agent 收取，同时也持有提醒。",
+ "m_subagent": "父级不必坐等的委派：子 agent 在后台运行。",
+ "m_plan": "把一次运行限制在阅读与推理，直到有人批准它打算做的事。",
+ "m_constraint": "定义可强制执行的运行时预算与状态上报。内置覆盖步数、token 和墙钟。",
+ "g_evolution": "进化",
+ "gb_evolution": "一个组件如何在运行时被创建、版本化、评判，以及被撤下来。",
+ "m_extension": "管理生成出的扩展清单及其向活跃框架的晋升。",
+ "m_dynamic": "把生成的 Python 源码加载进受控的运行时模块，并推导出可调用的元数据。",
+ "m_version": "追踪可进化框架实体的版本，并生成经过校验的下一个版本。",
+ "m_scope": "一个注册作用域持有经它做的每一次注册，并把它们作为一个整体撤销。",
+ "m_capability": "每个可调用的 Manager 都暴露 `get_schema(name, action=None, format=\"json\")`。",
+ "m_benchmark": "提供版本化的基准定义，以及用于加载和执行它们的管理器。",
+ "m_data": "包含 Benchmark 模块使用的数据集适配器，含 AIME、GPQA、GSM8K、LeetCode 等。",
+ "g_infra": "基础设施",
+ "gb_infra": "其他每个模块都依赖的部分，以及外界使用的那道门。",
+ "m_gateway": "定义交互式客户端与 AgentEvolver 通信所用的、带版本的边界。",
+ "m_config": "把 Python 配置文件加载进全局 `config` 对象，并校验装配出的框架。",
+ "m_paths": "磁盘布局的唯一真相源：一张表声明框架用到的每一条路径。",
+ "m_port": "中央端口注册表——为框架的知名默认端口命名，并分发/回收端口。",
+ "m_logger": "提供框架日志器、日志级别、显示颜色，以及用于关联的会话 ID 上下文。",
+ "m_permission": "依据显式的权限模式与策略，评估命令与文件系统操作。",
+ "m_hook": "为追踪、压缩、注册、晋升等提供生命周期拦截点。",
+ "m_utils": "跨模块共享的轻依赖助手：路径拼装、文件锁、并发工具等。",
+ "m_spill": "把超大的工具结果暂存到磁盘，并交给 agent 一个定位符加取回提示。",
+ "m_attachment": "钉住 agent 读过的图片字节，并在之后每次请求里重新附上。",
+ "m_deploy": "从受控的源目录部署 Web 产物，并记录它们的 URL、健康状况与资源。",
+ "m_conversation": "项目内部的一条条对话线——它们的记录与身份。",
+ "m_visual": "这个目录存放 AgentEvolver HTML 原生产物的、零依赖的浏览器渲染器。",
+ "nav_home": "首页",
+ "nav_tut": "教程",
+ "nav_arch": "架构",
+ "nav_mod": "模块",
+ "nav_dev": "开发文档",
+ "nav_ui": "Web 界面",
+ "hdr_pill": "模块参考",
+ "hdr_title_html": "五十六个模块，<span class=\"grad\">七个族</span>",
+ "hdr_lede": "每个能力都是自己的一个顶层模块。没有一个大家往里加东西的公共核心——新增能力就是新增一个目录、同样四个文件，别处一行不改。每个名字旁边的数字是它的行数，大致说明里面到底有多少东西。",
+ "side_a": "分族",
+ "shape_h": "它们共享的形状",
+ "shape_p": "读懂一个模块，就知道怎么读其余的。四个文件，而且 manager 卸载的写法永远一样——<code>unregister(name)</code>——正因如此，一个作用域才能同时持有跨多个模块的注册并把它们一起取回。",
+ "foot_tag": "一个自进化的多智能体框架 · MIT 许可证"
+}
+};
+</script>
+<script src="assets/site.js"></script>
+</body>
+</html>

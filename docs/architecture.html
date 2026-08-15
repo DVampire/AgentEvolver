@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Architecture — AgentEvolver</title>
+<meta name="description" content="How AgentEvolver fits together: the one door in, the step loop, the append-only log and its two readings, and the cycle that turns a run into a better component.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="mark">◆</span> AgentEvolver</a>
+    <div class="nav-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="tutorial.html" data-i18n="nav_tut">Tutorial</a>
+      <a href="architecture.html" class="here" data-i18n="nav_arch">Architecture</a>
+      <a href="modules.html" data-i18n="nav_mod">Modules</a>
+      <a href="development.html" data-i18n="nav_dev">Development</a>
+      <a href="ui.html" data-i18n="nav_ui">Web UI</a>
+    </div>
+    <div class="nav-right">
+      <div class="lang" role="group" aria-label="language">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="zh">中文</button>
+      </div>
+      <a class="btn primary" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page">
+  <div class="wrap">
+    <span class="eyebrow" data-i18n="hdr_pill">Architecture</span>
+    <h1 data-i18n="hdr_title_html">One log, <span class="grad">two readings</span></h1>
+    <p class="lede" data-i18n="hdr_lede">Four mechanisms carry the whole system: one door the browser talks through, a step loop that never grows, an append-only log the history is derived from, and a cycle that turns a finished run into a better component. Everything else is a capability plugged into those.</p>
+  </div>
+</header>
+
+<div class="wrap shell">
+  <aside>
+    <div class="grp">
+      <b data-i18n="side_a">The shape</b>
+      <a href="#layers" data-i18n="nav_layers">Layers</a>
+      <a href="#door" data-i18n="nav_door">The one door</a>
+    </div>
+    <div class="grp">
+      <b data-i18n="side_b">A run</b>
+      <a href="#loop" data-i18n="nav_loop">The step loop</a>
+      <a href="#log" data-i18n="nav_log">The log</a>
+    </div>
+    <div class="grp">
+      <b data-i18n="side_c">Getting better</b>
+      <a href="#evolve" data-i18n="nav_evolve">The evolution cycle</a>
+      <a href="#safety" data-i18n="nav_safety">What stops it</a>
+    </div>
+  </aside>
+
+  <main>
+
+  <!-- ================= LAYERS ================= -->
+  <section id="layers">
+    <h2><span class="num">01</span><span data-i18n="s1_h">Layers</span></h2>
+    <p data-i18n="s1_p1">Four layers, and the direction of dependency is strict: a capability never reaches up into the loop, and the loop never imports a specific capability. That is what makes a capability replaceable without touching anything else.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 400" role="img" aria-labelledby="fig1t">
+        <title id="fig1t">AgentEvolver layers, from browser to capabilities</title>
+        <!-- browser -->
+        <rect class="d-box-c" x="30" y="24" width="200" height="58" rx="11"/>
+        <text class="d-t" x="130" y="48" text-anchor="middle">Browser</text>
+        <text class="d-s" x="130" y="66" text-anchor="middle">React · one WebSocket</text>
+
+        <path class="d-l-b" d="M130 82 L130 118" marker-end="url(#a1)"/>
+        <text class="d-m" x="140" y="104">/ws</text>
+
+        <!-- gateway -->
+        <rect class="d-box-b" x="30" y="118" width="200" height="58" rx="11"/>
+        <text class="d-t" x="130" y="142" text-anchor="middle">Gateway</text>
+        <text class="d-s" x="130" y="160" text-anchor="middle">versioned command surface</text>
+
+        <path class="d-l-b" d="M130 176 L130 212" marker-end="url(#a1)"/>
+
+        <!-- runtime -->
+        <rect class="d-box-b" x="30" y="212" width="200" height="70" rx="11"/>
+        <text class="d-t" x="130" y="238" text-anchor="middle">Runtime</text>
+        <text class="d-s" x="130" y="256" text-anchor="middle">agent · session · trace</text>
+        <text class="d-s" x="130" y="272" text-anchor="middle">memory · model</text>
+
+        <path class="d-l" d="M230 247 L292 247" marker-end="url(#a2)"/>
+
+        <!-- capability families -->
+        <rect class="d-box" x="292" y="24" width="176" height="52" rx="10"/>
+        <text class="d-t" x="380" y="46" text-anchor="middle">tool</text>
+        <text class="d-s" x="380" y="63" text-anchor="middle">atomic callables</text>
+
+        <rect class="d-box" x="486" y="24" width="176" height="52" rx="10"/>
+        <text class="d-t" x="574" y="46" text-anchor="middle">skill</text>
+        <text class="d-s" x="574" y="63" text-anchor="middle">SKILL.md + scripts</text>
+
+        <rect class="d-box" x="680" y="24" width="190" height="52" rx="10"/>
+        <text class="d-t" x="775" y="46" text-anchor="middle">environment</text>
+        <text class="d-s" x="775" y="63" text-anchor="middle">stateful, has actions</text>
+
+        <rect class="d-box" x="292" y="96" width="176" height="52" rx="10"/>
+        <text class="d-t" x="380" y="118" text-anchor="middle">connector</text>
+        <text class="d-s" x="380" y="135" text-anchor="middle">MCP servers</text>
+
+        <rect class="d-box" x="486" y="96" width="176" height="52" rx="10"/>
+        <text class="d-t" x="574" y="118" text-anchor="middle">workflow</text>
+        <text class="d-s" x="574" y="135" text-anchor="middle">HTML → program</text>
+
+        <rect class="d-box" x="680" y="96" width="190" height="52" rx="10"/>
+        <text class="d-t" x="775" y="118" text-anchor="middle">subagent</text>
+        <text class="d-s" x="775" y="135" text-anchor="middle">delegation</text>
+
+        <!-- execution world -->
+        <rect class="d-box-w" x="292" y="188" width="578" height="94" rx="12"/>
+        <text class="d-t" x="581" y="212" text-anchor="middle">Execution world</text>
+        <text class="d-s" x="581" y="232" text-anchor="middle">sandbox · terminal · kernel · lsp · docker · e2b · ssh</text>
+        <text class="d-s" x="581" y="252" text-anchor="middle">run · read · write · edit · list · grep · glob · remove</text>
+        <text class="d-s" x="581" y="270" text-anchor="middle">— the same operations, here or on another machine —</text>
+
+        <!-- persistence -->
+        <rect class="d-box" x="30" y="312" width="840" height="60" rx="11"/>
+        <text class="d-t" x="450" y="336" text-anchor="middle">Append-only session log</text>
+        <text class="d-s" x="450" y="356" text-anchor="middle">trace → trajectory → training records · nothing is deleted, only shadowed</text>
+
+        <path class="d-l-d" d="M130 282 L130 312" marker-end="url(#a2)"/>
+        <path class="d-l-d" d="M581 282 L581 312" marker-end="url(#a2)"/>
+
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(124,92,255,.85)"/>
+          </marker>
+          <marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(255,255,255,.4)"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption data-i18n="fig1_cap">Dependencies point one way. The runtime knows the capability registries; no capability knows the runtime. The execution world is where file and process work actually happens — swapping it moves an agent to another machine without changing a single tool.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= THE DOOR ================= -->
+  <section id="door">
+    <h2><span class="num">02</span><span data-i18n="s2_h">The one door</span></h2>
+    <p data-i18n="s2_p1">The browser reaches the runtime through a single WebSocket and nothing else — not a second port, not a direct call into a manager. Live views that need another protocol, such as a terminal or a VNC screen, are relayed <em>through</em> the gateway rather than exposed beside it.</p>
+    <div class="card why">
+      <b class="tag" data-i18n="t_why">Why</b>
+      <p data-i18n="s2_why">Because the browser is usually not on the machine the gateway runs on. One door means one forwarded port; an address that leaks — a container's ephemeral VNC port, a sandbox upstream — is an address that works on the developer's laptop and nowhere else.</p>
+    </div>
+    <p data-i18n="s2_p2">A command is <code>{id, method, params, protocol_version}</code>. The version is checked before the method is looked up, so a newer client cannot half-succeed against an older server.</p>
+  </section>
+
+  <!-- ================= THE LOOP ================= -->
+  <section id="loop">
+    <h2><span class="num">03</span><span data-i18n="s3_h">The step loop</span></h2>
+    <p data-i18n="s3_p1">One step is: assemble what the model sees, ask it, dispatch what it asked for, record what came back. The loop itself does not grow — new behaviour attaches to the points marked below rather than adding a branch here.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 320" role="img" aria-labelledby="fig2t">
+        <title id="fig2t">One step of the agent loop</title>
+
+        <rect class="d-box-b" x="26" y="112" width="146" height="66" rx="11"/>
+        <text class="d-t" x="99" y="139" text-anchor="middle">Assemble</text>
+        <text class="d-s" x="99" y="157" text-anchor="middle">prompt · memory</text>
+        <text class="d-s" x="99" y="171" text-anchor="middle">tools · context</text>
+
+        <path class="d-l-b" d="M172 145 L216 145" marker-end="url(#b1)"/>
+
+        <rect class="d-box-b" x="216" y="112" width="146" height="66" rx="11"/>
+        <text class="d-t" x="289" y="139" text-anchor="middle">Ask the model</text>
+        <text class="d-s" x="289" y="157" text-anchor="middle">stream → reasoning</text>
+        <text class="d-s" x="289" y="171" text-anchor="middle">+ tool calls</text>
+
+        <path class="d-l-b" d="M362 145 L406 145" marker-end="url(#b1)"/>
+
+        <rect class="d-box-b" x="406" y="112" width="160" height="66" rx="11"/>
+        <text class="d-t" x="486" y="139" text-anchor="middle">Dispatch</text>
+        <text class="d-s" x="486" y="157" text-anchor="middle">permission → flush</text>
+        <text class="d-s" x="486" y="171" text-anchor="middle">→ run → observe</text>
+
+        <path class="d-l-b" d="M566 145 L610 145" marker-end="url(#b1)"/>
+
+        <rect class="d-box-b" x="610" y="112" width="146" height="66" rx="11"/>
+        <text class="d-t" x="683" y="139" text-anchor="middle">Record</text>
+        <text class="d-s" x="683" y="157" text-anchor="middle">trace · memory</text>
+        <text class="d-s" x="683" y="171" text-anchor="middle">usage · trajectory</text>
+
+        <!-- loop back -->
+        <path class="d-l-b" d="M756 145 L800 145 L800 250 L99 250 L99 178" marker-end="url(#b1)"/>
+        <text class="d-s" x="450" y="243" text-anchor="middle">next step, unless the model called done_tool or a budget stopped it</text>
+
+        <!-- extension points -->
+        <rect class="d-box-c" x="26" y="26" width="146" height="52" rx="10"/>
+        <text class="d-s" x="99" y="47" text-anchor="middle">pre-step hooks</text>
+        <text class="d-s" x="99" y="64" text-anchor="middle">reminders · plan mode</text>
+        <path class="d-l-d" d="M99 78 L99 112" marker-end="url(#b2)"/>
+
+        <rect class="d-box-c" x="406" y="26" width="160" height="52" rx="10"/>
+        <text class="d-s" x="486" y="47" text-anchor="middle">pre / post action</text>
+        <text class="d-s" x="486" y="64" text-anchor="middle">permission · guards</text>
+        <path class="d-l-d" d="M486 78 L486 112" marker-end="url(#b2)"/>
+
+        <rect class="d-box-w" x="610" y="26" width="146" height="52" rx="10"/>
+        <text class="d-s" x="683" y="47" text-anchor="middle">budgets</text>
+        <text class="d-s" x="683" y="64" text-anchor="middle">step · token · wall</text>
+        <path class="d-l-d" d="M683 78 L683 112" marker-end="url(#b2)"/>
+
+        <defs>
+          <marker id="b1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(124,92,255,.85)"/>
+          </marker>
+          <marker id="b2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(255,255,255,.35)"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption data-i18n="fig2_cap">The dashed arrows are extension points, not calls the loop makes to named features. A reminder, a plan-mode gate, and a permission policy all attach at the same three places; none of them appears in the loop's own code.</figcaption>
+    </figure>
+
+    <div class="card trap">
+      <b class="tag" data-i18n="t_trap">Trap</b>
+      <p data-i18n="s3_trap">"Dispatch" includes a step that looks like bookkeeping and is not: before a tool that may change anything, the log is flushed to disk. Events are queued, so the log trails the run — and a run killed inside that lag leaves no record of the command it was about to execute.</p>
+    </div>
+  </section>
+
+  <!-- ================= THE LOG ================= -->
+  <section id="log">
+    <h2><span class="num">04</span><span data-i18n="s4_h">The log, and its two readings</span></h2>
+    <p data-i18n="s4_p1">Everything a run does is appended to one log and nothing is ever deleted. But what the model's history <em>says</em> does shrink — compaction folds a run of records into a single summary. Those two facts are reconciled without losing anything: each event declares how it joins the history.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 300" role="img" aria-labelledby="fig3t">
+        <title id="fig3t">The append-only log and the two ways it is read</title>
+
+        <text class="d-s" x="30" y="30">append-only log — write order, never rewritten</text>
+
+        <!-- events -->
+        <g>
+          <rect class="d-box" x="30" y="44" width="86" height="42" rx="8"/><text class="d-m" x="73" y="70" text-anchor="middle">e0</text>
+          <rect class="d-box" x="126" y="44" width="86" height="42" rx="8"/><text class="d-m" x="169" y="70" text-anchor="middle">e1</text>
+          <rect class="d-box" x="222" y="44" width="86" height="42" rx="8"/><text class="d-m" x="265" y="70" text-anchor="middle">e2</text>
+          <rect class="d-box" x="318" y="44" width="86" height="42" rx="8"/><text class="d-m" x="361" y="70" text-anchor="middle">e3</text>
+          <rect class="d-box-b" x="414" y="44" width="150" height="42" rx="8"/>
+          <text class="d-m" x="489" y="63" text-anchor="middle">e4 · summary</text>
+          <text class="d-s" x="489" y="79" text-anchor="middle">replaces e1–e3</text>
+          <rect class="d-box" x="574" y="44" width="86" height="42" rx="8"/><text class="d-m" x="617" y="70" text-anchor="middle">e5</text>
+        </g>
+
+        <!-- model reading -->
+        <text class="d-s" x="30" y="140">what the model is sent — replacements shadow what they stand for</text>
+        <g>
+          <rect class="d-box-c" x="30" y="152" width="86" height="38" rx="8"/><text class="d-m" x="73" y="176" text-anchor="middle">e0</text>
+          <rect class="d-box-c" x="126" y="152" width="150" height="38" rx="8"/><text class="d-m" x="201" y="176" text-anchor="middle">e4</text>
+          <rect class="d-box-c" x="286" y="152" width="86" height="38" rx="8"/><text class="d-m" x="329" y="176" text-anchor="middle">e5</text>
+          <text class="d-s" x="392" y="176">3 messages</text>
+        </g>
+
+        <!-- human reading -->
+        <text class="d-s" x="30" y="228">what a person is shown — every turn they already read</text>
+        <g>
+          <rect class="d-box" x="30" y="240" width="86" height="38" rx="8"/><text class="d-m" x="73" y="264" text-anchor="middle">e0</text>
+          <rect class="d-box" x="126" y="240" width="86" height="38" rx="8"/><text class="d-m" x="169" y="264" text-anchor="middle">e1</text>
+          <rect class="d-box" x="222" y="240" width="86" height="38" rx="8"/><text class="d-m" x="265" y="264" text-anchor="middle">e2</text>
+          <rect class="d-box" x="318" y="240" width="86" height="38" rx="8"/><text class="d-m" x="361" y="264" text-anchor="middle">e3</text>
+          <rect class="d-box" x="414" y="240" width="86" height="38" rx="8"/><text class="d-m" x="457" y="264" text-anchor="middle">e5</text>
+          <text class="d-s" x="516" y="264">5 turns · the summary is not one of them</text>
+        </g>
+
+        <path class="d-l-d" d="M700 65 L820 65 L820 171 L372 171" marker-end="url(#c1)"/>
+        <path class="d-l-d" d="M700 65 L860 65 L860 259 L500 259" marker-end="url(#c1)"/>
+
+        <defs>
+          <marker id="c1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(255,255,255,.3)"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption data-i18n="fig3_cap">One log, two projections. Reading the model's view to render a conversation is the mistake this distinction exists to prevent — it deletes turns the user has already read, the moment a summary lands, and it renders perfectly until then.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= EVOLUTION ================= -->
+  <section id="evolve">
+    <h2><span class="num">05</span><span data-i18n="s5_h">The evolution cycle</span></h2>
+    <p data-i18n="s5_p1">A finished run is not only an answer. It is a reward-annotated record of what was tried, and that record is what a later round improves a component from. The cycle is deliberately gated at every point where a bad component could reach the next session.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 330" role="img" aria-labelledby="fig4t">
+        <title id="fig4t">From a run to a promoted component, and the gates in between</title>
+
+        <rect class="d-box-b" x="34" y="40" width="150" height="58" rx="11"/>
+        <text class="d-t" x="109" y="65" text-anchor="middle">Run</text>
+        <text class="d-s" x="109" y="83" text-anchor="middle">agent does the task</text>
+
+        <path class="d-l-b" d="M184 69 L232 69" marker-end="url(#d1)"/>
+
+        <rect class="d-box-b" x="232" y="40" width="164" height="58" rx="11"/>
+        <text class="d-t" x="314" y="65" text-anchor="middle">Trajectory</text>
+        <text class="d-s" x="314" y="83" text-anchor="middle">steps + reward</text>
+
+        <path class="d-l-b" d="M396 69 L444 69" marker-end="url(#d1)"/>
+
+        <rect class="d-box-b" x="444" y="40" width="164" height="58" rx="11"/>
+        <text class="d-t" x="526" y="65" text-anchor="middle">Generate</text>
+        <text class="d-s" x="526" y="83" text-anchor="middle">a new component version</text>
+
+        <path class="d-l-b" d="M608 69 L656 69" marker-end="url(#d1)"/>
+
+        <rect class="d-box-w" x="656" y="40" width="210" height="58" rx="11"/>
+        <text class="d-t" x="761" y="65" text-anchor="middle">Smoke gate</text>
+        <text class="d-s" x="761" y="83" text-anchor="middle">real loop, synthetic task</text>
+
+        <!-- pass -->
+        <path class="d-l-b" d="M761 98 L761 150" marker-end="url(#d1)"/>
+        <text class="d-s" x="772" y="126">passes</text>
+        <rect class="d-box-b" x="656" y="150" width="210" height="58" rx="11"/>
+        <text class="d-t" x="761" y="175" text-anchor="middle">Promote</text>
+        <text class="d-s" x="761" y="193" text-anchor="middle">archive first, then manifest</text>
+
+        <!-- fail -->
+        <path class="d-l" d="M656 69 L616 69 L616 236 L470 236" marker-end="url(#d2)"/>
+        <text class="d-s" x="500" y="228">fails</text>
+        <rect class="d-box" x="290" y="212" width="180" height="52" rx="10"/>
+        <text class="d-t" x="380" y="234" text-anchor="middle">Roll back</text>
+        <text class="d-s" x="380" y="251" text-anchor="middle">or unload if brand-new</text>
+
+        <!-- back to run -->
+        <path class="d-l-d" d="M761 208 L761 292 L109 292 L109 98" marker-end="url(#d2)"/>
+        <text class="d-s" x="430" y="286" text-anchor="middle">the next run uses it — and produces the trajectory that judges it</text>
+
+        <defs>
+          <marker id="d1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(124,92,255,.85)"/>
+          </marker>
+          <marker id="d2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(255,255,255,.4)"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption data-i18n="fig4_cap">Archiving happens before the manifest is written, so a rollback target exists before the change is live. A component that cannot be rolled back is unloaded rather than left running.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= SAFETY ================= -->
+  <section id="safety">
+    <h2><span class="num">06</span><span data-i18n="s6_h">What stops it</span></h2>
+    <p data-i18n="s6_p1">An agent that writes and mounts its own code needs limits that are not advice. These are the ones that refuse rather than warn.</p>
+    <table>
+      <thead><tr><th data-i18n="s6_th1">Limit</th><th data-i18n="s6_th2">What it refuses</th></tr></thead>
+      <tbody>
+        <tr><td data-i18n="s6_r1a">Permission modes</td><td data-i18n="s6_r1b">A read-only agent cannot call a framework-mutating tool at all — the denial is tested through the executor, not by omitting the tool from a prompt.</td></tr>
+        <tr><td data-i18n="s6_r2a">Budgets</td><td data-i18n="s6_r2b">Step, token, and wall-clock ceilings stop a run rather than letting it spend. A stop is reported as a stop, never as a completed task.</td></tr>
+        <tr><td data-i18n="s6_r3a">Promotion containment</td><td data-i18n="s6_r3b">A component is promoted only from inside the session's staging root, checked after both paths are resolved — so <code>..</code> and symlinks cannot spell a way out.</td></tr>
+        <tr><td data-i18n="s6_r4a">Plan mode</td><td data-i18n="s6_r4b">Holds a run to reading and reasoning until a person approves what it intends to do.</td></tr>
+        <tr><td data-i18n="s6_r5a">Sandboxing</td><td data-i18n="s6_r5b">Commands run under an isolated execution world, with the filesystem fenced by the session's mode.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>
+      <div class="brand" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:13px">◆</span> AgentEvolver</div>
+      <div style="margin-top:8px" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</div>
+    </div>
+    <div class="foot-links">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="tutorial.html" data-i18n="nav_tut">Tutorial</a>
+      <a href="modules.html" data-i18n="nav_mod">Modules</a>
+      <a href="development.html" data-i18n="nav_dev">Development</a>
+      <a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+window.I18N = {
+ en:{
+  nav_home:"Home", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_ui:"Web UI",
+  nav_layers:"Layers", nav_door:"The one door", nav_loop:"The step loop", nav_log:"The log",
+  nav_evolve:"The evolution cycle", nav_safety:"What stops it",
+  side_a:"The shape", side_b:"A run", side_c:"Getting better",
+  t_why:"Why", t_trap:"Trap",
+  hdr_pill:"Architecture",
+  hdr_title_html:'One log, <span class="grad">two readings</span>',
+  hdr_lede:"Four mechanisms carry the whole system: one door the browser talks through, a step loop that never grows, an append-only log the history is derived from, and a cycle that turns a finished run into a better component. Everything else is a capability plugged into those.",
+
+  s1_h:"Layers",
+  s1_p1:"Four layers, and the direction of dependency is strict: a capability never reaches up into the loop, and the loop never imports a specific capability. That is what makes a capability replaceable without touching anything else.",
+  fig1_cap:"Dependencies point one way. The runtime knows the capability registries; no capability knows the runtime. The execution world is where file and process work actually happens — swapping it moves an agent to another machine without changing a single tool.",
+
+  s2_h:"The one door",
+  s2_p1:"The browser reaches the runtime through a single WebSocket and nothing else — not a second port, not a direct call into a manager. Live views that need another protocol, such as a terminal or a VNC screen, are relayed <em>through</em> the gateway rather than exposed beside it.",
+  s2_why:"Because the browser is usually not on the machine the gateway runs on. One door means one forwarded port; an address that leaks — a container's ephemeral VNC port, a sandbox upstream — is an address that works on the developer's laptop and nowhere else.",
+  s2_p2:"A command is <code>{id, method, params, protocol_version}</code>. The version is checked before the method is looked up, so a newer client cannot half-succeed against an older server.",
+
+  s3_h:"The step loop",
+  s3_p1:"One step is: assemble what the model sees, ask it, dispatch what it asked for, record what came back. The loop itself does not grow — new behaviour attaches to the points marked below rather than adding a branch here.",
+  fig2_cap:"The dashed arrows are extension points, not calls the loop makes to named features. A reminder, a plan-mode gate, and a permission policy all attach at the same three places; none of them appears in the loop's own code.",
+  s3_trap:"\"Dispatch\" includes a step that looks like bookkeeping and is not: before a tool that may change anything, the log is flushed to disk. Events are queued, so the log trails the run — and a run killed inside that lag leaves no record of the command it was about to execute.",
+
+  s4_h:"The log, and its two readings",
+  s4_p1:"Everything a run does is appended to one log and nothing is ever deleted. But what the model's history <em>says</em> does shrink — compaction folds a run of records into a single summary. Those two facts are reconciled without losing anything: each event declares how it joins the history.",
+  fig3_cap:"One log, two projections. Reading the model's view to render a conversation is the mistake this distinction exists to prevent — it deletes turns the user has already read, the moment a summary lands, and it renders perfectly until then.",
+
+  s5_h:"The evolution cycle",
+  s5_p1:"A finished run is not only an answer. It is a reward-annotated record of what was tried, and that record is what a later round improves a component from. The cycle is deliberately gated at every point where a bad component could reach the next session.",
+  fig4_cap:"Archiving happens before the manifest is written, so a rollback target exists before the change is live. A component that cannot be rolled back is unloaded rather than left running.",
+
+  s6_h:"What stops it",
+  s6_p1:"An agent that writes and mounts its own code needs limits that are not advice. These are the ones that refuse rather than warn.",
+  s6_th1:"Limit", s6_th2:"What it refuses",
+  s6_r1a:"Permission modes", s6_r1b:"A read-only agent cannot call a framework-mutating tool at all — the denial is tested through the executor, not by omitting the tool from a prompt.",
+  s6_r2a:"Budgets", s6_r2b:"Step, token, and wall-clock ceilings stop a run rather than letting it spend. A stop is reported as a stop, never as a completed task.",
+  s6_r3a:"Promotion containment", s6_r3b:"A component is promoted only from inside the session's staging root, checked after both paths are resolved — so <code>..</code> and symlinks cannot spell a way out.",
+  s6_r4a:"Plan mode", s6_r4b:"Holds a run to reading and reasoning until a person approves what it intends to do.",
+  s6_r5a:"Sandboxing", s6_r5b:"Commands run under an isolated execution world, with the filesystem fenced by the session's mode.",
+
+  foot_tag:"A self-evolving multi-agent framework · MIT License"
+ },
+ zh:{
+  nav_home:"首页", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_ui:"Web 界面",
+  nav_layers:"分层", nav_door:"唯一的门", nav_loop:"步骤循环", nav_log:"日志",
+  nav_evolve:"进化闭环", nav_safety:"什么在拦住它",
+  side_a:"整体形状", side_b:"一次运行", side_c:"变得更好",
+  t_why:"为什么", t_trap:"坑",
+  hdr_pill:"架构",
+  hdr_title_html:'一份日志，<span class="grad">两种读法</span>',
+  hdr_lede:"四个机制撑起整个系统：浏览器唯一的那道门、一个永远不会变胖的步骤循环、一份用来推导历史的只追加日志，以及一条把跑完的运行变成更好组件的闭环。其余一切都是插在这四者之上的能力。",
+
+  s1_h:"分层",
+  s1_p1:"四层，而且依赖方向是严格的：能力从不向上够到循环，循环也从不 import 某个具体能力。正因如此，换掉一个能力不需要动别处任何东西。",
+  fig1_cap:"依赖是单向的。运行时认识各能力注册表；没有任何能力认识运行时。执行世界是文件与进程操作真正发生的地方——把它换掉，agent 就搬到了另一台机器上，而一个工具都不用改。",
+
+  s2_h:"唯一的门",
+  s2_p1:"浏览器只通过一条 WebSocket 触达运行时，别无他路——没有第二个端口，也不能直接调某个 manager。需要别的协议的实时视图（终端、VNC 画面）是<em>经由</em>网关中转的，而不是在它旁边另开一个口。",
+  s2_why:"因为浏览器通常不在网关所在的那台机器上。一道门意味着只需转发一个端口；而一个泄漏出去的地址——容器的临时 VNC 端口、沙箱的上游——是一个只在开发者自己笔记本上有效的地址。",
+  s2_p2:"一条命令是 <code>{id, method, params, protocol_version}</code>。版本在方法查找<strong>之前</strong>就被校验，所以一个较新的客户端不可能对着较老的服务端「成功一半」。",
+
+  s3_h:"步骤循环",
+  s3_p1:"一步就是：组装模型看到的东西、问它、派发它要的动作、记录回来的结果。循环本身不会变胖——新行为挂在下图标出的扩展点上，而不是在这里加一个分支。",
+  fig2_cap:"虚线箭头是扩展点，不是循环对具名功能的调用。提醒、计划模式闸门、权限策略都挂在同样这三个位置；它们没有一个出现在循环自己的代码里。",
+  s3_trap:"「派发」里有一步看着像记账、其实不是：在任何可能改变什么的工具之前，日志要先落盘。事件是排队的，所以日志落后于运行——而一次死在这个滞后里的运行，对它正要执行的那条命令不会留下任何记录。",
+
+  s4_h:"日志，以及它的两种读法",
+  s4_p1:"一次运行做的一切都追加进同一份日志，而且永不删除。但模型历史<em>所说</em>的内容确实会缩短——压缩会把一串记录折叠成一条摘要。这两件事是在不丢失任何东西的前提下调和的：每个事件都声明自己以何种方式加入历史。",
+  fig3_cap:"一份日志，两种投影。用模型那份视图去渲染对话，正是这个区分要防的错误——摘要一落地，用户已经读过的轮次就被删掉了，而在那之前它渲染得完美无缺。",
+
+  s5_h:"进化闭环",
+  s5_p1:"一次跑完的运行不只是一个答案。它是一份带奖励标注的「试过什么」的记录，而后续轮次正是从这份记录去改进组件的。这条闭环在每一个「坏组件可能溜进下一次会话」的位置都设了闸。",
+  fig4_cap:"归档发生在写清单<strong>之前</strong>，所以回滚目标在改动生效之前就已存在。一个无法回滚的组件会被卸载，而不是留着继续跑。",
+
+  s6_h:"什么在拦住它",
+  s6_p1:"一个会自己写代码并挂载它的 agent，需要的是限制而不是建议。下面这些是会**拒绝**而不是警告的那种。",
+  s6_th1:"限制", s6_th2:"它拒绝什么",
+  s6_r1a:"权限模式", s6_r1b:"只读 agent 根本不能调用会改动框架的工具——这个拒绝是<strong>通过执行器</strong>测试的，不是靠从提示里省略那个工具。",
+  s6_r2a:"预算", s6_r2b:"步数、token、墙钟三种上限会让运行停下，而不是任它花下去。停了就报告为停了，绝不报告成任务完成。",
+  s6_r3a:"晋升包容性", s6_r3b:"组件只能从本会话的暂存根目录里晋升，而且是在两条路径都解析之后才检查——所以 <code>..</code> 和符号链接都拼不出一条出路。",
+  s6_r4a:"计划模式", s6_r4b:"把运行限制在阅读与推理，直到有人批准它打算做的事。",
+  s6_r5a:"沙箱", s6_r5b:"命令在隔离的执行世界里运行，文件系统按本会话的模式围栏。",
+
+  foot_tag:"一个自进化的多智能体框架 · MIT 许可证"
+ }
+};
+</script>
+<script src="assets/site.js"></script>
+</body>
+</html>
