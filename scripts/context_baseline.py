@@ -153,8 +153,8 @@ def _measure(session: Path) -> Dict[str, Any]:
     for path in sorted(session.glob("log/messages/*/*.html")):
         text = path.read_text(encoding="utf-8")
         entry = agents.setdefault(path.parent.name, {"paths": {}, "sizes": [], "texts": []})
-        kind = _classify(text)
-        entry["paths"][kind] = entry["paths"].get(kind, 0) + 1
+        path_type = _classify(text)
+        entry["paths"][path_type] = entry["paths"].get(path_type, 0) + 1
         entry["sizes"].append(len(_body(text)))
         entry["texts"].append(text)
 

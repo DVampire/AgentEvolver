@@ -24,9 +24,9 @@ from agentevolver.hook.default.repeat_tool import (
 
 
 def _action(name, **args):
-    signature = json.dumps({"kind": "tool", "name": name, "args": args},
+    signature = json.dumps({"type": "tool", "name": name, "args": args},
                            ensure_ascii=False, sort_keys=True, default=str)
-    return {"name": name, "kind": "tool", "signature": signature}
+    return {"name": name, "type": "tool", "signature": signature}
 
 
 def _run(batches, chain=None):
@@ -127,7 +127,7 @@ def test_a_multi_call_reminder_names_every_call_in_the_batch():
 
 
 def test_later_reminders_quote_the_arguments():
-    signature = [json.dumps({"kind": "tool", "name": "t", "args": {"pattern": "needle"}})]
+    signature = [json.dumps({"type": "tool", "name": "t", "args": {"pattern": "needle"}})]
     text = reminder_for({"count": THRESHOLDS[1], "names": ["t"], "signature": signature})
     assert text and "needle" in text
     assert "done_tool" in text          # names the exit, not just the problem
@@ -139,7 +139,7 @@ def test_a_huge_payload_is_not_quoted_back_whole():
     Without this, a looping `write_file_tool` carrying a large payload would copy that
     payload into every reminder, i.e. into the next request.
     """
-    signature = [json.dumps({"kind": "tool", "name": "w", "args": {"content": "Z" * 50_000}})]
+    signature = [json.dumps({"type": "tool", "name": "w", "args": {"content": "Z" * 50_000}})]
     text = reminder_for({"count": THRESHOLDS[1], "names": ["w"], "signature": signature})
     assert text is not None
     assert len(text) < 2_000

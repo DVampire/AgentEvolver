@@ -166,9 +166,9 @@ class TraceStatsProjector:
         )
 
     def _reduce(self, state: TraceStats, event: TraceEvent) -> None:
-        kind = event.event_type.value
+        event_type = event.event_type.value
         state.event_count += 1
-        _increment(state.event_counts, kind)
+        _increment(state.event_counts, event_type)
         if event.task_id and event.task_id not in state.task_ids:
             state.task_ids.append(event.task_id)
             state.task_ids.sort()
@@ -180,8 +180,8 @@ class TraceStatsProjector:
         state.first_event_at = min(state.first_event_at, timestamp) if state.first_event_at else timestamp
         state.last_event_at = max(state.last_event_at, timestamp) if state.last_event_at else timestamp
         if event.duration_ms is not None:
-            state.duration_ms_by_event[kind] = (
-                float(state.duration_ms_by_event.get(kind, 0.0)) + float(event.duration_ms)
+            state.duration_ms_by_event[event_type] = (
+                float(state.duration_ms_by_event.get(event_type, 0.0)) + float(event.duration_ms)
             )
 
         if event.event_type == TraceEventType.MODEL_REQUEST:

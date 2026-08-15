@@ -29,7 +29,7 @@ from agentevolver.code import bootstrap as _bootstrap
 from agentevolver.code.types import (
     MAX_LOG_CHARS,
     CodeFailure,
-    CodeFailureKind,
+    CodeFailureType,
     CodeRunResult,
 )
 from agentevolver.logger import logger
@@ -115,7 +115,7 @@ class CodeRuntimeServer(BaseModel):
                 logs=state.logs,
                 calls=state.calls,
                 failure=CodeFailure(
-                    kind=CodeFailureKind.TIMEOUT,
+                    type=CodeFailureType.TIMEOUT,
                     message=(
                         f"The program was stopped after {timeout:g}s and its process killed. "
                         f"Anything it printed before then is above. Split the work, or give "
@@ -126,7 +126,7 @@ class CodeRuntimeServer(BaseModel):
         finally:
             await self._reap(process, errors, kill=expired)
 
-        if result.failure is not None and result.failure.kind is CodeFailureKind.RUNTIME_EXIT:
+        if result.failure is not None and result.failure.type is CodeFailureType.RUNTIME_EXIT:
             diagnostic = (errors.result() if errors.done() and not errors.cancelled() else b"")
             detail = diagnostic.decode("utf-8", errors="replace").strip()
             if detail:
@@ -172,20 +172,20 @@ class CodeRuntimeServer(BaseModel):
                 # something here that is not part of the protocol; it is not a reason to
                 # fail the run, and it is not something to act on either.
                 continue
-            kind = message.get("t")
-            if kind == "log":
+            message_type = message.get("t")
+            if message_type == "log":
                 state.log(str(message.get("text", "")))
-            elif kind == "call":
+            elif message_type == "call":
                 state.calls += 1
                 in_flight.append(asyncio.create_task(
                     self._serve_call(process, message, bindings, gate, writing)
                 ))
-            elif kind == "done":
+            elif message_type == "done":
                 value = message.get("value")
                 raw = message.get("failure")
                 if raw:
                     failure = CodeFailure(
-                        kind=CodeFailureKind(raw.get("kind", "exception")),
+                        type=CodeFailureType(raw.get("type", "exception")),
                         message=str(raw.get("message", "")),
                     )
                 settled = True
@@ -199,7 +199,7 @@ class CodeRuntimeServer(BaseModel):
 
         if not settled:
             failure = CodeFailure(
-                kind=CodeFailureKind.RUNTIME_EXIT,
+                type=CodeFailureType.RUNTIME_EXIT,
                 message="The interpreter running the program exited before it reported a result.",
             )
         return CodeRunResult(value=value, logs=state.logs, failure=failure, calls=state.calls)

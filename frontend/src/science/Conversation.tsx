@@ -224,10 +224,10 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
 function toStep(event: GatewayEvent): Step | null {
   if (event.type === 'task.started') return { id: `${event.seq_no}`, label: 'Meta agent started' };
   const trace = (event.payload ?? {}) as Record<string, unknown>;
-  const kind = String(trace.event_type ?? '');
+  const eventType = String(trace.event_type ?? '');
   // The *_start halves would double every line; the finished ones carry the
   // outcome, which is what a reader wants.
-  if (kind.endsWith('_start')) return null;
+  if (eventType.endsWith('_start')) return null;
   const actor = String(trace.action_name ?? trace.agent_name ?? trace.label ?? 'agent');
   const input = (trace.input ?? {}) as Record<string, unknown>;
   const detail = String(input.command ?? input.path ?? input.file_path ?? input.code ?? '')

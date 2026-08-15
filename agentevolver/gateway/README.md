@@ -15,7 +15,7 @@ start transport dependencies.
 
 | File | Responsibility |
 |---|---|
-| `protocol.py` | Client-facing request and event contracts |
+| `types.py` | Client-facing request and event contracts |
 | `service.py` | Gateway application service |
 | `approval.py` | Session-fenced, one-shot Tool approval rendezvous |
 | `transport.py` | Transport adaptation |

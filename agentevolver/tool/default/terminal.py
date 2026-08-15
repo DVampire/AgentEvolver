@@ -291,7 +291,7 @@ class TerminalSendTool(Tool):
         from agentevolver.job import job_manager
 
         job = job_manager.register(
-            kind="terminal", label=f"{terminal_id}: {text[:70]}", session_id=session_id)
+            type="terminal", label=f"{terminal_id}: {text[:70]}", session_id=session_id)
 
         typed = _asyncio.Event()
 

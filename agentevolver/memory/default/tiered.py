@@ -594,7 +594,7 @@ class TieredMemory(Memory):
                 success=True,
                 surface_op=replace_op(start, end),
                 source_event_seqs=shadowed,
-                metadata={"kind": "compaction", "records": len(chunk)},
+                metadata={"type": "compaction", "records": len(chunk)},
             ))
         except Exception as error:  # noqa: BLE001 — the fold itself already succeeded
             logger.warning(f"| ⚠️ {self.name}: could not record the fold in the trace ({error})")

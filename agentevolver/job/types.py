@@ -62,7 +62,7 @@ class Job(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: str = Field(description="Short handle the agent uses to name this job.")
-    kind: str = Field(description="What started it — 'bash', 'terminal', 'agent'. Descriptive only; the controller treats every kind alike.")
+    type: str = Field(description="What started it — 'bash', 'terminal', 'agent'. Descriptive only; the controller treats every type alike.")
     label: str = Field(default="", description="Human-readable summary, e.g. the command line. Shown in listings so a job can be recognised without reading its output.")
     session_id: str = Field(default="", description="The session that started it. Jobs are session-local; this is what scopes a listing.")
     status: JobStatus = Field(default=JobStatus.RUNNING)
@@ -128,7 +128,7 @@ class Job(BaseModel):
                 state += f"/{format_interval(self.every_seconds)}"
             timing = (f"in {format_interval(remaining)}" if remaining > 0
                       else f"{format_interval(-remaining)} late")
-        return f"{self.id}  {state:<22} {timing:>10}  {self.kind}: {self.label[:70]}"
+        return f"{self.id}  {state:<22} {timing:>10}  {self.type}: {self.label[:70]}"
 
 
 def format_interval(seconds: float) -> str:

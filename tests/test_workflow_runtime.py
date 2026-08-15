@@ -52,8 +52,8 @@ class FakeRuntime(WorkflowRuntime):
     async def _validate_capabilities(self, definition):
         return None
 
-    async def _invoke(self, kind, target, task, args, ctx, depth, budget=None):
-        self.kinds.append(kind)
+    async def _invoke(self, capability_type, target, task, args, ctx, depth, budget=None):
+        self.kinds.append(capability_type)
         self.calls.append((target, task, args))
         value = self.handler(target, task, args)
         return await value if asyncio.iscoroutine(value) else value
@@ -695,10 +695,10 @@ async def test_a_nested_workflow_spends_the_root_budget_not_its_own(tmp_path):
     class NestedRuntime(FakeRuntime):
         """Resolve a nested <workflow> step to the compiled child, sharing the root budget."""
 
-        async def _invoke(self, kind, target, task, args, ctx, depth, budget=None):
-            if kind.value == "workflow":
+        async def _invoke(self, capability_type, target, task, args, ctx, depth, budget=None):
+            if capability_type.value == "workflow":
                 return await self.run(child, input=args, ctx=ctx, depth=depth + 1, _budget=budget)
-            return await super()._invoke(kind, target, task, args, ctx, depth, budget=budget)
+            return await super()._invoke(capability_type, target, task, args, ctx, depth, budget=budget)
 
     run = await NestedRuntime(lambda *_: {"ok": True}).run(
         parent, ctx=SimpleNamespace(workspace_root=str(tmp_path)),

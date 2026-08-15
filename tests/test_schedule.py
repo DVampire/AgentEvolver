@@ -139,7 +139,7 @@ def test_a_scheduled_reminder_is_not_a_finished_job(clock):
     assert not reminder.status.is_final
 
     for index in range(MAX_FINISHED_PER_SESSION + 5):
-        finished = job_manager.register(kind="test", label=f"d{index}", session_id=SESSION)
+        finished = job_manager.register(type="test", label=f"d{index}", session_id=SESSION)
         job_manager.finish(finished.id, exit_code=0)
     assert job_manager.get(reminder.id) is not None, "the eviction pass ate a pending reminder"
 

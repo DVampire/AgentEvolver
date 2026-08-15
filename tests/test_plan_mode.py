@@ -325,7 +325,7 @@ async def test_the_review_declares_the_label_that_approves_it(plans):
     [record] = pending
     [question] = record.questions
 
-    assert question.intent.kind == "plan-review"
+    assert question.intent.type == "plan-review"
     assert question.intent.approve == APPROVE_LABEL
     assert question.detail == "the plan"  # the plan is the detail, not an option
     assert [option.label for option in question.options] == [APPROVE_LABEL, DECLINE_LABEL]

@@ -65,7 +65,7 @@ interface Call {
   id: string;
   name: string;
   /** "tool" | "skill" — the log's own `action_type`. */
-  kind: string;
+  type: string;
   index?: number;
   input?: Record<string, unknown>;
   /** The result, as derive.py would put it in a ToolMessage — just formatted. */
@@ -78,11 +78,11 @@ interface Call {
 }
 
 type Turn =
-  | { kind: 'task'; id: string; text: string; agent?: string }
-  | { kind: 'step'; id: string; step: number; reasoning: string; usage?: Usage; durationMs?: number; calls: Call[] }
-  | { kind: 'result'; id: string; text: string; success: boolean; error?: string; durationMs?: number }
-  | { kind: 'compaction'; id: string; text: string; shadowed: number[] }
-  | { kind: 'error'; id: string; text: string };
+  | { type: 'task'; id: string; text: string; agent?: string }
+  | { type: 'step'; id: string; step: number; reasoning: string; usage?: Usage; durationMs?: number; calls: Call[] }
+  | { type: 'result'; id: string; text: string; success: boolean; error?: string; durationMs?: number }
+  | { type: 'compaction'; id: string; text: string; shadowed: number[] }
+  | { type: 'error'; id: string; text: string };
 
 interface Trajectory {
   turns: Turn[];
@@ -299,7 +299,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 /* --- Turns --------------------------------------------------------------- */
 
 function TurnCard({ turn, open, onToggle }: { turn: Turn; open: boolean; onToggle: () => void }) {
-  if (turn.kind === 'task') {
+  if (turn.type === 'task') {
     return (
       <article className="trajectory-turn task">
         <header><strong>Task</strong>{turn.agent ? <em>{turn.agent}</em> : null}</header>
@@ -307,7 +307,7 @@ function TurnCard({ turn, open, onToggle }: { turn: Turn; open: boolean; onToggl
       </article>
     );
   }
-  if (turn.kind === 'result') {
+  if (turn.type === 'result') {
     return (
       <article className={`trajectory-turn result${turn.success ? '' : ' failed'}`}>
         <header>
@@ -319,7 +319,7 @@ function TurnCard({ turn, open, onToggle }: { turn: Turn; open: boolean; onToggl
       </article>
     );
   }
-  if (turn.kind === 'compaction') {
+  if (turn.type === 'compaction') {
     return (
       <article className="trajectory-turn compaction">
         <header>
@@ -334,7 +334,7 @@ function TurnCard({ turn, open, onToggle }: { turn: Turn; open: boolean; onToggl
       </article>
     );
   }
-  if (turn.kind === 'error') {
+  if (turn.type === 'error') {
     return (
       <article className="trajectory-turn result failed">
         <header><strong>Error</strong></header>
@@ -385,7 +385,7 @@ function CallCard({ call }: { call: Call }) {
   return (
     <section className={`trajectory-call${call.success === false ? ' failed' : ''}`}>
       <header>
-        <span className="trajectory-call-icon">{call.kind === 'skill' ? <Layers size={12} /> : <Terminal size={12} />}</span>
+        <span className="trajectory-call-icon">{call.type === 'skill' ? <Layers size={12} /> : <Terminal size={12} />}</span>
         <strong>{call.name || 'call'}</strong>
         <span className="trajectory-call-args">{command ? firstLine(command) : summarise(rest)}</span>
         {call.durationMs !== undefined ? <em>{formatDuration(call.durationMs)}</em> : null}
@@ -537,7 +537,7 @@ function project(traces: Trace[]): Trajectory {
 
   const turns: Turn[] = [];
   let pending: Trace[] = [];
-  let current: (Turn & { kind: 'step' }) | undefined;
+  let current: (Turn & { type: 'step' }) | undefined;
 
   const flush = () => {
     for (const result of pending) {
@@ -545,7 +545,7 @@ function project(traces: Trace[]): Trajectory {
       // without `agent_call`) still happened; give it a step of its own rather
       // than dropping it.
       if (!current || current.step !== (result.step_number ?? current.step)) {
-        current = { kind: 'step', id: `orphan-${result.seq_no ?? turns.length}`, step: result.step_number ?? 0, reasoning: '', calls: [] };
+        current = { type: 'step', id: `orphan-${result.seq_no ?? turns.length}`, step: result.step_number ?? 0, reasoning: '', calls: [] };
         turns.push(current);
       }
       const id = callId(result);
@@ -557,7 +557,7 @@ function project(traces: Trace[]): Trajectory {
         target.durationMs = numberOf(result.duration_ms);
       } else {
         current.calls.push({
-          id, name: result.action_name ?? '', kind: result.action_type ?? 'tool',
+          id, name: result.action_name ?? '', type: result.action_type ?? 'tool',
           index: numberOf(result.action_index), result: resultText(result),
           success: result.success ?? undefined, error: result.error ?? undefined,
           durationMs: numberOf(result.duration_ms), unpaired: true,
@@ -574,23 +574,23 @@ function project(traces: Trace[]): Trajectory {
 
   for (const trace of traces) {
     if (onSurface && (typeof trace.seq_no !== 'number' || !onSurface.has(trace.seq_no))) continue;
-    const kind = trace.event_type;
-    if (kind === 'agent_start') {
+    const type = trace.event_type;
+    if (type === 'agent_start') {
       flush();
       current = undefined;
-      turns.push({ kind: 'task', id: `task-${trace.seq_no ?? turns.length}`, text: String((trace.input ?? {}).task ?? ''), agent: trace.agent_name ?? undefined });
-    } else if (kind === 'agent_call') {
+      turns.push({ type: 'task', id: `task-${trace.seq_no ?? turns.length}`, text: String((trace.input ?? {}).task ?? ''), agent: trace.agent_name ?? undefined });
+    } else if (type === 'agent_call') {
       const step = trace.step_number ?? 0;
       const stepUsage = readUsage(trace.usage);
       current = {
-        kind: 'step', id: `step-${trace.seq_no ?? step}`, step,
+        type: 'step', id: `step-${trace.seq_no ?? step}`, step,
         reasoning: reasoningOf(trace),
         usage: stepUsage,
         durationMs: numberOf(trace.duration_ms),
         calls: (callsByStep.get(step) ?? []).map((start) => ({
           id: callId(start),
           name: start.action_name ?? '',
-          kind: start.action_type ?? 'tool',
+          type: start.action_type ?? 'tool',
           index: numberOf(start.action_index),
           input: start.input ?? undefined,
         })),
@@ -598,9 +598,9 @@ function project(traces: Trace[]): Trajectory {
       turns.push(current);
       flush();
       if (stepUsage) summed = addUsage(summed, stepUsage);
-    } else if (kind === 'tool_call' || kind === 'skill_call') {
+    } else if (type === 'tool_call' || type === 'skill_call') {
       pending.push(trace);
-    } else if (kind === 'agent_end') {
+    } else if (type === 'agent_end') {
       flush();
       outcome = trace.success === false ? 'failed' : 'ok';
       wallMs = numberOf(trace.duration_ms);
@@ -609,30 +609,30 @@ function project(traces: Trace[]): Trajectory {
       // steps AND adding this would count every token twice.
       usage = readUsage(trace.usage) ?? usage;
       turns.push({
-        kind: 'result', id: `end-${trace.seq_no ?? turns.length}`,
+        type: 'result', id: `end-${trace.seq_no ?? turns.length}`,
         text: textOf(trace.output ?? trace.message), success: trace.success !== false,
         error: trace.error ?? undefined, durationMs: wallMs,
       });
       current = undefined;
-    } else if (kind === 'custom' && (trace.metadata ?? {}).kind === 'compaction') {
+    } else if (type === 'custom' && (trace.metadata ?? {}).type === 'compaction') {
       flush();
       turns.push({
-        kind: 'compaction', id: `fold-${trace.seq_no ?? turns.length}`,
+        type: 'compaction', id: `fold-${trace.seq_no ?? turns.length}`,
         text: textOf(trace.message),
         shadowed: (typeof trace.seq_no === 'number' && usable?.shadowed.get(trace.seq_no)) || trace.source_event_seqs || [],
       });
-    } else if (kind === 'error') {
+    } else if (type === 'error') {
       flush();
-      turns.push({ kind: 'error', id: `err-${trace.seq_no ?? turns.length}`, text: textOf(trace.error ?? trace.message) });
+      turns.push({ type: 'error', id: `err-${trace.seq_no ?? turns.length}`, text: textOf(trace.error ?? trace.message) });
     }
   }
   flush();
 
-  const steps = turns.filter((turn) => turn.kind === 'step').length;
-  const calls = turns.reduce((total, turn) => total + (turn.kind === 'step' ? turn.calls.length : 0), 0);
+  const steps = turns.filter((turn) => turn.type === 'step').length;
+  const calls = turns.reduce((total, turn) => total + (turn.type === 'step' ? turn.calls.length : 0), 0);
   const failures = turns.reduce((total, turn) => total
-    + (turn.kind === 'step' ? turn.calls.filter((call) => call.success === false).length : 0)
-    + (turn.kind === 'error' ? 1 : 0), 0);
+    + (turn.type === 'step' ? turn.calls.filter((call) => call.success === false).length : 0)
+    + (turn.type === 'error' ? 1 : 0), 0);
   if (wallMs === undefined) wallMs = spanOf(traces);
   return { turns, steps, calls, failures, usage: usage ?? summed, wallMs, outcome, warning };
 }
@@ -693,9 +693,9 @@ function spanOf(traces: Trace[]): number | undefined {
 }
 
 function isFailure(turn: Turn): boolean {
-  if (turn.kind === 'error') return true;
-  if (turn.kind === 'result') return !turn.success;
-  return turn.kind === 'step' && turn.calls.some((call) => call.success === false);
+  if (turn.type === 'error') return true;
+  if (turn.type === 'result') return !turn.success;
+  return turn.type === 'step' && turn.calls.some((call) => call.success === false);
 }
 
 /* --- Formatting ----------------------------------------------------------- */

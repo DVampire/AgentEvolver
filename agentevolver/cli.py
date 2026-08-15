@@ -46,7 +46,7 @@ class TerminalClient:
     @asynccontextmanager
     async def _session(self):
         """Open an in-process Gateway + session; stop the Gateway on exit."""
-        from agentevolver.gateway.protocol import GatewayCommand
+        from agentevolver.gateway.types import GatewayCommand
         from agentevolver.gateway.service import AgentGateway
         from agentevolver.utils import make_id
 
@@ -63,7 +63,7 @@ class TerminalClient:
     @staticmethod
     async def _dispatch(gateway, session_id: str, raw: str) -> Tuple[bool, str]:
         """Run one slash command through the Gateway's ``command.execute``."""
-        from agentevolver.gateway.protocol import GatewayCommand
+        from agentevolver.gateway.types import GatewayCommand
         from agentevolver.utils import make_id
 
         resp = await gateway.handle(GatewayCommand(

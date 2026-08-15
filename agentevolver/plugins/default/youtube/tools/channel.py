@@ -23,10 +23,10 @@ class YoutubeChannelTool(YoutubeToolBase):
     def _channel_id(self, youtube, channel_url: str) -> str:
         if channel_url.startswith("UC") and len(channel_url) == 24:
             return channel_url
-        for kind, pattern in _URL_PATTERNS.items():
+        for url_type, pattern in _URL_PATTERNS.items():
             match = re.search(pattern, channel_url)
             if match:
-                if kind == "channel_id":
+                if url_type == "channel_id":
                     return match.group(1)
                 resp = youtube.search().list(part="id", q=match.group(1), type="channel", maxResults=1).execute()
                 if resp.get("items"):

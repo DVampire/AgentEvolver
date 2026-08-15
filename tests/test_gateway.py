@@ -24,7 +24,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agentevolver.canvas.types import FlowGraph, GraphNode
-from agentevolver.gateway.protocol import GatewayCommand, PROTOCOL_VERSION
+from agentevolver.gateway.types import GatewayCommand, PROTOCOL_VERSION
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig

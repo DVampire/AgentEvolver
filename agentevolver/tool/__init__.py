@@ -7,7 +7,7 @@ from .execution import (
     ToolExecutionPipeline,
     ToolExecutionStage,
     ToolPolicyDecision,
-    ToolPolicyKind,
+    ToolPolicyType,
 )
 from .server import tool_manager
 from .default import *
@@ -23,5 +23,5 @@ __all__ = [
     "ToolExecutionPipeline",
     "ToolExecutionStage",
     "ToolPolicyDecision",
-    "ToolPolicyKind",
+    "ToolPolicyType",
 ]

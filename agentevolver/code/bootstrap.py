@@ -217,14 +217,14 @@ async def _run(init: Dict[str, Any]) -> None:
         compiled = compile(source, PROGRAM_FILENAME, "exec")
     except SyntaxError as error:
         line = max(1, (error.lineno or 1) - _WRAPPER_LINES)
-        failure = {"kind": "exception", "message": f"SyntaxError on line {line}: {error.msg}"}
+        failure = {"type": "exception", "message": f"SyntaxError on line {line}: {error.msg}"}
     else:
         exec(compiled, namespace)  # noqa: S102 — running the model's program is the point
         try:
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 value = await namespace["__program__"]()
         except BaseException as error:  # noqa: BLE001 — every failure is the program's news
-            failure = {"kind": "exception", "message": _format_exception(error)}
+            failure = {"type": "exception", "message": _format_exception(error)}
         finally:
             output.drain()
 

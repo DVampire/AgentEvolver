@@ -133,7 +133,7 @@ async def _record_retry(
             success=False,
             error=error,
             metadata={
-                "kind": "llm_retry",
+                "type": "llm_retry",
                 "model": model,
                 "attempt": attempt,
                 "max_attempts": total,

@@ -1,33 +1,16 @@
-export const PROTOCOL_VERSION = 1;
-
-export interface GatewayResponse {
-  kind: 'response';
-  id: string;
-  ok: boolean;
-  result: Record<string, unknown>;
-  // `details` is where a refusal says what was wrong, as opposed to that something was.
-  // A client that only reads `message` can report the failure but never explain it.
-  error?: { code: string; message: string; details?: Record<string, unknown> | null };
-  // Echoed on every response. Declared so a client can tell a server it no longer
-  // understands from one that merely refused this command; tests/test_gateway_contract.py
-  // keeps this constant and the server's in step.
-  protocol_version: number;
-}
-
-export interface GatewayEvent {
-  kind: 'event';
-  type: string;
-  payload: Record<string, unknown>;
-  session_id?: string;
-  // Which transcript this belongs to. The gateway broadcasts every event to
-  // every client, so a view that owns one conversation has to filter on it —
-  // without this, a canvas run appeared in the chat.
-  conversation_id?: string;
-  task_id?: string;
-  seq_no: number;
-  timestamp: string;
-  protocol_version: number;
-}
+// The wire contract is generated from agentevolver/gateway/types.py. Re-exported here
+// because this is where the socket lives, so the views that consume events keep importing
+// from one place.
+export {
+  PROTOCOL_VERSION,
+  isGatewayEvent,
+  type GatewayCommand,
+  type GatewayError,
+  type GatewayEvent,
+  type GatewayMessage,
+  type GatewayResponse,
+} from '../protocol/gateway';
+import type { GatewayEvent, GatewayResponse } from '../protocol/gateway';
 
 type PendingRequest = {
   resolve: (response: GatewayResponse) => void;

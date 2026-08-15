@@ -89,7 +89,7 @@ class IncrementalTrajectoryProjector:
             header = json.loads(raw_lines[0])
         except json.JSONDecodeError as exc:
             raise ProjectionWatermarkError("trajectory projection header is corrupt") from exc
-        if header.get("kind") != "trajectory_projection_state":
+        if header.get("type") != "trajectory_projection_state":
             raise ProjectionWatermarkError("trajectory projection state has no header")
         if int(header.get("schema_version", 0)) != PROJECTION_STATE_VERSION:
             raise ProjectionWatermarkError(
@@ -124,17 +124,17 @@ class IncrementalTrajectoryProjector:
                 raise ProjectionWatermarkError(
                     f"trajectory projection state line {index} is corrupt"
                 ) from exc
-            kind = record.get("kind")
-            if kind == "event":
+            record_type = record.get("type")
+            if record_type == "event":
                 pending.append(record.get("event") or {})
-            elif kind == "batch":
+            elif record_type == "batch":
                 for payload in pending:
                     committed[int(payload["seq_no"])] = payload
                 pending = []
                 source_last_seq = int(record["source_last_seq"])
             else:
                 raise ProjectionWatermarkError(
-                    f"trajectory projection state line {index} has unknown kind {kind!r}"
+                    f"trajectory projection state line {index} has unknown type {record_type!r}"
                 )
         return TrajectoryProjectionState(
             session_id=session_id,
@@ -156,13 +156,13 @@ class IncrementalTrajectoryProjector:
         records = []
         if created:
             records.append({
-                "kind": "trajectory_projection_state",
+                "type": "trajectory_projection_state",
                 "schema_version": PROJECTION_STATE_VERSION,
                 "projector_version": PROJECTOR_VERSION,
                 "session_id": session_id,
             })
-        records.extend({"kind": "event", "event": event} for event in events)
-        records.append({"kind": "batch", "source_last_seq": int(source_last_seq)})
+        records.extend({"type": "event", "event": event} for event in events)
+        records.append({"type": "batch", "source_last_seq": int(source_last_seq)})
         payload = "".join(
             json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             + "\n"

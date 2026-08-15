@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 DOCUMENT_VERSION = 2
@@ -126,7 +126,7 @@ class GraphNode(BaseModel):
     #: saved before the rename would otherwise load with every node silently
     #: defaulting to ``step`` — inputs and outputs turning into steps, and their
     #: edges vanishing with the ports that no longer existed.
-    type: NodeType = Field(default="step", validation_alias=AliasChoices("type", "kind"))
+    type: NodeType = Field(default="step")
     step_type: Optional[str] = None
     target: Optional[str] = None
     task: str = ""

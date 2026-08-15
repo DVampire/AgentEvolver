@@ -25,7 +25,7 @@ import pytest
 import pytest_asyncio
 
 from agentevolver.agent.types import Agent, AgentContext
-from agentevolver.code import RUN_CODE_TOOL, CodeFailureKind, code_runtime
+from agentevolver.code import RUN_CODE_TOOL, CodeFailureType, code_runtime
 from agentevolver.config import config
 from agentevolver.hook.context import HookContextManager
 from agentevolver.hook.server import hook_manager
@@ -177,7 +177,7 @@ async def test_a_run_that_expires_still_returns_what_it_printed():
         "print('got this far')\nimport time\ntime.sleep(30)", {}, timeout=2)
     elapsed = time.monotonic() - started
 
-    assert result.failure.kind is CodeFailureKind.TIMEOUT
+    assert result.failure.type is CodeFailureType.TIMEOUT
     assert result.logs == ["got this far"]
     # The budget is a promise. A polite wait for a program that has already overrun it
     # turns a 2-second timeout into whatever the grace period is.

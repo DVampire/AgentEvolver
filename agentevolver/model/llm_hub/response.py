@@ -190,12 +190,12 @@ class ResponseLLMHub(BaseModel):
         functions: List[Dict[str, Any]] = []
 
         for item in payload.get("output") or []:
-            kind = item.get("type")
-            if kind == "message":
+            item_type = item.get("type")
+            if item_type == "message":
                 for part in item.get("content") or []:
                     if part.get("text"):
                         text_parts.append(part["text"])
-            elif kind == "function_call":
+            elif item_type == "function_call":
                 import json as _json
 
                 arguments = item.get("arguments") or "{}"
@@ -210,7 +210,7 @@ class ResponseLLMHub(BaseModel):
                     "name": item.get("name", ""),
                     "args": parsed,
                 })
-            elif kind == "reasoning":
+            elif item_type == "reasoning":
                 for part in item.get("summary") or []:
                     if part.get("text"):
                         reasoning_parts.append(part["text"])

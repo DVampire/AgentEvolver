@@ -495,10 +495,11 @@ class SessionQueryServer(metaclass=Singleton):
         does not — logs written before ``call_id`` existed still pair rather than
         losing the link between a call and what it returned.
         """
-        kind = str(target.get("event_type") or "")
-        if not kind.endswith(("_start", "_call")) or kind.startswith("agent"):
+        event_type = str(target.get("event_type") or "")
+        if not event_type.endswith(("_start", "_call")) or event_type.startswith("agent"):
             return None
-        wanted = kind.replace("_start", "_call") if kind.endswith("_start") else kind.replace("_call", "_start")
+        wanted = (event_type.replace("_start", "_call") if event_type.endswith("_start")
+                  else event_type.replace("_call", "_start"))
         call_id = (target.get("metadata") or {}).get("call_id")
         for row in rows:
             if row.get("event_type") != wanted:

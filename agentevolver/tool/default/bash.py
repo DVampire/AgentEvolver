@@ -206,7 +206,7 @@ class BashTool(Tool):
             start_new_session=True, close_fds=True, text=True, bufsize=1,
         )
         job = job_manager.register(
-            kind="bash", label=command,
+            type="bash", label=command,
             session_id=str(getattr(ctx, "id", "") or ""), handle=process,
         )
 

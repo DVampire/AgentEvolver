@@ -42,7 +42,7 @@ from agentevolver.extension import extension_manager
 from agentevolver.ide import ide_manager
 from agentevolver.science import science_manager
 from agentevolver.kernel import kernel_manager
-from agentevolver.gateway.protocol import (
+from agentevolver.gateway.types import (
     PROTOCOL_VERSION,
     GatewayCommand,
     GatewayEvent,
@@ -737,7 +737,7 @@ class AgentGateway:
         return {
             "jobs": [{
                 "id": job.id,
-                "kind": job.kind,
+                "type": job.type,
                 "label": job.label,
                 "status": job.status.value,
                 "running": not job.status.is_final,

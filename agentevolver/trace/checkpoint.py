@@ -78,7 +78,7 @@ async def _integrity_failure(
 
     if trace_manager.should_report_integrity_gap(session_id, boundary.value, issue):
         event_metadata = {
-            "kind": "integrity_degraded",
+            "type": "integrity_degraded",
             "policy_version": INTEGRITY_POLICY_VERSION,
             "profile": profile.value,
             "boundary": boundary.value,

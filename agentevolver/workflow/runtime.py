@@ -726,7 +726,7 @@ class WorkflowRuntime:
         derived.extra = {**(getattr(ctx, "extra", None) or {}), **overrides}
         return derived
 
-    async def _invoke(self, kind, target, task, args, ctx, depth, budget=None):
+    async def _invoke(self, capability_type, target, task, args, ctx, depth, budget=None):
         """Route a capability call to the owning manager, keeping normal permission boundaries.
 
         Tool/skill/connector/environment payloads are validated against the target's
@@ -734,7 +734,7 @@ class WorkflowRuntime:
         with incremented depth and the shared budget.
 
         Args:
-            kind: The capability :class:`StepType`.
+            capability_type: The capability :class:`StepType`.
             target: Registered capability name.
             task: Optional task text folded into the payload as ``task``.
             args: Resolved argument mapping.
@@ -746,25 +746,25 @@ class WorkflowRuntime:
             The manager's raw result (later normalized by :meth:`_normalize`).
 
         Raises:
-            ValueError: If the kind is not directly callable or arguments fail schema
+            ValueError: If the capability type is not directly callable or arguments fail schema
                 validation.
         """
         payload = dict(args or {})
         if task:
             payload.setdefault("task", task)
-        if kind == StepType.AGENT:
+        if capability_type == StepType.AGENT:
             from agentevolver.agent import agent_manager
             ctx = self._apply_agent_mounts(payload, ctx)
             return await agent_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.TOOL:
+        if capability_type == StepType.TOOL:
             from agentevolver.tool import tool_manager
             await self._validate_invocation_schema(await tool_manager.get_schema(target), payload, target)
             return await tool_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.SKILL:
+        if capability_type == StepType.SKILL:
             from agentevolver.skill import skill_manager
             await self._validate_invocation_schema(await skill_manager.get_schema(target), payload, target)
             return await skill_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.CONNECTOR:
+        if capability_type == StepType.CONNECTOR:
             from agentevolver.connector import connector_manager
             action = payload.pop("action", None)
             await self._validate_invocation_schema(
@@ -772,7 +772,7 @@ class WorkflowRuntime:
                 f"{target}.{action}",
             )
             return await connector_manager(name=target, input={"action": action, "args": payload}, ctx=ctx)
-        if kind == StepType.ENVIRONMENT:
+        if capability_type == StepType.ENVIRONMENT:
             from agentevolver.environment import environment_manager
             action = payload.pop("action", None)
             await self._validate_invocation_schema(
@@ -780,24 +780,24 @@ class WorkflowRuntime:
                 f"{target}.{action}",
             )
             return await environment_manager(name=target, action=action, input=payload, ctx=ctx)
-        if kind == StepType.WORKFLOW:
+        if capability_type == StepType.WORKFLOW:
             from .server import workflow_manager
             return await workflow_manager.run(
                 target, input=payload, ctx=ctx, depth=depth + 1, _budget=budget,
             )
-        if kind == StepType.DATASOURCE:
+        if capability_type == StepType.DATASOURCE:
             from agentevolver.plugins import plugin_manager
             return await plugin_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.PROCESS:
+        if capability_type == StepType.PROCESS:
             from agentevolver.process import process_manager
             return await process_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.DATA:
+        if capability_type == StepType.DATA:
             from agentevolver.data import data_manager
             return await data_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.KNOWLEDGE:
+        if capability_type == StepType.KNOWLEDGE:
             from agentevolver.knowledge import knowledge_manager
             return await knowledge_manager(name=target, input=payload, ctx=ctx)
-        if kind == StepType.BENCHMARK:
+        if capability_type == StepType.BENCHMARK:
             import json as _json
 
             from agentevolver.benchmark import benchmark_manager
@@ -829,7 +829,7 @@ class WorkflowRuntime:
                 message=f"{target}: avg score {score:.4f} over {len(results)} item(s).",
                 data={"benchmark": target, "score": score, "count": len(results)},
             )
-        raise ValueError(f"{kind.value} is not directly callable")
+        raise ValueError(f"{capability_type.value} is not directly callable")
 
     @staticmethod
     async def _validate_invocation_schema(function_calling, payload, label):

@@ -73,7 +73,7 @@ async def test_a_pty_send_lands_in_the_same_registry_as_a_background_command(ses
     await TerminalSendTool()(terminal_id=terminal_id, text="sleep 20",
                              run_in_background=True, ctx=_Ctx())
 
-    kinds = {j.kind for j in job_manager.list(_Ctx.id)}
+    kinds = {j.type for j in job_manager.list(_Ctx.id)}
     assert "terminal" in kinds, f"a backgrounded send is invisible to job_list; saw {kinds}"
 
 

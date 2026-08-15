@@ -1,6 +1,6 @@
 """JobManager — the one registry every kind of background work reports to.
 
-Kind-agnostic on purpose. A background shell command, a PTY send, and a spawned agent
+Type-agnostic on purpose. A background shell command, a PTY send, and a spawned agent
 raise exactly three questions — is it done, what did it say, stop it — so they share one
 controller and one set of tools. Modelling them separately would hand the agent three
 vocabularies for one idea and guarantee that two of them lag behind the third.
@@ -71,7 +71,7 @@ class JobManagerServer(metaclass=Singleton):
     # Starting
     # ------------------------------------------------------------------
 
-    def register(self, *, kind: str, label: str, session_id: str = "",
+    def register(self, *, type: str, label: str, session_id: str = "",
                  handle: object = None) -> Job:
         """Take a already-started piece of work into the registry.
 
@@ -80,11 +80,11 @@ class JobManagerServer(metaclass=Singleton):
         gets to it. Asking each producer to start its own work and then hand it over
         keeps this class from having to know how any of them begin.
         """
-        job = Job(id=f"job_{uuid.uuid4().hex[:8]}", kind=kind, label=label,
+        job = Job(id=f"job_{uuid.uuid4().hex[:8]}", type=type, label=label,
                   session_id=session_id, handle=handle)
         self._jobs[job.id] = job
         self._evict(session_id)
-        logger.info(f"| 🧵 Job {job.id} started ({kind}): {label[:80]}")
+        logger.info(f"| 🧵 Job {job.id} started ({type}): {label[:80]}")
         return job
 
     def append_output(self, job_id: str, text: str) -> None:
@@ -140,7 +140,7 @@ class JobManagerServer(metaclass=Singleton):
         now = self.clock()
         due_at, interval = resolve_due(now=now, after_seconds=after_seconds,
                                        at=at, every_seconds=every_seconds)
-        job = Job(id=f"job_{uuid.uuid4().hex[:8]}", kind="reminder", label=text,
+        job = Job(id=f"job_{uuid.uuid4().hex[:8]}", type="reminder", label=text,
                   session_id=session_id, status=JobStatus.SCHEDULED,
                   due_at=due_at, every_seconds=interval)
         self._jobs[job.id] = job

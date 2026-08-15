@@ -94,7 +94,7 @@ def test_torn_state_tail_is_repaired_before_a_resumed_append(tmp_path):
     projector = IncrementalTrajectoryProjector(reader, str(tmp_path / "trace"))
     projector.project(SESSION, task_id=TASK)
     with open(projector._state_path(SESSION), "a", encoding="utf-8") as handle:
-        handle.write('{"kind":"event"')
+        handle.write('{"type":"event"')
 
     reader.events.append(events[5])
     resumed = IncrementalTrajectoryProjector(

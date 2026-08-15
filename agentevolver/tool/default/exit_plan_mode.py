@@ -98,7 +98,7 @@ class ExitPlanModeTool(Tool):
                 QuestionOption(label=DECLINE_LABEL,
                                description="Stay in plan mode; say what should change."),
             ],
-            intent=QuestionIntent(kind="plan-review", approve=APPROVE_LABEL),
+            intent=QuestionIntent(type="plan-review", approve=APPROVE_LABEL),
         )
 
         try:

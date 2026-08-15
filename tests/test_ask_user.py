@@ -260,7 +260,7 @@ def test_an_intent_whose_approve_label_names_no_option_is_refused():
     """
     with pytest.raises(ValueError, match="names none of its options"):
         validate([one_question(detail="the plan",
-                               intent=QuestionIntent(kind="plan-review", approve="Yes"))])
+                               intent=QuestionIntent(type="plan-review", approve="Yes"))])
 
 
 def test_a_plan_review_with_nothing_to_review_is_refused():
@@ -270,7 +270,7 @@ def test_a_plan_review_with_nothing_to_review_is_refused():
     already shown the person the question.
     """
     with pytest.raises(ValueError, match="without the detail"):
-        validate([one_question(intent=QuestionIntent(kind="plan-review", approve="SQLite"))])
+        validate([one_question(intent=QuestionIntent(type="plan-review", approve="SQLite"))])
 
 
 # --------------------------------------------------------------------------- #

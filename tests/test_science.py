@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from agentevolver.gateway.protocol import GatewayCommand
+from agentevolver.gateway.types import GatewayCommand
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.kernel import Execution, KernelOutput, kernel_manager
 from agentevolver.paths import P, path_manager

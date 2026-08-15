@@ -105,7 +105,7 @@ async def test_training_profile_requires_a_running_trace_writer(isolated_trace_m
         # singleton for unrelated tests.
         isolated_trace_manager.__dict__.pop("emit", None)
     event = emitted.await_args.args[0]
-    assert event.metadata["kind"] == "integrity_degraded"
+    assert event.metadata["type"] == "integrity_degraded"
     assert event.ignorable is False
 
 

@@ -29,7 +29,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from agentevolver.gateway.protocol import PROTOCOL_VERSION
+from agentevolver.gateway.types import PROTOCOL_VERSION
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.gateway.transport import create_websocket_app, serve_stdio
 

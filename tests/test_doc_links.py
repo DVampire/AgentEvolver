@@ -96,7 +96,7 @@ def _is_local(target: str) -> bool:
 
 
 def links(path: Path) -> Iterator[Tuple[str, str]]:
-    """`(target, kind)` for every local file reference in one document.
+    """`(target, link_type)` for every local file reference in one document.
 
     Three syntaxes, because all three are used here: inline `[text](target)` including
     image embeds, reference definitions `[id]: target`, and raw HTML attributes — module
@@ -110,12 +110,12 @@ def links(path: Path) -> Iterator[Tuple[str, str]]:
         (r"^\s*\[[^\]^]+\]:\s*<?(\S+)>?\s*$", "reference"),
         (r"<(?:img|a|source|video|iframe)\b[^>]*?(?:src|href)=\"([^\"]+)\"", "html"),
     )
-    for pattern, kind in patterns:
+    for pattern, link_type in patterns:
         for match in re.finditer(pattern, body, re.M):
             target = match.group(1).rstrip(">")
-            if _is_local(target) and (target, kind) not in seen:
-                seen.add((target, kind))
-                yield target, kind
+            if _is_local(target) and (target, link_type) not in seen:
+                seen.add((target, link_type))
+                yield target, link_type
 
 
 def resolve(path: Path, target: str) -> Path:
@@ -129,13 +129,13 @@ def broken(path: Path) -> List[str]:
     relative = str(path.relative_to(ROOT))
     exempt = {target for doc, target, _ in PLACEHOLDER_LINKS if doc == relative}
     out = []
-    for target, kind in links(path):
+    for target, link_type in links(path):
         if target in exempt:
             continue
         if not target.split("#")[0]:
             continue
         if not resolve(path, target).exists():
-            out.append(f"{relative}: {kind} -> {target}")
+            out.append(f"{relative}: {link_type} -> {target}")
     return out
 
 

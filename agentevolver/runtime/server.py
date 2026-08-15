@@ -494,7 +494,7 @@ class RuntimeManager(metaclass=Singleton):
 
         name = getattr(child, "name", "agent")
         job = job_manager.register(
-            kind="agent", label=f"{name} · {task[:60]}",
+            type="agent", label=f"{name} · {task[:60]}",
             session_id=str(getattr(parent_ctx, "id", "") or ""),
         )
         # How ``report_tool`` finds the transcript to write into. On the context rather

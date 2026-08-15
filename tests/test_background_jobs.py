@@ -44,7 +44,7 @@ async def _wait_until(predicate, timeout=10.0):
 # --------------------------------------------------------------------------- #
 def test_a_killed_job_is_not_a_failed_one():
     """The agent's own decision must not read as the command's verdict."""
-    job = job_manager.register(kind="test", label="x", session_id="s1")
+    job = job_manager.register(type="test", label="x", session_id="s1")
     job_manager.kill(job.id)
     assert job_manager.get(job.id).status is JobStatus.KILLED
     job_manager.forget("s1")
@@ -56,7 +56,7 @@ def test_the_first_verdict_stands():
     Otherwise a job the agent stopped reads back as one that ran to completion, and the
     agent acts on a result that was never produced.
     """
-    job = job_manager.register(kind="test", label="x", session_id="s1")
+    job = job_manager.register(type="test", label="x", session_id="s1")
     job_manager.kill(job.id)
     job_manager.finish(job.id, exit_code=0)
     assert job_manager.get(job.id).status is JobStatus.KILLED
@@ -68,7 +68,7 @@ def test_reading_output_does_not_consume_it():
 
     A consuming read makes "nothing new" and "I already took it" the same answer.
     """
-    job = job_manager.register(kind="test", label="x", session_id="s1")
+    job = job_manager.register(type="test", label="x", session_id="s1")
     job_manager.append_output(job.id, "line-1\n")
     assert "line-1" in job_manager.output(job.id)
     assert "line-1" in job_manager.output(job.id)
@@ -79,7 +79,7 @@ def test_output_is_capped_at_the_head_not_the_tail():
     """A command's closing lines are the ones that say what happened."""
     from agentevolver.job.server import MAX_OUTPUT_CHARS
 
-    job = job_manager.register(kind="test", label="x", session_id="s1")
+    job = job_manager.register(type="test", label="x", session_id="s1")
     job_manager.append_output(job.id, "EARLY\n" + "z" * MAX_OUTPUT_CHARS + "\nVERDICT")
     text = job_manager.output(job.id)
     assert text.endswith("VERDICT")
@@ -92,9 +92,9 @@ def test_a_running_job_is_never_evicted():
     """Forgetting a live job orphans a process nothing can then report on or stop."""
     from agentevolver.job.server import MAX_FINISHED_PER_SESSION
 
-    live = job_manager.register(kind="test", label="live", session_id="s2")
+    live = job_manager.register(type="test", label="live", session_id="s2")
     for i in range(MAX_FINISHED_PER_SESSION + 10):
-        done = job_manager.register(kind="test", label=f"d{i}", session_id="s2")
+        done = job_manager.register(type="test", label=f"d{i}", session_id="s2")
         job_manager.finish(done.id, exit_code=0)
     assert job_manager.get(live.id) is not None
     job_manager.forget("s2")
@@ -102,8 +102,8 @@ def test_a_running_job_is_never_evicted():
 
 def test_jobs_are_scoped_to_their_session():
     """One run must not list, read, or kill another's work."""
-    a = job_manager.register(kind="test", label="a", session_id="s3")
-    b = job_manager.register(kind="test", label="b", session_id="s4")
+    a = job_manager.register(type="test", label="a", session_id="s3")
+    b = job_manager.register(type="test", label="b", session_id="s4")
     assert [j.id for j in job_manager.list("s3")] == [a.id]
     assert [j.id for j in job_manager.list("s4")] == [b.id]
     job_manager.forget("s3")
@@ -112,7 +112,7 @@ def test_jobs_are_scoped_to_their_session():
 
 def test_elapsed_time_separates_working_from_hung():
     """A status alone cannot; it says "running" either way."""
-    job = Job(id="j", kind="test", label="x")
+    job = Job(id="j", type="test", label="x")
     assert job.elapsed >= 0
     assert "running" in job.summary()
 
@@ -178,7 +178,7 @@ async def test_killing_a_finished_job_is_not_an_error(workspace):
     """Reporting it as one invites a retry loop against a dead process."""
     from agentevolver.tool.default.job import JobKillTool
 
-    job = job_manager.register(kind="test", label="x", session_id=_Ctx.id)
+    job = job_manager.register(type="test", label="x", session_id=_Ctx.id)
     job_manager.finish(job.id, exit_code=0)
     result = await JobKillTool()(job_id=job.id, ctx=_Ctx())
     assert result.success
@@ -200,7 +200,7 @@ async def test_an_unknown_job_id_names_the_ones_that_exist(workspace):
     """A bare "not found" leaves the agent guessing at a handle it already holds."""
     from agentevolver.tool.default.job import JobOutputTool
 
-    job = job_manager.register(kind="test", label="x", session_id=_Ctx.id)
+    job = job_manager.register(type="test", label="x", session_id=_Ctx.id)
     result = await JobOutputTool()(job_id="job_nope", ctx=_Ctx())
     assert not result.success
     assert job.id in result.message
@@ -225,7 +225,7 @@ def test_a_process_that_ignores_sigterm_is_still_stopped():
     ignores_term = ("import signal, time; "
                     "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)")
     process = subprocess.Popen([sys.executable, "-c", ignores_term], start_new_session=True)
-    job = job_manager.register(kind="test", label="ignores SIGTERM",
+    job = job_manager.register(type="test", label="ignores SIGTERM",
                                session_id="quiescence", handle=process)
     # The handler is installed by the interpreter at startup; signalling before it exists
     # kills the process on the first SIGTERM and tests nothing.
@@ -251,7 +251,7 @@ def test_killing_reaps_the_process_rather_than_leaving_a_zombie():
 
     process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
                                start_new_session=True)
-    job = job_manager.register(kind="test", label="sleeper", session_id="reap",
+    job = job_manager.register(type="test", label="sleeper", session_id="reap",
                                handle=process)
     try:
         job_manager.kill(job.id)
@@ -267,7 +267,7 @@ def test_killing_a_job_whose_process_is_already_gone_does_not_raise():
 
     process = subprocess.Popen([sys.executable, "-c", ""], start_new_session=True)
     process.wait()
-    job = job_manager.register(kind="test", label="already gone", session_id="gone",
+    job = job_manager.register(type="test", label="already gone", session_id="gone",
                                handle=process)
     try:
         assert job_manager.kill(job.id) is True

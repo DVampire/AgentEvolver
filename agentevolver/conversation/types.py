@@ -117,7 +117,7 @@ class QuestionIntent(BaseModel):
     whether or not the UI understood the tag.
     """
 
-    kind: Literal["plan-review"] = Field(description="Which known decision this is.")
+    type: Literal["plan-review"] = Field(description="Which known decision this is.")
     #: Which label approves, named rather than inferred from option order — no UI
     #: should have to guess the verdict from a position in a list.
     approve: str = Field(description="The option label that approves; every other option declines.")

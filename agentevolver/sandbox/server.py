@@ -5,7 +5,7 @@ Unlike the tool/agent/skill managers it carries no versioning/persistence
 machinery — a sandbox is infrastructure, not an evolvable component. It:
 
   * lazily ensures the opensandbox-server daemon is running (via the handles),
-  * hands out started :class:`~agentevolver.sandbox.types.Sandbox` handles by *kind*
+  * hands out started :class:`~agentevolver.sandbox.types.Sandbox` handles by *type*
     (``"opensandbox"``, ``"playwright"``, ``"vscode"``, ...),
   * optionally caches a handle per ``reuse_key`` (e.g. a session id) so callers
     can keep a warm container across calls instead of paying cold-start each time,
@@ -81,7 +81,7 @@ class SandboxManagerServer(BaseModel):
                     self.allow_hosts.append(host)
 
         self._initialized = True
-        logger.info(f"| 🧩 Sandbox manager ready (kinds: {await self.list()})")
+        logger.info(f"| 🧩 Sandbox manager ready (types: {await self.list()})")
         if self.allow_hosts or self.deny_hosts:
             logger.info(f"| 🛡️  Sandbox egress defaults — allow={self.allow_hosts} deny={self.deny_hosts}")
 
@@ -90,12 +90,12 @@ class SandboxManagerServer(BaseModel):
         await self._ensure_registered()
         return sorted(SANDBOX.module_dict.keys())
 
-    async def get(self, kind: str) -> Type[Sandbox]:
-        """Return the registered sandbox *class* for a kind (not a live handle)."""
+    async def get(self, type: str) -> Type[Sandbox]:
+        """Return the registered sandbox *class* for a type (not a live handle)."""
         await self._ensure_registered()
-        cls = SANDBOX.get(kind)
+        cls = SANDBOX.get(type)
         if cls is None:
-            raise ValueError(f"No registered sandbox kind {kind!r}. Available: {await self.list()}")
+            raise ValueError(f"No registered sandbox type {type!r}. Available: {await self.list()}")
         return cls
 
     async def _ensure_registered(self) -> None:
@@ -105,16 +105,16 @@ class SandboxManagerServer(BaseModel):
     # ------------------------------------------------------------- handles
     async def acquire(
         self,
-        kind: str = "opensandbox",
+        type: str = "opensandbox",
         *,
         reuse_key: Optional[str] = None,
         start: bool = True,
         **overrides: Any,
     ) -> Sandbox:
-        """Create (or reuse) a started sandbox handle of the given kind.
+        """Create (or reuse) a started sandbox handle of the given type.
 
         Args:
-            kind: registered sandbox kind (``opensandbox`` / ``playwright`` / ``vscode``).
+            type: registered sandbox type (``opensandbox`` / ``playwright`` / ``vscode``).
             reuse_key: if given, the handle is cached and reused for this key
                 (e.g. a session id) so the container stays warm across calls.
             start: whether to ``await handle.start()`` before returning.
@@ -126,19 +126,19 @@ class SandboxManagerServer(BaseModel):
         Not called ``**config``: the module-level ``config`` is the run's global
         configuration, and a parameter of that name shadowed it inside this method.
         """
-        cache_key = f"{kind}:{reuse_key}" if reuse_key else None
+        cache_key = f"{type}:{reuse_key}" if reuse_key else None
         if cache_key and cache_key in self._handles:
             handle = self._handles[cache_key]
             if await handle.is_alive():
                 return handle
             self._handles.pop(cache_key, None)
 
-        cls = await self.get(kind)
+        cls = await self.get(type)
         sandbox_config = SandboxConfig(**self._with_egress_defaults(overrides))
         # One key identifies this sandbox everywhere: its relay socket and, for backends
         # that name real resources, its container. Derived from reuse_key so a leftover
         # from a killed run can be cleaned up by exact name next time.
-        key = reuse_key or kind
+        key = reuse_key or type
         sandbox_config.sandbox_key = sandbox_config.sandbox_key or key
         relay = await self._start_relay(sandbox_config, key)
 
@@ -163,7 +163,7 @@ class SandboxManagerServer(BaseModel):
                 await handle.destroy()
             except Exception as teardown_error:  # noqa: BLE001
                 logger.warning(
-                    f"| ⚠️ Could not destroy {kind} sandbox after a failed start: {teardown_error}"
+                    f"| ⚠️ Could not destroy {type} sandbox after a failed start: {teardown_error}"
                 )
             await self._stop_relay(handle)
             raise
@@ -216,9 +216,9 @@ class SandboxManagerServer(BaseModel):
         relay = self._relays.get(id(handle))
         return relay.audit() if relay is not None else None
 
-    async def release(self, kind: str = "opensandbox", *, reuse_key: Optional[str] = None) -> None:
+    async def release(self, type: str = "opensandbox", *, reuse_key: Optional[str] = None) -> None:
         """Destroy a cached handle for a reuse_key."""
-        cache_key = f"{kind}:{reuse_key}" if reuse_key else None
+        cache_key = f"{type}:{reuse_key}" if reuse_key else None
         if cache_key and cache_key in self._handles:
             handle = self._handles.pop(cache_key)
             await handle.destroy()

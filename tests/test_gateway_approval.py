@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.gateway.protocol import GatewayCommand
+from agentevolver.gateway.types import GatewayCommand
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.response import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager

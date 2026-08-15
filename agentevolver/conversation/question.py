@@ -68,12 +68,12 @@ def validate(questions: Sequence[UserQuestion]) -> None:
         labels = [option.label for option in question.options]
         if intent.approve not in labels:
             raise ValueError(
-                f"question {question.id!r} declares intent {intent.kind!r} whose approve "
+                f"question {question.id!r} declares intent {intent.type!r} whose approve "
                 f"label {intent.approve!r} names none of its options {labels}"
             )
         if not question.detail:
             raise ValueError(
-                f"question {question.id!r} declares intent {intent.kind!r} without the "
+                f"question {question.id!r} declares intent {intent.type!r} without the "
                 f"detail it is a review of"
             )
 

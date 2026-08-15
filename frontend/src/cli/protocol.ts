@@ -1,41 +1,12 @@
-export const PROTOCOL_VERSION = 1;
-
-export interface GatewayCommand {
-  id: string;
-  method: string;
-  params: Record<string, unknown>;
-  protocol_version: number;
-}
-
-export interface GatewayError {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-export interface GatewayResponse {
-  kind: 'response';
-  id: string;
-  ok: boolean;
-  result: Record<string, unknown>;
-  error?: GatewayError;
-  protocol_version: number;
-}
-
-export interface GatewayEvent {
-  kind: 'event';
-  type: string;
-  payload: Record<string, unknown>;
-  session_id?: string;
-  conversation_id?: string;
-  task_id?: string;
-  seq_no: number;
-  timestamp: string;
-  protocol_version: number;
-}
-
-export type GatewayMessage = GatewayEvent | GatewayResponse;
-
-export function isGatewayEvent(message: GatewayMessage): message is GatewayEvent {
-  return message.kind === 'event';
-}
+// The CLI speaks the same protocol as the browser, so it reads the same generated
+// declarations. This file used to declare them again by hand; nothing checked that copy,
+// and it drifted from the server for as long as it existed.
+export {
+  PROTOCOL_VERSION,
+  isGatewayEvent,
+  type GatewayCommand,
+  type GatewayError,
+  type GatewayEvent,
+  type GatewayMessage,
+  type GatewayResponse,
+} from '../protocol/gateway';

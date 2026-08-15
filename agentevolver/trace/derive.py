@@ -117,12 +117,12 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
 
     for event in events:
         seq = getattr(event, "seq_no", None)
-        kind = event.event_type
+        event_type = event.event_type
 
         if seq not in on_surface:
             continue
 
-        if kind == TraceEventType.AGENT_CALL:
+        if event_type == TraceEventType.AGENT_CALL:
             # The assistant's turn: the step's reasoning, plus the calls it made. The
             # calls come from log-only `*_start` events — a call is part of this turn,
             # not a message of its own — so they are joined in here rather than
@@ -141,21 +141,21 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
                 tool_calls=[_tool_call(s) for s in calls_by_step.get(step, [])],
             ))
             flush_results()
-        elif kind == TraceEventType.AGENT_START:
+        elif event_type == TraceEventType.AGENT_START:
             flush_results()
             messages.append(HumanMessage(content=_text((event.input or {}).get("task"))))
-        elif kind in (TraceEventType.TOOL_CALL, TraceEventType.SKILL_CALL):
+        elif event_type in (TraceEventType.TOOL_CALL, TraceEventType.SKILL_CALL):
             (pending := pending if pending is not None else []).append(event)
-        elif kind == TraceEventType.AGENT_END:
+        elif event_type == TraceEventType.AGENT_END:
             flush_results()
             messages.append(AssistantMessage(content=_text(event.output or event.message)))
-        elif kind == TraceEventType.CUSTOM and (event.metadata or {}).get("kind") == "compaction":
+        elif event_type == TraceEventType.CUSTOM and (event.metadata or {}).get("type") == "compaction":
             # A summary stands where its range used to. It rides as a user turn for the
             # same reason dsh does it: only message-producing roles reach the model, and
             # a summary is context handed to the assistant, not something it said.
             flush_results()
             messages.append(HumanMessage(content=_text(event.message)))
-        elif kind == TraceEventType.ERROR:
+        elif event_type == TraceEventType.ERROR:
             flush_results()
             messages.append(HumanMessage(content=f"Error: {_text(event.error or event.message)}"))
 

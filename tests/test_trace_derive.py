@@ -159,7 +159,7 @@ def test_a_compaction_summary_replaces_what_it_shadowed():
     # surface and must be cited, the assistant turns included.
     events.append(TraceEvent(
         event_type=TraceEventType.CUSTOM, session_id="s", seq_no=len(events),
-        message="Earlier: ran a and b.", metadata={"kind": "compaction"},
+        message="Earlier: ran a and b.", metadata={"type": "compaction"},
         surface_op=replace_op(0, 6), source_event_seqs=[0, 2, 3, 5, 6],
     ))
 
@@ -184,7 +184,7 @@ def test_a_summary_shadows_the_reasoning_as_well_as_the_results():
     )
     events.append(TraceEvent(
         event_type=TraceEventType.CUSTOM, session_id="s", seq_no=len(events),
-        message="Earlier: ran a.", metadata={"kind": "compaction"},
+        message="Earlier: ran a.", metadata={"type": "compaction"},
         surface_op=replace_op(0, 3), source_event_seqs=[0, 2, 3],
     ))
 

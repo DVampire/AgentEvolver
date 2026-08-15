@@ -1,195 +1,202 @@
 """The browser's idea of the wire protocol and the server's are the same idea.
 
-`agentevolver/gateway/protocol.py` defines the wire models; `frontend/src/controllers/
-gateway.ts` declares them again by hand, in another language, in another build. Nothing
-made the two agree, and neither compiler can see the other.
+They used to be two ideas that a test compared. `agentevolver/gateway/types.py` defined the
+models and `frontend/src/controllers/gateway.ts` declared them again by hand, in another
+language, in another build, with neither compiler able to see the other. Both directions of
+drift were silent. A field the client declares and the server does not send arrives as
+`undefined` while TypeScript stays satisfied, so the break surfaces somewhere else — a
+blank panel, or a comparison that quietly takes the wrong branch. A field the server sends
+and the client does not declare is a capability nobody can use until someone notices it
+exists; three had been shipping for months when this file first looked.
 
-Both directions of drift are silent and neither is theoretical.
+Comparing the copies was the wrong fix, and it failed in the way that fix always fails: a
+gate over registered copies only guards the copies it was told about. There was a second
+mirror in `frontend/src/cli/protocol.ts` the whole time, and nothing checked it.
 
-A field the client declares and the server does not send arrives as `undefined`. TypeScript
-is satisfied — the type says it is there — and the failure surfaces somewhere else entirely,
-as a blank panel or a comparison against `undefined` that quietly takes the wrong branch.
-That is what a rename on the server does to a client that was not updated with it.
-
-A field the server sends and the client does not declare is a capability the frontend
-cannot use without someone first noticing it exists. This is the same defect this repository
-keeps finding in its Python — something computed and handed to nobody — and this file found
-three on its first run: `protocol_version` on both responses and events, and `details` on
-errors, all sent for months and declared nowhere.
-
-Fields are compared, not types: the shapes are `Dict[str, Any]` on one side and
-`Record<string, unknown>` on the other, so a type comparison would be theatre. A missing or
-misspelled field is the drift that actually happens.
+So there is one declaration now. `gateway/typescript.py` renders the models, the render is
+checked in, and these tests fail while the two differ. The interesting assertions are no
+longer "do the field lists match" — they cannot diverge — but "can a hand-written mirror
+come back", and "does a new server field actually reach the client".
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
 
 import pytest
+from pydantic import BaseModel, Field
 
-from agentevolver.gateway.protocol import (
-    PROTOCOL_VERSION,
-    GatewayCommand,
-    GatewayError,
-    GatewayEvent,
-    GatewayResponse,
+from agentevolver.gateway import types as wire
+from agentevolver.gateway.types import PROTOCOL_VERSION
+from agentevolver.gateway.typescript import (
+    MODELS,
+    artifact_path,
+    render_typescript,
+    write_typescript,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-CLIENT = ROOT / "frontend" / "src" / "controllers" / "gateway.ts"
+FRONTEND = ROOT / "frontend" / "src"
 
-#: Start of a client wire model. The body is taken by matching braces rather than by
-#: regex: `[^}]*` stops at the first `}`, which for `GatewayResponse` is the end of its
-#: nested `error?: { … }` — truncating the interface before its remaining fields while
-#: pulling the nested ones in. Both errors point the same way, at a mismatch that is not
-#: there.
-_INTERFACE_START = re.compile(r"export interface (?P<name>\w+)\s*\{")
-
-
-def _balanced_body(source: str, open_brace: int) -> str:
-    """The text between ``open_brace`` and the `}` that closes it."""
-    depth = 0
-    for index in range(open_brace, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[open_brace + 1:index]
-    raise AssertionError("unbalanced braces in the client transport")
-
-#: `field?: type` — anchored to a line start OR to a `;`/`{` separator, because the client
-#: writes nested shapes inline (`error?: { code: string; message: string }`). Anchoring only
-#: to line starts finds `code` there and misses `message`, which reads as a missing field
-#: when nothing is missing at all.
-_FIELD = re.compile(r"(?:^|[;{])\s*(?P<name>\w+)\??\s*:", re.MULTILINE)
-
-
-def client_interfaces() -> dict[str, set[str]]:
-    """Every `export interface` in the client transport, as name → field names."""
-    source = CLIENT.read_text(encoding="utf-8")
-    found: dict[str, set[str]] = {}
-    for match in _INTERFACE_START.finditer(source):
-        body = _balanced_body(source, match.end() - 1)
-        # A nested object literal (`error?: { code: string }`) would otherwise contribute
-        # its own members as if they were the interface's. Drop anything inside braces.
-        flat = re.sub(r"\{[^{}]*\}", "", body)
-        found[match.group("name")] = set(_FIELD.findall(flat))
-    return found
-
-
-#: The models both sides speak, paired with the client interface that mirrors each.
-PAIRS = [
-    ("GatewayResponse", GatewayResponse),
-    ("GatewayEvent", GatewayEvent),
-]
+#: A hand-written declaration of a wire model. The generated artifact is exempt because it
+#: is the one place these may be declared.
+_WIRE_INTERFACE = re.compile(r"export interface (Gateway(?:Command|Error|Event|Response))\b")
 
 
 # --------------------------------------------------------------------------- #
-# The two directions of drift
+# The artifact is current
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("interface,model", PAIRS)
-def test_the_client_declares_every_field_the_server_sends(interface: str, model):
-    """A sent field nobody declared is a capability the frontend cannot reach.
+def test_the_checked_in_typescript_is_what_the_models_render():
+    """The gate the whole arrangement rests on.
 
-    It is also how a protocol grows a field that no client ever adopts: the server pays to
-    compute and send it, and the only record that it exists is the Python model.
+    Without it the generator is a suggestion: someone edits the Python, forgets to
+    regenerate, and the client is back to describing a protocol the server no longer
+    speaks — with the added insult that the file says it was generated.
     """
-    declared = client_interfaces()[interface]
-    sent = set(model.model_fields)
-
-    missing = sorted(sent - declared)
-    assert not missing, (
-        f"{interface} in {CLIENT.relative_to(ROOT)} is missing {missing}, which "
-        f"{model.__name__} sends"
+    path = artifact_path(ROOT)
+    assert path.exists(), f"{path} is missing; run write_typescript()"
+    assert path.read_text(encoding="utf-8") == render_typescript(), (
+        "frontend/src/protocol/gateway.ts is stale. Regenerate it with:\n"
+        '  python -c "from agentevolver.gateway.typescript import write_typescript; '
+        'write_typescript()"'
     )
 
 
-@pytest.mark.parametrize("interface,model", PAIRS)
-def test_the_client_declares_nothing_the_server_does_not_send(interface: str, model):
-    """The dangerous direction: the client reads a field that never arrives.
+def test_regenerating_an_unchanged_artifact_reports_no_change(tmp_path):
+    """Writing must be idempotent, or the gate above would fight every commit."""
+    (tmp_path / "frontend" / "src" / "protocol").mkdir(parents=True)
+    assert write_typescript(tmp_path) is True       # first write creates it
+    assert write_typescript(tmp_path) is False      # second finds it already correct
 
-    TypeScript cannot catch it — the declaration says the field is there — so the value is
-    `undefined` at runtime and the failure appears wherever it is used rather than where it
-    is wrong. A server-side rename with no client change looks exactly like this.
+
+# --------------------------------------------------------------------------- #
+# A second mirror cannot come back
+# --------------------------------------------------------------------------- #
+def test_no_hand_written_file_declares_a_wire_type():
+    """The defect that made the old gate useless was an unregistered copy.
+
+    A gate that compares one hand-written mirror against the server says nothing about the
+    second one, and the second one is the one that drifts — nobody is looking at it. This
+    asserts the shape of the arrangement rather than the contents of a list, so a third
+    mirror fails here on the day it is written.
     """
-    declared = client_interfaces()[interface]
-    sent = set(model.model_fields)
-
-    invented = sorted(declared - sent)
-    assert not invented, (
-        f"{interface} in {CLIENT.relative_to(ROOT)} declares {invented}, which "
-        f"{model.__name__} never sends — these arrive as undefined"
+    generated = artifact_path(ROOT)
+    offenders = [
+        f"{path.relative_to(ROOT)}: {', '.join(found)}"
+        for path in FRONTEND.rglob("*.ts")
+        if path != generated
+        for found in [_WIRE_INTERFACE.findall(path.read_text(encoding="utf-8"))]
+        if found
+    ]
+    assert not offenders, (
+        "these declare wire types by hand; import them from protocol/gateway instead:\n"
+        + "\n".join(offenders)
     )
 
 
-def test_the_error_shape_carries_everything_an_error_reports():
-    """`GatewayError` is nested inside a response rather than declared on its own.
+def test_the_clients_reach_the_protocol_through_the_generated_file():
+    """Both clients import it, so neither can be quietly left behind on a rename."""
+    for relative in ("controllers/gateway.ts", "cli/protocol.ts"):
+        source = (FRONTEND / relative).read_text(encoding="utf-8")
+        assert "protocol/gateway" in source, f"{relative} does not import the contract"
 
-    Checked separately for that reason, and worth checking: `details` is where a refusal
-    says *what* was wrong, and a client that cannot see it can only show the message.
+
+# --------------------------------------------------------------------------- #
+# What the renderer promises
+# --------------------------------------------------------------------------- #
+def test_every_wire_model_is_rendered():
+    """A model added to the server but not to `MODELS` would never reach a client.
+
+    Read off the module rather than from a second list here, because a second list is the
+    thing this whole file exists to stop.
     """
-    source = CLIENT.read_text(encoding="utf-8")
-    nested = re.search(r"error\??\s*:\s*\{(?P<body>[^}]*)\}", source)
-
-    assert nested, "the client's response type no longer declares an `error` member"
-    declared = set(_FIELD.findall(nested.group("body")))
-    missing = sorted(set(GatewayError.model_fields) - declared)
-
-    assert not missing, f"the client's error shape is missing {missing}"
+    defined = {
+        value.__name__
+        for value in vars(wire).values()
+        if isinstance(value, type) and issubclass(value, BaseModel) and value is not BaseModel
+    }
+    assert defined == {model.__name__ for model in MODELS}
 
 
-# --------------------------------------------------------------------------- #
-# The version both sides claim to speak
-# --------------------------------------------------------------------------- #
+def test_a_new_server_field_reaches_the_client():
+    """The property that makes this a generator rather than a third copy."""
+
+    class _Added(BaseModel):
+        existing: str
+        newly_added: int
+
+    from agentevolver.gateway.typescript import _render_model
+
+    rendered = _render_model(_Added)
+    assert "newly_added: number;" in rendered
+
+
+@pytest.mark.parametrize(
+    "annotation, expected",
+    [
+        (str, "value: string;"),
+        (int, "value: number;"),
+        (bool, "value: boolean;"),
+        (Dict[str, Any], "value: Record<string, unknown>;"),
+        (List[str], "value: string[];"),
+        (Optional[str], "value?: string;"),
+        (Literal["event"], "value: 'event';"),
+    ],
+)
+def test_python_shapes_become_the_typescript_a_client_can_use(annotation, expected):
+    from agentevolver.gateway.typescript import _render_model
+
+    model = type("_Shape", (BaseModel,), {"__annotations__": {"value": annotation}})
+    if expected.startswith("value?"):
+        model = type("_Shape", (BaseModel,), {"__annotations__": {"value": annotation},
+                                              "value": None})
+    assert expected in _render_model(model)
+
+
+def test_an_optional_field_is_an_optional_key_and_not_a_nullable_one():
+    """The server omits these. A client made to handle both an absent key and an explicit
+    null has been given two ways to say one thing, and will eventually check only one."""
+    rendered = render_typescript()
+    assert "conversation_id?: string;" in rendered
+    assert "conversation_id: string | null" not in rendered
+
+
+def test_a_field_description_travels_into_the_generated_comment():
+    """The reason a field exists has one home, in the Python model, and reaches the client
+    from there. Written twice it would be corrected once.
+
+    Compared with the comment prefixes and wrapping removed: where the renderer breaks a
+    line is not a promise, and asserting on it would make rewording a description fail
+    here for no reason.
+    """
+    unwrapped = " ".join(
+        line.strip().lstrip("/").strip()
+        for line in render_typescript().splitlines()
+        if line.strip().startswith("//")
+    )
+    description = wire.GatewayEvent.model_fields["conversation_id"].description
+    assert description in unwrapped
+
+
+def test_the_discriminator_is_rendered_as_a_literal_so_the_union_narrows():
+    """`isGatewayEvent` is a type guard, which only works if `kind` is the literal rather
+    than `string` — otherwise every consumer needs a cast."""
+    rendered = render_typescript()
+    assert "kind: 'event';" in rendered
+    assert "kind: 'response';" in rendered
+
+
 def test_both_sides_claim_the_same_protocol_version():
-    """The number exists so a mismatch is refused rather than half-executed.
-
-    Two copies of it that disagree is worse than one copy: the server refuses a command the
-    client believed was current, and the client's own constant says otherwise.
-    """
-    source = CLIENT.read_text(encoding="utf-8")
-    match = re.search(r"export const PROTOCOL_VERSION\s*=\s*(\d+)", source)
-
-    assert match, "the client no longer exports PROTOCOL_VERSION"
-    assert int(match.group(1)) == PROTOCOL_VERSION, (
-        f"client speaks protocol {match.group(1)}, server speaks {PROTOCOL_VERSION}"
-    )
+    assert f"export const PROTOCOL_VERSION = {PROTOCOL_VERSION};" in render_typescript()
 
 
-def test_the_command_the_client_sends_is_the_command_the_server_accepts():
-    """`GatewayCommand` forbids extra fields, so an invented one is refused outright.
-
-    The client builds commands inline rather than from an interface, so this pins the four
-    keys it constructs against the model that validates them.
-    """
-    source = CLIENT.read_text(encoding="utf-8")
-    sent = set(re.findall(r"^\s*(id|method|params|protocol_version)\s*[,:]", source, re.MULTILINE))
-
-    assert sent <= set(GatewayCommand.model_fields), (
-        f"the client sends {sorted(sent - set(GatewayCommand.model_fields))}, which "
-        f"GatewayCommand forbids"
-    )
-
-
-# --------------------------------------------------------------------------- #
-# The extractor
-# --------------------------------------------------------------------------- #
-def test_the_parser_finds_the_interfaces_it_is_asked_about():
-    """A gate over an empty parse passes forever.
-
-    If the client's declaration style ever changes — a type alias, a generated file — every
-    check above silently compares two empty sets and stays green.
-    """
-    found = client_interfaces()
-
-    for interface, _ in PAIRS:
-        assert found.get(interface), f"could not parse {interface} out of the client"
-
-
-def test_a_nested_object_does_not_leak_its_members_into_the_interface():
-    """`error?: { code: string }` must not contribute `code` to the outer interface,
-    or the response would appear to declare a field the server never sends at that level."""
-    assert "code" not in client_interfaces()["GatewayResponse"]
+def test_the_two_axes_on_an_event_are_both_declared():
+    """`kind` says which envelope this is; `type` says which event it carries. They are
+    different questions, and an event needs both answered — collapsing them would leave a
+    client unable to tell a response from an event, or one event from another."""
+    rendered = render_typescript()
+    event = rendered[rendered.index("export interface GatewayEvent"):]
+    assert "kind: 'event';" in event
+    assert "type: string;" in event

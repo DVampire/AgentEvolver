@@ -134,7 +134,7 @@ async def test_a_background_child_is_a_job_rather_than_a_second_registry():
     sub = await _start(child, "investigate the parser", parent_ctx=_Parent())
 
     job = job_manager.get(sub.job_id)
-    assert job is not None and job.kind == "agent"
+    assert job is not None and job.type == "agent"
     assert job.session_id == SESSION
     assert sub.job_id in [j.id for j in job_manager.list(SESSION)]
 

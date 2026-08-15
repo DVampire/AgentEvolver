@@ -54,7 +54,7 @@ class ToolErrorCode(str, Enum):
     FINALIZATION_ERROR = "finalization_error"
 
 
-class ToolPolicyKind(str, Enum):
+class ToolPolicyType(str, Enum):
     """A monotonic guard may abstain, deny, or request one-shot approval.
 
     There is deliberately no ``allow`` value. If two guards run, neither can undo the
@@ -70,7 +70,7 @@ class ToolPolicyKind(str, Enum):
 class ToolPolicyDecision:
     """One guard's decision without an authority-expanding state."""
 
-    kind: ToolPolicyKind = ToolPolicyKind.ABSTAIN
+    type: ToolPolicyType = ToolPolicyType.ABSTAIN
     reason: str = ""
 
     @classmethod
@@ -79,11 +79,11 @@ class ToolPolicyDecision:
 
     @classmethod
     def deny(cls, reason: str) -> "ToolPolicyDecision":
-        return cls(ToolPolicyKind.DENY, str(reason))
+        return cls(ToolPolicyType.DENY, str(reason))
 
     @classmethod
     def ask(cls, reason: str) -> "ToolPolicyDecision":
-        return cls(ToolPolicyKind.ASK, str(reason))
+        return cls(ToolPolicyType.ASK, str(reason))
 
 
 def _json_default(value: Any) -> Any:
@@ -404,9 +404,9 @@ class ToolExecutionPipeline:
                     f"Tool policy guard returned unsupported decision "
                     f"{type(decision).__name__}; call denied.",
                 )
-            if decision.kind == ToolPolicyKind.ABSTAIN:
+            if decision.type == ToolPolicyType.ABSTAIN:
                 continue
-            if decision.kind == ToolPolicyKind.DENY:
+            if decision.type == ToolPolicyType.DENY:
                 return ToolErrorCode.POLICY_DENIED, decision.reason or "Tool call denied."
             if self._approval_resolver is None:
                 return (
@@ -516,7 +516,7 @@ __all__ = [
     "TOOL_EXECUTION_SCHEMA_VERSION",
     "ToolExecutionStage",
     "ToolErrorCode",
-    "ToolPolicyKind",
+    "ToolPolicyType",
     "ToolPolicyDecision",
     "ToolExecution",
     "ToolExecutionOutcome",

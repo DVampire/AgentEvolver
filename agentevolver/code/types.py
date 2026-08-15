@@ -33,11 +33,11 @@ RUN_CODE_TOOL = "run_code_tool"
 MAX_LOG_CHARS = 24_000
 
 
-class CodeFailureKind(str, Enum):
+class CodeFailureType(str, Enum):
     """Why a program did not produce a value.
 
     Kept apart rather than folded into one error string because the agent's next move
-    differs by kind: an exception is a bug in the program it just wrote, a timeout is a
+    differs by type: an exception is a bug in the program it just wrote, a timeout is a
     program that was too slow or waited on something that never came, and a runtime exit
     is the substrate dying underneath it — which is not the program's fault at all and
     should not send the model off rewriting working code.
@@ -51,7 +51,7 @@ class CodeFailureKind(str, Enum):
 class CodeFailure(BaseModel):
     """One reason a run ended without a value."""
 
-    kind: CodeFailureKind = Field(description="Which way the run ended.")
+    type: CodeFailureType = Field(description="Which way the run ended.")
     message: str = Field(default="", description="What to show the model, already formatted.")
 
 
@@ -80,7 +80,7 @@ class CodeRunResult(BaseModel):
         if self.logs:
             parts.append("\n".join(self.logs))
         if self.failure is not None:
-            parts.append(f"[{self.failure.kind.value}] {self.failure.message}".rstrip())
+            parts.append(f"[{self.failure.type.value}] {self.failure.message}".rstrip())
         elif self.value is not None:
             parts.append(f"Returned: {self.value}")
         if not parts:
@@ -108,7 +108,7 @@ __all__ = [
     "MAX_LOG_CHARS",
     "RUN_CODE_TOOL",
     "CodeFailure",
-    "CodeFailureKind",
+    "CodeFailureType",
     "CodeRunResult",
     "GuardedDispatch",
 ]

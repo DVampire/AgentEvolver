@@ -28,7 +28,7 @@ import type { GatewayEvent } from '../controllers/gateway';
 /** One job as `_command_job_list` returns it — see gateway/service.py. */
 export interface Job {
   id: string;
-  kind: string;
+  type: string;
   label: string;
   status: string;
   running: boolean;
@@ -193,7 +193,7 @@ export function JobsDialog({ request, sessionId, jobs, onClose }: {
                     <span className="jobs-row-icon"><JobIcon job={job} /></span>
                     <span className="jobs-row-main">
                       <strong>{job.label || job.id}</strong>
-                      <em>{job.kind} · {job.id}</em>
+                      <em>{job.type} · {job.id}</em>
                     </span>
                     <span className="jobs-row-meta">
                       <span className={`trajectory-pill ${toneOf(job)}`}>{stateOf(job)}</span>
@@ -211,7 +211,7 @@ export function JobsDialog({ request, sessionId, jobs, onClose }: {
                     <strong>{chosen.label || chosen.id}</strong>
                     {/* Composed rather than `job.summary`, which repeats the
                         label the line above already gives in full. */}
-                    <em>{chosen.kind} · {chosen.id} · {stateOf(chosen)} · {timingOf(chosen)}</em>
+                    <em>{chosen.type} · {chosen.id} · {stateOf(chosen)} · {timingOf(chosen)}</em>
                   </header>
                   {chosen.error ? <p className="jobs-error">{chosen.error}</p> : null}
                   {output?.truncated ? (
@@ -247,8 +247,8 @@ export function JobsDialog({ request, sessionId, jobs, onClose }: {
 
 function JobIcon({ job }: { job: Job }) {
   if (job.due_at !== null && job.due_at !== undefined) return <Clock size={12} />;
-  if (job.kind === 'agent') return <Bot size={12} />;
-  if (job.kind === 'bash' || job.kind === 'terminal') return <Terminal size={12} />;
+  if (job.type === 'agent') return <Bot size={12} />;
+  if (job.type === 'bash' || job.type === 'terminal') return <Terminal size={12} />;
   return <CircleDot size={12} />;
 }
 

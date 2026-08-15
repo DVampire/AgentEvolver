@@ -1015,9 +1015,9 @@ class Agent(BaseModel):
         # Per leaf block, so an added skill is announced inside a `<skill-context>` and
         # an added tool inside a `<tool-context>` — the same vocabulary the catalog
         # uses. A new capability is not a new *kind* of thing.
-        for kind in sorted(set(old_blocks) | set(new_blocks)):
-            before = old_blocks.get(kind, "").splitlines()
-            after = new_blocks.get(kind, "").splitlines()
+        for capability_type in sorted(set(old_blocks) | set(new_blocks)):
+            before = old_blocks.get(capability_type, "").splitlines()
+            after = new_blocks.get(capability_type, "").splitlines()
             diff = list(difflib.unified_diff(before, after, n=0, lineterm=""))
             added = [l[1:].strip() for l in diff if l.startswith("+") and not l.startswith("+++")]
             removed = [l[1:].strip() for l in diff if l.startswith("-") and not l.startswith("---")]
@@ -1025,10 +1025,10 @@ class Agent(BaseModel):
             removed = [l for l in removed if l]
             if not added and not removed:
                 continue
-            body = [f"  <{kind}>"]
+            body = [f"  <{capability_type}>"]
             body += [f"    now available: {l}" for l in added]
             body += [f"    no longer available, do not call: {l}" for l in removed]
-            body.append(f"  </{kind}>")
+            body.append(f"  </{capability_type}>")
             sections.append("\n".join(body))
 
         if not sections:
@@ -1475,12 +1475,12 @@ class Agent(BaseModel):
         from agentevolver.hook.types import HookDecision, HookEvent
 
         route = routing.get(call.name)
-        kind = route[0] if route else "tool"
+        capability_type = route[0] if route else "tool"
         args_str = _json.dumps(call.input, ensure_ascii=False)
-        logger.info(f"| 📝 [{self.name}] [{kind}] {call.name}: {call.input}")
+        logger.info(f"| 📝 [{self.name}] [{capability_type}] {call.name}: {call.input}")
 
         action_dict = {
-            "index": index, "id": call.id, "description": "", "type": kind,
+            "index": index, "id": call.id, "description": "", "type": capability_type,
             "name": call.name, "args": args_str, "args_parsed": call.input,
             # Code Mode sub-calls execute through this same method, but they were not
             # emitted by the model. The parent id lets a training projector keep their
@@ -1516,13 +1516,13 @@ class Agent(BaseModel):
             # Tool refusals enter the same execution pipeline as allowed calls. That
             # produces a classified, correlated result without invoking the body. Other
             # capability kinds do not use ToolExecution and retain their existing gate.
-            if kind == "tool" and route is not None:
+            if capability_type == "tool" and route is not None:
                 guard_denials.append(str(plan_gate.reason or "Blocked by plan mode."))
             else:
                 return {"name": call.name, "done": False, "result": None,
                         "reasoning": None, "error": plan_gate.reason}
 
-        if (route is not None and self.permission_mode == "read_only" and kind == "tool"
+        if (route is not None and self.permission_mode == "read_only" and capability_type == "tool"
                 and route[1] in _READ_ONLY_DENIED_TOOLS
                 and not self._allow_read_only_tool_call(route[1], call.input or {})):
             guard_denials.append(
@@ -1539,7 +1539,7 @@ class Agent(BaseModel):
             # the same roster, gated by the same plan mode, and recorded by the same
             # hooks as the call the model could have made itself.
             bridge = None
-            if kind == "tool" and route[1] == RUN_CODE_TOOL:
+            if capability_type == "tool" and route[1] == RUN_CODE_TOOL:
                 bridge = self._guarded_dispatch(routing, task_id, step_number, ctx,
                                                 parent_ref, call.id)
             tool_execution_context = {
@@ -1668,8 +1668,8 @@ class Agent(BaseModel):
         — is identical, because the only thing backgrounding changes is whether this
         agent spends its own steps waiting.
         """
-        kind = route[0]
-        if kind == "agent":
+        capability_type = route[0]
+        if capability_type == "agent":
             from agentevolver.agent.server import agent_manager
             from agentevolver.runtime import runtime_manager
             child = await agent_manager.get(route[1])
@@ -1708,26 +1708,26 @@ class Agent(BaseModel):
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             return resp.message, False, None, None, None, None
-        if kind == "workflow":
+        if capability_type == "workflow":
             from agentevolver.workflow import workflow_manager
             response = await workflow_manager(route[1], input=call.input or {}, ctx=ctx)
             if not response.success:
                 raise RuntimeError(response.message or f"Workflow {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Workflow '{route[1]}' completed")
             return response.message, False, None, None, None, None
-        if kind == "skill":
+        if capability_type == "skill":
             response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
             if not response.success:
                 raise RuntimeError(response.message or f"Skill {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
             return response.message, False, None, None, None, None
-        if kind == "connector":
+        if capability_type == "connector":
             response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
             if not response.success:
                 raise RuntimeError(response.message or f"Connector {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
             return response.message, False, None, None, None, None
-        if kind == "environment":
+        if capability_type == "environment":
             from agentevolver.environment.server import environment_manager
             response = await environment_manager(name=route[1], action=route[2], input=call.input, ctx=ctx)
             if not response.success:
@@ -1735,7 +1735,7 @@ class Agent(BaseModel):
             action_result = response.message
             logger.info(f"| ✅ [{self.name}] Environment '{route[1]}' action '{route[2]}' completed")
             return action_result, False, None, None, None, None
-        if kind == "tool":
+        if capability_type == "tool":
             passthrough = {"sub_dispatch": bridge} if bridge is not None else {}
             tool_response = await tool_manager(
                 name=route[1], input=call.input, ctx=ctx,
@@ -1751,7 +1751,7 @@ class Agent(BaseModel):
                 return (tool_response.message, True, tool_response.message, reasoning,
                         None, execution_meta)
             return tool_response.message, False, None, None, None, execution_meta
-        raise ValueError(f"Unknown route kind {kind!r}")
+        raise ValueError(f"Unknown route type {capability_type!r}")
 
     # ------------------------------------------------------------------
     # Path 1: Direct call
@@ -2269,7 +2269,7 @@ class Agent(BaseModel):
             signature = self._action_signature(route[0], call.name, call.input or {})
             actions.append({
                 "name": call.name,
-                "kind": route[0],
+                "type": route[0],
                 "signature": signature,
             })
         fingerprint = await self._workspace_fingerprint(run.ctx)
@@ -2363,9 +2363,9 @@ class Agent(BaseModel):
         return None
 
     @staticmethod
-    def _action_signature(kind: str, name: str, args: Dict[str, Any]) -> str:
+    def _action_signature(type: str, name: str, args: Dict[str, Any]) -> str:
         """Return a deterministic signature for one capability invocation."""
-        payload = {"kind": kind, "name": name, "args": args}
+        payload = {"type": type, "name": name, "args": args}
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
     @staticmethod

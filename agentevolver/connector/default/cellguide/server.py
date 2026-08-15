@@ -120,17 +120,17 @@ def get_cell_type_info(cell_type: str) -> str:
 
 
 @mcp.tool()
-def get_marker_genes(cell_type: str, kind: str = "canonical", limit: int = 50) -> str:
+def get_marker_genes(cell_type: str, source: str = "canonical", limit: int = 50) -> str:
     """Get marker genes for a cell type.
 
     Args:
         cell_type: a CL id or name.
-        kind: "canonical" (literature-curated, with tissue + publication) or
+        source: "canonical" (literature-curated, with tissue + publication) or
             "computational" (CELLxGENE-computed, ranked by marker_score).
         limit: max genes (default 50).
     """
     cl, _ = _resolve(cell_type)
-    if kind == "computational":
+    if source == "computational":
         data = _cg_json(f"computational_marker_genes/{_clfile(cl)}.json") or []
         data.sort(key=lambda d: d.get("marker_score", 0), reverse=True)
         rows = ["symbol\tmarker_score\tspecificity\torganism"]
@@ -143,7 +143,7 @@ def get_marker_genes(cell_type: str, kind: str = "canonical", limit: int = 50) -
         for d in data[:max(1, limit)]:
             rows.append(f"{d.get('symbol','')}\t{d.get('name','')}\t{d.get('tissue','')}")
     if len(rows) == 1:
-        return f"No {kind} marker genes for {cl}."
+        return f"No {source} marker genes for {cl}."
     return _cap(rows, "genes")
 
 

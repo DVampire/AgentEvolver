@@ -89,7 +89,7 @@ def test_a_failed_attempt_is_written_to_the_trace():
 
     assert event.session_id == "session-1"
     assert event.success is False
-    assert event.metadata["kind"] == "llm_retry"
+    assert event.metadata["type"] == "llm_retry"
     assert (event.metadata["attempt"], event.metadata["max_attempts"]) == (1, 3)
 
 

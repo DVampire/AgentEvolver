@@ -18,7 +18,6 @@ the far machine never has to borrow a local tool and land in the wrong place.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shlex
 from typing import Any, Dict, List, Optional
@@ -154,33 +153,6 @@ class SSHEnvironment(Environment):
         sid = self._session_id(ctx)
         chosen = self._hosts.get(self._active.get(sid, ""))
         return chosen or self._hosts.default()
-
-    def world_identity(self, ctx=None) -> Dict[str, Any]:
-        """Non-secret lineage for Tool/Trace records using this SSH world.
-
-        The host address, user, jump host and key path are operational configuration,
-        not training data.  A fingerprint still lets two exports distinguish targets
-        without disclosing that topology.
-        """
-        host = self.active_host(ctx)
-        if host is None:
-            return {
-                "kind": "ssh",
-                "provider": f"{type(self).__module__}.{type(self).__qualname__}",
-                "name": "unconfigured",
-                "workspace_root": "",
-            }
-        target = f"{host.user}@{host.host}:{host.port}"
-        fingerprint = hashlib.sha256(target.encode()).hexdigest()
-        return {
-            "kind": "ssh",
-            "provider": f"{type(self).__module__}.{type(self).__qualname__}",
-            # A host handle often *is* its DNS name. A synthetic lineage name avoids
-            # leaking it while remaining stable and human-comparable within an export.
-            "name": f"remote:{fingerprint[:12]}",
-            "workspace_root": host.workspace_root,
-            "target_fingerprint": fingerprint,
-        }
 
     def select_host(self, ctx, name: str) -> RemoteHost:
         """Point this session at `name`. Raises ``KeyError`` when there is no such host."""
@@ -462,9 +434,9 @@ class SSHEnvironment(Environment):
         for line in result.stdout.splitlines():
             parts = line.split("\t", 3)
             if len(parts) == 4:
-                kind, size, modified, full = parts
+                entry_type, size, modified, full = parts
                 entries.append({
-                    "type": "dir" if kind == "d" else "file",
+                    "type": "dir" if entry_type == "d" else "file",
                     "size": int(size) if size.isdigit() else 0,
                     "modified": modified,
                     "path": full,
@@ -922,7 +894,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         # watching the old one's terminal would be worse than no view at all.
         machine = self._resolve(ctx)
         return await self._ensure_ttyd(
-            ctx, machine.name, kind="view", writable=False,
+            ctx, machine.name, type="view", writable=False,
             cwd=None,
         )
 
@@ -940,7 +912,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         """
         machine = self._resolve(ctx, host)
         url = await self._ensure_ttyd(
-            ctx, machine.name, kind="shell", writable=True, cwd=None,
+            ctx, machine.name, type="shell", writable=True, cwd=None,
             base_path=base_path,
         )
         if not url:
@@ -953,7 +925,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         return {"url": url, "port": self._view_ports.get(key), "host": machine.name}
 
     async def _ensure_ttyd(
-        self, ctx, host_name: str, *, kind: str, writable: bool, cwd: Optional[str],
+        self, ctx, host_name: str, *, type: str, writable: bool, cwd: Optional[str],
         base_path: str = "",
     ) -> Optional[str]:
         """Start (or reuse) a ttyd on `host_name` and tunnel it here. Returns its URL.
@@ -966,7 +938,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         """
         from agentevolver.port import port_manager
 
-        key = (self._session_id(ctx), host_name, kind)
+        key = (self._session_id(ctx), host_name, type)
         # The manager announces the view after *every* action. For the browser that is a
         # property lookup; here the full path is five remote round trips and a subprocess,
         # which turned a one-second action into a nine-second one. Once a terminal is up
@@ -1016,12 +988,12 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
             )
             candidate = picked.stdout.strip().splitlines()[-1] if picked.stdout.strip() else ""
             if not candidate.isdigit():
-                logger.warning(f"| ⚠️ no free port for the {kind} on {service.target}")
+                logger.warning(f"| ⚠️ no free port for the {type} on {service.target}")
                 return None
             remote_port = int(candidate)
             self._view_remote_ports[key] = remote_port
 
-        session_name = f"{self._job_prefix(ctx)}{kind}"
+        session_name = f"{self._job_prefix(ctx)}{type}"
         await service.run_raw(
             f'tmux has-session -t {shlex.quote(session_name)} 2>/dev/null || '
             f'tmux new-session -d -s {shlex.quote(session_name)} '
@@ -1076,7 +1048,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
 
         local_port = self._view_ports.get(key)
         if local_port is None:
-            record = port_manager.register(f"ssh-{kind}:{key[0]}:{key[1]}", type="host")
+            record = port_manager.register(f"ssh-{type}:{key[0]}:{key[1]}", type="host")
             local_port = record["port"]
             self._view_ports[key] = local_port
 
@@ -1095,7 +1067,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
             # A repeat request for a forward the master already holds is not a failure.
             detail = err.decode(errors="replace").strip()
             if "forward" not in detail.lower():
-                logger.warning(f"| ⚠️ SSH {kind} tunnel failed: {detail}")
+                logger.warning(f"| ⚠️ SSH {type} tunnel failed: {detail}")
                 return None
         url = f"http://127.0.0.1:{local_port}/"
         self._view_urls[key] = url
@@ -1171,8 +1143,8 @@ def _render_state(*, target: str, root: str, sections: Dict[str, List[str]],
         for line in file_lines:
             parts = line.split("\t", 3)
             if len(parts) == 4:
-                kind, size, modified, name = parts
-                marker = "/" if kind == "d" else " "
+                entry_type, size, modified, name = parts
+                marker = "/" if entry_type == "d" else " "
                 out.append(f"  {name}{marker}".ljust(34) + f"{_human(size)}  {modified}")
 
     if gpu_lines:

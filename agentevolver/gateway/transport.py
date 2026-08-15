@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from agentevolver.gateway.protocol import GatewayCommand, error_response
+from agentevolver.gateway.types import GatewayCommand, error_response
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.logger import logger
 

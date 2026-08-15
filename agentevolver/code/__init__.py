@@ -5,7 +5,7 @@ from .types import (
     MAX_LOG_CHARS,
     RUN_CODE_TOOL,
     CodeFailure,
-    CodeFailureKind,
+    CodeFailureType,
     CodeRunResult,
     GuardedDispatch,
 )
@@ -15,7 +15,7 @@ __all__ = [
     "code_runtime",
     "RUN_CODE_TOOL",
     "CodeFailure",
-    "CodeFailureKind",
+    "CodeFailureType",
     "CodeRunResult",
     "GuardedDispatch",
     "MAX_LOG_CHARS",

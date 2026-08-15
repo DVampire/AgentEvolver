@@ -1,6 +1,6 @@
 """The three tools that control background work: list, output, kill.
 
-Kind-agnostic by design. A backgrounded shell command, a PTY send, and a spawned agent
+Type-agnostic by design. A backgrounded shell command, a PTY send, and a spawned agent
 raise exactly three questions — is it done, what did it say, stop it — so one set of tools
 answers all of them. Giving each producer its own controller would mean three vocabularies
 for one idea, and two of them drifting behind the third.

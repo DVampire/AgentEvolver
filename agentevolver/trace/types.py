@@ -207,7 +207,7 @@ def model_request_event(
         label=f"model request: {snapshot.routed_model}",
         input=snapshot_dict,
         metadata={
-            "kind": "model_request",
+            "type": "model_request",
             "request_snapshot_id": snapshot.snapshot_id,
             "attempt": attempt,
             "route_index": route_index,
