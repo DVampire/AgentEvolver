@@ -5,10 +5,10 @@ import { MessageMarkdown } from '../components/common/Markdown';
 import { Button } from '../components/ui/button';
 import type { RequestFn } from '../canvas/types';
 import type { GatewayEvent } from '../controllers/gateway';
-import { GoalCard } from './GoalCard';
 import { JobsDialog, useJobs } from './JobsDialog';
-import { PlanBar } from './PlanBar';
 import { TrajectoryDialog } from './TrajectoryDialog';
+import './panels';
+import { Slot } from './Slot';
 
 interface Entry { id: string; role: 'user' | 'agent' | 'system'; title: string; content: string; timestamp: string }
 interface Step { id: string; label: string; detail?: string }
@@ -142,7 +142,7 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
           ) : null}
         </div>
       ) : null}
-      <GoalCard request={request} subscribe={subscribe} sessionId={sessionId} />
+      <Slot name="conversation.above-thread" request={request} subscribe={subscribe} sessionId={sessionId} />
       <div className="science-thread">
         {entries.length ? entries.map((entry) => (
           <article className={`science-message ${entry.role}`} key={entry.id}>
@@ -176,7 +176,7 @@ export function ScienceConversation({ request, subscribe, sessionId, connected }
         ) : null}
         <div ref={bottom} />
       </div>
-      <PlanBar request={request} subscribe={subscribe} sessionId={sessionId} />
+      <Slot name="conversation.below-thread" request={request} subscribe={subscribe} sessionId={sessionId} />
       <div className="science-composer">
         <textarea
           value={draft}
