@@ -97,6 +97,12 @@ _THINK_FAILURES_BEFORE_GIVING_UP = 3
 #: a fourth says the window is the wrong size for the work.
 _COMPACTIONS_PER_RUN = 3
 
+#: How much of a parent's conversation a forked child is shown. A history has no natural
+#: size, and this rides in the child's prompt on every step, so it is bounded here rather
+#: than left to the pressure guard — which may only shrink tool results and would have
+#: nothing to take.
+_INHERITED_CONTEXT_MAX = 12_000
+
 #: Consecutive turns that change nothing before the agent is told so in its own context.
 #: Low, because the remedy is cheap — make the edit you were about to justify — and the
 #: failure it heads off is expensive: three separate runs spent 65, 300 and 650 turns
@@ -636,6 +642,56 @@ class Agent(BaseModel):
         tool_context = f"### Available Tools\n{available_tools}" + (f"\n\n{sdk}" if sdk else "")
         return {"tool_context": tool_context, "available_tools": available_tools}
 
+    async def _get_inherited_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """What a forked child is told its parent had already done.
+
+        A dispatched child starts with a fresh session and sees none of the conversation
+        behind its task, so everything it needs to know has to survive the trip inside one
+        `task` string. That is the same defect attachments already fixed on the file side:
+        without them a child got only the orchestrator's paraphrase of a document the
+        orchestrator was handed in full. This is the conversation half — the parent read
+        five files and ruled out three approaches, and re-typing that accurately into a
+        brief is work the parent will do imperfectly every time.
+
+        Read-only, and rendered rather than replayed. The parent's turns are *not* written
+        into the child's log: they did not happen in this session, and a child whose trace
+        claims otherwise would export training samples for turns another agent took.
+
+        Bounded from the tail. A parent's history has no natural size, and the most recent
+        turns are the ones its decision rested on.
+        """
+        extra = getattr(ctx, "extra", None) or {}
+        parent_session = str(extra.get("forked_from") or "")
+        if not parent_session:
+            return {}
+        from agentevolver.trace import trace_manager
+        from agentevolver.trace.derive import derive_messages
+        from agentevolver.trace.surface import SurfaceError
+
+        try:
+            events = trace_manager.events(parent_session)
+            derived = derive_messages(events) if events else []
+        except SurfaceError as error:
+            logger.warning(
+                f"| ⚠️ [{self.name}] cannot project the parent log {parent_session} "
+                f"({error}); the fork starts without it"
+            )
+            return {}
+        if not derived:
+            return {}
+
+        lines = [f"{getattr(m, 'role', '?')}: {getattr(m, 'text', '') or ''}".strip()
+                 for m in derived]
+        body = "\n\n".join(line for line in lines if line.strip())
+        if len(body) > _INHERITED_CONTEXT_MAX:
+            kept = body[-_INHERITED_CONTEXT_MAX:]
+            body = (f"[earlier turns omitted: {len(body) - _INHERITED_CONTEXT_MAX:,} "
+                    f"characters]\n\n{kept}")
+        return {"inherited_context": (
+            "This is what the agent that dispatched you had already done, for context. "
+            "It is not your own history and you did not take these actions.\n\n" + body
+        )}
+
     async def _get_environment_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the environment context, the same way tools get theirs.
 
@@ -823,6 +879,7 @@ class Agent(BaseModel):
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
 
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
+        agent_message_modules.update(await self._get_inherited_context(ctx=ctx))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         agent_message_modules.update(await self._get_connector_context(ctx=ctx))
@@ -1716,6 +1773,7 @@ class Agent(BaseModel):
                 # inside the same peer sandbox, which both bash_tool and the prompt's
                 # workspace slot read off the context.
                 parent_ctx=ctx,
+                fork=bool(inp.get("fork")),
             )
             if inp.get("run_in_background"):
                 started = await runtime_manager.delegate_background(

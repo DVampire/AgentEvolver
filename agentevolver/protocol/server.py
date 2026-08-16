@@ -100,7 +100,7 @@ class ProtocolManager(metaclass=Singleton):
     def child_brief(
         self, child: Any, task: str, *,
         target_name: Optional[str] = None, allowlists: Optional[Dict[str, Any]] = None,
-        parent_ref: Any = None, parent_ctx: Any = None,
+        parent_ref: Any = None, parent_ctx: Any = None, fork: bool = False,
     ) -> Tuple[str, Any]:
         """The task text and the context one delegation hands its child.
 
@@ -122,6 +122,11 @@ class ProtocolManager(metaclass=Singleton):
         )
         if target_name:
             ctx.extra["target_name"] = target_name
+        # A forked child reads its parent's conversation for context. Recorded as the
+        # parent's *trace* session — `parent_session_id` above is the ref name, which
+        # routes an escalation and names no log.
+        if fork and parent_ctx is not None and getattr(parent_ctx, "id", None):
+            ctx.extra["forked_from"] = str(parent_ctx.id)
         effective_allowlists = dict(allowlists or {})
         if hasattr(child, "_target_capability_allowlists"):
             for key, value in child._target_capability_allowlists(target_name).items():
@@ -137,7 +142,7 @@ class ProtocolManager(metaclass=Singleton):
         files: Optional[List[str]] = None, target_name: Optional[str] = None,
         allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None,
         workspace_root: Optional[str] = None, parent_ctx: Any = None,
-        ctx: Any = None,
+        ctx: Any = None, fork: bool = False,
     ) -> Response:
         """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
         ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
@@ -153,7 +158,7 @@ class ProtocolManager(metaclass=Singleton):
         if ctx is None:
             task, ctx = self.child_brief(child, task, target_name=target_name,
                                          allowlists=allowlists, parent_ref=parent_ref,
-                                         parent_ctx=parent_ctx)
+                                         parent_ctx=parent_ctx, fork=fork)
         existing = [f for f in (files or []) if os.path.exists(f)]
         return await runtime_manager.invoke(child, task=task, files=existing or None, ctx=ctx, parent_ref=parent_ref)
 

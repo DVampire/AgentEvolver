@@ -485,6 +485,7 @@ class RuntimeManager(metaclass=Singleton):
             child, task,
             target_name=brief.get("target_name"), allowlists=brief.get("allowlists"),
             parent_ref=brief.get("parent_ref"), parent_ctx=brief.get("parent_ctx"),
+            fork=bool(brief.get("fork")),
         )
 
     @staticmethod

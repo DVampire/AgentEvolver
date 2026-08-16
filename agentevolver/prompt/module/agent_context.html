@@ -11,6 +11,11 @@
 <task>
 {{ task }}
 </task>
+{% if inherited_context %}
+<inherited-context>
+{{ inherited_context }}
+</inherited-context>
+{% endif %}
 <constraints>
 {{ constraint_text }}
 </constraints>

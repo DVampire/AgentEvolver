@@ -143,10 +143,11 @@ class AgentManagerServer(BaseModel):
         return {
             "type": "object",
             "properties": {
-                "task": {"type": "string", "description": "Precise, self-contained instruction — the sub-agent receives only this."},
+                "task": {"type": "string", "description": "Precise instruction. Unless you set `fork`, this and the files you name are everything the sub-agent gets — it cannot see this conversation."},
                 "files": {"type": "array", "items": {"type": "string"}, "description": "Existing file paths to pass as context; omit if none."},
                 "run_in_background": {"type": "boolean", "description": "Outlive this round: return a job id now and keep working while you do other things. Collect with job_output_tool, stop with job_kill_tool. You do NOT need this to parallelise — dispatch calls in one turn already run together. Use it when the work is longer than you are willing to wait for, or when you want to act on something else before it finishes."},
                 "continuable": {"type": "boolean", "description": "Background only: keep it alive between turns so send_message_tool can give it more work on the same conversation. Default false — it answers once and ends."},
+                "fork": {"type": "boolean", "description": "Let it read your conversation so far as context, instead of starting from only this task text. Use it when what you have already found is what makes the task make sense — files you ruled out, an approach that failed, a decision and why. Default false: a fresh worker on a self-contained job does not need your history and reads faster without it."},
                 "target_name": {"type": "string", "description": "ONLY for evaluator/optimizer/generator: the capability being evaluated/improved/created."},
                 "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
                 "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},
