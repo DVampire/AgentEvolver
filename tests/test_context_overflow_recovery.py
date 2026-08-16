@@ -131,3 +131,129 @@ def test_the_loop_answers_an_overflow_before_counting_it_as_a_model_failure():
     recovery = source.index('decision.get("overflowed")')
     counted = source.index("run.think_failures += 1")
     assert recovery < counted, "an overflow is counted as a model failure before it is answered"
+
+
+# --------------------------------------------------------------------------- #
+# Folding before the ceiling, when a deployment asks for it
+# --------------------------------------------------------------------------- #
+# Off by default, and the default is a judgement rather than caution: the recovery path
+# costs no tokens when it fires — an oversized request is refused before it is sent — so
+# folding at 85% spends information to save a loop iteration on requests that would
+# mostly have succeeded. It is worth having because the deterministic prune in that band
+# is lossy too, and which loses less is a question about a workload.
+
+
+class _Ahead(_Agent):
+    """`_fold_ahead` and its reading, unbound, over a controllable log."""
+
+    from agentevolver.agent.types import Agent
+
+    _fold_ahead = Agent._fold_ahead
+    _last_pressure_ratio = Agent._last_pressure_ratio
+
+    def __init__(self, *, fold_at_pressure: float = 0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.fold_at_pressure = fold_at_pressure
+
+
+@pytest.fixture
+def at_pressure(monkeypatch):
+    """Serve one recorded request pressure to `_last_pressure_ratio`."""
+    from agentevolver.trace import trace_manager
+    from agentevolver.trace.types import TraceEvent, TraceEventType
+
+    ratio = {"value": 0.0}
+
+    def events(session_id, *args, **kwargs):
+        return [TraceEvent(event_type=TraceEventType.MODEL_REQUEST, session_id="s", seq_no=0,
+                           input={"pressure": {"pressure_ratio_after": ratio["value"]}})]
+
+    monkeypatch.setattr(trace_manager, "events", events)
+    return ratio
+
+
+def test_folding_ahead_is_off_unless_a_deployment_sets_a_threshold():
+    """Read off the real signature.
+
+    A stub that passes its own threshold cannot see the default, so asserting behaviour
+    through one says nothing about what an ordinary agent does — which is the whole
+    claim. Same reason `derive_context` pins its default this way.
+    """
+    import inspect
+    from agentevolver.agent.types import Agent
+
+    assert inspect.signature(Agent.__init__).parameters["fold_at_pressure"].default == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_zero_threshold_is_inert_under_pressure_that_would_trigger_it(folds, at_pressure):
+    calls, _ = folds
+    at_pressure["value"] = 0.99
+
+    await _Ahead(fold_at_pressure=0.0)._fold_ahead(_Run())
+
+    assert calls == [], "folded ahead without being asked to"
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_that_asks_for_it_folds_ahead(folds, at_pressure):
+    calls, _ = folds
+    at_pressure["value"] = 0.90
+
+    await _Ahead(fold_at_pressure=0.85)._fold_ahead(_Run())
+
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_request_below_the_threshold_is_left_alone(folds, at_pressure):
+    calls, _ = folds
+    at_pressure["value"] = 0.50
+
+    await _Ahead(fold_at_pressure=0.85)._fold_ahead(_Run())
+
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_folding_ahead_shares_the_runs_budget(folds, at_pressure):
+    """Otherwise a pressured run folds every step for the rest of its budget, and the
+    bound that makes folding safe would apply only to the recovery path."""
+    calls, _ = folds
+    at_pressure["value"] = 0.99
+    agent, run = _Ahead(fold_at_pressure=0.85), _Run()
+
+    for _ in range(_COMPACTIONS_PER_RUN + 2):
+        await agent._fold_ahead(run)
+
+    assert len(calls) == _COMPACTIONS_PER_RUN
+
+
+@pytest.mark.asyncio
+async def test_a_log_that_cannot_be_read_does_not_fold_on_a_guess(folds, monkeypatch):
+    """Measuring nothing is not the same as measuring high."""
+    calls, _ = folds
+    from agentevolver.trace import trace_manager
+
+    def explode(session_id, *args, **kwargs):
+        raise RuntimeError("trace backend is down")
+
+    monkeypatch.setattr(trace_manager, "events", explode)
+    await _Ahead(fold_at_pressure=0.85)._fold_ahead(_Run())
+
+    assert calls == []
+
+
+def test_the_fold_happens_before_the_prompt_is_rebuilt():
+    """A fold after `_get_messages` would take effect one step late, which reads as the
+    threshold being off by one rather than as an ordering mistake."""
+    import inspect
+    from agentevolver.agent.types import Agent
+
+    # Scoped to the method that does both. `_get_messages` is called from more than one
+    # place, and the earliest call in the class is not the one this orders against.
+    body = next(
+        inspect.getsource(member) for _, member in inspect.getmembers(Agent, inspect.isfunction)
+        if "await self._fold_ahead(run)" in inspect.getsource(member)
+    )
+    assert body.index("await self._fold_ahead(run)") < body.index("await self._get_messages(")

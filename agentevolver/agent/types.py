@@ -444,6 +444,7 @@ class Agent(BaseModel):
         enable_evolving: bool = False,
         use_memory: bool = True,
         derive_context: bool = False,
+        fold_at_pressure: float = 0.0,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -467,6 +468,10 @@ class Agent(BaseModel):
         #: sees, so it is switched on per agent and measured against a baseline rather
         #: than flipped globally. See `trace/derive.py`.
         self.derive_context = derive_context
+        #: Fold history before a step whose last request was at least this fraction of
+        #: the model's input capacity. ``0`` — the default — folds only when a request
+        #: will not fit at all. See :meth:`_fold_ahead`.
+        self.fold_at_pressure = float(fold_at_pressure or 0.0)
         self.model_name = model_name
 
         # Setup steps
@@ -2128,6 +2133,9 @@ class Agent(BaseModel):
             return False
 
         logger.info(f"| 🔄 [{self.name}] Step {run.step + 1}/{self.max_step}")
+        # Before the prompt is built, because `_get_messages` rebuilds it from memory and
+        # trace — a fold recorded now is already shadowed out of what it renders.
+        await self._fold_ahead(run)
         messages = await self._get_messages(
             run.task, ctx=run.ctx, files=run.files, step_number=run.step,
             action_errors=run.action_errors, constraint_status=cstatus, _run=run, **run.extra_kwargs)
@@ -2445,6 +2453,60 @@ class Agent(BaseModel):
         run.step += 1
         run.retry_now = True
         return None
+
+    async def _fold_ahead(self, run) -> None:
+        """Fold before a step when the last request was already close to the ceiling.
+
+        Off by default, and the default is a judgement rather than caution. Folding is
+        lossy — a summary replaces turns the model can no longer read in full — and the
+        recovery path costs no tokens when it fires: an oversized request is refused
+        before it is sent, folded, and rebuilt. So folding at 85% spends information to
+        save a loop iteration, on requests that would mostly have succeeded.
+
+        What makes it worth having anyway is that the deterministic prune between the
+        trigger and the ceiling is *also* lossy — it excerpts tool results head-and-tail —
+        and a summary may preserve more of the same range than an excerpt does. Which is
+        better is a question about a particular workload, so this is a number a
+        deployment sets against a measurement rather than a behaviour everyone gets.
+
+        The reading comes from the last request snapshot in the log, which records
+        `pressure_ratio_after` on every dispatch already. Nothing new is measured for it.
+        """
+        # The budget test here only skips a log read that `_make_room` would refuse
+        # anyway; the bound itself is enforced there, once, for both paths.
+        if self.fold_at_pressure <= 0 or run.rooms_made >= _COMPACTIONS_PER_RUN:
+            return
+        ratio = await self._last_pressure_ratio(run)
+        if ratio < self.fold_at_pressure:
+            return
+        logger.info(
+            f"| 🗜️ [{self.name}] last request was at {ratio:.0%} of capacity "
+            f"(fold_at_pressure={self.fold_at_pressure:.0%}); folding before this step"
+        )
+        await self._make_room(run)
+
+    async def _last_pressure_ratio(self, run) -> float:
+        """How full the previous request was, read from the log rather than remembered.
+
+        ``0`` when there is no request yet, or when the log cannot be read — a step that
+        cannot measure pressure must not fold on a guess.
+        """
+        from agentevolver.trace import trace_manager
+        from agentevolver.trace.types import TraceEventType
+
+        try:
+            events = trace_manager.events(str(getattr(run.ctx, "id", "") or "")) or []
+        except Exception as error:                                  # noqa: BLE001
+            logger.debug(f"| [{self.name}] cannot read pressure from the log: {error}")
+            return 0.0
+        for event in reversed(events):
+            if event.event_type is TraceEventType.MODEL_REQUEST:
+                pressure = (event.input or {}).get("pressure") or {}
+                try:
+                    return float(pressure.get("pressure_ratio_after") or 0.0)
+                except (TypeError, ValueError):
+                    return 0.0
+        return 0.0
 
     async def _make_room(self, run) -> bool:
         """Fold the oldest history so the next rebuild fits. Returns whether it worked.
