@@ -288,3 +288,71 @@ async def test_cancelling_a_detached_task_is_not_a_failure(monkeypatch):
     await asyncio.sleep(0.05)
 
     assert said == []
+
+
+# --------------------------------------------------------------------------- #
+# Folding on demand, for a request that will not fit
+# --------------------------------------------------------------------------- #
+# The ordinary trigger counts records. A request that does not fit is over a token
+# budget, and the two disagree: thirty small records sit under the count while three
+# large ones sit over the budget. `compact()` is how whoever measured the budget asks
+# for room without waiting for the count to catch up.
+
+
+def test_folding_on_demand_does_not_wait_for_the_record_count(monkeypatch):
+    """The count says there is nothing to do; the caller has measured otherwise."""
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    _fill(state, memory.recent_max)          # at the threshold, so `_compact` would idle
+
+    monkeypatch.setattr(TieredMemory, "_summarise",
+                        staticmethod(lambda items, existing: _resolved("a summary")))
+    assert asyncio.run(memory.compact("s1")) is True
+    assert len(state.recent) < memory.recent_max
+
+
+def test_folding_stops_at_what_the_next_step_will_read(monkeypatch):
+    """`recent_fetch` records reach the prompt.
+
+    Folding past it buys space by removing what the next step is about to read, which
+    trades an oversized request for a step that cannot see what it just did.
+    """
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    _fill(state, memory.recent_fetch + 1)
+
+    monkeypatch.setattr(TieredMemory, "_summarise",
+                        staticmethod(lambda items, existing: _resolved("a summary")))
+    asyncio.run(memory.compact("s1"))
+
+    assert len(state.recent) >= memory.recent_fetch
+
+
+def test_a_history_already_at_that_floor_reports_that_it_folded_nothing():
+    """`False` is what stops the caller asking again.
+
+    A caller that reads "folded" from a fold that removed nothing rebuilds the same
+    oversized request and asks once more, for as long as its budget lasts.
+    """
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    _fill(state, memory.recent_fetch)
+
+    assert asyncio.run(memory.compact("s1")) is False
+
+
+def test_folding_an_unknown_session_is_not_an_error():
+    """A run whose memory never started has nothing to fold, and saying so is the
+    answer — raising here would replace an oversized-context report with a KeyError."""
+    assert asyncio.run(_memory().compact("never-seen")) is False
+
+
+def test_a_memory_that_keeps_no_history_folds_nothing():
+    """The base class answers for every memory that has nothing to give up."""
+    from agentevolver.memory.types import Memory
+
+    assert asyncio.run(Memory(name="stateless").compact("s1")) is False
+
+
+async def _resolved(value):
+    return value

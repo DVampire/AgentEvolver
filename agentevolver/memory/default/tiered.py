@@ -469,7 +469,27 @@ class TieredMemory(Memory):
         if len(state.recent) > self.recent_max and not state._compacting:
             _detached(self._compact(state), "compaction")
 
-    async def _compact(self, state: _SessionState) -> None:
+    async def compact(self, session_id: str) -> bool:
+        """Fold one chunk now, without waiting for ``recent_max`` to be exceeded.
+
+        The ordinary trigger counts records, which is the wrong unit when something else
+        has already measured the problem: a request that does not fit is over a token
+        budget, and thirty small records can sit under the count while three large ones
+        sit over the budget. This lets whoever measured it ask for room directly.
+
+        Never folds below ``recent_fetch`` — that is how many records reach the prompt, so
+        folding past it would buy space by removing what the next step is about to read.
+        """
+        state = self._sessions.get(session_id)
+        if state is None or state._compacting:
+            return False
+        if len(state.recent) <= self.recent_fetch:
+            return False
+        before = len(state.recent)
+        await self._compact(state, down_to=max(self.recent_fetch, before - self.compact_chunk))
+        return len(state.recent) < before
+
+    async def _compact(self, state: _SessionState, *, down_to: Optional[int] = None) -> None:
         """Fold the oldest history into summaries, as one recorded transaction.
  
         The bracket is what makes a crash legible. ``state.compaction`` is set and
@@ -488,15 +508,16 @@ class TieredMemory(Memory):
         fails is put back, so a partial run leaves history shorter but never holed.
         """
         state._compacting = True
+        floor = self.recent_max if down_to is None else max(0, int(down_to))
         outcome = "ok"
         chunks_done = 0
         try:
             state.compaction = {"started_at": _ts(), "chunks": 0}
             await self._persist(state)
 
-            while len(state.recent) > self.recent_max:
+            while len(state.recent) > floor:
                 async with state._lock:
-                    k = min(self.compact_chunk, len(state.recent))
+                    k = min(self.compact_chunk, len(state.recent) - floor, len(state.recent))
                     chunk = [state.recent.popleft() for _ in range(k)]
                 items = [r.as_line() for r in chunk]
                 existing = state.working[-1] if state.working else ""

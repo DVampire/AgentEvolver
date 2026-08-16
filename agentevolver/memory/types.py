@@ -118,9 +118,22 @@ class Memory(BaseModel):
         if not self.description and self.__class__.__doc__:
             self.description = self.__class__.__doc__.strip().split('\n')[0]
     
+    async def compact(self, session_id: str) -> bool:
+        """Fold the oldest history now, ahead of whatever this memory's own trigger is.
+
+        Returns whether anything was folded, so a caller that asked for room can tell
+        "the history is smaller now, try again" from "there was nothing left to fold" and
+        stop rather than ask a second time.
+
+        The default is to fold nothing. A memory that keeps no history has nothing to
+        give up, and saying so is not a failure — the caller's next move is the same
+        either way.
+        """
+        return False
+
     def __str__(self):
         return f"Memory(name={self.name}, description={self.description})"
-    
+
     def __repr__(self):
         return self.__str__()
 

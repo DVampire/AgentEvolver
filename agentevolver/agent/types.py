@@ -90,6 +90,13 @@ _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
 #: is reported rather than converted into an exhausted budget.
 _THINK_FAILURES_BEFORE_GIVING_UP = 3
 
+#: How many times one run may fold history to make an oversized request fit. Folding is
+#: lossy — the summary replaces turns the model can no longer read in full — so a run that
+#: needs it repeatedly is not recovering, it is shrinking toward a prompt that no longer
+#: describes its own task. Three folds is room for a long run that grew past its window;
+#: a fourth says the window is the wrong size for the work.
+_COMPACTIONS_PER_RUN = 3
+
 #: Consecutive turns that change nothing before the agent is told so in its own context.
 #: Low, because the remedy is cheap — make the edit you were about to justify — and the
 #: failure it heads off is expensive: three separate runs spent 65, 300 and 650 turns
@@ -365,6 +372,11 @@ class _AgentRun:
         #: exceeded" from inside a template renderer — nothing to do with the actual
         #: cause.
         self.retry_now = False
+        #: How many times this run has folded history to fit a request. Bounded because a
+        #: memory that cannot shrink further would otherwise be asked once per step for
+        #: the rest of the budget, each time producing the same request and the same
+        #: refusal — the shape of runaway this loop has produced before.
+        self.rooms_made = 0
         #: Consecutive turns whose model call raised. A run whose model is unreachable or
         #: misnamed produces no tool calls, retries instantly, and would otherwise spend
         #: its whole budget doing that: 958 steps in 44 seconds, reported as a stack
@@ -1318,6 +1330,7 @@ class Agent(BaseModel):
         step_tokens = 0
         step_usage: Optional[Dict[str, Any]] = None
         think_error: Optional[str] = None
+        overflowed = False
         try:
             acc = await accumulate_stream(
                 model_manager.stream(
@@ -1355,10 +1368,16 @@ class Agent(BaseModel):
             reasoning = acc.get("thinking") or acc.get("text") or ""
             tool_calls = acc.get("tool_calls") or []
         except Exception as e:
+            from agentevolver.model.pressure import ContextOverflowError
             from agentevolver.trace.checkpoint import TraceIntegrityError
             if isinstance(e, TraceIntegrityError):
                 raise
             think_error = str(e)
+            # Separated from an ordinary model error because the answer is different.
+            # Another attempt at the same prompt cannot succeed, and counting it toward
+            # the give-up threshold spends the run's remaining patience on a request that
+            # was decided before it was sent.
+            overflowed = isinstance(e, ContextOverflowError)
             logger.error(f"| ❌ [{self.name}] Error in _think: {e}")
 
         tool_calls = self._cap_actions(tool_calls)
@@ -1371,7 +1390,8 @@ class Agent(BaseModel):
         # retries, and a broken model spends the entire budget looking like an agent
         # thinking out loud.
         return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning,
-                "step_tokens": step_tokens, "step_usage": step_usage, "error": think_error}
+                "step_tokens": step_tokens, "step_usage": step_usage, "error": think_error,
+                "overflowed": overflowed}
 
     def _cap_actions(self, tool_calls: List[Any]) -> List[Any]:
         """Hold a turn's batch to ``max_actions``, keeping the earliest calls.
@@ -2064,6 +2084,12 @@ class Agent(BaseModel):
         # 958 steps in 44 seconds this way and reported a stack overflow, while the
         # actual cause ("Model ... not found. Available: [...]") had been logged on the
         # very first step. Stop on the third consecutive one and report *that*.
+        if decision.get("overflowed") and await self._make_room(run):
+            # Not a failed step: the request was never sent, and the next rebuild is
+            # smaller. Deliberately not counted toward `think_failures` — this is the one
+            # model error the run can do something about.
+            return True
+
         if decision.get("error"):
             run.think_failures += 1
             if run.think_failures >= _THINK_FAILURES_BEFORE_GIVING_UP:
@@ -2361,6 +2387,45 @@ class Agent(BaseModel):
         run.step += 1
         run.retry_now = True
         return None
+
+    async def _make_room(self, run) -> bool:
+        """Fold the oldest history so the next rebuild fits. Returns whether it worked.
+
+        Answering an oversized request by compacting is the only recovery there is: the
+        prompt is rebuilt from memory and trace every step, so a fold recorded now is
+        shadowed out of the derived history before the next render. Nothing else the run
+        can do makes the same request smaller.
+
+        ``False`` means the run should stop trying — either there is no memory to fold,
+        or there is nothing left in it that folding would remove. Then the ordinary error
+        path reports the overflow, which is the honest outcome: a single turn whose
+        instructions and reasoning alone exceed the window cannot be made to fit here.
+        """
+        if not (self.use_memory and self.memory_name):
+            return False
+        if run.rooms_made >= _COMPACTIONS_PER_RUN:
+            logger.error(
+                f"| 🛑 [{self.name}] context still does not fit after "
+                f"{run.rooms_made} compaction(s); not folding further"
+            )
+            return False
+        from agentevolver.memory import memory_manager
+        try:
+            folded = await memory_manager.compact(self.memory_name, str(run.ctx.id or ""))
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(f"| ⚠️ [{self.name}] could not compact to make room: {error}")
+            return False
+        if not folded:
+            logger.warning(
+                f"| 🗜️ [{self.name}] nothing left to fold; the request cannot be made to fit"
+            )
+            return False
+        run.rooms_made += 1
+        logger.info(
+            f"| 🗜️ [{self.name}] folded history to fit the next request "
+            f"(compaction {run.rooms_made}/{_COMPACTIONS_PER_RUN})"
+        )
+        return True
 
     @staticmethod
     def _action_signature(type: str, name: str, args: Dict[str, Any]) -> str:

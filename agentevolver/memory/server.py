@@ -234,8 +234,21 @@ class MemoryManagerServer(BaseModel):
         """
         return await self.memory_context_manager.get_session_info(memory_name, ctx=ctx, **kwargs)
     
-    async def clear_session(self, 
-                            memory_name: str, 
+    async def compact(self, memory_name: str, session_id: str) -> bool:
+        """Ask one memory to fold its oldest history now. Returns whether it folded.
+
+        For a caller that has measured a context it cannot send: the memory's own trigger
+        counts records, and the caller is over a token budget, so it has to be able to ask
+        rather than wait. A ``False`` means there is nothing left to fold, which is the
+        caller's signal to stop asking rather than to ask again.
+        """
+        memory = await self.get(memory_name)
+        if memory is None:
+            return False
+        return await memory.compact(session_id)
+
+    async def clear_session(self,
+                            memory_name: str,
                             ctx: SessionContext = None,
                             **kwargs):
         """Clear a memory session.
