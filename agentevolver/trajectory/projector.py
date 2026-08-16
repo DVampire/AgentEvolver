@@ -89,7 +89,10 @@ class IncrementalTrajectoryProjector:
             header = json.loads(raw_lines[0])
         except json.JSONDecodeError as exc:
             raise ProjectionWatermarkError("trajectory projection header is corrupt") from exc
-        if header.get("type") != "trajectory_projection_state":
+        # ``kind`` is what this header was called before the rename; a state file
+        # written then is still perfectly readable, and refusing it would throw away
+        # a projection that only needs to be continued.
+        if (header.get("type") or header.get("kind")) != "trajectory_projection_state":
             raise ProjectionWatermarkError("trajectory projection state has no header")
         if int(header.get("schema_version", 0)) != PROJECTION_STATE_VERSION:
             raise ProjectionWatermarkError(
@@ -124,7 +127,7 @@ class IncrementalTrajectoryProjector:
                 raise ProjectionWatermarkError(
                     f"trajectory projection state line {index} is corrupt"
                 ) from exc
-            record_type = record.get("type")
+            record_type = record.get("type") or record.get("kind")
             if record_type == "event":
                 pending.append(record.get("event") or {})
             elif record_type == "batch":

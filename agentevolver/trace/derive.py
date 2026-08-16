@@ -78,6 +78,17 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else str(value)
 
 
+def _marker(event: Any) -> str:
+    """What a CUSTOM event says it is.
+
+    Reads both spellings: ``type`` is current, ``kind`` is what trace files written
+    before the rename carry. Missing the old one is not a parse failure — it leaves a
+    fold unrecognised, so the summary and the turns it replaced both reach the model.
+    """
+    metadata = event.metadata or {}
+    return str(metadata.get("type") or metadata.get("kind") or "")
+
+
 def derive_messages(events: Sequence[Any]) -> List[Message]:
     """Project ``events`` into the model-visible history.
 
@@ -149,7 +160,7 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
         elif event_type == TraceEventType.AGENT_END:
             flush_results()
             messages.append(AssistantMessage(content=_text(event.output or event.message)))
-        elif event_type == TraceEventType.CUSTOM and (event.metadata or {}).get("type") == "compaction":
+        elif event_type == TraceEventType.CUSTOM and _marker(event) == "compaction":
             # A summary stands where its range used to. It rides as a user turn for the
             # same reason dsh does it: only message-producing roles reach the model, and
             # a summary is context handed to the assistant, not something it said.

@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 DOCUMENT_VERSION = 2
@@ -125,8 +125,9 @@ class GraphNode(BaseModel):
     #: Accepts the old ``kind`` spelling too. ``extra="ignore"`` means a flow
     #: saved before the rename would otherwise load with every node silently
     #: defaulting to ``step`` — inputs and outputs turning into steps, and their
-    #: edges vanishing with the ports that no longer existed.
-    type: NodeType = Field(default="step")
+    #: edges vanishing with the ports that no longer existed. Saved flows are files on
+    #: someone's disk, so this alias outlives the rename that made it necessary.
+    type: NodeType = Field(default="step", validation_alias=AliasChoices("type", "kind"))
     step_type: Optional[str] = None
     target: Optional[str] = None
     task: str = ""

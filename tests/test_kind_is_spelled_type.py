@@ -51,6 +51,12 @@ ALLOWED = {
     "tests/test_gateway.py": "capability family",
     "tests/test_plan_mode.py": "capability family",
     "tests/test_trace_checkpoint.py": "capability family",
+    # Data written to disk before the rename. A field can be renamed; a file already on
+    # someone's disk cannot, so these readers accept both spellings and write the new one.
+    "agentevolver/canvas/types.py": "loads flows saved with the old spelling",
+    "agentevolver/trace/derive.py": "reads folds recorded with the old spelling",
+    "agentevolver/trajectory/projector.py": "resumes state files written with the old spelling",
+    "tests/test_saved_files_outlive_a_rename.py": "pins exactly that back-compatibility",
     # Third-party skill documents describing another system's feature.
     "agentevolver/skill/": "Claude Code's own subagent vocabulary",
     # This file names the word in order to forbid it.
