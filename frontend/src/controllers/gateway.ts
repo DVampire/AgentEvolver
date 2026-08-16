@@ -10,6 +10,7 @@ export {
   type GatewayMessage,
   type GatewayResponse,
 } from '../protocol/gateway';
+import { PROTOCOL_VERSION } from '../protocol/gateway';
 import type { GatewayEvent, GatewayResponse } from '../protocol/gateway';
 
 type PendingRequest = {

@@ -22,7 +22,10 @@ from agentevolver.trace.types import TraceEvent, TraceEventType, parse_trace_eve
 
 PROJECTOR_VERSION = 1
 PROJECTION_NAME = "stats"
-STATS_SCHEMA_VERSION = 1
+#: 2 adds `compactions` / `compaction_tokens_saved`. Bumped rather than defaulted: an
+#: old state file would load with both at zero while its watermark said it was caught up,
+#: so the totals would be short by every fold before the upgrade and nothing would say so.
+STATS_SCHEMA_VERSION = 2
 
 
 class TraceStats(BaseModel):
@@ -51,6 +54,10 @@ class TraceStats(BaseModel):
     failed_actions: int = 0
     error_events: int = 0
     duration_ms_by_event: Dict[str, float] = Field(default_factory=dict)
+    #: Folds recorded in this session, and what they cost. `tokens_saved` may be negative
+    #: for one fold; the sum is the honest total either way.
+    compactions: int = 0
+    compaction_tokens_saved: int = 0
     usage: TokenUsage = Field(default_factory=TokenUsage)
     reported_run_usage: Optional[TokenUsage] = None
     terminal_success: Optional[bool] = None
@@ -183,6 +190,11 @@ class TraceStatsProjector:
             state.duration_ms_by_event[event_type] = (
                 float(state.duration_ms_by_event.get(event_type, 0.0)) + float(event.duration_ms)
             )
+
+        if (event.event_type == TraceEventType.CUSTOM
+                and (event.metadata or {}).get("type") == "compaction"):
+            state.compactions += 1
+            state.compaction_tokens_saved += int((event.metadata or {}).get("tokens_saved") or 0)
 
         if event.event_type == TraceEventType.MODEL_REQUEST:
             snapshot = event.input or {}

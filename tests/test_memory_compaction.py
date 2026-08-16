@@ -356,3 +356,72 @@ def test_a_memory_that_keeps_no_history_folds_nothing():
 
 async def _resolved(value):
     return value
+
+
+# --------------------------------------------------------------------------- #
+# What a fold cost, carried on the fold
+# --------------------------------------------------------------------------- #
+# Stats, a training-sample budget and the UI all want to know how much a compaction
+# bought. A consumer that derives it has to hold the replaced range to subtract from, so
+# each would keep its own copy of what the summary shadowed — and they would disagree the
+# first time one of them missed a fold.
+
+
+def _folded(monkeypatch, records: int = 4, summary: str = "a short summary"):
+    """Run one fold and return the trace event it recorded."""
+    emitted: list = []
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    _fill(state, records)
+
+    from agentevolver.trace import trace_manager
+    monkeypatch.setattr(TieredMemory, "_summarise",
+                        staticmethod(lambda items, existing: _resolved(summary)))
+    monkeypatch.setattr(trace_manager, "surface_span", lambda *a, **k: [0, 1])
+
+    async def emit(event, *a, **k):
+        emitted.append(event)
+
+    monkeypatch.setattr(trace_manager, "emit", emit)
+    for position, record in enumerate(state.recent):
+        record.seq = position
+    asyncio.run(memory.compact("s1"))
+    return emitted[0] if emitted else None
+
+
+def test_a_fold_records_what_it_cost(monkeypatch):
+    event = _folded(monkeypatch)
+
+    assert event is not None, "the fold recorded nothing"
+    metadata = event.metadata
+    assert metadata["tokens_before"] > metadata["tokens_after"]
+    assert metadata["tokens_saved"] == metadata["tokens_before"] - metadata["tokens_after"]
+
+
+def test_a_summary_longer_than_what_it_replaced_is_recorded_as_a_loss(monkeypatch):
+    """Recording it as a saving would make the total say compaction always helps.
+
+    It does not: three short records can fold into a summary that is longer than they
+    were, and a reader deciding whether compaction is worth its model call needs the
+    negative in the sum.
+    """
+    event = _folded(monkeypatch, records=3, summary="x" * 4_000)
+
+    assert event.metadata["tokens_saved"] < 0
+
+
+def test_the_stats_projection_totals_folds_without_recomputing_them(monkeypatch):
+    """The consumer reads the number; it does not hold the replaced range to subtract."""
+    from agentevolver.trace.stats import TraceStats, TraceStatsProjector
+    from agentevolver.trace.types import TraceEvent, TraceEventType
+
+    state = TraceStats(session_id="s1")
+    for saved in (120, -30):
+        TraceStatsProjector._reduce(
+            TraceStatsProjector.__new__(TraceStatsProjector), state,
+            TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s1",
+                       metadata={"type": "compaction", "records": 4, "tokens_saved": saved}),
+        )
+
+    assert state.compactions == 2
+    assert state.compaction_tokens_saved == 90

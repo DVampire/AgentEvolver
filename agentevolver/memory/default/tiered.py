@@ -588,6 +588,16 @@ class TieredMemory(Memory):
         seqs = [r.seq for r in chunk if r.seq is not None]
         if not seqs:
             return  # nothing to cite: these records predate sequence numbering
+        # What the fold bought, carried on the fold itself. Stats, a training-sample
+        # budget and the UI all want this number, and a consumer that derives it has to
+        # hold the replaced range to subtract from — so each would keep its own copy of
+        # what the summary shadowed, and they would disagree the first time one missed a
+        # fold. Estimated with the same counter the request boundary uses, so the two
+        # readings are in one unit.
+        from agentevolver.model.pressure import estimate_tokens
+
+        before = estimate_tokens([r.as_line() for r in chunk])
+        after = estimate_tokens(summary)
         try:
             from agentevolver.trace import replace_op, trace_manager
             from agentevolver.trace.types import TraceEvent, TraceEventType
@@ -615,7 +625,16 @@ class TieredMemory(Memory):
                 success=True,
                 surface_op=replace_op(start, end),
                 source_event_seqs=shadowed,
-                metadata={"type": "compaction", "records": len(chunk)},
+                metadata={
+                    "type": "compaction",
+                    "records": len(chunk),
+                    "tokens_before": before,
+                    "tokens_after": after,
+                    # May be negative: a summary longer than the three short records it
+                    # replaced is a real outcome, and recording it as a saving would make
+                    # the total say compaction always helps.
+                    "tokens_saved": before - after,
+                },
             ))
         except Exception as error:  # noqa: BLE001 — the fold itself already succeeded
             logger.warning(f"| ⚠️ {self.name}: could not record the fold in the trace ({error})")
