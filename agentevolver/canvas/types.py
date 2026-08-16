@@ -37,6 +37,33 @@ def ports_compatible(source: str, target: str) -> bool:
     return source == target or source == "any" or target == "any"
 
 
+#: Ports whose type is the same wherever the name appears. A capability result
+#: normalizes to ``{message, data, files}``, and ``items``/``task`` mean the same thing on
+#: every node that has them, so these can be typed from an edge alone — without the
+#: catalog, which is built from live registries and is not reachable from a synchronous
+#: compile.
+#:
+#: Deliberately partial. ``out`` is the whole value and varies by node kind, and
+#: ``arg:<param>`` takes its type from that node's parameter schema; neither is knowable
+#: here, so both are absent and read as ``any``. A check that cannot be sure allows —
+#: rejecting a valid flow is worse than missing an invalid one, and the invalid ones this
+#: does catch are the ones a person actually wires.
+PORT_TYPES: Dict[str, PortType] = {
+    # capability outputs
+    "message": "text",
+    "data": "object",
+    "files": "list",
+    # inputs that mean one thing everywhere
+    "items": "list",
+    "task": "text",
+}
+
+
+def port_type(name: str) -> PortType:
+    """The declared type of a named port, or ``any`` where it depends on the node."""
+    return PORT_TYPES.get(name, "any")
+
+
 class Position(BaseModel):
     x: float = 0.0
     y: float = 0.0

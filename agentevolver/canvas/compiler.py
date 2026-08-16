@@ -22,6 +22,8 @@ from agentevolver.canvas.types import (
     FlowGraph,
     GraphNode,
     STEP_TYPES,
+    port_type,
+    ports_compatible,
     workflow_name_for,
 )
 from agentevolver.workflow.compiler import WorkflowCompiler
@@ -103,6 +105,21 @@ class CanvasCompiler:
             #  - loop/map "item" edge → the body reads the current item variable.
             #  - "done" edge → the aggregated/final result (the whole node value).
             if source.step_type in ("branch", "loop", "map") and port in ("true", "false"):
+                continue
+            # The rule is declared on `PortType` and enforced by the editor when a person
+            # drags an edge. That is not enforcement: a flow reaches here from a file
+            # someone edited, from the gateway's canvas commands, and from an agent that
+            # wrote one — none of which pass through the editor. Checked where the binding
+            # is actually made, so every route gets the same answer.
+            #
+            # `port_type` returns `any` for anything it cannot type from the edge alone,
+            # so this only ever rejects a mismatch it is sure of.
+            source_type, target_type = port_type(port), port_type(edge.param)
+            if not ports_compatible(source_type, target_type):
+                errors.append(
+                    f"Edge {edge.id} connects a {source_type} output ({port}) to a "
+                    f"{target_type} input ({edge.param})"
+                )
                 continue
             key = (edge.target, edge.param)
             if key in bindings:

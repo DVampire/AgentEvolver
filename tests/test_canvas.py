@@ -377,3 +377,94 @@ def test_an_unsaved_draft_runs_on_the_shared_workflow_runtime(tmp_path) -> None:
         assert "canvas-ok" in str(status["output"])
 
     asyncio.run(run())
+
+
+# --------------------------------------------------------------------------- #
+# Port types, enforced where the binding is made
+# --------------------------------------------------------------------------- #
+# `PortType` declares that a connection is valid when the two types match or either is
+# `any`, and the editor refuses a mismatched drag. That was the whole enforcement, which
+# means it was none: a graph reaches the compiler from a file someone edited, from the
+# gateway's canvas commands, and from an agent that wrote one. A `files` output wired
+# into a `task` input compiled cleanly and handed a step a list of paths where it
+# expected a sentence.
+
+
+def _wired(source_port: str, param: str) -> FlowGraph:
+    """Two capability steps and one edge between the named ports."""
+    return FlowGraph(
+        name="Ports",
+        nodes=[
+            _node("a", step_type="agent", target="general_agent", task="do a thing"),
+            _node("b", step_type="agent", target="general_agent", task="use ${a}"),
+        ],
+        edges=[GraphEdge(id="e1", source="a", target="b", param=param, source_port=source_port)],
+    )
+
+
+@pytest.mark.parametrize("source_port, param", [
+    ("files", "task"),      # list  → text
+    ("data", "task"),       # object → text
+    ("message", "items"),   # text  → list
+    ("data", "items"),      # object → list
+])
+def test_a_mismatched_edge_is_refused_by_the_compiler(source_port, param):
+    with pytest.raises(CanvasCompileError) as refusal:
+        canvas_compiler.compile(_wired(source_port, param))
+    assert "output" in str(refusal.value) and "input" in str(refusal.value)
+
+
+@pytest.mark.parametrize("source_port, param", [
+    ("message", "task"),    # text → text
+    ("files", "items"),     # list → list
+    ("out", "task"),        # `out` is the whole value: any, so it fits anything
+    ("message", "arg:x"),   # an arg's type lives in the node's params, not in the edge
+])
+def test_a_connection_the_edge_cannot_disprove_is_allowed(source_port, param):
+    """The check only tightens where it is certain.
+
+    `out` and `arg:<param>` cannot be typed from an edge alone — one is the whole node
+    value, the other comes from that node's parameter schema — so both read as `any`.
+    Rejecting a valid flow is worse than missing an invalid one.
+    """
+    canvas_compiler.compile(_wired(source_port, param))
+
+
+def test_the_editor_and_the_compiler_apply_the_same_rule():
+    """Two implementations of one sentence, in two languages, that must not drift.
+
+    Small enough that generating one from the other would cost more than it saves, so
+    the whole 4×4 truth table is compared instead — the rule has sixteen cases.
+    """
+    import re
+
+    from agentevolver.canvas.types import ports_compatible
+
+    source = (Path(__file__).resolve().parents[1]
+              / "frontend" / "src" / "canvas" / "types.ts").read_text(encoding="utf-8")
+    body = re.search(r"export function portsCompatible\([^)]*\)[^{]*\{(.*?)\n\}", source, re.S)
+    assert body, "portsCompatible is not where this test expects it"
+
+    def typescript(a: str, b: str) -> bool:
+        expression = body.group(1).replace("return", "").strip().rstrip(";")
+        return eval(expression.replace("===", "==").replace("||", "or")   # noqa: S307
+                    .replace("source", repr(a)).replace("target", repr(b)))
+
+    kinds = ["text", "list", "object", "any"]
+    mismatched = [(a, b) for a in kinds for b in kinds
+                  if ports_compatible(a, b) != typescript(a, b)]
+    assert not mismatched, f"the two implementations disagree on: {mismatched}"
+
+
+def test_the_catalog_declares_the_types_the_compiler_enforces():
+    """A port typed one way in the palette and another in the check would make the
+    editor and the compiler disagree about the same flow."""
+    from agentevolver.canvas.catalog import _CAPABILITY_OUTPUTS
+    from agentevolver.canvas.types import PORT_TYPES
+
+    for port in _CAPABILITY_OUTPUTS:
+        if port.name in PORT_TYPES:
+            assert port.type == PORT_TYPES[port.name], (
+                f"the palette types {port.name} as {port.type}, the compiler as "
+                f"{PORT_TYPES[port.name]}"
+            )

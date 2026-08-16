@@ -17,7 +17,7 @@ that belongs to whoever is compacting.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 APPEND = "append"
 
@@ -142,24 +142,9 @@ def replace_op(start: int, end: int) -> Dict[str, Any]:
     return {"op": "replace", "start": int(start), "end": int(end)}
 
 
-def check_citations(events: Iterable[Any]) -> List[str]:
-    """Report surface events whose declarations do not hold up, without raising.
-
-    The fold refuses a log it cannot read; this answers the softer question an audit
-    asks — *is this log still foldable* — and returns the problems instead of stopping
-    at the first one.
-    """
-    try:
-        fold_surface(list(events))
-    except SurfaceError as error:
-        return [str(error)]
-    return []
-
-
 __all__ = [
     "APPEND",
     "SurfaceError",
-    "check_citations",
     "fold_surface",
     "replace_op",
     "shadowed_by",
