@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_plugin">
+  <meta name="description" content="Smoke test: the meta agent calls a plugin tool">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that a plugin tool works end to end. Look up one fact through the
+arxiv plugin.
+</objective>
+
+<requirements>
+- Use the `arxiv__arxiv` plugin tool to search arXiv for the paper titled
+  **"Attention Is All You Need"**.
+- Do not use `bash_tool`, a connector, or your own knowledge for the lookup.
+  The point of this task is the plugin call itself.
+- Report the arXiv id and the first author, and name the exact plugin tool you
+  called.
+</requirements>
+
+<note>
+Plugins are opt-in: a run reaches one only when it names it. Launch this task with
+`--plugins arxiv`, or the tool will not be in the model's tool list at all.
+</note>
+
+<acceptance>
+```
+final answer   names the plugin tool called (arxiv__arxiv)
+               reports arXiv id 1706.03762 and first author Ashish Vaswani
+```
+</acceptance>
+</div>
+
+</body>
+</html>

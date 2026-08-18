@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_environment">
+  <meta name="description" content="Smoke test: the meta agent drives the browser environment">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that an environment action works end to end. Read one value off a live
+page using the browser.
+</objective>
+
+<requirements>
+- Use `browser_environment__*` actions to open `https://example.com`.
+- Read the page's `<h1>` heading back from the live page — navigate, then read.
+  Do not fetch the URL with `bash_tool` (curl/wget) and do not answer from
+  memory. The point of this task is the environment action itself.
+- Close or leave the browser in a clean state when you are done.
+- Report the heading text, and name the exact environment actions you called.
+</requirements>
+
+<acceptance>
+```
+final answer   names the environment actions called (browser_environment__…)
+               reports the heading "Example Domain"
+```
+</acceptance>
+</div>
+
+</body>
+</html>

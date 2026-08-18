@@ -57,10 +57,19 @@ class ToolContext(BaseContext):
     """Context passed into tool manager and individual tool instances."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    id: str = Field(default="", description="Unique identifier for this tool call.")
+    #: The **session** this call belongs to, not the call. `BaseContext.from_context`
+    #: carries the caller's id through unchanged, so every tool call in one run sees the
+    #: same value — which is what `spill`, permission and provenance want, since they
+    #: scope by run. What identifies one *call* is `ToolExecution.call_id`, minted by the
+    #: execution pipeline; nothing in this context is unique per call.
+    id: str = Field(default="", description="The session this call belongs to.")
     name: str = Field(default="", description="Name of the tool being called.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the tool.")
-    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this tool context.")
+    #: Ambient run state — workspace and log roots, the sandbox handle, allowlists,
+    #: lineage a conversion would otherwise drop. Inherited: `_inherited_ambient` seeds a
+    #: sub-agent from it, so anything belonging to *one call* does not go here. That is
+    #: what `tool_manager.__call__`'s `execution_context` is for.
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Ambient run state, inherited by sub-agents.")
 
 
 class Tool(BaseModel):

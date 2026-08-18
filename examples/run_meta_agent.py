@@ -58,6 +58,17 @@ def parse_args():
     )
     add_task_args(parser, default_task_file=os.path.join(root, "examples", "tasks", "calculator_tool.html"))
     parser.add_argument(
+        "--plugins",
+        nargs="*",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Plugins this run may call, e.g. --plugins arxiv wikipedia. The registry "
+            "holds hundreds of tools for services most runs never touch, so a plugin "
+            "reaches the model only when the run names it."
+        ),
+    )
+    parser.add_argument(
         "--cfg-options",
         nargs="+",
         action=DictAction,
@@ -93,6 +104,12 @@ async def main():
         shared_extension_root=config.extension_root,
     )
     bind_session_roots(config, sandbox)
+    # Named here rather than in the config, because which plugins a run may call is a
+    # property of the run. `Agent._get_*_context` and the native projection both read it
+    # off the context.
+    if args.plugins:
+        ctx.extra = dict(getattr(ctx, "extra", None) or {})
+        ctx.extra["plugin_allowlist"] = list(args.plugins)
     extension_manager.set_base_dir(config.extension_root)
     logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
@@ -148,6 +165,13 @@ async def main():
     if env_names:
         await environment_manager.initialize(env_names=env_names)
         logger.info(f"| ✅ Environments: {await environment_manager.list()}")
+
+    plugin_names = args.plugins if args.plugins is not None else getattr(config, "plugin_names", None)
+    if plugin_names:
+        logger.info("| 🧩 Initializing plugins...")
+        from agentevolver.plugins import plugin_manager
+        await plugin_manager.initialize(plugin_names=plugin_names)
+        logger.info(f"| ✅ Plugins: {await plugin_manager.list()}")
 
     logger.info("| 🤖 Initializing agents...")
     await agent_manager.initialize(agent_names=config.agent_names)

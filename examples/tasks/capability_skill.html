@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_skill">
+  <meta name="description" content="Smoke test: the meta agent invokes a skill">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that a skill works end to end. Have a skill review a small file you
+write first.
+</objective>
+
+<requirements>
+- Write `divide.py` in the work directory holding exactly this function:
+
+  ```python
+  def divide(a, b):
+      return a / b
+  ```
+
+- Then invoke the `code_review_skill` on that file. Invoke the skill — do not
+  review the code yourself and do not describe what a review would say.
+- Report the name of the skill you invoked and the single most important
+  finding it returned.
+</requirements>
+
+<acceptance>
+```
+workspace_root/divide.py   the function above
+final answer               names `code_review_skill` as invoked
+                           reports a finding about the unguarded division by zero
+```
+</acceptance>
+</div>
+
+</body>
+</html>

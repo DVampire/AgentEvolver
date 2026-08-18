@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_connector">
+  <meta name="description" content="Smoke test: the meta agent calls an MCP connector action">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that a connector action works end to end. Look up a compound in
+PubChem through the chemistry connector.
+</objective>
+
+<requirements>
+- Use a `chemistry_connector__*` action to look up **aspirin** in PubChem.
+- Do not use `bash_tool`, a plugin, or your own knowledge for the lookup. The
+  point of this task is the connector call itself.
+- Report the compound's PubChem CID and its molecular formula, and name the
+  exact connector action you called.
+</requirements>
+
+<acceptance>
+```
+final answer   names the connector action called (chemistry_connector__…)
+               reports CID 2244 and formula C9H8O4
+```
+</acceptance>
+</div>
+
+</body>
+</html>

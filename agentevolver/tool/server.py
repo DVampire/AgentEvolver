@@ -133,13 +133,10 @@ class ToolManagerServer(BaseModel):
         return tool_config
     
     async def list(self) -> List[str]:
-        """List all registered tools
-        
-        Args:
-            include_disabled: Whether to include disabled tools
-            
+        """List all registered tools.
+
         Returns:
-            List[str]: List of tool names
+            List[str]: List of tool names.
         """
         return await self._ensure_context_manager().list()
     
@@ -266,15 +263,25 @@ class ToolManagerServer(BaseModel):
                        **kwargs
                        ) -> Response:
         """Call a tool through the single execution pipeline.
-        
+
         Args:
-            name: Tool name
-            input: Input for the tool
-            timeout: Timeout in seconds for this specific call (overrides default_timeout if provided)
-            ctx: Tool context
-            
+            name: Tool name.
+            input: Arguments for the tool, as the model produced them.
+            ctx: The caller's context. Converted to a call-local ``ToolContext`` below.
+            execution_context: This call's coordinates, supplied by the caller rather
+                than by the model — call/root/parent ids, the session, task, agent,
+                step and action index, and any denial the caller has already decided
+                (plan mode, read-only). :mod:`agentevolver.tool.execution` freezes the
+                identity half into an immutable record that guards may refuse but
+                cannot rewrite, and takes the denials as the pipeline's own initial
+                verdict, so a refused call still produces a paired start and result.
+
+        There is deliberately no per-call ``timeout``: a tool's budget is read from
+        its own ``call_timeout_seconds`` declaration, where the code that knows what
+        the work costs can state it. See ``ToolContextManager._call_timeout``.
+
         Returns:
-            Response: Tool result
+            Response: Tool result.
         """
         # Give the tool a call-local view rather than the caller's ambient AgentContext.
         # The session id and ambient resources survive conversion, while name/input now

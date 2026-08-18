@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_tool">
+  <meta name="description" content="Smoke test: the meta agent reaches an ordinary local tool">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that an ordinary local tool works end to end. Read this machine's kernel
+release, and leave the answer in a file.
+</objective>
+
+<requirements>
+- Use `bash_tool` to run `uname -r`. Do not guess the value or read it from anywhere else.
+- Write the exact output to `kernel.txt` in the work directory.
+- Report the kernel release in your final answer.
+</requirements>
+
+<acceptance>
+```
+workspace_root/kernel.txt   one line, the exact `uname -r` output
+final answer                names the same string
+```
+</acceptance>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_subagent">
+  <meta name="description" content="Smoke test: the meta agent dispatches a sub-agent and collects its answer">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that delegation works end to end. The work below must be done by a
+sub-agent, not by you.
+</objective>
+
+<requirements>
+- Dispatch `code_agent` with a self-contained brief: write `sum_squares.py` in
+  the work directory, holding a function `sum_squares(n)` that returns the sum
+  of the first n squares, then run it for n=10 and print the result.
+- Do not write the file yourself and do not compute the answer yourself. Your
+  own role is to brief the sub-agent and report what it returned.
+- Report which agent you dispatched, and the number it came back with.
+</requirements>
+
+<acceptance>
+```
+workspace_root/sum_squares.py   written by the sub-agent
+final answer                    names `code_agent` and the value 385
+```
+</acceptance>
+</div>
+
+</body>
+</html>

@@ -129,106 +129,33 @@ tool_names = [
     "web_fetcher_tool",
     "media_search_tool",
 ]
+# Resident rosters are what reaches the model on every step, as a tool schema each. The
+# rest of the registry is not gone: `inspect_capability_tool` reads any registered
+# capability by name, so a run that needs one can look it up. Keeping the resident set
+# small is what leaves room for the conversation — 21 connectors alone expanded to 213
+# action schemas and 48k tokens, against a 95k input capacity.
 skill_names = [
-    # worker skills — the skill pool for this session's sub-agents (code/general/triads).
-    "code_review_skill",
-    "security_review_skill",
-    "deep_research_skill",
-    "simplify_skill",
-    "review_skill",
-    "verify_skill",
-    "run_skill",
-    "init_skill",
-    "report_design_skill",
-    "artifact_design_skill",
-    "theme_factory_skill",
-    "doc_coauthoring_skill",
-    # document / data I/O skills — deliver real Office & PDF artifacts
-    "docx_skill",
-    "xlsx_skill",
-    "pdf_skill",
-    "pptx_skill",
-    # browser automation — test/verify local web apps, capture screenshots
-    "webapp_testing_skill",
-    # deployment — run a web service in a sandbox and bind it to a URL (drives deploy_tool)
-    "deploy_skill",
-    # per-type creator skills (orchestrator role) — drive each triad's create->eval->improve loop
+    # Kept resident because a prompt or another config names them: the creator triad
+    # skills and `self_evolving_skill` are what this configuration exists to run.
     "agent_creator_skill",
     "tool_creator_skill",
+    "skill_creator_skill",
+    "connector_creator_skill",
     "environment_creator_skill",
     "memory_creator_skill",
-    # orchestrator skill: how to drive the skill create->evaluate->improve loop
-    "skill_creator_skill",
-    # orchestrator skill: how to drive the connector create->evaluate->improve loop
-    "connector_creator_skill",
-    # global self-evolution playbook: WHEN to evolve + the loop + enable_evolving gate (ties the triads together)
     "self_evolving_skill",
-    # engineering-workflow skills (adapted from agent-skills) — orchestrator-side planning/decomposition
-    "planning_and_task_breakdown_skill",
-    "spec_driven_development_skill",
-    "context_engineering_skill",
-    "doubt_driven_development_skill",
-    # interactive (define/discovery) skills — for task-intake / user turns, not autonomous batch
-    "interview_me_skill",
-    "idea_refine_skill",
-    # build methodology (worker) — how to implement/test/debug/document correctly
-    "test_driven_development_skill",
-    "debugging_and_error_recovery_skill",
-    "source_driven_development_skill",
-    "api_and_interface_design_skill",
-    "incremental_implementation_skill",
-    "documentation_and_adrs_skill",
-    "git_workflow_and_versioning_skill",
-    # code quality / web / ops (worker)
-    "performance_optimization_skill",
-    "ci_cd_and_automation_skill",
-    "shipping_and_launch_skill",
-    "frontend_ui_engineering_skill",
-    "deprecation_and_migration_skill",
-    "observability_and_instrumentation_skill",
-    # science / domain skills (agentevolver/skill/science) — biomodels & bioinformatics workers.
-    # GPU-backed structure/sequence models and CPU analysis/design skills; available to
-    # sub-agents for drug-discovery, protein, genomics, and single-cell tasks.
-    "alphafold2_skill",
-    "openfold3_skill",
-    "esmfold2_skill",
-    "boltz_skill",
-    "chai1_skill",
-    "diffdock_skill",
-    "esm2_skill",
-    "evo2_skill",
-    "borzoi_skill",
-    "scgpt_skill",
-    "scvi_tools_skill",
-    "proteinmpnn_skill",
-    "solublempnn_skill",
-    "ligandmpnn_skill",
-    "literature_review_skill",
-    "indication_dossier_skill",
-    "drawio_skill",
+    # The everyday four.
+    "code_review_skill",
+    "verify_skill",
+    "run_skill",
+    "deep_research_skill",
+    # Deliverable craft, named by the report and artifact prompts.
+    "report_design_skill",
+    "artifact_design_skill",
 ]
 connector_names = [
-    "biomart_connector",
-    "cbioportal_connector",
-    "cellguide_connector",
     "chemistry_connector",
-    "clinical_genomics_connector",
-    "drug_regulatory_connector",
-    "expression_connector",
-    "genes_ontologies_connector",
-    "genomes_connector",
-    "human_genetics_connector",
-    "molecule_toolkit_connector",
     "literature_graph_connector",
-    "omics_archives_connector",
-    "protein_annotation_connector",
-    "regulation_connector",
-    "research_resources_connector",
-    "rna_connector",
-    "structures_interactions_connector",
-    "variants_connector",
-    "zinc_connector",
-    "ketcher_chemistry_connector",
 ]
 
 #-----------------ENVIRONMENT CONFIGS-----------------
