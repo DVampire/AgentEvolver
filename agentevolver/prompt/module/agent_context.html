@@ -25,6 +25,11 @@
 <memory>
 {{ memory_context }}
 </memory>
+{% if environment_state %}
+<environment-state>
+{{ environment_state }}
+</environment-state>
+{% endif %}
 {% if todo %}
 <todo>
 {{ todo }}

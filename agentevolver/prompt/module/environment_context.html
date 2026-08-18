@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="environment_context">
+  <link rel="stylesheet" href="../../visual/css/prompt.css">
+  <script src="../../visual/js/prompt.js"></script>
+</head>
+<body>
+<!-- The environments this agent works in. Headed in a block of its own rather than
+     inside <capability-context>, because an agent works *in* an environment rather than
+     calling it in passing — but a block of its own is not a reason to write it out per
+     template, which is what three prompts did, byte for byte identical.
+
+     Rendered only when the agent has one, and placed with the capabilities rather than
+     after the state: the roster is a catalog that does not change between steps, and
+     everything after the state is re-read at full price every step. All three copies sat
+     below </agent-context>. -->
+{% if environment_context %}<environment-context>
+{{ environment_context }}
+</environment-context>{% endif %}
+</body>
+</html>

@@ -69,8 +69,17 @@ LEAVES = _leaves_used_in_templates()
 
 
 def test_the_layout_was_actually_found():
+    """The parametrized tests below are vacuous if the glob found nothing.
+
+    This asserted `> 20`, which is a census rather than a guard: deleting prompts fails
+    it for the one reason that is fine, and a glob pointed at the wrong directory could
+    still pass it while there were enough files. Naming templates that must exist says
+    what the guard is actually for.
+    """
     assert LEAVES, "no template nests anything in <capability-context>"
-    assert len(TEMPLATES) > 20, f"only {len(TEMPLATES)} templates found"
+    found = {p.name for p in TEMPLATES}
+    for expected in ("meta_agent.html", "code_agent.html", "generate_agent.html"):
+        assert expected in found, f"{expected} missing — TEMPLATES is not the prompt directory"
 
 
 @pytest.mark.parametrize("leaf", sorted(LEAVES))
@@ -154,8 +163,8 @@ def test_the_agent_authoring_guide_describes_the_shape_it_will_be_read_against()
     stale does not merely mislead a reader — it reproduces the old layout in every agent
     generated afterwards.
     """
-    guide = (ROOT / "agentevolver" / "skill" / "creator" / "agent_creator_skill"
-             / "SKILL.md").read_text(encoding="utf-8")
+    guide = (ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill"
+             / "references" / "agent.md").read_text(encoding="utf-8")
     assert CONTAINER in guide, "the agent-authoring guide never mentions the container"
     assert "as **siblings** of `<agent-context>`" not in guide, \
         "the guide still describes the pre-merge sibling layout"

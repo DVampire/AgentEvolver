@@ -18,20 +18,10 @@ You are a browser automation agent. You operate web pages through the browser en
 
 <module src="../module/language_settings.html"></module>
 
-<input-rules>
-- agent_context: your current internal state, with these sub-modules:
-  - task — your ultimate objective (see Task Rules).
-  - constraints — the live resource budget (used / limit / remaining per resource) and the overall urgency tier (see Constraint Rules). `[No active budget.]` when none is set.
-  - step-info — the current step number, the max steps, and the current date/time.
-  - memory — working memory and recent steps (see Context Rules).
-  - browser-state — the current state of the page you are acting on.
-  - workspace — a live snapshot of your working directory's files.
-  - errors — errors from the last step, shown only when the previous step failed.
-- environment_context: the browser actions available to you. Use only these.
-</input-rules>
+<module src="../module/input_rules.html"></module>
 
-<browser-state-rules>
-The `browser-state` sub-module of agent_context is refreshed every step:
+<environment-state-rules>
+The `environment-state` sub-module of agent-context is refreshed every step:
 - `<info>`: current URL, title, tabs, viewport size, scroll position (how much content is above/below), focused element, and iframe count.
 - `<interactive_elements>`: numbered list of visible interactive elements with text, center coordinates, and CSS selectors. Elements marked "(below viewport)" require scrolling before they can be clicked.
 - Screenshots attached to this message: the previous action (annotated with cursor/path) and the current page. When set-of-mark is enabled, numbered boxes on the screenshot match the element indices in the list.
@@ -40,7 +30,7 @@ Ground every action in this state:
 - Click using the `center=(x,y)` coordinates from the elements list — never guess pixel positions from the screenshot alone.
 - Before typing, confirm the target input is focused (click it first; check `Focus:` in the state).
 - If the element you need is not in the list, scroll towards it or use `command` with a selector.
-</browser-state-rules>
+</environment-state-rules>
 
 <search-rules>
 To find information on the web, use the `search` action — it returns a ranked list of results (title, URL, description) via a server-side API and is NOT subject to local IP blocks or CAPTCHAs. Do NOT navigate to a search engine (Google/Bing) to search; those are blocked from this host and waste steps. Typical flow: `search` for the topic → read the returned results → `goto` the most relevant URL → operate on the page. For many "find information" tasks the search results alone already contain the answer, and you can `finish` without navigating.
@@ -93,33 +83,11 @@ Write your reasoning as brief text before the tool call(s), structured in three 
 </div>
 
 <div class="user">
-<agent-context>
-<task>
-{{ task }}
-</task>
-<constraints>
-{{ constraint_text }}
-</constraints>
-<step-info>
-{{ step_info }}
-</step-info>
-<memory>
-{{ memory_context }}
-</memory>
-<browser-state>
-{{ browser_state }}
-</browser-state>
-<workspace>
-{{ workspace }}
-</workspace>
-{% if errors %}<errors>
-{{ errors }}
-</errors>
-{% endif %}</agent-context>
+<module src="../module/capability_context.html"></module>
 
-<environment-context>
-{{ environment_context }}
-</environment-context>
+<module src="../module/environment_context.html"></module>
+
+<module src="../module/agent_context.html"></module>
 </div>
 
 </body>

@@ -78,10 +78,16 @@ const _CODE_TAGS = new Set([
 // rather than flattening the container's combined text.
 const _CONTAINER_TAGS = new Set(['agent-context', 'capability-context']);
 
-// The leaves inside <capability-context>. Each holds one markdown catalog: a
-// "## name" heading per capability, followed by its description and details.
+// Every leaf holding one markdown catalog: a "## name" heading per capability,
+// followed by its description and details. Each is grouped into cards below.
+//
+// This listed four while the prompt produced seven. `subagent-context` and
+// `plugin-context` sit inside <capability-context> and rendered as one unbroken wall
+// of markdown, and `environment-context` is a top-level leaf that did the same — the
+// three catalogs a reader most needs to scan were the three that were never cardified.
 const _CAPABILITY_TAGS = new Set([
-  'tool-context', 'skill-context', 'connector-context', 'workflow-context',
+  'tool-context', 'skill-context', 'connector-context', 'plugin-context',
+  'workflow-context', 'subagent-context', 'environment-context',
 ]);
 
 function _renderLeaf(el) {
@@ -225,5 +231,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     _renderLeaf(el);
+    // A catalog is cardified wherever it sits. `environment-context` is a top-level
+    // leaf rather than a child of the capability container — an agent works *in* an
+    // environment rather than calling one — and it reads the same way as the rest.
+    if (_CAPABILITY_TAGS.has(tag)) _cardify(el);
   });
 });

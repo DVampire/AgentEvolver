@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="input_rules">
+  <link rel="stylesheet" href="../../visual/css/prompt.css">
+  <script src="../../visual/js/prompt.js"></script>
+</head>
+<body>
+<!-- What the two context blocks below the system prompt contain. Named here once because
+     the answer is the same for every agent: the blocks are assembled by one builder from
+     one table, so a prompt that described them itself was describing that builder from
+     memory, and several described a shape it had stopped producing. -->
+<input-rules>
+- capability-context: everything you may call, listed in full. Fixed for the whole
+  conversation and placed ahead of your state, because it does not change between steps.
+  A section appears only when you actually have that kind of capability:
+  - tool-context — the tools you may call, each with its full instruction (function /
+    guidance / parameters / example). These are resident: you already have everything you
+    need to call them. Use `inspect_tool` only for something NOT listed here,
+    or for a component's registry facts (version / enable_evolving / source path).
+  - skill-context — the skills you may invoke.
+  - connector-context — the connectors you may use.
+  - plugin-context — the plugins you may call.
+  - workflow-context — the workflows you may run.
+  - subagent-context — the sub-agents you may dispatch.
+  Use only what is listed. Do not invent names.
+- capability-context-changes: MAY APPEAR LATER in the conversation, after the history
+  rather than in this position. Components can be registered or withdrawn while you are
+  running; the catalog above is deliberately left byte-for-byte unchanged so it stays
+  reusable, and what has changed since is stated in that block instead. It supersedes the
+  catalog for the entries it names and for nothing else — anything it does not mention is
+  still exactly as listed above.
+- environment-context: the environment you are working *in*, when you have one, with its
+  available actions and current state. It is not in capability-context because you do not
+  call it in passing — you act inside it.
+- agent-context: your current state, with these sub-modules:
+  - task — your ultimate objective (see Task Rules).
+  - inherited-context — what the caller handed down, when you were dispatched by someone.
+  - constraints — the live resource budget (used / limit / remaining per resource) and the
+    overall urgency tier (see Constraint Rules). `[No active budget.]` when none is set.
+  - step-info — the current step number, the max steps, and the current date/time.
+  - memory — working memory and recent steps (see Context Rules).
+  - environment-state — the live state of the environment you are acting in, refreshed
+    every step. Only when you have one.
+  - todo — your task list, when you are keeping one.
+  - workspace — a live snapshot of your working directory's files.
+  - errors — errors from the last step, shown only when the previous step failed.
+</input-rules>
+</body>
+</html>

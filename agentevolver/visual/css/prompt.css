@@ -10,6 +10,7 @@
   --amber:       #CFA040;
   --red:         #D45E3E;
   --blue:        #5E93C0;
+  --purple:      #9B7EC8;
   --border:      #243220;
   --border-hi:   #384F2E;
 
@@ -208,6 +209,7 @@ div.system > input-rules       { border-left-color: var(--blue); }
 div.system > context-rules     { border-left-color: var(--blue); }
 div.system > situation-rules   { border-left-color: var(--blue); }
 div.system > execution-state-rules { border-left-color: var(--blue); }
+div.system > environment-state-rules { border-left-color: var(--blue); }
 div.system > project           { border-left-color: var(--blue); }
 
 div.system > input-rules::before {
@@ -224,6 +226,10 @@ div.system > situation-rules::before {
 }
 div.system > execution-state-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  execution-state-rules";
+  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+}
+div.system > environment-state-rules::before {
+  content: counter(section, decimal-leading-zero) "  ·  environment-state-rules";
   color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
 }
 div.system > project::before {
@@ -264,6 +270,17 @@ div.system > example-rules::before      { content: counter(section, decimal-lead
 div.system > reasoning::before          { content: counter(section, decimal-leading-zero) "  ·  reasoning"; }
 div.system > efficiency-guidelines::before { content: counter(section, decimal-leading-zero) "  ·  efficiency-guidelines"; }
 div.system > canonical-workflow::before { content: counter(section, decimal-leading-zero) "  ·  canonical-workflow"; }
+div.system > search-rules::before          { content: counter(section, decimal-leading-zero) "  ·  search-rules"; }
+div.system > evaluation-rules::before      { content: counter(section, decimal-leading-zero) "  ·  evaluation-rules"; }
+div.system > optimization-rules::before    { content: counter(section, decimal-leading-zero) "  ·  optimization-rules"; }
+div.system > review-rules::before          { content: counter(section, decimal-leading-zero) "  ·  review-rules"; }
+div.system > workflow-rules::before        { content: counter(section, decimal-leading-zero) "  ·  workflow-rules"; }
+div.system > self-evolution-rules::before  { content: counter(section, decimal-leading-zero) "  ·  self-evolution-rules"; }
+div.system > remote-work-rules::before     { content: counter(section, decimal-leading-zero) "  ·  remote-work-rules"; }
+div.system > response-protocol::before       { content: counter(section, decimal-leading-zero) "  ·  response-protocol"; }
+div.system > progress-rules::before          { content: counter(section, decimal-leading-zero) "  ·  progress-rules"; }
+div.system > action-batching-rules::before   { content: counter(section, decimal-leading-zero) "  ·  action-batching-rules"; }
+div.system > two-machines::before            { content: counter(section, decimal-leading-zero) "  ·  two-machines"; }
 div.system > evaluation-dimensions::before { content: counter(section, decimal-leading-zero) "  ·  evaluation-dimensions"; }
 div.system > optimization-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  optimization-target-rules"; }
 div.system > code-operation-rules::before { content: counter(section, decimal-leading-zero) "  ·  code-operation-rules"; }
@@ -361,7 +378,10 @@ div.user > capability-context::before {
 div.user capability-context > tool-context,
 div.user capability-context > skill-context,
 div.user capability-context > connector-context,
-div.user capability-context > workflow-context {
+div.user capability-context > plugin-context,
+div.user capability-context > workflow-context,
+div.user capability-context > subagent-context,
+div.user capability-context > environment-context {
   display: block;
   white-space: normal;
   border: none;
@@ -374,7 +394,10 @@ div.user capability-context > workflow-context {
 div.user capability-context > tool-context::before,
 div.user capability-context > skill-context::before,
 div.user capability-context > connector-context::before,
-div.user capability-context > workflow-context::before {
+div.user capability-context > plugin-context::before,
+div.user capability-context > workflow-context::before,
+div.user capability-context > subagent-context::before,
+div.user capability-context > environment-context::before {
   display: block;
   font-family: var(--mono);
   font-size: 11px;
@@ -391,11 +414,42 @@ div.user capability-context > tool-context::before      { content: "TOOLS"      
 div.user capability-context > skill-context::before     { content: "SKILLS"     attr(data-count-label); --kind: var(--green); }
 div.user capability-context > connector-context::before { content: "CONNECTORS" attr(data-count-label); --kind: var(--amber); }
 div.user capability-context > workflow-context::before  { content: "WORKFLOWS"  attr(data-count-label); --kind: var(--text-mid); }
+div.user capability-context > plugin-context::before    { content: "PLUGINS"    attr(data-count-label); --kind: var(--red); }
+div.user capability-context > subagent-context::before  { content: "SUB-AGENTS" attr(data-count-label); --kind: var(--purple); }
+
 
 div.user capability-context > tool-context      { --kind: var(--blue); }
 div.user capability-context > skill-context     { --kind: var(--green); }
 div.user capability-context > connector-context { --kind: var(--amber); }
 div.user capability-context > workflow-context  { --kind: var(--text-mid); }
+div.user capability-context > plugin-context    { --kind: var(--red); }
+div.user capability-context > subagent-context  { --kind: var(--purple); }
+
+/* Environments render in a block of their own — an agent works *in* one rather than
+   calling it in passing — but read as the same kind of catalog, so they carry the same
+   label, the same card grid, and a colour of their own. */
+div.user > environment-context {
+  display: block;
+  white-space: normal;
+  border: none;
+  background: none;
+  padding: 10px 0 4px;
+  --kind: var(--amber);
+}
+div.user > environment-context::before {
+  content: "ENVIRONMENTS" attr(data-count-label);
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  padding: 2px 0 3px 8px;
+  margin-bottom: 8px;
+  border: none;
+  border-left: 3px solid var(--kind);
+  color: var(--kind);
+  counter-increment: none;
+}
 
 .cap-grid {
   display: grid;
@@ -564,8 +618,8 @@ div.user > agent-context > workspace::before       { content: "workspace"; color
 div.user > agent-context > workspace               { border-left-color: var(--text-mid); }
 div.user > agent-context > errors::before          { content: "errors"; color: var(--red); }
 div.user > agent-context > errors                  { border-left-color: var(--red); }
-div.user > agent-context > browser-state::before   { content: "browser-state"; color: var(--blue); }
-div.user > agent-context > browser-state           { border-left-color: var(--blue); }
+div.user > agent-context > environment-state::before { content: "environment-state"; color: var(--blue); }
+div.user > agent-context > environment-state         { border-left-color: var(--blue); }
 
 /* ── constraints sub-module — amber, hosts budget rings ── */
 div.user > agent-context > constraints {

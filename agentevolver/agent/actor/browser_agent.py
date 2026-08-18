@@ -90,14 +90,15 @@ class BrowserAgent(Agent):
     ) -> Dict[str, Any]:
         """Extend the base prompt context with browser-specific fields.
 
-        Adds the observed ``browser_state``, a ``workspace`` snapshot, any
+        Adds the observed ``environment_state``, a ``workspace`` snapshot, any
         ``errors`` from the previous step's actions, and the rendered environment
         actions, so the template can ground the next batch of env actions.
         """
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
         browser_state = kwargs.get("browser_state")
-        base["browser_state"] = browser_state.get("state") if browser_state else "[Browser state unavailable.]"
+        base["environment_state"] = (browser_state.get("state") if browser_state
+                                    else "[Environment state unavailable.]")
 
         base["workspace"] = self._workspace_snapshot(ctx)
 

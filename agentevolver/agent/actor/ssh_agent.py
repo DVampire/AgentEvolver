@@ -83,7 +83,10 @@ class SSHAgent(Agent):
         """
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
         state = await environment_manager.get_state(self.env_name, ctx=ctx)
-        base["remote_state"] = (
+        # The same slot every environment-backed agent fills. It was `remote_state`
+        # here, `browser_state` there and rendered as `desktop-state` in a third — three
+        # spellings of one thing, of which only one ever had a stylesheet rule.
+        base["environment_state"] = (
             state.get("state") if state else "[Remote state unavailable — the host may be "
                                              "unreachable; try a `run` to confirm.]"
         )
