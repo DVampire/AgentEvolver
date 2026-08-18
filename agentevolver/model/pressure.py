@@ -24,7 +24,13 @@ from agentevolver.message.types import ToolMessage
 #: trigger and still fit.
 REQUEST_PRESSURE_VERSION = 2
 ESTIMATE_METHOD = "canonical_json_utf8_bytes_div_4"
-DEFAULT_CONTEXT_WINDOW = 128_000
+#: What a model is assumed to accept when its spec does not say. Every frontier model
+#: this repository calls is at or above 1M, and the cost of the two mistakes is not
+#: symmetric: too low is a wall we invented — the request never leaves, and history is
+#: folded to get under a limit the provider does not have — while too high is a wall the
+#: provider states, which `provider_rejected_for_length` turns back into the same
+#: recoverable overflow. Guess high, and let the provider correct the guess.
+DEFAULT_CONTEXT_WINDOW = 1_000_000
 DEFAULT_PRUNE_RATIO = 0.85
 DEFAULT_TARGET_RATIO = 0.75
 MIN_TOOL_RESULT_CHARS = 512
@@ -192,6 +198,41 @@ def _excerpt(content: str, keep_chars: int) -> str:
     return content[:head] + marker + content[-tail:]
 
 
+#: What each provider says when the request exceeded *its* window. Matched as lowercase
+#: substrings against the error text, because the wire shape differs per provider (an
+#: OpenAI ``code``, an Anthropic ``message``, a relay's passthrough string) while the
+#: sentence does not. Deliberately specific: "max_tokens is too large" is about the
+#: *output* reservation and must not land here, since folding history would not fix it.
+_LENGTH_REJECTION_MARKERS = (
+    "context_length_exceeded",           # OpenAI error code
+    "maximum context length",            # OpenAI prose
+    "prompt is too long",                # Anthropic
+    "exceeds the maximum number of tokens",   # Google
+    "input token count",                 # Google, paired with the line above
+    "context length",                    # OpenRouter passthrough
+    "too many total text bytes",         # Google, non-token phrasing
+    "reduce the length of the messages",  # OpenAI remediation sentence
+)
+
+
+def provider_rejected_for_length(error: BaseException) -> bool:
+    """Whether ``error`` is a provider saying the request exceeded its context window.
+
+    The window we configure is a guess used to decide when to excerpt tool results early.
+    The provider's own limit is the only authority, and it states it in a rejection. Read
+    here, that rejection becomes the same recoverable condition as a locally-detected
+    overflow: the run folds history and rebuilds, rather than retrying an identical
+    request until the attempt budget is gone and reporting it as a provider outage.
+
+    Without this, guessing the window high is unsafe — which is the only reason the
+    default was ever a number small enough to be wrong in the other direction.
+    """
+    if isinstance(error, ContextOverflowError):
+        return True
+    text = f"{error}".lower()
+    return any(marker in text for marker in _LENGTH_REJECTION_MARKERS)
+
+
 @dataclass(frozen=True)
 class PreparedRequest:
     messages: list[Any]
@@ -288,6 +329,7 @@ __all__ = [
     "DEFAULT_CONTEXT_WINDOW",
     "DEFAULT_PRUNE_RATIO",
     "DEFAULT_TARGET_RATIO",
+    "provider_rejected_for_length",
     "PreparedRequest",
     "RequestTokenEstimator",
     "RequestTokenEstimatorRegistrationError",

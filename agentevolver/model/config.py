@@ -164,6 +164,9 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "model_name": "llm_hub/claude-opus-5",
             "model_id": "claude-opus-5",
             "model_type": "chat/completions",
+            # Confirmed against Anthropic's model page: 1M is both the default and the
+            # maximum; there is no smaller context variant of Opus 5.
+            "context_window": 1_000_000,
             # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
             # the relay answers a request carrying one with "`temperature` is deprecated
             # for this model".
@@ -179,6 +182,9 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "model_name": "llm_hub/gpt-5.6-sol",
             "model_id": "gpt-5.6-sol",
             "model_type": "responses",
+            # OpenAI's published spec. Codex reports 272k for its own bundle — that is a
+            # billing threshold (input above it is priced 2x), not a capacity limit.
+            "context_window": 1_050_000,
             "reasoning": {"effort": "low"},
             "max_output_tokens": max_tokens,
             "timeout": default_timeout,
@@ -419,6 +425,7 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
             "model_name": "openrouter/claude-opus-5",
             "model_id": "anthropic/claude-opus-5",
             "model_type": "chat/completions",
+            "context_window": 1_000_000,
             "reasoning": {"reasoning": {"max_tokens": 8000}},
             "temperature": default_temperature,
             "max_completion_tokens": max_tokens,

@@ -55,7 +55,17 @@ Immediately before snapshot and dispatch, `prepare_messages()` measures canonica
 JSON. For an OpenAI model recognized by `tiktoken`, it uses that model's native encoding;
 other routes use the documented, deterministic UTF-8/4 fallback. It reserves the
 configured output budget and compares the remaining input against the selected model's
-`context_window` (or the manager's 128k compatibility default).
+`context_window` (or the manager's 1M default).
+
+That window is a *guess*, and the two ways of guessing wrong are not symmetric. Too low
+invents a wall the provider does not have: the request never leaves, and history is folded
+to get under a limit that was never there — which is what a 128k default did to a model
+that accepts a million. Too high is a wall the provider states, and
+`provider_rejected_for_length()` reads that statement back as the same
+`ContextOverflowError` a local overflow raises, so the run folds history and rebuilds
+instead of re-sending an identical request until its attempts are gone. Guess high; let
+the provider correct the guess. A catalog entry that knows its real window declares
+`context_window` and every registration site passes it through to `ModelConfig`.
 
 Below 85% pressure, the message objects are unchanged. Above it, the manager works from
 oldest to newest and shortens only `ToolMessage.content`, retaining a head, tail, original

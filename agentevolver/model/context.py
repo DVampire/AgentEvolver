@@ -28,6 +28,7 @@ from agentevolver.model.pressure import (
     DEFAULT_CONTEXT_WINDOW,
     ContextOverflowError,
     prepare_messages,
+    provider_rejected_for_length,
     resolve_request_token_estimator,
 )
 from agentevolver.logger import logger
@@ -405,6 +406,7 @@ class ModelContextManager:
                 supports_vision=True,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -426,6 +428,7 @@ class ModelContextManager:
                 supports_vision=True,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -445,6 +448,7 @@ class ModelContextManager:
                 supports_vision=False,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -464,6 +468,7 @@ class ModelContextManager:
                 supports_vision=False,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -501,6 +506,7 @@ class ModelContextManager:
                 supports_vision=True,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -530,6 +536,7 @@ class ModelContextManager:
                 timeout=m.get("timeout", self.default_timeout),
                 supports_streaming=True, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -546,6 +553,7 @@ class ModelContextManager:
                 # as canonical events. Functions are the reason this surface is used.
                 supports_streaming=False, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -581,6 +589,7 @@ class ModelContextManager:
                 supports_vision=True,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -611,6 +620,7 @@ class ModelContextManager:
                 supports_vision=True,
                 output_version=None,
                 fallback_model=None,
+                context_window=m.get("context_window"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -953,6 +963,17 @@ class ModelContextManager:
                     # Retrying or falling back cannot repair a missing source fact, and
                     # must never turn a fail-closed profile into another provider route.
                     raise
+                # The provider stated its own limit. Retrying sends the identical
+                # request into the identical rejection; the answer is a smaller
+                # conversation, which only the caller can produce. Re-typed so the
+                # caller reads it as the recoverable overflow it is.
+                if provider_rejected_for_length(e):
+                    last_exc = ContextOverflowError(
+                        f"{name} rejected the request as too long for its context "
+                        f"window: {e}"
+                    )
+                    logger.error(f"| ❌ {last_exc}")
+                    break
                 last_exc = e
                 _elapsed = _t.time() - _start
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
@@ -1165,6 +1186,17 @@ class ModelContextManager:
                     from agentevolver.trace.checkpoint import TraceIntegrityError
                     if isinstance(e, TraceIntegrityError):
                         raise
+                    # Same reasoning as the branch above: the provider's own limit is
+                    # the authority, and it just stated it. Give up this candidate's
+                    # remaining attempts so the next model — which may have a larger
+                    # window — gets its turn, and let the caller fold history.
+                    if not started and provider_rejected_for_length(e):
+                        last_exc = ContextOverflowError(
+                            f"{target} rejected the request as too long for its context "
+                            f"window: {e}"
+                        )
+                        logger.error(f"| ❌ {last_exc}")
+                        break
                     last_exc = e
                     if started:
                         # Already emitted output downstream — restarting would
