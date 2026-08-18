@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
@@ -92,7 +93,7 @@ class DataManager(BaseModel):
         which a bound session repoints at its own directory.
         """
         self.base_dir = assemble_workspace_path(
-            base_dir or self.base_dir or os.path.join(config.log_root, "datasets"))
+            base_dir or self.base_dir or path_manager.under(config.log_root, P.LOG_MODULE, module="datasets"))
         logger.info(f"| 🗂️ Data manager datasets directory: {self.base_dir}")
         logger.info("| ✅ Data manager initialization completed")
 

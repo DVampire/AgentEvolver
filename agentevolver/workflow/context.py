@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.utils import assemble_workspace_path
@@ -46,7 +47,7 @@ class WorkflowContextManager(BaseModel):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self.base_dir = assemble_workspace_path(base_dir or os.path.join(config.log_root, "workflow"))
+        self.base_dir = assemble_workspace_path(base_dir or path_manager.under(config.log_root, P.LOG_MODULE, module="workflow"))
         selected_builtin_dir = builtin_workflows_dir or builtin_dir or (Path(__file__).parent / "default")
         self.builtin_workflows_dir = str(Path(selected_builtin_dir).resolve())
         self.evaluation_path = str(Path(evaluation_path or os.path.join(self.base_dir, "evaluations.json")))

@@ -91,7 +91,7 @@ class PluginConfig(BaseModel):
     #: A plugin and a connector are the same shape — one outside service, several
     #: separately callable members — so the document that describes the service as
     #: a whole is read the same way: named in the roster, delivered by
-    #: ``get_instruction(level="full")`` and by ``inspect_capability_tool``.
+    #: ``get_instruction(level="full")`` and by ``inspect_tool``.
     content: str = Field(default="", description="Full markdown body of PLUGIN.md (after frontmatter)")
     manifest_path: str = Field(default="", description="Absolute path to PLUGIN.md")
 

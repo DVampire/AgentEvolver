@@ -23,6 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.code import RUN_CODE_TOOL, GuardedDispatch
 from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
+from inspect import isawaitable
+
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
 from agentevolver.capability import CAPABILITY_TYPES, capability_type as capability_type_entry
@@ -63,7 +65,7 @@ _READ_ONLY_DENIED_TOOLS = {
 #: are rendered at all — see Agent._evolution_enabled.
 _EVOLUTION_TOOL = "evolution_tool"
 _EVOLUTION_SKILL = "self_evolving_skill"
-_EVOLUTION_AGENT_SUFFIXES = ("_generate_agent", "_optimize_agent", "_evaluate_agent")
+_EVOLUTION_AGENTS = frozenset({"generate_agent", "optimize_agent", "evaluate_agent"})
 
 #: Blocked no-progress proposals tolerated before a run is terminated, as a fraction of
 #: its step budget rather than a fixed count. Every blocked proposal already costs the
@@ -673,9 +675,16 @@ class Agent(BaseModel):
         costs it no prompt at all.
         """
         entry = capability_type_entry(capability_type)
-        content = await entry.manager().get_instruction(
+        content = entry.manager().get_instruction(
             allowlist=self._capability_allowlist(capability_type, ctx), types=types,
             level="brief", **extra)
+        # `workflow_manager` answers synchronously while every other manager awaits.
+        # Awaiting unconditionally raised `TypeError: object str can't be used in
+        # 'await' expression` for any agent that reached the generic path for
+        # `workflow` — which was every agent except the one that happened to override
+        # the hook, so the whole prompt build died on the first step.
+        if isawaitable(content):
+            content = await content
         return {f"available_{entry.mount_type}": content or ""}
 
     async def _capability_slots(self, entry: Any, ctx: AgentContext) -> Dict[str, Any]:
@@ -707,16 +716,19 @@ class Agent(BaseModel):
         return await self._get_capability_context("agent", ctx, exclude=self.name)
 
     async def _capability_environment_slots(self, ctx: AgentContext) -> Dict[str, Any]:
-        """Environments, which also render headed in a block of their own.
+        """Environments, headed in a block of their own.
 
-        An agent works *in* an environment rather than calling it in passing, and the
-        three prompts that have one place that block away from the capability list for
-        exactly that reason.
+        An agent works *in* an environment rather than calling it in passing, so this
+        renders through ``environment_context.html`` beside the capability block rather
+        than inside it.
+
+        One slot, not two: ``available_<mount_type>`` is what the generic path returns
+        and no template ever named ``available_environments``, so the roster was built
+        and then rendered under a second key — the same duplicate-slot shape that lost
+        the Code Mode section under ``tool_context``.
         """
-        slots = await self._get_capability_context("environment", ctx)
-        body = slots["available_environments"]
-        slots["environment_context"] = f"### Available Environments\n{body}" if body else ""
-        return slots
+        body = (await self._get_capability_context("environment", ctx))["available_environments"]
+        return {"environment_context": f"### Available Environments\n{body}" if body else ""}
 
     async def _capability_tool_slots(self, ctx: AgentContext) -> Dict[str, Any]:
         """Tools, plus the Code Mode calling convention when this agent can run a program."""
@@ -875,10 +887,7 @@ class Agent(BaseModel):
                 return True
             if _EVOLUTION_SKILL in set(await skill_manager.list()):
                 return True
-            return any(
-                str(name).endswith(_EVOLUTION_AGENT_SUFFIXES)
-                for name in await agent_manager.list()
-            )
+            return bool(_EVOLUTION_AGENTS & {str(n) for n in await agent_manager.list()})
         except Exception as e:  # noqa: BLE001 — never fail a render over introspection
             logger.warning(f"| ⚠️ [{self.name}] Could not resolve evolution roster: {e}")
             return False
@@ -911,6 +920,12 @@ class Agent(BaseModel):
             workspace_root=workspace_root,
             log_root=log_root,
             evolution_enabled=await self._evolution_enabled(ctx=ctx),
+            # What this run was dispatched to work on. The evolution agents build whichever
+            # component type they are told to, so the type is an input to the run — and a
+            # generate run cannot look its target up, because the target does not exist yet.
+            # Empty for every other agent, whose prompts do not mention either.
+            target_name=str(roots.get("target_name") or ""),
+            target_type=str(roots.get("target_type") or ""),
             **_runtime_facts(),
         )
         agent_message_modules = dict(task=self._task_with_input_files(task, **kwargs))
@@ -1800,6 +1815,7 @@ class Agent(BaseModel):
             ambient_files = (getattr(ctx, "extra", None) or {}).get("task_files")
             brief = dict(
                 files=inp.get("files") or ambient_files, target_name=inp.get("target_name"),
+                target_type=inp.get("target_type"),
                 allowlists={
                     k: inp.get(k) for k in (
                         "tool_allowlist", "skill_allowlist", "connector_allowlist",
@@ -2344,8 +2360,13 @@ class Agent(BaseModel):
         """Narrow opt-in for non-mutating actions exposed by a mixed-action Tool."""
         return False
 
-    def _target_capability_allowlists(self, target_name: Optional[str]) -> Dict[str, Any]:
-        """Optional least-privilege allowlists derived from an evolution target."""
+    def _target_capability_allowlists(self, target_name: Optional[str],
+                                      target_type: Optional[str] = None) -> Dict[str, Any]:
+        """Optional least-privilege allowlists derived from an evolution target.
+
+        ``target_type`` says which kind the target is, so an implementation can name the
+        right allowlist key. It was implicit while each type had its own agent class.
+        """
         return {}
 
     def _extra_tools(self, run: "_AgentRun") -> Optional[List[Any]]:

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.skill.context import SkillContextManager
@@ -45,7 +46,7 @@ class SkillManagerServer(BaseModel):
         Args:
             skill_names: If provided, only these skills are loaded.
         """
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "skill"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="skill"))
         logger.info(
             f"| 📁 skill manager Server base directory: {self.base_dir} "
         )

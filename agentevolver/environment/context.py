@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from asyncio_atexit import register as async_atexit_register
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.version import version_manager
@@ -45,7 +46,7 @@ class EnvironmentContextManager(BaseModel):
             self.base_dir = assemble_workspace_path(base_dir)
         else:
             base_root = config.log_root if hasattr(config, "log_root") and config.get("log_root") else config.workspace_root
-            self.base_dir = assemble_workspace_path(os.path.join(base_root, "environment"))
+            self.base_dir = assemble_workspace_path(path_manager.under(base_root, P.LOG_MODULE, module="environment"))
         logger.info(f"| 📁 Environment context manager base directory: {self.base_dir}.")    
         logger.info(f"| 📁 Environment context manager.")
 

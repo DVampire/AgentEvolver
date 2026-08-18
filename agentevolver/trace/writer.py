@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.queue import AsyncQueue
 from agentevolver.trace.types import TraceEvent
@@ -33,7 +34,7 @@ class TraceWriter:
         # session_id → summary dict for the index
         self._session_meta: Dict[str, Dict] = {}
 
-        self._index_path = os.path.join(log_root, "index.json")
+        self._index_path = str(path_manager.under(log_root, P.LOG_TRACE_INDEX))
         self._task: Optional[asyncio.Task] = None
         self._durability_errors: Dict[str, str] = {}
 
@@ -51,7 +52,7 @@ class TraceWriter:
             return
         self._close_all_handles()
         self._log_root = log_root
-        self._index_path = os.path.join(log_root, "index.json")
+        self._index_path = str(path_manager.under(log_root, P.LOG_TRACE_INDEX))
         self._session_meta.clear()
 
     def start(self) -> None:

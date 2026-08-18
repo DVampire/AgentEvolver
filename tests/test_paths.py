@@ -16,7 +16,7 @@ import pytest
 from mmengine import Config as MMConfig
 
 from agentevolver.config.config import process_general
-from agentevolver.paths import P, path_manager
+from agentevolver.paths import RELATIVE, P, path_manager
 from agentevolver.utils.path_utils import data_path, extension_root, home_dir, project_path
 
 
@@ -95,10 +95,32 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
               "project_key": "key", "module": "skill", "conversation_id": "cid"}
 
     for key in P:
+        if key in RELATIVE:
+            # A fragment joined onto a root the caller supplies, so the rule applies to
+            # that root. Checked below instead: the fragment must stay a fragment.
+            continue
         resolved = path_manager.get(key, **{p: sample[p] for p in path_manager.params_for(key)})
         assert resolved.is_relative_to(output) or resolved.is_relative_to(extension), (
             f"{key.value} -> {resolved} escapes both writable roots"
         )
+
+
+def test_a_relative_key_cannot_escape_the_root_it_is_joined_to() -> None:
+    """`under` joins a fragment onto a caller's root, so the fragment decides nothing.
+
+    An absolute template, or one starting `../`, would silently ignore that root — and
+    these are exactly the keys a manager resolves against whatever log root the run is
+    bound to, so escaping one would write outside the session.
+    """
+    from agentevolver.paths.types import LAYOUT
+
+    for key in RELATIVE:
+        template = LAYOUT[key]
+        assert not template.startswith(("/", "~")), f"{key.value} is absolute: {template}"
+        assert ".." not in template.split("/"), f"{key.value} climbs out: {template}"
+        resolved = path_manager.under("/somewhere", key,
+                                      **{p: "x" for p in path_manager.params_for(key)})
+        assert resolved.is_relative_to("/somewhere"), f"{key.value} escaped: {resolved}"
 
 
 def test_missing_placeholder_is_rejected_rather_than_written_literally(monkeypatch, tmp_path: Path) -> None:
@@ -140,3 +162,87 @@ def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path
     assert Path(config.project_root) == path_manager.get(P.OUTPUT) / "demo"
     assert not Path(config.workspace_root).exists()
     assert not Path(config.log_root).exists()
+
+
+def test_the_sandbox_names_its_roots_the_same_way_the_table_does(monkeypatch, tmp_path: Path) -> None:
+    """Two places decide where a session's workspace and log sit.
+
+    The layout table says `output/{owner}/sessions/{id}/workspace`, and `ProjectSandbox`
+    builds `project / "workspace"` from a root it is handed — which is usually that same
+    session directory but may be any path, so it cannot ask the table. The leaf names are
+    therefore written twice, and a rename in the table would leave the sandbox creating
+    the old one: every session would have both, one of them empty, and which one a given
+    reader found would depend on which of the two it asked.
+    """
+    from agentevolver.sandbox.project import ProjectSandbox
+
+    sandbox = ProjectSandbox.create(tmp_path / "sess")
+    table = {
+        "workspace": path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="s").name,
+        "log": path_manager.get(P.SESSION_TRACE, owner="o", session_id="s").parent.name,
+    }
+    assert sandbox.workspace_root.name == table["workspace"], (
+        f"the table says a session's workspace is {table['workspace']!r}; "
+        f"the sandbox creates {sandbox.workspace_root.name!r}")
+    assert sandbox.log_root.name == table["log"], (
+        f"the table puts session logs under {table['log']!r}; "
+        f"the sandbox creates {sandbox.log_root.name!r}")
+
+
+def test_a_direct_runner_binds_its_roots_before_the_managers_start(monkeypatch) -> None:
+    """`bind_session_roots` after the managers initialize is too late.
+
+    Every manager derives its own directory from `config.log_root` when it initializes,
+    so binding afterwards leaves the first half of the run writing to the tag-level
+    `output/<owner>/log` and only the second half reaching the session. The evolution
+    runners did exactly that: an agent's log landed outside the session it belonged to.
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for script in sorted((root / "examples").glob("run_*.py")):
+        text = script.read_text(encoding="utf-8")
+        if "bind_session_roots" not in text:
+            continue
+        bind = text.index("bind_session_roots(config")
+        for manager in ("logger.initialize(", "task_manager.initialize("):
+            if manager in text and text.index(manager) < bind:
+                offenders.append(f"{script.name}: {manager} runs before bind_session_roots")
+    assert not offenders, offenders
+
+
+def test_no_module_joins_its_own_directory_onto_a_root() -> None:
+    """The layout table is the only place that decides where anything goes.
+
+    Every manager used to join its own working directory itself —
+    `os.path.join(config.log_root, "memory")` — and each did it twice, once in its
+    server and once in its context, so one rule was written forty-odd times in code the
+    table had no view of. Renaming a directory meant finding every copy, and a missed one
+    is silent: that manager simply keeps writing where it always did while everything
+    else has moved.
+
+    `path_manager.under(root, P.LOG_MODULE, module=...)` is the supported way to ask.
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[1] / "agentevolver"
+    pattern = re.compile(
+        r'os\.path\.join\(\s*(?:config\.)?(?:log_root|workspace_root|base_root|project_root)\s*,'
+        r'\s*["\'][\w.]+["\']\s*\)'
+        r'|(?:log_root|workspace_root|base_root|project_root)\s*/\s*["\'][\w.]+["\']'
+    )
+    offenders = []
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in str(path) or "/skill/" in str(path):
+            continue          # bundled skill scripts are documents, not framework code
+        if path.parent.name == "paths":
+            continue          # the authority itself, whose docs quote the shape it replaced
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#") or "path_manager" in line:
+                continue
+            if pattern.search(line):
+                offenders.append(f"{path.relative_to(root.parent)}:{number}: {line.strip()[:90]}")
+    assert not offenders, (
+        "these join a directory onto a root themselves; declare it in the layout table "
+        "and resolve it with `path_manager.under`:\n" + "\n".join(offenders))

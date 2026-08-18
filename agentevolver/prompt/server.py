@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.logger import logger
@@ -41,7 +42,7 @@ class PromptManagerServer(BaseModel):
             prompt_names: List of prompt names (md frontmatter `name:`) to load.
                           If None, all md files are loaded.
         """
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "prompt"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="prompt"))
         logger.info(f"| 📁 Prompt Manager base_dir={self.base_dir}")
 
         self.prompt_context_manager = PromptContextManager(

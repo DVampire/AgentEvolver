@@ -45,7 +45,7 @@ class SkillContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "skill"))
+            self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="skill"))
 
 
 
@@ -472,7 +472,7 @@ class SkillContextManager(BaseModel):
         ``full`` adds the body, for the reader who cannot invoke: an evaluator
         scoring a skill or an optimizer rewriting one must not call it, because
         calling it injects the procedure into their own context as instructions to
-        follow. They ask ``inspect_capability_tool`` instead, and this is what it
+        follow. They ask ``inspect_tool`` instead, and this is what it
         returns them. It is per-name in practice — the whole registry at ``full``
         is every SOP in the repository.
 

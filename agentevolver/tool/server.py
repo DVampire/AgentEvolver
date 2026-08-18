@@ -7,6 +7,7 @@ import os
 from pydantic import BaseModel, ConfigDict, Field
 
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.tool.context import ToolContextManager
@@ -42,7 +43,7 @@ class ToolManagerServer(BaseModel):
             tool_names: List of tool names to initialize. If None, initialize all registered tools.
         """
         
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "tool"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="tool"))
         logger.info(f"| 📁 tool manager Server base directory: {self.base_dir}")
         
         # Initialize tool context manager

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.plugins.context import PluginContextManager
@@ -55,7 +56,7 @@ class PluginManagerServer(BaseModel):
         Args:
             plugin_names: Plugins to build. None builds every registered plugin.
         """
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "plugin"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="plugin"))
         logger.info(f"| 📁 Plugin manager server base directory: {self.base_dir}")
 
         self.plugin_context_manager = PluginContextManager(base_dir=self.base_dir)

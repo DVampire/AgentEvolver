@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.version import version_manager
@@ -39,7 +40,7 @@ class PromptContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "prompt"))
+            self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="prompt"))
 
 
         _src_dir = Path(__file__).resolve().parent

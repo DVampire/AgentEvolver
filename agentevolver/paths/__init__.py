@@ -8,6 +8,6 @@ Two roots only: ``output/`` for generated, machine- and user-specific state, and
 """
 
 from .server import PathManagerServer, path_manager
-from .types import LAYOUT, P
+from .types import RELATIVE, LAYOUT, P
 
-__all__ = ["path_manager", "PathManagerServer", "P", "LAYOUT"]
+__all__ = ["path_manager", "PathManagerServer", "P", "LAYOUT", "RELATIVE"]

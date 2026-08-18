@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 import inflection
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
@@ -62,7 +63,7 @@ class PluginContextManager(BaseModel):
             self.base_dir = assemble_workspace_path(base_dir)
         else:
             base_root = config.log_root if hasattr(config, "log_root") and config.get("log_root") else config.workspace_root
-            self.base_dir = assemble_workspace_path(os.path.join(base_root, "plugin"))
+            self.base_dir = assemble_workspace_path(path_manager.under(base_root, P.LOG_MODULE, module="plugin"))
         logger.info(f"| 📁 Plugin context manager base directory: {self.base_dir}.")
 
         self._plugin_configs: Dict[str, PluginConfig] = {}

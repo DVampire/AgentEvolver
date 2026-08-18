@@ -9,6 +9,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.utils import (
@@ -47,7 +48,7 @@ class AgentContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "agent"))
+            self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="agent"))
         logger.info(f"| 📁 Agent context manager base directory: {self.base_dir}.")
         logger.info(f"| 📁 Agent context manager.")
 

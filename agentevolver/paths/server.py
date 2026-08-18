@@ -109,6 +109,36 @@ class PathManagerServer:
             return cls.extension_dir(), template[len(prefix) + 1:]
         return cls.project_dir(), template
 
+    def under(self, root: str | Path, key: P, *, create: bool = False, **params: str) -> Path:
+        """Resolve a key against a root supplied by the caller.
+
+        :meth:`get` hangs a template off the project directory, which is right for
+        everything with a fixed home. Two families do not have one: a manager's working
+        directory follows whichever log root the run is currently bound to — and that
+        moves when a session binds — and a project's three sub-roots are built for a
+        directory the sandbox is handed, which need not be a session at all.
+
+        The names are still the table's. They were joined by each caller instead:
+        `os.path.join(config.log_root, "memory")` appeared in the memory server and again
+        in its context, and twenty other modules did the same, so renaming one meant
+        finding forty-odd copies and the table had no say in it.
+
+        Args:
+            root: The directory to resolve against.
+            key: Which path, from :class:`~agentevolver.paths.types.P`.
+            create: Create the directory first.
+            **params: Values for the template's placeholders, e.g. ``module``.
+        """
+        template = self._layout[key]
+        required = set(_PLACEHOLDER.findall(template))
+        missing = required - params.keys()
+        if missing:
+            raise ValueError(f"{key.value} needs {sorted(missing)}; got {sorted(params)}")
+        path = Path(root).expanduser() / template.format(**params)
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def params_for(self, key: P) -> List[str]:
         """Placeholders a key needs — useful for callers building paths generically."""
         return sorted(set(_PLACEHOLDER.findall(self._layout[key])))

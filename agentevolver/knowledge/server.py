@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 import inflection
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.registry import KNOWLEDGE
@@ -82,7 +83,7 @@ class KnowledgeManager(BaseModel):
         import agentevolver.knowledge  # noqa: F401 — ensure default rankers register
 
         self.base_dir = assemble_workspace_path(
-            base_dir or self.base_dir or os.path.join(config.log_root, "knowledge"))
+            base_dir or self.base_dir or path_manager.under(config.log_root, P.LOG_MODULE, module="knowledge"))
         for cls in list(KNOWLEDGE._module_dict.values()):
             try:
                 instance: RagBackend = cls()

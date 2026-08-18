@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, Union, Type
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.logger import logger
@@ -37,7 +38,7 @@ class BenchmarkManager(BaseModel):
 
     async def initialize(self, benchmark_names: Optional[List[str]] = None):
         """Initialize benchmarks."""
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "benchmark"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="benchmark"))
         
         self.benchmark_context_manager = BenchmarkContextManager(
             base_dir=self.base_dir,

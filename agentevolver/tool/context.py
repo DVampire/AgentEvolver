@@ -10,6 +10,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.utils import (assemble_workspace_path,
@@ -45,13 +46,13 @@ def _field_default(tool_cls, name):
 #:
 #: ``brief`` — name, description, guidance. What a prompt carries for every resident
 #:     capability, every step.
-#: ``full``  — plus the examples. What ``inspect_capability_tool`` returns for the one
+#: ``full``  — plus the examples. What ``inspect_tool`` returns for the one
 #:     capability an agent has stopped to ask about.
 #:
 #: The parameters are at neither level. They are derived from the signature and
 #: travel in the request's own ``tools`` array, which is how the model calls anything
 #: at all — printing them here would be a second spelling of one contract. The one
-#: place they are still rendered is `inspect_capability_tool`, which appends
+#: place they are still rendered is `inspect_tool`, which appends
 #: `get_schema(format="md")` for an agent evaluating a capability that is *not* in
 #: its own tool list and so has never been sent the schema.
 #:
@@ -137,7 +138,7 @@ class ToolContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "tool"))
+            self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="tool"))
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
         logger.info(f"| 📁 Tool context manager.")
 
@@ -833,7 +834,7 @@ class ToolContextManager(BaseModel):
             level: One of :data:`INSTRUCTION_LEVELS`. ``brief`` is what a prompt
                 carries — guidance, but not the parameters the request's own ``tools``
                 array already states. ``full`` adds the examples, and is what
-                ``inspect_capability_tool`` returns for a tool an agent has stopped
+                ``inspect_tool`` returns for a tool an agent has stopped
                 to ask about.
 
         Returns:

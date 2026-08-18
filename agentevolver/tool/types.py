@@ -86,7 +86,7 @@ class Tool(BaseModel):
 
     #: Complete example calls, one per entry. Read before a first call and not worth
     #: carrying afterwards, so they reach a model at ``full`` — through
-    #: ``inspect_capability_tool`` — rather than in every step's prompt.
+    #: ``inspect_tool`` — rather than in every step's prompt.
     examples: List[str] = Field(default_factory=list, description="Complete example calls")
 
     #: The authored instruction as one markdown blob, in the older four-section form

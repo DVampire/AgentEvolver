@@ -2243,7 +2243,7 @@ class AgentGateway:
         trace_manager.rebind(config.log_root)
         memory_manager.rebind(config.log_root)
         trajectory_manager.rebind(config.log_root)
-        task_manager.rebind(os.path.join(config.log_root, "tasks"))
+        task_manager.rebind(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
         # Boot ran without a file sink (no session existed yet); attach it now so the
         # run log lands in this session too.
         logger.rebind(config.log_path)

@@ -17,6 +17,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.trajectory.labels import (
     REWARD_LABEL_SCHEMA_VERSION,
@@ -55,7 +56,7 @@ class TrajectoryManagerServer:
         except (AttributeError, KeyError):
             # config not initialized (e.g. isolated tests) — fall back to workspace_root.
             log_root = "workspace_root"
-        self.base_dir = assemble_workspace_path(os.path.join(log_root, "trajectory"))
+        self.base_dir = assemble_workspace_path(path_manager.under(log_root, P.LOG_MODULE, module="trajectory"))
         logger.info(f"| 📁 Trajectory manager base directory: {self.base_dir}")
 
     def rebind(self, log_root: str) -> None:
@@ -67,7 +68,7 @@ class TrajectoryManagerServer:
         """
         from agentevolver.utils import assemble_workspace_path
 
-        self.base_dir = assemble_workspace_path(os.path.join(log_root, "trajectory"))
+        self.base_dir = assemble_workspace_path(path_manager.under(log_root, P.LOG_MODULE, module="trajectory"))
 
     # ------------------------------------------------------------------
     # Build — driven by TrajectoryHook
@@ -553,7 +554,7 @@ class TrajectoryManagerServer:
             log_root = config.log_root
         except (AttributeError, KeyError):
             log_root = "workspace_root"
-        return assemble_workspace_path(os.path.join(log_root, "trajectory"))
+        return assemble_workspace_path(path_manager.under(log_root, P.LOG_MODULE, module="trajectory"))
 
     def _persist(self, traj: Trajectory) -> None:
         try:

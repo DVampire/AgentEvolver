@@ -53,7 +53,7 @@ class ConnectorContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "connector"))
+            self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="connector"))
 
 
 
@@ -621,7 +621,7 @@ class ConnectorContextManager(BaseModel):
             types: Filter by the connector's ``type`` label.
             level: ``brief`` — description and the path, enough to choose one and
                 know where to look. ``full`` — plus the CONNECTOR.md body, which is
-                what ``inspect_capability_tool`` returns, and what an agent needs
+                what ``inspect_tool`` returns, and what an agent needs
                 before calling an action rather than guessing at it.
 
         Returns:

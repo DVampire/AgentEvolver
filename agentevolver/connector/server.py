@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.connector.context import ConnectorContextManager
@@ -46,7 +47,7 @@ class ConnectorManagerServer(BaseModel):
         Args:
             connector_names: If provided, only these connectors are loaded.
         """
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "connector"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="connector"))
         logger.info(
             f"| 📁 connector manager Server base directory: {self.base_dir} "
         )

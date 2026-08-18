@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.logger import logger
@@ -41,7 +42,7 @@ class WorkflowManagerServer(BaseModel):
 
     async def initialize(self, workflow_names: Optional[List[str]] = None) -> None:
         """Create the registry context and load built-in workflows (optionally filtered)."""
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "workflow"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="workflow"))
         self.workflow_context_manager = WorkflowContextManager(base_dir=self.base_dir)
         await self._ensure_context_manager().initialize(workflow_names=workflow_names)
         logger.info("| ✅ Workflow manager Server initialized")

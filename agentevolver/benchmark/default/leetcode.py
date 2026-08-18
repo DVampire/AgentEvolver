@@ -12,6 +12,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
@@ -136,7 +137,7 @@ class CodeSubmitter:
         
         # 2. Setup browser
         self.playwright = await async_playwright().start()
-        user_data_dir = os.path.join(self.base_dir, "playwright_user_data")
+        user_data_dir = path_manager.under(self.base_dir, P.LOG_MODULE, module="playwright_user_data")
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=self.headless,

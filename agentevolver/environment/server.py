@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import json
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.config import config
@@ -53,7 +54,7 @@ class EnvironmentManagerServer(BaseModel):
         """
 
         base_root = config.log_root if hasattr(config, "log_root") and config.get("log_root") else config.workspace_root
-        self.base_dir = assemble_workspace_path(os.path.join(base_root, "environment"))
+        self.base_dir = assemble_workspace_path(path_manager.under(base_root, P.LOG_MODULE, module="environment"))
         logger.info(f"| 📁 ECP Server base directory: {self.base_dir}")
 
         # Initialize environment context manager

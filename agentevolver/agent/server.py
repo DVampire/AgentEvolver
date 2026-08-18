@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.agent.types import AgentConfig, Agent, AgentContext
@@ -43,7 +44,7 @@ class AgentManagerServer(BaseModel):
             agent_names: List of agent names to initialize. If None, initialize all registered agents.
         """
         
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "agent"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="agent"))
         logger.info(f"| 📁 agent manager Server base directory: {self.base_dir}")
         
         # Initialize agent context manager
@@ -188,6 +189,7 @@ class AgentManagerServer(BaseModel):
                 "continuable": {"type": "boolean", "description": "Background only: keep it alive between turns so send_message_tool can give it more work on the same conversation. Default false — it answers once and ends."},
                 "fork": {"type": "boolean", "description": "Let it read your conversation so far as context, instead of starting from only this task text. Use it when what you have already found is what makes the task make sense — files you ruled out, an approach that failed, a decision and why. Default false: a fresh worker on a self-contained job does not need your history and reads faster without it."},
                 "target_name": {"type": "string", "description": "ONLY for evaluator/optimizer/generator: the capability being evaluated/improved/created."},
+                "target_type": {"type": "string", "enum": ["tool", "skill", "agent", "connector", "memory", "plugin", "workflow", "environment"], "description": "ONLY for capability_generate/optimize/evaluate_agent: which kind of component to create, improve or judge. A generate run's target does not exist yet, so this cannot be looked up — unstated, the run cannot install what it built."},
                 "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
                 "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},
                 "connector_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these connectors."},

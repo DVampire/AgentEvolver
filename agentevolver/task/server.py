@@ -22,6 +22,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.response.types import Response
 from agentevolver.task.types import Task, TaskPriority, TaskStatus
@@ -134,8 +135,8 @@ class TaskManager(metaclass=Singleton):
         self._handler = handler
         # Directory is created on first save, so a host that binds a session later
         # (the Gateway) leaves no empty tag-level task directory behind.
-        self._persist_path = os.path.join(log_root, "tasks.json")
-        self._archive_path = os.path.join(log_root, "tasks_archive.json")
+        self._persist_path = str(path_manager.under(log_root, P.LOG_TASKS))
+        self._archive_path = str(path_manager.under(log_root, P.LOG_TASKS_ARCHIVE))
 
         await self._load()
 
@@ -153,8 +154,8 @@ class TaskManager(metaclass=Singleton):
         if log_root == self._log_root:
             return
         self._log_root = log_root
-        self._persist_path = os.path.join(log_root, "tasks.json")
-        self._archive_path = os.path.join(log_root, "tasks_archive.json")
+        self._persist_path = str(path_manager.under(log_root, P.LOG_TASKS))
+        self._archive_path = str(path_manager.under(log_root, P.LOG_TASKS_ARCHIVE))
 
     async def start(self, num_workers: int = 4) -> None:
         """Start the worker pool.  Safe to call multiple times."""

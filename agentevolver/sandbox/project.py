@@ -84,9 +84,13 @@ class ProjectSandbox:
         empty session directories off disk.
         """
         project = Path(project_root).expanduser().resolve()
-        workspace = Path(workspace_root).expanduser().resolve() if workspace_root else project / "workspace"
-        log = project / "log"
-        extension = project / "extension"
+        # Leaf names come from the layout table, not from here: a session's workspace is
+        # declared there as well, and two spellings of one directory means a rename in
+        # the table would quietly leave every session with both.
+        workspace = (Path(workspace_root).expanduser().resolve() if workspace_root
+                     else path_manager.under(project, P.PROJECT_WORKSPACE))
+        log = path_manager.under(project, P.PROJECT_LOG)
+        extension = path_manager.under(project, P.PROJECT_EXTENSION)
         if not _inside(workspace, project):
             raise ValueError("workspace_root must be located under project_root")
         if materialize:

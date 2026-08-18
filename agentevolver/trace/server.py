@@ -25,6 +25,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.queue import AsyncQueue
 from agentevolver.trace.types import TraceEvent, parse_trace_event
@@ -83,7 +84,7 @@ class TraceManager(metaclass=Singleton):
             return
         if log_root is None:
             from agentevolver.config import config
-            log_root = os.path.join(config.log_root, "trace")
+            log_root = path_manager.under(config.log_root, P.LOG_MODULE, module="trace")
         self._log_root = log_root
 
         self._queue = AsyncQueue[TraceEvent](maxsize=20_000)
@@ -104,7 +105,7 @@ class TraceManager(metaclass=Singleton):
         session exists; binding a session re-points it (and its writer) so each
         session's event files and index live under its own log root.
         """
-        trace_root = os.path.join(log_root, "trace")
+        trace_root = path_manager.under(log_root, P.LOG_MODULE, module="trace")
         self._log_root = trace_root
         if self._writer is not None:
             self._writer.rebind(trace_root)

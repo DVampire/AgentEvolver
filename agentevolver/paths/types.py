@@ -14,6 +14,23 @@ class P(str, Enum):
     much later.
     """
 
+    # --- resolved against a root given at call time ----------------------
+    #: One manager's working directory under a run's log root: `<log_root>/tool`,
+    #: `<log_root>/memory`, and so on. Every manager joined this itself, twice —
+    #: once in its server and once in its context — so the same rule was written
+    #: forty-odd times and the layout table did not know about any of it.
+    LOG_MODULE = "log_module"
+    #: Files a manager keeps beside its own directory, under the same log root.
+    LOG_TASKS = "log_tasks"
+    LOG_TASKS_ARCHIVE = "log_tasks_archive"
+    LOG_TRACE_INDEX = "log_trace_index"
+    #: The three directories a project root is made of. `ProjectSandbox` builds
+    #: these for a root it is handed, which may be any directory, so it cannot ask
+    #: for a session key — but the leaf names still belong to the table.
+    PROJECT_WORKSPACE = "project_workspace"
+    PROJECT_LOG = "project_log"
+    PROJECT_EXTENSION = "project_extension"
+
     # --- the two buckets -------------------------------------------------
     OUTPUT = "output"
     EXTENSION = "extension"
@@ -94,7 +111,29 @@ class P(str, Enum):
 #: ``output/`` for generated, machine- and user-specific state, and
 #: ``extension/`` for shared, durable components. Everything the framework
 #: writes is declared here — this table *is* the disk contract.
+#: Keys resolved against a root the caller supplies, through
+#: :meth:`PathManagerServer.under` rather than :meth:`get`. They are fragments — a
+#: leaf name or a `{module}` slot — so they have no home of their own and the rule
+#: that every declared path stays inside the two writable roots is enforced on the
+#: root they are joined to, not on them.
+RELATIVE: frozenset = frozenset({P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE,
+                                 P.LOG_TRACE_INDEX, P.PROJECT_WORKSPACE,
+                                 P.PROJECT_LOG, P.PROJECT_EXTENSION})
+
 LAYOUT: Dict[P, str] = {
+    #: A manager's own working directory under whichever log root the run is bound
+    #: to, and the three roots a project directory is made of. Both are resolved
+    #: against a root supplied at call time — a session's log root moves when the
+    #: session binds, and a project root may be any directory — so they are joined
+    #: through :meth:`PathManagerServer.under`, not :meth:`get`.
+    P.LOG_MODULE: "{module}",
+    P.LOG_TASKS: "tasks.json",
+    P.LOG_TASKS_ARCHIVE: "tasks_archive.json",
+    P.LOG_TRACE_INDEX: "index.json",
+    P.PROJECT_WORKSPACE: "workspace",
+    P.PROJECT_LOG: "log",
+    P.PROJECT_EXTENSION: "extension",
+
     P.OUTPUT: "output",
     P.EXTENSION: "extension",
     P.EXTENSION_MODULE: "extension/{module}",

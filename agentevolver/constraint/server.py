@@ -7,6 +7,7 @@ import os
 from pydantic import BaseModel, ConfigDict, Field
 
 
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.constraint.context import ConstraintContextManager
@@ -42,7 +43,7 @@ class ConstraintManagerServer(BaseModel):
             constraint_names: List of constraint names to initialize. If None, initialize all registered constraints.
         """
 
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "constraint"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="constraint"))
         logger.info(f"| 📁 constraint manager Server base directory: {self.base_dir}")
 
         # Initialize constraint context manager
