@@ -202,61 +202,95 @@ action_schemas:
     title: search_protein_atlasArguments
     type: object
 action_descriptions:
-  get_domain_architecture: "Get the domain architecture of a protein — all InterPro/member\
-    \ entries on it.\n\n    Args:\n        uniprot: UniProt accession (e.g. \"P04637\"\
-    ).\n        limit: max entries (default 30)."
-  get_interpro_entry: "Get an InterPro entry's details (type, GO terms, member DBs,\
-    \ description).\n\n    Args:\n        interpro_id: InterPro accession (e.g. \"IPR000719\"\
-    )."
-  get_pfam_clan: "Get a Pfam clan's details (name, description).\n\n    Args:\n    \
-    \    clan_id: Pfam clan accession (e.g. \"CL0001\")."
-  get_pfam_family_proteins: "List UniProt proteins that contain a given Pfam family.\n\
-    \n    Args:\n        pfam_id: Pfam family accession (e.g. \"PF00069\").\n      \
-    \  limit: max proteins (default 20)."
-  get_pfam_family_proteomes: "List proteomes (organisms) in which a Pfam family is found.\n\
-    \n    Args:\n        pfam_id: Pfam family accession (e.g. \"PF00069\").\n      \
-    \  limit: max proteomes (default 20)."
-  get_protein_atlas_gene: "Get the Human Protein Atlas record for a single gene.\n\n\
-    \    Args:\n        gene: Ensembl gene id (e.g. \"ENSG00000141510\") or gene symbol\
-    \ (e.g. \"TP53\").\n            A symbol is resolved to its Ensembl id via the HPA\
-    \ search API first.\n    Returns key HPA fields: identity, protein class, RNA/protein\
-    \ tissue specificity,\n    subcellular location, and pathology/prognostic summaries\
-    \ when present."
-  get_string_best_similarity_hits: "Get each protein's best homolog (highest bit-score)\
-    \ in target species via STRING.\n\n    Args:\n        genes: list of gene symbols/identifiers\
-    \ in the source species.\n        species: source NCBI taxon id (default 9606 =\
-    \ human).\n        species_b: optional comma-separated target taxon id(s) to restrict\
-    \ hits to\n            (e.g. \"10090\" for mouse); empty = best hit across all STRING\
-    \ species.\n    Returns 'sourceProtein<TAB>targetTaxon<TAB>targetProtein<TAB>bitscore'\
-    \ rows."
-  get_string_network: "Get the STRING protein-protein interaction network for a set\
-    \ of genes.\n\n    Args:\n        genes: list of gene symbols/identifiers (e.g.\
-    \ [\"TP53\", \"MDM2\", \"CDKN1A\"]).\n        species: NCBI taxon id (default 9606\
-    \ = human).\n        required_score: minimum combined STRING score, 0-1000 (default\
-    \ 400 = medium confidence).\n    Returns interacting pairs with their combined and\
-    \ channel-specific scores."
-  get_string_similarity_scores: "Get STRING homology (Smith-Waterman bit-score) similarities\
-    \ among a set of proteins.\n\n    Args:\n        genes: list of gene symbols/identifiers\
-    \ (e.g. [\"TP53\", \"TP63\", \"TP73\"]).\n        species: NCBI taxon id (default\
-    \ 9606 = human).\n    Returns all-vs-all bit scores between the input proteins."
-  map_string_ids: "Map gene symbols/identifiers to STRING protein identifiers.\n\n \
-    \   Args:\n        genes: list of gene symbols or identifiers (e.g. [\"TP53\", \"\
-    EGFR\", \"MDM2\"]).\n        species: NCBI taxon id (default 9606 = human).\n  \
-    \  Returns 'input<TAB>stringId<TAB>preferredName<TAB>annotation' rows."
-  search_interpro_entries: "Search InterPro entries (domains/families/sites) by keyword.\n\
-    \n    Args:\n        query: search text (e.g. \"kinase\", \"zinc finger\").\n  \
-    \      limit: max entries (default 15).\n    Returns 'accession<TAB>name<TAB>type'\
-    \ rows."
-  search_pfam_clans: "Search/list Pfam clans (superfamilies grouping related families).\n\
-    \n    Args:\n        query: substring to match against clan accession/name (optional).\n\
-    \        limit: max clans (default 20)."
-  search_protein_atlas: "Search the Human Protein Atlas and download selected columns\
-    \ as rows.\n\n    Args:\n        query: HPA search query — a gene symbol/name, or\
-    \ a field query such as\n            \"protein_class:Transcription factors\" or\
-    \ \"tissue_category_rna:liver;Tissue enriched\".\n        columns: comma-separated\
-    \ HPA column codes (default gene identity + specificity/location:\n            \"\
-    g,gs,eg,gd,up,chr,pc,rnats,scl\"). See proteinatlas.org for the full code list.\n\
-    \        limit: max rows (default 15)."
+  get_domain_architecture: |-
+    Get the domain architecture of a protein — all InterPro/member entries on it.
+
+    Args:
+        uniprot: UniProt accession (e.g. "P04637").
+        limit: max entries (default 30).
+  get_interpro_entry: |-
+    Get an InterPro entry's details (type, GO terms, member DBs, description).
+
+    Args:
+        interpro_id: InterPro accession (e.g. "IPR000719").
+  get_pfam_clan: |-
+    Get a Pfam clan's details (name, description).
+
+    Args:
+        clan_id: Pfam clan accession (e.g. "CL0001").
+  get_pfam_family_proteins: |-
+    List UniProt proteins that contain a given Pfam family.
+
+    Args:
+        pfam_id: Pfam family accession (e.g. "PF00069").
+        limit: max proteins (default 20).
+  get_pfam_family_proteomes: |-
+    List proteomes (organisms) in which a Pfam family is found.
+
+    Args:
+        pfam_id: Pfam family accession (e.g. "PF00069").
+        limit: max proteomes (default 20).
+  get_protein_atlas_gene: |-
+    Get the Human Protein Atlas record for a single gene.
+
+    Args:
+        gene: Ensembl gene id (e.g. "ENSG00000141510") or gene symbol (e.g. "TP53").
+            A symbol is resolved to its Ensembl id via the HPA search API first.
+    Returns key HPA fields: identity, protein class, RNA/protein tissue specificity,
+    subcellular location, and pathology/prognostic summaries when present.
+  get_string_best_similarity_hits: |-
+    Get each protein's best homolog (highest bit-score) in target species via STRING.
+
+    Args:
+        genes: list of gene symbols/identifiers in the source species.
+        species: source NCBI taxon id (default 9606 = human).
+        species_b: optional comma-separated target taxon id(s) to restrict hits to
+            (e.g. "10090" for mouse); empty = best hit across all STRING species.
+    Returns 'sourceProtein<TAB>targetTaxon<TAB>targetProtein<TAB>bitscore' rows.
+  get_string_network: |-
+    Get the STRING protein-protein interaction network for a set of genes.
+
+    Args:
+        genes: list of gene symbols/identifiers (e.g. ["TP53", "MDM2", "CDKN1A"]).
+        species: NCBI taxon id (default 9606 = human).
+        required_score: minimum combined STRING score, 0-1000 (default 400 = medium confidence).
+    Returns interacting pairs with their combined and channel-specific scores.
+  get_string_similarity_scores: |-
+    Get STRING homology (Smith-Waterman bit-score) similarities among a set of proteins.
+
+    Args:
+        genes: list of gene symbols/identifiers (e.g. ["TP53", "TP63", "TP73"]).
+        species: NCBI taxon id (default 9606 = human).
+    Returns all-vs-all bit scores between the input proteins.
+  map_string_ids: |-
+    Map gene symbols/identifiers to STRING protein identifiers.
+
+    Args:
+        genes: list of gene symbols or identifiers (e.g. ["TP53", "EGFR", "MDM2"]).
+        species: NCBI taxon id (default 9606 = human).
+    Returns 'input<TAB>stringId<TAB>preferredName<TAB>annotation' rows.
+  search_interpro_entries: |-
+    Search InterPro entries (domains/families/sites) by keyword.
+
+    Args:
+        query: search text (e.g. "kinase", "zinc finger").
+        limit: max entries (default 15).
+    Returns 'accession<TAB>name<TAB>type' rows.
+  search_pfam_clans: |-
+    Search/list Pfam clans (superfamilies grouping related families).
+
+    Args:
+        query: substring to match against clan accession/name (optional).
+        limit: max clans (default 20).
+  search_protein_atlas: |-
+    Search the Human Protein Atlas and download selected columns as rows.
+
+    Args:
+        query: HPA search query — a gene symbol/name, or a field query such as
+            "protein_class:Transcription factors" or "tissue_category_rna:liver;Tissue enriched".
+        columns: comma-separated HPA column codes (default gene identity + specificity/location:
+            "g,gs,eg,gd,up,chr,pc,rnats,scl"). See proteinatlas.org for the full code list.
+        limit: max rows (default 15).
 ---
 # Protein Annotation
 

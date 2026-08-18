@@ -15,6 +15,10 @@ class GitextractorTool(PluginTool):
 
     output = {'text': 'text', 'files': 'list'}
 
+
+    def _render(self, data):
+        return f"Extracted {data['files']} files ({len(data['text'])} chars)."
+
     async def __call__(self, clone_url: str = "", branch: str = "main", **kwargs) -> Response:
         import tempfile
         if not clone_url:
@@ -25,4 +29,4 @@ class GitextractorTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"gitextractor: {type(exc).__name__}: {exc}")
         text = "\n\n".join(f"# {d.metadata.get('file_path','')}\n{d.page_content}" for d in docs)
-        return self._ok(f"Extracted {len(docs)} files ({len(text)} chars).", text=text, files=len(docs))
+        return self._ok(text=text, files=len(docs))

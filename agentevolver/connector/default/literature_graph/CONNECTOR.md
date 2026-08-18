@@ -127,33 +127,60 @@ action_schemas:
     title: openalex_venue_infoArguments
     type: object
 action_descriptions:
-  arxiv_get_papers: "Fetch specific arXiv papers by their ids.\n\n    Args:\n      \
-    \  arxiv_ids: comma-separated arXiv ids (e.g. \"2202.07171,1706.03762\").\n    \
-    \    limit: max papers (default 10)."
-  arxiv_search: "Search arXiv preprints by query.\n\n    Args:\n        query: search\
-    \ text (e.g. \"diffusion models\"); supports arXiv field prefixes\n            like\
-    \ \"au:\", \"ti:\", \"cat:\".\n        limit: max papers (default 10)."
-  openalex_citations: "List works that CITE a given work (incoming citations).\n\n \
-    \   Args:\n        work_id: OpenAlex work id (e.g. \"W2556159813\").\n        limit:\
-    \ max citing works (default 20)."
-  openalex_get_author: "Get an author's profile (works, citations, institution, top\
-    \ topics).\n\n    Args:\n        author_id: OpenAlex author id (e.g. \"A5085943412\"\
-    )."
-  openalex_get_work: "Get a work's full metadata (authors, venue, year, citations, abstract).\n\
-    \n    Args:\n        work_id: OpenAlex id (e.g. \"W2556159813\") or a DOI."
-  openalex_references: "List the works REFERENCED BY a given work (its bibliography).\n\
-    \n    Args:\n        work_id: OpenAlex work id (e.g. \"W2556159813\").\n       \
-    \ limit: max references (default 25)."
-  openalex_search_authors: "Search authors in OpenAlex by name.\n\n    Args:\n     \
-    \   query: author name (e.g. \"Jennifer Doudna\").\n        limit: max authors (default\
-    \ 15).\n    Returns 'id<TAB>name<TAB>works<TAB>citations<TAB>institution' rows."
-  openalex_search_works: "Search scholarly works (papers) in OpenAlex by keyword.\n\n\
-    \    Args:\n        query: search text (e.g. \"CRISPR gene editing\").\n       \
-    \ limit: max works (default 15).\n    Returns 'id<TAB>title<TAB>year<TAB>citations<TAB>doi'\
-    \ rows."
-  openalex_venue_info: "Get info on a publication venue/source (journal) by name or\
-    \ OpenAlex source id.\n\n    Args:\n        query: venue name (e.g. \"Nature\")\
-    \ or a source id (e.g. \"S137773608\")."
+  arxiv_get_papers: |-
+    Fetch specific arXiv papers by their ids.
+
+    Args:
+        arxiv_ids: comma-separated arXiv ids (e.g. "2202.07171,1706.03762").
+        limit: max papers (default 10).
+  arxiv_search: |-
+    Search arXiv preprints by query.
+
+    Args:
+        query: search text (e.g. "diffusion models"); supports arXiv field prefixes
+            like "au:", "ti:", "cat:".
+        limit: max papers (default 10).
+  openalex_citations: |-
+    List works that CITE a given work (incoming citations).
+
+    Args:
+        work_id: OpenAlex work id (e.g. "W2556159813").
+        limit: max citing works (default 20).
+  openalex_get_author: |-
+    Get an author's profile (works, citations, institution, top topics).
+
+    Args:
+        author_id: OpenAlex author id (e.g. "A5085943412").
+  openalex_get_work: |-
+    Get a work's full metadata (authors, venue, year, citations, abstract).
+
+    Args:
+        work_id: OpenAlex id (e.g. "W2556159813") or a DOI.
+  openalex_references: |-
+    List the works REFERENCED BY a given work (its bibliography).
+
+    Args:
+        work_id: OpenAlex work id (e.g. "W2556159813").
+        limit: max references (default 25).
+  openalex_search_authors: |-
+    Search authors in OpenAlex by name.
+
+    Args:
+        query: author name (e.g. "Jennifer Doudna").
+        limit: max authors (default 15).
+    Returns 'id<TAB>name<TAB>works<TAB>citations<TAB>institution' rows.
+  openalex_search_works: |-
+    Search scholarly works (papers) in OpenAlex by keyword.
+
+    Args:
+        query: search text (e.g. "CRISPR gene editing").
+        limit: max works (default 15).
+    Returns 'id<TAB>title<TAB>year<TAB>citations<TAB>doi' rows.
+  openalex_venue_info: |-
+    Get info on a publication venue/source (journal) by name or OpenAlex source id.
+
+    Args:
+        query: venue name (e.g. "Nature") or a source id (e.g. "S137773608").
 ---
 # Literature Graph
 

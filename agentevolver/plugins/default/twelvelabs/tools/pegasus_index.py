@@ -13,7 +13,11 @@ class TwelvelabsPegasusIndexTool(PluginTool):
     display_name: str = 'TwelveLabs Pegasus Index Video'
     description: str = 'Index videos using TwelveLabs and add the video_id to metadata.'
 
-    output = {'index_id': 'any'}
+    output = {"index_name": "text", 'index_id': 'any'}
+
+
+    def _render(self, data):
+        return f"Created index '{data['index_name']}'."
 
     async def __call__(self, index_name: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY")
@@ -25,4 +29,4 @@ class TwelvelabsPegasusIndexTool(PluginTool):
                     models=[{"name": "pegasus1.2", "options": ["visual", "audio"]}])
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"twelvelabs.pegasus_index: {type(exc).__name__}: {exc}")
-        return self._ok(f"Created index '{index_name}'.", index_id=getattr(idx, "id", None))
+        return self._ok(index_name=index_name, index_id=getattr(idx, "id", None))

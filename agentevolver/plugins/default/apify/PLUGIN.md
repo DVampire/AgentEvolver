@@ -24,7 +24,7 @@ All 1 tools are implemented.
 
 Declared result shapes:
 
-- `apify.apify_actor` → `data` keys: count, records
+- `apify.apify_actor` → `data` keys: actor_id, count, records
 
 ## Credentials
 

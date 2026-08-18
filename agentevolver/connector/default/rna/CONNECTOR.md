@@ -111,29 +111,55 @@ action_schemas:
     title: search_sequenceArguments
     type: object
 action_descriptions:
-  accession_to_id: "Convert an Rfam accession to its family id.\n\n    Args:\n     \
-    \   accession: Rfam accession (e.g. \"RF00001\")."
-  get_covariance_model: "Get an Rfam family's covariance model (CM) file header (truncated).\n\
-    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\")."
-  get_family: "Get an Rfam family's metadata (id, description, type, clan, curation).\n\
-    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\") or family id (e.g.\
-    \ \"5S_rRNA\")."
-  get_seed_alignment: "Get an Rfam family's seed alignment (Stockholm format, truncated).\n\
-    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\")."
-  get_sequence_regions: "Sequence regions (genomic hits) of an Rfam family.\n\n    NOTE:\
-    \ Rfam restricts the full-region web API; bulk regions are distributed via FTP.\n\
-    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\")."
-  get_structure_mapping: "Map an Rfam family to 3D structures (PDB) — CM-to-PDB region\
-    \ mappings.\n\n    Args:\n        accession: Rfam accession (e.g. \"RF00001\").\n\
-    \        limit: max mappings (default 25)."
-  get_tree: "Get an Rfam family's phylogenetic tree (Newick, truncated).\n\n    Args:\n\
-    \        accession: Rfam accession (e.g. \"RF00001\")."
-  id_to_accession: "Convert an Rfam family id to its accession.\n\n    Args:\n     \
-    \   rfam_id: Rfam family id (e.g. \"5S_rRNA\")."
-  search_sequence: "Search a nucleotide sequence against Rfam covariance models (Infernal\
-    \ cmscan).\n\n    Args:\n        sequence: RNA/DNA sequence (plain letters, no FASTA\
-    \ header needed).\n        max_wait: seconds to wait for the async job (default\
-    \ 25)."
+  accession_to_id: |-
+    Convert an Rfam accession to its family id.
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001").
+  get_covariance_model: |-
+    Get an Rfam family's covariance model (CM) file header (truncated).
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001").
+  get_family: |-
+    Get an Rfam family's metadata (id, description, type, clan, curation).
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001") or family id (e.g. "5S_rRNA").
+  get_seed_alignment: |-
+    Get an Rfam family's seed alignment (Stockholm format, truncated).
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001").
+  get_sequence_regions: |-
+    Sequence regions (genomic hits) of an Rfam family.
+
+    NOTE: Rfam restricts the full-region web API; bulk regions are distributed via FTP.
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001").
+  get_structure_mapping: |-
+    Map an Rfam family to 3D structures (PDB) — CM-to-PDB region mappings.
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001").
+        limit: max mappings (default 25).
+  get_tree: |-
+    Get an Rfam family's phylogenetic tree (Newick, truncated).
+
+    Args:
+        accession: Rfam accession (e.g. "RF00001").
+  id_to_accession: |-
+    Convert an Rfam family id to its accession.
+
+    Args:
+        rfam_id: Rfam family id (e.g. "5S_rRNA").
+  search_sequence: |-
+    Search a nucleotide sequence against Rfam covariance models (Infernal cmscan).
+
+    Args:
+        sequence: RNA/DNA sequence (plain letters, no FASTA header needed).
+        max_wait: seconds to wait for the async job (default 25).
 ---
 # RNA
 

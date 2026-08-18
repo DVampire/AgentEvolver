@@ -17,7 +17,23 @@ class BenchmarkManager(BaseModel):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Created lazily: config may not be loaded at import time. initialize()
+        # reconfigures it with the proper base_dir.
+        self.benchmark_context_manager: Optional[BenchmarkContextManager] = None
         self._registered_benchmarks: Dict[str, BenchmarkConfig] = {}
+
+    def _ensure_context_manager(self) -> BenchmarkContextManager:
+        """Lazily create the context manager so methods work before initialize().
+
+        Every other manager has this. Without it, asking this one anything before
+        `initialize()` raised `AttributeError` — which reads as a missing feature
+        rather than as "no benchmarks are loaded yet". The canvas palette asks, and
+        catches the failure per registry, so the visible symptom was every benchmark
+        node quietly absent from the palette rather than an error anybody saw.
+        """
+        if self.benchmark_context_manager is None:
+            self.benchmark_context_manager = BenchmarkContextManager()
+        return self.benchmark_context_manager
 
     async def initialize(self, benchmark_names: Optional[List[str]] = None):
         """Initialize benchmarks."""
@@ -35,7 +51,7 @@ class BenchmarkManager(BaseModel):
                        override: bool = False, 
                        **kwargs: Any) -> BenchmarkConfig:
         """Register a benchmark system asynchronously."""
-        benchmark_config = await self.benchmark_context_manager.register(benchmark, override=override, **kwargs)
+        benchmark_config = await self._ensure_context_manager().register(benchmark, override=override, **kwargs)
         self._registered_benchmarks[benchmark_config.name] = benchmark_config
         return benchmark_config
 
@@ -46,41 +62,41 @@ class BenchmarkManager(BaseModel):
                      description: Optional[str] = None,
                      **kwargs: Any) -> BenchmarkConfig:
         """Update an existing benchmark system."""
-        benchmark_config = await self.benchmark_context_manager.update(benchmark_name, benchmark, new_version, description, **kwargs)
+        benchmark_config = await self._ensure_context_manager().update(benchmark_name, benchmark, new_version, description, **kwargs)
         self._registered_benchmarks[benchmark_config.name] = benchmark_config
         return benchmark_config
 
     async def get_info(self, benchmark_name: str) -> Optional[BenchmarkConfig]:
         """Get benchmark configuration by name."""
-        return self.benchmark_context_manager._benchmark_configs.get(benchmark_name)
+        return self._ensure_context_manager()._benchmark_configs.get(benchmark_name)
 
     async def list(self) -> List[str]:
         """List all registered benchmarks."""
-        return list(self.benchmark_context_manager._benchmark_configs.keys())
+        return list(self._ensure_context_manager()._benchmark_configs.keys())
 
     async def get(self, name: str) -> Optional[Benchmark]:
         """Get benchmark instance by name."""
-        return await self.benchmark_context_manager.get(name)
+        return await self._ensure_context_manager().get(name)
 
     async def reset(self, name: str, split: Optional[str] = None) -> Optional[Task]:
         """Reset benchmark progress."""
-        return await self.benchmark_context_manager.reset(name, split)
+        return await self._ensure_context_manager().reset(name, split)
 
     async def step(self, name: str) -> Optional[Task]:
         """Get next benchmark task."""
-        return await self.benchmark_context_manager.step(name)
+        return await self._ensure_context_manager().step(name)
 
     async def eval(self, name: str, task: Task) -> Optional[Task]:
         """Evaluate a benchmark task."""
-        return await self.benchmark_context_manager.eval(name, task)
+        return await self._ensure_context_manager().eval(name, task)
 
     async def stats(self, name: str) -> Optional[Stats]:
         """Get benchmark statistics."""
-        return await self.benchmark_context_manager.stats(name)
+        return await self._ensure_context_manager().stats(name)
 
     async def restore(self, name: str, version: str) -> Optional[BenchmarkConfig]:
         """Restore a specific version of a benchmark."""
-        benchmark_config = await self.benchmark_context_manager.restore(name, version)
+        benchmark_config = await self._ensure_context_manager().restore(name, version)
         if benchmark_config:
             self._registered_benchmarks[name] = benchmark_config
         return benchmark_config
@@ -129,7 +145,7 @@ class BenchmarkManager(BaseModel):
     async def cleanup(self):
         """Cleanup all benchmarks using context manager."""
         if hasattr(self, 'benchmark_context_manager'):
-            await self.benchmark_context_manager.cleanup()
+            await self._ensure_context_manager().cleanup()
 
 # Global instance
 benchmark_manager = BenchmarkManager()

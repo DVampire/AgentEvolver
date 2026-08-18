@@ -15,7 +15,11 @@ class AmazonS3BucketUploaderTool(PluginTool):
     category: str = 'files'
     type: str = 'tool'
 
-    output = {'bucket': 'text', 'key': 'text'}
+    output = {"file_path": "text", 'bucket': 'text', 'key': 'text'}
+
+
+    def _render(self, data):
+        return f"Uploaded {data['file_path']} to s3://{data['bucket']}/{data['key']}."
 
     async def __call__(self, bucket_name: str = "", file_path: str = "", s3_key: str = "", aws_access_key_id: str = "", aws_secret_access_key: str = "", **kwargs) -> Response:
         if not bucket_name or not file_path:
@@ -30,4 +34,4 @@ class AmazonS3BucketUploaderTool(PluginTool):
             client.upload_file(file_path, bucket_name, key)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"amazon.s3: {type(exc).__name__}: {exc}")
-        return self._ok(f"Uploaded {file_path} to s3://{bucket_name}/{key}.", bucket=bucket_name, key=key)
+        return self._ok(file_path=file_path, bucket=bucket_name, key=key)

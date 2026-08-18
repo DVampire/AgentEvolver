@@ -70,22 +70,32 @@ action_schemas:
     title: search_grantsArguments
     type: object
 action_descriptions:
-  find_antibodies_by_catalog: "Find antibodies by vendor catalog number (via Antibody\
-    \ Registry full-text search).\n\n    Args:\n        catalog_number: vendor catalog\
-    \ number (e.g. \"ab290\").\n        limit: max matches (default 15)."
-  get_antibody: "Get an antibody's details from the Antibody Registry by its id/RRID.\n\
-    \n    Args:\n        antibody_id: numeric abId (e.g. \"3751761\") or RRID (e.g.\
-    \ \"AB_2532057\")."
-  get_antibody_registry_stats: Get Antibody Registry summary statistics (total antibodies,
-    last update).
-  search_antibodies: "Search the Antibody Registry (full-text) for research antibodies.\n\
-    \n    Args:\n        query: search text (e.g. \"anti-GFP\", \"CD3 monoclonal\").\n\
-    \        limit: max antibodies (default 15).\n    Returns 'RRID<TAB>name<TAB>vendor<TAB>catalog<TAB>target<TAB>species'\
-    \ rows."
-  search_grants: "Search Grants.gov federal funding opportunities by keyword.\n\n  \
-    \  Args:\n        keyword: search text (e.g. \"cancer research\", \"microbiome\"\
-    ).\n        limit: max opportunities (default 15).\n    Returns 'number<TAB>title<TAB>agency<TAB>status<TAB>closeDate'\
-    \ rows."
+  find_antibodies_by_catalog: |-
+    Find antibodies by vendor catalog number (via Antibody Registry full-text search).
+
+    Args:
+        catalog_number: vendor catalog number (e.g. "ab290").
+        limit: max matches (default 15).
+  get_antibody: |-
+    Get an antibody's details from the Antibody Registry by its id/RRID.
+
+    Args:
+        antibody_id: numeric abId (e.g. "3751761") or RRID (e.g. "AB_2532057").
+  get_antibody_registry_stats: Get Antibody Registry summary statistics (total antibodies, last update).
+  search_antibodies: |-
+    Search the Antibody Registry (full-text) for research antibodies.
+
+    Args:
+        query: search text (e.g. "anti-GFP", "CD3 monoclonal").
+        limit: max antibodies (default 15).
+    Returns 'RRID<TAB>name<TAB>vendor<TAB>catalog<TAB>target<TAB>species' rows.
+  search_grants: |-
+    Search Grants.gov federal funding opportunities by keyword.
+
+    Args:
+        keyword: search text (e.g. "cancer research", "microbiome").
+        limit: max opportunities (default 15).
+    Returns 'number<TAB>title<TAB>agency<TAB>status<TAB>closeDate' rows.
 ---
 # Research Resources
 

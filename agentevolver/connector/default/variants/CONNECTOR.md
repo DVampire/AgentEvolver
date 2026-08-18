@@ -227,47 +227,93 @@ action_schemas:
     title: structural_variantsArguments
     type: object
 action_descriptions:
-  clinvar_get_records: "Get specific ClinVar records by id.\n\n    Args:\n        clinvar_ids:\
-    \ comma-separated ClinVar UIDs (e.g. \"4856951,446748\")."
-  clinvar_search: "Search ClinVar by free-text query.\n\n    Args:\n        query: search\
-    \ term (e.g. \"BRCA1 pathogenic\", \"Lynch syndrome\").\n        limit: max records\
-    \ (default 20)."
-  clinvar_variant_by_rsid: "Find ClinVar records for a dbSNP rsID.\n\n    Args:\n  \
-    \      rsid: dbSNP rsID (e.g. \"rs334\" or \"334\")."
-  clinvar_variants: "List ClinVar variant records for a gene.\n\n    Args:\n       \
-    \ gene: gene symbol (e.g. \"BRCA1\").\n        limit: max records (default 20)."
-  dbsnp_get_rsids: "Get dbSNP records for one or more rsIDs (alleles, MAF, clinical\
-    \ significance, genes).\n\n    Args:\n        rsids: comma-separated rsIDs (e.g.\
-    \ \"rs334,rs7412\")."
-  dbsnp_search_by_region: "Find dbSNP rsIDs in a genomic region (GRCh38).\n\n    Args:\n\
-    \        chrom: chromosome number (e.g. \"11\").\n        start, end: base positions.\n\
-    \        limit: max rsIDs (default 25)."
-  gene_constraint: "Get gnomAD loss-of-function / missense constraint metrics for a\
-    \ gene.\n\n    Args:\n        gene: gene symbol (e.g. \"PCSK9\")."
-  gene_variants: "List gnomAD variants in a gene (by symbol), highest allele frequency\
-    \ first.\n\n    Args:\n        gene: gene symbol (e.g. \"PCSK9\").\n        limit:\
-    \ max variants (default 25).\n        dataset: gnomAD dataset (default \"gnomad_r4\"\
-    )."
-  get_structural_variant: "Get a gnomAD structural variant by id.\n\n    Args:\n   \
-    \     sv_id: structural variant id (e.g. \"DEL_1_12345\")."
-  get_variant: "Get a gnomAD variant's population frequencies (genome & exome).\n\n\
-    \    Args:\n        variant_id: e.g. \"1-55039974-G-T\" (chrom-pos-ref-alt, GRCh38).\n\
-    \        dataset: gnomAD dataset (default \"gnomad_r4\")."
-  liftover_variant: "Lift a variant over between GRCh37 and GRCh38 via gnomAD.\n\n \
-    \   Args:\n        variant_id: chrom-pos-ref-alt in the source assembly.\n     \
-    \   source_genome: \"GRCh38\" or \"GRCh37\" (default GRCh38)."
-  mitochondrial_variants: "List gnomAD mitochondrial variants in a gene.\n\n    Args:\n\
-    \        gene: mitochondrial gene symbol (e.g. \"MT-ND1\").\n        limit: max\
-    \ variants (default 25)."
-  region_variants: "List gnomAD variants in a genomic region.\n\n    Args:\n       \
-    \ chrom: chromosome (e.g. \"1\"). start, stop: 1-based coordinates (GRCh38).\n \
-    \       limit: max variants (default 25). dataset: default \"gnomad_r4\"."
-  search_variants: "Search gnomAD variants within a gene (alias of gene_variants by\
-    \ symbol).\n\n    Args:\n        gene: gene symbol (e.g. \"BRCA1\").\n        limit:\
-    \ max variants (default 25)."
-  structural_variants: "List gnomAD structural variants (SVs) overlapping a gene.\n\n\
-    \    Args:\n        gene: gene symbol (e.g. \"COL1A1\").\n        limit: max SVs\
-    \ (default 25)."
+  clinvar_get_records: |-
+    Get specific ClinVar records by id.
+
+    Args:
+        clinvar_ids: comma-separated ClinVar UIDs (e.g. "4856951,446748").
+  clinvar_search: |-
+    Search ClinVar by free-text query.
+
+    Args:
+        query: search term (e.g. "BRCA1 pathogenic", "Lynch syndrome").
+        limit: max records (default 20).
+  clinvar_variant_by_rsid: |-
+    Find ClinVar records for a dbSNP rsID.
+
+    Args:
+        rsid: dbSNP rsID (e.g. "rs334" or "334").
+  clinvar_variants: |-
+    List ClinVar variant records for a gene.
+
+    Args:
+        gene: gene symbol (e.g. "BRCA1").
+        limit: max records (default 20).
+  dbsnp_get_rsids: |-
+    Get dbSNP records for one or more rsIDs (alleles, MAF, clinical significance, genes).
+
+    Args:
+        rsids: comma-separated rsIDs (e.g. "rs334,rs7412").
+  dbsnp_search_by_region: |-
+    Find dbSNP rsIDs in a genomic region (GRCh38).
+
+    Args:
+        chrom: chromosome number (e.g. "11").
+        start, end: base positions.
+        limit: max rsIDs (default 25).
+  gene_constraint: |-
+    Get gnomAD loss-of-function / missense constraint metrics for a gene.
+
+    Args:
+        gene: gene symbol (e.g. "PCSK9").
+  gene_variants: |-
+    List gnomAD variants in a gene (by symbol), highest allele frequency first.
+
+    Args:
+        gene: gene symbol (e.g. "PCSK9").
+        limit: max variants (default 25).
+        dataset: gnomAD dataset (default "gnomad_r4").
+  get_structural_variant: |-
+    Get a gnomAD structural variant by id.
+
+    Args:
+        sv_id: structural variant id (e.g. "DEL_1_12345").
+  get_variant: |-
+    Get a gnomAD variant's population frequencies (genome & exome).
+
+    Args:
+        variant_id: e.g. "1-55039974-G-T" (chrom-pos-ref-alt, GRCh38).
+        dataset: gnomAD dataset (default "gnomad_r4").
+  liftover_variant: |-
+    Lift a variant over between GRCh37 and GRCh38 via gnomAD.
+
+    Args:
+        variant_id: chrom-pos-ref-alt in the source assembly.
+        source_genome: "GRCh38" or "GRCh37" (default GRCh38).
+  mitochondrial_variants: |-
+    List gnomAD mitochondrial variants in a gene.
+
+    Args:
+        gene: mitochondrial gene symbol (e.g. "MT-ND1").
+        limit: max variants (default 25).
+  region_variants: |-
+    List gnomAD variants in a genomic region.
+
+    Args:
+        chrom: chromosome (e.g. "1"). start, stop: 1-based coordinates (GRCh38).
+        limit: max variants (default 25). dataset: default "gnomad_r4".
+  search_variants: |-
+    Search gnomAD variants within a gene (alias of gene_variants by symbol).
+
+    Args:
+        gene: gene symbol (e.g. "BRCA1").
+        limit: max variants (default 25).
+  structural_variants: |-
+    List gnomAD structural variants (SVs) overlapping a gene.
+
+    Args:
+        gene: gene symbol (e.g. "COL1A1").
+        limit: max SVs (default 25).
 ---
 # Variants
 

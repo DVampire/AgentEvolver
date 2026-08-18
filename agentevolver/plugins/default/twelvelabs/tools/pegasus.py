@@ -15,6 +15,10 @@ class TwelvelabsPegasusTool(PluginTool):
 
     output = {'video_id': 'text', 'text': 'text'}
 
+
+    def _render(self, data):
+        return data["text"]
+
     async def __call__(self, video_id: str = "", index_id: str = "", prompt: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY", "TWELVE_LABS_API_KEY")
         if not video_id or not prompt or not key:
@@ -26,4 +30,4 @@ class TwelvelabsPegasusTool(PluginTool):
             text = getattr(result, "data", None) or getattr(result, "text", None) or str(result)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"twelvelabs.pegasus: {type(exc).__name__}: {exc}")
-        return self._ok(str(text), video_id=video_id, text=str(text))
+        return self._ok(video_id=video_id, text=str(text))

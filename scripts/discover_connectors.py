@@ -44,12 +44,31 @@ OWNED = ("actions", "action_schemas", "action_descriptions")
 
 
 def _dump(value: Any, indent: int = 2) -> str:
-    """Render one frontmatter value as YAML, block style, stable across runs."""
+    """Render one frontmatter value as YAML, block style, stable across runs.
+
+    Two settings do the "stable" part, and both were learned by watching `--check`
+    disagree with itself. `width` is unbounded because PyYAML folds long scalars at a
+    column that has changed between releases, so the same description rendered under two
+    interpreters produced two files and a drift report that named no real drift. And a
+    string holding newlines — an MCP tool description is a docstring — is written as a
+    literal block rather than as one escaped line, which is both stable and the only form
+    of it a person can read in a diff.
+    """
     import yaml
 
-    text = yaml.safe_dump(value, sort_keys=True, allow_unicode=True, default_flow_style=False)
+    class _StableDumper(yaml.SafeDumper):
+        pass
+
+    def _block_for_multiline(dumper, data):
+        style = "|" if "\n" in data else None
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+    _StableDumper.add_representer(str, _block_for_multiline)
+
+    text = yaml.dump(value, Dumper=_StableDumper, sort_keys=True, allow_unicode=True,
+                     default_flow_style=False, width=1 << 30)
     pad = " " * indent
-    return "".join(pad + line + "\n" for line in text.rstrip("\n").splitlines())
+    return "".join((pad + line if line else "") + "\n" for line in text.rstrip("\n").splitlines())
 
 
 def _replace_block(front: str, key: str, value: Any) -> str:

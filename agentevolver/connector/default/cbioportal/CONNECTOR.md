@@ -100,31 +100,48 @@ action_schemas:
     title: cbioportal_mutations_in_geneArguments
     type: object
 action_descriptions:
-  cbioportal_clinical_attributes: "List the clinical attributes recorded for a study's\
-    \ patients/samples.\n\n    Args:\n        study_id: e.g. \"gbm_tcga_pan_can_atlas_2018\"\
-    .\n    Returns 'attributeId<TAB>displayName<TAB>datatype' rows."
-  cbioportal_cna_in_gene: "List discrete copy-number alterations of a gene across a\
-    \ study's samples.\n\n    Args:\n        study_id: e.g. \"gbm_tcga_pan_can_atlas_2018\"\
-    .\n        gene: Hugo symbol or Entrez ID (e.g. \"EGFR\").\n        event_type:\
-    \ one of ALL, AMP, HOMDEL, HOMDEL_AND_AMP, GAIN, HETLOSS, DIPLOID\n            (default\
-    \ HOMDEL_AND_AMP — the clinically significant events).\n    Returns 'sampleId<TAB>alteration'\
-    \ rows (-2 HOMDEL, -1 HETLOSS, 1 GAIN, 2 AMP)."
-  cbioportal_get_study: "Get metadata for one study (name, cancer type, sample count,\
-    \ citation).\n\n    Args:\n        study_id: e.g. \"gbm_tcga_pan_can_atlas_2018\"\
-    \ (from cbioportal_list_studies)."
-  cbioportal_list_studies: "List cancer studies (cohorts), optionally filtered by a\
-    \ keyword.\n\n    Args:\n        keyword: filter studies by name/id (e.g. \"glioblastoma\"\
-    , \"breast\", \"tcga\").\n        limit: max studies to return (default 50).\n \
-    \   Returns 'studyId<TAB>name<TAB>samples' rows."
-  cbioportal_mutation_frequency: "Compute how often a gene is mutated in a study (mutated\
-    \ samples / total).\n\n    Args:\n        study_id: e.g. \"gbm_tcga_pan_can_atlas_2018\"\
-    .\n        gene: Hugo symbol or Entrez ID (e.g. \"TP53\").\n        sample_list_id:\
-    \ sample list (default \"<study_id>_all\")."
-  cbioportal_mutations_in_gene: "List mutations of a gene across the samples in a study.\n\
-    \n    Args:\n        study_id: e.g. \"gbm_tcga_pan_can_atlas_2018\".\n        gene:\
-    \ Hugo symbol or Entrez ID (e.g. \"TP53\").\n        sample_list_id: sample list\
-    \ (default \"<study_id>_all\").\n    Returns 'sampleId<TAB>proteinChange<TAB>mutationType'\
-    \ rows."
+  cbioportal_clinical_attributes: |-
+    List the clinical attributes recorded for a study's patients/samples.
+
+    Args:
+        study_id: e.g. "gbm_tcga_pan_can_atlas_2018".
+    Returns 'attributeId<TAB>displayName<TAB>datatype' rows.
+  cbioportal_cna_in_gene: |-
+    List discrete copy-number alterations of a gene across a study's samples.
+
+    Args:
+        study_id: e.g. "gbm_tcga_pan_can_atlas_2018".
+        gene: Hugo symbol or Entrez ID (e.g. "EGFR").
+        event_type: one of ALL, AMP, HOMDEL, HOMDEL_AND_AMP, GAIN, HETLOSS, DIPLOID
+            (default HOMDEL_AND_AMP — the clinically significant events).
+    Returns 'sampleId<TAB>alteration' rows (-2 HOMDEL, -1 HETLOSS, 1 GAIN, 2 AMP).
+  cbioportal_get_study: |-
+    Get metadata for one study (name, cancer type, sample count, citation).
+
+    Args:
+        study_id: e.g. "gbm_tcga_pan_can_atlas_2018" (from cbioportal_list_studies).
+  cbioportal_list_studies: |-
+    List cancer studies (cohorts), optionally filtered by a keyword.
+
+    Args:
+        keyword: filter studies by name/id (e.g. "glioblastoma", "breast", "tcga").
+        limit: max studies to return (default 50).
+    Returns 'studyId<TAB>name<TAB>samples' rows.
+  cbioportal_mutation_frequency: |-
+    Compute how often a gene is mutated in a study (mutated samples / total).
+
+    Args:
+        study_id: e.g. "gbm_tcga_pan_can_atlas_2018".
+        gene: Hugo symbol or Entrez ID (e.g. "TP53").
+        sample_list_id: sample list (default "<study_id>_all").
+  cbioportal_mutations_in_gene: |-
+    List mutations of a gene across the samples in a study.
+
+    Args:
+        study_id: e.g. "gbm_tcga_pan_can_atlas_2018".
+        gene: Hugo symbol or Entrez ID (e.g. "TP53").
+        sample_list_id: sample list (default "<study_id>_all").
+    Returns 'sampleId<TAB>proteinChange<TAB>mutationType' rows.
 ---
 # Cancer Models (cBioPortal)
 

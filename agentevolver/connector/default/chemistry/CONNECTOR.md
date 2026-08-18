@@ -179,44 +179,81 @@ action_schemas:
     title: rhea_search_reactionsArguments
     type: object
 action_descriptions:
-  bindingdb_ligands_by_target: "Get measured ligand binding affinities for a protein\
-    \ target from BindingDB.\n\n    Args:\n        uniprot: UniProt accession of the\
-    \ target (e.g. \"P00533\" for EGFR).\n        cutoff_nm: only return ligands with\
-    \ affinity <= this many nM (default 100 = potent).\n        limit: max ligands (default\
-    \ 40).\n    Returns ligands sorted by affinity (most potent first)."
-  bindingdb_targets_by_compound: "Find protein targets bound by compounds structurally\
-    \ similar to a query molecule.\n\n    Uses BindingDB's getTargetByCompound: does\
-    \ a 2D similarity search for the query\n    SMILES and returns the targets its similar\
-    \ compounds bind, with measured affinities.\n\n    Args:\n        smiles: query\
-    \ molecule SMILES (e.g. \"CC(=O)OC1=CC=CC=C1C(=O)O\" for aspirin).\n        similarity_cutoff:\
-    \ Tanimoto similarity threshold, 0-1 (default 0.85).\n        limit: max target-affinity\
-    \ rows (default 40)."
-  chebi_get_entity: "Get a ChEBI entity's definition and chemical properties.\n\n  \
-    \  Args:\n        chebi_id: e.g. \"CHEBI:27732\" (or \"27732\")."
-  chebi_get_ontology: "Get a ChEBI entity's is_a hierarchy (parents and children).\n\
-    \n    Args:\n        chebi_id: e.g. \"CHEBI:27732\"."
-  chebi_search: "Search ChEBI (via EBI OLS) for chemical entities by name.\n\n    Args:\n\
-    \        query: chemical name (e.g. \"caffeine\").\n        limit: max results (default\
-    \ 10)."
-  pubchem_get_bioassay_summary: "Summarize a compound's PubChem bioassay activity (active/inactive\
-    \ counts + samples).\n\n    Args:\n        cid: PubChem compound CID."
-  pubchem_get_compounds: "Fetch properties for one or more PubChem CIDs.\n\n    Args:\n\
-    \        cids: list of PubChem CIDs, e.g. [2519, 2244].\n        properties: comma-separated\
-    \ PUG property names; default a useful set\n            (MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,IUPACName,XLogP)."
-  pubchem_get_safety: "Get GHS safety classification (signal, hazard statements, pictograms)\
-    \ for a compound.\n\n    Args:\n        cid: PubChem compound CID."
-  pubchem_search_compounds: "Search PubChem compounds by name/synonym; returns CID,\
-    \ title, formula.\n\n    Args:\n        query: compound name (e.g. \"caffeine\"\
-    , \"aspirin\").\n        limit: max compounds (default 10)."
-  pubchem_similarity_search: "2D-similarity search: find PubChem compounds similar to\
-    \ a SMILES.\n\n    Args:\n        smiles: query structure as SMILES.\n        threshold:\
-    \ Tanimoto similarity threshold 0-100 (default 90).\n        limit: max hits (default\
-    \ 10)."
-  rhea_get_reaction: "Get a Rhea reaction's equation, participating ChEBI ids, and EC\
-    \ number.\n\n    Args:\n        rhea_id: e.g. \"RHEA:10280\" or \"10280\"."
-  rhea_search_reactions: "Search Rhea biochemical reactions by keyword/compound.\n\n\
-    \    Args:\n        query: e.g. \"caffeine\", \"ATP\", a ChEBI name.\n        limit:\
-    \ max reactions (default 10)."
+  bindingdb_ligands_by_target: |-
+    Get measured ligand binding affinities for a protein target from BindingDB.
+
+    Args:
+        uniprot: UniProt accession of the target (e.g. "P00533" for EGFR).
+        cutoff_nm: only return ligands with affinity <= this many nM (default 100 = potent).
+        limit: max ligands (default 40).
+    Returns ligands sorted by affinity (most potent first).
+  bindingdb_targets_by_compound: |-
+    Find protein targets bound by compounds structurally similar to a query molecule.
+
+    Uses BindingDB's getTargetByCompound: does a 2D similarity search for the query
+    SMILES and returns the targets its similar compounds bind, with measured affinities.
+
+    Args:
+        smiles: query molecule SMILES (e.g. "CC(=O)OC1=CC=CC=C1C(=O)O" for aspirin).
+        similarity_cutoff: Tanimoto similarity threshold, 0-1 (default 0.85).
+        limit: max target-affinity rows (default 40).
+  chebi_get_entity: |-
+    Get a ChEBI entity's definition and chemical properties.
+
+    Args:
+        chebi_id: e.g. "CHEBI:27732" (or "27732").
+  chebi_get_ontology: |-
+    Get a ChEBI entity's is_a hierarchy (parents and children).
+
+    Args:
+        chebi_id: e.g. "CHEBI:27732".
+  chebi_search: |-
+    Search ChEBI (via EBI OLS) for chemical entities by name.
+
+    Args:
+        query: chemical name (e.g. "caffeine").
+        limit: max results (default 10).
+  pubchem_get_bioassay_summary: |-
+    Summarize a compound's PubChem bioassay activity (active/inactive counts + samples).
+
+    Args:
+        cid: PubChem compound CID.
+  pubchem_get_compounds: |-
+    Fetch properties for one or more PubChem CIDs.
+
+    Args:
+        cids: list of PubChem CIDs, e.g. [2519, 2244].
+        properties: comma-separated PUG property names; default a useful set
+            (MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,IUPACName,XLogP).
+  pubchem_get_safety: |-
+    Get GHS safety classification (signal, hazard statements, pictograms) for a compound.
+
+    Args:
+        cid: PubChem compound CID.
+  pubchem_search_compounds: |-
+    Search PubChem compounds by name/synonym; returns CID, title, formula.
+
+    Args:
+        query: compound name (e.g. "caffeine", "aspirin").
+        limit: max compounds (default 10).
+  pubchem_similarity_search: |-
+    2D-similarity search: find PubChem compounds similar to a SMILES.
+
+    Args:
+        smiles: query structure as SMILES.
+        threshold: Tanimoto similarity threshold 0-100 (default 90).
+        limit: max hits (default 10).
+  rhea_get_reaction: |-
+    Get a Rhea reaction's equation, participating ChEBI ids, and EC number.
+
+    Args:
+        rhea_id: e.g. "RHEA:10280" or "10280".
+  rhea_search_reactions: |-
+    Search Rhea biochemical reactions by keyword/compound.
+
+    Args:
+        query: e.g. "caffeine", "ATP", a ChEBI name.
+        limit: max reactions (default 10).
 ---
 # Chemistry
 

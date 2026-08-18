@@ -13,7 +13,11 @@ class NotionPageContentViewerTool(NotionToolBase):
     display_name: str = 'Page Content Viewer '
     description: str = 'Retrieve the content of a Notion page as plain text.'
 
-    output = {'records': 'list', 'count': 'any'}
+    output = {"page_id": "text", 'records': 'list', 'count': 'any'}
+
+
+    def _render(self, data):
+        return f"Page {data['page_id']} has {data['count']} blocks."
 
     async def __call__(self, api_key: str = "", page_id: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
@@ -25,6 +29,6 @@ class NotionPageContentViewerTool(NotionToolBase):
                 return self._fail("notion.page_content_viewer: 'page_id' is required.")
             js = self._request("GET", f"/blocks/{page_id}/children?page_size=100", token)
             blocks = js.get("results", [])
-            return self._ok(f"Page {page_id} has {len(blocks)} blocks.", records=blocks, count=len(blocks))
+            return self._ok(page_id=page_id, records=blocks, count=len(blocks))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"notion.page_content_viewer: {type(exc).__name__}: {exc}")

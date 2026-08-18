@@ -15,6 +15,10 @@ class EmpiriolabsTool(PluginTool):
 
     output = {'text': 'text'}
 
+
+    def _render(self, data):
+        return data["text"]
+
     async def __call__(self, prompt: str = "", model: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "EMPIRIOLABS_API_KEY")
         if not prompt or not key:
@@ -27,4 +31,4 @@ class EmpiriolabsTool(PluginTool):
             text = out.content if hasattr(out, "content") else str(out)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"empiriolabs: {type(exc).__name__}: {exc}")
-        return self._ok(str(text), text=str(text))
+        return self._ok(text=str(text))

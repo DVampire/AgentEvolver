@@ -13,7 +13,11 @@ class ApifyActorTool(PluginTool):
     display_name: str = 'Apify Actors'
     description: str = 'Apify Actors'
 
-    output = {'records': 'list', 'count': 'any'}
+    output = {"actor_id": "text", 'records': 'list', 'count': 'any'}
+
+
+    def _render(self, data):
+        return f"Apify actor '{data['actor_id']}' produced {data['count']} items."
 
     async def __call__(self, actor_id: str = "", run_input: Optional[dict] = None, api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "APIFY_API_TOKEN", "APIFY_TOKEN")
@@ -26,4 +30,4 @@ class ApifyActorTool(PluginTool):
             items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"apify: {type(exc).__name__}: {exc}")
-        return self._ok(f"Apify actor '{actor_id}' produced {len(items)} items.", records=items, count=len(items))
+        return self._ok(actor_id=actor_id, records=items, count=len(items))

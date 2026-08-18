@@ -83,22 +83,36 @@ action_schemas:
     title: reaction_parseArguments
     type: object
 action_descriptions:
-  molecule_convert: "Convert a molecule between chemical formats.\n\n    Args:\n   \
-    \     structure: the molecule in `from_format` (e.g. a SMILES string or a MOL block).\n\
-    \        from_format: input format — smiles / mol / sdf / inchi / smarts.\n    \
-    \    to_format: output format — smiles / mol / inchi / inchikey / formula."
-  molecule_depict: "Render a 2D structure depiction of a molecule as an SVG string (embeddable\
-    \ in reports).\n\n    Args:\n        smiles: molecule as SMILES.\n        width:\
-    \ image width in px (default 400).\n        height: image height in px (default\
-    \ 300)."
-  molecule_descriptors: "Compute key molecular descriptors and Lipinski rule-of-five\
-    \ for a molecule.\n\n    Args:\n        smiles: molecule as SMILES (e.g. \"CC(=O)Oc1ccccc1C(=O)O\"\
-    )."
-  molecule_scaffold: "Extract the Bemis-Murcko scaffold (core ring system) of a molecule.\n\
-    \n    Args:\n        smiles: molecule as SMILES.\n        generic: if True, return\
-    \ the generic (atom/bond-agnostic) scaffold framework."
-  reaction_parse: "Parse a reaction SMILES (reactants>>products) into its components.\n\
-    \n    Args:\n        reaction_smiles: e.g. \"CC(=O)O.OCC>>CC(=O)OCC.O\"."
+  molecule_convert: |-
+    Convert a molecule between chemical formats.
+
+    Args:
+        structure: the molecule in `from_format` (e.g. a SMILES string or a MOL block).
+        from_format: input format — smiles / mol / sdf / inchi / smarts.
+        to_format: output format — smiles / mol / inchi / inchikey / formula.
+  molecule_depict: |-
+    Render a 2D structure depiction of a molecule as an SVG string (embeddable in reports).
+
+    Args:
+        smiles: molecule as SMILES.
+        width: image width in px (default 400).
+        height: image height in px (default 300).
+  molecule_descriptors: |-
+    Compute key molecular descriptors and Lipinski rule-of-five for a molecule.
+
+    Args:
+        smiles: molecule as SMILES (e.g. "CC(=O)Oc1ccccc1C(=O)O").
+  molecule_scaffold: |-
+    Extract the Bemis-Murcko scaffold (core ring system) of a molecule.
+
+    Args:
+        smiles: molecule as SMILES.
+        generic: if True, return the generic (atom/bond-agnostic) scaffold framework.
+  reaction_parse: |-
+    Parse a reaction SMILES (reactants>>products) into its components.
+
+    Args:
+        reaction_smiles: e.g. "CC(=O)O.OCC>>CC(=O)OCC.O".
 ---
 # Molecule Toolkit
 

@@ -255,63 +255,123 @@ action_schemas:
     title: open_targets_graphqlArguments
     type: object
 action_descriptions:
-  civic_gene_variants: "List CIViC variants curated for a gene.\n\n    Args:\n     \
-    \   gene: gene symbol (e.g. \"BRAF\").\n        limit: max variants (default 40)."
-  civic_get_assertion: "Get a CIViC assertion (a summarized clinical statement over\
-    \ evidence).\n\n    Args:\n        assertion_id: CIViC assertion id (integer)."
-  civic_get_evidence_item: "Get a CIViC evidence item's clinical interpretation.\n\n\
-    \    Args:\n        evidence_id: CIViC evidence item id (integer)."
-  civic_get_molecular_profile: "Get a CIViC molecular profile (a variant or combination\
-    \ interpreted clinically).\n\n    Args:\n        molecular_profile_id: CIViC molecular\
-    \ profile id (integer)."
-  civic_get_variant: "Get a CIViC variant's details.\n\n    Args:\n        variant_id:\
-    \ CIViC variant id (integer)."
-  civic_search_assertions: "Search CIViC assertions, optionally filtered by disease\
-    \ name.\n\n    Args:\n        disease: disease name filter (e.g. \"Melanoma\");\
-    \ empty for latest.\n        limit: max assertions (default 20)."
-  civic_search_diseases: "Search CIViC diseases by name.\n\n    Args:\n        query:\
-    \ disease name substring (e.g. \"melanoma\").\n        limit: max results (default\
-    \ 25)."
-  civic_search_evidence: "Search CIViC evidence items, optionally filtered by disease\
-    \ name.\n\n    Args:\n        disease: disease name filter (e.g. \"Melanoma\");\
-    \ empty for latest evidence.\n        limit: max items (default 20)."
-  civic_search_genes: "Look up a gene in CIViC by symbol; returns CIViC id, name, Entrez\
-    \ id, description.\n\n    Args:\n        symbol: gene symbol (e.g. \"BRAF\")."
-  civic_search_molecular_profiles: "Search CIViC molecular profiles by name (e.g. \"\
-    BRAF V600E\").\n\n    Args:\n        query: molecular profile name substring.\n\
-    \        limit: max results (default 25)."
-  civic_search_therapies: "Search CIViC therapies (drugs) by name.\n\n    Args:\n  \
-    \      query: therapy name substring (e.g. \"vemurafenib\").\n        limit: max\
-    \ results (default 25)."
-  civic_search_variants: "Search CIViC variants by name (e.g. \"V600E\").\n\n    Args:\n\
-    \        query: variant name substring.\n        limit: max results (default 25)."
-  clingen_actionability: "ClinGen clinical actionability for a gene.\n\n    NOTE: ClinGen\
-    \ Actionability exposes no public JSON API (web UI only), so this returns\n    the\
-    \ direct report-search link for the gene rather than structured data.\n\n    Args:\n\
-    \        gene: HGNC gene symbol (e.g. \"BRCA1\")."
-  clingen_dosage_sensitivity: "ClinGen dosage sensitivity (haploinsufficiency / triplosensitivity)\
-    \ for a gene.\n\n    Args:\n        gene: HGNC gene symbol (e.g. \"BRCA1\")."
-  clingen_gene_validity: "ClinGen gene-disease validity classifications for a gene.\n\
-    \n    Args:\n        gene: HGNC gene symbol (e.g. \"BRCA1\").\n    Returns 'disease<TAB>MOI<TAB>classification<TAB>date'\
-    \ rows."
-  clingen_variant_classifications: "ClinGen Evidence Repository (ERepo) variant interpretations\
-    \ for a gene.\n\n    Args:\n        gene: HGNC gene symbol (e.g. \"BRCA1\").\n \
-    \       limit: max variants (default 25).\n    Returns 'variant(HGVS)<TAB>caid<TAB>condition<TAB>date'\
-    \ rows."
-  open_targets_disease_drugs: "List drugs and clinical candidates for a disease from\
-    \ Open Targets.\n\n    Args:\n        disease: disease name or EFO/MONDO id (e.g.\
-    \ \"melanoma\").\n        limit: max drugs (default 25)."
-  open_targets_disease_targets: "List targets associated with a disease, ranked by Open\
-    \ Targets association score.\n\n    Args:\n        disease: disease name or EFO/MONDO\
-    \ id (e.g. \"melanoma\" or \"MONDO_0005105\").\n        limit: max targets (default\
-    \ 25)."
-  open_targets_drug: "Get an Open Targets drug's type, phase, mechanism(s), and indications.\n\
-    \n    Args:\n        drug: drug name or ChEMBL id (e.g. \"vemurafenib\" or \"CHEMBL1229517\"\
-    )."
-  open_targets_graphql: "Run an arbitrary Open Targets Platform GraphQL query (escape\
-    \ hatch for any query).\n\n    Args:\n        query: a GraphQL query string against\
-    \ https://api.platform.opentargets.org/api/v4/graphql.\n        variables: optional\
-    \ JSON string of query variables.\n    Returns the JSON `data` payload."
+  civic_gene_variants: |-
+    List CIViC variants curated for a gene.
+
+    Args:
+        gene: gene symbol (e.g. "BRAF").
+        limit: max variants (default 40).
+  civic_get_assertion: |-
+    Get a CIViC assertion (a summarized clinical statement over evidence).
+
+    Args:
+        assertion_id: CIViC assertion id (integer).
+  civic_get_evidence_item: |-
+    Get a CIViC evidence item's clinical interpretation.
+
+    Args:
+        evidence_id: CIViC evidence item id (integer).
+  civic_get_molecular_profile: |-
+    Get a CIViC molecular profile (a variant or combination interpreted clinically).
+
+    Args:
+        molecular_profile_id: CIViC molecular profile id (integer).
+  civic_get_variant: |-
+    Get a CIViC variant's details.
+
+    Args:
+        variant_id: CIViC variant id (integer).
+  civic_search_assertions: |-
+    Search CIViC assertions, optionally filtered by disease name.
+
+    Args:
+        disease: disease name filter (e.g. "Melanoma"); empty for latest.
+        limit: max assertions (default 20).
+  civic_search_diseases: |-
+    Search CIViC diseases by name.
+
+    Args:
+        query: disease name substring (e.g. "melanoma").
+        limit: max results (default 25).
+  civic_search_evidence: |-
+    Search CIViC evidence items, optionally filtered by disease name.
+
+    Args:
+        disease: disease name filter (e.g. "Melanoma"); empty for latest evidence.
+        limit: max items (default 20).
+  civic_search_genes: |-
+    Look up a gene in CIViC by symbol; returns CIViC id, name, Entrez id, description.
+
+    Args:
+        symbol: gene symbol (e.g. "BRAF").
+  civic_search_molecular_profiles: |-
+    Search CIViC molecular profiles by name (e.g. "BRAF V600E").
+
+    Args:
+        query: molecular profile name substring.
+        limit: max results (default 25).
+  civic_search_therapies: |-
+    Search CIViC therapies (drugs) by name.
+
+    Args:
+        query: therapy name substring (e.g. "vemurafenib").
+        limit: max results (default 25).
+  civic_search_variants: |-
+    Search CIViC variants by name (e.g. "V600E").
+
+    Args:
+        query: variant name substring.
+        limit: max results (default 25).
+  clingen_actionability: |-
+    ClinGen clinical actionability for a gene.
+
+    NOTE: ClinGen Actionability exposes no public JSON API (web UI only), so this returns
+    the direct report-search link for the gene rather than structured data.
+
+    Args:
+        gene: HGNC gene symbol (e.g. "BRCA1").
+  clingen_dosage_sensitivity: |-
+    ClinGen dosage sensitivity (haploinsufficiency / triplosensitivity) for a gene.
+
+    Args:
+        gene: HGNC gene symbol (e.g. "BRCA1").
+  clingen_gene_validity: |-
+    ClinGen gene-disease validity classifications for a gene.
+
+    Args:
+        gene: HGNC gene symbol (e.g. "BRCA1").
+    Returns 'disease<TAB>MOI<TAB>classification<TAB>date' rows.
+  clingen_variant_classifications: |-
+    ClinGen Evidence Repository (ERepo) variant interpretations for a gene.
+
+    Args:
+        gene: HGNC gene symbol (e.g. "BRCA1").
+        limit: max variants (default 25).
+    Returns 'variant(HGVS)<TAB>caid<TAB>condition<TAB>date' rows.
+  open_targets_disease_drugs: |-
+    List drugs and clinical candidates for a disease from Open Targets.
+
+    Args:
+        disease: disease name or EFO/MONDO id (e.g. "melanoma").
+        limit: max drugs (default 25).
+  open_targets_disease_targets: |-
+    List targets associated with a disease, ranked by Open Targets association score.
+
+    Args:
+        disease: disease name or EFO/MONDO id (e.g. "melanoma" or "MONDO_0005105").
+        limit: max targets (default 25).
+  open_targets_drug: |-
+    Get an Open Targets drug's type, phase, mechanism(s), and indications.
+
+    Args:
+        drug: drug name or ChEMBL id (e.g. "vemurafenib" or "CHEMBL1229517").
+  open_targets_graphql: |-
+    Run an arbitrary Open Targets Platform GraphQL query (escape hatch for any query).
+
+    Args:
+        query: a GraphQL query string against https://api.platform.opentargets.org/api/v4/graphql.
+        variables: optional JSON string of query variables.
+    Returns the JSON `data` payload.
 ---
 # Clinical Genomics
 

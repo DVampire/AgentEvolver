@@ -24,7 +24,7 @@ All 1 tools are implemented.
 
 Declared result shapes:
 
-- `spider.spider` → `data` keys: count, records
+- `spider.spider` → `data` keys: count, mode, records
 
 ## Credentials
 

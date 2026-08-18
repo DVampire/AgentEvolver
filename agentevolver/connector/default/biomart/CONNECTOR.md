@@ -131,40 +131,66 @@ action_schemas:
     title: list_martsArguments
     type: object
 action_descriptions:
-  batch_translate: "Translate many identifiers at once between two attribute types.\n\
-    \n    Args:\n        dataset: e.g. hsapiens_gene_ensembl.\n        from_attribute:\
-    \ source ID type (e.g. \"hgnc_symbol\").\n        to_attribute: target ID type (e.g.\
-    \ \"entrezgene_id\").\n        values: list of identifiers, e.g. [\"TP53\", \"BRCA1\"\
-    , \"EGFR\"]."
-  get_data: "Run a BioMart query: fetch `attributes` from `dataset`, constrained by\
-    \ `filters`.\n\n    This is the main data-retrieval tool. Returns TSV with a header\
-    \ row.\n\n    Args:\n        dataset: e.g. hsapiens_gene_ensembl (see list_datasets).\n\
-    \        attributes: attribute names to return, e.g. [\"ensembl_gene_id\", \"hgnc_symbol\"\
-    ].\n        filters: optional {filter_name: value}; value may be comma-separated\
-    \ for lists,\n            e.g. {\"hgnc_symbol\": \"TP53,BRCA1\"} or {\"chromosome_name\"\
-    : \"17\"}."
-  get_translation: "Translate a single identifier from one attribute type to another.\n\
-    \n    Args:\n        dataset: e.g. hsapiens_gene_ensembl.\n        from_attribute:\
-    \ source ID type, usable as both filter and attribute\n            (e.g. \"hgnc_symbol\"\
-    , \"ensembl_gene_id\", \"entrezgene_id\").\n        to_attribute: target ID type\
-    \ (e.g. \"ensembl_gene_id\").\n        value: the identifier to translate (e.g.\
-    \ \"TP53\")."
-  list_all_attributes: "List all attributes for a dataset, optionally filtered by a\
-    \ search substring.\n\n    The full list can be thousands of entries — pass `search`\
-    \ (matched against the\n    attribute name and description) to narrow it.\n\n  \
-    \  Args:\n        dataset: e.g. hsapiens_gene_ensembl.\n        search: case-insensitive\
-    \ substring filter (optional)."
-  list_common_attributes: "List the most commonly used attributes (fields) for a gene\
-    \ dataset.\n\n    A curated shortlist for the frequent case; use list_all_attributes\
-    \ to search\n    the full attribute set.\n\n    Args:\n        dataset: e.g. hsapiens_gene_ensembl."
-  list_datasets: "List datasets in a mart (e.g. hsapiens_gene_ensembl for human genes).\n\
-    \n    Args:\n        mart: Mart name from list_marts (default ENSEMBL_MART_ENSEMBL).\n\
-    \    Returns 'dataset<TAB>description' rows."
-  list_filters: "List the filters available to constrain a query on a dataset.\n\n \
-    \   Args:\n        dataset: e.g. hsapiens_gene_ensembl.\n        search: case-insensitive\
-    \ substring filter (optional)."
-  list_marts: "List the available BioMart marts (databases), e.g. ENSEMBL_MART_ENSEMBL.\n\
-    \n    Use this first to discover which mart to query. Returns 'name<TAB>displayName'."
+  batch_translate: |-
+    Translate many identifiers at once between two attribute types.
+
+    Args:
+        dataset: e.g. hsapiens_gene_ensembl.
+        from_attribute: source ID type (e.g. "hgnc_symbol").
+        to_attribute: target ID type (e.g. "entrezgene_id").
+        values: list of identifiers, e.g. ["TP53", "BRCA1", "EGFR"].
+  get_data: |-
+    Run a BioMart query: fetch `attributes` from `dataset`, constrained by `filters`.
+
+    This is the main data-retrieval tool. Returns TSV with a header row.
+
+    Args:
+        dataset: e.g. hsapiens_gene_ensembl (see list_datasets).
+        attributes: attribute names to return, e.g. ["ensembl_gene_id", "hgnc_symbol"].
+        filters: optional {filter_name: value}; value may be comma-separated for lists,
+            e.g. {"hgnc_symbol": "TP53,BRCA1"} or {"chromosome_name": "17"}.
+  get_translation: |-
+    Translate a single identifier from one attribute type to another.
+
+    Args:
+        dataset: e.g. hsapiens_gene_ensembl.
+        from_attribute: source ID type, usable as both filter and attribute
+            (e.g. "hgnc_symbol", "ensembl_gene_id", "entrezgene_id").
+        to_attribute: target ID type (e.g. "ensembl_gene_id").
+        value: the identifier to translate (e.g. "TP53").
+  list_all_attributes: |-
+    List all attributes for a dataset, optionally filtered by a search substring.
+
+    The full list can be thousands of entries — pass `search` (matched against the
+    attribute name and description) to narrow it.
+
+    Args:
+        dataset: e.g. hsapiens_gene_ensembl.
+        search: case-insensitive substring filter (optional).
+  list_common_attributes: |-
+    List the most commonly used attributes (fields) for a gene dataset.
+
+    A curated shortlist for the frequent case; use list_all_attributes to search
+    the full attribute set.
+
+    Args:
+        dataset: e.g. hsapiens_gene_ensembl.
+  list_datasets: |-
+    List datasets in a mart (e.g. hsapiens_gene_ensembl for human genes).
+
+    Args:
+        mart: Mart name from list_marts (default ENSEMBL_MART_ENSEMBL).
+    Returns 'dataset<TAB>description' rows.
+  list_filters: |-
+    List the filters available to constrain a query on a dataset.
+
+    Args:
+        dataset: e.g. hsapiens_gene_ensembl.
+        search: case-insensitive substring filter (optional).
+  list_marts: |-
+    List the available BioMart marts (databases), e.g. ENSEMBL_MART_ENSEMBL.
+
+    Use this first to discover which mart to query. Returns 'name<TAB>displayName'.
 ---
 # BioMart
 

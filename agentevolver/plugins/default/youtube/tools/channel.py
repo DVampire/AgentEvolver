@@ -35,6 +35,11 @@ class YoutubeChannelTool(YoutubeToolBase):
 
     output = {'channel_id': 'any', 'records': 'list', 'count': 'any'}
 
+
+    def _render(self, data):
+        first = (data["records"] or [{}])[0]
+        return f"Retrieved channel info for '{first.get('title', data['channel_id'])}'."
+
     async def __call__(self, channel_url: str = "", api_key: str = "",
                        include_statistics: bool = True, include_branding: bool = False, **kwargs) -> Response:
         channel_url = str(channel_url or "").strip()
@@ -73,7 +78,6 @@ class YoutubeChannelTool(YoutubeToolBase):
                 brand = info.get("brandingSettings", {}).get("channel", {})
                 row.update({"brand_title": brand.get("title", ""), "brand_keywords": brand.get("keywords", "")})
             youtube.close()
-            return self._ok(f"Retrieved channel info for '{row['title']}'.",
-                            channel_id=channel_id, records=[row], count=1)
+            return self._ok(channel_id=channel_id, records=[row], count=1)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"youtube.channel: {type(exc).__name__}: {exc}")

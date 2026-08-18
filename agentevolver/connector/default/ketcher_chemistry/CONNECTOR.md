@@ -38,16 +38,20 @@ action_schemas:
     title: open_sketcherArguments
     type: object
 action_descriptions:
-  open_sketcher: "Open a 2D molecule sketcher and return it as a self-contained HTML\
-    \ artifact.\n\n    Lays out a molecule in 2D and produces a \"sketch pad\" HTML\
-    \ document: a rendered 2D\n    depiction alongside the editable MOL block (Ketcher's\
-    \ native format) and the molecule's\n    identifiers (canonical SMILES, formula,\
-    \ MW, InChIKey). The HTML is fully self-contained\n    (inline SVG + CSS, no external\
-    \ assets) so it can be saved directly as an artifact.\n\n    Args:\n        structure:\
-    \ the starting molecule (e.g. a SMILES string); leave empty for a blank pad.\n \
-    \       from_format: input format — smiles / mol / sdf / inchi (default smiles).\n\
-    \        title: optional heading for the sketch pad.\n        width: depiction width\
-    \ in px (default 600).\n        height: depiction height in px (default 450)."
+  open_sketcher: |-
+    Open a 2D molecule sketcher and return it as a self-contained HTML artifact.
+
+    Lays out a molecule in 2D and produces a "sketch pad" HTML document: a rendered 2D
+    depiction alongside the editable MOL block (Ketcher's native format) and the molecule's
+    identifiers (canonical SMILES, formula, MW, InChIKey). The HTML is fully self-contained
+    (inline SVG + CSS, no external assets) so it can be saved directly as an artifact.
+
+    Args:
+        structure: the starting molecule (e.g. a SMILES string); leave empty for a blank pad.
+        from_format: input format — smiles / mol / sdf / inchi (default smiles).
+        title: optional heading for the sketch pad.
+        width: depiction width in px (default 600).
+        height: depiction height in px (default 450).
 ---
 # Ketcher Chemistry
 

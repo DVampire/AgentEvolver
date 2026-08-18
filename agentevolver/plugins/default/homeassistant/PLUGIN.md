@@ -25,7 +25,7 @@ All 2 tools are implemented.
 
 Declared result shapes:
 
-- `homeassistant.home_assistant_control` → `data` keys: result
+- `homeassistant.home_assistant_control` → `data` keys: domain, result, service
 - `homeassistant.list_home_assistant_states` → `data` keys: count, records
 
 ## Credentials

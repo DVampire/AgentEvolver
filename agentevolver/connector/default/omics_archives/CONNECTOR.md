@@ -218,53 +218,103 @@ action_schemas:
     title: pride_search_projectsArguments
     type: object
 action_descriptions:
-  arrayexpress_get_experiment: "Get an ArrayExpress experiment's metadata.\n\n    Args:\n\
-    \        accession: experiment accession (e.g. \"E-GEOD-17155\")."
-  arrayexpress_get_experiment_files: "List the data files of an ArrayExpress experiment.\n\
-    \n    Args:\n        accession: experiment accession (e.g. \"E-GEOD-17155\").\n\
-    \        limit: max files (default 25)."
-  arrayexpress_get_experiment_samples: "Summarize the samples/assays of an ArrayExpress\
-    \ experiment (from its SDRF).\n\n    Args:\n        accession: experiment accession\
-    \ (e.g. \"E-GEOD-17155\")."
-  arrayexpress_search_experiments: "Search ArrayExpress (BioStudies) functional-genomics\
-    \ experiments.\n\n    Args:\n        query: search text (e.g. \"breast cancer RNA-seq\"\
-    ).\n        limit: max experiments (default 15)."
-  geo_get_series: "Get details of a GEO series by accession (GSE id).\n\n    Args:\n\
-    \        gse: series accession (e.g. \"GSE17155\")."
-  geo_search_series: "Search NCBI GEO for expression series (GSE) by keyword.\n\n  \
-    \  Args:\n        query: search text (e.g. \"breast cancer\").\n        limit: max\
-    \ series (default 15)."
-  metabolights_get_studies: "Get a MetaboLights study's metadata.\n\n    Args:\n   \
-    \     study_id: study accession (e.g. \"MTBLS1\")."
-  metabolights_get_study_files: "List the files of a MetaboLights study.\n\n    Args:\n\
-    \        study_id: study accession (e.g. \"MTBLS1\").\n        limit: max files\
-    \ (default 30)."
-  metabolights_list_studies: "List public MetaboLights study accessions.\n\n    Args:\n\
-    \        limit: max study ids (default 40)."
-  metabolights_search_data_files: "Search the data files of a MetaboLights study by\
-    \ filename substring.\n\n    Args:\n        study_id: study accession (e.g. \"MTBLS1\"\
-    ).\n        query: filename substring to match (e.g. \".mzML\", \"sample\"); empty\
-    \ for all data files."
-  mgnify_get_studies: "Get an MGnify study's metadata.\n\n    Args:\n        study_id:\
-    \ MGnify study accession (e.g. \"MGYS00006862\")."
-  mgnify_get_study_analyses: "List the analyses of an MGnify study.\n\n    Args:\n \
-    \       study_id: MGnify study accession (e.g. \"MGYS00006862\").\n        limit:\
-    \ max analyses (default 20)."
-  mgnify_search_studies: "Search MGnify metagenomics studies.\n\n    Args:\n       \
-    \ query: search text (e.g. \"human gut microbiome\").\n        limit: max studies\
-    \ (default 15)."
-  pride_find_projects_for_protein: "Find PRIDE projects associated with a protein (by\
-    \ accession/name keyword).\n\n    Args:\n        protein: protein accession or name\
-    \ (e.g. \"P04637\", \"TP53\").\n        limit: max projects (default 15)."
-  pride_get_projects: "Get a PRIDE project's metadata.\n\n    Args:\n        accession:\
-    \ PRIDE project accession (e.g. \"PXD079445\")."
-  pride_search_project_proteins: "Proteins reported in a PRIDE project.\n\n    NOTE:\
-    \ PRIDE exposes no simple public per-project protein-list API; this returns\n  \
-    \  pointers to the project's protein data instead.\n\n    Args:\n        accession:\
-    \ PRIDE project accession (e.g. \"PXD079445\")."
-  pride_search_projects: "Search PRIDE proteomics projects by keyword.\n\n    Args:\n\
-    \        keyword: search text (e.g. \"melanoma phosphoproteome\").\n        limit:\
-    \ max projects (default 15)."
+  arrayexpress_get_experiment: |-
+    Get an ArrayExpress experiment's metadata.
+
+    Args:
+        accession: experiment accession (e.g. "E-GEOD-17155").
+  arrayexpress_get_experiment_files: |-
+    List the data files of an ArrayExpress experiment.
+
+    Args:
+        accession: experiment accession (e.g. "E-GEOD-17155").
+        limit: max files (default 25).
+  arrayexpress_get_experiment_samples: |-
+    Summarize the samples/assays of an ArrayExpress experiment (from its SDRF).
+
+    Args:
+        accession: experiment accession (e.g. "E-GEOD-17155").
+  arrayexpress_search_experiments: |-
+    Search ArrayExpress (BioStudies) functional-genomics experiments.
+
+    Args:
+        query: search text (e.g. "breast cancer RNA-seq").
+        limit: max experiments (default 15).
+  geo_get_series: |-
+    Get details of a GEO series by accession (GSE id).
+
+    Args:
+        gse: series accession (e.g. "GSE17155").
+  geo_search_series: |-
+    Search NCBI GEO for expression series (GSE) by keyword.
+
+    Args:
+        query: search text (e.g. "breast cancer").
+        limit: max series (default 15).
+  metabolights_get_studies: |-
+    Get a MetaboLights study's metadata.
+
+    Args:
+        study_id: study accession (e.g. "MTBLS1").
+  metabolights_get_study_files: |-
+    List the files of a MetaboLights study.
+
+    Args:
+        study_id: study accession (e.g. "MTBLS1").
+        limit: max files (default 30).
+  metabolights_list_studies: |-
+    List public MetaboLights study accessions.
+
+    Args:
+        limit: max study ids (default 40).
+  metabolights_search_data_files: |-
+    Search the data files of a MetaboLights study by filename substring.
+
+    Args:
+        study_id: study accession (e.g. "MTBLS1").
+        query: filename substring to match (e.g. ".mzML", "sample"); empty for all data files.
+  mgnify_get_studies: |-
+    Get an MGnify study's metadata.
+
+    Args:
+        study_id: MGnify study accession (e.g. "MGYS00006862").
+  mgnify_get_study_analyses: |-
+    List the analyses of an MGnify study.
+
+    Args:
+        study_id: MGnify study accession (e.g. "MGYS00006862").
+        limit: max analyses (default 20).
+  mgnify_search_studies: |-
+    Search MGnify metagenomics studies.
+
+    Args:
+        query: search text (e.g. "human gut microbiome").
+        limit: max studies (default 15).
+  pride_find_projects_for_protein: |-
+    Find PRIDE projects associated with a protein (by accession/name keyword).
+
+    Args:
+        protein: protein accession or name (e.g. "P04637", "TP53").
+        limit: max projects (default 15).
+  pride_get_projects: |-
+    Get a PRIDE project's metadata.
+
+    Args:
+        accession: PRIDE project accession (e.g. "PXD079445").
+  pride_search_project_proteins: |-
+    Proteins reported in a PRIDE project.
+
+    NOTE: PRIDE exposes no simple public per-project protein-list API; this returns
+    pointers to the project's protein data instead.
+
+    Args:
+        accession: PRIDE project accession (e.g. "PXD079445").
+  pride_search_projects: |-
+    Search PRIDE proteomics projects by keyword.
+
+    Args:
+        keyword: search text (e.g. "melanoma phosphoproteome").
+        limit: max projects (default 15).
 ---
 # Omics Archives
 

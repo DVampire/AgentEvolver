@@ -15,6 +15,10 @@ class WolframalphaWolframAlphaApiTool(PluginTool):
 
     output = {'query': 'text', 'result': 'object'}
 
+
+    def _render(self, data):
+        return str(data["result"])
+
     async def __call__(self, input_value: str = "", app_id: str = "", **kwargs) -> Response:
         q = str(input_value or "").strip()
         key = self._secret(app_id, "WOLFRAM_ALPHA_APPID")
@@ -25,4 +29,4 @@ class WolframalphaWolframAlphaApiTool(PluginTool):
             out = WolframAlphaAPIWrapper(wolfram_alpha_appid=key).run(q)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"wolframalpha: {type(exc).__name__}: {exc}")
-        return self._ok(str(out), query=q, result=str(out))
+        return self._ok(query=q, result=str(out))

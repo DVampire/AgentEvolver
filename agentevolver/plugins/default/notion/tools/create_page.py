@@ -15,6 +15,10 @@ class NotionCreatePageTool(NotionToolBase):
 
     output = {'page': 'any'}
 
+
+    def _render(self, data):
+        return f"Created Notion page {(data['page'] or {}).get('id')}."
+
     async def __call__(self, api_key: str = "", database_id: str = "", properties_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:
@@ -26,6 +30,6 @@ class NotionCreatePageTool(NotionToolBase):
                 return self._fail("notion.create_page: 'database_id' and 'properties_json' are required.")
             payload = {"parent": {"database_id": database_id}, "properties": _json.loads(properties_json)}
             js = self._request("POST", "/pages", token, json=payload)
-            return self._ok(f"Created Notion page {js.get('id')}.", page=js)
+            return self._ok(page=js)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"notion.create_page: {type(exc).__name__}: {exc}")

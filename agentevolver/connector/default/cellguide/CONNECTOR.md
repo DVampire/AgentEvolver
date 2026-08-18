@@ -79,24 +79,39 @@ action_schemas:
     title: search_cell_typesArguments
     type: object
 action_descriptions:
-  get_cell_tissues: "List the tissues where a cell type is characterized (from its marker\
-    \ data).\n\n    Args:\n        cell_type: a CL id or name.\n    Returns one tissue\
-    \ per line."
-  get_cell_type_info: "Get a cell type's canonical description and synonyms.\n\n   \
-    \ Args:\n        cell_type: a CL id (e.g. \"CL:0000084\") or a name (e.g. \"T cell\"\
-    )."
-  get_marker_genes: "Get marker genes for a cell type.\n\n    Args:\n        cell_type:\
-    \ a CL id or name.\n        source: \"canonical\" (literature-curated, with tissue\
-    \ + publication) or\n            \"computational\" (CELLxGENE-computed, ranked by\
-    \ marker_score).\n        limit: max genes (default 50)."
-  get_source_data: "List the source datasets/collections that describe a cell type.\n\
-    \n    Args:\n        cell_type: a CL id or name.\n        limit: max collections\
-    \ (default 25).\n    Returns 'collection_name<TAB>collection_url<TAB>publication_url'\
-    \ rows."
-  search_cell_types: "Search cell types by name or synonym (Cell Ontology).\n\n    Args:\n\
-    \        query: text to match against cell-type names/synonyms (e.g. \"T cell\"\
-    , \"neuron\").\n        limit: max results (default 25).\n    Returns 'CL_id<TAB>name'\
-    \ rows."
+  get_cell_tissues: |-
+    List the tissues where a cell type is characterized (from its marker data).
+
+    Args:
+        cell_type: a CL id or name.
+    Returns one tissue per line.
+  get_cell_type_info: |-
+    Get a cell type's canonical description and synonyms.
+
+    Args:
+        cell_type: a CL id (e.g. "CL:0000084") or a name (e.g. "T cell").
+  get_marker_genes: |-
+    Get marker genes for a cell type.
+
+    Args:
+        cell_type: a CL id or name.
+        source: "canonical" (literature-curated, with tissue + publication) or
+            "computational" (CELLxGENE-computed, ranked by marker_score).
+        limit: max genes (default 50).
+  get_source_data: |-
+    List the source datasets/collections that describe a cell type.
+
+    Args:
+        cell_type: a CL id or name.
+        limit: max collections (default 25).
+    Returns 'collection_name<TAB>collection_url<TAB>publication_url' rows.
+  search_cell_types: |-
+    Search cell types by name or synonym (Cell Ontology).
+
+    Args:
+        query: text to match against cell-type names/synonyms (e.g. "T cell", "neuron").
+        limit: max results (default 25).
+    Returns 'CL_id<TAB>name' rows.
 ---
 # CellGuide
 

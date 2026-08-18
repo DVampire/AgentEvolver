@@ -31,7 +31,7 @@ All 7 tools are implemented.
 Declared result shapes:
 
 - `twelvelabs.convert_astra_results` → `data` keys: count, records
-- `twelvelabs.pegasus_index` → `data` keys: index_id
+- `twelvelabs.pegasus_index` → `data` keys: index_id, index_name
 - `twelvelabs.split_video` → `data` keys: clips, count
 - `twelvelabs.text_embeddings` → `data` keys: dims, vector
 - `twelvelabs.twelvelabs_pegasus` → `data` keys: text, video_id

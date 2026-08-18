@@ -204,43 +204,80 @@ action_schemas:
     title: unibind_tfbs_in_regionArguments
     type: object
 action_descriptions:
-  encode_get_biosample: "Get an ENCODE biosample's metadata.\n\n    Args:\n        accession:\
-    \ biosample accession (e.g. \"ENCBS000AAA\")."
-  encode_get_experiment: "Get an ENCODE experiment's metadata.\n\n    Args:\n      \
-    \  accession: experiment accession (e.g. \"ENCSR000AKB\")."
-  encode_get_file: "Get an ENCODE file's metadata (format, type, assembly, download\
-    \ URL).\n\n    Args:\n        accession: file accession (e.g. \"ENCFF000ABC\")."
-  encode_list_files: "List the files produced by an ENCODE experiment.\n\n    Args:\n\
-    \        experiment_accession: e.g. \"ENCSR000AKB\".\n        limit: max files (default\
-    \ 25)."
-  encode_search_biosamples: "Search ENCODE biosamples by keyword.\n\n    Args:\n   \
-    \     query: search text (e.g. \"K562\", \"liver\").\n        limit: max biosamples\
-    \ (default 15)."
-  encode_search_experiments: "Search ENCODE experiments by keyword (assay, target, biosample).\n\
-    \n    Args:\n        query: search text (e.g. \"CTCF K562 ChIP-seq\").\n       \
-    \ limit: max experiments (default 15)."
-  jaspar_get_matrix: "Get a JASPAR TF binding matrix (motif) by id.\n\n    Args:\n \
-    \       matrix_id: JASPAR matrix id (e.g. \"MA0139.1\")."
+  encode_get_biosample: |-
+    Get an ENCODE biosample's metadata.
+
+    Args:
+        accession: biosample accession (e.g. "ENCBS000AAA").
+  encode_get_experiment: |-
+    Get an ENCODE experiment's metadata.
+
+    Args:
+        accession: experiment accession (e.g. "ENCSR000AKB").
+  encode_get_file: |-
+    Get an ENCODE file's metadata (format, type, assembly, download URL).
+
+    Args:
+        accession: file accession (e.g. "ENCFF000ABC").
+  encode_list_files: |-
+    List the files produced by an ENCODE experiment.
+
+    Args:
+        experiment_accession: e.g. "ENCSR000AKB".
+        limit: max files (default 25).
+  encode_search_biosamples: |-
+    Search ENCODE biosamples by keyword.
+
+    Args:
+        query: search text (e.g. "K562", "liver").
+        limit: max biosamples (default 15).
+  encode_search_experiments: |-
+    Search ENCODE experiments by keyword (assay, target, biosample).
+
+    Args:
+        query: search text (e.g. "CTCF K562 ChIP-seq").
+        limit: max experiments (default 15).
+  jaspar_get_matrix: |-
+    Get a JASPAR TF binding matrix (motif) by id.
+
+    Args:
+        matrix_id: JASPAR matrix id (e.g. "MA0139.1").
   jaspar_list_collections: 'List JASPAR matrix collections (e.g. CORE, CNE). Args: `limit`.'
-  jaspar_list_matrices: "List/search JASPAR matrices, optionally by keyword or collection.\n\
-    \n    Args:\n        search: TF name/keyword (optional).\n        collection: JASPAR\
-    \ collection (e.g. \"CORE\"), optional.\n        limit: max matrices (default 20)."
+  jaspar_list_matrices: |-
+    List/search JASPAR matrices, optionally by keyword or collection.
+
+    Args:
+        search: TF name/keyword (optional).
+        collection: JASPAR collection (e.g. "CORE"), optional.
+        limit: max matrices (default 20).
   jaspar_list_releases: 'List JASPAR database releases. Args: `limit`.'
   jaspar_list_species: 'List species available in JASPAR. Args: `limit`.'
   jaspar_list_taxa: 'List taxonomic groups in JASPAR. Args: `limit`.'
-  jaspar_matrix_versions: "List all versions of a JASPAR matrix.\n\n    Args:\n    \
-    \    base_id: JASPAR base id without version (e.g. \"MA0139\")."
-  unibind_get_dataset: "Get a UniBind TFBS dataset's metadata.\n\n    Args:\n      \
-    \  dataset_id: UniBind dataset id (e.g. \"EXP059548.KC167_developmental_stage_6-12h_embryo.ABD-A\"\
-    )."
-  unibind_search_tfbs: "Search UniBind TFBS datasets by transcription factor (or keyword).\n\
-    \n    Args:\n        tf: TF name or keyword (e.g. \"CTCF\").\n        limit: max\
-    \ datasets (default 20)."
-  unibind_tfbs_in_region: "TF binding sites overlapping a genomic region.\n\n    NOTE:\
-    \ UniBind exposes no public per-region JSON API (region tracks are BED downloads\n\
-    \    served via the genome browser), so this returns pointers rather than a live\
-    \ region query.\n\n    Args:\n        chromosome, start, end: region (e.g. chr17\
-    \ / 7668402 / 7687550).\n        genome: assembly (default hg38)."
+  jaspar_matrix_versions: |-
+    List all versions of a JASPAR matrix.
+
+    Args:
+        base_id: JASPAR base id without version (e.g. "MA0139").
+  unibind_get_dataset: |-
+    Get a UniBind TFBS dataset's metadata.
+
+    Args:
+        dataset_id: UniBind dataset id (e.g. "EXP059548.KC167_developmental_stage_6-12h_embryo.ABD-A").
+  unibind_search_tfbs: |-
+    Search UniBind TFBS datasets by transcription factor (or keyword).
+
+    Args:
+        tf: TF name or keyword (e.g. "CTCF").
+        limit: max datasets (default 20).
+  unibind_tfbs_in_region: |-
+    TF binding sites overlapping a genomic region.
+
+    NOTE: UniBind exposes no public per-region JSON API (region tracks are BED downloads
+    served via the genome browser), so this returns pointers rather than a live region query.
+
+    Args:
+        chromosome, start, end: region (e.g. chr17 / 7668402 / 7687550).
+        genome: assembly (default hg38).
 ---
 # Regulation
 

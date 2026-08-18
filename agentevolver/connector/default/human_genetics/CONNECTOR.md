@@ -202,51 +202,88 @@ action_schemas:
     title: phewas_variantArguments
     type: object
 action_descriptions:
-  eqtl_associations: "eQTL associations in a dataset for a gene or genomic region (top\
-    \ by p-value).\n\n    Args:\n        dataset_id: eQTL Catalogue dataset id (e.g.\
-    \ \"QTD000001\", see eqtl_list_datasets).\n        gene: gene symbol — resolved\
-    \ to a region via Ensembl (optional).\n        region: \"chrom:start-end\" (e.g.\
-    \ \"17:7668402-7687550\"); overrides gene.\n        limit: max associations (default\
-    \ 25)."
-  eqtl_list_datasets: "List eQTL Catalogue datasets, optionally filtered by quant method\
-    \ or tissue.\n\n    Args:\n        quant_method: e.g. \"ge\" (gene expression),\
-    \ \"tx\", \"exon\", \"aptamer\" (optional).\n        tissue: substring to filter\
-    \ tissue label (optional).\n        limit: max datasets (default 30)."
-  gwas_associations_for_gene: "GWAS-cataloged variants mapped to a gene (their rsIDs,\
-    \ class, location).\n\n    Args:\n        gene: gene symbol (e.g. \"APOE\").\n \
-    \       limit: max variants (default 30)."
-  gwas_associations_for_trait: "GWAS Catalog associations for a trait (by name or EFO\
-    \ id).\n\n    Args:\n        trait: trait name (e.g. \"Alzheimer disease\") or EFO\
-    \ id (e.g. \"EFO_0000249\").\n        limit: max associations (default 30)."
-  gwas_associations_for_variant: "GWAS Catalog associations for a variant (rsID) — its\
-    \ trait associations.\n\n    Args:\n        rsid: dbSNP rsID (e.g. \"rs429358\"\
-    ).\n        limit: max associations (default 30).\n    Returns 'pvalue<TAB>riskAllele<TAB>OR/beta<TAB>study'\
-    \ rows."
-  gwas_get_study: "Get a GWAS Catalog study by accession id.\n\n    Args:\n        accession:\
-    \ study accession (e.g. \"GCST002245\")."
-  gwas_get_variant: "Get a GWAS Catalog variant (SNP) record by rsID.\n\n    Args:\n\
-    \        rsid: dbSNP rsID (e.g. \"rs429358\")."
-  gwas_search_studies: "Search GWAS Catalog studies by disease/trait. Falls back to\
-    \ EFO-trait studies.\n\n    Args:\n        disease_trait: reported disease/trait\
-    \ (e.g. \"Alzheimer disease\").\n        limit: max studies (default 20)."
-  gwas_search_traits: "Search GWAS Catalog EFO traits by name.\n\n    Args:\n      \
-    \  query: trait name (e.g. \"Alzheimer disease\").\n    Returns 'trait<TAB>efo_id<TAB>uri'\
-    \ rows."
-  phewas_finngen_gene: "Gene-based PheWAS in FinnGen: phenotypes associated at the gene's\
-    \ locus.\n\n    Args:\n        gene: gene symbol (e.g. \"APOE\").\n        limit:\
-    \ max phenotype associations (default 30)."
-  phewas_instances: List the PheWAS portals this connector can query (FinnGen, BioBank
-    Japan).
-  phewas_list_phenotypes: "List phenotypes available in a PheWAS instance (FinnGen).\n\
-    \n    Args:\n        instance: PheWAS instance id (default \"finngen\"; see phewas_instances).\n\
-    \        limit: max phenotypes (default 40)."
-  phewas_search_phenotypes: "Search phenotypes in a PheWAS instance by name/code/category\
-    \ (FinnGen).\n\n    Args:\n        query: search text (e.g. \"diabetes\", \"Alzheimer\"\
-    ).\n        instance: PheWAS instance id (default \"finngen\").\n        limit:\
-    \ max results (default 25)."
-  phewas_variant: "Phenome-wide associations for a variant (all trait associations,\
-    \ via GWAS Catalog).\n\n    Args:\n        rsid: dbSNP rsID (e.g. \"rs429358\").\n\
-    \        limit: max associations (default 30)."
+  eqtl_associations: |-
+    eQTL associations in a dataset for a gene or genomic region (top by p-value).
+
+    Args:
+        dataset_id: eQTL Catalogue dataset id (e.g. "QTD000001", see eqtl_list_datasets).
+        gene: gene symbol — resolved to a region via Ensembl (optional).
+        region: "chrom:start-end" (e.g. "17:7668402-7687550"); overrides gene.
+        limit: max associations (default 25).
+  eqtl_list_datasets: |-
+    List eQTL Catalogue datasets, optionally filtered by quant method or tissue.
+
+    Args:
+        quant_method: e.g. "ge" (gene expression), "tx", "exon", "aptamer" (optional).
+        tissue: substring to filter tissue label (optional).
+        limit: max datasets (default 30).
+  gwas_associations_for_gene: |-
+    GWAS-cataloged variants mapped to a gene (their rsIDs, class, location).
+
+    Args:
+        gene: gene symbol (e.g. "APOE").
+        limit: max variants (default 30).
+  gwas_associations_for_trait: |-
+    GWAS Catalog associations for a trait (by name or EFO id).
+
+    Args:
+        trait: trait name (e.g. "Alzheimer disease") or EFO id (e.g. "EFO_0000249").
+        limit: max associations (default 30).
+  gwas_associations_for_variant: |-
+    GWAS Catalog associations for a variant (rsID) — its trait associations.
+
+    Args:
+        rsid: dbSNP rsID (e.g. "rs429358").
+        limit: max associations (default 30).
+    Returns 'pvalue<TAB>riskAllele<TAB>OR/beta<TAB>study' rows.
+  gwas_get_study: |-
+    Get a GWAS Catalog study by accession id.
+
+    Args:
+        accession: study accession (e.g. "GCST002245").
+  gwas_get_variant: |-
+    Get a GWAS Catalog variant (SNP) record by rsID.
+
+    Args:
+        rsid: dbSNP rsID (e.g. "rs429358").
+  gwas_search_studies: |-
+    Search GWAS Catalog studies by disease/trait. Falls back to EFO-trait studies.
+
+    Args:
+        disease_trait: reported disease/trait (e.g. "Alzheimer disease").
+        limit: max studies (default 20).
+  gwas_search_traits: |-
+    Search GWAS Catalog EFO traits by name.
+
+    Args:
+        query: trait name (e.g. "Alzheimer disease").
+    Returns 'trait<TAB>efo_id<TAB>uri' rows.
+  phewas_finngen_gene: |-
+    Gene-based PheWAS in FinnGen: phenotypes associated at the gene's locus.
+
+    Args:
+        gene: gene symbol (e.g. "APOE").
+        limit: max phenotype associations (default 30).
+  phewas_instances: List the PheWAS portals this connector can query (FinnGen, BioBank Japan).
+  phewas_list_phenotypes: |-
+    List phenotypes available in a PheWAS instance (FinnGen).
+
+    Args:
+        instance: PheWAS instance id (default "finngen"; see phewas_instances).
+        limit: max phenotypes (default 40).
+  phewas_search_phenotypes: |-
+    Search phenotypes in a PheWAS instance by name/code/category (FinnGen).
+
+    Args:
+        query: search text (e.g. "diabetes", "Alzheimer").
+        instance: PheWAS instance id (default "finngen").
+        limit: max results (default 25).
+  phewas_variant: |-
+    Phenome-wide associations for a variant (all trait associations, via GWAS Catalog).
+
+    Args:
+        rsid: dbSNP rsID (e.g. "rs429358").
+        limit: max associations (default 30).
 ---
 # Human Genetics
 

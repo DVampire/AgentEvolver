@@ -15,6 +15,10 @@ class PaddleocrTool(PluginTool):
 
     output = {'text': 'text', 'lines': 'any'}
 
+
+    def _render(self, data):
+        return f"Extracted {len(data['lines'])} text lines."
+
     async def __call__(self, image_path: str = "", lang: str = "en", **kwargs) -> Response:
         import os as _os
         if not image_path or not _os.path.exists(image_path):
@@ -26,4 +30,4 @@ class PaddleocrTool(PluginTool):
             lines = [line[1][0] for page in (result or []) for line in (page or [])]
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"paddle.ocr: {type(exc).__name__}: {exc}")
-        return self._ok(f"Extracted {len(lines)} text lines.", text="\n".join(lines), lines=lines)
+        return self._ok(text="\n".join(lines), lines=lines)

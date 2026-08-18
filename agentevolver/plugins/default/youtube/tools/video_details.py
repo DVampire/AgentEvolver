@@ -13,6 +13,11 @@ class YoutubeVideoDetailsTool(YoutubeToolBase):
 
     output = {'video_id': 'text', 'records': 'list', 'count': 'any'}
 
+
+    def _render(self, data):
+        first = (data["records"] or [{}])[0]
+        return f"Retrieved details for '{first.get('title', data['video_id'])}'."
+
     async def __call__(self, video_url: str = "", api_key: str = "", include_statistics: bool = True,
                        include_content_details: bool = True, include_tags: bool = False, **kwargs) -> Response:
         video_url = str(video_url or "").strip()
@@ -58,7 +63,6 @@ class YoutubeVideoDetailsTool(YoutubeToolBase):
                             "definition": cd.get("definition", "hd").upper(),
                             "has_captions": cd.get("caption", "false") == "true"})
             youtube.close()
-            return self._ok(f"Retrieved details for '{row['title']}'.",
-                            video_id=video_id, records=[row], count=1)
+            return self._ok(video_id=video_id, records=[row], count=1)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"youtube.video_details: {type(exc).__name__}: {exc}")

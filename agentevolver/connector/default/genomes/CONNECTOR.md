@@ -185,53 +185,87 @@ action_schemas:
     title: ucsc_track_dataArguments
     type: object
 action_descriptions:
-  ensembl_homology: "Orthologues of a gene across species via Ensembl Compara.\n\n \
-    \   Args:\n        gene: gene symbol (e.g. \"BRCA1\").\n        species: source\
-    \ species (default \"human\").\n        target_species: optional single target species\
-    \ to restrict to (e.g. \"mouse\")."
-  ensembl_lookup: "Look up a gene/transcript by Ensembl id or gene symbol.\n\n    Args:\n\
-    \        query: Ensembl id (e.g. \"ENSG00000012048\") or gene symbol (e.g. \"BRCA1\"\
-    ).\n        species: species for symbol lookup (default \"human\")."
-  ensembl_overlap_region: "List features overlapping a genomic region via Ensembl.\n\
-    \n    Args:\n        region: \"chrom:start-end\" (e.g. \"17:43044295-43125483\"\
-    ).\n        species: species (default \"human\").\n        feature: feature type\
-    \ — gene, transcript, exon, variation, regulatory (default \"gene\")."
-  ensembl_sequence: "Fetch the sequence for an Ensembl id.\n\n    Args:\n        ensembl_id:\
-    \ gene/transcript/protein id (e.g. \"ENST00000357654\").\n        seq_type: \"genomic\"\
-    , \"cds\", \"cdna\", or \"protein\" (default \"genomic\").\n        max_len: max\
-    \ sequence characters to return (default 1000; full length reported)."
-  ensembl_vep_variant: "Predict variant effects (VEP) for an rsID, HGVS notation, or\
-    \ region/allele.\n\n    Args:\n        variant: dbSNP rsID (e.g. \"rs699\"), HGVS\
-    \ (e.g. \"ENST00000269305.4:c.215C>G\"),\n            or region:allele (e.g. \"\
-    17:43044295:A\").\n        species: species (default \"human\")."
-  ensembl_xrefs: "Cross-references (external DB ids) for a gene via Ensembl.\n\n   \
-    \ Args:\n        query: Ensembl id or gene symbol (e.g. \"BRCA1\").\n        species:\
-    \ species for symbol lookup (default \"human\").\n    Returns 'db<TAB>primary_id<TAB>display_id'\
-    \ rows."
-  ucsc_chrom_sizes: "Get chromosome/contig names and sizes for a UCSC assembly.\n\n\
-    \    Args:\n        genome: UCSC assembly (e.g. \"hg38\", \"hg19\", \"mm39\").\n\
-    \        search: optional substring to filter chromosome names (e.g. \"chr1\").\n\
-    \    Returns 'chrom<TAB>size(bp)' rows, largest first."
-  ucsc_conservation: "Summarize evolutionary conservation across a region from UCSC\
-    \ phyloP/phastCons.\n\n    Args:\n        region: \"chrom:start-end\" (1-based),\
-    \ e.g. \"chr17:43044295-43044395\".\n        genome: UCSC assembly (default \"hg38\"\
-    ).\n        track: conservation bigWig track; defaults to \"phyloP100way\" for hg38,\n\
-    \            \"phyloP60way\" otherwise. Try \"phastCons100way\" for phastCons scores.\n\
-    \    Returns per-track count/mean/min/max of the base-level scores in the region."
-  ucsc_list_tracks: "List queryable data tracks for a UCSC assembly.\n\n    Args:\n\
-    \        genome: UCSC assembly (e.g. \"hg38\", \"hg19\", \"mm39\").\n        search:\
-    \ optional case-insensitive substring to filter by track name/label.\n    Returns\
-    \ 'track<TAB>type<TAB>shortLabel' rows (composite subtracks flattened)."
-  ucsc_tfbs_clusters: "List ENCODE transcription-factor binding-site (TFBS) clusters\
-    \ in a region.\n\n    Uses UCSC's ENCODE TF ChIP-seq clustered track (encRegTfbsClustered\
-    \ on hg38 /\n    hg19). Summarizes the factors bound and their peak scores.\n\n\
-    \    Args:\n        region: \"chrom:start-end\" (1-based), e.g. \"chr17:43044295-43125483\"\
-    .\n        genome: UCSC assembly (default \"hg38\"; supported on hg38/hg19)."
-  ucsc_track_data: "Fetch raw row data for any UCSC track within a genomic region.\n\
-    \n    Args:\n        track: UCSC track name (see ucsc_list_tracks), e.g. \"refGene\"\
-    , \"knownGene\".\n        region: \"chrom:start-end\" (1-based), e.g. \"chr17:43044295-43125483\"\
-    .\n        genome: UCSC assembly (default \"hg38\").\n    Returns one line per feature\
-    \ with its raw JSON fields."
+  ensembl_homology: |-
+    Orthologues of a gene across species via Ensembl Compara.
+
+    Args:
+        gene: gene symbol (e.g. "BRCA1").
+        species: source species (default "human").
+        target_species: optional single target species to restrict to (e.g. "mouse").
+  ensembl_lookup: |-
+    Look up a gene/transcript by Ensembl id or gene symbol.
+
+    Args:
+        query: Ensembl id (e.g. "ENSG00000012048") or gene symbol (e.g. "BRCA1").
+        species: species for symbol lookup (default "human").
+  ensembl_overlap_region: |-
+    List features overlapping a genomic region via Ensembl.
+
+    Args:
+        region: "chrom:start-end" (e.g. "17:43044295-43125483").
+        species: species (default "human").
+        feature: feature type — gene, transcript, exon, variation, regulatory (default "gene").
+  ensembl_sequence: |-
+    Fetch the sequence for an Ensembl id.
+
+    Args:
+        ensembl_id: gene/transcript/protein id (e.g. "ENST00000357654").
+        seq_type: "genomic", "cds", "cdna", or "protein" (default "genomic").
+        max_len: max sequence characters to return (default 1000; full length reported).
+  ensembl_vep_variant: |-
+    Predict variant effects (VEP) for an rsID, HGVS notation, or region/allele.
+
+    Args:
+        variant: dbSNP rsID (e.g. "rs699"), HGVS (e.g. "ENST00000269305.4:c.215C>G"),
+            or region:allele (e.g. "17:43044295:A").
+        species: species (default "human").
+  ensembl_xrefs: |-
+    Cross-references (external DB ids) for a gene via Ensembl.
+
+    Args:
+        query: Ensembl id or gene symbol (e.g. "BRCA1").
+        species: species for symbol lookup (default "human").
+    Returns 'db<TAB>primary_id<TAB>display_id' rows.
+  ucsc_chrom_sizes: |-
+    Get chromosome/contig names and sizes for a UCSC assembly.
+
+    Args:
+        genome: UCSC assembly (e.g. "hg38", "hg19", "mm39").
+        search: optional substring to filter chromosome names (e.g. "chr1").
+    Returns 'chrom<TAB>size(bp)' rows, largest first.
+  ucsc_conservation: |-
+    Summarize evolutionary conservation across a region from UCSC phyloP/phastCons.
+
+    Args:
+        region: "chrom:start-end" (1-based), e.g. "chr17:43044295-43044395".
+        genome: UCSC assembly (default "hg38").
+        track: conservation bigWig track; defaults to "phyloP100way" for hg38,
+            "phyloP60way" otherwise. Try "phastCons100way" for phastCons scores.
+    Returns per-track count/mean/min/max of the base-level scores in the region.
+  ucsc_list_tracks: |-
+    List queryable data tracks for a UCSC assembly.
+
+    Args:
+        genome: UCSC assembly (e.g. "hg38", "hg19", "mm39").
+        search: optional case-insensitive substring to filter by track name/label.
+    Returns 'track<TAB>type<TAB>shortLabel' rows (composite subtracks flattened).
+  ucsc_tfbs_clusters: |-
+    List ENCODE transcription-factor binding-site (TFBS) clusters in a region.
+
+    Uses UCSC's ENCODE TF ChIP-seq clustered track (encRegTfbsClustered on hg38 /
+    hg19). Summarizes the factors bound and their peak scores.
+
+    Args:
+        region: "chrom:start-end" (1-based), e.g. "chr17:43044295-43125483".
+        genome: UCSC assembly (default "hg38"; supported on hg38/hg19).
+  ucsc_track_data: |-
+    Fetch raw row data for any UCSC track within a genomic region.
+
+    Args:
+        track: UCSC track name (see ucsc_list_tracks), e.g. "refGene", "knownGene".
+        region: "chrom:start-end" (1-based), e.g. "chr17:43044295-43125483".
+        genome: UCSC assembly (default "hg38").
+    Returns one line per feature with its raw JSON fields.
 ---
 # Genomes
 

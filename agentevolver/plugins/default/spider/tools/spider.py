@@ -11,7 +11,11 @@ class SpiderTool(PluginTool):
     display_name: str = 'Spider Web Crawler & Scraper'
     description: str = 'Spider API for web crawling and scraping.'
 
-    output = {'records': 'list', 'count': 'any'}
+    output = {"mode": "text", 'records': 'list', 'count': 'any'}
+
+
+    def _render(self, data):
+        return f"Spider {data['mode']} returned {data['count']} page(s)."
 
     async def __call__(self, url: str = "", spider_api_key: str = "", mode: str = "scrape", limit: int = 0, **kwargs) -> Response:
         key = self._secret(spider_api_key, "SPIDER_API_KEY")
@@ -33,5 +37,4 @@ class SpiderTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"spider: {type(exc).__name__}: {exc}")
         records = [{"content": r.get("content"), "url": r.get("url")} for r in (result or [])]
-        return self._ok(f"Spider {mode} returned {len(records)} page(s).",
-                        records=records, count=len(records))
+        return self._ok(mode=mode, records=records, count=len(records))

@@ -13,7 +13,11 @@ class HomeassistantHomeAssistantControlTool(PluginTool):
     display_name: str = 'Home Assistant Control'
     description: str = ''
 
-    output = {'result': 'object'}
+    output = {"domain": "text", "service": "text", 'result': 'object'}
+
+
+    def _render(self, data):
+        return f"Called {data['domain']}.{data['service']}."
 
     async def __call__(self, ha_url: str = "", ha_token: str = "", domain: str = "", service: str = "", entity_id: str = "", **kwargs) -> Response:
         import httpx
@@ -28,4 +32,4 @@ class HomeassistantHomeAssistantControlTool(PluginTool):
             result = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"homeassistant.control: {type(exc).__name__}: {exc}")
-        return self._ok(f"Called {domain}.{service}.", result=result)
+        return self._ok(domain=domain, service=service, result=result)

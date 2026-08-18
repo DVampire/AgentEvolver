@@ -27,7 +27,7 @@ All 4 tools are implemented.
 
 Declared result shapes:
 
-- `amazon.s3_bucket_uploader` → `data` keys: bucket, key
+- `amazon.s3_bucket_uploader` → `data` keys: bucket, file_path, key
 
 ## Credentials
 

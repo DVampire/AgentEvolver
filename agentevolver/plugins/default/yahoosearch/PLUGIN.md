@@ -23,7 +23,7 @@ All 1 tools are implemented.
 
 Declared result shapes:
 
-- `yahoosearch.yahoo` → `data` keys: result, symbol
+- `yahoosearch.yahoo` → `data` keys: method, result, symbol
 
 ## Credentials
 

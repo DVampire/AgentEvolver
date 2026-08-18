@@ -97,31 +97,47 @@ action_schemas:
     title: search_drug_labelsArguments
     type: object
 action_descriptions:
-  count_drug_applications: "Aggregate a count of Drugs@FDA applications grouped by a\
-    \ field.\n\n    Args:\n        field: openFDA field to group by (e.g. \"products.marketing_status\"\
-    ,\n            \"products.dosage_form.exact\", \"products.route.exact\").\n    \
-    \    search: optional openFDA search filter (e.g. 'openfda.generic_name:\"aspirin\"\
-    ')."
-  get_drug_application: "Get details of one Drugs@FDA application (sponsor, products,\
-    \ approval).\n\n    Args:\n        application_number: e.g. \"NDA020702\" or \"\
-    ANDA207687\"."
-  get_drug_statistics: "Approval/marketing statistics for a drug across Drugs@FDA (by\
-    \ status & dosage form).\n\n    Args:\n        drug: generic or brand name (e.g.\
-    \ \"atorvastatin\")."
-  get_generic_equivalents: "Find generic (ANDA) and brand (NDA) equivalents sharing\
-    \ a drug's active ingredient.\n\n    Args:\n        drug: generic or brand name\
-    \ (e.g. \"Lipitor\", \"atorvastatin\").\n        limit: max applications (default\
-    \ 25)."
-  list_pharmacologic_classes: "List pharmacologic classes (EPC/MOA/PE/CS). For a drug,\
-    \ its classes; else top EPC classes.\n\n    Args:\n        drug: optional drug name;\
-    \ if empty, returns the most common EPC classes overall."
-  search_drug_applications: "Search Drugs@FDA applications by brand or generic drug\
-    \ name.\n\n    Args:\n        query: brand or generic name (e.g. \"atorvastatin\"\
-    , \"Lipitor\").\n        limit: max applications (default 10).\n    Returns 'application<TAB>sponsor<TAB>brand<TAB>generic'\
-    \ rows."
-  search_drug_labels: "Search SPL drug labels; returns brand, indications snippet, and\
-    \ SPL id.\n\n    Args:\n        query: brand or generic name (e.g. \"ibuprofen\"\
-    ).\n        limit: max labels (default 5)."
+  count_drug_applications: |-
+    Aggregate a count of Drugs@FDA applications grouped by a field.
+
+    Args:
+        field: openFDA field to group by (e.g. "products.marketing_status",
+            "products.dosage_form.exact", "products.route.exact").
+        search: optional openFDA search filter (e.g. 'openfda.generic_name:"aspirin"').
+  get_drug_application: |-
+    Get details of one Drugs@FDA application (sponsor, products, approval).
+
+    Args:
+        application_number: e.g. "NDA020702" or "ANDA207687".
+  get_drug_statistics: |-
+    Approval/marketing statistics for a drug across Drugs@FDA (by status & dosage form).
+
+    Args:
+        drug: generic or brand name (e.g. "atorvastatin").
+  get_generic_equivalents: |-
+    Find generic (ANDA) and brand (NDA) equivalents sharing a drug's active ingredient.
+
+    Args:
+        drug: generic or brand name (e.g. "Lipitor", "atorvastatin").
+        limit: max applications (default 25).
+  list_pharmacologic_classes: |-
+    List pharmacologic classes (EPC/MOA/PE/CS). For a drug, its classes; else top EPC classes.
+
+    Args:
+        drug: optional drug name; if empty, returns the most common EPC classes overall.
+  search_drug_applications: |-
+    Search Drugs@FDA applications by brand or generic drug name.
+
+    Args:
+        query: brand or generic name (e.g. "atorvastatin", "Lipitor").
+        limit: max applications (default 10).
+    Returns 'application<TAB>sponsor<TAB>brand<TAB>generic' rows.
+  search_drug_labels: |-
+    Search SPL drug labels; returns brand, indications snippet, and SPL id.
+
+    Args:
+        query: brand or generic name (e.g. "ibuprofen").
+        limit: max labels (default 5).
 ---
 # Drug Regulatory
 

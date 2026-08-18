@@ -28,7 +28,7 @@ All 5 tools are implemented.
 
 Declared result shapes:
 
-- `assemblyai.assemblyai_get_subtitles` → `data` keys: format, subtitles
+- `assemblyai.assemblyai_get_subtitles` → `data` keys: format, subtitles, transcript_id
 - `assemblyai.assemblyai_lemur` → `data` keys: response
 - `assemblyai.assemblyai_list_transcripts` → `data` keys: count, records
 - `assemblyai.assemblyai_poll_transcript` → `data` keys: status, text, transcript_id

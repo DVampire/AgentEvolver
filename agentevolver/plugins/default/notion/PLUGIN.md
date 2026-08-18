@@ -31,14 +31,14 @@ All 8 tools are implemented.
 
 Declared result shapes:
 
-- `notion.add_content_to_page` → `data` keys: result
+- `notion.add_content_to_page` → `data` keys: page_id, result
 - `notion.create_page` → `data` keys: page
 - `notion.list_database_properties` → `data` keys: count, properties
 - `notion.list_pages` → `data` keys: count, records
 - `notion.list_users` → `data` keys: count, records
-- `notion.page_content_viewer` → `data` keys: count, records
+- `notion.page_content_viewer` → `data` keys: count, page_id, records
 - `notion.search` → `data` keys: count, query, records
-- `notion.update_page_property` → `data` keys: page
+- `notion.update_page_property` → `data` keys: page, page_id
 
 ## Credentials
 

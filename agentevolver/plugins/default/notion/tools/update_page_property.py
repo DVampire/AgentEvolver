@@ -13,7 +13,11 @@ class NotionUpdatePagePropertyTool(NotionToolBase):
     display_name: str = 'Update Page Property '
     description: str = 'Update the properties of a Notion page.'
 
-    output = {'page': 'any'}
+    output = {"page_id": "text", 'page': 'any'}
+
+
+    def _render(self, data):
+        return f"Updated page {data['page_id']}."
 
     async def __call__(self, api_key: str = "", page_id: str = "", properties_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
@@ -26,6 +30,6 @@ class NotionUpdatePagePropertyTool(NotionToolBase):
                 return self._fail("notion.update_page_property: 'page_id' and 'properties_json' are required.")
             js = self._request("PATCH", f"/pages/{page_id}", token,
                                json={"properties": _json.loads(properties_json)})
-            return self._ok(f"Updated page {page_id}.", page=js)
+            return self._ok(page_id=page_id, page=js)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"notion.update_page_property: {type(exc).__name__}: {exc}")
