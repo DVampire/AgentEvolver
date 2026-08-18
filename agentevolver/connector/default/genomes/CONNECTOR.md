@@ -22,8 +22,217 @@ actions:
   - ucsc_conservation
   - ucsc_tfbs_clusters
   - ucsc_chrom_sizes
+action_schemas:
+  ensembl_homology:
+    properties:
+      gene:
+        title: Gene
+        type: string
+      species:
+        default: human
+        title: Species
+        type: string
+      target_species:
+        default: ''
+        title: Target Species
+        type: string
+    required:
+    - gene
+    title: ensembl_homologyArguments
+    type: object
+  ensembl_lookup:
+    properties:
+      query:
+        title: Query
+        type: string
+      species:
+        default: human
+        title: Species
+        type: string
+    required:
+    - query
+    title: ensembl_lookupArguments
+    type: object
+  ensembl_overlap_region:
+    properties:
+      feature:
+        default: gene
+        title: Feature
+        type: string
+      region:
+        title: Region
+        type: string
+      species:
+        default: human
+        title: Species
+        type: string
+    required:
+    - region
+    title: ensembl_overlap_regionArguments
+    type: object
+  ensembl_sequence:
+    properties:
+      ensembl_id:
+        title: Ensembl Id
+        type: string
+      max_len:
+        default: 1000
+        title: Max Len
+        type: integer
+      seq_type:
+        default: genomic
+        title: Seq Type
+        type: string
+    required:
+    - ensembl_id
+    title: ensembl_sequenceArguments
+    type: object
+  ensembl_vep_variant:
+    properties:
+      species:
+        default: human
+        title: Species
+        type: string
+      variant:
+        title: Variant
+        type: string
+    required:
+    - variant
+    title: ensembl_vep_variantArguments
+    type: object
+  ensembl_xrefs:
+    properties:
+      query:
+        title: Query
+        type: string
+      species:
+        default: human
+        title: Species
+        type: string
+    required:
+    - query
+    title: ensembl_xrefsArguments
+    type: object
+  ucsc_chrom_sizes:
+    properties:
+      genome:
+        default: hg38
+        title: Genome
+        type: string
+      search:
+        default: ''
+        title: Search
+        type: string
+    title: ucsc_chrom_sizesArguments
+    type: object
+  ucsc_conservation:
+    properties:
+      genome:
+        default: hg38
+        title: Genome
+        type: string
+      region:
+        title: Region
+        type: string
+      track:
+        default: ''
+        title: Track
+        type: string
+    required:
+    - region
+    title: ucsc_conservationArguments
+    type: object
+  ucsc_list_tracks:
+    properties:
+      genome:
+        default: hg38
+        title: Genome
+        type: string
+      search:
+        default: ''
+        title: Search
+        type: string
+    title: ucsc_list_tracksArguments
+    type: object
+  ucsc_tfbs_clusters:
+    properties:
+      genome:
+        default: hg38
+        title: Genome
+        type: string
+      region:
+        title: Region
+        type: string
+    required:
+    - region
+    title: ucsc_tfbs_clustersArguments
+    type: object
+  ucsc_track_data:
+    properties:
+      genome:
+        default: hg38
+        title: Genome
+        type: string
+      region:
+        title: Region
+        type: string
+      track:
+        title: Track
+        type: string
+    required:
+    - track
+    - region
+    title: ucsc_track_dataArguments
+    type: object
+action_descriptions:
+  ensembl_homology: "Orthologues of a gene across species via Ensembl Compara.\n\n \
+    \   Args:\n        gene: gene symbol (e.g. \"BRCA1\").\n        species: source\
+    \ species (default \"human\").\n        target_species: optional single target species\
+    \ to restrict to (e.g. \"mouse\")."
+  ensembl_lookup: "Look up a gene/transcript by Ensembl id or gene symbol.\n\n    Args:\n\
+    \        query: Ensembl id (e.g. \"ENSG00000012048\") or gene symbol (e.g. \"BRCA1\"\
+    ).\n        species: species for symbol lookup (default \"human\")."
+  ensembl_overlap_region: "List features overlapping a genomic region via Ensembl.\n\
+    \n    Args:\n        region: \"chrom:start-end\" (e.g. \"17:43044295-43125483\"\
+    ).\n        species: species (default \"human\").\n        feature: feature type\
+    \ — gene, transcript, exon, variation, regulatory (default \"gene\")."
+  ensembl_sequence: "Fetch the sequence for an Ensembl id.\n\n    Args:\n        ensembl_id:\
+    \ gene/transcript/protein id (e.g. \"ENST00000357654\").\n        seq_type: \"genomic\"\
+    , \"cds\", \"cdna\", or \"protein\" (default \"genomic\").\n        max_len: max\
+    \ sequence characters to return (default 1000; full length reported)."
+  ensembl_vep_variant: "Predict variant effects (VEP) for an rsID, HGVS notation, or\
+    \ region/allele.\n\n    Args:\n        variant: dbSNP rsID (e.g. \"rs699\"), HGVS\
+    \ (e.g. \"ENST00000269305.4:c.215C>G\"),\n            or region:allele (e.g. \"\
+    17:43044295:A\").\n        species: species (default \"human\")."
+  ensembl_xrefs: "Cross-references (external DB ids) for a gene via Ensembl.\n\n   \
+    \ Args:\n        query: Ensembl id or gene symbol (e.g. \"BRCA1\").\n        species:\
+    \ species for symbol lookup (default \"human\").\n    Returns 'db<TAB>primary_id<TAB>display_id'\
+    \ rows."
+  ucsc_chrom_sizes: "Get chromosome/contig names and sizes for a UCSC assembly.\n\n\
+    \    Args:\n        genome: UCSC assembly (e.g. \"hg38\", \"hg19\", \"mm39\").\n\
+    \        search: optional substring to filter chromosome names (e.g. \"chr1\").\n\
+    \    Returns 'chrom<TAB>size(bp)' rows, largest first."
+  ucsc_conservation: "Summarize evolutionary conservation across a region from UCSC\
+    \ phyloP/phastCons.\n\n    Args:\n        region: \"chrom:start-end\" (1-based),\
+    \ e.g. \"chr17:43044295-43044395\".\n        genome: UCSC assembly (default \"hg38\"\
+    ).\n        track: conservation bigWig track; defaults to \"phyloP100way\" for hg38,\n\
+    \            \"phyloP60way\" otherwise. Try \"phastCons100way\" for phastCons scores.\n\
+    \    Returns per-track count/mean/min/max of the base-level scores in the region."
+  ucsc_list_tracks: "List queryable data tracks for a UCSC assembly.\n\n    Args:\n\
+    \        genome: UCSC assembly (e.g. \"hg38\", \"hg19\", \"mm39\").\n        search:\
+    \ optional case-insensitive substring to filter by track name/label.\n    Returns\
+    \ 'track<TAB>type<TAB>shortLabel' rows (composite subtracks flattened)."
+  ucsc_tfbs_clusters: "List ENCODE transcription-factor binding-site (TFBS) clusters\
+    \ in a region.\n\n    Uses UCSC's ENCODE TF ChIP-seq clustered track (encRegTfbsClustered\
+    \ on hg38 /\n    hg19). Summarizes the factors bound and their peak scores.\n\n\
+    \    Args:\n        region: \"chrom:start-end\" (1-based), e.g. \"chr17:43044295-43125483\"\
+    .\n        genome: UCSC assembly (default \"hg38\"; supported on hg38/hg19)."
+  ucsc_track_data: "Fetch raw row data for any UCSC track within a genomic region.\n\
+    \n    Args:\n        track: UCSC track name (see ucsc_list_tracks), e.g. \"refGene\"\
+    , \"knownGene\".\n        region: \"chrom:start-end\" (1-based), e.g. \"chr17:43044295-43125483\"\
+    .\n        genome: UCSC assembly (default \"hg38\").\n    Returns one line per feature\
+    \ with its raw JSON fields."
 ---
-
 # Genomes
 
 A self-contained MCP connector for genome annotation over two **public** REST APIs,

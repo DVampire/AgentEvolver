@@ -13,6 +13,11 @@ class AgentqlApiTool(PluginTool):
     display_name: str = 'Extract Web Data'
     description: str = 'Extracts structured data from a web page using an AgentQL query or a Natural Language description.'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'AgentQL query completed.'
+
     async def __call__(self, url: str = "", query: str = "", prompt: str = "", api_key: str = "", mode: str = "fast", **kwargs) -> Response:
         import httpx
         key = self._secret(api_key, "AGENTQL_API_KEY")
@@ -27,4 +32,4 @@ class AgentqlApiTool(PluginTool):
             data = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"agentql: {type(exc).__name__}: {exc}")
-        return self._ok("AgentQL query completed.", result=data.get("data", data))
+        return self._ok(result=data.get('data', data))

@@ -7,7 +7,7 @@ A second list and a second delete would be a second vocabulary for one idea, and
 agent would have to learn which of the two knew about which piece of work.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -18,8 +18,7 @@ from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Set a reminder that comes due later in this run — after a delay, at a time, or at a fixed interval."
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Park something you must come back to, instead of holding it in your head or polling for
 it. Give exactly one of:
 
@@ -29,7 +28,6 @@ it. Give exactly one of:
   guessing a time zone is how a reminder fires at breakfast in the wrong hemisphere.
 - every_seconds — a fixed interval, at least 300 (five minutes).
 
-## Guidance
 - Delivery is session-local. The reminder lives in this run and dies with it — it does
   not reach anyone after the run ends, and it is not a notification. Something that must
   outlive the run belongs in a file, or in the goal.
@@ -40,18 +38,13 @@ it. Give exactly one of:
 - The prompt is what you will read later — write it so it makes sense with no memory of
   now. "check the deploy" is worse than "check whether the 14:30 deploy of api-gateway
   finished and rolled back cleanly".
-
-## Parameters
-- prompt (str, required): what to say when it comes due.
-- after_seconds (int, optional): fire once, this many seconds from now.
-- at (str, optional): fire once, at this RFC 3339 instant.
-- every_seconds (int, optional): fire repeatedly, this often; minimum 300.
-
-## Example
-{"name": "schedule_create_tool", "args": {"prompt": "Check whether the nightly ETL finished", "after_seconds": 1800}}
-{"name": "schedule_create_tool", "args": {"prompt": "Re-read the build log for new failures", "every_seconds": 600}}
-{"name": "schedule_create_tool", "args": {"prompt": "Hand over the summary", "at": "2026-08-15T09:00:00+08:00"}}
 """
+
+_EXAMPLES = [
+    '{"name": "schedule_create_tool", "args": {"prompt": "Check whether the nightly ETL finished", "after_seconds": 1800}}',
+    '{"name": "schedule_create_tool", "args": {"prompt": "Re-read the build log for new failures", "every_seconds": 600}}',
+    '{"name": "schedule_create_tool", "args": {"prompt": "Hand over the summary", "at": "2026-08-15T09:00:00+08:00"}}',
+]
 
 
 def _session_of(kwargs) -> str:
@@ -65,7 +58,8 @@ class ScheduleCreateTool(Tool):
 
     name: str = "schedule_create_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Adds a record to this session's job registry.")
@@ -77,6 +71,14 @@ class ScheduleCreateTool(Tool):
     async def __call__(self, prompt: str, after_seconds: Optional[int] = None,
                        at: Optional[str] = None, every_seconds: Optional[int] = None,
                        **kwargs) -> Response:
+        """Schedule a prompt to be delivered later, once or repeatedly.
+
+        Args:
+            prompt: What to say when it comes due.
+            after_seconds: Fire once, this many seconds from now.
+            at: Fire once, at this RFC 3339 instant.
+            every_seconds: Fire repeatedly, this often; minimum 300.
+        """
         try:
             job = job_manager.schedule(
                 session_id=_session_of(kwargs), prompt=prompt,

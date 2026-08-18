@@ -18,23 +18,15 @@ _IGNORED_DIRS = frozenset({
 
 _DESCRIPTION = "Find files matching a glob pattern within a directory tree."
 
-_INSTRUCTION = """
-## Function
-Find files matching a glob pattern within a directory tree.
-
-## Guidance
+_GUIDANCE = """
 - The pattern is matched against both the full relative path from root and the bare filename.
 - Common noise directories (.git, node_modules, __pycache__, .venv, etc.) are skipped automatically.
 - Results are sorted and capped at max_results; refine the pattern if results are truncated.
-
-## Parameters
-- pattern (str): Glob pattern, e.g. "*.py" or "src/**/*.ts".
-- root (str): Absolute path to the directory to search in.
-- max_results (int, optional): Maximum number of results to return. Defaults to 100.
-
-## Example
-{"name": "glob_search_tool", "args": {"pattern": "*.py", "root": "/abs/path/to/project"}}
 """
+
+_EXAMPLES = [
+    '{"name": "glob_search_tool", "args": {"pattern": "*.py", "root": "/abs/path/to/project"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -50,7 +42,8 @@ class GlobSearchTool(Tool):
     #: a tree walk over a large repository, not an unbounded scan.
     call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = False

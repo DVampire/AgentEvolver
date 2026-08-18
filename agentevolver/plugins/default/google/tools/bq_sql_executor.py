@@ -13,6 +13,11 @@ class GoogleBqSqlExecutorTool(PluginTool):
     display_name: str = 'BigQuery'
     description: str = 'Execute SQL queries on Google BigQuery.'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"BigQuery returned {data['count']} rows."
+
     async def __call__(self, query: str = "", project: str = "", credentials_json: str = "", **kwargs) -> Response:
         if not query:
             return self._fail("google.bigquery: 'query' is required.")
@@ -22,4 +27,4 @@ class GoogleBqSqlExecutorTool(PluginTool):
             rows = [dict(r) for r in client.query(query).result()]
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"google.bigquery: {type(exc).__name__}: {exc}")
-        return self._ok(f"BigQuery returned {len(rows)} rows.", records=rows, count=len(rows))
+        return self._ok(records=rows, count=len(rows))

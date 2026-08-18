@@ -330,11 +330,7 @@ class Todo(BaseModel):
 
 _DESCRIPTION = "Manage a todo.md file with task decomposition and step tracking."
 
-_INSTRUCTION = """
-## Function
-Manage a todo.md file with task decomposition and step tracking.
-
-## Guidance
+_GUIDANCE = """
 Only provide parameters relevant to the specific operation you are performing; do not include unnecessary parameters. The todo.md file is maintained in the base directory and follows a structured format for task management.
 
 Available `action` values:
@@ -346,23 +342,12 @@ Available `action` values:
 6. show: Show the complete todo.md file content.
 7. export: Export todo.md to a specified path (export_path).
 8. cleanup: Clean up and remove the todo from cache (call when done with the todo list).
-
-## Parameters
-- action (str): One of add, complete, update, list, clear, show, export, cleanup.
-- task (str, optional): Step description (add/update).
-- priority (str, optional): Step priority (add).
-- category (str, optional): Step category (add).
-- parameters (dict, optional): Extra step parameters (add/update).
-- after_step_id (str, optional): Step ID to insert after (add).
-- step_id (str, optional): Target step ID (complete/update).
-- status (str, optional): Completion status "success" or "failed" (complete).
-- result (str, optional): Result description (complete).
-- export_path (str, optional): Target path for export.
-
-## Example
-{"name": "todo_tool", "args": {"action": "add", "task": "Task description", "priority": "high", "category": "work"}}
-{"name": "todo_tool", "args": {"action": "complete", "step_id": "step_1", "status": "success", "result": "Completed successfully"}}
 """
+
+_EXAMPLES = [
+    '{"name": "todo_tool", "args": {"action": "add", "task": "Task description", "priority": "high", "category": "work"}}',
+    '{"name": "todo_tool", "args": {"action": "complete", "step_id": "step_1", "status": "success", "result": "Completed successfully"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -372,7 +357,8 @@ class TodoTool(Tool):
     
     name: str = "todo_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     

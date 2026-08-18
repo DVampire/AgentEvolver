@@ -11,6 +11,8 @@ class SpiderTool(PluginTool):
     display_name: str = 'Spider Web Crawler & Scraper'
     description: str = 'Spider API for web crawling and scraping.'
 
+    output = {'records': 'list', 'count': 'any'}
+
     async def __call__(self, url: str = "", spider_api_key: str = "", mode: str = "scrape", limit: int = 0, **kwargs) -> Response:
         key = self._secret(spider_api_key, "SPIDER_API_KEY")
         if not key:

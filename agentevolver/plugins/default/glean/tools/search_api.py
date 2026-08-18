@@ -11,6 +11,11 @@ class GleanSearchApiTool(PluginTool):
     display_name: str = 'Glean Search API'
     description: str = 'Search using Glean'
 
+    output = {'query': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Glean returned {data['count']} results for '{data['query']}'."
+
     async def __call__(self, query: str = "", glean_api_url: str = "", glean_access_token: str = "", page_size: int = 10, **kwargs) -> Response:
         import httpx
         query = str(query or "").strip()
@@ -30,5 +35,4 @@ class GleanSearchApiTool(PluginTool):
             results = resp.json().get("results", [])
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"glean.search: {type(exc).__name__}: {exc}")
-        return self._ok(f"Glean returned {len(results)} results for '{query}'.",
-                        query=query, records=results, count=len(results))
+        return self._ok(query=query, records=results, count=len(results))

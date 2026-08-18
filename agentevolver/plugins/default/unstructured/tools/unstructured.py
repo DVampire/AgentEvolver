@@ -13,6 +13,11 @@ class UnstructuredTool(PluginTool):
     display_name: str = 'Unstructured API'
     description: str = ''
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Parsed {data['count']} elements from the file."
+
     async def __call__(self, file_path: str = "", api_key: str = "", api_url: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "UNSTRUCTURED_API_KEY")
         if not file_path:
@@ -28,4 +33,4 @@ class UnstructuredTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"unstructured: {type(exc).__name__}: {exc}")
         records = [{"content": d.page_content, "metadata": d.metadata} for d in docs]
-        return self._ok(f"Parsed {len(records)} elements from the file.", records=records, count=len(records))
+        return self._ok(records=records, count=len(records))

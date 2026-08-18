@@ -12,6 +12,10 @@ class ExaSearchTool(PluginTool):
     name: str = 'exa_search'
     display_name: str = 'Exa Search'
     description: str = 'Exa search and contents tools for agents and MCP clients.'
+    output = {"query": "text", "records": "list", "count": "any"}
+
+    def _render(self, data):
+        return f"Exa returned {data['count']} result(s) for '{data['query']}'."
 
     async def __call__(self, query: str = "", api_key: str = "", num_results: int = 5, **kwargs) -> Response:
         q = str(query or "").strip()
@@ -25,4 +29,4 @@ class ExaSearchTool(PluginTool):
                        for r in resp.results]
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"exa: {type(exc).__name__}: {exc}")
-        return self._ok(f"Exa returned {len(records)} results for '{q}'.", query=q, records=records, count=len(records))
+        return self._ok(query=q, records=records, count=len(records))

@@ -10,6 +10,10 @@ class TavilySearchTool(PluginTool):
     name: str = "tavily_search"
     display_name: str = "Tavily Search"
     description: str = "Search the web and return ranked results, optionally with a synthesised answer."
+    output = {"query": "text", "answer": "text", "records": "list", "count": "any"}
+
+    def _render(self, data):
+        return f"Tavily returned {data['count']} result(s) for '{data['query']}'."
 
     async def __call__(self, query: str = "", api_key: str = "", search_depth: str = "basic",
                        topic: str = "general", max_results: int = 5, include_answer: bool = True,
@@ -32,5 +36,5 @@ class TavilySearchTool(PluginTool):
         records = [{"title": r.get("title"), "url": r.get("url"),
                     "content": r.get("content", ""), "score": r.get("score")}
                    for r in body.get("results", [])]
-        return self._ok(f"Tavily returned {len(records)} result(s) for '{query}'.",
-                        query=query, answer=body.get("answer"), records=records, count=len(records))
+        return self._ok(query=query, answer=body.get("answer"),
+                        records=records, count=len(records))

@@ -14,6 +14,11 @@ class TwelvelabsVideoEmbeddingsTool(PluginTool):
     description: str = 'Generate embeddings from videos using TwelveLabs video embedding models.'
     category: str = 'knowledge'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'Video embedded.'
+
     async def __call__(self, video_url: str = "", api_key: str = "", model_name: str = "Marengo-retrieval-2.7", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY")
         if not video_url or not key:
@@ -26,4 +31,4 @@ class TwelvelabsVideoEmbeddingsTool(PluginTool):
             result = client.embed.task.retrieve(task.id)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"twelvelabs.video_embeddings: {type(exc).__name__}: {exc}")
-        return self._ok("Video embedded.", result=str(result))
+        return self._ok(result=str(result))

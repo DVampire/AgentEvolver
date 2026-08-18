@@ -6,7 +6,7 @@ type: vectorstore
 icon: resources/icon.svg
 tools: 1
 implemented: 1
-credentials: [OPENAI_API_KEY]
+credentials: [OPENAI_API_KEY, PINECONE_API_KEY]
 requirements: [langchain_openai, langchain_pinecone]
 version: "1.0.0"
 ---

@@ -52,7 +52,7 @@ retry, aggregation, budget, or termination defects.
 
 ## Improving a Workflow
 
-1. Call `inspect_workflow` first. Stop if missing or `enable_evolving=false`.
+1. Call `inspect_capability_tool` (capability_type="workflow") first. Stop if missing or `enable_evolving=false`.
 2. Read evaluation evidence and identify a Workflow-owned defect.
 3. Make the smallest structural change; preserve public name and input/output compatibility
    unless the task explicitly authorizes a breaking change.
@@ -66,7 +66,7 @@ Never tune a Workflow to one benchmark case. Prefer parameterization over copyin
 
 Evaluation is read-only:
 
-1. Call `inspect_workflow`; confirm name, version, active status, source, and contract.
+1. Call `inspect_capability_tool` (capability_type="workflow"); confirm name, version, active status, source, and contract.
 2. Check schema safety, bounded termination, path coverage, capability existence, retry and
    verification policy, input/output clarity, and applicability precision.
 3. Run a representative case when safe. Compare with the prior active version or manual

@@ -13,6 +13,8 @@ class ApifyActorTool(PluginTool):
     display_name: str = 'Apify Actors'
     description: str = 'Apify Actors'
 
+    output = {'records': 'list', 'count': 'any'}
+
     async def __call__(self, actor_id: str = "", run_input: Optional[dict] = None, api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "APIFY_API_TOKEN", "APIFY_TOKEN")
         if not actor_id or not key:

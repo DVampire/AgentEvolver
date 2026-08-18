@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticUndefined
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.session import BaseContext
-from agentevolver.response.types import Response, ResponseType
+from agentevolver.response.types import Response
 
 
 #: Cap on how much of one command's output reaches the agent, in characters.
@@ -68,7 +69,27 @@ class Tool(BaseModel):
 
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
-    instruction: str = Field(default="", description="Full instruction (function/guidance/parameters/example) fetched on demand via inspect_tool")
+    #: What a caller needs beyond the call schema: when to reach for this, what it
+    #: does that one line of description cannot say, what goes wrong. The schema
+    #: states the arguments; this states everything the arguments do not, which is
+    #: why it is the one part a prompt carries for every resident tool.
+    guidance: str = Field(default="", description="When and how to use this tool; what the schema cannot say")
+
+    #: Complete example calls, one per entry. Read before a first call and not worth
+    #: carrying afterwards, so they reach a model at ``full`` — through
+    #: ``inspect_capability_tool`` — rather than in every step's prompt.
+    examples: List[str] = Field(default_factory=list, description="Complete example calls")
+
+    #: The authored instruction as one markdown blob, in the older four-section form
+    #: (Function / Guidance / Parameters / Example).
+    #:
+    #: Superseded by the fields above, and kept for what still produces one: a tool
+    #: written before the split, and a tool an optimizer generates at runtime. A
+    #: config with neither ``guidance`` nor ``examples`` is read out of this, so
+    #: nothing has to be migrated to keep working — but ``## Function`` restates the
+    #: description and ``## Parameters`` restates the schema, and a new tool that
+    #: writes them writes them twice.
+    instruction: str = Field(default="", description="Legacy single-blob instruction; prefer guidance + examples")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
@@ -131,7 +152,9 @@ class ToolConfig(BaseModel):
     
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
-    instruction: str = Field(default="", description="Full instruction (function/guidance/parameters/example); kept out of the prompt context and fetched on demand via inspect_tool")
+    guidance: str = Field(default="", description="When and how to use this tool; what the schema cannot say")
+    examples: List[str] = Field(default_factory=list, description="Complete example calls")
+    instruction: str = Field(default="", description="Legacy single-blob instruction; prefer guidance + examples")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
@@ -156,18 +179,32 @@ class ToolConfig(BaseModel):
 
     @model_validator(mode="after")
     def _fill_instruction_from_cls(self) -> "ToolConfig":
-        """Backfill `instruction` from the tool class when not explicitly set.
+        """Backfill the authored documentation from the tool class.
 
-        Lets every ToolConfig construction site (which all pass `cls`) pick up the
-        tool's `instruction` field without threading it through each call.
+        Every ToolConfig construction site passes `cls`, so the tool's own
+        `guidance` / `examples` / `instruction` come along without being threaded
+        through each call. All three, not just the blob: a tool that has been split
+        into fields would otherwise arrive here with nothing to render, which is
+        exactly the silent-empty failure the split was meant to avoid.
         """
-        if not self.instruction and self.cls is not None:
-            try:
-                field = self.cls.model_fields.get("instruction")
-                if field is not None and field.default:
-                    self.instruction = field.default
-            except Exception:
-                pass
+        if self.cls is None:
+            return self
+        try:
+            fields = self.cls.model_fields
+        except Exception:  # noqa: BLE001 — a class that is not a model has nothing to give
+            return self
+        for name in ("instruction", "guidance", "examples"):
+            if getattr(self, name, None):
+                continue
+            field = fields.get(name)
+            if field is None:
+                continue
+            # A field declared with `default_factory` reports `PydanticUndefined` as
+            # its default, which is truthy — assigning it would put the sentinel on
+            # the config and blow up wherever the value is used.
+            default = field.default
+            if default is not PydanticUndefined and default:
+                setattr(self, name, default)
         return self
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
@@ -176,6 +213,8 @@ class ToolConfig(BaseModel):
         result = {
             "name": self.name,
             "description": self.description,
+            "guidance": self.guidance,
+            "examples": list(self.examples),
             "instruction": self.instruction,
             "metadata": self.metadata,
             "enable_evolving": self.enable_evolving,

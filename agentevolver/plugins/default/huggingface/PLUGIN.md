@@ -6,7 +6,7 @@ type: model
 icon: resources/icon.svg
 tools: 2
 implemented: 2
-credentials: [HUGGINGFACEHUB_API_TOKEN]
+credentials: [HF_TOKEN, HUGGINGFACEHUB_API_TOKEN, OPENAI_API_KEY]
 requirements: [langchain_community, langchain_huggingface, langchain_openai]
 version: "1.0.0"
 ---

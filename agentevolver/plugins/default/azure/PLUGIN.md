@@ -5,7 +5,7 @@ category: data
 type: model
 tools: 2
 implemented: 2
-credentials: [AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT]
+credentials: [AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, OPENAI_API_KEY]
 requirements: [langchain_openai]
 version: "1.0.0"
 ---

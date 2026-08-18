@@ -13,6 +13,8 @@ class PaddleocrTool(PluginTool):
     display_name: str = 'PaddleOCR'
     description: str = 'Use PaddleOCR for either layout-aware document parsing into Markdown or plain OCR text recognition.'
 
+    output = {'text': 'text', 'lines': 'any'}
+
     async def __call__(self, image_path: str = "", lang: str = "en", **kwargs) -> Response:
         import os as _os
         if not image_path or not _os.path.exists(image_path):

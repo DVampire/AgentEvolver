@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import Any, Optional, Dict
+from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from agentevolver.tool.types import Tool
@@ -13,11 +13,7 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Convert various file formats to markdown text using markitdown and save to base_dir folder."
 
-_INSTRUCTION = """
-## Function
-Convert various file formats to markdown text using markitdown and save to base_dir folder.
-
-## Guidance
+_GUIDANCE = """
 This tool converts files to markdown format and saves the converted markdown text to the base_dir folder for easy text processing and analysis.
 The input should be a file path (absolute path recommended) to the file you want to convert.
 
@@ -32,14 +28,12 @@ Supported file formats:
 - Plain text files
 
 The tool will extract text content, tables, metadata, and other structured information from these files, convert them into readable markdown format, and save the result as a .md file in the base_dir folder.
-
-## Parameters
-- file_path (str): The absolute path to the file to convert.
-- output_format (str): The output format.
-
-## Example
-{"name": "mdify_tool", "args": {"file_path": "/path/to/file.pdf", "output_format": "markdown"}}
 """
+
+_EXAMPLES = [
+    '{"name": "mdify_tool", "args": {"file_path": "/path/to/file.pdf", "output_format": "markdown"}}',
+]
+
 
 @TOOL.register_module(force=True)
 class MdifyTool(Tool):
@@ -47,7 +41,8 @@ class MdifyTool(Tool):
 
     name: str = "mdify_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     

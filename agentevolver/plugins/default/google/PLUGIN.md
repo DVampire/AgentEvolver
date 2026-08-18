@@ -6,7 +6,7 @@ type: tool
 icon: resources/icon.svg
 tools: 9
 implemented: 9
-credentials: [GOOGLE_API_KEY, GOOGLE_CSE_ID, SERPER_API_KEY]
+credentials: [GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, OPENAI_API_KEY, SERPER_API_KEY]
 requirements: [google, langchain_community, langchain_google_community, langchain_google_genai, langchain_openai]
 version: "1.0.0"
 ---
@@ -29,6 +29,14 @@ Google tools.
 | `google.google_serper_api_core` | Google Serper API | ✅ | Call the Serper.dev Google Search API. |
 
 All 9 tools are implemented.
+
+Declared result shapes:
+
+- `google.gmail` → `data` keys: result
+- `google.google_bq_sql_executor` → `data` keys: count, records
+- `google.google_drive` → `data` keys: count, records
+- `google.google_search_api_core` → `data` keys: count, query, records
+- `google.google_serper_api_core` → `data` keys: count, query, records
 
 ## Credentials
 

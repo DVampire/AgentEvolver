@@ -2,7 +2,7 @@
 
 Server implementation for the Environment Context Protocol with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Type, Callable
 
 import os
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,7 +15,7 @@ from agentevolver.config import config
 from agentevolver.environment.context import EnvironmentContextManager
 from agentevolver.environment.types import Environment, EnvironmentConfig, EnvironmentContext
 from agentevolver.utils import assemble_workspace_path
-from agentevolver.capability import CapabilitySchema, SchemaSource
+from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 
 class EnvironmentManagerServer(BaseModel):
     """ECP Server for managing environment registration and execution with lazy loading."""
@@ -26,11 +26,25 @@ class EnvironmentManagerServer(BaseModel):
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the ECP Server."""
         super().__init__(**kwargs)
+        # Created lazily: config may not be loaded at import time. initialize()
+        # reconfigures it with the proper base_dir.
+        self.environment_context_manager: Optional[EnvironmentContextManager] = None
         self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
         # (session_id, env_name) -> last announced live-view URL, to dedupe announcements.
         self._announced_views: Dict[tuple, str] = {}
 
-        
+    def _ensure_context_manager(self) -> EnvironmentContextManager:
+        """Lazily create the context manager so methods work before initialize().
+
+        Every other capability manager has this. Without it, asking this one
+        anything before ``initialize()`` raised ``AttributeError`` — which reads
+        as a missing feature rather than as "no environments are loaded yet", and
+        is the one manager where a roster lookup could take a caller down.
+        """
+        if self.environment_context_manager is None:
+            self.environment_context_manager = EnvironmentContextManager()
+        return self.environment_context_manager
+
     async def initialize(self, env_names: Optional[List[str]] = None):
         """Initialize environments by names using environment context manager with concurrent support.
         
@@ -92,7 +106,7 @@ class EnvironmentManagerServer(BaseModel):
         """
         if not hasattr(self, "environment_context_manager"):
             await self.initialize(env_names=[])
-        env_config = await self.environment_context_manager.register(
+        env_config = await self._ensure_context_manager().register(
             env_cls,
             env_config_dict=env_config_dict, 
             override=override,
@@ -109,12 +123,17 @@ class EnvironmentManagerServer(BaseModel):
         """
         if not hasattr(self, "environment_context_manager"):
             return []
-        return await self.environment_context_manager.list()
+        return await self._ensure_context_manager().list()
 
     async def function_callings(
-        self, allowlist: Optional[List[str]] = None
+        self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None
     ) -> List[Tuple[Dict[str, Any], Tuple[str, str, str]]]:
-        """Expose selected environment actions as native tool-calling schemas."""
+        """Expose selected environment actions as native tool-calling schemas.
+
+        ``types`` is accepted for a uniform manager interface — environments have
+        no type filter — so a caller can project every capability type in one loop
+        instead of remembering which manager takes which arguments.
+        """
         names = allowlist if allowlist is not None else await self.list()
         out: List[Tuple[Dict[str, Any], Tuple[str, str, str]]] = []
         for env_name in names:
@@ -164,7 +183,7 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             Environment: Environment instance or None if not found
         """
-        return await self.environment_context_manager.get(env_name)
+        return await self._ensure_context_manager().get(env_name)
     
     async def get_info(self, env_name: str) -> Optional[EnvironmentConfig]:
         """Get environment configuration by name
@@ -175,7 +194,7 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             EnvironmentConfig: Environment configuration or None if not found
         """
-        return await self.environment_context_manager.get_info(env_name)
+        return await self._ensure_context_manager().get_info(env_name)
     
     async def get_state(self, env_name: str, ctx: EnvironmentContext = None, **kwargs) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
@@ -187,33 +206,35 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             Optional[Dict[str, Any]]: State of the environment or None if not found
         """
-        return await self.environment_context_manager.get_state(env_name, ctx, **kwargs)
+        return await self._ensure_context_manager().get_state(env_name, ctx, **kwargs)
 
-    async def get_instruction(self, allowlist: Optional[List[str]] = None) -> str:
-        """Assemble the environment instruction text for prompt injection.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None,
+                              types: Optional[List[str]] = None,
+                              level: str = "brief") -> str:
+        """Assemble the environment roster for prompt injection.
 
-        Mirrors `tool_manager.get_instruction`, and for the same reason: the manager owns
-        the facts, so the agent side is a wrapper rather than something that has to know
-        what an environment is made of. Without it, an agent that wanted this text had to
-        walk `info.actions` itself — which is why two agents once inherited a mixin to do
-        it, and why environment context reached only those two rather than every agent.
+        The connector and plugin shape, because an environment is the same thing:
+        one container with several separately callable members and one document
+        describing it. ``brief`` names ENVIRONMENT.md, ``full`` is ENVIRONMENT.md —
+        which is where its rules and its actions' arguments are written for the
+        model to read, in one place a human edits and reviews.
 
-        The text is each environment's own `ENVIRONMENT.md` body, already parsed at load
-        into `EnvironmentConfig.rules`. That file is written for the model: it states the
-        environment's rules and its actions with their arguments, in one place a human
-        edits and reviews.
+        The manager owns the facts, so the agent side is a wrapper rather than
+        something that has to know what an environment is made of. Without that, an
+        agent that wanted this text had to walk ``info.actions`` itself — which is
+        why two agents once inherited a mixin to do it, and why environment context
+        reached only those two rather than every agent.
 
-        Each environment's block ends with the names its actions are actually callable
-        under. The prose names an action `run`; the schema a model is given calls it
-        `remote_host__run`, because two environments may both have a `run` and the tool
-        namespace is flat. A prompt that says "use the actions described here" while the
-        only callable names are qualified is telling the model to use something it does
-        not have — so the qualified names are appended, read from the same schemas the
-        model is sent rather than rebuilt, which is what keeps them from drifting apart.
+        Args:
+            allowlist: Which environments to include. ``None`` = all registered,
+                ``[]`` = none, ``[names]`` = only those — the same contract every
+                other capability manager uses.
+            types: Accepted for a uniform manager interface; environments have no
+                type filter.
+            level: ``brief`` for the roster, ``full`` to include ENVIRONMENT.md.
 
-        `allowlist` (list of environment names) selects which to include: None = all
-        registered; [] = none; [names] = only those — the same contract every other
-        capability manager uses.
+        Returns:
+            The rendered cards, joined.
         """
         names = allowlist if allowlist is not None else await self.list()
         parts: List[str] = []
@@ -221,22 +242,28 @@ class EnvironmentManagerServer(BaseModel):
             info = await self.get_info(env_name)
             if info is None:
                 continue
-            rules = (getattr(info, "rules", "") or "").strip()
-            # Falling back to the description keeps an environment with no ENVIRONMENT.md
-            # — a generated one, say — visible in the prompt rather than silently absent.
-            block = rules or f"### {env_name}\n{getattr(info, 'description', '') or ''}".strip()
+            # The prose names an action `run`; the schema a model is given calls it
+            # `remote_host__run`, because two environments may both have a `run` and the
+            # tool namespace is flat. Read from the same actions the schemas are built
+            # from rather than rebuilt, and printed where that prose is.
             callable_names = sorted(
                 f"{env_name}__{action}" for action in (getattr(info, "actions", {}) or {})
             )
-            if callable_names:
-                block += ("\n\nCall these by their full names: "
-                          + ", ".join(f"`{name}`" for name in callable_names))
-            parts.append(block)
-        return "\n\n".join(part for part in parts if part)
+            parts.append(roster_card(
+                env_name, getattr(info, "description", "") or "",
+                meta=f"v{getattr(info, 'version', '')}",
+                manifest_label="ENVIRONMENT.md",
+                manifest_path=getattr(info, "manifest_path", "") or "",
+                document=getattr(info, "rules", "") or "",
+                footer=("Call these by their full names: "
+                        + ", ".join(f"`{name}`" for name in callable_names)) if callable_names else "",
+                level=level,
+            ))
+        return roster(parts)
 
     async def cleanup(self):
         """Cleanup all environments"""
-        await self.environment_context_manager.cleanup()
+        await self._ensure_context_manager().cleanup()
         self._registered_configs.clear()
     
     async def update(self, 
@@ -255,7 +282,7 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             EnvironmentConfig: Updated environment configuration
         """
-        env_config = await self.environment_context_manager.update(
+        env_config = await self._ensure_context_manager().update(
             env_cls, env_config_dict=env_config_dict, new_version=new_version, description=description
         )
         self._registered_configs[env_config.name] = env_config
@@ -277,7 +304,7 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             EnvironmentConfig: New environment configuration
         """
-        env_config = await self.environment_context_manager.copy(
+        env_config = await self._ensure_context_manager().copy(
             env_name, new_name, new_version, new_config
         )
         self._registered_configs[env_config.name] = env_config
@@ -292,7 +319,7 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             True if unregistered successfully, False otherwise
         """
-        success = await self.environment_context_manager.unregister(env_name)
+        success = await self._ensure_context_manager().unregister(env_name)
         if success and env_name in self._registered_configs:
             del self._registered_configs[env_name]
         return success
@@ -308,7 +335,7 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             EnvironmentConfig of the restored version, or None if not found
         """
-        env_config = await self.environment_context_manager.restore(env_name, version, auto_initialize)
+        env_config = await self._ensure_context_manager().restore(env_name, version, auto_initialize)
         if env_config:
             self._registered_configs[env_config.name] = env_config
         return env_config

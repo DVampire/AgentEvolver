@@ -23,6 +23,11 @@ Wikipedia tools.
 
 All 2 tools are implemented.
 
+Declared result shapes:
+
+- `wikipedia.wikidata` → `data` keys: count, query, records
+- `wikipedia.wikipedia` → `data` keys: count, query, records
+
 ## Credentials
 
 None — these tools need no credential.

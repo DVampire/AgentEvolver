@@ -20,7 +20,7 @@ Elasticsearch tools.
 |----|------|--------|--------------|
 | `elastic.elasticsearch` | Elasticsearch | ✅ | Elasticsearch Vector Store with with advanced, customizable search capabilities. |
 | `elastic.opensearch` | OpenSearch | ✅ | OpenSearch |
-| `elastic.opensearch_multimodal` | OpenSearch (Multi-Model Multi-Embedding) | ✅ | OpenSearch (Multi-Model Multi-Embedding) |
+| `elastic.opensearch_multimodal` | OpenSearch (Multi-Model Multi-Embedding) | ✅ |  |
 
 All 3 tools are implemented.
 

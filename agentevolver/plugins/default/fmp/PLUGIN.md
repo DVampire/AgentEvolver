@@ -21,6 +21,10 @@ Fetch market data (OHLCV price history) from Financial Modeling Prep.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `fmp.history` → `data` keys: count, records, symbol
+
 ## Credentials
 
 `FMP_API_KEY`, an `api_key` argument on the call, or a `fmp_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

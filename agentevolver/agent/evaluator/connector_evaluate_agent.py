@@ -14,7 +14,7 @@ class ConnectorEvaluateAgent(Agent):
     """Evaluates an existing connector across quality dimensions (connection validity, action coverage, doc
     quality, task usefulness) and returns a scored report. Produces no registrable artifact, so its
     ``__call__`` just runs the base-class standard loop. The target connector is named in the task; the agent
-    should call ``inspect_connector_tool`` to obtain its registry facts (connection, actions) before evaluating."""
+    should call ``inspect_capability_tool`` to obtain its registry facts (connection, actions) before evaluating."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 

@@ -6,7 +6,7 @@ type: memory
 icon: resources/icon.svg
 tools: 1
 implemented: 1
-credentials: []
+credentials: [ZEP_API_KEY]
 requirements: [langchain_community]
 version: "1.0.0"
 ---

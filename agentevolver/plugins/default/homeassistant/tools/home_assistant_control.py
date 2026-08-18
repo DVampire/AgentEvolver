@@ -13,6 +13,8 @@ class HomeassistantHomeAssistantControlTool(PluginTool):
     display_name: str = 'Home Assistant Control'
     description: str = ''
 
+    output = {'result': 'object'}
+
     async def __call__(self, ha_url: str = "", ha_token: str = "", domain: str = "", service: str = "", entity_id: str = "", **kwargs) -> Response:
         import httpx
         token = self._secret(ha_token, "HA_TOKEN", "HOMEASSISTANT_TOKEN")

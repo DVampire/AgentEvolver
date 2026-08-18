@@ -51,7 +51,7 @@ You are [role]. You receive [input], then you [core behavior] using tools/skills
   - todo — your running plan/checklist (only if this agent uses `todo_tool`).
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- tool_context: available tools with their names and short descriptions. Use only these. Call `inspect_tool` for a tool's full parameters when unsure.
+- tool_context: available tools with their names and short descriptions. Use only these. Call `inspect_capability_tool` (capability_type="tool") for a tool's worked examples when unsure.
 - skill_context: available skills. When a task matches a skill, invoke it via a `skill` action to get its full instructions.
 - connector_context: available connectors (external MCP servers). Read a connector's CONNECTOR.md before calling it.
 </input-rules>

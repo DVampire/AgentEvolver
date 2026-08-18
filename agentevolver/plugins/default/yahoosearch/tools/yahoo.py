@@ -13,6 +13,8 @@ class YahoosearchYahooTool(PluginTool):
     display_name: str = 'Yahoo! Finance'
     description: str = 'Yahoo! Finance'
 
+    output = {'symbol': 'text', 'result': 'object'}
+
     async def __call__(self, symbol: str = "", method: str = "news", **kwargs) -> Response:
         sym = str(symbol or "").strip().upper()
         if not sym:

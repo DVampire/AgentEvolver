@@ -11,6 +11,8 @@ class AssemblyaiStartTranscriptTool(AssemblyaiToolBase):
     display_name: str = 'AssemblyAI Start Transcript'
     description: str = 'Create a transcription job for an audio file using AssemblyAI with advanced options'
 
+    output = {'transcript_id': 'text', 'status': 'text'}
+
     async def __call__(self, audio_url: str = "", speech_model: str = "best", api_key: str = "", **kwargs) -> Response:
         try:
             aai = self._aai(api_key)

@@ -18,7 +18,7 @@ admit it is how an agent concludes work was never done.
 """
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -41,8 +41,7 @@ from agentevolver.tool.types import Tool
 INLINE_EVENT_CHARS = 6_000
 
 _SEARCH_DESCRIPTION = "Find past runs whose recorded work matches a description."
-_SEARCH_INSTRUCTION = """
-## Function
+_SEARCH_GUIDANCE = """
 Search every finished run on this machine for one whose log carries all of your words,
 then start from the best-matching event. Use it before starting work that may already
 have been done: the task, the tool calls, the results, and the final answer of every
@@ -50,40 +49,28 @@ past run are all searchable.
 
 Terms are ANDed and matched anywhere in the run, not all in one event — a description
 is normally spread across the task, the work, and the answer.
-
-## Parameters
-- query (str): Words describing the work, e.g. "penguins EDA matplotlib".
-- agent_name (str, optional): Only runs where this agent emitted events.
-- limit (int, optional): Hits to return, default 20, capped at 50.
-
-## Example
-{"name": "session_search_tool", "args": {"query": "fibonacci generator"}}
-{"name": "session_search_tool", "args": {"query": "pytest failing", "agent_name": "code_agent"}}
 """
 
+_SEARCH_EXAMPLES = [
+    '{"name": "session_search_tool", "args": {"query": "fibonacci generator"}}',
+    '{"name": "session_search_tool", "args": {"query": "pytest failing", "agent_name": "code_agent"}}',
+]
+
 _EVENT_SEARCH_DESCRIPTION = "Find individual recorded steps matching a query, in one past run or across all of them."
-_EVENT_SEARCH_INSTRUCTION = """
-## Function
+_EVENT_SEARCH_GUIDANCE = """
 Search at step granularity and get back coordinates — a session id and a seq number —
 to read exactly. Give a session_id to search inside one run; leave it out to search
 every run. Here every term must appear in the *same* event, because the answer is a
 place to read from.
-
-## Parameters
-- query (str): Words that must all appear in one event.
-- session_id (str, optional): Restrict to one run.
-- event_type (str, optional): e.g. "tool_call", "agent_end", "error".
-- action_name (str, optional): e.g. "bash_tool" — the tool or skill involved.
-- limit (int, optional): Hits to return, default 20, capped at 50.
-
-## Example
-{"name": "session_event_search_tool", "args": {"query": "ModuleNotFoundError"}}
-{"name": "session_event_search_tool", "args": {"query": "seaborn", "event_type": "tool_call", "action_name": "bash_tool"}}
 """
 
+_EVENT_SEARCH_EXAMPLES = [
+    '{"name": "session_event_search_tool", "args": {"query": "ModuleNotFoundError"}}',
+    '{"name": "session_event_search_tool", "args": {"query": "seaborn", "event_type": "tool_call", "action_name": "bash_tool"}}',
+]
+
 _READ_DESCRIPTION = "Read a past run step by step, one line per step."
-_READ_INSTRUCTION = """
-## Function
+_READ_GUIDANCE = """
 Page through what a past run actually did, in order, one line per step. This is the
 overview; follow a line that matters with session_event_read_tool to get that step
 whole.
@@ -92,53 +79,39 @@ By default you see the run's history as it stood at the end — a compaction sum
 place of the steps it replaced, which is what that run's own agent saw. Pass
 surface_only=false to see the raw append order instead: every event as written,
 summaries and the steps they shadowed alike.
-
-## Parameters
-- session_id (str): From session_search_tool.
-- start (int, optional): Index within the run to begin at, default 0.
-- limit (int, optional): Lines to return, default 40, capped at 200.
-- surface_only (bool, optional): Folded history (default) or raw write order.
-
-## Example
-{"name": "session_read_tool", "args": {"session_id": "code_agent-1edbf044"}}
-{"name": "session_read_tool", "args": {"session_id": "code_agent-1edbf044", "start": 40}}
 """
 
+_READ_EXAMPLES = [
+    '{"name": "session_read_tool", "args": {"session_id": "code_agent-1edbf044"}}',
+    '{"name": "session_read_tool", "args": {"session_id": "code_agent-1edbf044", "start": 40}}',
+]
+
 _EVENT_READ_DESCRIPTION = "Read one recorded step of a past run in full, with its neighbours."
-_EVENT_READ_INSTRUCTION = """
-## Function
+_EVENT_READ_GUIDANCE = """
 Get one event exactly as it was written — arguments, output, error, timing — plus a few
 steps either side for context, and its links to other events: which step a result
 answers, and which steps a compaction summary stands in for.
 
 An oversized event is saved to a file and you get a preview plus its path, so a huge
 tool result costs you a locator instead of your context.
-
-## Parameters
-- session_id (str): From session_search_tool.
-- seq_no (int): The step's position, from a search hit or session_read_tool.
-- before (int, optional): Preceding events to include, default 0, max 10.
-- after (int, optional): Following events to include, default 0, max 10.
-
-## Example
-{"name": "session_event_read_tool", "args": {"session_id": "f49d6082", "seq_no": 5}}
-{"name": "session_event_read_tool", "args": {"session_id": "f49d6082", "seq_no": 5, "before": 2, "after": 2}}
 """
 
+_EVENT_READ_EXAMPLES = [
+    '{"name": "session_event_read_tool", "args": {"session_id": "f49d6082", "seq_no": 5}}',
+    '{"name": "session_event_read_tool", "args": {"session_id": "f49d6082", "seq_no": 5, "before": 2, "after": 2}}',
+]
+
 _TRACE_DESCRIPTION = "Show which past runs belong together — a run and the sub-agent runs it spawned."
-_TRACE_INSTRUCTION = """
-## Function
+_TRACE_GUIDANCE = """
 One run is rarely the whole story: a meta-agent's log records that it delegated, and
 the delegate's own log records what was actually done. This lists every run filed under
 the same session directory, with each one's task and outcome, so you can move from the
 run you found to the one that holds the work.
-
-## Parameters
-- session_id (str): From session_search_tool.
-
-## Example
-{"name": "session_trace_tool", "args": {"session_id": "f49d6082"}}
 """
+
+_TRACE_EXAMPLES = [
+    '{"name": "session_trace_tool", "args": {"session_id": "f49d6082"}}',
+]
 
 
 def _session_key(kwargs: Dict[str, Any]) -> str:
@@ -172,7 +145,8 @@ class SessionSearchTool(Tool):
 
     name: str = "session_search_tool"
     description: str = _SEARCH_DESCRIPTION
-    instruction: str = _SEARCH_INSTRUCTION
+    guidance: str = _SEARCH_GUIDANCE
+    examples: List[str] = _SEARCH_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads finished trace logs; writes nothing.")
@@ -183,6 +157,13 @@ class SessionSearchTool(Tool):
 
     async def __call__(self, query: str, agent_name: Optional[str] = None,
                        limit: int = DEFAULT_HITS, **kwargs) -> Response:
+        """Find past runs by what was worked on.
+
+        Args:
+            query: Words describing the work, e.g. "penguins EDA matplotlib".
+            agent_name: Only runs where this agent emitted events.
+            limit: Hits to return, default 20, capped at 50.
+        """
         if not str(query or "").strip():
             return Response(type=ResponseType.TOOL, success=False,
                             message="session_search_tool needs a query — some words describing the work.")
@@ -227,7 +208,8 @@ class SessionEventSearchTool(Tool):
 
     name: str = "session_event_search_tool"
     description: str = _EVENT_SEARCH_DESCRIPTION
-    instruction: str = _EVENT_SEARCH_INSTRUCTION
+    guidance: str = _EVENT_SEARCH_GUIDANCE
+    examples: List[str] = _EVENT_SEARCH_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads finished trace logs; writes nothing.")
@@ -239,6 +221,15 @@ class SessionEventSearchTool(Tool):
     async def __call__(self, query: str, session_id: Optional[str] = None,
                        event_type: Optional[str] = None, action_name: Optional[str] = None,
                        limit: int = DEFAULT_HITS, **kwargs) -> Response:
+        """Find individual events across runs.
+
+        Args:
+            query: Words that must all appear in one event.
+            session_id: Restrict to one run.
+            event_type: e.g. "tool_call", "agent_end", "error".
+            action_name: e.g. "bash_tool" — the tool or skill involved.
+            limit: Hits to return, default 20, capped at 50.
+        """
         if not str(query or "").strip():
             return Response(type=ResponseType.TOOL, success=False,
                             message="session_event_search_tool needs a query — words that appear in the step.")
@@ -281,7 +272,8 @@ class SessionReadTool(Tool):
 
     name: str = "session_read_tool"
     description: str = _READ_DESCRIPTION
-    instruction: str = _READ_INSTRUCTION
+    guidance: str = _READ_GUIDANCE
+    examples: List[str] = _READ_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads finished trace logs; writes nothing.")
@@ -292,6 +284,14 @@ class SessionReadTool(Tool):
 
     async def __call__(self, session_id: str, start: int = 0, limit: int = DEFAULT_OUTLINE,
                        surface_only: bool = True, **kwargs) -> Response:
+        """Read a run's history as an outline.
+
+        Args:
+            session_id: From ``session_search_tool``.
+            start: Index within the run to begin at, default 0.
+            limit: Lines to return, default 40, capped at 200.
+            surface_only: Folded history (default) or raw write order.
+        """
         outline = session_query.outline(session_id, start=max(0, int(start)),
                                         limit=limit, surface_only=surface_only)
         if outline is None:
@@ -338,7 +338,8 @@ class SessionEventReadTool(Tool):
 
     name: str = "session_event_read_tool"
     description: str = _EVENT_READ_DESCRIPTION
-    instruction: str = _EVENT_READ_INSTRUCTION
+    guidance: str = _EVENT_READ_GUIDANCE
+    examples: List[str] = _EVENT_READ_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads finished trace logs; writes nothing.")
@@ -349,6 +350,14 @@ class SessionEventReadTool(Tool):
 
     async def __call__(self, session_id: str, seq_no: int, before: int = 0, after: int = 0,
                        **kwargs) -> Response:
+        """Read one step of a run, with optional neighbours.
+
+        Args:
+            session_id: From ``session_search_tool``.
+            seq_no: The step's position, from a search hit or ``session_read_tool``.
+            before: Preceding events to include, default 0, max 10.
+            after: Following events to include, default 0, max 10.
+        """
         window = session_query.event_window(session_id, int(seq_no),
                                             before=before, after=after)
         if window is None:
@@ -415,7 +424,8 @@ class SessionTraceTool(Tool):
 
     name: str = "session_trace_tool"
     description: str = _TRACE_DESCRIPTION
-    instruction: str = _TRACE_INSTRUCTION
+    guidance: str = _TRACE_GUIDANCE
+    examples: List[str] = _TRACE_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads finished trace logs; writes nothing.")
@@ -425,6 +435,11 @@ class SessionTraceTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, session_id: str, **kwargs) -> Response:
+        """Return a run's full trace.
+
+        Args:
+            session_id: From ``session_search_tool``.
+        """
         record = session_query.find(session_id)
         if record is None:
             return _not_found(session_id)

@@ -10,6 +10,7 @@ Framework code lives in `src/` (immutable). Evolved/generated components live ou
     ├── prompt/<name>.html
     ├── skill/<name>/SKILL.md
     ├── environment/<name>/{environment.py + ENVIRONMENT.md}
+    ├── plugin/<name>/{plugin.py + PLUGIN.md + tools/}
     ├── connector/<name>/CONNECTOR.md
     ├── workflow/<name>.html
     └── .versions/<module>/<name>/<version>.<ext>   # archive: every version coexists
@@ -37,16 +38,17 @@ from agentevolver.utils.file_utils import file_lock
 from agentevolver.extension.types import Manifest, ManifestComponent
 
 # Modules whose components are class-based (loaded via dynamic_manager).
-_CLASS_MODULES = {"tool", "agent", "environment", "memory"}
+_CLASS_MODULES = {"tool", "agent", "environment", "memory", "plugin"}
 # All modules the extension tree may carry.
-_MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector", "workflow", "memory"]
+_MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector", "workflow", "memory", "plugin"]
 # Active-file extension per module ("" => the component is a directory).
-_EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": "", "workflow": ".html", "memory": ".py"}
+_EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": "", "workflow": ".html", "memory": ".py", "plugin": ""}
 # Directory-type modules: the active component is a directory holding a manifest file.
-_DIR_MODULES = {"skill", "environment", "connector"}
-_MANIFEST_FILE = {"skill": "SKILL.md", "environment": "ENVIRONMENT.md", "connector": "CONNECTOR.md"}
+_DIR_MODULES = {"skill", "environment", "connector", "plugin"}
+_MANIFEST_FILE = {"skill": "SKILL.md", "environment": "ENVIRONMENT.md", "connector": "CONNECTOR.md",
+                  "plugin": "PLUGIN.md"}
 # For directory-type class modules, the Python class lives in this file inside the dir.
-_CLASS_ENTRY = {"environment": "environment.py"}
+_CLASS_ENTRY = {"environment": "environment.py", "plugin": "plugin.py"}
 
 _ARCHIVE = ".versions"
 
@@ -536,6 +538,10 @@ class ExtensionManagerServer(BaseModel):
             from agentevolver.workflow import workflow_manager
             definition = workflow_manager.get(name)
             return getattr(definition, "enable_evolving", None) if definition is not None else None
+        if module == "plugin":
+            from agentevolver.plugins import plugin_manager
+            info = await plugin_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
         return None
 
     @staticmethod
@@ -606,6 +612,9 @@ class ExtensionManagerServer(BaseModel):
         elif module == "memory":
             from agentevolver.memory.server import memory_manager
             cfg = await memory_manager.register(cls, memory_config_dict=config, override=True, version=version)
+        elif module == "plugin":
+            from agentevolver.plugins import plugin_manager
+            cfg = await plugin_manager.register(cls, plugin_config_dict=config, override=True, version=version)
         else:
             raise ValueError(f"Not a class-based module: {module}")
         name = getattr(cfg, "name", None) or getattr(cls, "__name__", "")
@@ -730,6 +739,9 @@ class ExtensionManagerServer(BaseModel):
         if module == "memory":
             from agentevolver.memory.types import Memory
             return Memory
+        if module == "plugin":
+            from agentevolver.plugins.types import Plugin
+            return Plugin
         return None
 
     @staticmethod
@@ -758,6 +770,9 @@ class ExtensionManagerServer(BaseModel):
         if module == "memory":
             from agentevolver.memory.server import memory_manager
             return memory_manager
+        if module == "plugin":
+            from agentevolver.plugins import plugin_manager
+            return plugin_manager
         raise ValueError(f"Unknown extension module: {module}")
 
 

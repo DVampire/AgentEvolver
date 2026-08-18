@@ -24,6 +24,13 @@ Docling tools.
 
 All 4 tools are implemented.
 
+Declared result shapes:
+
+- `docling.chunk_docling_document` → `data` keys: count, records
+- `docling.docling_inline` → `data` keys: markdown
+- `docling.docling_remote` → `data` keys: markdown
+- `docling.export_docling_document` → `data` keys: content, format
+
 ## Credentials
 
 None — these tools need no credential.

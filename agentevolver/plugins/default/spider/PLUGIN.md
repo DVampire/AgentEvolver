@@ -22,6 +22,10 @@ Spider tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `spider.spider` → `data` keys: count, records
+
 ## Credentials
 
 `SPIDER_API_KEY`, an `api_key` argument on the call, or a `spider_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

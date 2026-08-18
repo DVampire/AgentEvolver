@@ -54,22 +54,13 @@ async def _make_firecrawl_request(
 
 _DESCRIPTION = "Search the web via Firecrawl API, prioritising research papers and PDFs."
 
-_INSTRUCTION = """
-## Function
-Search the web via Firecrawl API, prioritising research papers and PDFs.
-
-## Guidance
+_GUIDANCE = """
 - Returns results with full scraped markdown content.
-
-## Parameters
-- query (str): The search query string.
-- image (str, optional): Unused image path argument (default: None).
-- num_results (int, optional): Number of results to return (default: 10).
-- filter_year (int, optional): Filter results by year (default: None).
-
-## Example
-{"name": "firecrawl_search_tool", "args": {"query": "transformer architecture survey", "num_results": 5}}
 """
+
+_EXAMPLES = [
+    '{"name": "firecrawl_search_tool", "args": {"query": "transformer architecture survey", "num_results": 5}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -84,7 +75,8 @@ class FirecrawlSearch(Tool):
 
     name: str = "firecrawl_search_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: str = Field(default="", description="Firecrawl API key")
     api_base: str = Field(default="", description="Firecrawl API base URL")
@@ -106,6 +98,8 @@ class FirecrawlSearch(Tool):
 
         Args:
             query: The search query string.
+            image: Ignored by Firecrawl; accepted so every search tool takes the same
+                arguments.
             num_results: Number of results to return (default: 10).
             filter_year: Filter results by year.
         """

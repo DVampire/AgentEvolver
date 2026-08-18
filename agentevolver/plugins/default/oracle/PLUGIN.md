@@ -24,6 +24,10 @@ Oracle tools.
 
 All 3 tools are implemented.
 
+Declared result shapes:
+
+- `oracle.oracledb_loaders` → `data` keys: count, records
+
 ## Credentials
 
 `OPENAI_API_KEY`, an `api_key` argument on the call, or a `oracle_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

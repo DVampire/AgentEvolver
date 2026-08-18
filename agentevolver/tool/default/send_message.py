@@ -11,7 +11,7 @@ Delivery is a queue, not an interrupt. The message becomes the child's next turn
 mid-turn finishes that turn first. See `agentevolver/runtime/README.md`.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import Field
 
@@ -22,8 +22,7 @@ from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Give a continuable background sub-agent more work, on the same conversation."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Send a message to a background sub-agent you started with `continuable: true`. It becomes
 that sub-agent's next turn and continues the same conversation, so you do not have to
 repeat what you already told it.
@@ -31,21 +30,16 @@ repeat what you already told it.
 This returns confirmation that the message was delivered, not an answer. Collect the
 answer with `job_output_tool` once the turn finishes.
 
-## Parameters
-- job_id (str, required): the id you were given when you backgrounded the sub-agent.
-- message (str, required): what to tell it. Self-contained enough to act on, but it still
-  remembers the earlier turns.
-
-## Guidance
 - Only a continuable sub-agent can take one. A one-shot child answers once and ends;
   sending to it fails and says so.
 - If it is mid-turn the message waits until that turn finishes — it cannot redirect work
   already underway. To stop what it is doing, use `job_kill_tool`.
 - A failure means the message was NOT delivered. Do not assume it arrived.
-
-## Example
-{"name": "send_message_tool", "args": {"job_id": "job_1a2b3c4d", "message": "Now run the same check against the staging config and report what differs."}}
 """
+
+_EXAMPLES = [
+    '{"name": "send_message_tool", "args": {"job_id": "job_1a2b3c4d", "message": "Now run the same check against the staging config and report what differs."}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -54,7 +48,8 @@ class SendMessageTool(Tool):
 
     name: str = "send_message_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     #: Its effects are the child's effects, which are not knowable from here — the same
@@ -68,6 +63,13 @@ class SendMessageTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, job_id: str, message: str, **kwargs) -> Response:
+        """Send a message to a running background sub-agent.
+
+        Args:
+            job_id: The id you were given when you backgrounded the sub-agent.
+            message: What to tell it. Self-contained enough to act on, but it still
+                remembers the earlier turns.
+        """
         from agentevolver.runtime import runtime_manager
 
         ctx = kwargs.get("ctx")

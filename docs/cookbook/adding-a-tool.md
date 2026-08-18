@@ -10,7 +10,7 @@ For *why* things are the way they are, follow the links — this page is the seq
 One file under `agentevolver/tool/default/`, named after the tool.
 
 ```python
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import Field
 
@@ -24,13 +24,29 @@ class WordCountTool(Tool):
     name: str = Field(default="word_count")
     description: str = Field(default="Count the words in a UTF-8 text file.")
 
+    #: What the call schema cannot say. Carried in the prompt for every resident tool.
+    guidance: str = Field(default="Counts whitespace-separated tokens, not glyphs. "
+                                  "For a binary file this fails rather than guessing.")
+    #: Complete calls, reached through `inspect_capability_tool` rather than the prompt.
+    examples: List[str] = Field(default_factory=lambda: [
+        '{"name": "word_count", "args": {"path": "/abs/path/notes.md"}}',
+    ])
+
     #: False means this tool only reports on the world. Three-valued: `True` changes
     #: state, `None` means "depends on the arguments" — what a shell tool declares.
     #: Anything but an explicit `False` makes the agent flush its log before dispatch,
     #: so that a run killed mid-call still records what it was about to do.
     mutates: bool = Field(default=False)
 
-    async def __call__(self, path: str, ctx: Any = None, **kwargs: Any) -> Response:
+    async def __call__(self, path: str, **kwargs: Any) -> Response:
+        """Count the words in a file.
+
+        Args:
+            path: Absolute path to a UTF-8 text file.
+        """
+        # `ctx` arrives through **kwargs rather than as a parameter: every declared
+        # parameter becomes part of the schema the model is sent, and the session is
+        # not something a model supplies.
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 count = len(handle.read().split())
@@ -51,6 +67,13 @@ Three things the registry reads and one that decides behaviour:
   governs agents and environments.
 - **`description` is what the model sees.** It is the entire basis on which the model
   decides to call this rather than something else.
+- **`guidance` and `examples` are the rest of the documentation, and the parameters are
+  not.** The arguments a model is checked against are derived from `__call__`'s signature
+  and its `Args:` docstring, and travel in the request's own `tools` array — so an
+  argument with no `Args:` line reaches the model unexplained, and a prose parameter list
+  beside it would be a third spelling of one contract. `guidance` is carried in the prompt
+  every step; `examples` are fetched by `inspect_capability_tool` when an agent stops to
+  ask.
 - **The return value must be a `Response`.** A tool that returns a bare string reaches the
   agent as `None` and the run spins without an observation.
 - **`mutates`** decides whether the trace is flushed before this runs — see

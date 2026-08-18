@@ -107,7 +107,8 @@ class AgentManagerServer(BaseModel):
         return await self._ensure_context_manager().list()
 
     async def function_callings(
-        self, allowlist: Optional[List[str]] = None, *, exclude: Optional[str] = None
+        self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None,
+        *, exclude: Optional[str] = None
     ) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
         """Native tool-calling schemas for dispatchable sub-agents, each paired with its
         route. Used by orchestrators (MetaAgent) that project agents as callables. The

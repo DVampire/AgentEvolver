@@ -13,6 +13,11 @@ class GoogleGmailTool(PluginTool):
     display_name: str = 'Gmail Loader'
     description: str = 'Loads emails from Gmail using provided credentials.'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'Gmail search completed.'
+
     async def __call__(self, query: str = "", credentials_json: str = "", **kwargs) -> Response:
         try:
             from langchain_google_community import GmailToolkit
@@ -22,4 +27,4 @@ class GoogleGmailTool(PluginTool):
             result = search.invoke({"query": query or "in:inbox"})
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"google.gmail: {type(exc).__name__}: {exc}")
-        return self._ok("Gmail search completed.", result=result)
+        return self._ok(result=result)

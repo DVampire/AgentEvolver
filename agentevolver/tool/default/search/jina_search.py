@@ -17,25 +17,14 @@ from agentevolver.utils import hvac_client
 
 _DESCRIPTION = "A search engine powered by Jina AI."
 
-_INSTRUCTION = """
-## Function
-A search engine powered by Jina AI.
-
-## Guidance
+_GUIDANCE = """
 - Useful for when you need to answer questions about current events.
 - Input should be a search query.
-
-## Parameters
-- query (str): The query to search for.
-- image (str, optional): Unused image path argument (default: None).
-- num_results (int, optional): The number of search results to return (default: 5).
-- country (str, optional): The country to search in (default: 'us').
-- lang (str, optional): The language to search in (default: 'en').
-- filter_year (int, optional): The year to filter results by (default: None).
-
-## Example
-{"name": "jina_search_tool", "args": {"query": "latest space missions 2026", "num_results": 5}}
 """
+
+_EXAMPLES = [
+    '{"name": "jina_search_tool", "args": {"query": "latest space missions 2026", "num_results": 5}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -51,7 +40,8 @@ class JinaSearch(Tool):
 
     name: str = "jina_search_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: str = Field(default="", description="Jina AI API key")
 
@@ -168,6 +158,8 @@ class JinaSearch(Tool):
 
         Args:
             query (str): The query to search for.
+            image (Optional[str]): Ignored by Jina's web search; accepted so every
+                search tool takes the same arguments.
             num_results (Optional[int]): The number of search results to return.
             country (Optional[str]): The country to search in.
             lang (Optional[str]): The language to search in.

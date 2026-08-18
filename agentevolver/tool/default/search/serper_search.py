@@ -68,24 +68,13 @@ async def _make_serper_request(
 
 _DESCRIPTION = "Search Google via Serper API and return organic search results."
 
-_INSTRUCTION = """
-## Function
-Search Google via Serper API and return organic search results.
-
-## Guidance
+_GUIDANCE = """
 - Returns organic search results with titles, URLs, and snippets.
-
-## Parameters
-- query (str): The search query string.
-- image (str, optional): Unused image path argument (default: None).
-- num_results (int, optional): Number of results to return (default: 10).
-- country (str, optional): Region code in ISO 3166-1 alpha-2 format (default: 'us').
-- lang (str, optional): Language code in ISO 639-1 format (default: 'en').
-- filter_year (int, optional): Filter results by year (default: None).
-
-## Example
-{"name": "serper_search_tool", "args": {"query": "latest AI research", "num_results": 5}}
 """
+
+_EXAMPLES = [
+    '{"name": "serper_search_tool", "args": {"query": "latest AI research", "num_results": 5}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -102,7 +91,8 @@ class SerperSearch(Tool):
 
     name: str = "serper_search_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: str = Field(default="", description="Serper API key")
     api_base: str = Field(default="", description="Serper API base URL")
@@ -162,6 +152,8 @@ class SerperSearch(Tool):
 
         Args:
             query: The search query string.
+            image: Ignored by Serper's web search; accepted so every search tool takes
+                the same arguments.
             num_results: Number of results to return (default: 10).
             country: Region code in ISO 3166-1 alpha-2 format (default: 'us').
             lang: Language code in ISO 639-1 format (default: 'en').

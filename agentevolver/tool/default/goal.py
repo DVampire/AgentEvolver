@@ -11,7 +11,7 @@ supply one. An authority the model can name is an authority the model has, and a
 goal the agent can quietly rewrite is a note.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -29,72 +29,55 @@ from agentevolver.task.types import (
 from agentevolver.tool.types import Tool
 
 _GET_DESCRIPTION = "Read this session's goal: what it asks for, where it stands, and its current revision."
-_GET_INSTRUCTION = """
-## Function
+_GET_GUIDANCE = """
 Show the standing objective for this session — the thing the whole session is for, as
 opposed to the task in front of you. Returns nothing if no goal has been set.
 
 Call this before every update: an update names the exact revision it read, and a revision
 you did not just read may already be stale. If it is, the change you missed is usually the
 news.
-
-## Parameters
-(none)
-
-## Example
-{"name": "get_goal_tool", "args": {}}
 """
 
+_GET_EXAMPLES = [
+    '{"name": "get_goal_tool", "args": {}}',
+]
+
 _CREATE_DESCRIPTION = "Record the standing objective a human has asked for in this session."
-_CREATE_INSTRUCTION = """
-## Function
+_CREATE_GUIDANCE = """
 Write down the long-running objective a person actually asked for, so it survives this
 conversation and any restart. Use it when someone states something the session is *for* —
 not for a single request you can finish now, and not for your own plan of work (that is
 todo_tool).
 
-## Guidance
 - Takes a direct human request. Working autonomously, or as a dispatched sub-agent, you
   cannot create a goal — and that is the point: the objective you are measured against is
   not yours to write.
 - Quote the objective in the person's own words as far as you can. It is what "done" will
   later be checked against.
 - One open goal at a time. If one is already open, this is refused and names it.
-
-## Parameters
-- objective (str, required): what the person asked for.
-- priority (str, optional): low | normal | high | critical. Defaults to normal.
-
-## Example
-{"name": "create_goal_tool", "args": {"objective": "Get the nightly ETL green and keep it green for a week"}}
 """
 
+_CREATE_EXAMPLES = [
+    '{"name": "create_goal_tool", "args": {"objective": "Get the nightly ETL green and keep it green for a week"}}',
+]
+
 _UPDATE_DESCRIPTION = "Report progress on the goal, or apply a change a human asked for."
-_UPDATE_INSTRUCTION = """
-## Function
+_UPDATE_GUIDANCE = """
 Change one exact revision of the goal. Read it with get_goal_tool first and copy the
 goal_id and revision back exactly.
 
-## Parameters
-- goal_id (str, required): from get_goal_tool.
-- revision (int, required): from get_goal_tool. A mismatch means it changed under you.
-- action (str, required): complete | blocked | edit | pause | resume.
-- objective (str, optional): the replacement text; only for edit.
-- priority (str, optional): low | normal | high | critical; only for edit.
-- blocked_reason (str, optional): required for blocked — the concrete condition.
-
-## Guidance
 - complete — the objective is actually met. Yours to claim.
 - blocked — the same concrete obstacle is stopping the work. Yours to claim; say what has
   to change in blocked_reason. Difficulty is not blocked. Uncertainty is not blocked. Work
   you can still do is not blocked.
 - edit, pause, resume — the human's to ask for. Attempted on your own, these are refused,
   and the refusal is not a bug to work around.
-
-## Example
-{"name": "update_goal_tool", "args": {"goal_id": "goal_1a2b3c4d", "revision": 3, "action": "complete"}}
-{"name": "update_goal_tool", "args": {"goal_id": "goal_1a2b3c4d", "revision": 3, "action": "blocked", "blocked_reason": "The staging database has been unreachable since 14:02; nothing can be verified against it."}}
 """
+
+_UPDATE_EXAMPLES = [
+    '{"name": "update_goal_tool", "args": {"goal_id": "goal_1a2b3c4d", "revision": 3, "action": "complete"}}',
+    '{"name": "update_goal_tool", "args": {"goal_id": "goal_1a2b3c4d", "revision": 3, "action": "blocked", "blocked_reason": "The staging database has been unreachable since 14:02; nothing can be verified against it."}}',
+]
 
 
 def _goal_data(goal: Goal) -> Dict[str, Any]:
@@ -129,7 +112,8 @@ class GetGoalTool(Tool):
 
     name: str = "get_goal_tool"
     description: str = _GET_DESCRIPTION
-    instruction: str = _GET_INSTRUCTION
+    guidance: str = _GET_GUIDANCE
+    examples: List[str] = _GET_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads the goal; changes nothing.")
@@ -161,7 +145,8 @@ class CreateGoalTool(Tool):
 
     name: str = "create_goal_tool"
     description: str = _CREATE_DESCRIPTION
-    instruction: str = _CREATE_INSTRUCTION
+    guidance: str = _CREATE_GUIDANCE
+    examples: List[str] = _CREATE_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Writes the session's goal; human authority required.")
@@ -171,6 +156,12 @@ class CreateGoalTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, objective: str, priority: Optional[str] = None, **kwargs) -> Response:
+        """Record what the person asked for as the run's goal.
+
+        Args:
+            objective: What the person asked for.
+            priority: low | normal | high | critical. Defaults to normal.
+        """
         ctx = kwargs.get("ctx")
         try:
             goal = goal_manager.create(
@@ -196,7 +187,8 @@ class UpdateGoalTool(Tool):
 
     name: str = "update_goal_tool"
     description: str = _UPDATE_DESCRIPTION
-    instruction: str = _UPDATE_INSTRUCTION
+    guidance: str = _UPDATE_GUIDANCE
+    examples: List[str] = _UPDATE_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Writes the session's goal.")
@@ -209,6 +201,16 @@ class UpdateGoalTool(Tool):
                        objective: Optional[str] = None,
                        blocked_reason: Optional[str] = None,
                        priority: Optional[str] = None, **kwargs) -> Response:
+        """Advance, edit, or close the run's goal.
+
+        Args:
+            goal_id: From ``get_goal_tool``.
+            revision: From ``get_goal_tool``. A mismatch means it changed under you.
+            action: complete | blocked | edit | pause | resume.
+            objective: The replacement text; only for ``edit``.
+            blocked_reason: Required for ``blocked`` — the concrete condition.
+            priority: low | normal | high | critical; only for ``edit``.
+        """
         ctx = kwargs.get("ctx")
         try:
             chosen = GoalAction(str(action).strip().lower())

@@ -28,6 +28,16 @@ YouTube tools.
 
 All 7 tools are implemented.
 
+Declared result shapes:
+
+- `youtube.channel` → `data` keys: channel_id, count, records
+- `youtube.comments` → `data` keys: count, records, video_id, video_url
+- `youtube.playlist` → `data` keys: count, playlist_url, records
+- `youtube.search` → `data` keys: count, query, records
+- `youtube.transcripts` → `data` keys: count, records, transcript, video_id, video_url
+- `youtube.trending` → `data` keys: category, count, records, region
+- `youtube.video_details` → `data` keys: count, records, video_id
+
 ## Credentials
 
 `YOUTUBE_API_KEY`, `YOUTUBE_DATA_API_KEY`, an `api_key` argument on the call, or a `youtube_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

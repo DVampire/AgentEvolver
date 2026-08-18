@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
+from agentevolver.capability import CAPABILITY_TYPES, capability_type as capability_type_entry
 from agentevolver.logger import logger
 from agentevolver.plan.types import PlanState, _now
 from agentevolver.utils import Singleton
@@ -38,13 +39,20 @@ PLAN_MODE_NOTICE = (
 #: a run — and blocking any of those leaves the agent with no legal move at all.
 ALWAYS_ALLOWED = frozenset({"exit_plan_mode", "ask_user_question", "done_tool"})
 
-#: Kinds whose members can be judged from a ``permission_mode`` declaration. A kind
-#: absent here — an agent dispatch, a workflow — is refused outright: its effects are
-#: whatever the thing it runs does, and that is not knowable from a declaration.
-_JUDGEABLE_KINDS = frozenset({"tool", "skill", "connector", "environment"})
+#: Capability types whose members can be judged from a ``permission_mode``
+#: declaration. A type absent here — an agent dispatch, a workflow — is refused
+#: outright: its effects are whatever the thing it runs does, and that is not
+#: knowable from a declaration.
+#:
+#: Read off :data:`CAPABILITY_TYPES` rather than listed again, because a list here
+#: is a second answer to a question that table already answers — and the way a new
+#: capability type quietly arrives judgeable-by-omission or refused-by-omission
+#: depending on which of the two someone remembered to edit.
+_JUDGEABLE_TYPES = frozenset(entry.type for entry in CAPABILITY_TYPES if entry.judgeable)
 
 
-def action_is_allowed(kind: str, name: str, declaration: Optional[Dict[str, Any]]) -> bool:
+def action_is_allowed(capability_type: str, name: str,
+                      declaration: Optional[Dict[str, Any]]) -> bool:
     """Whether an action may run while plan mode is active.
 
     Allowed when the capability declared it does not mutate (``mutates is False``)
@@ -58,36 +66,27 @@ def action_is_allowed(kind: str, name: str, declaration: Optional[Dict[str, Any]
     """
     if name in ALWAYS_ALLOWED:
         return True
-    if kind not in _JUDGEABLE_KINDS or not declaration:
+    if capability_type not in _JUDGEABLE_TYPES or not declaration:
         return False
     if declaration.get("mutates") is False:
         return True
     return declaration.get("permission_mode") == "read_only"
 
 
-async def declaration_of(kind: str, name: str) -> Optional[Dict[str, Any]]:
+async def declaration_of(capability_type: str, name: str) -> Optional[Dict[str, Any]]:
     """What a capability says about its own effects, or ``None`` if nothing can be read.
 
-    ``None`` covers a kind with no registry to ask, a name that is not registered,
+    ``None`` covers a type with no registry to ask, a name that is not registered,
     and a manager that has not been initialized. All three mean the same thing to
     the gate — nothing was declared — so they are not distinguished here.
     """
-    if kind not in _JUDGEABLE_KINDS:
+    entry = capability_type_entry(capability_type)
+    if entry is None or not entry.judgeable:
         return None
-    managers = {
-        "tool": "agentevolver.tool.server",
-        "skill": "agentevolver.skill.server",
-        "connector": "agentevolver.connector.server",
-        "environment": "agentevolver.environment.server",
-    }
     try:
-        import importlib
-
-        module = importlib.import_module(managers[kind])
-        manager = getattr(module, f"{kind}_manager")
-        info = await manager.get_info(name)
+        info = await entry.manager().get_info(name)
     except Exception as exc:  # noqa: BLE001 — an unreadable declaration is no declaration
-        logger.debug(f"| Plan gate could not read {kind} {name!r}: {exc}")
+        logger.debug(f"| Plan gate could not read {capability_type} {name!r}: {exc}")
         return None
     if info is None:
         return None

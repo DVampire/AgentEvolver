@@ -17,10 +17,15 @@ NextPlaid tools.
 
 | id | name | status | what it does |
 |----|------|--------|--------------|
-| `nextplaid.nextplaid` | NextPlaid | ✅ | NextPlaid |
-| `nextplaid.vllm_multivector_embeddings` | vLLM Multivector Embeddings | ✅ | vLLM Multivector Embeddings |
+| `nextplaid.nextplaid` | NextPlaid | ✅ |  |
+| `nextplaid.vllm_multivector_embeddings` | vLLM Multivector Embeddings | ✅ |  |
 
 All 2 tools are implemented.
+
+Declared result shapes:
+
+- `nextplaid.nextplaid` → `data` keys: result
+- `nextplaid.vllm_multivector_embeddings` → `data` keys: dims, vector
 
 ## Credentials
 

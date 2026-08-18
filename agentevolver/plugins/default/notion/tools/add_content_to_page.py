@@ -13,6 +13,8 @@ class NotionAddContentToPageTool(NotionToolBase):
     display_name: str = 'Add Content to Page '
     description: str = 'Convert markdown text to Notion blocks and append them to a Notion page.'
 
+    output = {'result': 'object'}
+
     async def __call__(self, api_key: str = "", page_id: str = "", content_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:

@@ -14,6 +14,11 @@ class NextplaidVllmMultivectorEmbeddingsTool(PluginTool):
     description: str = ''
     category: str = 'knowledge'
 
+    output = {'vector': 'any', 'dims': 'any'}
+
+    def _render(self, data):
+        return f"Embedded text ({data['dims']} dims)."
+
     async def __call__(self, text: str = "", base_url: str = "http://localhost:8000/v1", model_name: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx
         if not text or not base_url:
@@ -26,4 +31,4 @@ class NextplaidVllmMultivectorEmbeddingsTool(PluginTool):
             vec = resp.json()["data"][0]["embedding"]
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"nextplaid.vllm_embeddings: {type(exc).__name__}: {exc}")
-        return self._ok(f"Embedded text ({len(vec)} dims).", vector=vec, dims=len(vec))
+        return self._ok(vector=vec, dims=len(vec))

@@ -14,7 +14,7 @@ def render_capability_card(name: str, description: str = "", body: str = "", met
 
     The `name` is the *only* heading (an H2 card header — the CSS turns it into a
     ruled divider so consecutive capabilities read as separate cards). Any markdown
-    headings inside `body` (e.g. a tool's `## Parameters` / `## Example`) are
+    headings inside `body` (e.g. a tool's `## Guidance` / `## Example`) are
     downgraded to bold labels so they render as tight sub-sections instead of
     oversized headers. Blank lines inside `body` are collapsed to keep it compact.
     """

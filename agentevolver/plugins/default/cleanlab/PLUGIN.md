@@ -19,9 +19,15 @@ Cleanlab tools.
 |----|------|--------|--------------|
 | `cleanlab.cleanlab_evaluator` | Cleanlab Evaluator | ✅ | Evaluates any LLM response using Cleanlab and outputs trust score and explanation. |
 | `cleanlab.cleanlab_rag_evaluator` | Cleanlab RAG Evaluator | ✅ | Evaluates context, query, and response from a RAG pipeline using Cleanlab and outputs trust metrics. |
-| `cleanlab.cleanlab_remediator` | Cleanlab Remediator | ✅ | Cleanlab Remediator |
+| `cleanlab.cleanlab_remediator` | Cleanlab Remediator | ✅ |  |
 
 All 3 tools are implemented.
+
+Declared result shapes:
+
+- `cleanlab.cleanlab_evaluator` → `data` keys: explanation, score
+- `cleanlab.cleanlab_rag_evaluator` → `data` keys: score
+- `cleanlab.cleanlab_remediator` → `data` keys: remediated, response, score
 
 ## Credentials
 

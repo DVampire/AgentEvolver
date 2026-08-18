@@ -13,6 +13,11 @@ class DoclingRemoteTool(PluginTool):
     display_name: str = 'Docling Serve'
     description: str = 'Uses Docling to process input documents connecting to your instance of Docling Serve.'
 
+    output = {'markdown': 'any'}
+
+    def _render(self, data):
+        return 'Converted document (remote).'
+
     async def __call__(self, source: str = "", **kwargs) -> Response:
         src = str(source or "").strip()
         if not src:
@@ -23,4 +28,4 @@ class DoclingRemoteTool(PluginTool):
             doc = result.document
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"docling.remote: {type(exc).__name__}: {exc}")
-        return self._ok("Converted document (remote).", markdown=doc.export_to_markdown())
+        return self._ok(markdown=doc.export_to_markdown())

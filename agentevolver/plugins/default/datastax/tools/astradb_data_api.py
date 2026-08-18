@@ -13,6 +13,11 @@ class DatastaxAstradbDataApiTool(PluginTool):
     display_name: str = 'Astra DB Data API'
     description: str = ''
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Found {data['count']} documents."
+
     async def __call__(self, collection_name: str = "", token: str = "", api_endpoint: str = "", filter: Optional[dict] = None, limit: int = 20, **kwargs) -> Response:
         token = self._secret(token, "ASTRA_DB_APPLICATION_TOKEN")
         endpoint = api_endpoint or self._secret("", "ASTRA_DB_API_ENDPOINT")
@@ -24,4 +29,4 @@ class DatastaxAstradbDataApiTool(PluginTool):
             docs = list(db.get_collection(collection_name).find(filter or {}, limit=int(limit)))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"datastax.data_api: {type(exc).__name__}: {exc}")
-        return self._ok(f"Found {len(docs)} documents.", records=docs, count=len(docs))
+        return self._ok(records=docs, count=len(docs))

@@ -43,8 +43,7 @@ from agentevolver.tool.types import Tool, clip_output
 _DESCRIPTION = ("Ask a language server for a symbol's definition, references, hover type, "
                 "or a file's symbols.")
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Answer a question about a symbol using the language server for that file, rather than by
 matching text. Use it when a grep match is ambiguous, and before an edit whose safety
 depends on knowing what a name refers to.
@@ -54,7 +53,6 @@ depends on knowing what a name refers to.
 - `hover` — its type and documentation, as the language server understands it.
 - `symbols` — every symbol declared in the file, with its kind and line. No cursor needed.
 
-## Guidance
 - The cursor must be on the symbol. Point it at the name itself — the `f` of `foo`, not the
   space before it, not the `(` after it. An off-symbol position returns nothing.
 - `line` and `character` count from 1, matching what read_file_tool shows you.
@@ -63,20 +61,13 @@ depends on knowing what a name refers to.
 - If the answer is `LSP_UNAVAILABLE`, no language server handles that file type. That is
   final for this run — do not retry it. Use grep_search_tool and read_file_tool instead.
 - `references` on a widely used name can be long; the result is capped and says so.
-
-## Parameters
-- operation (str): One of definition, references, hover, symbols.
-- path (str): The file to ask about, absolute or relative to the workspace root.
-- line (int, optional): One-based line of the cursor. Required for every operation
-  except symbols.
-- character (int, optional): One-based column of the cursor. Defaults to 1.
-
-## Example
-{"name": "lsp_tool", "args": {"operation": "definition", "path": "agentevolver/agent/types.py", "line": 412, "character": 9}}
-{"name": "lsp_tool", "args": {"operation": "references", "path": "agentevolver/lsp/server.py", "line": 55, "character": 9}}
-{"name": "lsp_tool", "args": {"operation": "symbols", "path": "agentevolver/lsp/stdio.py"}}
 """
 
+_EXAMPLES = [
+    '{"name": "lsp_tool", "args": {"operation": "definition", "path": "agentevolver/agent/types.py", "line": 412, "character": 9}}',
+    '{"name": "lsp_tool", "args": {"operation": "references", "path": "agentevolver/lsp/server.py", "line": 55, "character": 9}}',
+    '{"name": "lsp_tool", "args": {"operation": "symbols", "path": "agentevolver/lsp/stdio.py"}}',
+]
 #: Locations rendered before the rest are counted instead of listed. A `references` on a
 #: common name can run to thousands; past a hundred the list stops being something to read
 #: and becomes something to grep.
@@ -161,7 +152,8 @@ class LspTool(Tool):
 
     name: str = "lsp_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "search"},
                                      description="The metadata of the tool")
     enable_evolving: bool = Field(default=False,
@@ -187,6 +179,15 @@ class LspTool(Tool):
 
     async def __call__(self, operation: str, path: str, line: Optional[int] = None,
                        character: int = 1, **kwargs) -> Response:
+        """Ask the language server about a position in a file.
+
+        Args:
+            operation: One of definition, references, hover, symbols.
+            path: The file to ask about, absolute or relative to the workspace root.
+            line: One-based line of the cursor. Required for every operation except
+                ``symbols``.
+            character: One-based column of the cursor. Defaults to 1.
+        """
         try:
             wanted = LspOperation(str(operation).strip().lower())
         except ValueError:

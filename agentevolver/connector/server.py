@@ -15,8 +15,7 @@ from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.connector.context import ConnectorContextManager
 from agentevolver.connector.types import ConnectorConfig, ConnectorContext
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.session import SessionContext
+from agentevolver.response.types import Response
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.capability import CapabilitySchema, SchemaSource
 
@@ -205,14 +204,16 @@ class ConnectorManagerServer(BaseModel):
     # Context & Contract
     # ------------------------------------------------------------------
 
-    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+    async def get_instruction(self, allowlist: Optional[List[str]] = None,
+                              types: Optional[List[str]] = None,
+                              level: str = "brief") -> str:
         """Assemble the connector instruction text for prompt injection.
 
         `allowlist` (connector names) selects which connectors to include (None = all,
         [] = none). `types` filters by connector type. Cached per (allowlist, types)
         until the registry changes.
         """
-        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
+        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types, level=level)
 
     async def function_callings(
         self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None
@@ -238,7 +239,17 @@ class ConnectorManagerServer(BaseModel):
         return out
 
     async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):
-        """Return one MCP action's inputSchema; legacy manifests are marked permissive."""
+        """Return one MCP action's contract as the model is sent it.
+
+        The arguments are the ``inputSchema`` the server declared, kept when the
+        connector was last reached. Without one the action still goes out — the
+        model can call it — but as a permissive object, marked ``legacy_fallback``
+        so nothing downstream mistakes "we never asked" for "it takes anything".
+
+        The description is the action's own, falling back to the connector's when
+        the server has not been reached: one sentence about the service is a poor
+        description of twenty different actions, but it is better than none.
+        """
         info = await self.get_info(name)
         if info is None or not action or action not in (getattr(info, "actions", None) or []):
             return None
@@ -248,9 +259,11 @@ class ConnectorManagerServer(BaseModel):
         if not isinstance(parameters, dict):
             parameters = {"type": "object", "additionalProperties": True}
             source = SchemaSource.LEGACY_FALLBACK
+        own = (getattr(info, "action_descriptions", None) or {}).get(action, "").strip()
+        description = own or f"{getattr(info, 'description', '') or name} — action '{action}'"
         return CapabilitySchema(
             name=f"{name}__{action}",
-            description=f"{getattr(info, 'description', '') or name} — action '{action}'",
+            description=description,
             parameters=parameters,
             strict=parameters.get("additionalProperties") is False,
             source=source,
@@ -263,15 +276,18 @@ class ConnectorManagerServer(BaseModel):
     async def __call__(
         self,
         name: str,
-        input: Dict[str, Any],
+        action: str = "",
+        input: Dict[str, Any] = None,
         ctx: ConnectorContext = None,
         **kwargs,
     ) -> Response:
-        """Execute a connector by name.
+        """Execute one of a connector's MCP actions.
 
         Args:
             name: Connector name.
-            input: {"action": <mcp tool name>, "args": <dict payload>}.
+            action: The MCP tool to call. The older ``{"action": ..., "args": ...}``
+                envelope in ``input`` is still read when this is omitted.
+            input: Arguments for the action.
             ctx: Connector context.
         """
         # Ensure ctx is always a ConnectorContext instance
@@ -279,6 +295,7 @@ class ConnectorManagerServer(BaseModel):
 
         return await self._ensure_context_manager()(
             name=name,
+            action=action,
             input=input,
             ctx=ctx,
             **kwargs,

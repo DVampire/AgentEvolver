@@ -13,6 +13,8 @@ class NotionCreatePageTool(NotionToolBase):
     display_name: str = 'Create Page '
     description: str = 'A component for creating Notion pages.'
 
+    output = {'page': 'any'}
+
     async def __call__(self, api_key: str = "", database_id: str = "", properties_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:

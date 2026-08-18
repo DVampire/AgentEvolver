@@ -25,6 +25,23 @@ connection pool outlives the request that opened it.
 A plugin is never itself a workflow step. Its *tools* surface on the canvas as
 `datasource` nodes and are dispatched through `plugin_manager`.
 
+## Reaching a plugin
+
+A plugin's tools are addressed `<plugin>.<tool>` and reach a model, a canvas node or a
+workflow step by three routes:
+
+| Caller | Address | Notes |
+|---|---|---|
+| Agent (native function calling) | `tavily__tavily_search` | Opt-in: a plugin is projected only when a run names it in `plugin_allowlist` |
+| Canvas node / workflow `datasource` | `tavily.tavily_search` | Dispatched through `plugin_manager` |
+| Direct | `await plugin_manager(name="tavily", action="tavily_search", input=…)` | `action` names the member, as it does for `environment_manager` |
+
+The agent side is opt-in on purpose. Every other capability's resident set is chosen in
+config and numbers in the tens; this registry holds hundreds of tools for services most
+runs never touch, so `get_instruction` and `function_callings` read an absent allowlist as
+**none** rather than as all. Only implemented tools are projected — a registered stub is
+honest on the canvas but has nothing to offer a model.
+
 ## A plugin is a package
 
 ```
@@ -38,7 +55,10 @@ default/tavily/
     └── extract.py     # class TavilyExtractTool(PluginTool)
 ```
 
-One tool per file, one class per tool — the same layout `tool/default/` uses.
+One tool per file, one class per tool — the same layout `tool/default/` uses. The same
+layout is what `extension/plugin/<name>/` holds, so a plugin someone installs is the same
+shape as a built-in one; `ExtensionManager` loads `plugin.py` and registers the class it
+finds through `plugin_manager.register`.
 
 ```python
 # plugin.py
@@ -82,10 +102,16 @@ single-capability plugin such as `yahoo` keeps a natural target.
 | `context.py` | `PluginContextManager` — registry → `PluginConfig` → instance, lifecycle, dispatch |
 | `server.py` | `PluginManagerServer` — the thin façade the rest of the framework calls |
 
-Same split as `tool` / `environment` / `connector`. Plugins wrap third-party
-services, so the evolution half of those managers (`update` / `copy` /
-`restore`) has no counterpart here: rewriting a vendor's API adapter at runtime
-is not something the optimizer should do.
+Same split as `tool` / `environment` / `connector`, and the same five bands in the same
+order: lifecycle, registration, query, contract, execution. One addition is a container's:
+`list_infos()` is the batch form of `list()` + `get_info()`, because building the palette
+wants every plugin's every tool and a hundred round trips to assemble one list is the
+reason it exists (`process` has it for the same reason). For a single lookup, prefer
+`list()` + `get_info(name)` — that is the enumeration idiom everywhere else.
+
+Plugins wrap third-party services, so the evolution half of those managers
+(`update` / `copy` / `restore`) has no counterpart here: rewriting a vendor's API
+adapter at runtime is not something the optimizer should do.
 
 ## Family templates
 
@@ -95,6 +121,32 @@ part — usually a single `_model` or `_build` method:
 
 `LLMPluginTool` · `EmbeddingPluginTool` · `RerankPluginTool` ·
 `VectorStorePluginTool` · `MemoryPluginTool` · `ComposioPluginTool`
+
+## A result has two halves
+
+`Response.data` is the machine contract — what the next canvas node wires to — and
+`Response.message` is the sentence the model reads. A tool declares the first and derives
+the second:
+
+```python
+class TavilySearchTool(PluginTool):
+    output = {"query": "text", "answer": "text", "records": "list", "count": "any"}
+
+    def _render(self, data):
+        return f"Tavily returned {data['count']} result(s) for '{data['query']}'."
+
+    async def __call__(self, ...):
+        return self._ok(query=query, answer=..., records=records, count=len(records))
+```
+
+`output` keys become typed sub-ports on the canvas node (`${node.data.records}`), so a
+downstream step can take the field it wants instead of the whole opaque object, and they
+are listed in `PLUGIN.md`. `_render` writes the message when `_ok` is given none, which
+keeps the prose a function of the data rather than a second thing to maintain — and keeps
+a huge payload in `data` while the sentence about it stays a sentence.
+
+Both are optional. A tool that has not been migrated passes its own message to `_ok` and
+keeps the single `data` port it always had.
 
 ## Status is computed, not declared
 
@@ -109,5 +161,9 @@ and returns a clear "not implemented yet" when run.
 Provider SDKs are imported lazily inside `__call__`, so a plugin registers
 without them and a call returns a clear failed result until they are installed.
 Each `PLUGIN.md` lists what that package needs under `requirements:`, and the
-credentials it reads under `credentials:` — both generated from the code, so
-they cannot drift from it.
+credentials it reads under `credentials:`. Declare both on the class
+(`Plugin.requirements` / `Plugin.credentials`) — they are the two facts a manifest
+cannot derive — and run `scripts/gen_plugin_manifest.py` to rewrite the derivable
+half of every manifest from the live registry. `--undeclared` lists the plugins
+still carrying hand-written values, beside the environment variables their
+`_secret` calls actually read; `--check` fails when a manifest has drifted.

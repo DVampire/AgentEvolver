@@ -37,6 +37,11 @@ class YoutubeCommentsTool(YoutubeToolBase):
                 rows.append(row)
         return rows
 
+    output = {'video_id': 'text', 'video_url': 'any', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Fetched {data['count']} comments for video '{data['video_id']}'."
+
     async def __call__(self, video_url: str = "", api_key: str = "", max_results: int = 20,
                        sort_by: str = "relevance", include_metrics: bool = True,
                        include_replies: bool = False, **kwargs) -> Response:
@@ -76,7 +81,6 @@ class YoutubeCommentsTool(YoutubeToolBase):
                 else:
                     request = None
             youtube.close()
-            return self._ok(f"Fetched {len(records)} comments for video '{video_id}'.",
-                            video_id=video_id, video_url=video_url, records=records, count=len(records))
+            return self._ok(video_id=video_id, video_url=video_url, records=records, count=len(records))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"youtube.comments: {type(exc).__name__}: {exc}")

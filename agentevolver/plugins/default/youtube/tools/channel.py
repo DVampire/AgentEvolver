@@ -33,6 +33,8 @@ class YoutubeChannelTool(YoutubeToolBase):
                     return resp["items"][0]["id"]["channelId"]
         return channel_url
 
+    output = {'channel_id': 'any', 'records': 'list', 'count': 'any'}
+
     async def __call__(self, channel_url: str = "", api_key: str = "",
                        include_statistics: bool = True, include_branding: bool = False, **kwargs) -> Response:
         channel_url = str(channel_url or "").strip()

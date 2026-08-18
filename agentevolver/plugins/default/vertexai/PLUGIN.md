@@ -6,7 +6,7 @@ type: model
 icon: resources/icon.svg
 tools: 2
 implemented: 2
-credentials: []
+credentials: [OPENAI_API_KEY]
 requirements: [langchain_google_vertexai, langchain_openai]
 version: "1.0.0"
 ---

@@ -18,7 +18,7 @@ class AgentOptimizeAgent(Agent):
     in ``__call__`` once the loop finishes.
 
     The target agent is named in the task text. The agent should call
-    ``inspect_agent_tool`` first to confirm the target is registered and evolvable
+    ``inspect_capability_tool`` first to confirm the target is registered and evolvable
     (``enable_evolving=True``) and to obtain its file paths — a frozen agent
     (enable_evolving=False) must NOT be optimized.
     """

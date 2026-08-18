@@ -13,6 +13,8 @@ class TwelvelabsPegasusTool(PluginTool):
     display_name: str = 'TwelveLabs Pegasus'
     description: str = 'Chat with videos using TwelveLabs Pegasus API.'
 
+    output = {'video_id': 'text', 'text': 'text'}
+
     async def __call__(self, video_id: str = "", index_id: str = "", prompt: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY", "TWELVE_LABS_API_KEY")
         if not video_id or not prompt or not key:

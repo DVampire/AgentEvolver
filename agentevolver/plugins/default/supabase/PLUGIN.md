@@ -6,7 +6,7 @@ type: vectorstore
 icon: resources/icon.svg
 tools: 1
 implemented: 1
-credentials: [OPENAI_API_KEY]
+credentials: [OPENAI_API_KEY, SUPABASE_SERVICE_KEY]
 requirements: [langchain_community, langchain_openai, supabase]
 version: "1.0.0"
 ---

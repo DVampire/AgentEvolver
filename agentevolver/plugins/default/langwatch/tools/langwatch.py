@@ -13,6 +13,11 @@ class LangwatchTool(PluginTool):
     display_name: str = 'LangWatch Evaluator'
     description: str = 'Evaluates various aspects of language models using LangWatch'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'LangWatch evaluation completed.'
+
     async def __call__(self, evaluator: str = "", input_value: str = "", output_value: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx
         key = self._secret(api_key, "LANGWATCH_API_KEY")
@@ -26,4 +31,4 @@ class LangwatchTool(PluginTool):
             result = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"langwatch: {type(exc).__name__}: {exc}")
-        return self._ok("LangWatch evaluation completed.", result=result)
+        return self._ok(result=result)

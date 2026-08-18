@@ -16,8 +16,86 @@ actions:
   - zinc_search_by_supplier
   - zinc_random_sample
   - zinc_get_3d
+action_schemas:
+  zinc_get_3d:
+    properties:
+      zinc_id:
+        title: Zinc Id
+        type: string
+    required:
+    - zinc_id
+    title: zinc_get_3dArguments
+    type: object
+  zinc_random_sample:
+    properties:
+      count:
+        default: 10
+        title: Count
+        type: integer
+    title: zinc_random_sampleArguments
+    type: object
+  zinc_search_by_id:
+    properties:
+      zinc_ids:
+        items:
+          type: string
+        title: Zinc Ids
+        type: array
+    required:
+    - zinc_ids
+    title: zinc_search_by_idArguments
+    type: object
+  zinc_search_by_smiles:
+    properties:
+      anonymous_distance:
+        default: 0
+        title: Anonymous Distance
+        type: integer
+      distance:
+        default: 0
+        title: Distance
+        type: integer
+      smiles:
+        title: Smiles
+        type: string
+    required:
+    - smiles
+    title: zinc_search_by_smilesArguments
+    type: object
+  zinc_search_by_supplier:
+    properties:
+      supplier_codes:
+        items:
+          type: string
+        title: Supplier Codes
+        type: array
+    required:
+    - supplier_codes
+    title: zinc_search_by_supplierArguments
+    type: object
+action_descriptions:
+  zinc_get_3d: "Locate the docking-ready 3D structure of a ZINC22 compound.\n\n    ZINC22\
+    \ stores pre-generated 3D conformers (db2/mol2) organized by tranche. This\n   \
+    \ returns the substance's tranche and the corresponding files.docking.org location,\n\
+    \    plus its ZINC page, so the 3D structure can be downloaded for docking.\n\n\
+    \    Args:\n        zinc_id: ZINC id (e.g. \"ZINC000000000053\")."
+  zinc_random_sample: "Draw a random sample of purchasable ZINC22 substances.\n\n  \
+    \  Args:\n        count: number of random substances to return (default 10, capped\
+    \ at 60)."
+  zinc_search_by_id: "Look up purchasable ZINC22 compounds by ZINC id, with their supplier\
+    \ catalogs.\n\n    Args:\n        zinc_ids: one or more ZINC ids (e.g. [\"ZINC000000000053\"\
+    ]).\n    Returns each substance's SMILES and the supplier catalog/codes offering\
+    \ it."
+  zinc_search_by_smiles: "Search purchasable ZINC22 compounds by SMILES — exact or similarity\
+    \ search.\n\n    Args:\n        smiles: query SMILES (e.g. \"c1ccc(cc1)C(=O)O\"\
+    ).\n        distance: SMILES/ECFP graph distance for similarity; 0 = exact match,\
+    \ higher = fuzzier.\n        anonymous_distance: element-anonymized graph distance\
+    \ (0 = off); relaxes atom identity.\n    Returns matching purchasable substances\
+    \ with SMILES and suppliers."
+  zinc_search_by_supplier: "Resolve supplier catalog numbers to ZINC22 substances.\n\
+    \n    Args:\n        supplier_codes: vendor catalog numbers / supplier codes to\
+    \ look up.\n    Returns the ZINC substances that map to those catalog entries."
 ---
-
 # ZINC22 (CartBlanche22)
 
 A self-contained MCP connector over the **public** CartBlanche22 API

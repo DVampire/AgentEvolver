@@ -26,28 +26,20 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Search for REAL images by keyword and download them to a local folder (keyless, via Openverse) so they can be bundled into a project — real-looking AND self-contained."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Search a keyless image provider (Openverse, Creative-Commons) by keyword and DOWNLOAD the top matches into a local directory. Returns the saved file paths so you can bundle real images into your project (e.g. a product catalog) instead of hotlinking a fragile CDN or drawing placeholder SVGs.
 
-## Parameters
-- query (str, required): what to find, e.g. "wireless headphones", "ceramic coffee mug".
-- out_dir (str, required): absolute directory to save images into (created if missing), e.g. the project's `src/assets/products/`.
-- count (int, optional): how many images to download (default 3, max 10).
-- name_prefix (str, optional): base filename for saved images (default derived from query); files are `<prefix>-<i>.<ext>`.
-- media_type (str, optional): "image" (default). Video search is not yet supported.
-
-## Returns (message + data.items)
+### Returns (message + data.items)
 For each downloaded image: `local_path` (use this in your code), `source_url`, `title`, `creator`, `license`. Failed downloads are skipped and reported.
 
-## Guidance
 - Save into a folder INSIDE your project's source (e.g. `src/assets/...`) so the bundler picks them up and the deployed site is self-contained.
 - Import/reference the returned `local_path`s from your components; do NOT hotlink the original `source_url` at runtime (that reintroduces the fragile-external-image problem).
 - Attribution: images are Creative-Commons; keep the returned creator/license if you show credits.
-
-## Example
-{"name": "media_search_tool", "args": {"query": "wireless headphones", "out_dir": "/abs/path/online_shop/src/assets/products", "count": 3, "name_prefix": "headphones"}}
 """
+
+_EXAMPLES = [
+    '{"name": "media_search_tool", "args": {"query": "wireless headphones", "out_dir": "/abs/path/online_shop/src/assets/products", "count": 3, "name_prefix": "headphones"}}',
+]
 
 _OPENVERSE_ENDPOINT = "https://api.openverse.org/v1/images/"
 _UA = "AgentEvolver-media-search/1.0 (+https://example.local)"
@@ -107,7 +99,8 @@ class MediaSearchTool(Tool):
 
     name: str = "media_search_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     # This downloads files into the workspace (`with open(dest, "wb")`), so it changes the tree — the earlier `False` was
@@ -121,6 +114,17 @@ class MediaSearchTool(Tool):
 
     async def __call__(self, query: str, out_dir: str, count: int = 3,
                        name_prefix: str = "", media_type: str = "image", **kwargs) -> Response:
+        """Find images on the web and save them into a directory.
+
+        Args:
+            query: What to find, e.g. "wireless headphones", "ceramic coffee mug".
+            out_dir: Absolute directory to save images into (created if missing), e.g.
+                the project's ``src/assets/products/``.
+            count: How many images to download (default 3, max 10).
+            name_prefix: Base filename for saved images (default derived from query);
+                files are ``<prefix>-<i>.<ext>``.
+            media_type: "image" (default). Video search is not yet supported.
+        """
         import asyncio
 
         if media_type != "image":

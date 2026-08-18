@@ -13,6 +13,11 @@ class DoclingExportDoclingDocumentTool(PluginTool):
     display_name: str = 'Export DoclingDocument'
     description: str = 'Export DoclingDocument to markdown, html or other formats.'
 
+    output = {'content': 'text', 'format': 'text'}
+
+    def _render(self, data):
+        return f"Exported document as {data['format']}."
+
     async def __call__(self, source: str = "", export_format: str = "markdown", **kwargs) -> Response:
         src = str(source or "").strip()
         if not src:
@@ -23,4 +28,4 @@ class DoclingExportDoclingDocumentTool(PluginTool):
             out = doc.export_to_markdown() if export_format == "markdown" else doc.export_to_dict()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"docling.export: {type(exc).__name__}: {exc}")
-        return self._ok(f"Exported document as {export_format}.", content=out, format=export_format)
+        return self._ok(content=out, format=export_format)

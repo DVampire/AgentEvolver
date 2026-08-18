@@ -6,7 +6,7 @@ answers all of them. Giving each producer its own controller would mean three vo
 for one idea, and two of them drifting behind the third.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -17,57 +17,46 @@ from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
 _LIST_DESCRIPTION = "List background jobs and whether each is still running."
-_LIST_INSTRUCTION = """
-## Function
+_LIST_GUIDANCE = """
 Show every background job this session started, newest first, with its state and how long
 it has been running. Use it to see what is still in flight before deciding whether to
 wait, collect a result, or stop something.
 
 Elapsed time is the signal that separates working from hung: a job that has printed
 nothing for minutes is telling you something a status alone does not.
-
-## Parameters
-(none)
-
-## Example
-{"name": "job_list_tool", "args": {}}
 """
 
+_LIST_EXAMPLES = [
+    '{"name": "job_list_tool", "args": {}}',
+]
+
 _OUTPUT_DESCRIPTION = "Read what a background job has printed so far."
-_OUTPUT_INSTRUCTION = """
-## Function
+_OUTPUT_GUIDANCE = """
 Collect a background job's output. Safe to call repeatedly — reading does not consume, so
 an early check still shows everything when you come back. A finished job keeps its output;
 a job that failed is exactly when you want it.
 
 If the job is still running you get what it has printed up to now, not a wait. Call it
 again later for more.
-
-## Parameters
-- job_id (str): The id returned when the job was started.
-- tail (int, optional): Return only the last N lines. Use it on a chatty job — the closing
-  lines are almost always the ones that say what happened.
-
-## Example
-{"name": "job_output_tool", "args": {"job_id": "job_1a2b3c4d"}}
-{"name": "job_output_tool", "args": {"job_id": "job_1a2b3c4d", "tail": 40}}
 """
 
+_OUTPUT_EXAMPLES = [
+    '{"name": "job_output_tool", "args": {"job_id": "job_1a2b3c4d"}}',
+    '{"name": "job_output_tool", "args": {"job_id": "job_1a2b3c4d", "tail": 40}}',
+]
+
 _KILL_DESCRIPTION = "Stop a running background job."
-_KILL_INSTRUCTION = """
-## Function
+_KILL_GUIDANCE = """
 Stop a background job you no longer need, or one that is not going to finish. The whole
 process tree is signalled, not just the command you typed — a shell command is usually a
 shell that started the real work.
 
 Output printed before the kill is kept, so this does not destroy what you already learned.
-
-## Parameters
-- job_id (str): The id returned when the job was started.
-
-## Example
-{"name": "job_kill_tool", "args": {"job_id": "job_1a2b3c4d"}}
 """
+
+_KILL_EXAMPLES = [
+    '{"name": "job_kill_tool", "args": {"job_id": "job_1a2b3c4d"}}',
+]
 
 
 def _session_of(kwargs) -> str:
@@ -81,7 +70,8 @@ class JobListTool(Tool):
 
     name: str = "job_list_tool"
     description: str = _LIST_DESCRIPTION
-    instruction: str = _LIST_INSTRUCTION
+    guidance: str = _LIST_GUIDANCE
+    examples: List[str] = _LIST_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads the job registry; changes nothing.")
@@ -115,7 +105,8 @@ class JobOutputTool(Tool):
 
     name: str = "job_output_tool"
     description: str = _OUTPUT_DESCRIPTION
-    instruction: str = _OUTPUT_INSTRUCTION
+    guidance: str = _OUTPUT_GUIDANCE
+    examples: List[str] = _OUTPUT_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads accumulated output; changes nothing.")
@@ -124,6 +115,13 @@ class JobOutputTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, job_id: str, tail: Optional[int] = None, **kwargs) -> Response:
+        """Read what a background job has written so far.
+
+        Args:
+            job_id: The id returned when the job was started.
+            tail: Return only the last N lines. Use it on a chatty job — the closing
+                lines are almost always the ones that say what happened.
+        """
         job = job_manager.get(job_id)
         if job is None:
             known = [j.id for j in job_manager.list(_session_of(kwargs))]
@@ -161,7 +159,8 @@ class JobKillTool(Tool):
 
     name: str = "job_kill_tool"
     description: str = _KILL_DESCRIPTION
-    instruction: str = _KILL_INSTRUCTION
+    guidance: str = _KILL_GUIDANCE
+    examples: List[str] = _KILL_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Signals a process this session started.")
@@ -170,6 +169,11 @@ class JobKillTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, job_id: str, **kwargs) -> Response:
+        """Stop watching a background job.
+
+        Args:
+            job_id: The id returned when the job was started.
+        """
         job = job_manager.get(job_id)
         if job is None:
             return Response(type=ResponseType.TOOL, success=False,

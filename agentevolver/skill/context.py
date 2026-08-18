@@ -1,11 +1,9 @@
 """Skill Context Manager for loading, managing, and serving skills."""
 
 import os
-import json
 import re
 import shutil
 import yaml
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +16,8 @@ from agentevolver.skill.types import SkillConfig
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
 from agentevolver.skill.types import SkillContext
-from agentevolver.utils import assemble_workspace_path, file_lock, render_capability_card
+from agentevolver.capability import roster, roster_card
+from agentevolver.utils import assemble_workspace_path
 from agentevolver.version import version_manager
 from agentevolver.permission import permission_manager, PermissionMode
 
@@ -103,7 +102,6 @@ class SkillContextManager(BaseModel):
 
         # 4. Build text representations, register versions, and store
         for name, skill_config in discovered.items():
-            skill_config.text = self._build_text_representation(skill_config)
             self._skill_configs[name] = skill_config
 
             if name not in self._skill_history_versions:
@@ -219,44 +217,6 @@ class SkillContextManager(BaseModel):
         return frontmatter, body
 
     # ------------------------------------------------------------------
-    # Text representation (for prompt injection)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _build_text_representation(skill_config: SkillConfig) -> str:
-        """Build a concise summary for prompt injection (no full SKILL.md body)."""
-        parts = [
-            f"Skill: {skill_config.name}",
-            f"Description: {skill_config.description}",
-            f"Type: {', '.join(skill_config.type_tags)}",
-            f"Version: {skill_config.version}",
-            f"Skill Directory: {skill_config.skill_dir}",
-            f"SKILL.md: {os.path.join(skill_config.skill_dir, 'SKILL.md')}",
-        ]
-
-        if skill_config.resources:
-            parts.append("Resources:")
-            for r in skill_config.resources:
-                parts.append(f"  - {r}")
-
-        if skill_config.scripts:
-            parts.append("Scripts:")
-            for s in skill_config.scripts:
-                parts.append(f"  - {s}")
-
-        if skill_config.references:
-            parts.append("References:")
-            for r in skill_config.references:
-                parts.append(f"  - {r}")
-
-        if skill_config.examples:
-            parts.append("Examples:")
-            for e in skill_config.examples:
-                parts.append(f"  - {e}")
-
-        return "\n".join(parts)
-
-    # ------------------------------------------------------------------
     # Register / Update / Unregister / Copy / Restore
     # ------------------------------------------------------------------
 
@@ -298,8 +258,6 @@ class SkillContextManager(BaseModel):
             raise ValueError(
                 f"Skill '{skill_config.name}' already registered. Use override=True or update()."
             )
-
-        skill_config.text = self._build_text_representation(skill_config)
         self._skill_configs[skill_config.name] = skill_config
 
         if skill_config.name not in self._skill_history_versions:
@@ -357,8 +315,6 @@ class SkillContextManager(BaseModel):
         if new_version is None:
             new_version = await version_manager.generate_next_version("skill", name, "patch")
         updated.version = new_version
-
-        updated.text = self._build_text_representation(updated)
         self._skill_configs[name] = updated
 
         if name not in self._skill_history_versions:
@@ -436,8 +392,6 @@ class SkillContextManager(BaseModel):
             else:
                 new_version = await version_manager.get_version("skill", new_name)
         copied.version = new_version
-
-        copied.text = self._build_text_representation(copied)
         self._skill_configs[new_name] = copied
 
         if new_name not in self._skill_history_versions:
@@ -471,7 +425,6 @@ class SkillContextManager(BaseModel):
             return None
 
         restored = SkillConfig(**target.model_dump())
-        restored.text = self._build_text_representation(restored)
         self._skill_configs[name] = restored
 
         version_history = await version_manager.get_version_history("skill", name)
@@ -506,17 +459,37 @@ class SkillContextManager(BaseModel):
     # Context generation (for agent prompt)
     # ------------------------------------------------------------------
 
-    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
-        """Assemble the skill instruction text for prompt injection, on demand.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None,
+                              level: str = "brief") -> str:
+        """Assemble the skill roster for prompt injection.
 
-        `allowlist` (list of skill names) selects which skills to include: None = all;
-        [] = none; [names] = only those. `types` filters by frontmatter ``type``
-        (``["worker"]`` / ``["orchestrator"]``) — the hard guardrail keeping worker SOPs
-        out of the MetaAgent and orchestration recipes out of workers. Cached per
-        (allowlist, types); invalidated on registry change via `_invalidate_instruction`.
+        ``brief`` is name, description and type tag — and nothing else, because
+        invoking a skill *is* reading it: :meth:`__call__` executes nothing, it
+        returns the SKILL.md body with its script paths made absolute and its
+        bundled files listed. A roster that repeated those paths would be paying,
+        on every step of every run, for what one call hands over anyway.
+
+        ``full`` adds the body, for the reader who cannot invoke: an evaluator
+        scoring a skill or an optimizer rewriting one must not call it, because
+        calling it injects the procedure into their own context as instructions to
+        follow. They ask ``inspect_capability_tool`` instead, and this is what it
+        returns them. It is per-name in practice — the whole registry at ``full``
+        is every SOP in the repository.
+
+        Args:
+            allowlist: Which skills to include. ``None`` = all, ``[]`` = none,
+                ``[names]`` = only those.
+            types: Filter by frontmatter ``type`` (``["worker"]`` /
+                ``["orchestrator"]``) — the hard guardrail keeping worker SOPs out
+                of the MetaAgent and orchestration recipes out of workers.
+            level: ``brief`` for the roster, ``full`` to include SKILL.md.
+
+        Returns:
+            The rendered cards, joined. Cached per (allowlist, types, level) and
+            dropped on registry change via :meth:`_invalidate_instruction`.
         """
         key = (None if allowlist is None else tuple(allowlist),
-               None if types is None else tuple(types))
+               None if types is None else tuple(types), level)
         if key in self._instr_cache:
             return self._instr_cache[key]
         targets = list(self._skill_configs.keys()) if allowlist is None else allowlist
@@ -527,30 +500,19 @@ class SkillContextManager(BaseModel):
                 continue
             if types and not any(t in types for t in cfg.type_tags):
                 continue
-            # The card is for discovery, not a file manifest: list a few bundled
-            # files by basename, but for deep script trees (vendored skills can
-            # ship 50+ files) show only a count so the card doesn't bloat the
-            # prompt — the full paths come from SKILL.md when the skill is invoked.
-            def _bundle(label: str, items: List[str], cap: int = 6) -> Optional[str]:
-                if not items:
-                    return None
-                if len(items) <= cap:
-                    return f"- **{label}**: {', '.join(os.path.basename(p) for p in items)}"
-                return f"- **{label}**: {len(items)} files (see SKILL.md)"
-
-            detail = [f"- **SKILL.md**: {os.path.join(cfg.skill_dir, 'SKILL.md')}"]
-            for _label, _items in (("Scripts", cfg.scripts), ("References", cfg.references),
-                                   ("Resources", cfg.resources), ("Examples", cfg.examples)):
-                line = _bundle(_label, _items)
-                if line:
-                    detail.append(line)
-            parts.append(render_capability_card(
-                name=cfg.name,
-                description=cfg.description or "",
+            parts.append(roster_card(
+                cfg.name, cfg.description or "",
                 meta=f"`[{', '.join(cfg.type_tags)}]` v{cfg.version}",
-                body="\n".join(detail),
+                manifest_label="SKILL.md",
+                manifest_path=os.path.join(cfg.skill_dir, "SKILL.md"),
+                # Withheld until `full`: invoking a skill returns its paths, so a
+                # roster that named them would charge every step for what one call
+                # hands over anyway.
+                manifest_from="full",
+                document=cfg.content or "",
+                level=level,
             ))
-        text = "\n\n".join(parts)
+        text = roster(parts)
         self._instr_cache[key] = text
         return text
 

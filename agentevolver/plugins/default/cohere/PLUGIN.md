@@ -6,7 +6,7 @@ type: embedding
 icon: resources/icon.svg
 tools: 3
 implemented: 3
-credentials: [COHERE_API_KEY]
+credentials: [COHERE_API_KEY, OPENAI_API_KEY]
 requirements: [langchain_cohere, langchain_core, langchain_openai]
 version: "1.0.0"
 ---

@@ -11,6 +11,11 @@ class BingSearchApiTool(PluginTool):
     display_name: str = 'Bing Search API'
     description: str = 'Call the Bing Search API.'
 
+    output = {'query': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Bing returned {data['count']} results for '{data['query']}'."
+
     async def __call__(self, input_value: str = "", bing_subscription_key: str = "", bing_search_url: str = "", k: int = 4, **kwargs) -> Response:
         query = str(input_value or "").strip()
         if not query:
@@ -28,5 +33,4 @@ class BingSearchApiTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"bing.search: {type(exc).__name__}: {exc}")
         records = [{"title": r.get("title"), "link": r.get("link"), "snippet": r.get("snippet", "")} for r in results]
-        return self._ok(f"Bing returned {len(records)} results for '{query}'.",
-                        query=query, records=records, count=len(records))
+        return self._ok(query=query, records=records, count=len(records))

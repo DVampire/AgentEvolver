@@ -22,6 +22,10 @@ Apify tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `apify.apify_actor` → `data` keys: count, records
+
 ## Credentials
 
 `APIFY_API_TOKEN`, `APIFY_TOKEN`, an `api_key` argument on the call, or a `apify_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

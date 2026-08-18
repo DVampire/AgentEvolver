@@ -18,8 +18,131 @@ actions:
   - get_go_annotations
   - get_uniprot_entries
   - map_reactome_pathways
+action_schemas:
+  get_go_annotations:
+    properties:
+      gene:
+        title: Gene
+        type: string
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+    required:
+    - gene
+    title: get_go_annotationsArguments
+    type: object
+  get_ontology_term:
+    properties:
+      ontology:
+        default: ''
+        title: Ontology
+        type: string
+      term_id:
+        title: Term Id
+        type: string
+    required:
+    - term_id
+    title: get_ontology_termArguments
+    type: object
+  get_uniprot_entries:
+    properties:
+      limit:
+        default: 5
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: get_uniprot_entriesArguments
+    type: object
+  list_ontologies:
+    properties:
+      limit:
+        default: 30
+        title: Limit
+        type: integer
+    title: list_ontologiesArguments
+    type: object
+  map_reactome_pathways:
+    properties:
+      gene:
+        title: Gene
+        type: string
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+    required:
+    - gene
+    title: map_reactome_pathwaysArguments
+    type: object
+  query_genes:
+    properties:
+      limit:
+        default: 10
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+      species:
+        default: human
+        title: Species
+        type: string
+    required:
+    - query
+    title: query_genesArguments
+    type: object
+  search_ontology_terms:
+    properties:
+      limit:
+        default: 15
+        title: Limit
+        type: integer
+      ontology:
+        default: ''
+        title: Ontology
+        type: string
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: search_ontology_termsArguments
+    type: object
+action_descriptions:
+  get_go_annotations: "Get Gene Ontology annotations for a gene/protein via QuickGO.\n\
+    \n    Args:\n        gene: gene symbol or UniProt accession (e.g. \"TP53\" or \"\
+    P04637\").\n        limit: max annotations (default 25).\n    Returns 'GO_id<TAB>aspect<TAB>qualifier<TAB>evidence'\
+    \ rows (deduplicated)."
+  get_ontology_term: "Get an ontology term's label, definition, and synonyms from EBI\
+    \ OLS.\n\n    Args:\n        term_id: an OBO id (e.g. \"GO:0006915\", \"HP:0001250\"\
+    ). Ontology is inferred\n            from the prefix if not given.\n        ontology:\
+    \ OLS ontology id (optional; inferred from term_id prefix otherwise)."
+  get_uniprot_entries: "Get UniProt protein entries by accession or a search query (human,\
+    \ reviewed).\n\n    Args:\n        query: UniProt accession (e.g. \"P04637\") or\
+    \ gene/protein search text (e.g. \"TP53\").\n        limit: max entries (default\
+    \ 5)."
+  list_ontologies: "List ontologies available in EBI OLS (id + title).\n\n    Args:\n\
+    \        limit: max ontologies (default 30)."
+  map_reactome_pathways: "Map a gene/protein to Reactome pathways it participates in.\n\
+    \n    Args:\n        gene: gene symbol or UniProt accession (e.g. \"TP53\" or \"\
+    P04637\").\n        limit: max pathways (default 25).\n    Returns 'stId<TAB>pathway'\
+    \ rows."
+  query_genes: "Query genes by symbol/name/id via MyGene.info; returns cross-reference\
+    \ identifiers.\n\n    Args:\n        query: gene symbol, name, or id (e.g. \"TP53\"\
+    , \"CDK2\").\n        species: species (default \"human\").\n        limit: max\
+    \ hits (default 10).\n    Returns 'symbol<TAB>name<TAB>entrez<TAB>ensembl<TAB>uniprot'\
+    \ rows."
+  search_ontology_terms: "Search ontology terms across EBI OLS, optionally restricted\
+    \ to one ontology.\n\n    Args:\n        query: search text (e.g. \"apoptosis\"\
+    ).\n        ontology: OLS ontology id to restrict to (e.g. \"go\", \"hp\"); empty\
+    \ for all.\n        limit: max results (default 15).\n    Returns 'term_id<TAB>label<TAB>ontology'\
+    \ rows."
 ---
-
 # Genes & Ontologies
 
 A self-contained MCP connector for gene identity and ontologies, aggregating five

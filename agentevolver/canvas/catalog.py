@@ -14,14 +14,17 @@ the icon/port lookup tables below are plain data.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Dict, List
+from typing import Any, Dict, List, get_args
 
-from agentevolver.canvas.types import NodeSpec, ParamSpec, PortSpec
+from agentevolver.canvas.types import NodeSpec, ParamSpec, PortSpec, PortType
+from agentevolver.capability import AGENT_MOUNT_TYPES as _CAPABILITY_MOUNT_TYPES
 from agentevolver.logger import logger
 
 # Which capability rosters an agent node can mount (scope). All are optional:
-# leaving a picker empty means the agent uses its configured defaults.
-AGENT_MOUNT_TYPES = ["tools", "skills", "connectors", "agents", "environments", "workflows"]
+# leaving a picker empty means the agent uses its configured defaults. Read off
+# the capability table in table order, so the pickers a person sees and the types
+# the framework dispatches are the same list rather than two lists that agree.
+AGENT_MOUNT_TYPES = list(_CAPABILITY_MOUNT_TYPES)
 
 # A capability result normalizes to {message, data, files} — so callable nodes
 # expose these three typed output ports (each compiles to ${node.<name>}), plus
@@ -32,6 +35,7 @@ _CAPABILITY_OUTPUTS = [
     PortSpec(name="files", label="Files", type="list", description="Produced file paths."),
     PortSpec(name="out", label="Result", type="any", description="The whole {message, data, files}."),
 ]
+
 
 # Tools opt into a standalone canvas node (grouped under this palette category)
 # by setting ``metadata["canvas_category"]``. Uncategorized tools stay
@@ -71,6 +75,31 @@ _ICON_BY_CATEGORY = {
     "process": "SlidersHorizontal", "evaluation": "Target", "files": "FileText",
     "knowledge": "BookOpen", "tool": "Wrench", "workflow": "Network",
 }
+
+
+def _declared_data_ports(output: Dict[str, str]) -> List[PortSpec]:
+    """One typed port per key a capability declares in its ``data``.
+
+    The port is named for the path it compiles to — ``data.records`` becomes
+    ``${node.data.records}``, which the compiler builds by joining the port name
+    onto the node and the workflow resolver walks segment by segment. So this
+    needs no support anywhere else: declaring a key is the whole change.
+
+    Undeclared ``data`` (every capability today) yields nothing, leaving the one
+    opaque ``data`` port that has always been there.
+
+    An unrecognised declared type degrades to ``any`` rather than raising: the
+    palette is built from every live registry at once, so one author's typo would
+    otherwise take out every plugin node instead of loosening one port.
+    """
+    ports: List[PortSpec] = []
+    for key, declared in (output or {}).items():
+        if declared not in get_args(PortType):
+            logger.warning(f"| ⚠️ Canvas palette: unknown port type {declared!r} on data.{key}; using 'any'")
+            declared = "any"
+        ports.append(PortSpec(name=f"data.{key}", label=key.replace("_", " ").capitalize(),
+                              type=declared, description=f"`data.{key}` from the result."))
+    return ports
 
 
 class Catalog:
@@ -345,6 +374,11 @@ class Catalog:
         frontend). Addressed as ``<plugin>.<tool>``, and executed through the
         shared datasource → ``plugin_manager`` path, which splits the two halves
         and dispatches via the plugin.
+
+        A tool that declares ``output`` also gets one typed port per key of its
+        ``data``, so the next node can take the field it wants instead of the
+        whole opaque object. Declared ports are appended to the four every
+        capability has, never in place of them: ``data`` stays wirable whole.
         """
         info = tool.public()
         return NodeSpec(
@@ -356,6 +390,7 @@ class Catalog:
             plugin=info["plugin"],
             plugin_label=info["plugin_label"],
             params=self._signature_params(tool, skip=("timeout",)),
+            outputs=[*_CAPABILITY_OUTPUTS, *_declared_data_ports(info["output"])],
         )
 
     @staticmethod

@@ -14,6 +14,11 @@ class NvidiaIngestTool(PluginTool):
     description: str = 'Multi-modal data extraction from documents using NVIDIA'
     category: str = 'data'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'NVIDIA ingest completed.'
+
     async def __call__(self, file_path: str = "", base_url: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "NVIDIA_API_KEY")
         if not file_path:
@@ -24,4 +29,4 @@ class NvidiaIngestTool(PluginTool):
             result = ingestor.files(file_path).extract().ingest()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"nvidia.ingest: {type(exc).__name__}: {exc}")
-        return self._ok("NVIDIA ingest completed.", result=str(result))
+        return self._ok(result=str(result))

@@ -13,6 +13,11 @@ class NextplaidTool(PluginTool):
     display_name: str = 'NextPlaid'
     description: str = ''
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'NextPlaid query completed.'
+
     async def __call__(self, query: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx
         key = self._secret(api_key, "NEXTPLAID_API_KEY")
@@ -26,4 +31,4 @@ class NextplaidTool(PluginTool):
             data = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"nextplaid: {type(exc).__name__}: {exc}")
-        return self._ok("NextPlaid query completed.", result=data)
+        return self._ok(result=data)

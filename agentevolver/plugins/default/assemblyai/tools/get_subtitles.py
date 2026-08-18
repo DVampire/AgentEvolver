@@ -11,6 +11,8 @@ class AssemblyaiGetSubtitlesTool(AssemblyaiToolBase):
     display_name: str = 'AssemblyAI Get Subtitles'
     description: str = 'Export your transcript in SRT or VTT format for subtitles and closed captions'
 
+    output = {'subtitles': 'list', 'format': 'text'}
+
     async def __call__(self, transcript_id: str = "", subtitle_format: str = "srt", chars_per_caption: int = 0, api_key: str = "", **kwargs) -> Response:
         try:
             aai = self._aai(api_key)

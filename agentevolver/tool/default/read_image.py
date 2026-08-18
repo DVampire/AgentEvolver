@@ -1,7 +1,7 @@
 """ReadImageTool — put an image file in front of the model, or refuse and say why."""
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -15,22 +15,18 @@ from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Look at an image file. Requires a model that accepts image input."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Look at an image file — a screenshot, a diagram, a plot, a photograph.
 
-## Guidance
 - The image is attached to the conversation and stays visible for the rest of the run, so read it once.
 - PNG, JPEG, GIF and WebP only, up to 5 MB. The format is read from the file's bytes, not its extension.
 - Only works when the current model accepts image input. If it does not, the call is refused and reading the file some other way will not help — say so rather than retrying.
 - Use read_file_tool for text; this tool does not describe the image in words, it shows it to you.
-
-## Parameters
-- path (str): Absolute path to the image file.
-
-## Example
-{"name": "read_image_tool", "args": {"path": "/abs/path/to/screenshot.png"}}
 """
+
+_EXAMPLES = [
+    '{"name": "read_image_tool", "args": {"path": "/abs/path/to/screenshot.png"}}',
+]
 
 
 def _routed_model(ctx: Any) -> Optional[str]:
@@ -60,7 +56,8 @@ class ReadImageTool(Tool):
     #: local I/O plus a base64 encode of at most 5 MB; a minute means a wedged mount.
     call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = False

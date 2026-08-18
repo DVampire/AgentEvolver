@@ -20,8 +20,121 @@ actions:
   - accession_to_id
   - id_to_accession
   - search_sequence
+action_schemas:
+  accession_to_id:
+    properties:
+      accession:
+        title: Accession
+        type: string
+    required:
+    - accession
+    title: accession_to_idArguments
+    type: object
+  get_covariance_model:
+    properties:
+      accession:
+        title: Accession
+        type: string
+    required:
+    - accession
+    title: get_covariance_modelArguments
+    type: object
+  get_family:
+    properties:
+      accession:
+        title: Accession
+        type: string
+    required:
+    - accession
+    title: get_familyArguments
+    type: object
+  get_seed_alignment:
+    properties:
+      accession:
+        title: Accession
+        type: string
+    required:
+    - accession
+    title: get_seed_alignmentArguments
+    type: object
+  get_sequence_regions:
+    properties:
+      accession:
+        title: Accession
+        type: string
+    required:
+    - accession
+    title: get_sequence_regionsArguments
+    type: object
+  get_structure_mapping:
+    properties:
+      accession:
+        title: Accession
+        type: string
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+    required:
+    - accession
+    title: get_structure_mappingArguments
+    type: object
+  get_tree:
+    properties:
+      accession:
+        title: Accession
+        type: string
+    required:
+    - accession
+    title: get_treeArguments
+    type: object
+  id_to_accession:
+    properties:
+      rfam_id:
+        title: Rfam Id
+        type: string
+    required:
+    - rfam_id
+    title: id_to_accessionArguments
+    type: object
+  search_sequence:
+    properties:
+      max_wait:
+        default: 25
+        title: Max Wait
+        type: integer
+      sequence:
+        title: Sequence
+        type: string
+    required:
+    - sequence
+    title: search_sequenceArguments
+    type: object
+action_descriptions:
+  accession_to_id: "Convert an Rfam accession to its family id.\n\n    Args:\n     \
+    \   accession: Rfam accession (e.g. \"RF00001\")."
+  get_covariance_model: "Get an Rfam family's covariance model (CM) file header (truncated).\n\
+    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\")."
+  get_family: "Get an Rfam family's metadata (id, description, type, clan, curation).\n\
+    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\") or family id (e.g.\
+    \ \"5S_rRNA\")."
+  get_seed_alignment: "Get an Rfam family's seed alignment (Stockholm format, truncated).\n\
+    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\")."
+  get_sequence_regions: "Sequence regions (genomic hits) of an Rfam family.\n\n    NOTE:\
+    \ Rfam restricts the full-region web API; bulk regions are distributed via FTP.\n\
+    \n    Args:\n        accession: Rfam accession (e.g. \"RF00001\")."
+  get_structure_mapping: "Map an Rfam family to 3D structures (PDB) — CM-to-PDB region\
+    \ mappings.\n\n    Args:\n        accession: Rfam accession (e.g. \"RF00001\").\n\
+    \        limit: max mappings (default 25)."
+  get_tree: "Get an Rfam family's phylogenetic tree (Newick, truncated).\n\n    Args:\n\
+    \        accession: Rfam accession (e.g. \"RF00001\")."
+  id_to_accession: "Convert an Rfam family id to its accession.\n\n    Args:\n     \
+    \   rfam_id: Rfam family id (e.g. \"5S_rRNA\")."
+  search_sequence: "Search a nucleotide sequence against Rfam covariance models (Infernal\
+    \ cmscan).\n\n    Args:\n        sequence: RNA/DNA sequence (plain letters, no FASTA\
+    \ header needed).\n        max_wait: seconds to wait for the async job (default\
+    \ 25)."
 ---
-
 # RNA
 
 A self-contained MCP connector for RNA families over the **public** Rfam API

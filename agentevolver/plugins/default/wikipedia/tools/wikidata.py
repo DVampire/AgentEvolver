@@ -11,6 +11,11 @@ class WikipediaWikidataTool(PluginTool):
     display_name: str = 'Wikidata'
     description: str = 'Performs a search using the Wikidata API.'
 
+    output = {'query': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Wikidata returned {data['count']} entities for '{data['query']}'."
+
     async def __call__(self, query: str = "", **kwargs) -> Response:
         import httpx
         query = str(query or "").strip()
@@ -27,5 +32,4 @@ class WikipediaWikidataTool(PluginTool):
             return self._fail(f"wikipedia.wikidata: {type(exc).__name__}: {exc}")
         records = [{"label": r.get("label"), "id": r.get("id"), "url": r.get("url"),
                     "description": r.get("description", ""), "concepturi": r.get("concepturi")} for r in results]
-        return self._ok(f"Wikidata returned {len(records)} entities for '{query}'.",
-                        query=query, records=records, count=len(records))
+        return self._ok(query=query, records=records, count=len(records))

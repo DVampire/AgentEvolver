@@ -18,10 +18,15 @@ Git tools.
 
 | id | name | status | what it does |
 |----|------|--------|--------------|
-| `git.git` | Git | ✅ | Git |
+| `git.git` | Git | ✅ |  |
 | `git.gitextractor` | GitExtractor | ✅ | Analyzes a Git repository and returns file contents and complete repository information |
 
 All 2 tools are implemented.
+
+Declared result shapes:
+
+- `git.git` → `data` keys: count, records
+- `git.gitextractor` → `data` keys: files, text
 
 ## Credentials
 

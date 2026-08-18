@@ -17,6 +17,11 @@ class FMPHistoryTool(PluginTool):
     description: str = "Fetch daily OHLCV price history for a ticker symbol from Financial Modeling Prep."
     type: str = "data_source"
 
+    output = {'symbol': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Fetched {data['count']} daily candles for {data['symbol']} from FMP."
+
     async def __call__(self, symbol: str = "", api_key: str = "", limit: int = 30,
                        timeout: float = 30.0, **kwargs) -> Response:
         import httpx
@@ -60,5 +65,4 @@ class FMPHistoryTool(PluginTool):
         # FMP returns newest-first; normalize to oldest-first like Yahoo.
         records.reverse()
 
-        return self._ok(f"Fetched {len(records)} daily candles for {symbol} from FMP.",
-                        symbol=symbol, records=records, count=len(records))
+        return self._ok(symbol=symbol, records=records, count=len(records))

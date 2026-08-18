@@ -5,9 +5,8 @@ import sys
 import json
 import re
 import shutil
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,7 +17,8 @@ from agentevolver.config import config
 from agentevolver.connector.types import ConnectorConfig, ConnectorContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
-from agentevolver.utils import assemble_workspace_path, file_lock, render_capability_card
+from agentevolver.capability import roster, roster_card
+from agentevolver.utils import assemble_workspace_path
 from agentevolver.version import version_manager
 from agentevolver.permission import permission_manager, PermissionMode
 
@@ -108,7 +108,6 @@ class ConnectorContextManager(BaseModel):
 
         # 4. Build text representations, register versions, and store
         for name, connector_config in discovered.items():
-            connector_config.text = self._build_text_representation(connector_config)
             self._connector_configs[name] = connector_config
 
             if name not in self._connector_history_versions:
@@ -218,10 +217,12 @@ class ConnectorContextManager(BaseModel):
         connection = self._resolve_connection(frontmatter.get("connection", {}) or {}, connector_dir)
         actions = list(frontmatter.get("actions", []) or [])
         action_schemas = frontmatter.get("action_schemas", {}) or {}
+        action_descriptions = frontmatter.get("action_descriptions", {}) or {}
 
         reserved = {
             "name", "description", "version", "enable_evolving", "type",
             "permission_mode", "connection", "actions", "action_schemas",
+            "action_descriptions",
         }
         metadata = {k: v for k, v in frontmatter.items() if k not in reserved}
 
@@ -238,6 +239,7 @@ class ConnectorContextManager(BaseModel):
             connection=connection,
             actions=actions,
             action_schemas=action_schemas,
+            action_descriptions=action_descriptions,
         )
 
     @staticmethod
@@ -263,25 +265,6 @@ class ConnectorContextManager(BaseModel):
 
         body = text[match.end():]
         return frontmatter, body
-
-    @staticmethod
-    def _build_text_representation(connector_config: ConnectorConfig) -> str:
-        """Build a concise summary for prompt injection (name + description + actions)."""
-        parts = [
-            f"Connector: {connector_config.name}",
-            f"Description: {connector_config.description}",
-            f"Type: {connector_config.type}",
-            f"Version: {connector_config.version}",
-            f"Transport: {connector_config.connection.get('transport', 'unknown')}",
-            f"CONNECTOR.md: {os.path.join(connector_config.connector_dir, 'CONNECTOR.md')}",
-        ]
-
-        if connector_config.actions:
-            parts.append("Actions:")
-            for a in connector_config.actions:
-                parts.append(f"  - {a}")
-
-        return "\n".join(parts)
 
     # ------------------------------------------------------------------
     # Register / Update / Unregister / Copy / Restore
@@ -325,8 +308,6 @@ class ConnectorContextManager(BaseModel):
             raise ValueError(
                 f"Connector '{connector_config.name}' already registered. Use override=True or update()."
             )
-
-        connector_config.text = self._build_text_representation(connector_config)
         self._connector_configs[connector_config.name] = connector_config
 
         if connector_config.name not in self._connector_history_versions:
@@ -392,8 +373,6 @@ class ConnectorContextManager(BaseModel):
         if new_version is None:
             new_version = await version_manager.generate_next_version("connector", name, "patch")
         updated.version = new_version
-
-        updated.text = self._build_text_representation(updated)
         self._connector_configs[name] = updated
 
         if name not in self._connector_history_versions:
@@ -471,8 +450,6 @@ class ConnectorContextManager(BaseModel):
             else:
                 new_version = await version_manager.get_version("connector", new_name)
         copied.version = new_version
-
-        copied.text = self._build_text_representation(copied)
         self._connector_configs[new_name] = copied
 
         if new_name not in self._connector_history_versions:
@@ -506,7 +483,6 @@ class ConnectorContextManager(BaseModel):
             return None
 
         restored = ConnectorConfig(**target.model_dump())
-        restored.text = self._build_text_representation(restored)
         self._connector_configs[name] = restored
 
         version_history = await version_manager.get_version_history("connector", name)
@@ -524,6 +500,55 @@ class ConnectorContextManager(BaseModel):
     # ------------------------------------------------------------------
     # Discovery (connect to the live MCP server and refresh actions)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _contract_from_tools(tools: List[Any]) -> Tuple[List[str], Dict[str, Any], Dict[str, str]]:
+        """Read the names, argument schemas and descriptions off loaded MCP tools.
+
+        An MCP server declares an ``inputSchema`` for every tool it exposes, and
+        both places here that open a session already receive it — the adapter puts
+        it on ``args_schema`` untouched. Both used to keep only the name, so every
+        action reached a model as a permissive object: the model could see that
+        ``biomart__get_data`` existed and had no way to know what to pass it. The
+        argument list was in CONNECTOR.md prose for a third of actions and nowhere
+        at all for the rest.
+
+        ``args_schema`` is a plain JSON-Schema dict for an MCP-derived tool. A tool
+        built any other way may carry a pydantic model instead, so that is read too
+        rather than being silently dropped a second time.
+        """
+        names: List[str] = []
+        schemas: Dict[str, Any] = {}
+        descriptions: Dict[str, str] = {}
+        for tool in tools:
+            action = getattr(tool, "name", None)
+            if not action:
+                continue
+            names.append(action)
+            description = (getattr(tool, "description", "") or "").strip()
+            if description:
+                descriptions[action] = description
+            schema = getattr(tool, "args_schema", None)
+            if isinstance(schema, dict):
+                schemas[action] = schema
+            elif hasattr(schema, "model_json_schema"):
+                try:
+                    schemas[action] = schema.model_json_schema()
+                except Exception:  # noqa: BLE001 — an unrenderable schema is no schema
+                    pass
+        return names, schemas, descriptions
+
+    def _absorb_contract(self, cfg: "ConnectorConfig", tools: List[Any]) -> List[str]:
+        """Fold what a live server just told us into the registered connector."""
+        names, schemas, descriptions = self._contract_from_tools(tools)
+        if names:
+            cfg.actions = names
+        if schemas:
+            cfg.action_schemas = {**cfg.action_schemas, **schemas}
+        if descriptions:
+            cfg.action_descriptions = {**cfg.action_descriptions, **descriptions}
+        self._invalidate_instruction()
+        return names
 
     async def discover(self, name: str) -> Optional[List[str]]:
         """Connect to a connector's MCP server and refresh its action list.
@@ -546,15 +571,10 @@ class ConnectorContextManager(BaseModel):
 
             client = MultiServerMCPClient({cfg.name: cfg.connection}, tool_name_prefix=False)
             tools = await client.get_tools(server_name=cfg.name)
-            action_names = [getattr(t, "name", None) or "" for t in tools]
-            action_names = [a for a in action_names if a]
+            action_names = self._absorb_contract(cfg, tools)
 
-            cfg.actions = action_names
-            cfg.text = self._build_text_representation(cfg)
-
-            self._invalidate_instruction()
-
-            logger.info(f"| 🔎 Connector '{name}' discovered {len(action_names)} action(s)")
+            logger.info(f"| 🔎 Connector '{name}' discovered {len(action_names)} action(s), "
+                        f"{len(cfg.action_schemas)} with argument schemas")
             return action_names
         except Exception as e:
             logger.error(f"| ❌ Connector '{name}' discovery failed: {e}")
@@ -580,15 +600,36 @@ class ConnectorContextManager(BaseModel):
     # Context generation (for agent prompt)
     # ------------------------------------------------------------------
 
-    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
-        """Assemble the connector instruction text for prompt injection, on demand.
+    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None,
+                              level: str = "brief") -> str:
+        """Assemble the connector roster for prompt injection.
 
-        `allowlist` (connector names) selects which connectors to include: None = all;
-        [] = none; [names] = only those. `types` filters by ``type``. Cached per
-        (allowlist, types); invalidated on registry change via `_invalidate_instruction`.
+        A connector's actions are each projected as their own native function
+        (``{connector}__{action}``), so the model can already see and call every
+        one of them — listing the names again here would be the roster paying, on
+        every step, for what the request's own ``tools`` array states.
+
+        What the roster does carry is where the arguments are. Those functions go
+        out with a permissive schema: an MCP server declares each tool's
+        ``inputSchema``, but nothing in this framework has ever stored it (see
+        :meth:`discover`), so the only description of an action's arguments is the
+        prose in CONNECTOR.md. ``brief`` names the file; ``full`` is the file.
+
+        Args:
+            allowlist: Which connectors to include. ``None`` = all, ``[]`` = none,
+                ``[names]`` = only those.
+            types: Filter by the connector's ``type`` label.
+            level: ``brief`` — description and the path, enough to choose one and
+                know where to look. ``full`` — plus the CONNECTOR.md body, which is
+                what ``inspect_capability_tool`` returns, and what an agent needs
+                before calling an action rather than guessing at it.
+
+        Returns:
+            The rendered cards, joined. Cached per (allowlist, types, level) and
+            dropped on registry change via :meth:`_invalidate_instruction`.
         """
         key = (None if allowlist is None else tuple(allowlist),
-               None if types is None else tuple(types))
+               None if types is None else tuple(types), level)
         if key in self._instr_cache:
             return self._instr_cache[key]
         targets = list(self._connector_configs.keys()) if allowlist is None else allowlist
@@ -600,16 +641,15 @@ class ConnectorContextManager(BaseModel):
             if types and cfg.type not in types:
                 continue
             transport = (cfg.connection or {}).get("transport", "unknown")
-            detail = [f"- **CONNECTOR.md**: {os.path.join(cfg.connector_dir, 'CONNECTOR.md')}"]
-            if cfg.actions:
-                detail.append(f"- **Actions**: {', '.join(cfg.actions)}")
-            parts.append(render_capability_card(
-                name=cfg.name,
-                description=cfg.description or "",
+            parts.append(roster_card(
+                cfg.name, cfg.description or "",
                 meta=f"`{transport}` v{cfg.version}",
-                body="\n".join(detail),
+                manifest_label="CONNECTOR.md",
+                manifest_path=os.path.join(cfg.connector_dir, "CONNECTOR.md"),
+                document=cfg.content or "",
+                level=level,
             ))
-        text = "\n\n".join(parts)
+        text = roster(parts)
         self._instr_cache[key] = text
         return text
 
@@ -630,15 +670,22 @@ class ConnectorContextManager(BaseModel):
     async def __call__(
         self,
         name: str,
-        input: Dict[str, Any],
+        action: str = "",
+        input: Dict[str, Any] = None,
         ctx: SessionContext = None,
         **kwargs,
     ) -> Response:
-        """Execute a connector by routing an ``action``/``args`` call to its MCP server.
+        """Execute one of a connector's MCP actions.
 
         Args:
             name: Connector (MCP server) name.
-            input: {"action": <mcp tool name>, "args": <dict payload>}.
+            action: The MCP tool to call. A container's member is named by its own
+                argument here, the way ``environment_manager`` and
+                ``plugin_manager`` name theirs — and the way ``get_schema`` has
+                always named it. The older ``{"action": ..., "args": ...}``
+                envelope in ``input`` is still read, so a saved workflow keeps
+                working.
+            input: Arguments for the action.
             ctx: Connector context.
         """
         connector_config = self._connector_configs.get(name)
@@ -649,13 +696,16 @@ class ConnectorContextManager(BaseModel):
                 message=f"Connector '{name}' not found. Available connectors: {list(self._connector_configs.keys())}",
             )
 
-        action = input.get("action")
-        args = input.get("args") or {}
+        payload = input or {}
+        args = payload
+        if not action:
+            action = payload.get("action") or ""
+            args = payload.get("args") or {}
         if not action:
             return Response(
                 type=ResponseType.CONNECTOR,
                 success=False,
-                message="Missing 'action' in input. Expected {'action': <mcp tool name>, 'args': {...}}.",
+                message="Missing 'action': name the MCP tool to call.",
             )
 
         logger.info(f"| 🎯 Executing connector '{name}' action '{action}' with args: {args}")
@@ -685,6 +735,10 @@ class ConnectorContextManager(BaseModel):
                     server_name=connector_config.name,
                     tool_name_prefix=False,
                 )
+                # The session is open and the tools are in hand, so this is where the
+                # contract stops being unknown — no extra round trip, and a connector
+                # that has been used once describes its own arguments from then on.
+                self._absorb_contract(connector_config, tools)
                 tool = next((t for t in tools if getattr(t, "name", None) == action), None)
                 if tool is None:
                     available = [getattr(t, "name", None) for t in tools]

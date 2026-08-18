@@ -13,6 +13,11 @@ class ConfluenceTool(PluginTool):
     display_name: str = 'Confluence'
     description: str = 'Confluence wiki collaboration platform'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Loaded {data['count']} Confluence pages."
+
     async def __call__(self, url: str = "", username: str = "", api_key: str = "", space_key: str = "", cloud: bool = True, max_pages: int = 50, **kwargs) -> Response:
         key = self._secret(api_key, "CONFLUENCE_API_KEY")
         if not url or not username or not key or not space_key:
@@ -24,4 +29,4 @@ class ConfluenceTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"confluence: {type(exc).__name__}: {exc}")
         records = [{"content": d.page_content, "metadata": d.metadata} for d in docs]
-        return self._ok(f"Loaded {len(records)} Confluence pages.", records=records, count=len(records))
+        return self._ok(records=records, count=len(records))

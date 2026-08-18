@@ -5,7 +5,7 @@ category: data
 type: model
 tools: 1
 implemented: 1
-credentials: [QIANFAN_AK, QIANFAN_SK]
+credentials: [OPENAI_API_KEY, QIANFAN_AK, QIANFAN_SK]
 requirements: [langchain_community, langchain_openai]
 version: "1.0.0"
 ---

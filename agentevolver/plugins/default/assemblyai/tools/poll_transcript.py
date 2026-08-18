@@ -11,6 +11,8 @@ class AssemblyaiPollTranscriptTool(AssemblyaiToolBase):
     display_name: str = 'AssemblyAI Poll Transcript'
     description: str = 'Poll for the status of a transcription job using AssemblyAI'
 
+    output = {'transcript_id': 'text', 'status': 'text', 'text': 'text'}
+
     async def __call__(self, transcript_id: str = "", api_key: str = "", **kwargs) -> Response:
         try:
             aai = self._aai(api_key)

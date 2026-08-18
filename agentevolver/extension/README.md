@@ -21,3 +21,8 @@ Promotion is journaled and guarded by replay-based smoke checks.
 
 Extension coordinates installation; the owning Tool, Skill, Agent, or Workflow Manager
 remains the source of truth after registration.
+
+The tree carries nine module kinds: `tool`, `agent`, `prompt`, `skill`, `environment`,
+`connector`, `workflow`, `memory` and `plugin`. A `plugin/<name>/` component has the same
+shape as a built-in one — `plugin.py` beside `PLUGIN.md`, with `tools/` and `resources/` —
+so a plugin someone installs and a plugin in the tree are read the same way.

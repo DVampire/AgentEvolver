@@ -18,11 +18,10 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Deploy and manage web services (static/SPA/API) in isolated sandboxes, each bound to its own URL."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Deploy a web service into an isolated sandbox container and bind it to a reachable URL, and manage deployed sites. Each site is one container keyed by `site_id`; deploy many and each gets its own URL.
 
-## Actions (pass `action`)
+### Actions (pass `action`)
 - `deploy`: build + start a site, return its URL. Args:
   - `site_id` (str, required): stable id / reuse key for the site.
   - `runtime` (str): one of `static` (plain HTML/CSS/JS or a pre-built SPA), `node` (build a React/Vue/Vite app and serve it), `python` (FastAPI/Flask/ASGI via uvicorn), `custom` (you supply image/build/start in `overrides`), `llm` (NOT implemented yet). Default `static`.
@@ -36,14 +35,14 @@ Deploy a web service into an isolated sandbox container and bind it to a reachab
 - `stop`: stop a site's container. Args: `site_id`.
 - `redeploy`: tear down and rebuild a site from its stored request (URL may change). Args: `site_id`.
 
-## Guidance
 - The service MUST listen on `0.0.0.0` (not `127.0.0.1`) or the URL won't be reachable.
 - `static` serves the uploaded directory; for `node`, put a buildable project (has package.json) as source; for `python`, default entrypoint is `app:app` — override `start` for a different one (e.g. `uvicorn main:app --host 0.0.0.0 --port 8000`).
 - Backend is automatic: uses the isolated opensandbox (Docker) sandbox when a container runtime is available, else falls back to running on the host directly (no isolation). Force it with the `DEPLOY_BACKEND` env var (`sandbox` | `host` | `auto`). On the host backend, run distinct sites on distinct ports.
-
-## Example
-{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "coffee-shop", "runtime": "static", "source_dir": "/abs/path/to/site"}}
 """
+
+_EXAMPLES = [
+    '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "coffee-shop", "runtime": "static", "source_dir": "/abs/path/to/site"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -52,7 +51,8 @@ class DeployTool(Tool):
 
     name: str = "deploy_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     mutates: bool = True
@@ -70,6 +70,14 @@ class DeployTool(Tool):
         return f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
 
     async def __call__(self, action: str = "list", **kwargs) -> Response:
+        """Deploy, inspect, and tear down sites.
+
+        Args:
+            action: Which operation to run — ``deploy`` (build + start a site and
+                return its URL), ``list``, ``status``, ``logs``, ``stop``, ``remove``.
+                Every other argument belongs to the chosen action and is documented
+                under "Actions" in this tool's instruction. Defaults to ``list``.
+        """
         action = (action or "list").lower().strip()
         try:
             if action == "deploy":

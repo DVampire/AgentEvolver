@@ -11,6 +11,11 @@ class YoutubePlaylistTool(YoutubeToolBase):
     display_name: str = 'YouTube Playlist'
     description: str = 'Extracts all video URLs from a YouTube playlist.'
 
+    output = {'playlist_url': 'any', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Extracted {data['count']} video URLs from the playlist."
+
     async def __call__(self, playlist_url: str = "", **kwargs) -> Response:
         playlist_url = str(playlist_url or "").strip()
         if not playlist_url:
@@ -20,7 +25,6 @@ class YoutubePlaylistTool(YoutubeToolBase):
 
             playlist = Playlist(playlist_url)
             records = [{"video_url": url} for url in playlist.video_urls]
-            return self._ok(f"Extracted {len(records)} video URLs from the playlist.",
-                            playlist_url=playlist_url, records=records, count=len(records))
+            return self._ok(playlist_url=playlist_url, records=records, count=len(records))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"youtube.playlist: {type(exc).__name__}: {exc}")

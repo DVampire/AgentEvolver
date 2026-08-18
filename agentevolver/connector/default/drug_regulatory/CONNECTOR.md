@@ -18,8 +18,111 @@ actions:
   - list_pharmacologic_classes
   - get_generic_equivalents
   - search_drug_labels
+action_schemas:
+  count_drug_applications:
+    properties:
+      field:
+        default: products.marketing_status
+        title: Field
+        type: string
+      search:
+        default: ''
+        title: Search
+        type: string
+    title: count_drug_applicationsArguments
+    type: object
+  get_drug_application:
+    properties:
+      application_number:
+        title: Application Number
+        type: string
+    required:
+    - application_number
+    title: get_drug_applicationArguments
+    type: object
+  get_drug_statistics:
+    properties:
+      drug:
+        title: Drug
+        type: string
+    required:
+    - drug
+    title: get_drug_statisticsArguments
+    type: object
+  get_generic_equivalents:
+    properties:
+      drug:
+        title: Drug
+        type: string
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+    required:
+    - drug
+    title: get_generic_equivalentsArguments
+    type: object
+  list_pharmacologic_classes:
+    properties:
+      drug:
+        default: ''
+        title: Drug
+        type: string
+    title: list_pharmacologic_classesArguments
+    type: object
+  search_drug_applications:
+    properties:
+      limit:
+        default: 10
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: search_drug_applicationsArguments
+    type: object
+  search_drug_labels:
+    properties:
+      limit:
+        default: 5
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: search_drug_labelsArguments
+    type: object
+action_descriptions:
+  count_drug_applications: "Aggregate a count of Drugs@FDA applications grouped by a\
+    \ field.\n\n    Args:\n        field: openFDA field to group by (e.g. \"products.marketing_status\"\
+    ,\n            \"products.dosage_form.exact\", \"products.route.exact\").\n    \
+    \    search: optional openFDA search filter (e.g. 'openfda.generic_name:\"aspirin\"\
+    ')."
+  get_drug_application: "Get details of one Drugs@FDA application (sponsor, products,\
+    \ approval).\n\n    Args:\n        application_number: e.g. \"NDA020702\" or \"\
+    ANDA207687\"."
+  get_drug_statistics: "Approval/marketing statistics for a drug across Drugs@FDA (by\
+    \ status & dosage form).\n\n    Args:\n        drug: generic or brand name (e.g.\
+    \ \"atorvastatin\")."
+  get_generic_equivalents: "Find generic (ANDA) and brand (NDA) equivalents sharing\
+    \ a drug's active ingredient.\n\n    Args:\n        drug: generic or brand name\
+    \ (e.g. \"Lipitor\", \"atorvastatin\").\n        limit: max applications (default\
+    \ 25)."
+  list_pharmacologic_classes: "List pharmacologic classes (EPC/MOA/PE/CS). For a drug,\
+    \ its classes; else top EPC classes.\n\n    Args:\n        drug: optional drug name;\
+    \ if empty, returns the most common EPC classes overall."
+  search_drug_applications: "Search Drugs@FDA applications by brand or generic drug\
+    \ name.\n\n    Args:\n        query: brand or generic name (e.g. \"atorvastatin\"\
+    , \"Lipitor\").\n        limit: max applications (default 10).\n    Returns 'application<TAB>sponsor<TAB>brand<TAB>generic'\
+    \ rows."
+  search_drug_labels: "Search SPL drug labels; returns brand, indications snippet, and\
+    \ SPL id.\n\n    Args:\n        query: brand or generic name (e.g. \"ibuprofen\"\
+    ).\n        limit: max labels (default 5)."
 ---
-
 # Drug Regulatory
 
 A self-contained MCP connector over the **public** openFDA drug API

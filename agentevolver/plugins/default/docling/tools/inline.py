@@ -13,6 +13,11 @@ class DoclingInlineTool(PluginTool):
     display_name: str = 'Docling'
     description: str = 'Uses Docling to process input documents running the Docling models locally.'
 
+    output = {'markdown': 'any'}
+
+    def _render(self, data):
+        return 'Converted document.'
+
     async def __call__(self, source: str = "", **kwargs) -> Response:
         src = str(source or "").strip()
         if not src:
@@ -23,4 +28,4 @@ class DoclingInlineTool(PluginTool):
             doc = result.document
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"docling.inline: {type(exc).__name__}: {exc}")
-        return self._ok("Converted document.", markdown=doc.export_to_markdown())
+        return self._ok(markdown=doc.export_to_markdown())

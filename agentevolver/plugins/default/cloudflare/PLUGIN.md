@@ -6,7 +6,7 @@ type: embedding
 icon: resources/icon.svg
 tools: 1
 implemented: 1
-credentials: [CLOUDFLARE_ACCOUNT_ID]
+credentials: [CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN]
 requirements: [langchain_community]
 version: "1.0.0"
 ---

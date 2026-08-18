@@ -13,6 +13,11 @@ class GoogleDriveTool(PluginTool):
     display_name: str = 'Google Drive Loader'
     description: str = 'Loads documents from Google Drive using provided credentials.'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Loaded {data['count']} Drive documents."
+
     async def __call__(self, document_ids: str = "", credentials_json: str = "", **kwargs) -> Response:
         ids = [i.strip() for i in str(document_ids or "").split(",") if i.strip()]
         if not ids:
@@ -23,4 +28,4 @@ class GoogleDriveTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"google.drive: {type(exc).__name__}: {exc}")
         records = [{"content": d.page_content, "metadata": d.metadata} for d in docs]
-        return self._ok(f"Loaded {len(records)} Drive documents.", records=records, count=len(records))
+        return self._ok(records=records, count=len(records))

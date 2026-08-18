@@ -11,6 +11,11 @@ class AssemblyaiListTranscriptsTool(AssemblyaiToolBase):
     display_name: str = 'AssemblyAI List Transcripts'
     description: str = 'Retrieve a list of transcripts from AssemblyAI with filtering options'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Listed {data['count']} transcripts."
+
     async def __call__(self, limit: int = 20, api_key: str = "", **kwargs) -> Response:
         try:
             aai = self._aai(api_key)
@@ -18,6 +23,6 @@ class AssemblyaiListTranscriptsTool(AssemblyaiToolBase):
             params.limit = int(limit)
             page = aai.Transcriber().list_transcripts(params)
             records = [t.dict() if hasattr(t, "dict") else dict(t) for t in page.transcripts]
-            return self._ok(f"Listed {len(records)} transcripts.", records=records, count=len(records))
+            return self._ok(records=records, count=len(records))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"assemblyai.assemblyai_list_transcripts: {type(exc).__name__}: {exc}")

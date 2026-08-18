@@ -18,7 +18,7 @@ class AgentEvaluateAgent(Agent):
     the base-class standard loop.
 
     The target agent is named in the task text. The agent should call
-    ``inspect_agent_tool`` to obtain the target's live registry facts (registered /
+    ``inspect_capability_tool`` to obtain the target's live registry facts (registered /
     instantiated / version / file paths) — this answers the Integration dimension
     directly and locates the files to read for the other dimensions.
     """

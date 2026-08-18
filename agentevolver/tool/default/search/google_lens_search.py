@@ -23,27 +23,13 @@ CHROMIUM_PATH = "/root/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome"
 
 _DESCRIPTION = "Search Google Lens with an image file and an optional text query."
 
-_INSTRUCTION = """
-## Function
-Search Google Lens with an image file and an optional text query.
-
-## Guidance
+_GUIDANCE = """
 - Returns the full result page as markdown content.
-
-## Parameters
-- query (str): Text query to combine with the image search.
-- image (str): Path to the image file to search with.
-- num_results (int, optional): Accepted and ignored. This search drives a real browser
-  session and reads back the single best match, so there is no result count to ask for.
-  Kept in the signature only so a call written for the other search tools does not fail.
-- filter_year (int, optional): Accepted and ignored. Google Lens matches an image; it has
-  no date filter to apply. Use `serper_search_tool` or `jina_search_tool` for a
-  year-narrowed text search.
-- screenshot_dir (str, optional): Directory to save step screenshots into (default: None).
-
-## Example
-{"name": "google_lens_search_tool", "args": {"query": "identify this landmark", "image": "/path/to/photo.jpg"}}
 """
+
+_EXAMPLES = [
+    '{"name": "google_lens_search_tool", "args": {"query": "identify this landmark", "image": "/path/to/photo.jpg"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -58,7 +44,8 @@ class GoogleLensSearch(Tool):
 
     name: str = "google_lens_search_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     chromium_path: str = Field(default=CHROMIUM_PATH, description="Path to Chromium binary")
 
@@ -76,6 +63,8 @@ class GoogleLensSearch(Tool):
         Args:
             image: Path to the image file to search with.
             query: Optional text query to combine with the image search.
+            num_results: Number of results to return (default: 10).
+            filter_year: Filter results by year.
             screenshot_dir: Optional directory to save step screenshots into.
         """
         image_path = Path(image)

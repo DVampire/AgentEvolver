@@ -1,7 +1,7 @@
 """Web fetcher tool for retrieving content from web pages."""
 
 from pydantic import Field
-from typing import Dict, Any
+from typing import Any, Dict, List
 
 from agentevolver.utils import fetch_url
 from agentevolver.logger import logger
@@ -11,20 +11,15 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Visit a webpage at a given URL and return its text content."
 
-_INSTRUCTION = """
-## Function
-Visit a webpage at a given URL and return its text content.
-
-## Guidance
+_GUIDANCE = """
 - Use this tool to fetch and read content from web pages.
 - The tool will return the page title and markdown-formatted content.
-
-## Parameters
-- url (str): The URL of the webpage to fetch.
-
-## Example
-{"name": "web_fetcher_tool", "args": {"url": "https://www.google.com"}}
 """
+
+_EXAMPLES = [
+    '{"name": "web_fetcher_tool", "args": {"url": "https://www.google.com"}}',
+]
+
 
 @TOOL.register_module(force=True)
 class WebFetcherTool(Tool):
@@ -34,7 +29,8 @@ class WebFetcherTool(Tool):
     #: one network round trip plus the provider's own latency.
     call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     mutates: bool = False

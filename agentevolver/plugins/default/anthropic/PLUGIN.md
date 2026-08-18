@@ -6,7 +6,7 @@ type: model
 icon: resources/icon.svg
 tools: 1
 implemented: 1
-credentials: [ANTHROPIC_API_KEY]
+credentials: [ANTHROPIC_API_KEY, OPENAI_API_KEY]
 requirements: [langchain_anthropic, langchain_openai]
 version: "1.0.0"
 ---

@@ -13,6 +13,11 @@ class IcosacomputingCombinatorialReasonerTool(PluginTool):
     display_name: str = 'Combinatorial Reasoner'
     description: str = 'Uses Combinatorial Optimization to construct an optimal prompt with embedded reasons. Sign up here:\\\\\\\\nhttps://forms.gle/oWNv2NKjBNaqqvCx6'
 
+    output = {'prompt': 'text', 'reasons': 'any'}
+
+    def _render(self, data):
+        return 'Combinatorial reasoning completed.'
+
     async def __call__(self, prompt: str = "", api_key: str = "", username: str = "", **kwargs) -> Response:
         import httpx
         key = self._secret(api_key, "ICOSA_API_KEY")
@@ -26,5 +31,4 @@ class IcosacomputingCombinatorialReasonerTool(PluginTool):
             data = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"icosacomputing: {type(exc).__name__}: {exc}")
-        return self._ok("Combinatorial reasoning completed.",
-                        prompt=data.get("finalPrompt"), reasons=data.get("reason"))
+        return self._ok(prompt=data.get('finalPrompt'), reasons=data.get('reason'))

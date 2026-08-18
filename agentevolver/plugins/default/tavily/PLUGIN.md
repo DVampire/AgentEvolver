@@ -23,6 +23,11 @@ Web search and page extraction, tuned for LLM retrieval.
 
 All 2 tools are implemented.
 
+Declared result shapes:
+
+- `tavily.tavily_extract` → `data` keys: count, failed, records
+- `tavily.tavily_search` → `data` keys: answer, count, query, records
+
 ## Credentials
 
 `TAVILY_API_KEY`, an `api_key` argument on the call, or a `tavily_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

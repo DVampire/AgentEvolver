@@ -13,6 +13,8 @@ class TwelvelabsPegasusIndexTool(PluginTool):
     display_name: str = 'TwelveLabs Pegasus Index Video'
     description: str = 'Index videos using TwelveLabs and add the video_id to metadata.'
 
+    output = {'index_id': 'any'}
+
     async def __call__(self, index_name: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "TWELVELABS_API_KEY")
         if not index_name or not key:

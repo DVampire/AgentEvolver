@@ -22,6 +22,10 @@ Bing tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `bing.bing_search_api` → `data` keys: count, query, records
+
 ## Credentials
 
 `BING_API_KEY`, `BING_SUBSCRIPTION_KEY`, an `api_key` argument on the call, or a `bing_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

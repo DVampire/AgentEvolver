@@ -35,7 +35,7 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
-    "inspect_connector_tool",
+    "inspect_capability_tool",
 ]
 agent_names = [
     "connector_evaluate_agent",

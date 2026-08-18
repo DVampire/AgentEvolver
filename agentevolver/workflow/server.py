@@ -80,12 +80,18 @@ class WorkflowManagerServer(BaseModel):
         """Return active workflows ranked by relevance to the query terms."""
         return self._ensure_context_manager().search(query)
 
-    def get_instruction(self, allowlist=None) -> str:
-        """Return the compact MetaAgent workflow roster, optionally allowlist-filtered."""
-        return self._ensure_context_manager().get_instruction(allowlist=allowlist)
+    def get_instruction(self, allowlist=None, types=None, level: str = "brief") -> str:
+        """Return the workflow roster at ``level``, optionally allowlist-filtered."""
+        return self._ensure_context_manager().get_instruction(
+            allowlist=allowlist, types=types, level=level)
 
-    async def function_callings(self, allowlist=None) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
-        """Return active workflows projected as native callable schemas."""
+    async def function_callings(self, allowlist=None,
+                                types: Optional[List[str]] = None) -> List[Tuple[Dict[str, Any], Tuple[Any, ...]]]:
+        """Return active workflows projected as native callable schemas.
+
+        ``types`` is accepted for a uniform manager interface; workflows have no
+        type filter.
+        """
         return await self._ensure_context_manager().function_callings(allowlist=allowlist)
 
     async def get_schema(self, name: str, action: Optional[str] = None, format: str = "json"):

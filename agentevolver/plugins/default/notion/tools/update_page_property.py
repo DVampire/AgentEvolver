@@ -13,6 +13,8 @@ class NotionUpdatePagePropertyTool(NotionToolBase):
     display_name: str = 'Update Page Property '
     description: str = 'Update the properties of a Notion page.'
 
+    output = {'page': 'any'}
+
     async def __call__(self, api_key: str = "", page_id: str = "", properties_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:

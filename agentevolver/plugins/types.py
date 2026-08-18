@@ -87,6 +87,14 @@ class PluginConfig(BaseModel):
     code: Optional[str] = Field(default=None, description="Source code of the plugin's module")
     path: Optional[str] = Field(default=None, description="File the plugin class is defined in")
 
+    #: The PLUGIN.md body, the way :class:`ConnectorConfig` carries CONNECTOR.md.
+    #: A plugin and a connector are the same shape — one outside service, several
+    #: separately callable members — so the document that describes the service as
+    #: a whole is read the same way: named in the roster, delivered by
+    #: ``get_instruction(level="full")`` and by ``inspect_capability_tool``.
+    content: str = Field(default="", description="Full markdown body of PLUGIN.md (after frontmatter)")
+    manifest_path: str = Field(default="", description="Absolute path to PLUGIN.md")
+
     tools: Dict[str, "PluginTool"] = Field(default_factory=dict, description="Tools this plugin provides, by short name")
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
@@ -130,6 +138,19 @@ class PluginTool(BaseModel):
     category: str = Field(default="", description="Palette section; empty inherits the plugin's.")
     type: str = Field(default="", description="Capability family (model / embedding / …); empty inherits the plugin's.")
 
+    #: Declared shape of this tool's ``Response.data`` — ``{key: port type}``, in the
+    #: same closed vocabulary ``canvas.types.PortType`` uses: ``text`` / ``list`` /
+    #: ``object`` / ``any``. There is no numeric port type, so a count is ``any``.
+    #: The canvas turns each key into a typed sub-port the next node can wire to
+    #: (``${node.data.<key>}``, a path the workflow resolver already walks), and the
+    #: manifest lists it.
+    #:
+    #: A ClassVar, so it is a declaration the author writes rather than per-instance
+    #: state — the same choice :attr:`Plugin.tools` makes. Empty means undeclared,
+    #: which is what every tool is until it is migrated: the node keeps its single
+    #: opaque ``data`` port and nothing changes.
+    output: ClassVar[Dict[str, str]] = {}
+
     #: Set by :meth:`Plugin.bind`. Private so pydantic does not try to serialise
     #: the plugin and its tools into each other in a cycle.
     _owner: Optional["Plugin"] = PrivateAttr(default=None)
@@ -144,6 +165,28 @@ class PluginTool(BaseModel):
     def owner(self) -> Optional["Plugin"]:
         """The plugin providing this tool, or None if it was built standalone."""
         return self._owner
+
+    @property
+    def permission_mode(self) -> str:
+        """What this tool may do, declared by the plugin that owns it.
+
+        Read off the owner the way :attr:`category` and :attr:`type` are, because
+        it is a property of the service and not of one call into it: a search API
+        is read-only whichever of its endpoints you reach. The plan gate reads
+        this, so an unowned tool answers with the strictest value rather than the
+        permissive default a missing field would give it.
+        """
+        owner = self._owner
+        return getattr(owner, "permission_mode", "read_only") if owner is not None else "read_only"
+
+    @property
+    def mutates(self) -> bool:
+        """Whether calling this tool changes state, from the same declaration.
+
+        Derived rather than declared so the two answers cannot disagree; a plugin
+        that says ``read_only`` is saying both things at once.
+        """
+        return self.permission_mode != "read_only"
 
     @property
     def id(self) -> str:
@@ -181,6 +224,7 @@ class PluginTool(BaseModel):
             "category": self.category or (owner.category if owner is not None else "data"),
             "icon": f"plugin:{plugin_id}" if plugin_id else "",
             "status": self.status,
+            "output": dict(type(self).output),
         }
 
     def _label(self) -> str:
@@ -195,10 +239,30 @@ class PluginTool(BaseModel):
             return self._owner.secret(arg_value, *env_names)
         return _resolve_secret("", arg_value, *env_names)
 
-    @staticmethod
-    def _ok(message: str, **data: Any) -> Response:
-        """Canonical success envelope."""
-        return Response(type=ResponseType.TOOL, success=True, message=message, data=data)
+    def _render(self, data: Dict[str, Any]) -> str:
+        """The model-facing sentence for a successful result, derived from ``data``.
+
+        Overriding this is what separates the canonical value from what the model
+        reads: ``data`` is the machine contract the canvas and the next node wire
+        to, this is the prose. Deriving one from the other is what keeps a tool
+        from carrying two descriptions of its own result that drift apart — and
+        it is what bounds the prompt, because a huge payload can stay in ``data``
+        while the sentence about it stays a sentence.
+
+        The default returns nothing, so a tool that has not been migrated keeps
+        passing its own message to :meth:`_ok` exactly as before.
+        """
+        return ""
+
+    def _ok(self, message: str = "", **data: Any) -> Response:
+        """Canonical success envelope.
+
+        ``message`` may be omitted, in which case :meth:`_render` writes it from
+        ``data``. An instance method rather than a static one for that reason;
+        every call site already goes through ``self``.
+        """
+        return Response(type=ResponseType.TOOL, success=True,
+                        message=message or self._render(data), data=data)
 
     @staticmethod
     def _fail(message: str) -> Response:
@@ -267,7 +331,10 @@ class Plugin(BaseModel):
     #: Which palette section this plugin's tools belong to (data / tool / agent / knowledge).
     category: str = Field(default="data", description="Palette section for this plugin's tools.")
     type: str = Field(default="data_source", description="Plugin family: data_source / software / …")
-    instruction: str = Field(default="", description="Full usage instruction, fetched on demand.")
+    #: Free-form usage notes a plugin class may carry. What a service needs said
+    #: beyond its tools' schemas — rate limits, which tool to reach for first —
+    #: normally lives in PLUGIN.md instead, which is where the roster looks.
+    instruction: str = Field(default="", description="Optional usage notes; PLUGIN.md is the usual home")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary plugin metadata.")
     permission_mode: str = Field(default="read_only", description="Permission mode for this plugin's side effects.")
 

@@ -8,7 +8,7 @@ needs at a terminal — type at it, look at it without typing, interrupt what is
 and put it away.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -27,8 +27,7 @@ from agentevolver.terminal import (
 from agentevolver.tool.types import Tool, clip_output
 
 _OPEN_DESCRIPTION = "Open a terminal that stays alive between calls."
-_OPEN_INSTRUCTION = """
-## Function
+_OPEN_GUIDANCE = """
 Start a shell in a real terminal and keep it. Unlike `bash_tool`, which runs each command
 in a new process, everything this shell does to itself persists: a `cd`, an activated
 virtualenv, exported variables, an `ssh` session, a `python`/`psql`/`gdb` prompt you are
@@ -40,22 +39,15 @@ close.
 
 You get back the terminal id and what the terminal shows once the shell has settled. Track
 the id; close the terminal when the work it holds is done.
-
-## Parameters
-- name (str, optional): A label for it, unique among your open terminals — "build",
-  "db", "remote". Listings show it, so a terminal can be recognised without reading it.
-- command (str, optional): What to run in the terminal instead of a shell — `python3 -i`,
-  `ssh host`, `gdb ./program`. The terminal ends when this program does.
-- cwd (str, optional): Where it starts. Defaults to the workspace root.
-
-## Example
-{"name": "terminal_open_tool", "args": {"name": "build"}}
-{"name": "terminal_open_tool", "args": {"name": "repl", "command": "python3 -i"}}
 """
 
+_OPEN_EXAMPLES = [
+    '{"name": "terminal_open_tool", "args": {"name": "build"}}',
+    '{"name": "terminal_open_tool", "args": {"name": "repl", "command": "python3 -i"}}',
+]
+
 _SEND_DESCRIPTION = "Type into an open terminal and read what appears."
-_SEND_INSTRUCTION = """
-## Function
+_SEND_GUIDANCE = """
 Write text to a terminal and wait for it to go quiet, then return what appeared because of
 it — not the whole screen, only what changed.
 
@@ -67,62 +59,38 @@ is still there either way, so silence is the only available evidence.
 - `timeout` — still printing when the budget ran out. Nothing is lost: the command keeps
   running and the output keeps accumulating, so read it or send again.
 - `exited` — the shell itself is gone. Its output is still readable; open a new terminal.
-
-## Parameters
-- terminal_id (str): From `terminal_open_tool` or `terminal_list_tool`.
-- text (str): What to type. An empty text with `submit: false` waits and looks without
-  disturbing anything.
-- submit (bool, optional): Press Enter afterwards. Default true. Set false to send control
-  characters ("\\u0003" is ctrl-C) or a line you are still building.
-- timeout (int, optional): Seconds to wait for quiet. Default 30.
-- run_in_background (bool, optional): Type the command and return at once, watching
-  it as a job instead of holding the turn. Use it for anything that runs for
-  minutes — the foreground wait settles on silence, and silence is the wrong signal
-  there: a build that prints nothing for a stretch looks finished. Collect it with
-  `job_output_tool`, or look at the live screen with `terminal_read_tool`.
-  `job_kill_tool` stops *watching*; the command keeps running, and
-  `terminal_signal_tool` is what stops that. Default false.
-
-## Example
-{"name": "terminal_send_tool", "args": {"terminal_id": "term_1a2b3c4d", "text": "cd src && ls"}}
-{"name": "terminal_send_tool", "args": {"terminal_id": "term_1a2b3c4d", "text": "", "submit": false}}
 """
 
+_SEND_EXAMPLES = [
+    '{"name": "terminal_send_tool", "args": {"terminal_id": "term_1a2b3c4d", "text": "cd src && ls"}}',
+    '{"name": "terminal_send_tool", "args": {"terminal_id": "term_1a2b3c4d", "text": "", "submit": false}}',
+]
+
 _READ_DESCRIPTION = "Read a terminal's output without typing at it."
-_READ_INSTRUCTION = """
-## Function
+_READ_GUIDANCE = """
 Show what a terminal holds — the screen and the lines that have scrolled off it — without
 sending anything. Use it on a terminal that is producing output on its own (a build, a
 server, a watcher), and to go back over output that has scrolled away.
-
-## Parameters
-- terminal_id (str): The terminal to read.
-- offset (int, optional): How many lines back from the newest to stop. 0 (default) ends at
-  the newest line; 50 shows what was on screen 50 lines ago.
-- count (int, optional): How many lines to return. Default 200.
-
-## Example
-{"name": "terminal_read_tool", "args": {"terminal_id": "term_1a2b3c4d"}}
-{"name": "terminal_read_tool", "args": {"terminal_id": "term_1a2b3c4d", "offset": 200, "count": 100}}
 """
 
+_READ_EXAMPLES = [
+    '{"name": "terminal_read_tool", "args": {"terminal_id": "term_1a2b3c4d"}}',
+    '{"name": "terminal_read_tool", "args": {"terminal_id": "term_1a2b3c4d", "offset": 200, "count": 100}}',
+]
+
 _LIST_DESCRIPTION = "List the terminals this session has open."
-_LIST_INSTRUCTION = """
-## Function
+_LIST_GUIDANCE = """
 Every terminal you opened, oldest first, with its label, whether it is still alive, and how
 long it has been there. Use it to recover an id you did not keep, and before opening
 another — a terminal you forgot about is still holding a shell.
-
-## Parameters
-(none)
-
-## Example
-{"name": "terminal_list_tool", "args": {}}
 """
 
+_LIST_EXAMPLES = [
+    '{"name": "terminal_list_tool", "args": {}}',
+]
+
 _SIGNAL_DESCRIPTION = "Interrupt whatever is running in a terminal."
-_SIGNAL_INSTRUCTION = """
-## Function
+_SIGNAL_GUIDANCE = """
 Send a signal to the command currently running in a terminal — what ctrl-C does. The
 signal goes to the running command, not to the shell, so the terminal survives and keeps
 everything it was holding.
@@ -130,32 +98,25 @@ everything it was holding.
 If nothing is running, there is nothing to interrupt: SIGTERM, SIGHUP and SIGKILL are
 refused in that state rather than quietly killing the shell. Ending the terminal is
 `terminal_close_tool`, which is a different intention.
-
-## Parameters
-- terminal_id (str): The terminal whose foreground command to signal.
-- signal (str): One of SIGINT, SIGTERM, SIGQUIT, SIGHUP, SIGTSTP, SIGCONT, SIGKILL.
-  SIGINT is the ordinary "stop this"; SIGKILL is for something that ignores the rest.
-
-## Example
-{"name": "terminal_signal_tool", "args": {"terminal_id": "term_1a2b3c4d", "signal": "SIGINT"}}
 """
 
+_SIGNAL_EXAMPLES = [
+    '{"name": "terminal_signal_tool", "args": {"terminal_id": "term_1a2b3c4d", "signal": "SIGINT"}}',
+]
+
 _CLOSE_DESCRIPTION = "Close a terminal and everything it is running."
-_CLOSE_INSTRUCTION = """
-## Function
+_CLOSE_GUIDANCE = """
 End a terminal you are finished with, along with anything it started. Its state — the
 directory, the environment, the REPL — is gone, so close it when the work that needed
 that state is done, not between commands.
 
 Closing is not optional housekeeping. A terminal left open is a live shell for the rest of
 the run, and one that is running something is still running it.
-
-## Parameters
-- terminal_id (str): The terminal to close.
-
-## Example
-{"name": "terminal_close_tool", "args": {"terminal_id": "term_1a2b3c4d"}}
 """
+
+_CLOSE_EXAMPLES = [
+    '{"name": "terminal_close_tool", "args": {"terminal_id": "term_1a2b3c4d"}}',
+]
 
 
 def _session_of(kwargs) -> str:
@@ -196,7 +157,8 @@ class TerminalOpenTool(Tool):
 
     name: str = "terminal_open_tool"
     description: str = _OPEN_DESCRIPTION
-    instruction: str = _OPEN_INSTRUCTION
+    guidance: str = _OPEN_GUIDANCE
+    examples: List[str] = _OPEN_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Starts a shell process.")
@@ -221,6 +183,16 @@ class TerminalOpenTool(Tool):
 
     async def __call__(self, name: str = "", command: Optional[str] = None,
                        cwd: Optional[str] = None, **kwargs) -> Response:
+        """Open a terminal, optionally running a program instead of a shell.
+
+        Args:
+            name: A label for it, unique among your open terminals — "build", "db",
+                "remote". Listings show it, so a terminal can be recognised without
+                reading it.
+            command: What to run in the terminal instead of a shell — ``python3 -i``,
+                ``ssh host``, ``gdb ./program``. The terminal ends when this program does.
+            cwd: Where it starts. Defaults to the workspace root.
+        """
         request = PermissionRequest(op=Operation.BASH, target=command or "bash -i")
         allowed = permission_manager.check(self.name, request,
                                            workspace=(config.workspace_root or ""))
@@ -259,7 +231,8 @@ class TerminalSendTool(Tool):
 
     name: str = "terminal_send_tool"
     description: str = _SEND_DESCRIPTION
-    instruction: str = _SEND_INSTRUCTION
+    guidance: str = _SEND_GUIDANCE
+    examples: List[str] = _SEND_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Runs whatever is typed.")
@@ -342,6 +315,24 @@ class TerminalSendTool(Tool):
     async def __call__(self, terminal_id: str, text: str = "", submit: bool = True,
                        timeout: Optional[float] = None, run_in_background: bool = False,
                        **kwargs) -> Response:
+        """Type into a terminal and wait for it to settle.
+
+        Args:
+            terminal_id: From ``terminal_open_tool`` or ``terminal_list_tool``.
+            text: What to type. An empty text with ``submit: false`` waits and looks
+                without disturbing anything.
+            submit: Press Enter afterwards. Default true. Set false to send control
+                characters ("\u0003" is ctrl-C) or a line you are still building.
+            timeout: Seconds to wait for quiet. Default 30.
+            run_in_background: Type the command and return at once, watching it as a job
+                instead of holding the turn. Use it for anything that runs for minutes —
+                the foreground wait settles on silence, and silence is the wrong signal
+                there: a build that prints nothing for a stretch looks finished. Collect
+                it with ``job_output_tool``, or look at the live screen with
+                ``terminal_read_tool``. ``job_kill_tool`` stops *watching*; the command
+                keeps running, and ``terminal_signal_tool`` is what stops that. Default
+                false.
+        """
         terminal, missing = _resolve(terminal_id, _session_of(kwargs))
         if missing is not None:
             return missing
@@ -394,7 +385,8 @@ class TerminalReadTool(Tool):
 
     name: str = "terminal_read_tool"
     description: str = _READ_DESCRIPTION
-    instruction: str = _READ_INSTRUCTION
+    guidance: str = _READ_GUIDANCE
+    examples: List[str] = _READ_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads retained output; types nothing.")
@@ -405,6 +397,14 @@ class TerminalReadTool(Tool):
 
     async def __call__(self, terminal_id: str, offset: int = 0, count: int = 200,
                        **kwargs) -> Response:
+        """Read what is on a terminal's screen.
+
+        Args:
+            terminal_id: The terminal to read.
+            offset: How many lines back from the newest to stop. 0 (default) ends at the
+                newest line; 50 shows what was on screen 50 lines ago.
+            count: How many lines to return. Default 200.
+        """
         terminal, missing = _resolve(terminal_id, _session_of(kwargs))
         if missing is not None:
             return missing
@@ -427,7 +427,8 @@ class TerminalListTool(Tool):
 
     name: str = "terminal_list_tool"
     description: str = _LIST_DESCRIPTION
-    instruction: str = _LIST_INSTRUCTION
+    guidance: str = _LIST_GUIDANCE
+    examples: List[str] = _LIST_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Reads the terminal registry.")
@@ -456,7 +457,8 @@ class TerminalSignalTool(Tool):
 
     name: str = "terminal_signal_tool"
     description: str = _SIGNAL_DESCRIPTION
-    instruction: str = _SIGNAL_INSTRUCTION
+    guidance: str = _SIGNAL_GUIDANCE
+    examples: List[str] = _SIGNAL_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Signals a process this session started.")
@@ -466,6 +468,14 @@ class TerminalSignalTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, terminal_id: str, signal: str = "SIGINT", **kwargs) -> Response:
+        """Signal a terminal's foreground command.
+
+        Args:
+            terminal_id: The terminal whose foreground command to signal.
+            signal: One of SIGINT, SIGTERM, SIGQUIT, SIGHUP, SIGTSTP, SIGCONT, SIGKILL.
+                SIGINT is the ordinary "stop this"; SIGKILL is for something that ignores
+                the rest.
+        """
         terminal, missing = _resolve(terminal_id, _session_of(kwargs))
         if missing is not None:
             return missing
@@ -494,7 +504,8 @@ class TerminalCloseTool(Tool):
 
     name: str = "terminal_close_tool"
     description: str = _CLOSE_DESCRIPTION
-    instruction: str = _CLOSE_INSTRUCTION
+    guidance: str = _CLOSE_GUIDANCE
+    examples: List[str] = _CLOSE_EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Ends a process this session started.")
@@ -504,6 +515,11 @@ class TerminalCloseTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, terminal_id: str, **kwargs) -> Response:
+        """Close a terminal.
+
+        Args:
+            terminal_id: The terminal to close.
+        """
         terminal, missing = _resolve(terminal_id, _session_of(kwargs))
         if missing is not None:
             return missing

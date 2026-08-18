@@ -21,6 +21,10 @@ PaddleOCR tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `paddle.paddleocr` → `data` keys: lines, text
+
 ## Credentials
 
 None — these tools need no credential.

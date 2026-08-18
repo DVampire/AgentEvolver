@@ -214,9 +214,10 @@ class EnvironmentContextManager(BaseModel):
 
                 # Rules + docs come from the ENVIRONMENT.md beside the class (not get_rules()).
                 env_rules = ""
+                env_manifest_path = ""
                 md = self._load_environment_md(env_cls)
                 if md:
-                    frontmatter, body, _ = md
+                    frontmatter, body, env_manifest_path = md
                     env_description = frontmatter.get("description", env_description)
                     env_rules = body
                 else:
@@ -278,6 +279,7 @@ class EnvironmentContextManager(BaseModel):
                     code=env_code,
                     actions=env_actions,
                     rules=env_rules,  # from ENVIRONMENT.md body
+                    manifest_path=env_manifest_path,
                 )
                 
                 env_configs[env_name] = env_config
@@ -453,12 +455,14 @@ class EnvironmentContextManager(BaseModel):
             # Rules from the ENVIRONMENT.md beside the class (no code-generated get_rules)
             _env_md = self._load_environment_md(type(env_instance))
             env_rules = _env_md[1] if _env_md else ""
+            env_manifest_path = _env_md[2] if _env_md else ""
             
             # --- Build EnvironmentConfig ---
             env_config = EnvironmentConfig(
                 name=env_name,
                 description=env_description,
                 rules=env_rules,
+                manifest_path=env_manifest_path,
                 version=env_version,
                 enable_evolving=env_enable_evolving,
                 actions=actions,
@@ -642,12 +646,14 @@ class EnvironmentContextManager(BaseModel):
             # Rules from the ENVIRONMENT.md beside the class (no code-generated get_rules)
             _env_md = self._load_environment_md(type(env_instance))
             env_rules = _env_md[1] if _env_md else ""
+            env_manifest_path = _env_md[2] if _env_md else ""
             
             # --- Build EnvironmentConfig ---
             updated_config = EnvironmentConfig(
                 name=env_name,  # Keep same name
                 description=env_description,
                 rules=env_rules,
+                manifest_path=env_manifest_path,
                 version=new_version,
                 enable_evolving=env_enable_evolving,
                 actions=actions,
@@ -783,12 +789,14 @@ class EnvironmentContextManager(BaseModel):
             # Rules from the ENVIRONMENT.md beside the class (no code-generated get_rules)
             _env_md = self._load_environment_md(type(env_instance))
             env_rules = _env_md[1] if _env_md else ""
+            env_manifest_path = _env_md[2] if _env_md else ""
             
             # --- Build EnvironmentConfig ---
             copied_config = EnvironmentConfig(
                 name=new_name,
                 description=env_description,
                 rules=env_rules,
+                manifest_path=env_manifest_path,
                 version=new_version,
                 enable_evolving=env_enable_evolving,
                 actions=actions,

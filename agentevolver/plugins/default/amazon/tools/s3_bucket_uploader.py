@@ -15,6 +15,8 @@ class AmazonS3BucketUploaderTool(PluginTool):
     category: str = 'files'
     type: str = 'tool'
 
+    output = {'bucket': 'text', 'key': 'text'}
+
     async def __call__(self, bucket_name: str = "", file_path: str = "", s3_key: str = "", aws_access_key_id: str = "", aws_secret_access_key: str = "", **kwargs) -> Response:
         if not bucket_name or not file_path:
             return self._fail("amazon.s3: 'bucket_name' and 'file_path' are required.")

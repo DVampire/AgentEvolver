@@ -6,7 +6,7 @@ type: model
 icon: resources/icon.svg
 tools: 4
 implemented: 4
-credentials: [AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY]
+credentials: [AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, OPENAI_API_KEY]
 requirements: [boto3, langchain_aws, langchain_openai]
 version: "1.0.0"
 ---
@@ -24,6 +24,10 @@ Amazon Bedrock tools.
 | `amazon.s3_bucket_uploader` | S3 Bucket Uploader | ✅ | Uploads files to S3 bucket. |
 
 All 4 tools are implemented.
+
+Declared result shapes:
+
+- `amazon.s3_bucket_uploader` → `data` keys: bucket, key
 
 ## Credentials
 

@@ -13,6 +13,11 @@ class VlmrunTranscriptionTool(PluginTool):
     display_name: str = 'VLM Run Transcription'
     description: str = 'Extract structured data from audio and video using [VLM Run AI](https://app.vlm.run)'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'VLM Run transcription completed.'
+
     async def __call__(self, url: str = "", api_key: str = "", domain: str = "document.markdown", **kwargs) -> Response:
         key = self._secret(api_key, "VLMRUN_API_KEY")
         if not url or not key:
@@ -23,4 +28,4 @@ class VlmrunTranscriptionTool(PluginTool):
             result = client.document.generate(url=url, domain=domain)
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"vlmrun: {type(exc).__name__}: {exc}")
-        return self._ok("VLM Run transcription completed.", result=str(result))
+        return self._ok(result=str(result))

@@ -13,6 +13,11 @@ class DoclingChunkDoclingDocumentTool(PluginTool):
     display_name: str = 'Chunk DoclingDocument'
     description: str = 'Use DoclingDocument chunkers to split the document into chunks.'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Chunked into {data['count']} pieces."
+
     async def __call__(self, source: str = "", max_tokens: int = 512, **kwargs) -> Response:
         src = str(source or "").strip()
         if not src:
@@ -25,4 +30,4 @@ class DoclingChunkDoclingDocumentTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"docling.chunk: {type(exc).__name__}: {exc}")
         records = [{"content": getattr(c, "text", str(c))} for c in chunks]
-        return self._ok(f"Chunked into {len(records)} pieces.", records=records, count=len(records))
+        return self._ok(records=records, count=len(records))

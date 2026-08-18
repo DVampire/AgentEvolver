@@ -6,7 +6,7 @@ type: embedding
 icon: resources/icon.svg
 tools: 2
 implemented: 2
-credentials: [LMSTUDIO_API_KEY]
+credentials: [LMSTUDIO_API_KEY, OPENAI_API_KEY]
 requirements: [langchain_openai]
 version: "1.0.0"
 ---

@@ -14,6 +14,11 @@ class EmpiriolabsImageGenerationTool(PluginTool):
     description: str = 'Generate an image from a text prompt using EmpirioLabs AI image models such as Seedream, \\\\\\\\\\\\n        Qwen-Image, FLUX, Nova Canvas, and HunyuanImage.'
     category: str = 'data'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'Image generated.'
+
     async def __call__(self, prompt: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx
         key = self._secret(api_key, "EMPIRIOLABS_API_KEY")
@@ -27,4 +32,4 @@ class EmpiriolabsImageGenerationTool(PluginTool):
             data = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"empiriolabs.image: {type(exc).__name__}: {exc}")
-        return self._ok("Image generated.", result=data)
+        return self._ok(result=data)

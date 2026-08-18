@@ -55,7 +55,6 @@ BUDGETS: dict[str, int] = {
     "docs/canvas.md": 700,
     "docs/capability-schemas.md": 300,
     "docs/workflows.md": 550,
-    "docs/vendored.md": 400,
 }
 
 #: One CJK ideograph, kana, or Hangul syllable. Matched individually because these scripts

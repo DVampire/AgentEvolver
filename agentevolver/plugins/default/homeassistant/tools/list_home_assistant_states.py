@@ -13,6 +13,11 @@ class HomeassistantListHomeAssistantStatesTool(PluginTool):
     display_name: str = 'List Home Assistant States'
     description: str = ''
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Home Assistant has {data['count']} states."
+
     async def __call__(self, ha_url: str = "", ha_token: str = "", filter_domain: str = "", **kwargs) -> Response:
         import httpx
         token = self._secret(ha_token, "HA_TOKEN", "HOMEASSISTANT_TOKEN")
@@ -27,4 +32,4 @@ class HomeassistantListHomeAssistantStatesTool(PluginTool):
             return self._fail(f"homeassistant: {type(exc).__name__}: {exc}")
         if filter_domain:
             states = [s for s in states if str(s.get("entity_id", "")).startswith(f"{filter_domain}.")]
-        return self._ok(f"Home Assistant has {len(states)} states.", records=states, count=len(states))
+        return self._ok(records=states, count=len(states))

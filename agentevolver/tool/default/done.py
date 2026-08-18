@@ -1,5 +1,5 @@
 """Done tool for indicating that the task has been completed."""
-from typing import Dict, Any
+from typing import Any, Dict, List
 from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
@@ -7,21 +7,15 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Indicate that the task has been completed."
 
-_INSTRUCTION = """
-## Function
-Indicate that the task has been completed.
-
-## Guidance
+_GUIDANCE = """
 - Use this tool to signal that a task or subtask has been finished.
 - Provide the `result` and `reasoning` of the task in the result and reasoning parameters.
-
-## Parameters
-- result (str): The result of the task completion.
-- reasoning (str): The analysis or explanation of the task completion.
-
-## Example
-{"name": "done_tool", "args": {"reasoning": "The task has been completed successfully.","result": "The task has been completed."}}
 """
+
+_EXAMPLES = [
+    '{"name": "done_tool", "args": {"reasoning": "The task has been completed successfully.","result": "The task has been completed."}}',
+]
+
 
 @TOOL.register_module(force=True)
 class DoneTool(Tool):
@@ -29,7 +23,8 @@ class DoneTool(Tool):
 
     name: str = "done_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     

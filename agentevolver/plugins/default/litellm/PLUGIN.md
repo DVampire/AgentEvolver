@@ -5,7 +5,7 @@ category: data
 type: model
 tools: 1
 implemented: 1
-credentials: [LITELLM_API_KEY]
+credentials: [LITELLM_API_KEY, OPENAI_API_KEY]
 requirements: [langchain_openai]
 version: "1.0.0"
 ---

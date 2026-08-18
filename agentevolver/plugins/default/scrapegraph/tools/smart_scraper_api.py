@@ -11,6 +11,11 @@ class ScrapegraphSmartScraperApiTool(PluginTool):
     display_name: str = 'ScrapeGraph Smart Scraper API'
     description: str = 'Given a URL, it will return the structured data of the website.'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'ScrapeGraph smartscraper completed.'
+
     async def __call__(self, url: str = "", prompt: str = "", api_key: str = "", query: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "SGAI_API_KEY", "SCRAPEGRAPH_API_KEY")
         if not key:
@@ -28,4 +33,4 @@ class ScrapegraphSmartScraperApiTool(PluginTool):
                 client.close()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"scrapegraph.smartscraper: {type(exc).__name__}: {exc}")
-        return self._ok("ScrapeGraph smartscraper completed.", result=response)
+        return self._ok(result=response)

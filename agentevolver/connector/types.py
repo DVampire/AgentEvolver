@@ -36,9 +36,18 @@ class ConnectorConfig(BaseModel):
     content: str = Field(default="", description="Full markdown body of CONNECTOR.md (module intro + per-tool detailed docs, after frontmatter)")
     connection: Dict[str, Any] = Field(default_factory=dict, description="MCP connection config (transport/command/args/url/... — MultiServerMCPClient format)")
     actions: List[str] = Field(default_factory=list, description="Discovered/declared MCP tool (action) names exposed by this server")
-    action_schemas: Dict[str, Any] = Field(default_factory=dict, description="Optional per-action argument schemas")
+    #: Per-action argument schemas, keyed by action name — the ``inputSchema`` an MCP
+    #: server declares for each of its tools. Populated from the server the first time
+    #: one is reached (see ``ConnectorContextManager.discover`` and ``_invoke_mcp``), and
+    #: readable from CONNECTOR.md frontmatter so a run that has not connected yet still
+    #: has them. An action with no entry here is sent to the model as a permissive
+    #: object, which tells it the action exists and nothing about what to pass.
+    action_schemas: Dict[str, Any] = Field(default_factory=dict, description="Per-action argument schemas")
 
-    text: Optional[str] = Field(default=None, description="Pre-built text representation for prompt injection")
+    #: Per-action descriptions from the same source. Without these every action of a
+    #: connector is described to the model by the *connector's* one-line description,
+    #: which is the same sentence twenty times over.
+    action_descriptions: Dict[str, str] = Field(default_factory=dict, description="Per-action descriptions")
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         return {
@@ -54,7 +63,7 @@ class ConnectorConfig(BaseModel):
             "connection": self.connection,
             "actions": self.actions,
             "action_schemas": self.action_schemas,
-            "text": self.text,
+            "action_descriptions": self.action_descriptions,
         }
 
 

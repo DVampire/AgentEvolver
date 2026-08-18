@@ -10,6 +10,12 @@ class TavilyExtractTool(PluginTool):
     name: str = "tavily_extract"
     display_name: str = "Tavily Extract"
     description: str = "Fetch one or more URLs and return their readable text content."
+    output = {"records": "list", "failed": "list", "count": "any"}
+
+    def _render(self, data):
+        failed = len(data["failed"])
+        tail = f" {failed} URL(s) failed." if failed else ""
+        return f"Extracted content from {data['count']} URL(s).{tail}"
 
     async def __call__(self, urls: str = "", api_key: str = "", extract_depth: str = "basic",
                        include_images: bool = False, **kwargs) -> Response:
@@ -30,5 +36,5 @@ class TavilyExtractTool(PluginTool):
             return self._fail(f"{self.id}: {type(exc).__name__}: {exc}")
         records = [{"url": r.get("url"), "raw_content": r.get("raw_content", ""),
                     "images": r.get("images", [])} for r in body.get("results", [])]
-        return self._ok(f"Extracted content from {len(records)} URL(s).",
-                        records=records, failed=body.get("failed_results", []), count=len(records))
+        return self._ok(records=records, failed=body.get("failed_results", []),
+                        count=len(records))

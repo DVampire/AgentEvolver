@@ -18,10 +18,15 @@ Home Assistant tools.
 
 | id | name | status | what it does |
 |----|------|--------|--------------|
-| `homeassistant.home_assistant_control` | Home Assistant Control | ✅ | Home Assistant Control |
-| `homeassistant.list_home_assistant_states` | List Home Assistant States | ✅ | List Home Assistant States |
+| `homeassistant.home_assistant_control` | Home Assistant Control | ✅ |  |
+| `homeassistant.list_home_assistant_states` | List Home Assistant States | ✅ |  |
 
 All 2 tools are implemented.
+
+Declared result shapes:
+
+- `homeassistant.home_assistant_control` → `data` keys: result
+- `homeassistant.list_home_assistant_states` → `data` keys: count, records
 
 ## Credentials
 

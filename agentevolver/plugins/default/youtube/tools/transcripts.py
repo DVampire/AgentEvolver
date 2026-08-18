@@ -11,6 +11,11 @@ class YoutubeTranscriptsTool(YoutubeToolBase):
     display_name: str = 'YouTube Transcripts'
     description: str = 'Extracts spoken content from YouTube videos with multiple output options.'
 
+    output = {'video_id': 'text', 'video_url': 'any', 'transcript': 'any', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Extracted {data['count']} transcript chunks for '{data['video_id']}'."
+
     async def __call__(self, url: str = "", chunk_size_seconds: int = 60,
                        translation: str = "", **kwargs) -> Response:
         url = str(url or "").strip()
@@ -59,6 +64,8 @@ class YoutubeTranscriptsTool(YoutubeToolBase):
             secs = int(c["start"])
             records.append({"timestamp": f"{secs // 60:02d}:{secs % 60:02d}", "text": c["text"]})
         full_text = " ".join(_get(s, "text") for s in segments)
-        return self._ok(f"Extracted {len(records)} transcript chunks for '{video_id}'.",
-                        video_id=video_id, video_url=url, transcript=full_text,
-                        records=records, count=len(records))
+        return self._ok(video_id=video_id,
+                        video_url=url,
+                        transcript=full_text,
+                        records=records,
+                        count=len(records))

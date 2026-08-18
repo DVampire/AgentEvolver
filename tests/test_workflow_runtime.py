@@ -254,10 +254,10 @@ async def test_the_roster_names_workflows_and_the_html_is_fetched_only_when_aske
 
     The roster carries name, version, inputs and tags — enough to choose — and the
     assertion that `<workflow` does not appear in it is what keeps a document from leaking
-    back into that budget. `inspect_workflow` is the second step for an agent that has
+    back into that budget. `inspect_capability_tool` is the second step for an agent that has
     chosen and now needs the program.
     """
-    from agentevolver.tool.default.inspect_workflow import InspectWorkflow
+    from agentevolver.tool.default.inspect_capability import InspectCapability
 
     definition = workflow_manager.register(HTML, override=True)
     try:
@@ -265,7 +265,7 @@ async def test_the_roster_names_workflows_and_the_html_is_fetched_only_when_aske
         assert definition.name in roster
         assert "<workflow" not in roster
 
-        response = await InspectWorkflow()(name=definition.name)
+        response = await InspectCapability()(capability_type="workflow", name=definition.name)
         assert response.success
         assert response.data["html"].lstrip().startswith("<workflow")
         assert response.data["nodes"][0]["type"] == "map"

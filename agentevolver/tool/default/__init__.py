@@ -43,12 +43,7 @@ from .send_message import SendMessageTool
 from .report import ReportTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
-from .inspect_tool import InspectTool
-from .inspect_agent import InspectAgent
-from .inspect_skill import InspectSkill
-from .inspect_environment import InspectEnvironment
-from .inspect_connector import InspectConnector
-from .inspect_workflow import InspectWorkflow
+from .inspect_capability import InspectCapability
 from .data_sources import HttpRequestTool
 
 __all__ = [
@@ -98,10 +93,5 @@ __all__ = [
     "ReplyTool",
     "GlobSearchTool",
     "GrepSearchTool",
-    "InspectTool",
-    "InspectAgent",
-    "InspectSkill",
-    "InspectEnvironment",
-    "InspectConnector",
-    "InspectWorkflow",
+    "InspectCapability",
 ]

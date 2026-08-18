@@ -22,6 +22,10 @@ DuckDuckGo tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `duckduckgo.duck_duck_go_search_run` → `data` keys: count, query, records
+
 ## Credentials
 
 None — these tools need no credential.

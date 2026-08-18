@@ -20,8 +20,141 @@ actions:
   - openalex_venue_info
   - arxiv_search
   - arxiv_get_papers
+action_schemas:
+  arxiv_get_papers:
+    properties:
+      arxiv_ids:
+        title: Arxiv Ids
+        type: string
+      limit:
+        default: 10
+        title: Limit
+        type: integer
+    required:
+    - arxiv_ids
+    title: arxiv_get_papersArguments
+    type: object
+  arxiv_search:
+    properties:
+      limit:
+        default: 10
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: arxiv_searchArguments
+    type: object
+  openalex_citations:
+    properties:
+      limit:
+        default: 20
+        title: Limit
+        type: integer
+      work_id:
+        title: Work Id
+        type: string
+    required:
+    - work_id
+    title: openalex_citationsArguments
+    type: object
+  openalex_get_author:
+    properties:
+      author_id:
+        title: Author Id
+        type: string
+    required:
+    - author_id
+    title: openalex_get_authorArguments
+    type: object
+  openalex_get_work:
+    properties:
+      work_id:
+        title: Work Id
+        type: string
+    required:
+    - work_id
+    title: openalex_get_workArguments
+    type: object
+  openalex_references:
+    properties:
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+      work_id:
+        title: Work Id
+        type: string
+    required:
+    - work_id
+    title: openalex_referencesArguments
+    type: object
+  openalex_search_authors:
+    properties:
+      limit:
+        default: 15
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: openalex_search_authorsArguments
+    type: object
+  openalex_search_works:
+    properties:
+      limit:
+        default: 15
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: openalex_search_worksArguments
+    type: object
+  openalex_venue_info:
+    properties:
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: openalex_venue_infoArguments
+    type: object
+action_descriptions:
+  arxiv_get_papers: "Fetch specific arXiv papers by their ids.\n\n    Args:\n      \
+    \  arxiv_ids: comma-separated arXiv ids (e.g. \"2202.07171,1706.03762\").\n    \
+    \    limit: max papers (default 10)."
+  arxiv_search: "Search arXiv preprints by query.\n\n    Args:\n        query: search\
+    \ text (e.g. \"diffusion models\"); supports arXiv field prefixes\n            like\
+    \ \"au:\", \"ti:\", \"cat:\".\n        limit: max papers (default 10)."
+  openalex_citations: "List works that CITE a given work (incoming citations).\n\n \
+    \   Args:\n        work_id: OpenAlex work id (e.g. \"W2556159813\").\n        limit:\
+    \ max citing works (default 20)."
+  openalex_get_author: "Get an author's profile (works, citations, institution, top\
+    \ topics).\n\n    Args:\n        author_id: OpenAlex author id (e.g. \"A5085943412\"\
+    )."
+  openalex_get_work: "Get a work's full metadata (authors, venue, year, citations, abstract).\n\
+    \n    Args:\n        work_id: OpenAlex id (e.g. \"W2556159813\") or a DOI."
+  openalex_references: "List the works REFERENCED BY a given work (its bibliography).\n\
+    \n    Args:\n        work_id: OpenAlex work id (e.g. \"W2556159813\").\n       \
+    \ limit: max references (default 25)."
+  openalex_search_authors: "Search authors in OpenAlex by name.\n\n    Args:\n     \
+    \   query: author name (e.g. \"Jennifer Doudna\").\n        limit: max authors (default\
+    \ 15).\n    Returns 'id<TAB>name<TAB>works<TAB>citations<TAB>institution' rows."
+  openalex_search_works: "Search scholarly works (papers) in OpenAlex by keyword.\n\n\
+    \    Args:\n        query: search text (e.g. \"CRISPR gene editing\").\n       \
+    \ limit: max works (default 15).\n    Returns 'id<TAB>title<TAB>year<TAB>citations<TAB>doi'\
+    \ rows."
+  openalex_venue_info: "Get info on a publication venue/source (journal) by name or\
+    \ OpenAlex source id.\n\n    Args:\n        query: venue name (e.g. \"Nature\")\
+    \ or a source id (e.g. \"S137773608\")."
 ---
-
 # Literature Graph
 
 A self-contained MCP connector for the scholarly literature graph, over two **public**

@@ -22,6 +22,10 @@ Olivya tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `olivya.olivya` → `data` keys: result
+
 ## Credentials
 
 `OLIVYA_API_KEY`, an `api_key` argument on the call, or a `olivya_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

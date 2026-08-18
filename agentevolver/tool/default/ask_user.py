@@ -28,29 +28,19 @@ from agentevolver.tool.types import Tool
 _DESCRIPTION = ("Ask the user a concise question when you need confirmation, a choice, or "
                 "missing information before proceeding.")
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Put a question to the person watching this run and wait for their answer. Use it when continuing would mean guessing at something only they can settle: which of two acceptable designs they want, whether an irreversible step may go ahead, or a fact that exists nowhere in the task or the workspace.
 
-## Parameters
-- questions (list, required): one or more question objects. Each has:
-  - id (str, required): a stable id you choose; the answer echoes it back so you can match them up.
-  - question (str, required): the question itself, in one sentence.
-  - header (str, optional): a short heading, e.g. "Confirm" or "Choose mode".
-  - detail (str, optional): supporting text shown with the question — not an option.
-  - options (list, optional): choices, each `{"label": ..., "description": ...}`. If you recommend one, put it first and append "(Recommended)" to its label.
-  - multi_select (bool, optional): whether more than one option may be chosen. Defaults to false.
-
-## Guidance
 - Ask sparingly. A question you can answer by reading a file or trying something is not a question for the person.
 - Batch related questions into one call rather than interrupting several times.
 - Offer options whenever the answer is a choice: a menu is far cheaper for them to answer than free text.
 - The call blocks until they answer or the wait expires. The result is JSON: `{"answers": [{"id", "selected", "custom"}]}` — `selected` holds the labels they picked, `custom` any text they typed. An empty `selected` with no `custom` means they passed over that question; treat it as "no preference", not as an error.
 - If nobody answers, you are told so. Do not re-ask; make the most reversible choice you can and say in your final result which question went unanswered.
-
-## Example
-{"name": "ask_user_question", "args": {"questions": [{"id": "db", "header": "Choose storage", "question": "Which store should the new service use?", "options": [{"label": "SQLite (Recommended)", "description": "No new infrastructure; fine up to a few million rows."}, {"label": "Postgres", "description": "Needs a running server, but scales past that."}]}]}}
 """
+
+_EXAMPLES = [
+    '{"name": "ask_user_question", "args": {"questions": [{"id": "db", "header": "Choose storage", "question": "Which store should the new service use?", "options": [{"label": "SQLite (Recommended)", "description": "No new infrastructure; fine up to a few million rows."}, {"label": "Postgres", "description": "Needs a running server, but scales past that."}]}]}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -59,7 +49,8 @@ class AskUserTool(Tool):
 
     name: str = "ask_user_question"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Asks a person a question; mutates nothing.")
@@ -73,6 +64,19 @@ class AskUserTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, questions: List[Dict[str, Any]], **kwargs) -> Response:
+        """Ask the person one or more questions and wait for the answers.
+
+        Args:
+            questions: One or more question objects. Each has ``id`` (str, a stable id
+                you choose; the answer echoes it back so you can match them up),
+                ``question`` (str, the question itself, in one sentence), ``header``
+                (str, optional, a short heading e.g. "Confirm"), ``detail`` (str,
+                optional, supporting text shown with the question — not an option),
+                ``options`` (list, optional, choices as ``{"label": ..., "description":
+                ...}``; if you recommend one, put it first and append "(Recommended)"
+                to its label), and ``multi_select`` (bool, optional, whether more than
+                one option may be chosen; defaults to false).
+        """
         from agentevolver.conversation.question import question_manager
 
         ctx = kwargs.get("ctx")

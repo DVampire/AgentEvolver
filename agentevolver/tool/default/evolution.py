@@ -12,7 +12,7 @@ re-registers it (it is a legitimate restore, not an evolution-overwrite, so it i
 subject to the enable_evolving gate).
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import Field
 
@@ -23,11 +23,10 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Manage evolved (extension) components: list active, list versions, roll back, or unload."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Manage the version lifecycle of evolved components (tools/agents/prompts/skills/environments/connectors/workflows created or optimized under `extension/`). Use it to UNDO a bad evolution a reviewer flagged — roll back to the previous good version, or unload a newly generated component that made things worse.
 
-## Actions (pass `action`)
+### Actions (pass `action`)
 - `list_active`: list all active evolved components (module, name, version). No args.
 - `list_versions`: list archived versions of one component. Args: `module`, `name`.
 - `diff`: show the source diff between two versions (see what an optimization actually changed). Args: `module`, `name`, `version_a`, `version_b` (optional; defaults to the live version).
@@ -37,14 +36,14 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 
 `module` is one of: tool | agent | prompt | skill | environment | connector | workflow.
 
-## Guidance
 - Pair with `reviewer_agent`: if the reviewer's verdict is that an evolution regressed the outcome, `rollback` to the prior version (use `list_versions` first to see what to roll back to), or `unload` a brand-new component that has no prior good version.
 - Only affects `extension/` components; built-in capabilities cannot be rolled back/unloaded here.
 - A rollback/unload takes effect for the NEXT dispatched sub-agent, not one already running.
-
-## Example
-{"name": "evolution_tool", "args": {"action": "rollback", "module": "tool", "name": "calculator_tool", "version": "1.0.0"}}
 """
+
+_EXAMPLES = [
+    '{"name": "evolution_tool", "args": {"action": "rollback", "module": "tool", "name": "calculator_tool", "version": "1.0.0"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -53,7 +52,8 @@ class EvolutionTool(Tool):
 
     name: str = "evolution_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Mutates the active set of evolved components under extension/.")
@@ -62,6 +62,14 @@ class EvolutionTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, action: str = "list_active", **kwargs) -> Response:
+        """Inspect and roll back evolved components.
+
+        Args:
+            action: Which operation to run — ``list_active``, ``list_versions``,
+                ``diff``, ``rollback``, ``unload``, ``record_workflow_evaluation``.
+                Every other argument belongs to the chosen action and is documented
+                under "Actions" in this tool's instruction. Defaults to ``list_active``.
+        """
         from agentevolver.extension import extension_manager  # local import avoids a heavy import at load
         action = (action or "list_active").lower().strip()
         try:

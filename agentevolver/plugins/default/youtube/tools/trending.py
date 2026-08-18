@@ -25,6 +25,11 @@ class YoutubeTrendingTool(YoutubeToolBase):
     display_name: str = 'YouTube Trending'
     description: str = 'Retrieves trending videos from YouTube with filtering options.'
 
+    output = {'region': 'any', 'category': 'any', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Retrieved {data['count']} trending videos ({data['region']}/{data['category']})."
+
     async def __call__(self, api_key: str = "", region: str = "Global", category: str = "All",
                        max_results: int = 10, include_statistics: bool = True, **kwargs) -> Response:
         key = self._secret(api_key, "YOUTUBE_API_KEY", "YOUTUBE_DATA_API_KEY")
@@ -57,7 +62,6 @@ class YoutubeTrendingTool(YoutubeToolBase):
                     })
                 records.append(row)
             youtube.close()
-            return self._ok(f"Retrieved {len(records)} trending videos ({region}/{category}).",
-                            region=region, category=category, records=records, count=len(records))
+            return self._ok(region=region, category=category, records=records, count=len(records))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"youtube.trending: {type(exc).__name__}: {exc}")

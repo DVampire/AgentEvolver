@@ -22,6 +22,10 @@ WolframAlpha tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `wolframalpha.wolfram_alpha_api` → `data` keys: query, result
+
 ## Credentials
 
 `WOLFRAM_ALPHA_APPID`, an `api_key` argument on the call, or a `wolframalpha_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

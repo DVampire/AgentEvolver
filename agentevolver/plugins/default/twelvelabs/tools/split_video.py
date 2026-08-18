@@ -14,6 +14,11 @@ class TwelvelabsSplitVideoTool(PluginTool):
     description: str = 'Split a video into multiple clips of specified duration.'
     category: str = 'files'
 
+    output = {'clips': 'any', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Split into {data['count']} clips."
+
     async def __call__(self, file_path: str = "", clip_length: int = 30, **kwargs) -> Response:
         import os as _os, subprocess
         if not file_path or not _os.path.exists(file_path):
@@ -27,4 +32,4 @@ class TwelvelabsSplitVideoTool(PluginTool):
             clips = sorted(_os.path.join(out_dir, f) for f in _os.listdir(out_dir))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"twelvelabs.split_video: {type(exc).__name__}: {exc} (needs ffmpeg).")
-        return self._ok(f"Split into {len(clips)} clips.", clips=clips, count=len(clips))
+        return self._ok(clips=clips, count=len(clips))

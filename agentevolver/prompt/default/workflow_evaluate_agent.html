@@ -10,7 +10,7 @@
 
 <module src="../module/runtime.html"></module>
 <task-rules>
-- First call `inspect_workflow` and evaluate the exact registered version named by the task.
+- First call `inspect_capability_tool` (capability_type="workflow") and evaluate the exact registered version named by the task.
 - Check schema safety, boundedness, contracts, path coverage, capability availability, quality, latency, and cost.
 - Exercise one representative input when safe; do not fabricate run evidence.
 - Record exactly one result with `evolution_tool` action `record_workflow_evaluation`.

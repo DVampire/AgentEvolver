@@ -13,6 +13,11 @@ class OlivyaTool(PluginTool):
     display_name: str = 'Place Call'
     description: str = 'A component to create an outbound call request from Olivya'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'Olivya call created.'
+
     async def __call__(self, from_number: str = "", to_number: str = "", first_message: str = "", system_prompt: str = "", api_key: str = "", **kwargs) -> Response:
         import httpx
         key = self._secret(api_key, "OLIVYA_API_KEY")
@@ -29,4 +34,4 @@ class OlivyaTool(PluginTool):
                 result = resp.json()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"olivya: {type(exc).__name__}: {exc}")
-        return self._ok("Olivya call created.", result=result)
+        return self._ok(result=result)

@@ -16,8 +16,88 @@ actions:
   - get_marker_genes
   - get_cell_tissues
   - get_source_data
+action_schemas:
+  get_cell_tissues:
+    properties:
+      cell_type:
+        title: Cell Type
+        type: string
+    required:
+    - cell_type
+    title: get_cell_tissuesArguments
+    type: object
+  get_cell_type_info:
+    properties:
+      cell_type:
+        title: Cell Type
+        type: string
+    required:
+    - cell_type
+    title: get_cell_type_infoArguments
+    type: object
+  get_marker_genes:
+    properties:
+      cell_type:
+        title: Cell Type
+        type: string
+      limit:
+        default: 50
+        title: Limit
+        type: integer
+      source:
+        default: canonical
+        title: Source
+        type: string
+    required:
+    - cell_type
+    title: get_marker_genesArguments
+    type: object
+  get_source_data:
+    properties:
+      cell_type:
+        title: Cell Type
+        type: string
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+    required:
+    - cell_type
+    title: get_source_dataArguments
+    type: object
+  search_cell_types:
+    properties:
+      limit:
+        default: 25
+        title: Limit
+        type: integer
+      query:
+        title: Query
+        type: string
+    required:
+    - query
+    title: search_cell_typesArguments
+    type: object
+action_descriptions:
+  get_cell_tissues: "List the tissues where a cell type is characterized (from its marker\
+    \ data).\n\n    Args:\n        cell_type: a CL id or name.\n    Returns one tissue\
+    \ per line."
+  get_cell_type_info: "Get a cell type's canonical description and synonyms.\n\n   \
+    \ Args:\n        cell_type: a CL id (e.g. \"CL:0000084\") or a name (e.g. \"T cell\"\
+    )."
+  get_marker_genes: "Get marker genes for a cell type.\n\n    Args:\n        cell_type:\
+    \ a CL id or name.\n        source: \"canonical\" (literature-curated, with tissue\
+    \ + publication) or\n            \"computational\" (CELLxGENE-computed, ranked by\
+    \ marker_score).\n        limit: max genes (default 50)."
+  get_source_data: "List the source datasets/collections that describe a cell type.\n\
+    \n    Args:\n        cell_type: a CL id or name.\n        limit: max collections\
+    \ (default 25).\n    Returns 'collection_name<TAB>collection_url<TAB>publication_url'\
+    \ rows."
+  search_cell_types: "Search cell types by name or synonym (Cell Ontology).\n\n    Args:\n\
+    \        query: text to match against cell-type names/synonyms (e.g. \"T cell\"\
+    , \"neuron\").\n        limit: max results (default 25).\n    Returns 'CL_id<TAB>name'\
+    \ rows."
 ---
-
 # CellGuide
 
 A self-contained MCP connector over the **public** CZ CELLxGENE CellGuide data

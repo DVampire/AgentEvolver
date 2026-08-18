@@ -26,6 +26,14 @@ AssemblyAI tools.
 
 All 5 tools are implemented.
 
+Declared result shapes:
+
+- `assemblyai.assemblyai_get_subtitles` → `data` keys: format, subtitles
+- `assemblyai.assemblyai_lemur` → `data` keys: response
+- `assemblyai.assemblyai_list_transcripts` → `data` keys: count, records
+- `assemblyai.assemblyai_poll_transcript` → `data` keys: status, text, transcript_id
+- `assemblyai.assemblyai_start_transcript` → `data` keys: status, transcript_id
+
 ## Credentials
 
 `ASSEMBLYAI_API_KEY`, an `api_key` argument on the call, or a `assemblyai_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

@@ -22,6 +22,10 @@ Glean tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `glean.glean_search_api` → `data` keys: count, query, records
+
 ## Credentials
 
 `GLEAN_ACCESS_TOKEN`, an `api_key` argument on the call, or a `glean_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

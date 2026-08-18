@@ -3,7 +3,7 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -22,11 +22,7 @@ from agentevolver.response.types import Response, ResponseType
 
 _DESCRIPTION = "Execute bash commands in the shell."
 
-_INSTRUCTION = """
-## Function
-Execute bash commands in the shell.
-
-## Guidance
+_GUIDANCE = """
 - Use this tool to run system commands, scripts, or any bash operations.
 - Be careful with commands that modify the system or require elevated privileges.
 - For file operations, ALWAYS use ABSOLUTE paths to avoid path-related issues.
@@ -47,35 +43,13 @@ Execute bash commands in the shell.
   gives the command a real terminal, and `stdin` sends it keystrokes. Without those, such
   a program is not merely inconvenient to test: its entire behaviour is invisible, and
   runs both fail identically, which reads as agreement.
-
-## Parameters
-- command (str): The command to execute. If file path is necessary, it should be an absolute path.
-- tty (bool, optional): Run under a pseudo-terminal. Needed for anything that requires a
-  terminal to work — full-screen programs, REPLs, prompts. You get back what the terminal
-  displays — the screen, plus a note of the colours and boldness used — not the escape
-  sequences that produced it. stdout and stderr are one stream, as on a real terminal.
-  TERM is set for you when the environment has none; prefix the command with `TERM=vt100 `
-  and such to choose one, since behaviour under different terminal types is itself worth
-  comparing. Default false.
-- stdin (str, optional): Text fed to the command's input. With `tty: true` these are
-  keystrokes, so a program can be driven and then told to quit. They are held back for a
-  moment first, so a full-screen program has drawn before it is asked to leave — and what
-  it drew is what you get back, even though its exit path clears the screen.
-- timeout (int, optional): Seconds before the command is abandoned. Keep it small for
-  anything that may not exit on its own.
-- run_in_background (bool, optional): Start the command and return a job id immediately
-  instead of waiting for it. Use it for anything that takes minutes — a build, a training
-  run, a long download — then keep working and collect it with `job_output_tool` when you
-  need the result. A foreground call spends a whole step doing nothing but waiting, and a
-  step spent waiting is a decision you did not get to make. `timeout` does not apply; the
-  job runs until it exits or you call `job_kill_tool`. Not available with `tty`, which
-  needs a live terminal to interact with. Default false.
-
-## Example
-{"name": "bash_tool", "args": {"command": "ls -l /path/to/file.txt"}}
-{"name": "bash_tool", "args": {"command": "./viewer --colour red", "tty": true, "stdin": "q", "timeout": 3}}
-{"name": "bash_tool", "args": {"command": "python train.py", "run_in_background": true}}
 """
+
+_EXAMPLES = [
+    '{"name": "bash_tool", "args": {"command": "ls -l /path/to/file.txt"}}',
+    '{"name": "bash_tool", "args": {"command": "./viewer --colour red", "tty": true, "stdin": "q", "timeout": 3}}',
+    '{"name": "bash_tool", "args": {"command": "python train.py", "run_in_background": true}}',
+]
 
 
 def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
@@ -172,7 +146,8 @@ class BashTool(Tool):
 
     name: str = "bash_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     timeout: int = Field(default=600, description="Timeout in seconds for command execution")

@@ -13,6 +13,11 @@ class NotionListDatabasePropertiesTool(NotionToolBase):
     display_name: str = 'List Database Properties '
     description: str = 'Retrieve properties of a Notion database.'
 
+    output = {'properties': 'any', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Database has {data['count']} properties."
+
     async def __call__(self, api_key: str = "", database_id: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:
@@ -23,6 +28,6 @@ class NotionListDatabasePropertiesTool(NotionToolBase):
                 return self._fail("notion.list_database_properties: 'database_id' is required.")
             js = self._request("GET", f"/databases/{database_id}", token)
             props = js.get("properties", {})
-            return self._ok(f"Database has {len(props)} properties.", properties=props, count=len(props))
+            return self._ok(properties=props, count=len(props))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"notion.list_database_properties: {type(exc).__name__}: {exc}")

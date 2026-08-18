@@ -10,6 +10,10 @@ class WikipediaTool(PluginTool):
     name: str = 'wikipedia'
     display_name: str = 'Wikipedia'
     description: str = 'Call Wikipedia API.'
+    output = {"query": "text", "records": "list", "count": "any"}
+
+    def _render(self, data):
+        return f"Wikipedia returned {data['count']} page(s) for '{data['query']}'."
 
     async def __call__(self, input_value: str = "", k: int = 4, lang: str = "en", load_all_available_meta: bool = False, doc_content_chars_max: int = 4000, **kwargs) -> Response:
         query = str(input_value or "").strip()
@@ -25,5 +29,4 @@ class WikipediaTool(PluginTool):
             return self._fail(f"wikipedia.wikipedia: {type(exc).__name__}: {exc}")
         records = [{"title": d.metadata.get("title", ""), "summary": d.metadata.get("summary", ""),
                     "source": d.metadata.get("source", ""), "content": d.page_content} for d in docs]
-        return self._ok(f"Wikipedia returned {len(records)} pages for '{query}'.",
-                        query=query, records=records, count=len(records))
+        return self._ok(query=query, records=records, count=len(records))

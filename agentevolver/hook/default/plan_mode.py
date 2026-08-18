@@ -52,10 +52,10 @@ class PlanModeHook(Hook):
         if not plan_manager.active(session_id):
             return HookResult.allow()
 
-        kind = str(action.get("type") or "tool")
+        capability_type = str(action.get("type") or "tool")
         name = str(action.get("name") or "")
-        declaration = await declaration_of(kind, name)
-        if action_is_allowed(kind, name, declaration):
+        declaration = await declaration_of(capability_type, name)
+        if action_is_allowed(capability_type, name, declaration):
             return HookResult.allow()
 
         return HookResult.block(

@@ -19,25 +19,15 @@ _IGNORED_DIRS = frozenset({
 
 _DESCRIPTION = "Search file contents for lines matching a regex or literal string."
 
-_INSTRUCTION = """
-## Function
-Search file contents for lines matching a regex or literal string.
-
-## Guidance
+_GUIDANCE = """
 - Only files whose names match file_pattern are searched; common noise directories (.git, node_modules, __pycache__, .venv, etc.) are skipped automatically.
 - An invalid regex pattern returns an error rather than matches.
 - Results are capped at max_results; each match reports the file path, line number, and line text.
-
-## Parameters
-- pattern (str): Regular expression (or literal string) to search for.
-- root (str): Absolute path to the directory to search in.
-- file_pattern (str, optional): Glob pattern to filter which files are searched, e.g. "*.py". Defaults to all files.
-- case_sensitive (bool, optional): Whether the search is case-sensitive. Defaults to true.
-- max_results (int, optional): Maximum number of matching lines to return. Defaults to 100.
-
-## Example
-{"name": "grep_search_tool", "args": {"pattern": "def __call__", "root": "/abs/path/to/project", "file_pattern": "*.py"}}
 """
+
+_EXAMPLES = [
+    '{"name": "grep_search_tool", "args": {"pattern": "def __call__", "root": "/abs/path/to/project", "file_pattern": "*.py"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -53,7 +43,8 @@ class GrepSearchTool(Tool):
     #: a tree walk over a large repository, not an unbounded scan.
     call_timeout_seconds: float = 120
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = False

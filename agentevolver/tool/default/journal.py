@@ -8,7 +8,7 @@ journal first so it never re-proposes a hypothesis that was already reverted.
 Backed by ``src/extension/journal.py``; stores ``extension/.journal/<module>/<name>.md``.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import Field
 
@@ -19,11 +19,10 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Read/write the evolution journal: record a hypothesis, backfill its outcome, or review prior rounds."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Maintain the per-component evolution memory so evolution is hypothesis-driven and does not repeat failed ideas.
 
-## Actions (pass `action`)
+### Actions (pass `action`)
 - `show`: render prior rounds for a component (predicted vs actually-flipped, reverted list). Args: `module`, `name`.
 - `record`: log a new hypothesis for this round BEFORE evolving. Args: `module`, `name`, `hypothesis_id`, `lever` (configuration|control|action|instruction), `predicted_flip` (list of task_ids), `note`.
 - `gate`: backfill the actual outcome AFTER evaluation. Args: `module`, `name`, `outcome` (accepted|reverted|noop), `attribution` (dict task_id -> bool flipped), optional `round_no`.
@@ -31,13 +30,13 @@ Maintain the per-component evolution memory so evolution is hypothesis-driven an
 
 `module` is one of: tool | agent | prompt | skill | environment | connector.
 
-## Guidance
 - Optimizer: call `show` + `reverted` first; then `record` your hypothesis; then evolve.
 - Evaluator/reviewer: after the next eval, call `gate` to attribute predicted vs actual flips.
-
-## Example
-{"name": "journal_tool", "args": {"action": "record", "module": "tool", "name": "calculator_tool", "hypothesis_id": "h3", "lever": "instruction", "predicted_flip": ["task_17"], "note": "trim tool instruction to cut parse errors"}}
 """
+
+_EXAMPLES = [
+    '{"name": "journal_tool", "args": {"action": "record", "module": "tool", "name": "calculator_tool", "hypothesis_id": "h3", "lever": "instruction", "predicted_flip": ["task_17"], "note": "trim tool instruction to cut parse errors"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -46,7 +45,8 @@ class JournalTool(Tool):
 
     name: str = "journal_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     # This appends rounds to the journal on disk — the earlier `False` was
@@ -59,6 +59,14 @@ class JournalTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, action: str = "show", **kwargs) -> Response:
+        """Read and write the evolution journal for one component.
+
+        Args:
+            action: Which operation to run — ``show``, ``record``, ``gate``,
+                ``reverted``. Every other argument belongs to the chosen action and is
+                documented under "Actions" in this tool's instruction. Defaults to
+                ``show``.
+        """
         from agentevolver.extension.journal import journal
         action = (action or "show").lower().strip()
         try:

@@ -13,6 +13,8 @@ class GitextractorTool(PluginTool):
     display_name: str = 'GitExtractor'
     description: str = 'Analyzes a Git repository and returns file contents and complete repository information'
 
+    output = {'text': 'text', 'files': 'list'}
+
     async def __call__(self, clone_url: str = "", branch: str = "main", **kwargs) -> Response:
         import tempfile
         if not clone_url:

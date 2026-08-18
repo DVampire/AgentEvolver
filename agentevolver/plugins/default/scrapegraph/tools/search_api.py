@@ -11,6 +11,11 @@ class ScrapegraphSearchApiTool(PluginTool):
     display_name: str = 'ScrapeGraph Search API'
     description: str = 'Given a search prompt, it will return search results using ScrapeGraph'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'ScrapeGraph searchscraper completed.'
+
     async def __call__(self, query: str = "", api_key: str = "", url: str = "", prompt: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "SGAI_API_KEY", "SCRAPEGRAPH_API_KEY")
         if not key:
@@ -26,4 +31,4 @@ class ScrapegraphSearchApiTool(PluginTool):
                 client.close()
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"scrapegraph.searchscraper: {type(exc).__name__}: {exc}")
-        return self._ok("ScrapeGraph searchscraper completed.", result=response)
+        return self._ok(result=response)

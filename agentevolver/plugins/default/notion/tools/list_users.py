@@ -13,6 +13,11 @@ class NotionListUsersTool(NotionToolBase):
     display_name: str = 'List Users '
     description: str = 'Retrieve users from Notion.'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Notion has {data['count']} users."
+
     async def __call__(self, api_key: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:
@@ -21,6 +26,6 @@ class NotionListUsersTool(NotionToolBase):
         try:
             js = self._request("GET", "/users", token)
             results = js.get("results", [])
-            return self._ok(f"Notion has {len(results)} users.", records=results, count=len(results))
+            return self._ok(records=results, count=len(results))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"notion.list_users: {type(exc).__name__}: {exc}")

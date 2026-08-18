@@ -10,6 +10,10 @@ class ArxivTool(PluginTool):
     name: str = 'arxiv'
     display_name: str = 'arXiv'
     description: str = 'Search and retrieve papers from arXiv.org.'
+    output = {"query": "text", "records": "list", "count": "any"}
+
+    def _render(self, data):
+        return f"arXiv returned {data['count']} paper(s) for '{data['query']}'."
 
     async def __call__(self, search_query: str = "", search_type: str = "all", max_results: int = 10, **kwargs) -> Response:
         import urllib.parse, urllib.request
@@ -42,5 +46,4 @@ class ArxivTool(PluginTool):
                 "authors": [a.find("atom:name", ns).text for a in entry.findall("atom:author", ns)],
                 "categories": [c.get("term") for c in entry.findall("atom:category", ns)],
             })
-        return self._ok(f"arXiv returned {len(records)} papers for '{q}'.",
-                        query=q, records=records, count=len(records))
+        return self._ok(query=q, records=records, count=len(records))

@@ -7,6 +7,11 @@ into native function-calling schemas (``*.function_callings(allowlist, types)``)
 this module only COMPOSES those per-manager outputs and builds one routing table
 (function name → owning manager) so a returned tool_call can be dispatched back.
 
+Which managers to ask comes from :data:`CAPABILITY_TYPES` rather than from a list
+here. The two used to be separate, and the way that failed is the way it always
+does: a capability type existed, was registered, was callable by name — and was
+absent from the model's tool list, because this file had not been told about it.
+
 No renaming happens here. Entity names already carry their type in the name
 (``bash_tool`` / ``done_tool`` / ``general_agent`` / ``self_evolving_skill``), so the
 raw name is used verbatim. ``done_tool`` is an ordinary registered tool, so it
@@ -22,12 +27,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from agentevolver.capability import CAPABILITY_TYPES
 from agentevolver.tool.types import Tool
 
 # Routing table value: a tuple describing how to dispatch a tool_call by name:
-#   ("tool", name) | ("skill", name) | ("connector", name, action)
-#   | ("environment", name, action) | ("env", action) | ("agent", name)
-#   | ("workflow", name)
+#   (capability_type, name) for something addressed by one name, and
+#   (capability_type, name, member) for a container's member —
+#   ("connector", name, action) | ("environment", name, action) | ("plugin", name, tool)
 Route = Tuple[Any, ...]
 
 
@@ -38,16 +44,48 @@ class _SchemaTool(Tool):
         raise RuntimeError("schema-only tool shim is not directly callable")
 
 
-def _fc(name: str, description: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-    """Build a canonical OpenAI function-calling dict (used for env actions)."""
-    return {"type": "function", "function": {"name": name, "description": description or name, "parameters": parameters}}
-
-
 def _shim(fc: Dict[str, Any]) -> _SchemaTool:
     """Wrap one function-calling dict in a schema-only ``_SchemaTool`` so serialization
     can read ``tool.function_calling`` uniformly; the shim itself is never executed."""
     fn = fc.get("function", {})
     return _SchemaTool(name=fn.get("name", ""), description=fn.get("description", ""), function_calling=fc)
+
+
+def _projects(capability_type: str, agent: Any, extra: Dict[str, Any], include_agents: bool) -> bool:
+    """Whether this run projects a capability type at all.
+
+    Three types are opt-in rather than resident, each for its own reason:
+
+    * ``agent`` — sub-agent dispatch belongs to an orchestrator (MetaAgent).
+    * ``workflow`` — a read-only Workflow evaluator must be able to execute its
+      target without also gaining arbitrary sub-agent delegation, so this is a
+      separate seam from ``agent`` rather than the same flag.
+    * ``plugin`` — the registry holds hundreds of tools for services most runs
+      never touch, so one reaches a model only when a run names it.
+    """
+    if capability_type == "agent":
+        return include_agents
+    if capability_type == "workflow":
+        return (include_agents
+                or (hasattr(agent, "_include_workflows") and agent._include_workflows())
+                or bool(extra.get("workflow_allowlist")))  # a canvas "Tool Mode" mount opts in
+    if capability_type == "plugin":
+        return bool(extra.get("plugin_allowlist"))
+    return True
+
+
+def _projection_kwargs(capability_type: str, agent: Any) -> Dict[str, Any]:
+    """The per-type arguments beyond ``allowlist`` that this run needs.
+
+    ``skill`` honours the agent's allowed skill types — the guardrail that keeps
+    worker SOPs out of the MetaAgent and orchestration recipes out of workers —
+    and ``agent`` must not project the caller as one of its own callables.
+    """
+    if capability_type == "skill" and hasattr(agent, "_allowed_skill_types"):
+        return {"types": list(agent._allowed_skill_types())}
+    if capability_type == "agent":
+        return {"exclude": getattr(agent, "name", None)}
+    return {}
 
 
 async def assemble_native_tools(
@@ -64,42 +102,16 @@ async def assemble_native_tools(
     sub-agent (except the caller) as a callable — used by MetaAgent, which dispatches
     agents; ordinary sub-agents leave it off.
     """
-    from agentevolver.tool.server import tool_manager
-    from agentevolver.skill.server import skill_manager
-    from agentevolver.connector.server import connector_manager
-    from agentevolver.environment.server import environment_manager
-
     extra = getattr(ctx, "extra", None) or {}
     pairs: List[Tuple[Dict[str, Any], Route]] = []
 
-    # tools (done_tool arrives here like any other tool)
-    pairs += await tool_manager.function_callings(extra.get("tool_allowlist"))
-
-    # skills — honor this agent's allowed skill types (worker vs orchestrator)
-    types = list(agent._allowed_skill_types()) if hasattr(agent, "_allowed_skill_types") else None
-    pairs += await skill_manager.function_callings(extra.get("skill_allowlist"), types=types)
-
-    # connector actions
-    pairs += await connector_manager.function_callings(extra.get("connector_allowlist"))
-
-    # selected environment actions; names are namespace-qualified to avoid collisions.
-    pairs += await environment_manager.function_callings(extra.get("environment_allowlist"))
-
-    # Sub-agents are MetaAgent-only. Workflow projection is a separate seam because
-    # a read-only Workflow evaluator must execute the target without gaining access
-    # to arbitrary sub-agent delegation.
-    if include_agents:
-        from agentevolver.agent.server import agent_manager
-        pairs += await agent_manager.function_callings(
-            extra.get("agent_allowlist"), exclude=getattr(agent, "name", None)
+    for entry in CAPABILITY_TYPES:
+        if not _projects(entry.type, agent, extra, include_agents):
+            continue
+        pairs += await entry.manager().function_callings(
+            extra.get(f"{entry.type}_allowlist"),
+            **_projection_kwargs(entry.type, agent),
         )
-
-    include_workflows = include_agents or (
-        hasattr(agent, "_include_workflows") and agent._include_workflows()
-    ) or bool(extra.get("workflow_allowlist"))  # a canvas "Tool Mode" mount opts in explicitly
-    if include_workflows:
-        from agentevolver.workflow import workflow_manager
-        pairs += await workflow_manager.function_callings(extra.get("workflow_allowlist"))
 
     tools = [_shim(fc) for fc, _ in pairs]
     routing = {fc["function"]["name"]: route for fc, route in pairs}

@@ -43,8 +43,6 @@ class SkillConfig(BaseModel):
     references: List[str] = Field(default_factory=list, description="Paths to reference docs under references/")
     examples: List[str] = Field(default_factory=list, description="Paths to example files under examples/")
 
-    text: Optional[str] = Field(default=None, description="Pre-built text representation for prompt injection")
-
     @property
     def type_tags(self) -> List[str]:
         """Normalize ``type`` (str or list) to a list of labels for filtering/display."""
@@ -66,7 +64,6 @@ class SkillConfig(BaseModel):
             "resources": self.resources,
             "references": self.references,
             "examples": self.examples,
-            "text": self.text,
         }
 
 

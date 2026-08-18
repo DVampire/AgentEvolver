@@ -13,6 +13,11 @@ class GoogleSearchApiCoreTool(PluginTool):
     display_name: str = 'Google Search API'
     description: str = 'Call Google Search API and return results as a DataFrame.'
 
+    output = {'query': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Google returned {data['count']} results."
+
     async def __call__(self, input_value: str = "", google_api_key: str = "", google_cse_id: str = "", k: int = 4, **kwargs) -> Response:
         q = str(input_value or "").strip()
         key = self._secret(google_api_key, "GOOGLE_API_KEY")
@@ -24,4 +29,4 @@ class GoogleSearchApiCoreTool(PluginTool):
             results = GoogleSearchAPIWrapper(google_api_key=key, google_cse_id=cse).results(q, int(k))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"google.search: {type(exc).__name__}: {exc}")
-        return self._ok(f"Google returned {len(results)} results.", query=q, records=results, count=len(results))
+        return self._ok(query=q, records=results, count=len(results))

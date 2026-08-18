@@ -12,23 +12,15 @@ from agentevolver.sandbox.project import check_session_path
 
 _DESCRIPTION = "List the contents of a directory as a tree structure."
 
-_INSTRUCTION = """
-## Function
-List the contents of a directory as a tree structure.
-
-## Guidance
+_GUIDANCE = """
 - Directories are listed before files and results are rendered as an indented tree.
 - Common noise directories (e.g. .git, __pycache__, node_modules) are ignored by default; add more via the ignore parameter.
-
-## Parameters
-- path (str): Absolute path to the directory to list.
-- depth (int, optional): Maximum depth of the tree. Defaults to 3.
-- ignore (list[str], optional): Directory/file name patterns to ignore. Defaults to common noise dirs like .git, __pycache__, node_modules.
-
-## Example
-{"name": "list_dir_tool", "args": {"path": "/abs/path/to/project"}}
-{"name": "list_dir_tool", "args": {"path": "/abs/path/to/project", "depth": 2, "ignore": [".git", "node_modules"]}}
 """
+
+_EXAMPLES = [
+    '{"name": "list_dir_tool", "args": {"path": "/abs/path/to/project"}}',
+    '{"name": "list_dir_tool", "args": {"path": "/abs/path/to/project", "depth": 2, "ignore": [".git", "node_modules"]}}',
+]
 
 _DEFAULT_IGNORE = {
     ".git", "__pycache__", "node_modules", ".venv", "venv", "env",
@@ -50,7 +42,8 @@ class ListDirTool(Tool):
     #: same local-I/O budget as reading.
     call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = False

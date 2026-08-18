@@ -11,6 +11,11 @@ class FirecrawlCrawlApiTool(PluginTool):
     display_name: str = 'Firecrawl Crawl API'
     description: str = 'Crawls a URL and returns the results.'
 
+    output = {'result': 'object'}
+
+    def _render(self, data):
+        return 'Firecrawl crawl completed.'
+
     async def __call__(self, url: str = "", api_key: str = "", limit: int = 10, **kwargs) -> Response:
         key = self._secret(api_key, "FIRECRAWL_API_KEY")
         if not key:
@@ -24,4 +29,4 @@ class FirecrawlCrawlApiTool(PluginTool):
             data = result.model_dump() if hasattr(result, "model_dump") else result
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"firecrawl.crawl: {type(exc).__name__}: {exc}")
-        return self._ok("Firecrawl crawl completed.", result=data)
+        return self._ok(result=data)

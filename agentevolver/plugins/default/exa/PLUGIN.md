@@ -22,6 +22,10 @@ Exa tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `exa.exa_search` → `data` keys: count, query, records
+
 ## Credentials
 
 `EXA_API_KEY`, an `api_key` argument on the call, or a `exa_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

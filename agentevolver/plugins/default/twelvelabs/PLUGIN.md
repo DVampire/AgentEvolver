@@ -28,6 +28,16 @@ TwelveLabs tools.
 
 All 7 tools are implemented.
 
+Declared result shapes:
+
+- `twelvelabs.convert_astra_results` → `data` keys: count, records
+- `twelvelabs.pegasus_index` → `data` keys: index_id
+- `twelvelabs.split_video` → `data` keys: clips, count
+- `twelvelabs.text_embeddings` → `data` keys: dims, vector
+- `twelvelabs.twelvelabs_pegasus` → `data` keys: text, video_id
+- `twelvelabs.video_embeddings` → `data` keys: result
+- `twelvelabs.video_file` → `data` keys: path, size
+
 ## Credentials
 
 `TWELVELABS_API_KEY`, `TWELVE_LABS_API_KEY`, an `api_key` argument on the call, or a `twelvelabs_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

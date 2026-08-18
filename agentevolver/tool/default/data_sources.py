@@ -5,13 +5,21 @@
 """
 
 import json as _json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
+
+_GUIDANCE = """
+Call a REST endpoint and return the response.
+"""
+
+_EXAMPLES = [
+    '{"name": "http_request_tool", "args": {"url": "https://api.example.com/x", "method": "GET"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -20,18 +28,22 @@ class HttpRequestTool(Tool):
 
     name: str = "http_request_tool"
     description: str = "Make an HTTP request (GET/POST/PUT/DELETE) to a URL and return the status and body."
-    instruction: str = (
-        "## Function\nCall a REST endpoint and return the response.\n\n"
-        "## Parameters\n- url (str): the request URL.\n- method (str): GET (default) / POST / PUT / DELETE / PATCH.\n"
-        "- headers (object): optional request headers.\n- body (str): optional request body (JSON or text).\n"
-        "- timeout (float): seconds to wait for the response. Defaults to 30.\n\n"
-        "## Example\n{\"name\": \"http_request_tool\", \"args\": {\"url\": \"https://api.example.com/x\", \"method\": \"GET\"}}"
-    )
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "data"})
     permission_mode: str = "read_only"
 
     async def __call__(self, url: str, method: str = "GET", headers: Optional[Dict[str, Any]] = None,
                        body: str = "", timeout: float = 30.0, **kwargs) -> Response:
+        """Issue one HTTP request and return the response.
+
+        Args:
+            url: The request URL.
+            method: GET (default) / POST / PUT / DELETE / PATCH.
+            headers: Optional request headers.
+            body: Optional request body (JSON or text).
+            timeout: Seconds to wait for the response. Defaults to 30.
+        """
         import httpx
 
         method = str(method or "GET").upper()

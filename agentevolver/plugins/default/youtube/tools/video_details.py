@@ -11,6 +11,8 @@ class YoutubeVideoDetailsTool(YoutubeToolBase):
     display_name: str = 'YouTube Video Details'
     description: str = 'Retrieves detailed information and statistics about YouTube videos.'
 
+    output = {'video_id': 'text', 'records': 'list', 'count': 'any'}
+
     async def __call__(self, video_url: str = "", api_key: str = "", include_statistics: bool = True,
                        include_content_details: bool = True, include_tags: bool = False, **kwargs) -> Response:
         video_url = str(video_url or "").strip()

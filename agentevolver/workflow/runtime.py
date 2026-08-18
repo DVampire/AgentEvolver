@@ -771,7 +771,7 @@ class WorkflowRuntime:
                 await connector_manager.get_schema(target, action=action), payload,
                 f"{target}.{action}",
             )
-            return await connector_manager(name=target, input={"action": action, "args": payload}, ctx=ctx)
+            return await connector_manager(name=target, action=action, input=payload, ctx=ctx)
         if capability_type == StepType.ENVIRONMENT:
             from agentevolver.environment import environment_manager
             action = payload.pop("action", None)

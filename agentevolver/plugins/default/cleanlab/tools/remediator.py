@@ -13,6 +13,8 @@ class CleanlabRemediatorTool(PluginTool):
     display_name: str = 'Cleanlab Remediator'
     description: str = ''
 
+    output = {'response': 'object', 'remediated': 'any', 'score': 'any'}
+
     async def __call__(self, response: str = "", score: float = 0.0, threshold: float = 0.7, fallback: str = "I am not sure.", **kwargs) -> Response:
         if not response:
             return self._fail("cleanlab.remediator: 'response' is required.")

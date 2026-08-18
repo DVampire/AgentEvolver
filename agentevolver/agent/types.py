@@ -25,6 +25,7 @@ from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
+from agentevolver.capability import CAPABILITY_TYPES, capability_type as capability_type_entry
 from agentevolver.message import ContentPartText, HumanMessage, Message
 from agentevolver.prompt import prompt_manager
 from agentevolver.tool import tool_manager
@@ -102,6 +103,13 @@ _COMPACTIONS_PER_RUN = 3
 #: than left to the pressure guard — which may only shrink tool results and would have
 #: nothing to take.
 _INHERITED_CONTEXT_MAX = 12_000
+
+#: Capability types the dispatch handles with one path: everything except ``tool``,
+#: which carries an execution record and the ``done_tool`` terminal, and ``agent``,
+#: which can be backgrounded. Derived from the table so a new type joins the plain
+#: path by existing rather than by someone remembering this line.
+_PLAIN_CAPABILITY_TYPES = frozenset(
+    entry.type for entry in CAPABILITY_TYPES if entry.type not in {"tool", "agent"})
 
 #: Consecutive turns that change nothing before the agent is told so in its own context.
 #: Low, because the remedy is cheap — make the edit you were about to justify — and the
@@ -633,19 +641,46 @@ class Agent(BaseModel):
             "todo": todo_body,
         }
 
-    async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Get the tool context.
+    def _capability_allowlist(self, capability_type: str, ctx: "AgentContext"):
+        """This run's allowlist for one capability type, or ``None`` for the default.
 
-        Honors an optional per-run allowlist in ``ctx.extra["tool_allowlist"]`` (a list
-        of tool names) — used to run a "with-tool" vs "baseline" agent over the same task.
-        ``None`` (default) = all loaded tools; an empty list = no tools (the baseline).
+        ``None`` = every loaded entity of that type, ``[]`` = none (the baseline an
+        evaluation runs against), ``[names]`` = only those. The one exception is
+        ``plugin``, whose manager reads ``None`` as none — the registry holds far
+        more than any run wants resident.
         """
-        allowlist = ctx.extra.get("tool_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
-        content = await tool_manager.get_instruction(allowlist=allowlist)
-        available_tools = content if content else "[No tools loaded.]"
-        sdk = await self._code_mode_section(allowlist)
-        tool_context = f"### Available Tools\n{available_tools}" + (f"\n\n{sdk}" if sdk else "")
-        return {"tool_context": tool_context, "available_tools": available_tools}
+        extra = getattr(ctx, "extra", None) if ctx is not None else None
+        return (extra or {}).get(f"{capability_type}_allowlist")
+
+    async def _get_capability_context(self, capability_type: str, ctx: "AgentContext",
+                                      types: Optional[List[str]] = None) -> Dict[str, Any]:
+        """One capability type's roster, as the prompt's slots for it.
+
+        Four near-identical copies of this stood here, one per type, and the way
+        that failed is on the record: environment context was assembled by a mixin
+        only two agents inherited, so every other agent — including agents whose
+        environments were in their own ``env_names`` — got none of it. Reading the
+        manager through the capability table means a type is served by existing.
+
+        Returns the two slots a prompt template names: ``<type>_context`` (headed,
+        for the body) and ``available_<type>s`` (bare, for anywhere else).
+        """
+        entry = capability_type_entry(capability_type)
+        content = await entry.manager().get_instruction(
+            allowlist=self._capability_allowlist(capability_type, ctx), types=types,
+            level="brief")
+        heading = f"Available {entry.mount_type.capitalize()}"
+        available = content if content else f"[No {entry.mount_type} loaded.]"
+        return {f"{capability_type}_context": f"### {heading}\n{available}",
+                f"available_{entry.mount_type}": available}
+
+    async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """The tool roster, plus the Code Mode calling convention when it applies."""
+        slots = await self._get_capability_context("tool", ctx)
+        sdk = await self._code_mode_section(self._capability_allowlist("tool", ctx))
+        if sdk:
+            slots["tool_context"] = f"{slots['tool_context']}\n\n{sdk}"
+        return slots
 
     async def _get_inherited_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """What a forked child is told its parent had already done.
@@ -698,24 +733,12 @@ class Agent(BaseModel):
         )}
 
     async def _get_environment_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Get the environment context, the same way tools get theirs.
+        """The environment roster — each environment's own ENVIRONMENT.md body.
 
-        On the base class rather than on a mixin, and reading from the manager rather than
-        walking `info.actions`, because both of those were the same mistake: a mixin only
-        two agents inherited assembled this text themselves, which meant every other agent
-        got no environment context at all — including agents whose environments were in
-        their own `env_names`.
-
-        The text is each environment's `ENVIRONMENT.md`, which is where its rules and its
-        actions' arguments are written for the model to read.
+        That file is written for the model: it states the environment's rules and
+        its actions with their arguments, in one place a human edits and reviews.
         """
-        allowlist = ctx.extra.get("environment_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
-        content = await environment_manager.get_instruction(allowlist=allowlist)
-        available_environments = content if content else "[No environments loaded.]"
-        return {
-            "environment_context": f"### Available Environments\n{available_environments}",
-            "available_environments": available_environments,
-        }
+        return await self._get_capability_context("environment", ctx)
 
     async def _code_mode_section(self, allowlist: Optional[List[str]]) -> str:
         """Declare the visible tools as functions, for agents that hold `run_code_tool`.
@@ -740,36 +763,29 @@ class Agent(BaseModel):
         return ["worker"]
 
     async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Get the skill context from loaded skills via skill manager.
+        """The skill roster, filtered to the types this agent may see.
 
-        Honors an optional per-run allowlist in ``ctx.extra["skill_allowlist"]`` (a list
-        of skill names) — used by skill evaluation to run a "with-skill" vs a "baseline"
-        agent over the same task. ``None`` (default) = all skills of the allowed type;
-        an empty list = no skills (the baseline). Normal runs never set it, so behavior
-        is unchanged.
+        The type filter is the hard guardrail keeping worker SOPs out of the
+        MetaAgent and orchestration recipes out of workers, so it is applied here
+        rather than left to whatever allowlist a run happens to carry.
         """
-        allowlist = ctx.extra.get("skill_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
-        skill_content = await skill_manager.get_instruction(
-            allowlist=allowlist, types=self._allowed_skill_types()
-        )
-        available_skills = skill_content if skill_content else "[No skills loaded.]"
-        skill_context = f"### Available Skills\n{available_skills}"
-        return {"skill_context": skill_context, "available_skills": available_skills}
+        return await self._get_capability_context("skill", ctx, types=self._allowed_skill_types())
 
     async def _get_connector_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Get the connector context from loaded connectors (MCP servers) via connector manager.
+        """The connector roster.
 
         Concise by design (name/description/actions + CONNECTOR.md path). The agent
         reads a connector's CONNECTOR.md on demand for per-action argument details.
-
-        Honors an optional per-run allowlist in ``ctx.extra["connector_allowlist"]`` —
-        ``None`` (default) = all loaded connectors; an empty list = none (baseline).
         """
-        allowlist = ctx.extra.get("connector_allowlist") if (ctx is not None and getattr(ctx, "extra", None)) else None
-        connector_content = await connector_manager.get_instruction(allowlist=allowlist)
-        available_connectors = connector_content if connector_content else "[No connectors loaded.]"
-        connector_context = f"### Available Connectors\n{available_connectors}"
-        return {"connector_context": connector_context, "available_connectors": available_connectors}
+        return await self._get_capability_context("connector", ctx)
+
+    async def _get_plugin_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+        """The plugin roster — empty unless this run named the plugins it wants.
+
+        Opt-in rather than resident: the registry wraps hundreds of tools across
+        services most runs never touch, so one reaches a model only when asked for.
+        """
+        return await self._get_capability_context("plugin", ctx)
 
     async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Workflow discovery is opt-in; worker agents do not orchestrate workflows."""
@@ -889,6 +905,7 @@ class Agent(BaseModel):
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         agent_message_modules.update(await self._get_connector_context(ctx=ctx))
         agent_message_modules.update(await self._get_environment_context(ctx=ctx))
+        agent_message_modules.update(await self._get_plugin_context(ctx=ctx))
         agent_message_modules.update(await self._get_workflow_context(ctx=ctx))
         
         response = await prompt_manager(
@@ -1791,33 +1808,22 @@ class Agent(BaseModel):
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             return resp.message, False, None, None, None, None
-        if capability_type == "workflow":
-            from agentevolver.workflow import workflow_manager
-            response = await workflow_manager(route[1], input=call.input or {}, ctx=ctx)
+        if capability_type in _PLAIN_CAPABILITY_TYPES:
+            # Skill, connector, environment, workflow and plugin differ only in which
+            # manager answers and whether the route names a member. Four copies of
+            # these five lines is where "the fifth one behaves slightly differently"
+            # came from, so they run one path.
+            entry = capability_type_entry(capability_type)
+            member = route[2] if len(route) > 2 else ""
+            label = f"{capability_type.capitalize()} {route[1]!r}" + (f" action {member!r}" if member else "")
+            manager = entry.manager()
+            response = (await manager(name=route[1], action=member, input=call.input or {}, ctx=ctx)
+                        if entry.container
+                        else await manager(name=route[1], input=call.input or {}, ctx=ctx))
             if not response.success:
-                raise RuntimeError(response.message or f"Workflow {route[1]!r} failed")
-            logger.info(f"| ✅ [{self.name}] Workflow '{route[1]}' completed")
+                raise RuntimeError(response.message or f"{label} failed")
+            logger.info(f"| ✅ [{self.name}] {label} completed")
             return response.message, False, None, None, None, None
-        if capability_type == "skill":
-            response = await skill_manager(name=route[1], input=call.input, ctx=ctx)
-            if not response.success:
-                raise RuntimeError(response.message or f"Skill {route[1]!r} failed")
-            logger.info(f"| ✅ [{self.name}] Skill '{route[1]}' completed (success={response.success})")
-            return response.message, False, None, None, None, None
-        if capability_type == "connector":
-            response = await connector_manager(name=route[1], input={"action": route[2], "args": call.input}, ctx=ctx)
-            if not response.success:
-                raise RuntimeError(response.message or f"Connector {route[1]!r} failed")
-            logger.info(f"| ✅ [{self.name}] Connector '{route[1]}' action '{route[2]}' completed (success={response.success})")
-            return response.message, False, None, None, None, None
-        if capability_type == "environment":
-            from agentevolver.environment.server import environment_manager
-            response = await environment_manager(name=route[1], action=route[2], input=call.input, ctx=ctx)
-            if not response.success:
-                raise RuntimeError(response.message or f"Environment {route[1]!r} action {route[2]!r} failed")
-            action_result = response.message
-            logger.info(f"| ✅ [{self.name}] Environment '{route[1]}' action '{route[2]}' completed")
-            return action_result, False, None, None, None, None
         if capability_type == "tool":
             passthrough = {"sub_dispatch": bridge} if bridge is not None else {}
             tool_response = await tool_manager(

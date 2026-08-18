@@ -10,6 +10,10 @@ class DuckduckgoDuckDuckGoSearchRunTool(PluginTool):
     name: str = 'duck_duck_go_search_run'
     display_name: str = 'DuckDuckGo Search'
     description: str = 'Search the web using DuckDuckGo with customizable result limits'
+    output = {"query": "text", "records": "list", "count": "any"}
+
+    def _render(self, data):
+        return f"DuckDuckGo returned {data['count']} result(s) for '{data['query']}'."
 
     async def __call__(self, input_value: str = "", max_results: int = 5, max_snippet_length: int = 100, **kwargs) -> Response:
         query = str(input_value or "").strip()
@@ -23,5 +27,4 @@ class DuckduckgoDuckDuckGoSearchRunTool(PluginTool):
             return self._fail(f"duckduckgo.search: {type(exc).__name__}: {exc}")
         lines = [ln for ln in full.split("\n") if ln.strip()][: int(max_results)]
         records = [{"content": ln, "snippet": ln[: int(max_snippet_length)]} for ln in lines]
-        return self._ok(f"DuckDuckGo returned {len(records)} results for '{query}'.",
-                        query=query, records=records, count=len(records))
+        return self._ok(query=query, records=records, count=len(records))

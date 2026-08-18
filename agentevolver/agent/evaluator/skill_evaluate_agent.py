@@ -15,7 +15,7 @@ class SkillEvaluateAgent(Agent):
 
     Produces no registrable artifact, so its ``__call__`` just runs the base-class
     standard loop. The target skill is named in the task; the agent should call
-    ``inspect_skill_tool`` to obtain its registry facts and directory before reading it."""
+    ``inspect_capability_tool`` to obtain its registry facts and directory before reading it."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 

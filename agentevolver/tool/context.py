@@ -1,10 +1,10 @@
 """Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
 import os
 import inspect
+import re
 import asyncio
 from asyncio_atexit import register as async_atexit_register
-from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
-from datetime import datetime
+from typing import Any, Dict, List, Type, Optional
 import inflection
 import json
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -37,6 +37,74 @@ def _field_default(tool_cls, name):
     """A declared field's default, or None when the tool does not declare it."""
     field = tool_cls.model_fields.get(name)
     return getattr(field, "default", None) if field is not None else None
+
+
+
+#: How much of a capability's instruction to render. Two levels, because there are
+#: two callers and they want different things:
+#:
+#: ``brief`` — name, description, guidance. What a prompt carries for every resident
+#:     capability, every step.
+#: ``full``  — plus the examples. What ``inspect_capability_tool`` returns for the one
+#:     capability an agent has stopped to ask about.
+#:
+#: The parameters are at neither level. They are derived from the signature and
+#: travel in the request's own ``tools`` array, which is how the model calls anything
+#: at all — printing them here would be a second spelling of one contract. The one
+#: place they are still rendered is `inspect_capability_tool`, which appends
+#: `get_schema(format="md")` for an agent evaluating a capability that is *not* in
+#: its own tool list and so has never been sent the schema.
+#:
+#: A name-only level was written and removed before it had a caller. If a roster ever
+#: grows past what guidance can afford, it comes back then, with the caller in hand.
+INSTRUCTION_LEVELS = ("brief", "full")
+
+#: Legacy blob sections that restate something else. ``Function`` restates the
+#: description, ``Parameters`` restates the schema.
+_BLOB_GUIDANCE_SECTIONS = frozenset({"guidance", "actions", "returns"})
+
+
+def _blob_sections(instruction: str) -> Dict[str, str]:
+    """Split an authored ``_INSTRUCTION`` blob into its ``## `` sections, lowercased.
+
+    Only for tools that have not been split into fields — a tool written before the
+    split, or one an optimizer generated at runtime from the old template.
+    """
+    sections: Dict[str, str] = {}
+    # `##` only: a deeper heading belongs to the section above it, and splitting on
+    # every level lets a sub-heading restart a section that was being skipped.
+    for block in re.split(r"(?m)^(?=##[ \t])", (instruction or "").strip()):
+        head, _, rest = block.partition("\n")
+        heading = re.match(r"##[ \t]+(.+?)[ \t]*#*[ \t]*$", head)
+        if heading:
+            label = heading.group(1).strip().lower().split(" (")[0]
+            sections[label] = rest.strip()
+    return sections
+
+
+def _instruction_at(config: Any, level: str = "brief") -> str:
+    """One tool's instruction at ``level``, composed from its fields.
+
+    ``guidance`` and ``examples`` are the two parts a tool authors; the rest of what
+    an instruction used to say is either the description above it or the schema
+    beside it. A tool that still carries only the old blob is read out of it here
+    rather than being made to migrate first.
+    """
+    guidance = (getattr(config, "guidance", "") or "").strip()
+    examples = list(getattr(config, "examples", None) or [])
+    if not guidance and not examples:
+        sections = _blob_sections(getattr(config, "instruction", "") or "")
+        guidance = "\n\n".join(
+            body for label, body in sections.items()
+            if label in _BLOB_GUIDANCE_SECTIONS and body)
+        examples = [line for line in (sections.get("example") or sections.get("examples") or "").splitlines()
+                    if line.strip()]
+    parts = []
+    if guidance:
+        parts.append(f"## Guidance\n{guidance}")
+    if level == "full" and examples:
+        parts.append("## Example\n" + "\n".join(examples))
+    return "\n\n".join(parts)
 
 
 class ToolContextManager(BaseModel):
@@ -755,20 +823,24 @@ class ToolContextManager(BaseModel):
         logger.info(f"| 🔄 Restored tool {tool_name} to version {version}")
         return restored_config
     
-    async def get_instruction(self, allowlist=None, types=None) -> str:
-        """Assemble the tool instruction text for prompt injection, on demand.
+    async def get_instruction(self, allowlist=None, types=None, level: str = "brief") -> str:
+        """Assemble the tool instruction text, cut to ``level``.
 
-        Each tool renders its name + description + full `_INSTRUCTION` (Function /
-        Guidance / Parameters / Example) so the agent has the arguments inline and
-        rarely needs `inspect_tool`. These are the agent's resident tools (its
-        configured set), so the set is small and inlining the instruction is affordable.
+        Args:
+            allowlist: Which tools to include. ``None`` = all loaded, ``[]`` = none,
+                ``[names]`` = only those.
+            types: Accepted for a uniform manager interface; tools have no type filter.
+            level: One of :data:`INSTRUCTION_LEVELS`. ``brief`` is what a prompt
+                carries — guidance, but not the parameters the request's own ``tools``
+                array already states. ``full`` adds the examples, and is what
+                ``inspect_capability_tool`` returns for a tool an agent has stopped
+                to ask about.
 
-        `allowlist` (list of tool names) selects which tools to include: None = all
-        loaded tools; [] = none; [names] = only those. Cached by allowlist and reused
-        until the registry changes (register/update/remove call `_invalidate_instruction`).
-        `types` is accepted for a uniform manager interface but tools have no type filter.
+        Returns:
+            The rendered cards, joined. Cached per (allowlist, level) and reused until
+            the registry changes (``_invalidate_instruction``).
         """
-        key = None if allowlist is None else tuple(allowlist)
+        key = (None if allowlist is None else tuple(allowlist), level)
         if key == self._instr_key:
             return self._instr_cache
         targets = list(self._tool_configs.keys()) if allowlist is None else allowlist
@@ -777,10 +849,11 @@ class ToolContextManager(BaseModel):
             info = await self.get_info(name)
             if info is None:
                 continue
+            description = info.description or ""
             block = render_capability_card(
                 name=info.name,
-                description=(info.description or ""),
-                body=(getattr(info, "instruction", "") or ""),
+                description=description,
+                body=_instruction_at(info, level),
             )
             parts.append(block)
         text = "\n\n".join(parts)

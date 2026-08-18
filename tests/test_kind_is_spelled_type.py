@@ -45,8 +45,6 @@ ALLOWED = {
     "tests/test_gateway_contract.py": "asserts the discriminator is rendered",
     # Capability family, beside a capability's own declared `type`.
     "agentevolver/gateway/service.py": "capability family beside `CapabilityDetail.type`",
-    "agentevolver/plan/server.py": "capability family",
-    "agentevolver/hook/default/plan_mode.py": "capability family",
     "frontend/src/App.tsx": "capability family beside `CapabilityDetail.type`",
     "tests/test_gateway.py": "capability family",
     "tests/test_plan_mode.py": "capability family",

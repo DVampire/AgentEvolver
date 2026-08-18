@@ -13,6 +13,8 @@ class EmpiriolabsTool(PluginTool):
     display_name: str = 'EmpirioLabs AI'
     description: str = 'Generates text using EmpirioLabs AI LLMs (OpenAI compatible).'
 
+    output = {'text': 'text'}
+
     async def __call__(self, prompt: str = "", model: str = "", api_key: str = "", **kwargs) -> Response:
         key = self._secret(api_key, "EMPIRIOLABS_API_KEY")
         if not prompt or not key:

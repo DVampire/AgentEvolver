@@ -14,8 +14,7 @@ from agentevolver.logger import logger
 from agentevolver.config import config
 from agentevolver.skill.context import SkillContextManager
 from agentevolver.skill.types import SkillConfig, SkillContext
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.session import SessionContext
+from agentevolver.response.types import Response
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.capability import CapabilitySchema, SchemaSource
 
@@ -190,14 +189,16 @@ class SkillManagerServer(BaseModel):
     # Context & Contract
     # ------------------------------------------------------------------
 
-    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+    async def get_instruction(self, allowlist: Optional[List[str]] = None,
+                              types: Optional[List[str]] = None,
+                              level: str = "brief") -> str:
         """Assemble the skill instruction text for prompt injection.
 
         `allowlist` (skill names) selects which skills to include (None = all, [] = none).
         `types` filters by frontmatter type (["worker"] for sub-agents, ["orchestrator"]
         for the MetaAgent). Cached per (allowlist, types) until the registry changes.
         """
-        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
+        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types, level=level)
 
     async def function_callings(
         self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None

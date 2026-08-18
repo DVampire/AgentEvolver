@@ -15,7 +15,7 @@ class ToolEvaluateAgent(Agent):
 
     Produces no registrable artifact, so its ``__call__`` just runs the base-class
     standard loop. The target tool is named in the task; the agent should call
-    ``inspect_tool`` to obtain its instruction, registry facts, and source path."""
+    ``inspect_capability_tool`` to obtain its instruction, registry facts, and source path."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 

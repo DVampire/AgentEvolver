@@ -216,6 +216,9 @@ class EnvironmentConfig(BaseModel):
     description: str = Field(description="The description of the environment")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the environment")
     rules: str = Field(description="The rules of the environment")
+    #: Absolute path to ENVIRONMENT.md, the way a plugin carries ``manifest_path``.
+    #: The roster names the file so an agent can read the part it was not given.
+    manifest_path: str = Field(default="", description="Absolute path to ENVIRONMENT.md")
     version: str = Field(default="1.0.0", description="Version of the environment")
     enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
     
@@ -233,6 +236,7 @@ class EnvironmentConfig(BaseModel):
             "description": self.description,
             "metadata": self.metadata,
             "rules": self.rules,
+            "manifest_path": self.manifest_path,
             "version": self.version,
             "enable_evolving": self.enable_evolving,
             

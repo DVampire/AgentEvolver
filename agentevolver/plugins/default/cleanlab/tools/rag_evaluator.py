@@ -13,6 +13,11 @@ class CleanlabRagEvaluatorTool(PluginTool):
     display_name: str = 'Cleanlab RAG Evaluator'
     description: str = 'Evaluates context, query, and response from a RAG pipeline using Cleanlab and outputs trust metrics.'
 
+    output = {'score': 'any'}
+
+    def _render(self, data):
+        return f"RAG trust score: {data['score']}."
+
     async def __call__(self, query: str = "", context: str = "", response: str = "", api_key: str = "", model: str = "gpt-4o-mini", **kwargs) -> Response:
         key = self._secret(api_key, "CLEANLAB_TLM_API_KEY", "CLEANLAB_API_KEY")
         if not query or not response or not key:
@@ -25,4 +30,4 @@ class CleanlabRagEvaluatorTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"cleanlab.rag_evaluator: {type(exc).__name__}: {exc}")
         score = result.get("trustworthiness_score", 0.0) if isinstance(result, dict) else result
-        return self._ok(f"RAG trust score: {score}.", score=score)
+        return self._ok(score=score)

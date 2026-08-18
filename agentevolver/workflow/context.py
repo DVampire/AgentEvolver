@@ -162,9 +162,26 @@ class WorkflowContextManager(BaseModel):
 
         return sorted((item for item in definitions if score(item)), key=score, reverse=True)
 
-    def get_instruction(self, allowlist: Optional[List[str]] = None) -> str:
-        """Render the compact MetaAgent roster; full HTML stays in inspect_workflow."""
-        key = None if allowlist is None else tuple(allowlist)
+    def get_instruction(self, allowlist: Optional[List[str]] = None,
+                        types: Optional[List[str]] = None,
+                        level: str = "brief") -> str:
+        """Render the workflow roster, cut to ``level``.
+
+        Args:
+            allowlist: Which workflows to include. ``None`` = every active one,
+                ``[]`` = none, ``[names]`` = only those.
+            types: Accepted for a uniform manager interface; workflows have no
+                type filter.
+            level: ``brief`` is the contract a caller needs to choose and call one
+                — name, description, inputs, outputs, what it claims to be for.
+                ``full`` adds the compiled HTML, which is the definition itself and
+                belongs to an agent rewriting or evaluating a workflow rather than
+                to every step of every run.
+
+        Returns:
+            The rendered cards, joined. Cached per (allowlist, level).
+        """
+        key = (None if allowlist is None else tuple(allowlist), level)
         if key in self._instruction_cache:
             return self._instruction_cache[key]
         names = self.list() if allowlist is None else allowlist
@@ -175,10 +192,15 @@ class WorkflowContextManager(BaseModel):
                 continue
             inputs = ", ".join(item.inputs) or "none"
             tags = ", ".join(item.tags) or "none"
-            cards.append(
-                f"- **{item.name}** (v{item.version}): {item.description or item.name}\n"
-                f"  Inputs: {inputs}; Tags: {tags}"
-            )
+            card = [f"- **{item.name}** (v{item.version}): {item.description or item.name}",
+                    f"  Inputs: {inputs}; Tags: {tags}"]
+            if item.applicability:
+                card.append(f"  Applicability: {item.applicability}")
+            if item.outputs:
+                card.append(f"  Outputs: {item.outputs}")
+            if level == "full" and (item.source or "").strip():
+                card.append(f"\n```html\n{item.source.strip()}\n```")
+            cards.append("\n".join(card))
         text = "\n".join(cards)
         self._instruction_cache[key] = text
         return text

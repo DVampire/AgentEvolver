@@ -54,13 +54,15 @@ class ToolManagerServer(BaseModel):
         
         logger.info("| ✅ Tools initialization completed")
         
-    async def get_instruction(self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None) -> str:
+    async def get_instruction(self, allowlist: Optional[List[str]] = None,
+                              types: Optional[List[str]] = None,
+                              level: str = "brief") -> str:
         """Assemble the tool instruction text for prompt injection.
 
         `allowlist` (list of tool names) selects which tools to include: None = all;
         [] = none; [names] = only those. Cached by allowlist until the registry changes.
         """
-        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types)
+        return await self._ensure_context_manager().get_instruction(allowlist=allowlist, types=types, level=level)
 
     async def function_callings(
         self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None

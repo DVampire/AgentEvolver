@@ -23,7 +23,7 @@ process every time, no state, no figures, and the tools are the point.
 from __future__ import annotations
 
 import functools
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -40,12 +40,10 @@ _DESCRIPTION = (
     "costs one turn instead of one turn per call."
 )
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Run a Python program that calls your other tools directly, so a batch of tool work costs
 one turn instead of one turn per call.
 
-## Guidance
 The code you send is the BODY of an async function: `await` and `return` work at the top
 level of it. Call a tool as `await tools.<tool_name>(argument=value)`, keyword arguments
 only, using the arguments documented in that tool's own instruction. Each call returns the
@@ -67,14 +65,11 @@ process every time.
 
 Independent reads may overlap with `asyncio.gather`. Calls that change something should
 run one at a time, in the order you want them applied.
-
-## Parameters
-- code (str): The program — the body of an async function.
-- description (str, optional): What the program does, 5-10 words, shown in the UI.
-
-## Example
-{"name": "run_code_tool", "args": {"code": "found = []\\nfor path in ['a.py', 'b.py']:\\n    text = await tools.read_file_tool(file_path=path)\\n    if 'TODO' in text:\\n        found.append(path)\\nprint(found)\\nreturn f'{len(found)} files have TODOs'", "description": "Find which files carry TODOs"}}
 """
+
+_EXAMPLES = [
+    '{"name": "run_code_tool", "args": {"code": "found = []\\\\nfor path in [\'a.py\', \'b.py\']:\\\\n    text = await tools.read_file_tool(file_path=path)\\\\n    if \'TODO\' in text:\\\\n        found.append(path)\\\\nprint(found)\\\\nreturn f\'{len(found)} files have TODOs\'", "description": "Find which files carry TODOs"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -87,7 +82,8 @@ class RunCodeTool(Tool):
     #: held together by a test instead.
     name: str = "run_code_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     #: The program is arbitrary code, and the tools it calls are whatever the agent holds.

@@ -18,8 +18,19 @@ introspected into native function-calling schemas and routed through `tool_manag
 | `execution.py` | Immutable call identity, monotonic policy, execution phases, and stable errors |
 | `context.py` | Registration, dynamic loading, versions, and instances |
 | `server.py` | Public schemas and the only supported execution entry point |
-| `default/` | Built-in framework tools, including inspect tools |
+| `default/` | Built-in framework tools, including `inspect_capability_tool` |
 | `other/` | Optional integrations |
+
+`inspect_capability_tool` is one tool for all seven capability types rather than one per
+type: the six it replaced asked different managers and printed a few different lines, and
+everything structural about a type — which manager owns it, whether its members are
+separately callable — now comes from `CAPABILITY_TYPES` instead of a branch.
+
+A tool's prompt card carries its guidance and examples, not its parameters: those are
+derived from the signature and its `Args:` docstring and travel in the request's own
+`tools` array, so a prose copy beside them would be a third spelling of one contract
+(`utils.string_utils.instruction_for_prompt`). `inspect_capability_tool` returns the whole
+instruction when an agent wants it.
 
 Tools should remain small and atomic. Reusable guidance belongs to Skill; multi-step
 orchestration belongs to Workflow. The former `tool/workflow/` location has been retired

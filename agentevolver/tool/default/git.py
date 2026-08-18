@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from agentevolver.tool.types import Tool
@@ -12,11 +12,7 @@ from agentevolver.config import config
 
 _DESCRIPTION = "Run git operations inside the project workspace_root."
 
-_INSTRUCTION = """
-## Function
-Run git operations inside the project workspace_root.
-
-## Guidance
+_GUIDANCE = """
 Available actions:
 - status: Show working tree status.
 - diff: Show unstaged changes. Optionally pass a file path.
@@ -26,20 +22,15 @@ Available actions:
 - commit: Create a commit. Requires message parameter.
 - checkout: Checkout a branch or restore a file. Pass target (branch name or file path).
 - branch: List branches.
-
-## Parameters
-- action (str): One of: status, diff, diff_staged, log, add, commit, checkout, branch.
-- path (str, optional): File or directory path for diff/add/checkout actions.
-- message (str, optional): Commit message for commit action.
-- count (int, optional): Number of log entries to show (default 10).
-
-## Example
-{"name": "git_tool", "args": {"action": "status"}}
-{"name": "git_tool", "args": {"action": "diff", "path": "src/foo.py"}}
-{"name": "git_tool", "args": {"action": "add", "path": "."}}
-{"name": "git_tool", "args": {"action": "commit", "message": "fix: handle edge case in parser"}}
-{"name": "git_tool", "args": {"action": "log", "count": 5}}
 """
+
+_EXAMPLES = [
+    '{"name": "git_tool", "args": {"action": "status"}}',
+    '{"name": "git_tool", "args": {"action": "diff", "path": "src/foo.py"}}',
+    '{"name": "git_tool", "args": {"action": "add", "path": "."}}',
+    '{"name": "git_tool", "args": {"action": "commit", "message": "fix: handle edge case in parser"}}',
+    '{"name": "git_tool", "args": {"action": "log", "count": 5}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -48,7 +39,8 @@ class GitTool(Tool):
 
     name: str = "git_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={})
     enable_evolving: bool = Field(default=False)
     timeout: int = Field(default=60)

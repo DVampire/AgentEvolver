@@ -5,7 +5,7 @@ category: data
 type: vectorstore
 tools: 1
 implemented: 1
-credentials: [OPENAI_API_KEY]
+credentials: [NEEDLE_API_KEY, OPENAI_API_KEY]
 requirements: [langchain_community, langchain_openai]
 version: "1.0.0"
 ---

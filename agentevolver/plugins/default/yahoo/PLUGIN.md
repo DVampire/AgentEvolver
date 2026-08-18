@@ -21,6 +21,10 @@ Fetch market data (OHLCV price history) from Yahoo Finance.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `yahoo.history` → `data` keys: count, interval, range, records, symbol
+
 ## Credentials
 
 None — these tools need no credential.

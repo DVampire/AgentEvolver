@@ -11,6 +11,11 @@ class SearchapiSearchTool(PluginTool):
     display_name: str = 'SearchApi'
     description: str = 'Calls the SearchApi API with result limiting. Supports Google, Bing and DuckDuckGo.'
 
+    output = {'query': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"SearchApi returned {data['count']} results for '{data['query']}'."
+
     async def __call__(self, input_value: str = "", api_key: str = "", engine: str = "google", max_results: int = 5, max_snippet_length: int = 100, **kwargs) -> Response:
         query = str(input_value or "").strip()
         if not query:
@@ -27,5 +32,4 @@ class SearchapiSearchTool(PluginTool):
         organic = (full or {}).get("organic_results", [])[: int(max_results)]
         records = [{"title": r.get("title", "")[: int(max_snippet_length)], "link": r.get("link", ""),
                     "snippet": r.get("snippet", "")[: int(max_snippet_length)]} for r in organic]
-        return self._ok(f"SearchApi returned {len(records)} results for '{query}'.",
-                        query=query, records=records, count=len(records))
+        return self._ok(query=query, records=records, count=len(records))

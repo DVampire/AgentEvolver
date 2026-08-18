@@ -33,7 +33,7 @@ fragment compilation remains available only for ephemeral `run_html()` and unit 
 Workflow follows the same registry model as Tool and Skill. Every active registration is
 projected to MetaAgent as a native function named `workflow__<name>` using the HTML
 input contract. The prompt receives only a compact roster. The read-only
-`inspect_workflow` tool supplies full HTML, compiled nodes, source location, and registry
+`inspect_capability_tool` tool supplies full HTML, compiled nodes, source location, and registry
 facts on demand.
 
 `get_schema(name, format="json"|"md")` follows the shared capability schema protocol.

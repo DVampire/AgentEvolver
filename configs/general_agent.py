@@ -28,7 +28,7 @@ tool_names = [
     'bash_tool',
     'code_interpreter_tool',
     'done_tool',
-    'inspect_tool',
+    'inspect_capability_tool',
     'todo_tool',
 ]
 skill_names = [

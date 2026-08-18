@@ -15,21 +15,14 @@ from agentevolver.response.types import Response, ResponseType
 
 _DESCRIPTION = "Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does."
 
-_INSTRUCTION = """
-## Function
-Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does.
-
-## Guidance
+_GUIDANCE = """
 - Use this tool to create new files.
 - For modifying existing files, prefer edit_file_tool to make targeted changes.
-
-## Parameters
-- path (str): Absolute path to the file to write.
-- content (str): The full content to write to the file.
-
-## Example
-{"name": "write_file_tool", "args": {"path": "/abs/path/to/new_file.py", "content": "print('hello')"}}
 """
+
+_EXAMPLES = [
+    '{"name": "write_file_tool", "args": {"path": "/abs/path/to/new_file.py", "content": "print(\'hello\')"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -40,7 +33,8 @@ class WriteFileTool(Tool):
     #: same local-I/O budget as reading.
     call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = True

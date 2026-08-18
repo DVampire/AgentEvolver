@@ -13,6 +13,11 @@ class GitTool(PluginTool):
     display_name: str = 'Git'
     description: str = ''
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Loaded {data['count']} files from the repo."
+
     async def __call__(self, clone_url: str = "", repo_path: str = "", branch: str = "main", file_filter: str = "", **kwargs) -> Response:
         import tempfile
         if not clone_url and not repo_path:
@@ -30,4 +35,4 @@ class GitTool(PluginTool):
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"git: {type(exc).__name__}: {exc}")
         records = [{"content": d.page_content, "metadata": d.metadata} for d in docs]
-        return self._ok(f"Loaded {len(records)} files from the repo.", records=records, count=len(records))
+        return self._ok(records=records, count=len(records))

@@ -18,9 +18,13 @@ Unstructured tools.
 
 | id | name | status | what it does |
 |----|------|--------|--------------|
-| `unstructured.unstructured` | Unstructured API | ✅ | Unstructured API |
+| `unstructured.unstructured` | Unstructured API | ✅ |  |
 
 All 1 tools are implemented.
+
+Declared result shapes:
+
+- `unstructured.unstructured` → `data` keys: count, records
 
 ## Credentials
 

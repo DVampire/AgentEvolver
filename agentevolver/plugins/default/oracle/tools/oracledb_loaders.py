@@ -15,6 +15,11 @@ class OracledbLoadersTool(PluginTool):
     category: str = 'data'
     type: str = 'tool'
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Loaded {data['count']} rows."
+
     async def __call__(self, user: str = "", password: str = "", dsn: str = "", query: str = "", **kwargs) -> Response:
         for r in ("user", "password", "dsn"):
             if not locals().get(r):
@@ -28,4 +33,4 @@ class OracledbLoadersTool(PluginTool):
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"oracle.loaders: {type(exc).__name__}: {exc}")
-        return self._ok(f"Loaded {len(rows)} rows.", records=rows, count=len(rows))
+        return self._ok(records=rows, count=len(rows))

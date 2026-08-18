@@ -15,7 +15,7 @@ class EnvironmentEvaluateAgent(Agent):
 
     Produces no registrable artifact, so its ``__call__`` just runs the base-class
     standard loop. The target environment is named in the task; the agent should call
-    ``inspect_environment_tool`` to obtain its registry facts and file paths before reading it."""
+    ``inspect_capability_tool`` to obtain its registry facts and file paths before reading it."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 

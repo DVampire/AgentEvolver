@@ -13,6 +13,8 @@ class NotionPageContentViewerTool(NotionToolBase):
     display_name: str = 'Page Content Viewer '
     description: str = 'Retrieve the content of a Notion page as plain text.'
 
+    output = {'records': 'list', 'count': 'any'}
+
     async def __call__(self, api_key: str = "", page_id: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:

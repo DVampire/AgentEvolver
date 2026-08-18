@@ -25,7 +25,7 @@ would have fixed a run's largest defect. The cost is real — no state across ca
 captured figures — so the kernel stays the default.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -38,11 +38,7 @@ from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Execute code in a persistent interpreter and return everything it produced."
 
-_INSTRUCTION = """
-## Function
-Execute code in a persistent interpreter and return everything it produced.
-
-## Guidance
+_GUIDANCE = """
 State persists across calls: variables, imports and open files from one call are
 still there in the next. The interpreter starts in the workspace, so relative
 paths mean what they mean to bash and to the files pane — code can read the
@@ -50,23 +46,17 @@ files you just wrote.
 
 Figures come back as images rather than as `<Figure ...>`: plot with matplotlib
 and the picture is captured alongside the text.
-
-## Parameters
-- code (str): The code to execute.
-- language (str, optional): One of python (default), bash, javascript, typescript, r.
-
-## Example
-{"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}
 """
 
+_EXAMPLES = [
+    '{"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}',
+]
 #: Used when ``use_kernel=False``. The persistence and figure-capture promises are
 #: dropped rather than softened: an agent that believes a variable survived the
 #: previous call writes code that silently reads a stale name.
-_INSTRUCTION_ONE_SHOT = """
-## Function
+_ONE_SHOT_GUIDANCE = """
 Run a self-contained script and return everything it produced.
 
-## Guidance
 Each call is a fresh process. NOTHING carries over between calls — no variables,
 no imports, no open files. Write each script so it stands alone: re-read what it
 needs from disk and write what it produces back to disk.
@@ -75,15 +65,11 @@ Figures are not captured. Save plots to a file and inspect the file.
 
 The script runs in the same filesystem your shell commands see, so relative paths
 and the files you just wrote mean the same thing here.
-
-## Parameters
-- code (str): The script to run.
-- language (str, optional): One of python (default), bash, javascript, typescript, r.
-
-## Example
-{"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}
 """
 
+_ONE_SHOT_EXAMPLES = [
+    '{"name": "code_interpreter_tool", "args": {"code": "print(2 + 2)", "language": "python"}}',
+]
 #: How to run a one-shot script per language. bash and python are the ones that
 #: matter in practice; the rest are here so an image that ships them works without
 #: editing this table.
@@ -116,7 +102,8 @@ class CodeInterpreterTool(Tool):
 
     name: str = "code_interpreter_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="danger_full_access", description="Runs code in the project's kernel.")
@@ -132,11 +119,12 @@ class CodeInterpreterTool(Tool):
 
     def __init__(self, enable_evolving: bool = False, use_kernel: bool = True, **kwargs):
         super().__init__(enable_evolving=enable_evolving, use_kernel=use_kernel, **kwargs)
-        # The instruction is what the agent plans against, so it has to describe the
+        # The guidance is what the agent plans against, so it has to describe the
         # mode actually in force — promising persistence that is not there produces
         # scripts that read variables no longer in scope.
         if not use_kernel:
-            self.instruction = _INSTRUCTION_ONE_SHOT
+            self.guidance = _ONE_SHOT_GUIDANCE
+            self.examples = list(_ONE_SHOT_EXAMPLES)
 
     async def _run_one_shot(self, code: str, language: str, ctx: Any) -> Response:
         """Write the script out and run it once as a subprocess.
@@ -185,7 +173,12 @@ class CodeInterpreterTool(Tool):
                             message=f"Error running one-shot {language}: {e}")
 
     async def __call__(self, code: str, language: str = "python", **kwargs) -> Response:
-        """Execute ``code`` — in this project's kernel, or as a one-shot script."""
+        """Execute ``code`` — in this project's kernel, or as a one-shot script.
+
+        Args:
+            code: The code to execute.
+            language: One of python (default), bash, javascript, typescript, r.
+        """
         ctx = kwargs.get("ctx")
         if not self.use_kernel:
             return await self._run_one_shot(code, language, ctx)

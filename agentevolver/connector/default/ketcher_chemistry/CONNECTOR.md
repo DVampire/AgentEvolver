@@ -12,8 +12,43 @@ connection:
     - server.py
 actions:
   - open_sketcher
+action_schemas:
+  open_sketcher:
+    properties:
+      from_format:
+        default: smiles
+        title: From Format
+        type: string
+      height:
+        default: 450
+        title: Height
+        type: integer
+      structure:
+        default: ''
+        title: Structure
+        type: string
+      title:
+        default: ''
+        title: Title
+        type: string
+      width:
+        default: 600
+        title: Width
+        type: integer
+    title: open_sketcherArguments
+    type: object
+action_descriptions:
+  open_sketcher: "Open a 2D molecule sketcher and return it as a self-contained HTML\
+    \ artifact.\n\n    Lays out a molecule in 2D and produces a \"sketch pad\" HTML\
+    \ document: a rendered 2D\n    depiction alongside the editable MOL block (Ketcher's\
+    \ native format) and the molecule's\n    identifiers (canonical SMILES, formula,\
+    \ MW, InChIKey). The HTML is fully self-contained\n    (inline SVG + CSS, no external\
+    \ assets) so it can be saved directly as an artifact.\n\n    Args:\n        structure:\
+    \ the starting molecule (e.g. a SMILES string); leave empty for a blank pad.\n \
+    \       from_format: input format — smiles / mol / sdf / inchi (default smiles).\n\
+    \        title: optional heading for the sketch pad.\n        width: depiction width\
+    \ in px (default 600).\n        height: depiction height in px (default 450)."
 ---
-
 # Ketcher Chemistry
 
 The agent-facing counterpart of **Ketcher**, EPAM's interactive 2D molecule sketcher.

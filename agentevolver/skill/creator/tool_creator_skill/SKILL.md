@@ -28,14 +28,27 @@ The sub-agents are headless: each runs one phase autonomously and returns a resu
 
 **Start from the template**: read `references/tool_template.py`, copy it, and adapt — it already encodes the convention below.
 
-### Anatomy: description + instruction (progressive disclosure)
+### Anatomy: four fields, and one thing you do not write
 
-A tool splits its docs in two, so the agent's tool_context stays small and the full detail is fetched on demand via `inspect_tool`:
-- **`_DESCRIPTION`** — one line: what the tool does. This is all the agent sees in tool_context.
-- **`_INSTRUCTION`** — the full instruction in **four markdown blocks**: `## Function`, `## Guidance`, `## Parameters`, `## Example`. Fetched via `inspect_tool` when the agent needs the arguments.
+A tool's documentation is its fields. Three you write, one is derived, and the split
+decides what a prompt carries every step versus what an agent fetches when it stops to ask:
+
+| field | who writes it | where it goes |
+|---|---|---|
+| `_DESCRIPTION` | you | the card's subtitle **and** the call schema's `description` |
+| `_GUIDANCE` | you | the prompt, for every resident tool, every step |
+| `_EXAMPLES` | you | only `inspect_capability_tool` — worth reading before a first call, not worth carrying afterwards |
+| **parameters** | **nobody** | derived from `__call__`'s signature and its `Args:` docstring, and sent in the request's own `tools` array |
+
+**Do not write a `## Parameters` block.** The arguments a model is checked against come
+from the signature; a prose copy is a third spelling of one contract, and it is the copy
+that goes stale. Document each argument in the `Args:` docstring instead — that is what
+becomes the schema's per-argument description.
+
+**Do not write a `## Function` block** either. That was the description again.
 
 ```python
-from typing import Any, Dict
+from typing import Any, Dict, List
 from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
@@ -43,19 +56,13 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "One line: what the tool does."
 
-_INSTRUCTION = """
-## Function
-What the tool does, in a sentence or two.
-
-## Guidance
-When and how to use it; caveats; when NOT to use it.
-
-## Parameters
-- arg_name (type): what it is.
-
-## Example
-{"name": "my_tool", "args": {"arg_name": "value"}}
+_GUIDANCE = """
+When and how to use it; caveats; when NOT to use it. What the call schema cannot say.
 """
+
+_EXAMPLES = [
+    '{"name": "my_tool", "args": {"arg_name": "value"}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -63,7 +70,8 @@ class MyTool(Tool):
     """One-line purpose."""
     name: str = "my_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
 
@@ -79,7 +87,8 @@ class MyTool(Tool):
 
 Design principles:
 - `__call__` must return a `Response` (`success`, `message`, optional `data`); catch expected failures and return `success=False` with an actionable message rather than raising.
-- Keep args explicit and JSON-friendly. Document every arg in the `## Parameters` block.
+- Keep args explicit and JSON-friendly. Document every arg in `__call__`'s Google-style
+  `Args:` docstring — that is what becomes the schema's per-argument description.
 - If the tool needs the current session, accept `ctx` via `**kwargs`. Do heavyweight imports **inside** `__call__` to avoid circular imports at module load.
 
 ### Verify and register
@@ -90,18 +99,20 @@ After writing: `python -m py_compile /abs/path/{name}.py`. When it compiles, put
 
 ## Evaluating a tool
 
-Call `inspect_tool` on the target — it returns the full instruction plus registry facts (version, enable_evolving, source path). Score across:
+Call `inspect_capability_tool` (capability_type="tool") on the target — it returns the full instruction plus registry facts (version, enable_evolving, source path). Score across:
 1. **Interface Compliance** — `@TOOL.register_module`, subclass `Tool`, has `name`/`description`/`instruction`, `__call__` returns a `Response`.
 2. **Code Quality** — valid, clean, proper error handling (failures returned as `success=False`, not raised).
-3. **Instruction Quality** — `_INSTRUCTION` has the four blocks (Function/Guidance/Parameters/Example); every parameter documented; example is valid JSON.
-4. **Integration** — `inspect_tool` shows it registered.
+3. **Documentation Quality** — `_GUIDANCE` says what the schema cannot; every argument has
+   an `Args:` line; each entry of `_EXAMPLES` is valid JSON. No `## Parameters` or
+   `## Function` block: both restate something the model is already sent.
+4. **Integration** — `inspect_capability_tool` (capability_type="tool") shows it registered.
 5. **Execution** — a valid call path; where feasible, run the tool on a sample input and check the `Response`.
 
 ---
 
 ## Improving a tool
 
-The target is named in the task. Call `inspect_tool` FIRST for its source path and `enable_evolving` — if `enable_evolving=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` short and `_INSTRUCTION`'s four blocks intact. Verify with `py_compile`, then re-register via the path in `done_tool` reasoning.
+The target is named in the task. Call `inspect_capability_tool` (capability_type="tool") FIRST for its source path and `enable_evolving` — if `enable_evolving=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` one line and `_GUIDANCE` / `_EXAMPLES` in place. Verify with `py_compile`, then re-register via the path in `done_tool` reasoning.
 
 ---
 
@@ -114,4 +125,5 @@ The target is named in the task. Call `inspect_tool` FIRST for its source path a
 
 ## Reference files
 
-- `references/tool_template.py` — a ready-to-copy tool class (the `_DESCRIPTION`/`_INSTRUCTION` split + `__call__` returning a `Response`).
+- `references/tool_template.py` — a ready-to-copy tool class (the
+  `_DESCRIPTION` / `_GUIDANCE` / `_EXAMPLES` split + `__call__` returning a `Response`).

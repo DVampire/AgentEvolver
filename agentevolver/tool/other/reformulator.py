@@ -13,21 +13,14 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Reformulate a clean, formatted final answer from an agent conversation transcript."
 
-_INSTRUCTION = """
-## Function
-Reformulate a clean, formatted final answer from an agent conversation transcript.
-
-## Guidance
+_GUIDANCE = """
 - Takes the original task and the conversation history, then uses an LLM to extract and format the final answer.
 - Use this tool when you need to produce a clean, formatted final answer from a conversation transcript.
-
-## Parameters
-- task (str): The original task/question that was asked.
-- data (List[str]): Conversation history in the form of a list of message texts.
-
-## Example
-{"name": "reformulator_tool", "args": {"task": "What is the capital of France?", "data": ["The capital of France is Paris.", "The capital of France is Paris."]}}
 """
+
+_EXAMPLES = [
+    '{"name": "reformulator_tool", "args": {"task": "What is the capital of France?", "data": ["The capital of France is Paris.", "The capital of France is Paris."]}}',
+]
 
 
 class ReformulatedAnswer(BaseModel):
@@ -40,7 +33,8 @@ class ReformulatorTool(Tool):
     
     name: str = "reformulator_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     

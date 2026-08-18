@@ -15,7 +15,7 @@ class ToolOptimizeAgent(Agent):
 
     Runs the base-class standard loop, then re-registers the edited tool inline in
     ``__call__``. The target tool is named in the task; the agent should call
-    ``inspect_tool`` first to confirm it is registered and evolvable (enable_evolving=True)
+    ``inspect_capability_tool`` first to confirm it is registered and evolvable (enable_evolving=True)
     and to obtain its source path — a frozen tool must NOT be optimized."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

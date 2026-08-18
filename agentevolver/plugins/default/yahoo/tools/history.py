@@ -19,6 +19,11 @@ class YahooHistoryTool(PluginTool):
     description: str = "Fetch OHLCV price history for a ticker symbol from Yahoo Finance."
     type: str = "data_source"
 
+    output = {'symbol': 'text', 'range': 'any', 'interval': 'any', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Fetched {data['count']} {data['interval']} candles for {data['symbol']} ({data['range']})."
+
     async def __call__(self, symbol: str = "", range: str = "1mo", interval: str = "1d",  # noqa: A002
                        timeout: float = 30.0, **kwargs) -> Response:
         import httpx
@@ -59,9 +64,7 @@ class YahooHistoryTool(PluginTool):
             "volume": _at(quote.get("volume"), i),
         } for i, ts in enumerate(timestamps)]
 
-        return self._ok(f"Fetched {len(records)} {interval} candles for {symbol} ({range}).",
-                        symbol=symbol, range=range, interval=interval,
-                        records=records, count=len(records))
+        return self._ok(symbol=symbol, range=range, interval=interval, records=records, count=len(records))
 
 
 def _at(series, index):

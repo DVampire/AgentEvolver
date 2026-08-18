@@ -5,7 +5,7 @@ category: agent
 type: memory
 tools: 1
 implemented: 1
-credentials: []
+credentials: [MEM0_API_KEY]
 requirements: [mem0]
 version: "1.0.0"
 ---

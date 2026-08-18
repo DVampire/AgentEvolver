@@ -13,6 +13,8 @@ class WolframalphaWolframAlphaApiTool(PluginTool):
     display_name: str = 'WolframAlpha API'
     description: str = 'WolframAlpha API'
 
+    output = {'query': 'text', 'result': 'object'}
+
     async def __call__(self, input_value: str = "", app_id: str = "", **kwargs) -> Response:
         q = str(input_value or "").strip()
         key = self._secret(app_id, "WOLFRAM_ALPHA_APPID")

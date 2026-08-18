@@ -22,6 +22,10 @@ arXiv tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `arxiv.arxiv` → `data` keys: count, query, records
+
 ## Credentials
 
 None — these tools need no credential.

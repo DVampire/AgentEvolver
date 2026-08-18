@@ -24,6 +24,12 @@ ScrapeGraph tools.
 
 All 3 tools are implemented.
 
+Declared result shapes:
+
+- `scrapegraph.scrapegraph_markdownify_api` → `data` keys: result
+- `scrapegraph.scrapegraph_search_api` → `data` keys: result
+- `scrapegraph.scrapegraph_smart_scraper_api` → `data` keys: result
+
 ## Credentials
 
 `SCRAPEGRAPH_API_KEY`, `SGAI_API_KEY`, an `api_key` argument on the call, or a `scrapegraph_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

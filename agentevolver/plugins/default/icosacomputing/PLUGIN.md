@@ -22,6 +22,10 @@ Icosa tools.
 
 All 1 tools are implemented.
 
+Declared result shapes:
+
+- `icosacomputing.combinatorial_reasoner` → `data` keys: prompt, reasons
+
 ## Credentials
 
 `ICOSA_API_KEY`, an `api_key` argument on the call, or a `icosacomputing_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

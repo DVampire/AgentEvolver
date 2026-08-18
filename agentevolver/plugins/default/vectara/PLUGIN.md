@@ -5,7 +5,7 @@ category: data
 type: vectorstore
 tools: 2
 implemented: 2
-credentials: [OPENAI_API_KEY]
+credentials: [OPENAI_API_KEY, VECTARA_API_KEY]
 requirements: [langchain_community, langchain_openai]
 version: "1.0.0"
 ---

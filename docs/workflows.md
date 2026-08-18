@@ -3,7 +3,7 @@
 Module version: **1.6.0** · HTML schema: **1.1.0** · Runtime: **1.1.0**
 
 Active workflows are registered capabilities. MetaAgent invokes one directly through its
-`workflow__<name>` function. It can call `inspect_workflow` for the complete HTML and
+`workflow__<name>` function. It can call `inspect_capability_tool` (capability_type="workflow") for the complete HTML and
 compiled structure; there is no generic search/run/register workflow tool.
 
 A workflow is an executable multi-agent program, not an Agent subtype. Its source is

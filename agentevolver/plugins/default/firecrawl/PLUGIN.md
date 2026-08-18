@@ -25,6 +25,13 @@ Firecrawl tools.
 
 All 4 tools are implemented.
 
+Declared result shapes:
+
+- `firecrawl.firecrawl_crawl_api` → `data` keys: result
+- `firecrawl.firecrawl_map_api` → `data` keys: result
+- `firecrawl.firecrawl_scrape_api` → `data` keys: result
+- `firecrawl.firecrawl_search_api` → `data` keys: result
+
 ## Credentials
 
 `FIRECRAWL_API_KEY`, an `api_key` argument on the call, or a `firecrawl_plugin` block in the config. Resolved once by the plugin — the tools never look it up themselves.

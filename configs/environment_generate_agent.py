@@ -37,7 +37,7 @@ tool_names = [
     "edit_file_tool",
     "glob_search_tool",
     "grep_search_tool",
-    "inspect_environment_tool",
+    "inspect_capability_tool",
 ]
 agent_names = [
     "environment_generate_agent",

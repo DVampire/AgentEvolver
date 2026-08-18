@@ -6,7 +6,7 @@ type: model
 icon: resources/icon.svg
 tools: 1
 implemented: 1
-credentials: [COMETAPI_API_KEY]
+credentials: [COMETAPI_API_KEY, OPENAI_API_KEY]
 requirements: [langchain_openai]
 version: "1.0.0"
 ---

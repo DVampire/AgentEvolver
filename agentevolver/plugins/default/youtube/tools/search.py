@@ -11,6 +11,11 @@ class YoutubeSearchTool(YoutubeToolBase):
     display_name: str = 'YouTube Search'
     description: str = 'Searches YouTube videos based on query.'
 
+    output = {'query': 'text', 'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Found {data['count']} videos for '{data['query']}'."
+
     async def __call__(self, query: str = "", api_key: str = "", max_results: int = 10,
                        order: str = "relevance", include_metadata: bool = True, **kwargs) -> Response:
         query = str(query or "").strip()
@@ -47,7 +52,6 @@ class YoutubeSearchTool(YoutubeToolBase):
                         })
                 records.append(row)
             youtube.close()
-            return self._ok(f"Found {len(records)} videos for '{query}'.",
-                            query=query, records=records, count=len(records))
+            return self._ok(query=query, records=records, count=len(records))
         except Exception as exc:  # noqa: BLE001 — provider/network error is a failed result
             return self._fail(f"youtube.search: {type(exc).__name__}: {exc}")

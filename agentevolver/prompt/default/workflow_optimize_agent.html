@@ -10,7 +10,7 @@
 
 <module src="../module/runtime.html"></module>
 <task-rules>
-- First call `inspect_workflow`; stop when unregistered or `enable_evolving=false`.
+- First call `inspect_capability_tool` (capability_type="workflow"); stop when unregistered or `enable_evolving=false`.
 - Require concrete repeated evidence. Agent output weakness belongs to Agent/Prompt/Skill, not Workflow.
 - Make the smallest compatible change, increment version, and keep status `active`.
 - Compile and verify bounded termination and output paths.

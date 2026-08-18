@@ -7,7 +7,7 @@ The pause/resume rendezvous is the runtime's suspend/resume channel, keyed by th
 sub-agent's task_id — see ``agentevolver/protocol/server.py``.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import Field
 
@@ -18,21 +18,16 @@ from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Reply to a sub-agent that ESCALATED (is blocked), unblocking it with concrete guidance."
 
-_INSTRUCTION = """
-## Function
+_GUIDANCE = """
 Answer a sub-agent that escalated (reported it is blocked) so it can continue. Use it whenever an ESCALATE event is pending: give a concrete, actionable instruction, or tell the sub-agent to stop gracefully.
 
-## Parameters
-- task_id (str, required): the exact task_id from the ESCALATE event.
-- reply (str, required): concrete guidance for the blocked sub-agent (or an instruction to stop gracefully).
-
-## Guidance
 - Reply promptly — the sub-agent is blocked, waiting, and holding up its round until you answer.
 - Be specific: point at the capability/file/approach to use, or state the decision it was unsure about.
-
-## Example
-{"name": "reply_tool", "args": {"task_id": "subtask-1a2b3c", "reply": "Use write_file_tool to create the config at /work/app/config.json, then re-run the build."}}
 """
+
+_EXAMPLES = [
+    '{"name": "reply_tool", "args": {"task_id": "subtask-1a2b3c", "reply": "Use write_file_tool to create the config at /work/app/config.json, then re-run the build."}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -41,7 +36,8 @@ class ReplyTool(Tool):
 
     name: str = "reply_tool"
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     permission_mode: str = Field(default="read_only", description="Only unblocks a sub-agent; mutates nothing.")
@@ -50,6 +46,13 @@ class ReplyTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, task_id: str, reply: str, **kwargs) -> Response:
+        """Answer a sub-agent that escalated.
+
+        Args:
+            task_id: The exact task_id from the ESCALATE event.
+            reply: Concrete guidance for the blocked sub-agent (or an instruction to
+                stop gracefully).
+        """
         from agentevolver.protocol import protocol_manager
         try:
             delivered = protocol_manager.reply(task_id, reply)

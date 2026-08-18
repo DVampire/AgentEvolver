@@ -1,7 +1,7 @@
 """ReadFileTool — read file contents with optional line range."""
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -14,23 +14,15 @@ from agentevolver.response.types import Response, ResponseType
 
 _DESCRIPTION = "Read the contents of a file."
 
-_INSTRUCTION = """
-## Function
-Read the contents of a file.
-
-## Guidance
+_GUIDANCE = """
 - Returns the file content with line numbers prefixed.
 - By default the whole file is read; use offset/limit to read a specific line range.
-
-## Parameters
-- path (str): Absolute path to the file to read.
-- offset (int, optional): Line number to start reading from (1-based). Defaults to 1.
-- limit (int, optional): Maximum number of lines to read. Defaults to the whole file.
-
-## Example
-{"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py"}}
-{"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py", "offset": 50, "limit": 100}}
 """
+
+_EXAMPLES = [
+    '{"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py"}}',
+    '{"name": "read_file_tool", "args": {"path": "/abs/path/to/file.py", "offset": 50, "limit": 100}}',
+]
 
 
 @TOOL.register_module(force=True)
@@ -46,7 +38,8 @@ class ReadFileTool(Tool):
     #: reading a file is local I/O; a minute means the path is on a wedged mount, not that the file is big.
     call_timeout_seconds: float = 60
     description: str = _DESCRIPTION
-    instruction: str = _INSTRUCTION
+    guidance: str = _GUIDANCE
+    examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
     enable_evolving: bool = Field(default=False)
     mutates: bool = False

@@ -11,7 +11,7 @@
 <module src="../module/runtime.html"></module>
 <task-rules>
 - The task must name the Workflow and provide either repeated successful orchestration evidence or an explicit user request.
-- The dispatching MetaAgent must check for duplicates first; use `inspect_workflow` when the task names a potentially overlapping registration.
+- The dispatching MetaAgent must check for duplicates first; use `inspect_capability_tool` when the task names a potentially overlapping registration.
 - Author a parameterized, bounded, `schema-version="1.1.0"`, `status="active"`, `enable-evolving="true"` HTML document with complete input JSON Schemas.
 - Validate it using the project compiler/tests; never execute untrusted script from HTML.
 - Put the absolute `.html` path in `done_tool.reasoning` so the registration hook can load it.

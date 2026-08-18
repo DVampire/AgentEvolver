@@ -13,6 +13,11 @@ class NotionListPagesTool(NotionToolBase):
     display_name: str = 'List Pages '
     description: str = 'List Pages '
 
+    output = {'records': 'list', 'count': 'any'}
+
+    def _render(self, data):
+        return f"Notion returned {data['count']} pages."
+
     async def __call__(self, api_key: str = "", database_id: str = "", query_json: str = "", **kwargs) -> Response:
         err = self._need_token(api_key)
         if err:
@@ -25,6 +30,6 @@ class NotionListPagesTool(NotionToolBase):
             payload = _json.loads(query_json) if query_json else {}
             js = self._request("POST", f"/databases/{database_id}/query", token, json=payload)
             results = js.get("results", [])
-            return self._ok(f"Notion returned {len(results)} pages.", records=results, count=len(results))
+            return self._ok(records=results, count=len(results))
         except Exception as exc:  # noqa: BLE001
             return self._fail(f"notion.list_pages: {type(exc).__name__}: {exc}")
