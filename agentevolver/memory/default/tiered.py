@@ -507,12 +507,25 @@ class TieredMemory(Memory):
         Each chunk is summarised before the next is taken, and a chunk whose summary
         fails is put back, so a partial run leaves history shorter but never holed.
         """
+        # The callers check this flag too, but they check it and then hand the work to a
+        # detached task — and between those two the loop can run, append another record,
+        # and pass the same check. Two compactions then interleaved: one's `finally`
+        # cleared `state.compaction` while the other was reading it, which surfaced as
+        # `compaction failed ('NoneType' object is not subscriptable)` and a chunk put
+        # back. Re-checking here is what closes it: from this line to the assignment
+        # below there is no await, so the second arrival sees the flag already set.
+        if state._compacting:
+            return
         state._compacting = True
         floor = self.recent_max if down_to is None else max(0, int(down_to))
         outcome = "ok"
         chunks_done = 0
+        # This run's own start time. It was read back out of `state.compaction` on every
+        # chunk, which made a shared, deliberately-cleared field load-bearing for a fact
+        # that never changes and belongs to this call.
+        started_at = _ts()
         try:
-            state.compaction = {"started_at": _ts(), "chunks": 0}
+            state.compaction = {"started_at": started_at, "chunks": 0}
             await self._persist(state)
 
             while len(state.recent) > floor:
@@ -543,7 +556,7 @@ class TieredMemory(Memory):
                     break
                 state.working.append(text)
                 chunks_done += 1
-                state.compaction = {"started_at": state.compaction["started_at"], "chunks": chunks_done}
+                state.compaction = {"started_at": started_at, "chunks": chunks_done}
                 await self._record_fold(state, chunk, text)
         except asyncio.CancelledError:
             outcome = "cancelled"

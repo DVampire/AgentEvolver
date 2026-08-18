@@ -425,3 +425,77 @@ def test_the_stats_projection_totals_folds_without_recomputing_them(monkeypatch)
 
     assert state.compactions == 2
     assert state.compaction_tokens_saved == 90
+
+
+# --------------------------------------------------------------------------- #
+# Two compactions at once
+# --------------------------------------------------------------------------- #
+def test_two_compactions_at_once_do_not_trip_over_each_other(monkeypatch):
+    """The caller checks the flag, then hands the work to a detached task.
+
+    Between those two the loop runs. Another record arrives, passes the same check, and
+    a second task is created — both before either has set the flag. The two then
+    interleaved: one's `finally` cleared `state.compaction` while the other was reading
+    `state.compaction["started_at"]` for its progress marker, so a real run reported
+    `compaction failed ('NoneType' object is not subscriptable)` and put its chunk back.
+
+    Reproduced by awaiting inside the summariser, which is where the real one yields.
+    """
+    memory, state = _memory(), _state()
+    _fill(state, 9)
+    failures = []
+
+    async def _summary(items, existing):
+        await asyncio.sleep(0)          # the yield the real summariser takes
+        return "a summary"
+
+    def _warn(message):
+        if "compaction failed" in str(message):
+            failures.append(str(message))
+
+    monkeypatch.setattr(TieredMemory, "_summarise", staticmethod(_summary))
+    monkeypatch.setattr("agentevolver.memory.default.tiered.logger.warning", _warn)
+
+    async def _both():
+        await asyncio.gather(TieredMemory._compact(memory, state),
+                             TieredMemory._compact(memory, state))
+
+    asyncio.run(_both())
+
+    assert not failures, f"concurrent compaction still fails: {failures}"
+    assert state.compaction is None, "the bracket was left open"
+    assert len(state.recent) <= memory.recent_max
+
+
+def test_the_second_arrival_leaves_the_first_alone(monkeypatch):
+    """It returns rather than folding again — the flag means "already running", and a
+    second pass over the same records would fold what the first has already taken."""
+    memory, state = _memory(), _state()
+    _fill(state, 9)
+    calls = []
+
+    async def _summary(items, existing):
+        calls.append(len(items))
+        await asyncio.sleep(0)
+        return "a summary"
+
+    monkeypatch.setattr(TieredMemory, "_summarise", staticmethod(_summary))
+
+    async def _both():
+        await asyncio.gather(TieredMemory._compact(memory, state),
+                             TieredMemory._compact(memory, state))
+
+    asyncio.run(_both())
+    solo, solo_state = _memory(), _state()
+    _fill(solo_state, 9)
+    calls_solo = []
+
+    async def _summary_solo(items, existing):
+        calls_solo.append(len(items))
+        return "a summary"
+
+    monkeypatch.setattr(TieredMemory, "_summarise", staticmethod(_summary_solo))
+    asyncio.run(TieredMemory._compact(solo, solo_state))
+
+    assert calls == calls_solo, (
+        f"two concurrent calls folded differently from one: {calls} vs {calls_solo}")

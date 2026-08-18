@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.logger import logger
@@ -24,6 +25,19 @@ class MemoryManagerServer(BaseModel):
         """Initialize the Memory Manager."""
         super().__init__(**kwargs)
         self._registered_memories: Dict[str, MemoryConfig] = {}  # memory_name -> MemoryConfig
+        # Created lazily, the way `agent_manager` does it. Every read below went
+        # straight through this attribute, so asking anything before `initialize()`
+        # raised `AttributeError` from inside the caller — which surfaces as a broken
+        # tool rather than as "nothing is registered yet". `inspect_tool` can now be
+        # asked about a memory system, so that path is reachable.
+        self.memory_context_manager: Optional[MemoryContextManager] = None
+
+    def _ensure_context_manager(self) -> MemoryContextManager:
+        """The context manager, created on first use if `initialize()` has not run."""
+        if self.memory_context_manager is None:
+            self.memory_context_manager = MemoryContextManager(base_dir=self.base_dir)
+        return self.memory_context_manager
+
     
     async def initialize(self, memory_names: Optional[List[str]] = None):
         """Initialize memory systems by discovering and registering them (similar to tool).
@@ -31,14 +45,14 @@ class MemoryManagerServer(BaseModel):
         Args:
             memory_names: List of memory system names to initialize. If None, initialize all discovered memory systems.
         """
-        self.base_dir = assemble_workspace_path(os.path.join(config.log_root, "memory"))
+        self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="memory"))
         logger.info(f"| 📁 Memory Manager base directory: {self.base_dir}")
         
         # Initialize memory context manager
         self.memory_context_manager = MemoryContextManager(
             base_dir=self.base_dir,
         )
-        await self.memory_context_manager.initialize(memory_names=memory_names)
+        await self._ensure_context_manager().initialize(memory_names=memory_names)
 
         logger.info("| ✅ Memory systems initialization completed")
 
@@ -49,7 +63,7 @@ class MemoryManagerServer(BaseModel):
         exists; binding a session re-points it so each session's memory files land
         under that session's own log root.
         """
-        base_dir = assemble_workspace_path(os.path.join(log_root, "memory"))
+        base_dir = assemble_workspace_path(path_manager.under(log_root, P.LOG_MODULE, module="memory"))
         self.base_dir = base_dir
         ctx_manager = getattr(self, "memory_context_manager", None)
         if ctx_manager is None:
@@ -71,7 +85,7 @@ class MemoryManagerServer(BaseModel):
         Returns:
             MemoryConfig: Memory configuration
         """
-        memory_config = await self.memory_context_manager.register(memory, override=override, **kwargs)
+        memory_config = await self._ensure_context_manager().register(memory, override=override, **kwargs)
         self._registered_memories[memory_config.name] = memory_config
         return memory_config
     
@@ -90,7 +104,7 @@ class MemoryManagerServer(BaseModel):
         Returns:
             MemoryConfig: Updated memory configuration
         """
-        memory_config = await self.memory_context_manager.update(memory_name, memory, new_version, description, **kwargs)
+        memory_config = await self._ensure_context_manager().update(memory_name, memory, new_version, description, **kwargs)
         self._registered_memories[memory_config.name] = memory_config
         return memory_config
     
@@ -103,7 +117,7 @@ class MemoryManagerServer(BaseModel):
         Returns:
             MemoryConfig: Memory configuration or None if not found
         """
-        return await self.memory_context_manager.get_info(memory_name)
+        return await self._ensure_context_manager().get_info(memory_name)
     
     async def unregister(self, memory_name: str) -> bool:
         """Unregister a memory system.
@@ -117,7 +131,7 @@ class MemoryManagerServer(BaseModel):
         Returns:
             bool: True if unregistered successfully, False otherwise
         """
-        return await self.memory_context_manager.unregister(memory_name)
+        return await self._ensure_context_manager().unregister(memory_name)
 
     async def list(self) -> List[str]:
         """List all registered memory systems
@@ -125,7 +139,7 @@ class MemoryManagerServer(BaseModel):
         Returns:
             List[str]: List of memory system names
         """
-        return await self.memory_context_manager.list()
+        return await self._ensure_context_manager().list()
     
     async def get(self, memory_name: str) -> Memory:
         """Get memory system instance by name (similar to tool_manager.get()).
@@ -139,7 +153,7 @@ class MemoryManagerServer(BaseModel):
         Returns:
             Memory: Memory system instance (new instance each time)
         """
-        return await self.memory_context_manager.get(memory_name)
+        return await self._ensure_context_manager().get(memory_name)
     
     async def cleanup(self):
         """Cleanup all memory systems using context manager."""
