@@ -263,14 +263,20 @@ def test_code_interpreter_defaults_to_the_kernel():
 
 
 def test_one_shot_mode_drops_the_persistence_promise():
-    """The instruction is what the agent plans against; a stale promise misleads it."""
+    """The guidance is what the agent plans against; a stale promise misleads it.
+
+    Read off `guidance` rather than `instruction`: the two modes swap the text a model
+    plans against, and that text moved into its own field when a tool's documentation
+    was split from one blob into `guidance` + `examples`. A test still reading the blob
+    passes vacuously — it did, against an empty string.
+    """
     from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
 
     kernel = CodeInterpreterTool()
     one_shot = CodeInterpreterTool(use_kernel=False)
-    assert "State persists across calls" in kernel.instruction
-    assert "State persists across calls" not in one_shot.instruction
-    assert "NOTHING carries over" in one_shot.instruction
+    assert "State persists across calls" in kernel.guidance
+    assert "State persists across calls" not in one_shot.guidance
+    assert "NOTHING carries over" in one_shot.guidance
 
 
 def test_one_shot_sees_the_filesystem_as_it_is_now(tmp_path):

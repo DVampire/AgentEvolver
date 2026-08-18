@@ -129,6 +129,7 @@ part — usually a single `_model` or `_build` method:
 the second:
 
 ```python
+# fragment — the two declarations, not the whole tool
 class TavilySearchTool(PluginTool):
     output = {"query": "text", "answer": "text", "records": "list", "count": "any"}
 

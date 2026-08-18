@@ -953,24 +953,43 @@ class TestEnvironmentInstruction:
     the agents that inherited it had environment context at all — an agent with
     environments in its own `env_names` and no mixin was told nothing about them.
 
-    The manager owns the text now, like `tool_manager.get_instruction` always has, and it
-    returns each environment's `ENVIRONMENT.md` body: the file where its rules and its
+    The manager owns the text now, like `tool_manager.get_instruction` always has, and the
+    source is always the environment's `ENVIRONMENT.md`: the file where its rules and its
     actions' arguments are written in one place a human edits and reviews. Walking
     `actions` produced a second, thinner description that had to be kept in step with it —
     and printed action names (`run`) the model cannot call, rather than the schema names
     (`remote_host__run`) it can.
+
+    Which of the file a caller gets depends on the level, the way it does for a skill, a
+    connector and a plugin: `brief` names the file, `full` is the file. Neither is a
+    summary rebuilt from the registry, which is the property these tests hold.
     """
 
     @pytest.mark.asyncio
     async def test_the_instruction_is_the_environment_md_body(self) -> None:
-        """Not a summary rebuilt from the registry. The file is the source."""
+        """Not a summary rebuilt from the registry. The file is the source.
+
+        Checked at both levels, because the failure this guards against would look
+        different at each: at `full` a rebuilt summary would be missing the file's own
+        headings, and at `brief` it would be a second description of the environment
+        instead of a pointer at the first one.
+        """
         from agentevolver.environment import environment_manager
 
         await environment_manager.initialize(env_names=["remote_host"])
-        text = await environment_manager.get_instruction()
 
-        assert "## The machines" in text          # a heading only the md has
-        assert "upload" in text and "download" in text
+        # Asserted on the prose rather than on `##`: a card downgrades the headings
+        # inside it to bold labels, so a marker-based check would be testing the
+        # renderer instead of where the text came from.
+        rule = "no argument switches a tool between them"
+
+        full = await environment_manager.get_instruction(level="full")
+        assert rule in full                       # a sentence only the md has
+        assert "upload" in full and "download" in full
+
+        brief = await environment_manager.get_instruction(level="brief")
+        assert "ENVIRONMENT.md" in brief          # where the rest is
+        assert rule not in brief                  # and not a second copy of it
 
     @pytest.mark.asyncio
     async def test_an_allowlist_selects_environments_the_way_every_manager_does(self) -> None:

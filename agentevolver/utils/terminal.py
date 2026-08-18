@@ -99,7 +99,7 @@ class LiveScreen:
         import pyte
 
         self.rows, self.cols = rows, cols
-        self._screen = pyte.HistoryScreen(cols, rows, history=scrollback)
+        self._screen = _wrap_aware_screen_class()(cols, rows, history=scrollback)
         self._stream = pyte.ByteStream(self._screen)
 
     def feed(self, data: bytes) -> None:
@@ -115,7 +115,16 @@ class LiveScreen:
         """
         history = [_row_to_text(row, self.cols) for row in self._screen.history.top]
         display = [line.rstrip() for line in self._screen.display]
-        return history, display
+        # Unwrapped across the seam: a line can start on the last row of history and
+        # finish on the first row of the display. The two halves are returned apart
+        # afterwards, so a caller still sees the settled/live distinction it needs.
+        joined, origins = _unwrap(history + display,
+                                  self._screen.continued_lines(len(history)))
+        # Split where the display actually begins, not at the original count: joining
+        # shortens the list, and a line that started in history and finished on screen
+        # belongs to the half it started in.
+        cut = next((i for i, origin in enumerate(origins) if origin >= len(history)), len(joined))
+        return joined[:cut], joined[cut:]
 
     def lines(self) -> list:
         """Everything the terminal holds, oldest first, with trailing blanks dropped."""
@@ -133,6 +142,103 @@ def _offsets_of(data: bytes, sequence: bytes) -> list:
         found.append(start)
         start = data.find(sequence, start + 1)
     return found
+
+
+
+class _WrapTrackingScreen:
+    """Mixin that records which lines were auto-wrapped onto the row below.
+
+    A terminal has no newline where a long line ran past the right edge — it just
+    continues on the next row — so the screen a scraper reads back has one line broken
+    into two. For a shell that is a lie about the output: a 118-character path came back
+    with a newline in the middle of it, and an agent that fed it to `read_file` got a
+    file-not-found for a file that is there.
+
+    Guessing from the text cannot tell the two cases apart, because a full-screen program
+    fills the whole width on purpose and joining its rows would run its display together.
+    So this records the fact rather than inferring it: pyte wraps from `draw` at the
+    moment the cursor sits past the last column, and that is the only time it does.
+
+    Recorded against the line, not the row. Row numbers are reused as the screen scrolls,
+    so a set of them describes the wrong lines the moment anything scrolls off — which is
+    exactly when a long-running command's output is being read. `index` is where a row
+    leaves the screen for the scrollback, so that is where the flag goes with it.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wrapped_screen: set = set()
+        self._wrapped_history: list = []
+
+    def draw(self, data) -> None:
+        for char in data:
+            if self.cursor.x == self.columns:
+                self._wrapped_screen.add(self.cursor.y)
+            super().draw(char)
+
+    def index(self) -> None:
+        top, bottom = self.margins or (0, self.lines - 1)
+        scrolling = self.cursor.y == bottom
+        if scrolling:
+            self._wrapped_history.append(top in self._wrapped_screen)
+        super().index()
+        if scrolling:
+            self._wrapped_screen = {y - 1 for y in self._wrapped_screen if y > top}
+
+    def reset(self) -> None:
+        super().reset()
+        self._wrapped_screen = set()
+        self._wrapped_history = []
+
+    def continued_lines(self, history_len: int) -> list:
+        """For each line of `history + display`, whether the next line continues it.
+
+        `history_len` is how many scrolled-off lines the caller is about to prepend; the
+        scrollback a screen keeps is bounded, so the two can disagree and the flags are
+        aligned to the caller's view rather than to this one's.
+        """
+        kept = self._wrapped_history[-history_len:] if history_len else []
+        kept = [False] * (history_len - len(kept)) + list(kept)
+        return kept + [y in self._wrapped_screen for y in range(self.lines)]
+
+
+#: Built once, on first render. Cached here rather than declared at module scope because
+#: this module imports nothing at the top: it is a pure function of a byte stream, and a
+#: subclass statement would pull `pyte` in for every importer of `agentevolver.utils`.
+_WRAP_AWARE_SCREEN = None
+
+
+def _wrap_aware_screen_class():
+    """`pyte.HistoryScreen` that also records which of its rows are continuations."""
+    global _WRAP_AWARE_SCREEN
+    if _WRAP_AWARE_SCREEN is None:
+        import pyte
+
+        class WrapAwareHistoryScreen(_WrapTrackingScreen, pyte.HistoryScreen):
+            """A scrollback screen that knows which of its rows are continuations."""
+
+        _WRAP_AWARE_SCREEN = WrapAwareHistoryScreen
+    return _WRAP_AWARE_SCREEN
+
+
+def _unwrap(lines: list, continued: list) -> tuple:
+    """Rejoin the rows a line was broken across, leaving every other line alone.
+
+    Returns `(lines, origins)` — `origins[i]` is the index in the input that the joined
+    line started at, so a caller that had two halves can split the result back at the
+    same place rather than at the same count.
+    """
+    out: list = []
+    origins: list = []
+    joining = False
+    for index, line in enumerate(lines):
+        if joining and out:
+            out[-1] += line
+        else:
+            out.append(line)
+            origins.append(index)
+        joining = index < len(continued) and continued[index]
+    return out, origins
 
 
 def render_terminal(data: bytes) -> str:
@@ -157,7 +263,7 @@ def render_terminal(data: bytes) -> str:
     """
     import pyte
 
-    screen = pyte.HistoryScreen(PTY_COLS, PTY_ROWS, history=200)
+    screen = _wrap_aware_screen_class()(PTY_COLS, PTY_ROWS, history=200)
     stream = pyte.ByteStream(screen)
 
     def row_text(row) -> str:
@@ -181,8 +287,13 @@ def render_terminal(data: bytes) -> str:
         return found
 
     def frame() -> tuple:
-        return ([row_text(row) for row in screen.history.top]
-                + [line.rstrip() for line in screen.display], styles_on_screen())
+        # Scrollback and screen are unwrapped together: a line can begin on the last row
+        # of history and finish on the first row of the display, and joining each half
+        # separately would leave exactly the break this is here to remove.
+        history = [row_text(row) for row in screen.history.top]
+        display = [line.rstrip() for line in screen.display]
+        joined, _ = _unwrap(history + display, screen.continued_lines(len(history)))
+        return joined, styles_on_screen()
 
     cuts = sorted({
         offset

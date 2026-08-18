@@ -169,6 +169,23 @@ def parameters_of(instance: Any) -> List[Tuple[str, str, str]]:
     return rows
 
 
+def _argument_descriptions(cls: Any) -> Dict[str, str]:
+    """Each argument's description as the model receives it, keyed by name.
+
+    Derived from `__call__`'s signature and its Google-style `Args:` block by the same
+    code that builds the schema sent in the request, so what this reports and what the
+    model reads cannot differ.
+    """
+    from agentevolver.dynamic import dynamic_manager
+
+    try:
+        schema = dynamic_manager.get_parameters(cls)
+    except Exception:  # noqa: BLE001 — a class whose signature cannot be read says nothing
+        return {}
+    return {name: (spec or {}).get("description", "")
+            for name, spec in (schema.get("properties") or {}).items()}
+
+
 def _cell(text: str) -> str:
     """A value safe to drop into a Markdown table cell."""
     return text.replace("|", "\\|").replace("\n", " ").strip()
@@ -264,6 +281,11 @@ def inventory() -> Dict[str, Any]:
             "permission_mode": instance.permission_mode,
             "instruction": instance.guidance or instance.instruction or "",
             "parameters": [name for name, _, _ in parameters_of(instance)],
+            # What the model is actually told about each argument: the description in
+            # the derived call schema, which comes from the `Args:` docstring. This is
+            # the only copy — a tool used to restate it as `## Parameters` prose, and
+            # the prose was the copy that went stale.
+            "documented": _argument_descriptions(cls),
         }
     return {"gap": completeness_gap(), "catalog": render(), "tools": tools}
 

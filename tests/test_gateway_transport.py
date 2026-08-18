@@ -143,6 +143,8 @@ def test_the_subscription_is_released_when_the_socket_closes(gateway: AgentGatew
     with client.websocket_connect("/ws"):
         assert len(gateway._subscribers) == 1
 
+    # Asserted outright, not waited for: the release happens before the handler awaits
+    # anything, which is the property that was missing. A wait here would pass either way.
     assert gateway._subscribers == set()
 
 

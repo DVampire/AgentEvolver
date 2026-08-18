@@ -43,10 +43,21 @@ async def serve_stdio(gateway: AgentGateway) -> None:
                 response = error_response("unknown", "invalid_command", str(exc))
             print(_encode(response), flush=True)
     finally:
+        # Released before the await, for the reason the websocket endpoint below
+        # documents. This writer parks on a plain queue and does cancel cleanly, so
+        # nothing is known to hang here — but a release that is only reached when a
+        # background task agrees to stop is a release that can be skipped, and the two
+        # paths should not differ on which of them is guaranteed.
+        gateway.unsubscribe(event_queue)
         writer.cancel()
         with suppress(asyncio.CancelledError):
             await writer
-        gateway.unsubscribe(event_queue)
+
+
+#: How long a closing websocket waits for its background tasks before returning anyway.
+#: A task parked in `send_text` on a gone socket may never finish being cancelled, and a
+#: handler that waits for it holds its connection slot for the life of the process.
+_TASK_SHUTDOWN_SECONDS = 2.0
 
 
 def create_websocket_app(
@@ -142,10 +153,19 @@ def create_websocket_app(
         except WebSocketDisconnect:
             pass
         finally:
+            # Released first, and not behind the await below. Cancelling a task that is
+            # parked inside `websocket.send_text` on a socket the client has already gone
+            # from does not always complete: the cancellation is delivered and the task
+            # never finishes, so `gather` waits forever and everything after it is dead
+            # code. What that cost was the subscription — a queue the gateway keeps
+            # feeding with nobody reading it, one per closed browser tab, which is the
+            # unbounded growth this ordering exists to prevent.
+            gateway.unsubscribe(event_queue)
             forwarder.cancel()
             writer.cancel()
-            await asyncio.gather(forwarder, writer, return_exceptions=True)
-            gateway.unsubscribe(event_queue)
+            # Bounded for the same reason. Waiting is worth a moment so a task that can
+            # stop does, but a handler that cannot return holds its connection slot.
+            await asyncio.wait({forwarder, writer}, timeout=_TASK_SHUTDOWN_SECONDS)
 
     @app.websocket("/env/term/{token}/ws")
     async def terminal_ws(websocket: WebSocket, token: str):

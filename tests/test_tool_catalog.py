@@ -10,10 +10,10 @@ it. `tests/test_registration.py` catches the missing *export* by reading
 importing the package and asking the registry what it actually got — which also reaches
 the tools in `tool/default/search/` and `tool/other/` that a top-level glob never sees.
 
-The parameter check is the third copy of the same fact: `## Parameters` in a tool's
-`instruction` is the only version the model reads, while `__call__` is the only version
-that binds. When they disagree the model sends an argument that is silently swallowed by
-`**kwargs`, or omits one it was never told about.
+The parameter check reads the call schema the request carries: `__call__`'s signature is
+what binds an argument, its `Args:` docstring is what describes one, and the schema is
+built from both. An argument with no `Args:` line reaches the model unexplained, and one
+the model was never told about is one it cannot send.
 
 Every fact below comes from one subprocess, not from importing the tool package here. In
 this process the registry holds whatever the whole test session imported, and a tool
@@ -48,13 +48,6 @@ def _inventory() -> dict:
 INVENTORY = _inventory()
 TOOLS = INVENTORY["tools"]
 CATALOG = ROOT / "docs" / "tool-catalog.md"
-
-#: Tools that dispatch on an `action` argument document each action's arguments under
-#: `## Actions` instead of `## Parameters`. Their `__call__` takes `action` plus
-#: `**kwargs`, so there is nothing else in the signature to compare; the check reads
-#: whichever of the two sections the tool wrote.
-ARGUMENT_SECTION = re.compile(r"^##\s*(Parameters|Actions)\b(.*?)(?=^##\s|\Z)", re.M | re.S)
-
 
 # --------------------------------------------------------------------------- #
 # The scan itself
@@ -176,21 +169,28 @@ def test_every_parameter_the_model_can_send_is_documented(class_name):
     capability is simply unreachable. `http_request_tool.timeout` sat like that — a real
     argument controlling how long a request may hang, absent from the only text the model
     is given about the tool.
+
+    Checked against the call schema rather than against prose. A tool used to restate its
+    arguments as a `## Parameters` block, and that block was a third spelling of one
+    contract — the signature binds, the `Args:` docstring describes, and the prose was the
+    copy that could disagree with both. So this reads the schema the request actually
+    carries, which is stricter than the old check: a parameter named in passing used to
+    satisfy it, and now it has to be described.
     """
     entry = TOOLS[class_name]
     if not entry["parameters"]:
         return
 
-    section = ARGUMENT_SECTION.search(entry["instruction"])
-    assert section, (
-        f"{entry['name']} accepts {entry['parameters']} but its instruction has no "
-        f"`## Parameters` or `## Actions` section, so the model is told nothing")
-    body = section.group(2)
-    undocumented = [name for name in entry["parameters"]
-                    if not re.search(rf"[`\s({{]{re.escape(name)}[`\s):,]", body)]
-    assert not undocumented, (
-        f"{entry['name']} accepts {undocumented} but its instruction never names them; "
-        f"the model cannot send an argument it has not been told about")
+    documented = entry["documented"]
+    missing = [name for name in entry["parameters"] if name not in documented]
+    assert not missing, (
+        f"{entry['name']} accepts {missing} but the call schema has no such property; "
+        f"the model is being sent a contract that does not match the signature")
+
+    undescribed = [name for name in entry["parameters"] if not documented.get(name, "").strip()]
+    assert not undescribed, (
+        f"{entry['name']} accepts {undescribed} with no description — add an `Args:` line "
+        f"for each in `__call__`'s docstring, which is what the schema is built from")
 
 
 @pytest.mark.parametrize("class_name", sorted(TOOLS))
