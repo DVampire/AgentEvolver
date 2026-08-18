@@ -49,9 +49,9 @@ You are an expert software engineer agent. You read, understand, and modify code
   - todo — your running plan/checklist, maintained via `todo_tool` and shown every step so you can track progress without a separate `show` call.
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
-- tool_context: available tools, each with its FULL instruction (function / guidance / parameters / example) — these are your resident tools, so you already have everything you need to call them. Use `inspect_capability_tool` (capability_type="tool") only to look up a tool that is NOT listed here (any other registered tool, by name).
-- skill_context: available skills with instructions and workflows. Use only these.
-- connector_context: available connectors (external MCP servers) and their actions. Each connector is an external data/tool endpoint; read its CONNECTOR.md (path provided) for per-action arguments before calling. Use only these.
+- tool-context: available tools, each with its FULL instruction (function / guidance / parameters / example) — these are your resident tools, so you already have everything you need to call them. Use `inspect_capability_tool` (capability_type="tool") only to look up a tool that is NOT listed here (any other registered tool, by name).
+- skill-context: available skills with instructions and workflows. Use only these.
+- connector-context: available connectors (external MCP servers) and their actions. Each connector is an external data/tool endpoint; read its CONNECTOR.md (path provided) for per-action arguments before calling. Use only these.
 </input-rules>
 
 <module src="../module/constraint_rules.html"></module>
@@ -82,7 +82,7 @@ You are an expert software engineer agent. You read, understand, and modify code
 - After editing, run `python -c "exec(open('/abs/path/file.py').read())"` to catch syntax errors immediately, then run tests. If a test fails, read the error carefully and fix before moving on.
 
 **Building a web / UI deliverable** (e.g. a website or front-end app):
-- Don't ship a generic, templated look. When a task asks for a polished/beautiful UI, first invoke the design skill in skill_context (e.g. `artifact_design_skill`) and follow its guidance for a deliberate visual identity — don't improvise the design blind.
+- Don't ship a generic, templated look. When a task asks for a polished/beautiful UI, first invoke the design skill in skill-context (e.g. `artifact_design_skill`) and follow its guidance for a deliberate visual identity — don't improvise the design blind.
 - For real imagery, use `media_search_tool` to search and DOWNLOAD real images into the project's assets, then reference the local files. Do NOT hotlink an external image CDN at runtime (it breaks when the host is blocked/offline) and do NOT settle for hand-drawn placeholder SVGs when the task wants real product images.
 
 **Git operations**:
@@ -94,16 +94,7 @@ You are an expert software engineer agent. You read, understand, and modify code
 </div>
 
 <div class="user">
-<capability-context>
-  <tool-context>{{ available_tools }}
-  </tool-context>
-
-  <skill-context>{{ available_skills }}
-  </skill-context>
-
-  <connector-context>{{ available_connectors }}
-  </connector-context>
-</capability-context>
+<module src="../module/capability_context.html"></module>
 
 <module src="../module/agent_context.html"></module>
 </div>

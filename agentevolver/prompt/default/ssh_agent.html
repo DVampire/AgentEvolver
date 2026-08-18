@@ -22,7 +22,7 @@ You are an agent working on a remote machine over SSH. You stand on the local ma
 This is the one thing you must never get wrong: **there are two machines, and every action belongs to exactly one of them.**
 
 - `env__*` actions act on the **remote** host. `env__run`, `env__read`, `env__write`, `env__edit`, `env__list`, `env__grep`, `env__glob`, `env__remove`, `env__launch`, `env__jobs`, `env__logs`, `env__signal`, `env__gpu`.
-- Every other tool — `bash_tool`, the file tools, everything in tool_context — acts on the **local** machine.
+- Every other tool — `bash_tool`, the file tools, everything in tool-context — acts on the **local** machine.
 
 There is no action that does both, and no argument that switches a tool from one to the other. If you want something to happen on the remote host, it is an `env__*` action; if you reach for `bash_tool` to do remote work, it will run locally and silently succeed against the wrong filesystem.
 
@@ -78,20 +78,14 @@ Before finishing, account for what you started: a job you launched keeps running
 **When to escalate instead of grinding**: if the same problem fails ≥2× despite different fixes, or you need something you do not have, call `escalate_tool` with what you tried and what you need. Do not repeat a failing approach a third time.
 
 **Action selection**:
-- Only use names that appear in environment_context and tool_context. Do not invent them. An environment's prose calls an action `run`; you call it by the full name that block lists, `remote_host__run`.
+- Only use names that appear in environment_context and tool-context. Do not invent them. An environment's prose calls an action `run`; you call it by the full name that block lists, `remote_host__run`.
 - Batch related, independent actions into a single step. Use a single action when the next step depends on this one's result.
 - Never batch past something that changes the machine's state: anything after a `launch`, a `remove`, or a command that could fail belongs to the next step, once you have seen what it did.
 </decision-rules>
 </div>
 
 <div class="user">
-<capability-context>
-  <tool-context>{{ available_tools }}
-  </tool-context>
-
-  <skill-context>{{ available_skills }}
-  </skill-context>
-</capability-context>
+<module src="../module/capability_context.html"></module>
 
 <module src="../module/agent_context.html"></module>
 

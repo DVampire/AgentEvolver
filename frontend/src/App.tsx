@@ -3,14 +3,14 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
-import { Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
+import { Blocks, Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
 import { type ConnectionStatus, type GatewayEvent, GatewaySocket } from './controllers/gateway';
 import useAlertStore from './stores/alertStore';
 
-type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'commands' | 'canvas';
+type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'plugins' | 'commands' | 'canvas';
 type MessageType = 'user' | 'assistant' | 'system' | 'error';
 type ActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 type Theme = 'dark' | 'light';
@@ -89,8 +89,6 @@ function readWidth(key: string, fallback: number): number {
   return Number.isFinite(raw) ? raw : fallback;
 }
 const FILE_CHUNK_SIZE = 512 * 1024;
-const EMPTY_CAPABILITIES: CapabilityCatalog = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [], canvas: [] };
-const EMPTY_SELECTION: CapabilitySelection = { agents: [], tools: [], skills: [], connectors: [], environments: [], workflows: [], commands: [], canvas: [] };
 const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: LucideIcon; description: string }> = {
   skills: { label: 'Skills', icon: GraduationCap, description: 'Reusable specialist workflows and domain knowledge.' },
   tools: { label: 'Tools', icon: Wrench, description: 'Actions the agent can call while it works.' },
@@ -98,10 +96,22 @@ const CAPABILITY_META: Record<CapabilityKind, { label: string; icon: LucideIcon;
   connectors: { label: 'Connectors', icon: Cable, description: 'Connected data sources and external services.' },
   environments: { label: 'Environments', icon: Monitor, description: 'Session environments and their available actions.' },
   workflows: { label: 'Workflows', icon: Workflow, description: 'Reusable HTML programs that orchestrate agents and other capabilities.' },
+  plugins: { label: 'Plugins', icon: Blocks, description: 'Third-party service tools; a run reaches one only when it names it.' },
   commands: { label: 'Commands', icon: SquareTerminal, description: 'Session control commands; run an enabled command from the composer.' },
   canvas: { label: 'Canvas', icon: Waypoints, description: 'Reusable visual flows saved from the canvas (a human-facing library, separate from agent workflows).' },
 };
 const CAPABILITY_KINDS = Object.keys(CAPABILITY_META) as CapabilityKind[];
+/** One entry per capability kind, built from the list rather than written out.
+ *  Spelled out by hand, every such map had to be remembered whenever a kind was added —
+ *  and `plugins` was missed in all four of them. */
+function byKind<T>(make: (kind: CapabilityKind) => T): Record<CapabilityKind, T> {
+  return CAPABILITY_KINDS.reduce((all, kind) => {
+    all[kind] = make(kind);
+    return all;
+  }, {} as Record<CapabilityKind, T>);
+}
+const EMPTY_CAPABILITIES: CapabilityCatalog = byKind(() => []);
+const EMPTY_SELECTION: CapabilitySelection = byKind(() => []);
 
 /** The local machines the Machines panel can "Open" into a live noVNC view —
  *  environments that ship their own VNC-capable runtime. SSH machines are the
@@ -1669,7 +1679,7 @@ function asCatalog(value: unknown): CapabilityCatalog {
       return null;
     })
     .filter((item): item is CapabilityItem => item !== null);
-  return { agents: itemsFor('agents'), tools: itemsFor('tools'), skills: itemsFor('skills'), connectors: itemsFor('connectors'), environments: itemsFor('environments'), workflows: itemsFor('workflows'), commands: itemsFor('commands'), canvas: itemsFor('canvas') };
+  return byKind(itemsFor);
 }
 
 // Selected capabilities are tracked by name (strings or {name} objects).
@@ -1678,7 +1688,7 @@ function asSelection(value: unknown): CapabilitySelection {
   const namesFor = (kind: CapabilityKind) => (Array.isArray(source[kind]) ? source[kind] : [])
     .map((item) => (typeof item === 'string' ? item : (item && typeof item === 'object' && typeof (item as Record<string, unknown>).name === 'string' ? (item as Record<string, string>).name : null)))
     .filter((name): name is string => typeof name === 'string');
-  return { agents: namesFor('agents'), tools: namesFor('tools'), skills: namesFor('skills'), connectors: namesFor('connectors'), environments: namesFor('environments'), workflows: namesFor('workflows'), commands: namesFor('commands'), canvas: namesFor('canvas') };
+  return byKind(namesFor);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

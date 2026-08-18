@@ -653,7 +653,8 @@ class Agent(BaseModel):
         return (extra or {}).get(f"{capability_type}_allowlist")
 
     async def _get_capability_context(self, capability_type: str, ctx: "AgentContext",
-                                      types: Optional[List[str]] = None) -> Dict[str, Any]:
+                                      types: Optional[List[str]] = None,
+                                      **extra: Any) -> Dict[str, Any]:
         """One capability type's roster, as the prompt's slots for it.
 
         Four near-identical copies of this stood here, one per type, and the way
@@ -662,24 +663,71 @@ class Agent(BaseModel):
         environments were in their own ``env_names`` — got none of it. Reading the
         manager through the capability table means a type is served by existing.
 
-        Returns the two slots a prompt template names: ``<type>_context`` (headed,
-        for the body) and ``available_<type>s`` (bare, for anywhere else).
+        Returns one slot, ``available_<mount_type>``, which is the one a template
+        renders. A second, headed ``<type>_context`` was produced beside it and no
+        template ever named it — the Code Mode calling convention was appended to that
+        key, so an agent holding ``run_code_tool`` was never told how to call anything.
+
+        An empty roster renders as empty rather than as a notice: the shared capability
+        module omits a block whose slot is blank, so a type this agent does not have
+        costs it no prompt at all.
         """
         entry = capability_type_entry(capability_type)
         content = await entry.manager().get_instruction(
             allowlist=self._capability_allowlist(capability_type, ctx), types=types,
-            level="brief")
-        heading = f"Available {entry.mount_type.capitalize()}"
-        available = content if content else f"[No {entry.mount_type} loaded.]"
-        return {f"{capability_type}_context": f"### {heading}\n{available}",
-                f"available_{entry.mount_type}": available}
+            level="brief", **extra)
+        return {f"available_{entry.mount_type}": content or ""}
+
+    async def _capability_slots(self, entry: Any, ctx: AgentContext) -> Dict[str, Any]:
+        """One capability type's prompt slots.
+
+        A type that needs something of its own defines ``_capability_<type>_slots``;
+        everything else takes the generic roster. The hook is named for the capability
+        rather than after ``_get_<type>_context`` because ``agent`` would then collide
+        with ``_get_agent_context``, which is the orchestration state and takes a
+        different signature — a resolution that would have failed only at run time, and
+        only for the one type that had no roster to begin with.
+        """
+        hook = getattr(self, f"_capability_{entry.type}_slots", None)
+        if hook is not None:
+            return await hook(ctx)
+        return await self._get_capability_context(entry.type, ctx)
+
+    async def _capability_skill_slots(self, ctx: AgentContext) -> Dict[str, Any]:
+        """Skills, filtered to the types this agent may see.
+
+        The filter is the hard guardrail keeping worker SOPs out of the MetaAgent and
+        orchestration recipes out of workers, so it is applied here rather than left to
+        whatever allowlist a run happens to carry.
+        """
+        return await self._get_capability_context("skill", ctx, types=self._allowed_skill_types())
+
+    async def _capability_agent_slots(self, ctx: AgentContext) -> Dict[str, Any]:
+        """The sub-agent roster, with this agent left out of its own."""
+        return await self._get_capability_context("agent", ctx, exclude=self.name)
+
+    async def _capability_environment_slots(self, ctx: AgentContext) -> Dict[str, Any]:
+        """Environments, which also render headed in a block of their own.
+
+        An agent works *in* an environment rather than calling it in passing, and the
+        three prompts that have one place that block away from the capability list for
+        exactly that reason.
+        """
+        slots = await self._get_capability_context("environment", ctx)
+        body = slots["available_environments"]
+        slots["environment_context"] = f"### Available Environments\n{body}" if body else ""
+        return slots
+
+    async def _capability_tool_slots(self, ctx: AgentContext) -> Dict[str, Any]:
+        """Tools, plus the Code Mode calling convention when this agent can run a program."""
+        return await self._get_tool_context(ctx=ctx)
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """The tool roster, plus the Code Mode calling convention when it applies."""
         slots = await self._get_capability_context("tool", ctx)
         sdk = await self._code_mode_section(self._capability_allowlist("tool", ctx))
         if sdk:
-            slots["tool_context"] = f"{slots['tool_context']}\n\n{sdk}"
+            slots["available_tools"] = f"{slots['available_tools']}\n\n{sdk}"
         return slots
 
     async def _get_inherited_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
@@ -732,13 +780,6 @@ class Agent(BaseModel):
             "It is not your own history and you did not take these actions.\n\n" + body
         )}
 
-    async def _get_environment_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """The environment roster — each environment's own ENVIRONMENT.md body.
-
-        That file is written for the model: it states the environment's rules and
-        its actions with their arguments, in one place a human edits and reviews.
-        """
-        return await self._get_capability_context("environment", ctx)
 
     async def _code_mode_section(self, allowlist: Optional[List[str]]) -> str:
         """Declare the visible tools as functions, for agents that hold `run_code_tool`.
@@ -762,34 +803,9 @@ class Agent(BaseModel):
         skills a run happens to load."""
         return ["worker"]
 
-    async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """The skill roster, filtered to the types this agent may see.
 
-        The type filter is the hard guardrail keeping worker SOPs out of the
-        MetaAgent and orchestration recipes out of workers, so it is applied here
-        rather than left to whatever allowlist a run happens to carry.
-        """
-        return await self._get_capability_context("skill", ctx, types=self._allowed_skill_types())
 
-    async def _get_connector_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """The connector roster.
 
-        Concise by design (name/description/actions + CONNECTOR.md path). The agent
-        reads a connector's CONNECTOR.md on demand for per-action argument details.
-        """
-        return await self._get_capability_context("connector", ctx)
-
-    async def _get_plugin_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """The plugin roster — empty unless this run named the plugins it wants.
-
-        Opt-in rather than resident: the registry wraps hundreds of tools across
-        services most runs never touch, so one reaches a model only when asked for.
-        """
-        return await self._get_capability_context("plugin", ctx)
-
-    async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Workflow discovery is opt-in; worker agents do not orchestrate workflows."""
-        return {"workflow_context": "", "available_workflows": ""}
 
     async def _resolve_workspace_root(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workspace_root surfaced in the prompt's `{{ workspace_root }}` slot.
@@ -901,12 +917,12 @@ class Agent(BaseModel):
 
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
         agent_message_modules.update(await self._get_inherited_context(ctx=ctx))
-        agent_message_modules.update(await self._get_tool_context(ctx=ctx))
-        agent_message_modules.update(await self._get_skill_context(ctx=ctx))
-        agent_message_modules.update(await self._get_connector_context(ctx=ctx))
-        agent_message_modules.update(await self._get_environment_context(ctx=ctx))
-        agent_message_modules.update(await self._get_plugin_context(ctx=ctx))
-        agent_message_modules.update(await self._get_workflow_context(ctx=ctx))
+        # Every type in the table, rather than a list of them here. Written out, this was
+        # one more register to remember: `agent` was missing from it, which is why a
+        # prompt told the model to "dispatch a sub-agent from Available Sub-Agents" while
+        # nothing produced that roster.
+        for entry in CAPABILITY_TYPES:
+            agent_message_modules.update(await self._capability_slots(entry, ctx))
         
         response = await prompt_manager(
             name=self.prompt_name,

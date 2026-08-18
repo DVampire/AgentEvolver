@@ -13,7 +13,7 @@ from agentevolver.logger import logger
 from agentevolver.agent.types import AgentConfig, Agent, AgentContext
 from agentevolver.agent.context import AgentContextManager
 from agentevolver.utils import assemble_workspace_path
-from agentevolver.capability import CapabilitySchema, SchemaSource
+from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 
 class AgentManagerServer(BaseModel):
     """Agent Manager Server for managing agent registration and execution with lazy loading."""
@@ -105,6 +105,44 @@ class AgentManagerServer(BaseModel):
             List[str]: List of agent names
         """
         return await self._ensure_context_manager().list()
+
+    async def get_instruction(self, allowlist: Optional[List[str]] = None,
+                              types: Optional[List[str]] = None,
+                              level: str = "brief", *,
+                              exclude: Optional[str] = None) -> str:
+        """The sub-agent roster, as every other capability type renders one.
+
+        The only type that had no ``get_instruction``, which is why sub-agents never
+        reached the capability block of a prompt: the generic builder asks the manager
+        named by ``CAPABILITY_TYPES``, and this one could not answer. The prompts told
+        the model to "dispatch a sub-agent from Available Sub-Agents" while nothing
+        produced that list, so the roster had to be inferred from the ``*_agent`` entries
+        in the tool schemas.
+
+        Args:
+            allowlist: Which agents to include. ``None`` is all, ``[]`` is none.
+            types: Unused here; accepted so every manager answers the same call.
+            level: ``brief`` for the resident roster, ``full`` for one agent's detail.
+            exclude: A name to leave out — the caller, so an orchestrator is not
+                offered itself.
+
+        Returns:
+            The rendered cards, joined.
+        """
+        names = allowlist if allowlist is not None else await self.list()
+        parts: List[str] = []
+        for name in names:
+            if name == exclude:
+                continue
+            info = await self.get_info(name)
+            if info is None:
+                continue
+            parts.append(roster_card(
+                info.name, getattr(info, "description", "") or "",
+                meta=f"v{getattr(info, 'version', '') or '1.0.0'}",
+                level=level,
+            ))
+        return roster(parts)
 
     async def function_callings(
         self, allowlist: Optional[List[str]] = None, types: Optional[List[str]] = None,

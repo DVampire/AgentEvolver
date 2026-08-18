@@ -1010,14 +1010,21 @@ class TestEnvironmentInstruction:
     async def test_every_agent_gets_environment_context_not_only_bound_ones(self) -> None:
         """The regression that motivated moving this off a mixin.
 
-        `_get_environment_context` sits beside `_get_tool_context` on the base class, so
-        an ordinary agent is told about its environments. When it was inherited, it was
-        not — silently, because an absent prompt section looks like an environment with
-        nothing to say.
+        Environment context reached only the two agents that inherited a mixin, and the
+        failure was silent: an absent prompt section looks like an environment with
+        nothing to say. It is assembled on the base class now, for every type in
+        `CAPABILITY_TYPES`, so a type is served by existing rather than by being named.
         """
-        from agentevolver.agent.types import Agent
+        import inspect
 
-        assert hasattr(Agent, "_get_environment_context")
-        for name in ("_get_tool_context", "_get_skill_context", "_get_connector_context"):
-            sibling = getattr(Agent, name)
-            assert sibling.__qualname__.split(".")[0] == Agent._get_environment_context.__qualname__.split(".")[0]
+        from agentevolver.agent.types import Agent
+        from agentevolver.capability import CAPABILITY_TYPES
+
+        assert "environment" in {entry.type for entry in CAPABILITY_TYPES}
+        assert "for entry in CAPABILITY_TYPES" in inspect.getsource(Agent._get_messages), (
+            "capability contexts are named one by one again, which is how environment "
+            "was missed the first time"
+        )
+        # The one thing environment does differently — its own headed block — is on the
+        # base class, not on the agents that happen to have an environment.
+        assert Agent._capability_environment_slots.__qualname__.startswith("Agent.")

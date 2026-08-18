@@ -112,9 +112,13 @@ class BrowserAgent(Agent):
         # Pure environment agent — no tools; the task ends via the `finish` action.
         return {"tool_context": ""}
 
-    async def _get_skill_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Return an empty skill context: this agent exposes no skills."""
-        return {"skill_context": ""}
+    async def _capability_skill_slots(self, ctx: AgentContext) -> Dict[str, Any]:
+        """No skills: this agent drives a browser and has no use for one.
+
+        The empty slot is what the shared capability module tests, so the block is
+        omitted rather than rendered with a notice inside it.
+        """
+        return {"available_skills": ""}
 
     async def _get_messages(
         self,

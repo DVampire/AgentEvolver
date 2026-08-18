@@ -119,17 +119,16 @@ class MetaAgent(Agent):
         await self._conclude(run)
         return None
 
-    async def _get_workflow_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+    async def _capability_workflow_slots(self, ctx: AgentContext) -> Dict[str, Any]:
         """Expose only active workflow summaries; inspect supplies full HTML on demand."""
         from agentevolver.workflow import workflow_manager
 
         allowlist = (getattr(ctx, "extra", None) or {}).get("workflow_allowlist")
         content = workflow_manager.get_instruction(allowlist=allowlist)
-        available = content or "[No workflows loaded.]"
-        return {
-            "workflow_context": f"### Available Workflows\n{available}",
-            "available_workflows": available,
-        }
+        available = content or ""
+        # Empty rather than a notice: the shared capability module omits a block whose
+        # slot is blank, so "no workflows" costs no prompt instead of a line saying so.
+        return {"available_workflows": available}
 
     async def _handle_extra_event(self, run, msg: Any) -> None:
         """A blocked sub-agent escalated (its EscalationMessage landed in our inbox). Reply

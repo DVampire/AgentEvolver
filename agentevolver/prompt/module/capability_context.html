@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="capability_context">
+  <link rel="stylesheet" href="../../visual/css/prompt.css">
+  <script src="../../visual/js/prompt.js"></script>
+</head>
+<body>
+<!-- One block per capability type a model can call, in one file so that adding a type is
+     one edit rather than twenty-six. Each is rendered only when its roster is non-empty:
+     an agent that has no connectors pays no prompt for saying so, and the five hand-cut
+     variants this replaces differed by nothing else. Environments are deliberately absent
+     — an agent works *in* one rather than calling it in passing, so they render in their
+     own block, beside the state that belongs to them. -->
+<capability-context>
+{% if available_tools %}<tool-context>
+{{ available_tools }}
+</tool-context>{% endif %}
+{% if available_skills %}<skill-context>
+{{ available_skills }}
+</skill-context>{% endif %}
+{% if available_connectors %}<connector-context>
+{{ available_connectors }}
+</connector-context>{% endif %}
+{% if available_plugins %}<plugin-context>
+{{ available_plugins }}
+</plugin-context>{% endif %}
+{% if available_workflows %}<workflow-context>
+{{ available_workflows }}
+</workflow-context>{% endif %}
+{% if available_agents %}<subagent-context>
+{{ available_agents }}
+</subagent-context>{% endif %}
+</capability-context>
+</body>
+</html>
