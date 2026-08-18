@@ -583,7 +583,8 @@ class DynamicModuleManager:
                         code: str, 
                         module_name: Optional[str] = None, 
                         context: Optional[str] = None,
-                        inject_imports: Optional[Dict[str, Any]] = None) -> str:
+                        inject_imports: Optional[Dict[str, Any]] = None,
+                        source_file: Optional[str] = None) -> str:
         """Load code into a virtual module and return the module name.
         
         Args:
@@ -592,6 +593,12 @@ class DynamicModuleManager:
             context: Optional context name (e.g., "tool", "agent") for auto-injection
             inject_imports: Optional dict of {symbol_name: object} to inject manually.
                            If None, will auto-detect based on code analysis.
+            source_file: The file this code was read from, when there is one. Set as the
+                         module's ``__file__`` so the standard library can find it:
+                         without it every ``inspect`` call reports the module as built-in
+                         (``TypeError: <module 'ext.memory.x'> is a built-in module``),
+                         which is what made reading an extension's own source fail, and
+                         what leaves its frames pathless in a traceback.
             
         Returns:
             The module name that was used
@@ -603,8 +610,11 @@ class DynamicModuleManager:
             module_name = self._generate_module_name()
         
         # Create a new module object (virtual, in memory only)
-        spec = importlib.util.spec_from_loader(module_name, loader=None)
+        spec = importlib.util.spec_from_loader(module_name, loader=None,
+                                               origin=source_file)
         module = importlib.util.module_from_spec(spec)
+        if source_file:
+            module.__file__ = source_file
         
         # Determine imports to inject
         if inject_imports is None:
@@ -618,8 +628,13 @@ class DynamicModuleManager:
         for name, obj in inject_imports.items():
             setattr(module, name, obj)
         
-        # Execute the code in the module namespace
-        exec(code, module.__dict__)
+        # Compiled against the real path, not exec'd as a bare string. `exec(code, ...)`
+        # compiles with the filename "<string>", which every function in the module then
+        # carries as its `co_filename` — so `inspect.getsource` on a method fails even
+        # when the module knows its own `__file__`, and a traceback through extension
+        # code shows no file and no source line. Naming the file here fixes both, and is
+        # why an environment's actions could not report their source.
+        exec(compile(code, source_file or f"<{module_name}>", "exec"), module.__dict__)
         
         # Add to sys.modules so Python treats it as a real importable module
         # This is a runtime virtual module - no file on disk needed
@@ -636,7 +651,8 @@ class DynamicModuleManager:
                    base_class: Optional[Type[T]] = None, 
                    module_name: Optional[str] = None,
                    context: Optional[str] = None,
-                   inject_imports: Optional[Dict[str, Any]] = None) -> Type[T]:
+                   inject_imports: Optional[Dict[str, Any]] = None,
+                   source_file: Optional[str] = None) -> Type[T]:
         """Dynamically load a class from source code.
         
         This function creates a virtual Python module in memory (not on disk) by:
@@ -673,10 +689,12 @@ class DynamicModuleManager:
         
         # Load code into module first (needed to find classes)
         if module_name is None:
-            module_name = self.load_code(code, context=context, inject_imports=inject_imports)
+            module_name = self.load_code(code, context=context, inject_imports=inject_imports,
+                                         source_file=source_file)
         else:
             if module_name not in self._loaded_modules:
-                self.load_code(code, module_name, context=context, inject_imports=inject_imports)
+                self.load_code(code, module_name, context=context, inject_imports=inject_imports,
+                               source_file=source_file)
         
         # Get module
         module = self._loaded_modules[module_name]
@@ -763,6 +781,9 @@ class DynamicModuleManager:
         # Force a fresh load when an explicit module_name is reused (hot-reload).
         if module_name is not None and module_name in self._loaded_modules:
             self.unload_module(module_name)
+        # The path travels with the code. It was read here and then dropped, so the
+        # module the code became had no `__file__` and every `inspect` call on it —
+        # source, frames, line numbers — answered "built-in module".
         return self.load_class(
             code,
             class_name=class_name,
@@ -770,6 +791,7 @@ class DynamicModuleManager:
             module_name=module_name,
             context=context,
             inject_imports=inject_imports,
+            source_file=file_path,
         )
 
     def unload_module(self, module_name: str) -> None:

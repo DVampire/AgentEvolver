@@ -602,3 +602,60 @@ def test_a_failure_to_read_source_is_reported(monkeypatch):
 
     assert said, "the read failed and nothing said so"
     assert "Unreadable" in said[0], "the report does not name the component"
+
+
+# --------------------------------------------------------------------------- #
+# A loaded module knows where it came from
+# --------------------------------------------------------------------------- #
+_SOURCE = '''
+class Widget:
+    """A widget."""
+
+    def act(self, value: str = "") -> str:
+        return value
+'''
+
+
+def test_a_module_loaded_from_a_file_knows_its_own_path(dynamic, tmp_path):
+    """`load_class_from_path` read the file and then dropped the path.
+
+    The module it built therefore had no `__file__`, and the standard library answers
+    that with `TypeError: <module 'ext.memory.x'> is a built-in module` — which is how
+    reading an extension component's own source failed. Self-evolution reads a component
+    through that path before rewriting it.
+    """
+    import inspect
+
+    path = tmp_path / "widget.py"
+    path.write_text(_SOURCE, encoding="utf-8")
+    cls = dynamic.load_class_from_path(str(path), module_name="ext.test.widget")
+
+    module = inspect.getmodule(cls)
+    assert getattr(module, "__file__", None) == str(path)
+    assert inspect.getfile(module) == str(path)
+
+
+def test_a_method_on_a_loaded_class_can_report_its_source(dynamic, tmp_path):
+    """`__file__` alone is not enough — the code has to be compiled against the path.
+
+    `exec(code, ns)` compiles with the filename `"<string>"`, which every function in the
+    module then carries as its `co_filename`. So `inspect.getsource` on a *method* failed
+    even once the module knew its own file, and an environment's actions all reported
+    "source code cannot be extracted". A traceback through the code was equally pathless.
+    """
+    import inspect
+
+    path = tmp_path / "widget.py"
+    path.write_text(_SOURCE, encoding="utf-8")
+    cls = dynamic.load_class_from_path(str(path), module_name="ext.test.widget2")
+
+    assert "def act" in inspect.getsource(cls.act)
+    assert cls.act.__code__.co_filename == str(path), (
+        "the method still carries the filename exec compiled it under")
+    assert dynamic.get_source_code(cls.act)
+
+
+def test_code_with_no_file_still_loads(dynamic):
+    """The other caller passes a string that never was a file; it must keep working."""
+    name = dynamic.load_code(_SOURCE, module_name="ext.test.stringy")
+    assert name == "ext.test.stringy"
