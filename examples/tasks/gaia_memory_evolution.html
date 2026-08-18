@@ -80,8 +80,8 @@ This is orchestration work. Do NOT explore the repository yourself with
 `list_dir_tool` / `read_file_tool` — dispatch sub-agents. Your FIRST action is
 Round 1.
 
-- **Round 1 — dispatch `memory_generate_agent`** with `target_name` set to
-  `constraint_memory`. Invoke `memory_creator_skill` ONCE, then write the file
+- **Round 1 — dispatch `generate_agent` (`target_type=memory`)** with `target_name` set to
+  `constraint_memory`. Invoke `self_evolving_skill` ONCE, then write the file
   immediately — do not re-read the skill. The spec, so nothing has to be derived:
   - single file `{extension_root}/memory/constraint_memory.py`
   - class `ConstraintMemory`, subclassing `TieredMemory`, registered via
@@ -100,7 +100,7 @@ Round 1.
   - verify with `python -m py_compile` and put the file path in
     `done_tool.reasoning` so the registration hook picks it up.
 
-- **Round 2 — dispatch `memory_evaluate_agent`** with `target_name` set to
+- **Round 2 — dispatch `evaluate_agent` (`target_type=memory`)** with `target_name` set to
   `constraint_memory` to score it across the five dimensions, telling it the
   objective criterion: a confirmed constraint established early must still be
   present verbatim after many later records, and ordinary recency behaviour must
@@ -109,7 +109,7 @@ Round 1.
 - **Round 3 — carry the policy into the bound memory.** `constraint_memory` is
   registered, but the sub-agents are bound to `file_system_memory` by
   configuration, so a newly generated component under a new name is not yet in
-  play. Dispatch **`memory_optimize_agent`** with `target_name` set to
+  play. Dispatch **`optimize_agent` (`target_type=memory`)** with `target_name` set to
   `file_system_memory`, citing `constraint_memory` as the reference
   implementation. Give it the same two-section retention policy, keep the class
   name, `@MEMORY_SYSTEM.register_module`, and existing method signatures intact,

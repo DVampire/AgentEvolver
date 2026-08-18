@@ -4,6 +4,12 @@ A **capability** is something a model can call. Seven types are projected into t
 native tool list — tool, skill, connector, agent, environment, workflow, plugin —
 and each is described here once, in the one place that knows.
 
+A **component** is anything the framework registers, versions and can evolve: those
+seven plus ``memory``, which an agent has rather than calls. :data:`COMPONENT_TYPES`
+is that wider set, and it is what the generate / optimize / evaluate agents work on.
+Everything that builds a roster for a model walks :data:`CAPABILITY_TYPES` instead,
+so a model is never offered something it cannot call.
+
 Written down because the same facts were being restated wherever they were
 needed: which manager owns a type, whether a type's members are separately
 callable, whether the plan gate can rule on it, what an agent mounts it as. Each
@@ -49,6 +55,12 @@ class CapabilityType:
     judgeable: bool
     #: What an agent mounts a roster of these as, on the canvas. Plural.
     mount_type: str
+    #: Whether a model can call this type at all. False for a component the
+    #: framework registers, versions and evolves but never hands to a model —
+    #: ``memory``, which an agent has rather than calls. Such a row is in
+    #: :data:`COMPONENT_TYPES` and deliberately not in :data:`CAPABILITY_TYPES`,
+    #: because everything that walks the latter is building a callable roster.
+    mounted: bool = True
 
 
 def _tool_manager() -> Any:
@@ -86,6 +98,11 @@ def _plugin_manager() -> Any:
     return plugin_manager
 
 
+def _memory_manager() -> Any:
+    from agentevolver.memory import memory_manager
+    return memory_manager
+
+
 #: Every model-callable capability type. The order is the order an agent's mount
 #: pickers appear on the canvas, so it is part of the UI and not arbitrary.
 CAPABILITY_TYPES: Tuple[CapabilityType, ...] = (
@@ -101,21 +118,45 @@ CAPABILITY_TYPES: Tuple[CapabilityType, ...] = (
     CapabilityType("plugin", _plugin_manager, container=True, judgeable=True, mount_type="plugins"),
 )
 
-_BY_TYPE: Dict[str, CapabilityType] = {entry.type: entry for entry in CAPABILITY_TYPES}
+#: Every component the framework registers, versions and can evolve — the seven
+#: callable ones plus ``memory``. This is what a tool that reads registry facts
+#: iterates, and what the generate / optimize / evaluate agents work on. It is a
+#: superset rather than a replacement: a roster builder wants only the callable
+#: rows, and reading them off this table would offer a model something it cannot
+#: call.
+COMPONENT_TYPES: Tuple[CapabilityType, ...] = CAPABILITY_TYPES + (
+    CapabilityType("memory", _memory_manager, container=False, judgeable=True,
+                   mount_type="memories", mounted=False),
+)
+
+_BY_TYPE: Dict[str, CapabilityType] = {entry.type: entry for entry in COMPONENT_TYPES}
 
 
-def capability_type(name: str) -> Optional[CapabilityType]:
-    """The entry for one type name, or ``None`` if it is not a capability type.
+def component_type(name: str) -> Optional[CapabilityType]:
+    """The entry for one component type name, or ``None`` if there is no such type.
 
-    ``None`` is the answer for ``memory``, ``prompt`` and the rest — things the
-    framework registers but never hands a model — so a caller can ask about any
-    string it was given without guarding first.
+    ``None`` is the answer for ``prompt`` and anything else the framework stores
+    but does not evolve on its own, so a caller can ask about any string it was
+    given without guarding first.
     """
     return _BY_TYPE.get(name)
 
 
+def capability_type(name: str) -> Optional[CapabilityType]:
+    """The entry for one *callable* type name, or ``None``.
+
+    Narrower than :func:`component_type` by exactly the rows a model cannot call:
+    ``memory`` answers ``None`` here and an entry there.
+    """
+    entry = _BY_TYPE.get(name)
+    return entry if entry is not None and entry.mounted else None
+
+
 #: Type names, in table order. What a caller shows a person choosing one.
 CAPABILITY_TYPE_NAMES: Tuple[str, ...] = tuple(entry.type for entry in CAPABILITY_TYPES)
+
+#: Every component type's name, in table order.
+COMPONENT_TYPE_NAMES: Tuple[str, ...] = tuple(entry.type for entry in COMPONENT_TYPES)
 
 #: Mount names, in table order — the rosters an agent node can be given.
 AGENT_MOUNT_TYPES: Tuple[str, ...] = tuple(entry.mount_type for entry in CAPABILITY_TYPES)

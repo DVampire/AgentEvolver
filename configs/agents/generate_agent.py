@@ -1,0 +1,15 @@
+generate_agent = dict(
+    name="generate_agent",
+    type="GenerateAgent",
+    description="Creates a new component of any type — tool, skill, agent, connector, memory, plugin, workflow or environment — from a description.",
+    model_name="llm_hub/claude-opus-5",
+    prompt_name="generate_agent",
+    memory_name="file_system_memory",
+    max_actions=10,
+    max_step=30,
+    max_token=1000000,
+    timeout=1800,
+    review_steps=5,
+    enable_evolving=False,
+    use_memory=False,
+)

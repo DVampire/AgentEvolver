@@ -27,7 +27,7 @@ class WordCountTool(Tool):
     #: What the call schema cannot say. Carried in the prompt for every resident tool.
     guidance: str = Field(default="Counts whitespace-separated tokens, not glyphs. "
                                   "For a binary file this fails rather than guessing.")
-    #: Complete calls, reached through `inspect_capability_tool` rather than the prompt.
+    #: Complete calls, reached through `inspect_tool` rather than the prompt.
     examples: List[str] = Field(default_factory=lambda: [
         '{"name": "word_count", "args": {"path": "/abs/path/notes.md"}}',
     ])
@@ -72,7 +72,7 @@ Three things the registry reads and one that decides behaviour:
   and its `Args:` docstring, and travel in the request's own `tools` array — so an
   argument with no `Args:` line reaches the model unexplained, and a prose parameter list
   beside it would be a third spelling of one contract. `guidance` is carried in the prompt
-  every step; `examples` are fetched by `inspect_capability_tool` when an agent stops to
+  every step; `examples` are fetched by `inspect_tool` when an agent stops to
   ask.
 - **The return value must be a `Response`.** A tool that returns a bare string reaches the
   agent as `None` and the run spins without an observation.

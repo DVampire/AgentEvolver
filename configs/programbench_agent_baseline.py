@@ -7,7 +7,7 @@ rather than switched off. Three differences, and only three:
 |---|---|---|
 | `agent_names` | 4 actors + 9 generate/optimize/evaluate agents | 4 actors |
 | `tool_names` | basic + `evolution_tool` | basic |
-| `skill_names` | `self_evolving_skill` + 3 creators | none |
+| `skill_names` | `self_evolving_skill` | none |
 
 This arm carries no skills at all, so it measures what the tool roster alone
 achieves. Worth knowing when reading its score: the first run with an empty skill

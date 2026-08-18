@@ -45,6 +45,11 @@ _MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector", "wor
 _EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": "", "workflow": ".html", "memory": ".py", "plugin": ""}
 # Directory-type modules: the active component is a directory holding a manifest file.
 _DIR_MODULES = {"skill", "environment", "connector", "plugin"}
+# What the evolution agents can create, improve and judge: everything installable
+# except a prompt, which is not evolved on its own — an agent's registration hook
+# takes a prompt-only change as part of that agent. Derived from the list above so
+# that a new module type joins it by existing rather than by being remembered.
+EVOLVABLE_MODULES = tuple(m for m in _MODULES if m != "prompt")
 _MANIFEST_FILE = {"skill": "SKILL.md", "environment": "ENVIRONMENT.md", "connector": "CONNECTOR.md",
                   "plugin": "PLUGIN.md"}
 # For directory-type class modules, the Python class lives in this file inside the dir.

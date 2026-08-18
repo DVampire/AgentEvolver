@@ -2,12 +2,11 @@ from .compact import CompactHook
 from .trace import TraceHook
 from .memory import MemoryHook
 from .constraint import ConstraintHook
-from .skill_registration import SkillRegistrationHook
-from .tool_registration import ToolRegistrationHook
+from .capability_registration import (
+    ConnectorRegistrationHook, EnvironmentRegistrationHook, MemoryRegistrationHook,
+    PluginRegistrationHook, SkillRegistrationHook, ToolRegistrationHook,
+)
 from .agent_registration import AgentRegistrationHook
-from .environment_registration import EnvironmentRegistrationHook
-from .memory_registration import MemoryRegistrationHook
-from .connector_registration import ConnectorRegistrationHook
 from .workflow_registration import WorkflowRegistrationHook
 from .snapshot_hook import SnapshotHook
 from .trajectory_hook import TrajectoryHook
@@ -25,6 +24,7 @@ __all__ = [
     "EnvironmentRegistrationHook",
     "MemoryRegistrationHook",
     "ConnectorRegistrationHook",
+    "PluginRegistrationHook",
     "WorkflowRegistrationHook",
     "SnapshotHook",
     "TrajectoryHook",

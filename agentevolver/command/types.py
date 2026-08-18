@@ -72,9 +72,20 @@ class SkillCommand(Command):
     type: CommandType = Field(default=CommandType.SKILL)
     target_agent: str = Field(default="", description="Name of the agent this command dispatches to.")
 
-    async def dispatch_agent(self, task: str, ctx: Optional[CommandContext] = None) -> Response:
-        """Send ``task`` to ``target_agent`` via the agent manager and return its Response."""
+    async def dispatch_agent(self, task: str, ctx: Optional[CommandContext] = None, *,
+                             target_type: Optional[str] = None,
+                             target_name: Optional[str] = None) -> Response:
+        """Send ``task`` to ``target_agent`` via the agent manager and return its Response.
+
+        ``target_type`` and ``target_name`` say what the run is working on, for the three
+        evolution agents that build whichever component type they are told to. They travel
+        in the context, not the task text: a generate run's target does not exist yet, so
+        the agent cannot look either of them up.
+        """
         from agentevolver.agent.server import agent_manager  # lazy import to avoid import cycles
+        if ctx is not None and (target_type or target_name):
+            ctx.extra.update({k: v for k, v in
+                              (("target_type", target_type), ("target_name", target_name)) if v})
         # Preserve the caller's session roots so tools invoked by the agent retain
         # the same filesystem boundary as the command that launched it.
         result = await agent_manager(self.target_agent, input={"task": task}, ctx=ctx)

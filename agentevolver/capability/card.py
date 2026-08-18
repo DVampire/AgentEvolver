@@ -14,7 +14,7 @@ The levels are the two that have callers:
     choose one, and where to look for the rest.
 
 ``full``
-    What ``inspect_capability_tool`` returns for the one capability an agent has
+    What ``inspect_tool`` returns for the one capability an agent has
     stopped to ask about — the document.
 
 A ``tool`` is not here: it has no document, so its own fields *are* its

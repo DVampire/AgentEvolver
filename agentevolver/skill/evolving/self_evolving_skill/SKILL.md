@@ -1,133 +1,116 @@
 ---
 name: self_evolving_skill
-description: The global playbook for self-evolution — how MetaAgent improves the system's OWN capabilities (agents, prompts, tools, skills, connectors, environments) while serving a user task. Use whenever a task is blocked or degraded by a missing/weak capability, when a sub-agent repeatedly fails for a fixable reason, or when the user explicitly asks to create/improve/evaluate a capability. Provides the cross-cutting loop (decide → generate/optimize → evaluate → adopt or roll back), the enable_evolving gate rules, and how to drive the per-type creator skills. NOT for the user's own deliverable work.
-version: 1.2.0
-type: [orchestrator]
+description: When to evolve the framework's own components, and the loop that does it. Use whenever a task is blocked or degraded by a missing or weak capability, when a sub-agent repeatedly fails for a fixable reason, or when the user asks to create, improve or evaluate a component. Covers the decide → generate/optimize → evaluate → adopt-or-roll-back loop, the enable_evolving gate, and how to read an evaluation. The how-to for each of the eight component types lives in generate_skill, optimize_skill and evaluate_skill, which the three agents read. NOT for the user's own deliverable work.
+version: 2.0.0
 license: N/A
+type: [orchestrator]
 category: meta
 requirements: [cpu]
 metadata: {}
 ---
 
-# Self-Evolving Skill (global playbook)
+# Self-Evolving
 
-This is the **cross-cutting** methodology for evolving the system's own capabilities.
-The per-type *creator* skills (`agent_creator_skill`, `tool_creator_skill`,
-`skill_creator_skill`, `connector_creator_skill`, `environment_creator_skill`) tell you
-**how** to build/optimize/evaluate one entity of that type. This skill tells you **when
-to evolve, which loop to run, how the evolvability gate works, and how to decide whether
-a change actually helped** — the parts that are the same across all types.
+**When** to change the framework's own components, and **which loop** to run. This is an
+orchestrator's document. *How* to write one is the three worker skills — `generate_skill`,
+`optimize_skill`, `evaluate_skill` — each covering all eight component types, each read by
+the one agent that does that job.
 
-## What "self-evolution" means here (and its honest limits)
+## What this is
 
-- **Two directions, never confuse them.** *User work* (write the app, answer the
-  question) is done by `code_agent` / `general_agent` (`category: actor`). *Self-evolution*
-  changes the framework's own capabilities and is done by the generate/optimize/evaluate
-  agents (`category: generator/optimizer/evaluator`). Evolution serves the task; it is
-  never the deliverable unless the user asked for it.
-- **Register-is-live, no candidate pool.** When a generated/optimized entity is
-  registered, it becomes the active version immediately (visible to the *next* dispatched
-  sub-agent, not one already running). There is **no separate "candidate → validate →
-  promote" staging** — so you must **evaluate before you rely on a change**, and treat a
-  live change as provisional until verified.
-- **The decision is yours (prose, not code).** Nothing automatically scores an evaluation
-  and promotes/rolls back. YOU read the evaluator's scored report and decide. Own that
-  decision explicitly in your reasoning.
+- **Two directions, never confuse them.** *User work* — write the app, answer the question —
+  is done by `code_agent` / `general_agent`. *Self-evolution* changes the framework's own
+  components and is done by `generate_agent` / `optimize_agent` / `evaluate_agent`. Evolution
+  serves the task; it is never the deliverable unless the user asked for it.
+- **Register-is-live.** A generated or optimized component becomes the active version the
+  moment it registers — visible to the *next* sub-agent dispatched, not one already running.
+  There is no candidate pool and no promotion step, so a change is provisional until you have
+  evaluated it.
+- **The decision is yours.** Nothing scores a report and promotes or rolls back for you. You
+  read the evaluation and decide, in your own reasoning, explicitly.
 
-## The evolvability gate (`enable_evolving`) — hard-enforced
+## What can be evolved
 
-Every capability carries `enable_evolving`. It is **enforced in code**: an optimizer that
-tries to overwrite a frozen entity is **blocked at registration**.
+Eight types: `tool`, `skill`, `agent` (including its prompt), `connector`, `environment`,
+`memory`, `workflow`, `plugin`. Every dispatch names one as `target_type` and the component
+as `target_name` — a generate run names what it is about to create.
 
-- **Built-in entities (`src/…`) are frozen** (`enable_evolving=False`) — do NOT try to
-  optimize them; the write will be refused. If a built-in is inadequate, **generate a new
-  entity in `extension/`** instead of editing the built-in.
-- **Generated entities are evolvable** (`enable_evolving=True`) — these you can optimize in
-  later rounds.
-- **Always `inspect_<type>` the target first** to read its `enable_evolving` (and whether it
-  is even registered). If it reports frozen, pick the "generate a new one" path, not optimize.
+## When to evolve
 
-## When to trigger evolution
+**The question every defect forces: fix *this deliverable*, or evolve a *capability*?**
 
-**The core question every defect forces: fix *this deliverable*, or evolve a *capability*?**
-When a verifier (e.g. `browser_agent`, `reviewer_agent`) or a failed sub-task surfaces a
-problem, decide with this discriminator:
-
-> *If I re-dispatch the same agent with "fix X", will it plausibly succeed using the
+> *If I re-dispatch the same agent with "fix X", will it plausibly succeed with the
 > capabilities it already has?*
-> **Yes → `continue`** (redo/fix the work — the default). **No, it structurally lacks the
-> means and will fail the same way → `evolve`.**
+> **Yes → continue** (redo the work — this is the default).
+> **No, it structurally lacks the means and will fail the same way → evolve.**
 
-Evolution targets a **capability** defect, not a one-off weak attempt. Trigger only on a
-real, observed signal — one of:
+Evolution targets a capability defect, never a one-off weak attempt, and needs a real
+**observed** signal — one of:
 
-1. **Missing capability** — the task needs an operation NO tool/skill/connector provides,
-   and retrying with existing ones cannot work → `generator` (build it in `extension/`).
-   *Example: the deliverable needs real product images and there is no image/media search tool.*
+1. **Missing capability** — the task needs an operation no tool, skill or connector provides,
+   and retrying cannot work → **generate** it. *The deliverable needs real product images and
+   there is no media-search tool.* A general-purpose shell counts as providing the operation;
+   "the agent did not think to do it" is not a missing capability.
 2. **Recurring structural failure** — the same agent fails the same way **≥2×** despite
-   corrective guidance → the fault is in its prompt/tool, not the attempt → `optimizer`
-   (if the target is evolvable) or `generator` (a skill that encodes the fix).
-   *Example: a code agent keeps emitting oversized single actions that fail to parse.*
+   corrective guidance, so the fault is in its prompt or tools rather than the attempt →
+   **optimize** it, or **generate** a skill that encodes the fix. The count comes from your own
+   dispatch history: one dispatch can never satisfy this.
 3. **Quality ceiling from a missing method** — output is *systematically* below bar on a
-   dimension because the agent has no method/knowledge to do better and per-task
-   instruction won't close the gap → `generator` (a skill carrying the methodology).
-   *Example: UIs keep coming out generic because no design skill is being consulted.*
+   dimension **you have measured**, because the agent has no method to do better and per-task
+   instruction will not close the gap → **generate** a skill carrying the methodology. If you
+   cannot name the measurement, you have signal-gathering to do, not a ceiling.
 
-**Check the cheap fixes BEFORE evolving** — most "missing capability" is really "not
-wired in / not used":
-- Is a suitable capability already registered but **not in the roster / allowlist**? Add it,
-  don't regenerate a duplicate. (E.g. a web-search or media tool that exists but wasn't loaded.)
-- Did the sub-agent **ignore an existing skill** it should have used? Re-dispatch instructing
-  it to invoke that skill (e.g. a design skill for UI), rather than building a new one.
-- Only `generator` when the capability is genuinely absent.
+**First, get a signal at all.** Every rule above needs an observed defect, and on an autonomous
+task nobody hands you one. The absence of visible defects is not evidence the work is good — it
+is usually evidence you have not looked. Make the work observable first (a check that can fail,
+a reproduction, a reviewer pass); until one has run, the move is `continue`, never `evolve` and
+never `done`.
 
-**Do NOT evolve** on a first-time fixable deliverable defect (→ `continue`), a one-off
-transient error (→ retry), when the budget is TIGHT/CRITICAL (→ finish the task), or to
-"improve" a frozen built-in (blocked at registration — generate an `extension/` capability).
+**Check the cheap fixes first.** Most "missing capability" is really "not wired in":
 
-## The loop (run it as ordered rounds)
+- Is a suitable component already registered but **not in the roster or allowlist**? Add it
+  rather than generating a duplicate.
+- Did the sub-agent **ignore a skill it should have used**? Re-dispatch telling it to invoke
+  that skill. A listed-but-unused methodology skill is the single most common cause of weak
+  output.
 
-All steps are `kind="agent"`. Pick the sub-agent by type + phase (see the per-type creator
-skill for the exact agent names, e.g. `tool_generate_agent` / `tool_optimize_agent` /
-`tool_evaluate_agent`).
+**Do not evolve** on a first-time fixable defect (→ continue), a one-off transient error
+(→ retry), when the budget is TIGHT or CRITICAL (→ finish the task), or to "improve" a frozen
+built-in (→ generate an `extension/` component instead).
 
-1. **Assess** — `inspect_<type>` the target: registered? `enable_evolving`? source path.
-   Decide generate (missing / frozen built-in → new) vs optimize (exists & evolvable).
-2. **Change** — dispatch the `generator` (new) or `optimizer` (existing), `target_name` set.
-   It authors the files in `extension/` and registers them (new entities come out evolvable).
-3. **Evaluate** — dispatch the `evaluator` for that type → a scored, per-dimension report.
-4. **Prove it helped (with-vs-baseline)** — for a capability meant to help task execution,
-   dispatch the SAME actor agent twice on a representative probe task: once **with** the new
-   capability and once **without** it (baseline). You gate what a sub-agent sees by passing
-   an allowlist in its task `args`: `{"tool_allowlist": [...]}` / `{"skill_allowlist": [...]}`
-   / `{"connector_allowlist": [...]}` — an empty list is the baseline.
-5. **Decide (own it)** — from the evaluator score + the with-vs-baseline outcome, and — for a
-   substantial change or before finishing the task — an independent `reviewer_agent` pass
-   (it verifies hands-on whether the task is done and whether the evolution actually helped,
-   returning a `stop` / `continue` / `evolve` verdict):
-   - **Helped (evaluation shows a clear improvement)** → keep it (it's already live) and continue the user task using it.
-   - **No better / regressed / not evaluated** → you MUST NOT leave it live. Because register-is-live
-     means a bad change is already active, **rolling it back is required, not optional**. Use
-     `evolution_tool`: `rollback` an optimized entity to its previous version (`list_versions` first
-     to see what to restore), or `unload` a brand-new entity that has no prior good version. Then
-     either re-dispatch the `optimizer` with the failure evidence, or regenerate. A change that was
-     never evaluated counts as unproven — evaluate it or roll it back; never rely on it blind.
-6. **Record** — state in your reasoning what you evolved, the score, the decision, and why.
+## The evolvability gate
 
-Typical shape: `Round N` generator|optimizer → `Round N+1` evaluator (+ optional baseline
-probe in the same round) → `Round N+2` decision (continue user task, or re-optimize).
+Every component carries `enable_evolving`, and it is enforced in code: an optimize run that
+tries to overwrite a frozen component is **blocked at registration**.
 
-## Which entity types are evolvable today
+- **Built-ins are frozen.** Do not try to optimize one — the write is refused. If a built-in is
+  inadequate, generate a new component in `extension/`.
+- **Generated components are evolvable**, so a later round can improve them.
+- **Always `inspect_<type>` first** to read `enable_evolving`, and whether the target is even
+  registered. Frozen means take the generate path, not the optimize path.
 
-`agent`, `prompt` (via agent optimization), `tool`, `skill`, `connector`, `environment` —
-each has a creator skill. There is **no** Memory or Evaluation/Verification evolution triad
-yet; don't plan rounds that assume one.
+## The loop
 
-## Guardrails
+1. **Assess** — `inspect_<type>` the target: registered? evolvable? source path? Decide generate
+   (missing, or a frozen built-in) versus optimize (exists and evolvable).
+2. **Change** — dispatch `generate_agent` or `optimize_agent` with `target_type` and
+   `target_name`. It authors the files under `extension/` and registers them.
+3. **Evaluate** — dispatch `evaluate_agent` for a scored, per-dimension report.
+4. **Prove it helped** — for a component meant to help task execution, dispatch the *same* actor
+   agent twice on a representative probe: once with the new component and once without. You gate
+   what a sub-agent sees with an allowlist in its task args — `{"tool_allowlist": [...]}`,
+   `{"skill_allowlist": [...]}`, `{"connector_allowlist": [...]}`; an empty list is the baseline.
+5. **Decide, and own it** — from the score and the with-versus-baseline outcome, plus an
+   independent `reviewer_agent` pass for a substantial change:
+   - **Helped** → keep it (it is already live) and continue the user task using it.
+   - **No better, regressed, or never evaluated** → you must not leave it live. Register-is-live
+     means a bad change is already active, so rolling back is required rather than optional:
+     `evolution_tool` `rollback` an optimized component to its previous version (`list_versions`
+     first), or `unload` a brand-new one that has no prior version. Then re-dispatch with the
+     failure evidence, or regenerate.
+6. **Record** — state what you evolved, the score, the decision, and why.
 
-- Never overwrite a frozen (built-in) entity — generate a new one in `extension/` instead.
-- Evaluate before trusting a change; a registered change is live but unverified. If it
-  regresses, undo it with `evolution_tool` (rollback/unload) rather than leaving it active.
-- Keep evolution within the user task's budget; when TIGHT/CRITICAL, stop evolving and
-  finish the user task with what works.
-- One capability change per optimize step, so the evaluator can attribute the effect.
+Typical shape: round N generate|optimize → round N+1 evaluate (with the baseline probe in the
+same round) → round N+2 decide.
+
+One component change per optimize step, so the evaluation can attribute the effect.

@@ -3,7 +3,7 @@
 Structured like `configs/meta_agent.py`, trimmed to what a ProgramBench
 code-reconstruction run actually needs: the basic tools, the actor agents, and
 the self-evolution roster that applies here — the tool / agent / skill triads,
-`evolution_tool`, their creator skills, and `self_evolving_skill`.
+`evolution_tool`, and `self_evolving_skill`.
 `examples/run_programbench.py --no-evolve` strips the evolution roster back out
 for a lean, cheaper "just do the task" run.
 
@@ -160,13 +160,10 @@ tool_names = [
 ]
 
 skill_names = [
-    # global playbook: WHEN to evolve, the loop, and the enable_evolving gate
+    # WHEN to evolve, the loop, the enable_evolving gate, and how to write each of the
+    # eight component types. This was four entries: the playbook plus a creator skill
+    # per type.
     "self_evolving_skill",
-    # per-type creator skills (orchestrator role) — drive each triad's
-    # create -> evaluate -> improve loop
-    "tool_creator_skill",
-    "agent_creator_skill",
-    "skill_creator_skill",
 ]
 
 connector_names = []

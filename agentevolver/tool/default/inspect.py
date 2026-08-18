@@ -1,10 +1,16 @@
-"""Inspect capability — one capability's full contract and live registry facts.
+"""Inspect — one component's full contract and live registry facts.
 
-One tool for all six capability types, because the six it replaced differed only
+One tool for all eight component types, because the ones it replaced differed only
 in which manager they asked and which extra lines they printed. Everything
 structural — which manager owns a type, whether its members are separately
-callable — comes from :data:`CAPABILITY_TYPES` rather than from a branch here,
-so a seventh type is a row in that table and a few lines of rendering below.
+callable — comes from :data:`COMPONENT_TYPES` rather than from a branch here, so a
+new type is a row in that table and a few lines of rendering below.
+
+That table rather than :data:`CAPABILITY_TYPES`: the narrower one is what a model
+can *call*, and ``memory`` is not on it. But a memory system is registered,
+versioned and evolvable like the rest, so an optimize or evaluate run needs its
+source path and its ``enable_evolving`` exactly as much as a tool's — and asking
+for it used to answer "unknown capability_type".
 """
 
 import os
@@ -14,19 +20,19 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import Field
 
 from agentevolver.capability import (
-    CAPABILITY_TYPE_NAMES,
+    COMPONENT_TYPE_NAMES,
     CapabilityType,
-    capability_type as capability_type_entry,
+    component_type as component_type_entry,
 )
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 from agentevolver.utils import get_extension_root
 
-_TYPES = ", ".join(CAPABILITY_TYPE_NAMES)
+_TYPES = ", ".join(COMPONENT_TYPE_NAMES)
 
 _DESCRIPTION = (
-    "Fetch one capability's full contract (instruction, call schema) plus its live registry "
+    "Fetch one component's full contract (instruction, call schema) plus its live registry "
     f"facts — version, evolvability/enable_evolving, source paths. Types: {_TYPES}."
 )
 
@@ -42,8 +48,8 @@ Fetch one capability's full contract and live registry facts by type and name.
 """
 
 _EXAMPLES = [
-    '{{"name": "inspect_capability_tool", "args": {{"capability_type": "tool", "name": "bash_tool"}}}}',
-    '{{"name": "inspect_capability_tool", "args": {{"capability_type": "skill", "name": "hello_world_skill"}}}}',
+    '{{"name": "inspect_tool", "args": {{"capability_type": "tool", "name": "bash_tool"}}}}',
+    '{{"name": "inspect_tool", "args": {{"capability_type": "skill", "name": "hello_world_skill"}}}}',
 ]
 
 
@@ -120,6 +126,9 @@ def _sources(capability: str, name: str, info: Any) -> List[str]:
                 _path_fact("ENVIRONMENT.md", os.path.join(directory, "ENVIRONMENT.md"))]
     if capability == "workflow":
         return [_path_fact("Source File", getattr(info, "source_path", "") or "")]
+    if capability == "memory":
+        return [_path_fact("Python File", getattr(info, "path", "")
+                           or _extension_path("memory", f"{name}.py"))]
     return []
 
 
@@ -155,10 +164,10 @@ def _members(entry: CapabilityType, info: Any) -> List[str]:
 
 
 @TOOL.register_module(force=True)
-class InspectCapability(Tool):
+class InspectTool(Tool):
     """Return one capability's contract and registry facts, whatever its type."""
 
-    name: str = "inspect_capability_tool"
+    name: str = "inspect_tool"
     # Declared, not inherited: this tool only reads, and `mutates` plus this field
     # are exactly what plan mode looks at.
     permission_mode: str = "read_only"
@@ -176,11 +185,11 @@ class InspectCapability(Tool):
         """Return one capability's contract and live registry facts.
 
         Args:
-            capability_type: Which kind of capability to inspect — one of
-                tool, skill, connector, agent, environment, workflow.
+            capability_type: Which kind of component to inspect — one of
+                tool, skill, connector, agent, environment, workflow, plugin, memory.
             name: The exact registered name, as shown in the roster.
         """
-        entry = capability_type_entry(capability_type)
+        entry = component_type_entry(capability_type)
         if entry is None:
             return self._fail(f"Unknown capability_type {capability_type!r}. One of: {_TYPES}.")
         if not name:

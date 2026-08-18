@@ -11,14 +11,13 @@ AgentEvolver/
 │   │                       #   default/ (built-ins) + types.py (base class + context) +
 │   │                       #   server.py (the *_manager singleton). Only notable extras are listed.
 │   ├── agent/              # Agents (built-ins; evolved ones → extension/)
-│   │   ├── actor/          #   Task-doing: Meta, Code, General, Browser, Monitor, Reviewer
-│   │   ├── generator/      #   Create new components (one *_generate_agent per type)
-│   │   ├── evaluator/      #   Score component quality (one *_evaluate_agent per type)
-│   │   └── optimizer/      #   Evolve existing component source (one *_optimize_agent per type)
+│   │   └── actor/          #   Task-doing: Meta, Code, General, Browser, Monitor, Reviewer,
+│   │                       #   plus Generate/Optimize/Evaluate — one each, for all 8 types
 │   ├── tool/               # Tools — default/ (bash, file r/w/edit, git, done, ...), workflow/ (todo), other/
 │   ├── prompt/             # Prompt templates (one HTML per agent)
 │   ├── skill/              # Skills (multi-step SOP workflows), in category folders scanned for SKILL.md:
-│   │   ├── creator/        #   Self-evolution — *_creator_skill (per type), self_evolving_skill
+│   │   ├── evolving/       #   Self-evolution — self_evolving_skill (when/loop) +
+│   │   │                   #   generate/optimize/evaluate_skill (how, all 8 types)
 │   │   ├── methodology/    #   Engineering practice: TDD, incremental dev, debugging, API design, git
 │   │   ├── orchestrate/    #   Planning & context: task breakdown, spec/doubt-driven dev, context_engineering
 │   │   ├── review/         #   Quality gates: code/security review, verify, simplify, perf
@@ -78,9 +77,9 @@ AgentEvolver/
 
 ### The self-evolution loop
 
-The framework evolves its **own** capabilities (tool, agent+prompt, skill, connector, environment) while serving a user task — kept strictly separate from *user work* (done by actor agents like `code_agent`/`general_agent`). Playbook: `skill/creator/self_evolving_skill`.
+The framework evolves its **own** components (tool, skill, agent+prompt, connector, memory, plugin, workflow, environment) while serving a user task — kept strictly separate from *user work* (done by actor agents like `code_agent`/`general_agent`). Playbook: `skill/evolving/self_evolving_skill`; the per-type how-to is `skill/evolving/{generate,optimize,evaluate}_skill`.
 
-- **The cycle**: **decide** (a capability is missing/weak) → **generate** (`*_generate_agent` writes a new component) or **optimize** (`*_optimize_agent` edits an existing one's source and re-registers) → **evaluate** (`*_evaluate_agent` scores whether it helped) → **adopt or roll back**.
+- **The cycle**: **decide** (a capability is missing/weak) → **generate** (`generate_agent` writes a new component) or **optimize** (`optimize_agent` edits an existing one's source and re-registers) → **evaluate** (`evaluate_agent` scores whether it helped) → **adopt or roll back**. One agent per role, told which of the eight types by `target_type`; `self_evolving_skill` carries the per-type how-to.
 - **`enable_evolving` gate**: a frozen component (`enable_evolving=False`, e.g. the evolution agents themselves) must never be optimized — checked first, every time.
 - **Persistence** (`extension_manager`): writes the flat active file under `extension/<module>/`, archives every version under `.versions/`, records the active one in `manifest.json`; `rollback(module, name, version)` restores any prior version.
 

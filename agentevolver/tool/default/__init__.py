@@ -43,7 +43,7 @@ from .send_message import SendMessageTool
 from .report import ReportTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
-from .inspect_capability import InspectCapability
+from .inspect import InspectTool
 from .data_sources import HttpRequestTool
 
 __all__ = [
@@ -93,5 +93,5 @@ __all__ = [
     "ReplyTool",
     "GlobSearchTool",
     "GrepSearchTool",
-    "InspectCapability",
+    "InspectTool",
 ]

@@ -33,7 +33,7 @@ fragment compilation remains available only for ephemeral `run_html()` and unit 
 Workflow follows the same registry model as Tool and Skill. Every active registration is
 projected to MetaAgent as a native function named `workflow__<name>` using the HTML
 input contract. The prompt receives only a compact roster. The read-only
-`inspect_capability_tool` tool supplies full HTML, compiled nodes, source location, and registry
+`inspect_tool` tool supplies full HTML, compiled nodes, source location, and registry
 facts on demand.
 
 `get_schema(name, format="json"|"md")` follows the shared capability schema protocol.
@@ -54,8 +54,8 @@ VersionManager registration during discovery.
 Generation, optimization, evaluation, and rollback remain management/evolution
 operations. They are intentionally not multiplexed through a generic Workflow tool.
 
-The self-evolution layer mirrors Skill: `workflow_creator_skill` contains the shared
-methodology; thin generate/optimize/evaluate Agents perform one phase each; a registration
+The self-evolution layer mirrors Skill: `generate_skill` / `optimize_skill` /
+`evaluate_skill` carry the per-type methodology and `self_evolving_skill` the loop; thin generate/optimize/evaluate Agents perform one phase each; a registration
 Hook registers validated HTML live, matching Tool/Skill; persisted version-scoped evidence
 guides keep/optimize/rollback decisions through the common `evolution_tool`.
 

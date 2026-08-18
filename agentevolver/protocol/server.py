@@ -99,7 +99,8 @@ class ProtocolManager(metaclass=Singleton):
 
     def child_brief(
         self, child: Any, task: str, *,
-        target_name: Optional[str] = None, allowlists: Optional[Dict[str, Any]] = None,
+        target_name: Optional[str] = None, target_type: Optional[str] = None,
+        allowlists: Optional[Dict[str, Any]] = None,
         parent_ref: Any = None, parent_ctx: Any = None, fork: bool = False,
     ) -> Tuple[str, Any]:
         """The task text and the context one delegation hands its child.
@@ -122,6 +123,11 @@ class ProtocolManager(metaclass=Singleton):
         )
         if target_name:
             ctx.extra["target_name"] = target_name
+        # Which kind of thing the target is. Beside `target_name` because the two are one
+        # fact split in half, and the half that says "tool" is the one that picks the
+        # registration hook.
+        if target_type:
+            ctx.extra["target_type"] = target_type
         # A forked child reads its parent's conversation for context. Recorded as the
         # parent's *trace* session — `parent_session_id` above is the ref name, which
         # routes an escalation and names no log.
@@ -129,7 +135,7 @@ class ProtocolManager(metaclass=Singleton):
             ctx.extra["forked_from"] = str(parent_ctx.id)
         effective_allowlists = dict(allowlists or {})
         if hasattr(child, "_target_capability_allowlists"):
-            for key, value in child._target_capability_allowlists(target_name).items():
+            for key, value in child._target_capability_allowlists(target_name, target_type).items():
                 if effective_allowlists.get(key) is None:
                     effective_allowlists[key] = value
         for key, val in effective_allowlists.items():
@@ -140,6 +146,7 @@ class ProtocolManager(metaclass=Singleton):
     async def delegate(
         self, child: Any, task: str, *,
         files: Optional[List[str]] = None, target_name: Optional[str] = None,
+        target_type: Optional[str] = None,
         allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None,
         workspace_root: Optional[str] = None, parent_ctx: Any = None,
         ctx: Any = None, fork: bool = False,
@@ -157,6 +164,7 @@ class ProtocolManager(metaclass=Singleton):
 
         if ctx is None:
             task, ctx = self.child_brief(child, task, target_name=target_name,
+                                         target_type=target_type,
                                          allowlists=allowlists, parent_ref=parent_ref,
                                          parent_ctx=parent_ctx, fork=fork)
         existing = [f for f in (files or []) if os.path.exists(f)]

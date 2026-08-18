@@ -77,8 +77,8 @@ This is orchestration work. Do NOT explore the repository yourself with
 `list_dir_tool` / `read_file_tool` — the sub-agents below read what they need.
 Your FIRST action is Round 1. Run these rounds in order, one per turn.
 
-- **Round 1 — dispatch `environment_generate_agent`** with `target_name` set to
-  `grid_maze_environment`. Invoke `environment_creator_skill` ONCE, then write the
+- **Round 1 — dispatch `generate_agent` (`target_type=environment`)** with `target_name` set to
+  `grid_maze_environment`. Invoke `self_evolving_skill` ONCE, then write the
   three files immediately — do not re-read the skill. Hand it this exact spec so
   it does not have to derive anything:
   - class `GridMazeEnvironment`, registered via `@ENVIRONMENT.register_module`
@@ -122,7 +122,7 @@ Your FIRST action is Round 1. Run these rounds in order, one per turn.
   environment's model of a "turn" is. Confirm this against the printed output,
   then state which capability is missing.
 
-- **Round 4 — dispatch `environment_optimize_agent`** with `target_name` set to
+- **Round 4 — dispatch `optimize_agent` (`target_type=environment`)** with `target_name` set to
   `grid_maze_environment`, citing Round 3's output as the evidence. Bump to
   v1.1.0, keep every existing action name and signature intact, and correct the
   model of the world:
@@ -135,7 +135,7 @@ Your FIRST action is Round 1. Run these rounds in order, one per turn.
     wrong branch can be walked back instead of forcing a `reset`
 
 - **Round 5 — dispatch `code_agent`** to walk the corrected environment for all
-  11 turns and print every step, and `environment_evaluate_agent` to score it
+  11 turns and print every step, and `evaluate_agent` (`target_type=environment`) to score it
   across the five quality dimensions. Both in the same turn.
 
 - **Round 6 — call `done_tool`** with the 6-digit hex answer, the fact that it

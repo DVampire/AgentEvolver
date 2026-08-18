@@ -24,7 +24,7 @@ Seven types are projected into the model's native tool list: **tool, skill, conn
 agent, environment, workflow, plugin**. `CAPABILITY_TYPES` is the one place that says so,
 and every consumer reads it — `assemble_native_tools` decides which managers to ask, the
 plan gate decides what it can rule on, the canvas builds an agent's mount pickers, and
-`inspect_capability_tool` resolves a type name to its manager.
+`inspect_tool` resolves a type name to its manager.
 
 They were separate lists, and the way that fails is not hypothetical: a type could be
 registered, addressable and callable while being absent from the model's tool list,
@@ -63,7 +63,7 @@ returns a human-readable contract including schema source and strict/permissive 
 `CapabilitySchema` validates the shared invariants.
 
 Prompt context remains a compact discovery roster. Native schemas are sent separately in
-the model request, and `inspect_capability_tool` exposes both Markdown and JSON on demand
+the model request, and `inspect_tool` exposes both Markdown and JSON on demand
 — which is why a capability's prompt card does not repeat its parameters (see
 `utils.string_utils.instruction_for_prompt`).
 

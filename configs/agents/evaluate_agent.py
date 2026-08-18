@@ -1,0 +1,16 @@
+evaluate_agent = dict(
+    name="evaluate_agent",
+    type="EvaluateAgent",
+    description="Evaluates an existing component of any type and reports scored findings.",
+    model_name="llm_hub/claude-opus-5",
+    prompt_name="evaluate_agent",
+    memory_name="file_system_memory",
+    max_actions=10,
+    max_step=20,
+    max_token=1000000,
+    timeout=1800,
+    review_steps=5,
+    enable_evolving=False,
+    permission_mode="read_only",
+    use_memory=True,
+)

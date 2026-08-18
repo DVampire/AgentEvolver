@@ -66,7 +66,7 @@ def process_general(config: MMConfig) -> MMConfig:
 
 def process_tools(config: MMConfig) -> MMConfig:
     for key in config:
-        # Skip agent configs (e.g. tool_generate_agent): their key contains "tool"
+        # Skip agent configs (e.g. code_agent): their key contains "tool"
         # but they are agents — handled by process_agent, not as tools.
         if "tool" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
@@ -79,7 +79,7 @@ def process_tools(config: MMConfig) -> MMConfig:
 
 def process_environments(config: MMConfig) -> MMConfig:
     for key in config:
-        # Skip agent configs (e.g. environment_generate_agent): key contains
+        # Skip agent configs (e.g. browser_agent): key contains
         # "environment" but they are agents — handled by process_agent.
         if "environment" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:

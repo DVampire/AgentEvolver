@@ -21,5 +21,6 @@ class EvaluateCommand(SkillCommand):
         if ctype not in AGENT_BACKED_TYPES:
             return self.fail(f"Can't evaluate type '{ctype}'. Options: {AGENT_BACKED_TYPES}")
 
-        self.target_agent = f"{ctype}_evaluate_agent"
-        return await self.dispatch_agent(f"Evaluate the {ctype} '{name}'.", ctx)
+        self.target_agent = "evaluate_agent"
+        return await self.dispatch_agent(f"Evaluate the {ctype} '{name}'.", ctx,
+                                         target_type=ctype, target_name=name)

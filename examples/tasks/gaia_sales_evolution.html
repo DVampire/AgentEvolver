@@ -79,7 +79,7 @@ round actually reported.
   the problem.
 
 - **Round 2 — read Round 1's report and decide.** If no registered tool can open
-  `.xlsx`, that is a **missing capability** — dispatch `tool_generate_agent`
+  `.xlsx`, that is a **missing capability** — dispatch `generate_agent` (`target_type=tool`)
   with `target_name` set to `xlsx_reader_tool`: a tool that opens a workbook and
   returns its rows as structured data (args: `path`, optional `sheet`). If some
   registered tool already reads it fine, skip this round and say so — do not
@@ -99,7 +99,7 @@ round actually reported.
     GAIA's output contract. Note that `code_agent` is a **built-in, frozen**
     capability (`enable_evolving=False`): the gate blocks optimizing it, and the
     framework's own rule is to *generate a new capability in `extension/`
-    instead*. So dispatch **`agent_generate_agent`** with `target_name` set to
+    instead*. So dispatch **`generate_agent` (`target_type=agent`)** with `target_name` set to
     `gaia_answer_agent`: an evolvable extension agent whose job is to turn a
     computed value plus the question's stated format contract into the exact
     submission string. Say explicitly in your reasoning that you are generating
@@ -110,13 +110,13 @@ round actually reported.
 
 - **Round 5 — if Round 4b's string is still not exactly `89706.00`, evolve its
   PROMPT.** `gaia_answer_agent` lives in `extension/` and IS evolvable, so this
-  time dispatch **`agent_optimize_agent`** with `target_name` set to
+  time dispatch **`optimize_agent` (`target_type=agent`)** with `target_name` set to
   `gaia_answer_agent`, changing only its HTML prompt: emit the bare answer
   string — no currency symbol, no thousands separator, exactly the decimal
   places demanded, nothing else. If Round 4b was already exact, skip this round
   and say so.
 
-- **Round 6 — dispatch `agent_evaluate_agent`** on what was evolved (the tool
+- **Round 6 — dispatch `evaluate_agent` (`target_type=agent`)** on what was evolved (the tool
   from Round 2, the agent from Round 4, the prompt from Round 5), telling it the
   objective criterion: the run must now produce exactly `89706.00`, and nothing
   that worked before may be broken. Then act on its verdict with

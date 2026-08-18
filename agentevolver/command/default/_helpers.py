@@ -3,9 +3,13 @@
 # Every versioned capability type (all have list/get_info/copy/restore/unregister).
 KNOWN_TYPES = ["tool", "agent", "skill", "connector", "environment", "prompt"]
 
-# Types with generate/evaluate/optimize agents behind them (SKILL commands dispatch to these).
-# 'prompt' is excluded — it has no *_generate_agent / *_evaluate_agent.
-AGENT_BACKED_TYPES = ["tool", "agent", "skill", "connector", "environment"]
+# Types the generate / evaluate / optimize agents can work on (SKILL commands dispatch to
+# those three). Taken from the extension tree rather than written out again: this list was
+# short by `workflow`, `memory` and `plugin`, so `/create workflow ...` was refused for a
+# type the framework has always been able to build.
+from agentevolver.extension import EVOLVABLE_MODULES
+
+AGENT_BACKED_TYPES = list(EVOLVABLE_MODULES)
 
 
 def get_manager(type_name: str):

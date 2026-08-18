@@ -7,24 +7,9 @@ with read_base():
     from .agents.reviewer_agent import reviewer_agent
     from .agents.monitor_agent import monitor_agent
     from .agents.browser_agent import browser_agent
-    from .agents.tool_optimize_agent import tool_optimize_agent
-    from .agents.tool_evaluate_agent import tool_evaluate_agent
-    from .agents.tool_generate_agent import tool_generate_agent
-    from .agents.agent_generate_agent import agent_generate_agent
-    from .agents.agent_optimize_agent import agent_optimize_agent
-    from .agents.agent_evaluate_agent import agent_evaluate_agent
-    from .agents.skill_generate_agent import skill_generate_agent
-    from .agents.skill_optimize_agent import skill_optimize_agent
-    from .agents.skill_evaluate_agent import skill_evaluate_agent
-    from .agents.environment_generate_agent import environment_generate_agent
-    from .agents.environment_optimize_agent import environment_optimize_agent
-    from .agents.environment_evaluate_agent import environment_evaluate_agent
-    from .agents.memory_generate_agent import memory_generate_agent
-    from .agents.memory_optimize_agent import memory_optimize_agent
-    from .agents.memory_evaluate_agent import memory_evaluate_agent
-    from .agents.connector_generate_agent import connector_generate_agent
-    from .agents.connector_optimize_agent import connector_optimize_agent
-    from .agents.connector_evaluate_agent import connector_evaluate_agent
+    from .agents.generate_agent import generate_agent
+    from .agents.optimize_agent import optimize_agent
+    from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
     from .tools.read_image import read_image_tool
     from .tools.ask_user import ask_user_question
@@ -74,24 +59,9 @@ agent_names = [
     # browser agent — drives a real browser to VERIFY web/UI deliverables hands-on
     # (render, click, check images/console) via the browser_environment.
     "browser_agent",
-    "tool_optimize_agent",
-    "tool_evaluate_agent",
-    "tool_generate_agent",
-    "agent_generate_agent",
-    "agent_optimize_agent",
-    "agent_evaluate_agent",
-    "skill_generate_agent",
-    "skill_optimize_agent",
-    "skill_evaluate_agent",
-    "environment_generate_agent",
-    "environment_optimize_agent",
-    "environment_evaluate_agent",
-    "memory_generate_agent",
-    "memory_optimize_agent",
-    "memory_evaluate_agent",
-    "connector_generate_agent",
-    "connector_optimize_agent",
-    "connector_evaluate_agent",
+    "generate_agent",
+    "optimize_agent",
+    "evaluate_agent",
 ]
 tool_names = [
     "bash_tool",
@@ -130,19 +100,14 @@ tool_names = [
     "media_search_tool",
 ]
 # Resident rosters are what reaches the model on every step, as a tool schema each. The
-# rest of the registry is not gone: `inspect_capability_tool` reads any registered
+# rest of the registry is not gone: `inspect_tool` reads any registered
 # capability by name, so a run that needs one can look it up. Keeping the resident set
 # small is what leaves room for the conversation — 21 connectors alone expanded to 213
 # action schemas and 48k tokens, against a 95k input capacity.
 skill_names = [
-    # Kept resident because a prompt or another config names them: the creator triad
-    # skills and `self_evolving_skill` are what this configuration exists to run.
-    "agent_creator_skill",
-    "tool_creator_skill",
-    "skill_creator_skill",
-    "connector_creator_skill",
-    "environment_creator_skill",
-    "memory_creator_skill",
+    # The orchestrator's half of evolution: when to evolve, the gate, the loop. How to
+    # write each of the eight component types is `generate_skill` / `optimize_skill` /
+    # `evaluate_skill`, which the three agents load themselves — MetaAgent only dispatches.
     "self_evolving_skill",
     # The everyday four.
     "code_review_skill",
@@ -251,137 +216,30 @@ browser_agent.update(
     use_memory=True,
 )
 
-#-----------------OPTIMIZER AGENT CONFIGS-----------------
-tool_optimize_agent.update(
+#-----------------EVOLUTION AGENT CONFIGS-----------------
+# One agent per role, each working on whichever of the eight component types it is
+# dispatched with. There were eighteen of these blocks, identical but for the name.
+generate_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
 )
 
-#-----------------GENERATOR AGENT CONFIGS-----------------
-tool_generate_agent.update(
+optimize_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
 )
 
-#-----------------EVALUATOR AGENT CONFIGS-----------------
-tool_evaluate_agent.update(
+evaluate_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
 )
 
-#-----------------FULL TRIAD CONFIGS (agent/skill/environment/connector)-----------------
-agent_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-agent_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-agent_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-skill_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-skill_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-skill_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-environment_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-environment_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-environment_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-connector_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-connector_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-connector_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-
-#-----------------MEMORY TRIAD CONFIGS-----------------
-memory_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-memory_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-memory_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(

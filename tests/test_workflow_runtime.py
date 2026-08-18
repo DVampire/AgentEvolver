@@ -254,10 +254,10 @@ async def test_the_roster_names_workflows_and_the_html_is_fetched_only_when_aske
 
     The roster carries name, version, inputs and tags — enough to choose — and the
     assertion that `<workflow` does not appear in it is what keeps a document from leaking
-    back into that budget. `inspect_capability_tool` is the second step for an agent that has
+    back into that budget. `inspect_tool` is the second step for an agent that has
     chosen and now needs the program.
     """
-    from agentevolver.tool.default.inspect_capability import InspectCapability
+    from agentevolver.tool.default.inspect import InspectTool
 
     definition = workflow_manager.register(HTML, override=True)
     try:
@@ -265,7 +265,7 @@ async def test_the_roster_names_workflows_and_the_html_is_fetched_only_when_aske
         assert definition.name in roster
         assert "<workflow" not in roster
 
-        response = await InspectCapability()(capability_type="workflow", name=definition.name)
+        response = await InspectTool()(capability_type="workflow", name=definition.name)
         assert response.success
         assert response.data["html"].lstrip().startswith("<workflow")
         assert response.data["nodes"][0]["type"] == "map"
@@ -815,21 +815,43 @@ def test_the_workflow_evaluator_can_read_and_record_but_not_change_what_it_grade
     action, not per tool, so an evaluator cannot reach a mutation by going through a tool
     it is otherwise allowed to call.
     """
-    from agentevolver.agent.evaluator.workflow_evaluate_agent import WorkflowEvaluateAgent
+    from agentevolver.agent.actor import EvaluateAgent
 
-    evaluator = WorkflowEvaluateAgent(base_dir=".")
+    evaluator = EvaluateAgent(base_dir=".")
+    assert evaluator.permission_mode == "read_only"
     assert evaluator._include_agents() is False
-    assert evaluator._include_workflows() is True
-    assert evaluator._target_capability_allowlists("parallel_review") == {
+    # Naming the workflow is also what opts the type in — workflows project only when a
+    # run names one — so the evaluator can execute its target without gaining delegation.
+    assert evaluator._target_capability_allowlists("parallel_review", "workflow") == {
         "workflow_allowlist": ["parallel_review"],
     }
-    assert evaluator.permission_mode == "read_only"
     assert evaluator._allow_read_only_tool_call(
         "evolution_tool", {"action": "record_workflow_evaluation"},
     )
     assert not evaluator._allow_read_only_tool_call(
         "evolution_tool", {"action": "rollback"},
     )
+
+
+def test_the_evaluator_scopes_itself_to_whichever_type_it_was_given():
+    """One evaluator now grades all eight types, and the scoping has to follow the type.
+
+    It was seven classes, of which only the workflow one narrowed itself to its target;
+    a merged agent that kept that rule hard-coded to `workflow` would silently hand a
+    tool evaluation the whole registry.
+    """
+    from agentevolver.agent.actor import EvaluateAgent
+
+    evaluator = EvaluateAgent(base_dir=".")
+    assert evaluator._target_capability_allowlists("calc_tool", "tool") == {
+        "tool_allowlist": ["calc_tool"],
+    }
+    assert evaluator._target_capability_allowlists("web_skill", "skill") == {
+        "skill_allowlist": ["web_skill"],
+    }
+    # No target is not "scope to nothing" — it is "this run was not given one".
+    assert evaluator._target_capability_allowlists(None, "tool") == {}
+    assert evaluator._target_capability_allowlists("calc_tool", None) == {}
 
 
 # --------------------------------------------------------------------------- #

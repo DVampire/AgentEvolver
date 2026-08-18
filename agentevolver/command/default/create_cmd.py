@@ -22,5 +22,6 @@ class CreateCommand(SkillCommand):
         if ctype not in AGENT_BACKED_TYPES:
             return self.fail(f"Can't create type '{ctype}'. Options: {AGENT_BACKED_TYPES}")
 
-        self.target_agent = f"{ctype}_generate_agent"
-        return await self.dispatch_agent(f"Create a new {ctype}: {desc}", ctx)
+        self.target_agent = "generate_agent"
+        return await self.dispatch_agent(f"Create a new {ctype}: {desc}", ctx,
+                                         target_type=ctype)
