@@ -908,22 +908,26 @@ def test_the_registration_hook_finds_the_artifact_even_when_its_path_has_spaces(
     """The hook reads an agent's output, and an agent announces a file however it likes.
 
     Two shapes are accepted: a structured path the agent passed, and a path it only
-    mentioned inside backticks in prose. Both directories and filenames here contain
+    mentioned inside backticks in prose. Both the directory and the filename here contain
     spaces, which is what breaks a naive whitespace split — the workflow would be written,
     reported as created, and never registered, leaving a file nothing loads.
     """
-    from agentevolver.hook.default.workflow_registration import WorkflowRegistrationHook
+    from agentevolver.hook.default.registration import SHAPES, resolve_artifact, _mentions
 
-    directory = tmp_path / "workflow files"
-    directory.mkdir()
+    shape = SHAPES["workflow"]
+    directory = tmp_path / "extension" / "workflow" / "review files"
+    directory.mkdir(parents=True)
     artifact = directory / "review workflow.html"
     artifact.write_text("<workflow name='review'><flow><checkpoint /></flow></workflow>")
-    assert WorkflowRegistrationHook._resolve(
-        None, str(artifact), "", str(tmp_path),
-    ) == str(artifact)
-    assert WorkflowRegistrationHook._resolve(
-        None, None, f"created `{artifact}`", str(tmp_path),
-    ) == str(artifact)
+
+    def find(**kwargs):
+        return resolve_artifact(
+            module="workflow", suffix=shape.suffix, target_name=None,
+            extension_root=str(tmp_path), matches=_mentions("workflow", shape), **kwargs,
+        )
+
+    assert find(artifact_path=str(artifact)) == str(artifact)
+    assert find(reasoning=f"created `{artifact}`") == str(artifact)
 
 
 class TestWorkflowResponse:

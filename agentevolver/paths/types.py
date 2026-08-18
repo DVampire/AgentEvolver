@@ -72,7 +72,15 @@ class P(str, Enum):
     # --- per session / per run (disposable) ------------------------------
     SESSIONS = "sessions"
     SESSION = "session"
+    #: The three directories a session owns. ``workspace`` was the only one with a key
+    #: of its own, so ``log`` and ``extension`` were reachable only by joining a
+    #: ``PROJECT_*`` fragment onto a root the caller already had — two algorithms for one
+    #: directory, and the table had no say in the second. A session's staged extension
+    #: tree is where an evolution run writes; nothing is promoted to ``EXTENSION`` until
+    #: it validates.
     SESSION_WORKSPACE = "session_workspace"
+    SESSION_LOG = "session_log"
+    SESSION_EXTENSION = "session_extension"
     SESSION_MANIFEST = "session_manifest"
     #: Where trace writes one JSONL file per run, plus its `index.json`. A session
     #: directory holds several: the run the session was opened for and every
@@ -159,6 +167,8 @@ LAYOUT: Dict[P, str] = {
     P.SESSIONS: "output/{owner}/sessions",
     P.SESSION: "output/{owner}/sessions/{session_id}",
     P.SESSION_WORKSPACE: "output/{owner}/sessions/{session_id}/workspace",
+    P.SESSION_LOG: "output/{owner}/sessions/{session_id}/log",
+    P.SESSION_EXTENSION: "output/{owner}/sessions/{session_id}/extension",
     P.SESSION_MANIFEST: "output/{owner}/sessions/{session_id}/session.json",
     P.SESSION_TRACE: "output/{owner}/sessions/{session_id}/log/trace",
     P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",

@@ -32,11 +32,12 @@ def promote_approved_component(extension_root: str, component_path: str) -> str:
 
 
 async def register_generated(response: Any, ctx: Any, model_name: str, *, verb: str) -> Any:
-    """Install what an evolution run produced, through the hook that knows its shape.
+    """Install what an evolution run produced, through the hook that installs everything.
 
     A tool is a file, a skill is a directory, a workflow is compiled before it counts, an
-    agent may be a prompt alone. The hooks differ on exactly that, so the type named in the
-    run's context chooses one — rather than this function growing a branch per shape.
+    agent may be a prompt alone. One hook holds all eight shapes and is handed the type
+    the run recorded — rather than this function, or the hook layer, growing a branch per
+    shape.
 
     Args:
         response: The finished run's response. A failed one is returned untouched: there
@@ -51,7 +52,6 @@ async def register_generated(response: Any, ctx: Any, model_name: str, *, verb: 
     from agentevolver.extension import EVOLVABLE_MODULES
     from agentevolver.hook.server import hook_manager
     from agentevolver.hook.types import HookDecision, HookEvent
-    from agentevolver.sandbox.project import staged_extension_root
 
     if not response.success:
         return response
@@ -70,13 +70,13 @@ async def register_generated(response: Any, ctx: Any, model_name: str, *, verb: 
         return response
 
     result = await hook_manager(
-        name=f"{target}_registration_hook",
+        name="registration_hook",
         input={
             "event": HookEvent.ON_STOP,
+            "target_type": target,
             "target_name": extra.get("target_name"),
             "artifact_path": (response.data or {}).get("artifact_path"),
             "reasoning": (response.data or {}).get("reasoning") or "",
-            "extension_root": staged_extension_root(ctx),
             "model_name": model_name,
         },
         ctx=ctx,

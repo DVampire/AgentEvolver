@@ -410,21 +410,22 @@ class TestActions:
 
     @pytest.mark.asyncio
     async def test_download_cannot_write_outside_the_local_session_roots(
-        self, env_and_service, tmp_path
+        self, env_and_service, bound_session
     ) -> None:
         """The remote side is boundary-checked; the local side has to be too.
 
         Otherwise `download` is the one action in the whole environment that can write
         anywhere on the machine the agent is actually running on.
+
+        The boundary comes from the session this run is bound to, not from the context
+        handed in — a context that carried its own roots could widen its own sandbox by
+        writing to the dict, which is why this test used to be able to declare them.
         """
         env, fake = env_and_service
 
         class _Bounded:
             id = "sess1234abcd"
-            extra = {
-                "project_root": str(tmp_path),
-                "workspace_root": str(tmp_path / "workspace"),
-            }
+            extra: dict = {}
 
         result = await env.download(
             remote_path="report.md", local_path="/etc/cron.d/pwned", ctx=_Bounded()
@@ -434,7 +435,7 @@ class TestActions:
 
         ok = await env.download(
             remote_path="report.md",
-            local_path=str(tmp_path / "workspace" / "report.md"),
+            local_path=str(bound_session["workspace"] / "report.md"),
             ctx=_Bounded(),
         )
         assert ok["success"] is True

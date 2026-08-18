@@ -22,7 +22,7 @@ actions:
 
 <!--
 TEMPLATE — CONNECTOR.md for an MCP-server connector. Copy to
-`extension/connector/{name}/CONNECTOR.md`, fill the frontmatter (connection + the
+`{extension_root}/connector/{name}/CONNECTOR.md`, fill the frontmatter (connection + the
 `actions` you discovered by probing the server with scripts/connections.py), and
 document each action below. The body is what an agent reads to call the connector.
 List only the actions you actually expose in `actions:` above.

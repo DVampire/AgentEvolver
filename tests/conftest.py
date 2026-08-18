@@ -35,6 +35,58 @@ def _isolate_agentevolver_tree(tmp_path_factory):
     patch.undo()
 
 
+@pytest.fixture(autouse=True)
+def _unbound_path_manager():
+    """No test inherits another test's session.
+
+    `path_manager.bind_session` is process-global on purpose — runs are serialized, and
+    the gateway rebinds per task — but a test that binds and does not unbind changes what
+    every later test resolves. The failure is not local either: with a session bound, the
+    sandbox boundary switches on, and nineteen tests across `lsp`, `read_image`,
+    `tool_robustness` and `ssh_environment` began refusing their own `tmp_path` fixtures
+    as "outside allowed roots", because the roots belonged to a session some earlier test
+    had opened.
+
+    Reset before *and* after: the first covers a test that binds without cleaning up, the
+    second keeps whatever this test did from leaking onward.
+    """
+    from agentevolver.paths import path_manager
+
+    path_manager.unbind_session()
+    yield
+    path_manager.unbind_session()
+
+
+@pytest.fixture
+def bound_session(request):
+    """Open a session so the sandbox boundary is in force, and yield its roots.
+
+    The boundary is only enforced for a run that has a session — a bare script has no
+    sandbox to be outside of. So a test about what the boundary *refuses* has to open one,
+    and it must be a real one from the layout table: the roots are resolved there, and a
+    test that invents its own would be asserting against paths the framework would never
+    produce. The tree is already redirected to a temp directory session-wide, so this
+    writes nothing into the checkout.
+
+    One session per test, named after it. Sharing an id shares the directories, and a
+    test that resolves an artifact then finds whatever an earlier test left there: the
+    prompt-only registration case passed alone and failed in the suite, having resolved
+    the `triage_agent.py` a previous test had written under the same session.
+    """
+    import re
+
+    from agentevolver.paths import path_manager
+
+    owner = "test"
+    session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", request.node.name)[:80]
+    path_manager.bind_session(owner, session_id)
+    roots = path_manager.session_roots()
+    for root in roots.values():
+        root.mkdir(parents=True, exist_ok=True)
+    yield roots
+    path_manager.unbind_session()
+
+
 # ---------------------------------------------------------------------------
 # Repairing an interrupted mutation run
 # ---------------------------------------------------------------------------

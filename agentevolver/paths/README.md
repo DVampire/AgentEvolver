@@ -18,8 +18,9 @@ gateway, the sandbox, the IDE and half a dozen others.
 ```python
 from agentevolver.paths import P, path_manager
 
-path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id=sid)
-path_manager.get(P.PORTS)
+path_manager.bind_session(owner, session_id)   # once, when the run's session opens
+path_manager.get(P.SESSION_WORKSPACE)          # anywhere after that, no arguments
+path_manager.get(P.PORTS)                      # machine-level, never needed a session
 ```
 
 ## Two roots, and only two
@@ -68,6 +69,8 @@ output/
       files/  flows/  ide/{extensions,user-data,home}
     sessions/<session_id>/      disposable
       workspace/                the files agent, canvas and IDE all share
+      log/                      this run's logs, trace and memory
+      extension/                staging: what this run built, before promotion
       session.json              identity, so the session survives a restart
     runs/<run_id>/              direct (non-gateway) runs
 extension/                      shared components
@@ -93,9 +96,53 @@ resolve to the *same* place. Both build their sandbox from `P.SESSION`:
 
 This used to diverge: the local path took `config.project_root / <id>` while the
 gateway used its own join, so the two produced different trees for identical
-work. `ensure_session_sandbox` now defaults to the layout, and passing an
-explicit root remains available for callers that deliberately want a separate
-tree (the ProgramBench harness) and for tests.
+work. `ensure_session_sandbox` resolves the layout and nothing else — its
+`project_root` parameter is gone, having had no caller.
+
+## The bound session
+
+A run's roots are *resolved*, never *carried*. `bind_session(owner, session_id)`
+is called once — by the direct entry points before any manager initializes, and
+by the gateway per task on its serialized path — and after that every
+session-scoped key answers for that run:
+
+```python
+path_manager.get(P.SESSION_EXTENSION)          # this run's staging tree
+path_manager.session_roots()["workspace"]      # and the rest of them, by name
+```
+
+They used to be computed once and then packed into `ctx.extra` as six strings,
+handed down through every manager, agent, hook and tool. Two things went wrong.
+The values drifted from their names — `ctx.extra["extension_root"]` was the
+session's **writable staging tree** while `config.extension_root` was the
+**shared library** — so one name meant two opposite directories depending on
+which module read it, and an agent told the wrong one wrote where promotion
+refused to look. And anything holding the dict could rewrite it, which left this
+table advisory: a copy in flight was as authoritative as the table itself.
+`session_roots()` names them apart (`extension` vs `shared_extension`) so the
+distinction survives being read.
+
+`unbind_session()` is not tidiness. The sandbox boundary is enforced *only* for a
+bound run, so a leaked binding turns unrelated code into a run whose allowed
+roots belong to somebody else — `tests/conftest.py` unbinds around every test for
+exactly this reason.
+
+## Overrides: the path the table cannot compute
+
+A task running inside a container sees its workspace at the mount point, and no
+host-side table can derive a mount point from a host path. That one case goes
+through `override()`:
+
+```python
+path_manager.override(P.SESSION_WORKSPACE, "/workspace")   # what the agent sees
+path_manager.get(P.SESSION_WORKSPACE)                      # → /workspace
+path_manager.get(P.SESSION_WORKSPACE, owner=o, session_id=s)  # → the host directory
+```
+
+An override answers the *unparameterised* call only, because ProgramBench needs
+both answers in one process: the agent's view of its workspace, and the real
+directory the harness is about to mount there. Overrides are cleared whenever a
+new session binds, since they describe one run's environment.
 
 ## `tag` is a label, not a directory
 

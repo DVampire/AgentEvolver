@@ -1,6 +1,6 @@
 """TEMPLATE — a tool (a callable an agent invokes with a JSON args object).
 
-Copy to `extension/tool/{name}.py`, rename the class, fill the three doc constants and
+Copy to `{extension_root}/tool/{name}.py`, rename the class, fill the three doc constants and
 `__call__`.
 
 A tool's documentation is its fields, and they are split by who needs what and when:

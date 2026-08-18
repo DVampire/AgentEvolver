@@ -16,7 +16,7 @@ A single skill for the full lifecycle of **tools**: creating, improving, and eva
 ## Framework conventions (read once)
 
 - A tool is a single Python file: `{extension_root}/tool/{name}.py`.
-- **Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `tool_registration_hook` registers it.
+- **Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `registration_hook` registers it.
 
 **Start from the template**: read `references/tool/tool_template.py`, copy it, and adapt — it already encodes the convention below.
 

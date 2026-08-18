@@ -495,8 +495,11 @@ class AgentGateway:
             name=name,
             workspace_root=str(sandbox.workspace_root),
             extra={
+                # Deliberately no roots here. They come from the layout table, through
+                # the session the path manager is bound to — carried in this dict, one
+                # name meant the session's staging tree in some modules and the shared
+                # library in others, and any holder could rewrite them.
                 "workspace": str(sandbox.workspace_root),
-                **sandbox.describe(),
                 "gateway_session": True,
                 "sandbox_mounts": sandbox.mounts(),
                 "source_workspace": source_workspace,
@@ -2237,6 +2240,9 @@ class AgentGateway:
         # exactly what has real work in it.
         self._write_session_manifest(session)
         bind_session_roots(config, session.sandbox)
+        # …and point the layout table at this session, so every caller that asks for a
+        # session-scoped path gets this one's without having been handed it.
+        path_manager.bind_session(session.owner, session.context.id)
         # Managers cached their base_dir at initialize(); re-point the ones that
         # persist per-run output. Writers that read config at write time (the
         # snapshot hook) follow the rebound config automatically.

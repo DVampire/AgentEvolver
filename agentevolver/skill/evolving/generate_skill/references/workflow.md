@@ -15,7 +15,7 @@ program, not an Agent subtype and not a substitute for a Skill's domain instruct
 
 - Inspect active Workflows first and avoid semantic duplicates.
 - Generalize concrete task details into typed `<inputs>`.
-- Write one complete HTML document to `extension/workflow/{name}.html`.
+- Write one complete HTML document to `{extension_root}/workflow/{name}.html`.
 - Use a `<workflow>` element with `name`, semantic `version`, `schema-version="1.1.0"`,
   `status="active"`, a precise `description`, and `enable-evolving="true"`.
 - Include `<applicability>` tags and prose explaining when to use and when not to use it.

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="workflow_generate">
+  <meta name="description" content="Generate triage_workflow">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Generate a workflow called `triage_workflow` that classifies an incoming report and
+routes it to the handling that classification implies.
+</objective>
+
+<requirements>
+- One step reads the report and decides a severity: `critical`, `normal`, or `noise`.
+- `critical` goes to a step that writes an escalation summary; `normal` goes to a step
+  that writes a short acknowledgement; `noise` ends the run without further work.
+- The run's outcome names the severity that was chosen and what was written.
+</requirements>
+</div>
+
+</body>
+</html>

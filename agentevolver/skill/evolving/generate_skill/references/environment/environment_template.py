@@ -1,6 +1,6 @@
 """TEMPLATE — an environment (a stateful class exposing named actions).
 
-Copy to `extension/environment/{name}/environment.py`, rename the class, and
+Copy to `{extension_root}/environment/{name}/environment.py`, rename the class, and
 implement the actions. Pair it with an `ENVIRONMENT.md` manifest (see
 `environment_md_template.md`) in the same directory, plus an `__init__.py` that
 imports the class so it registers on load.

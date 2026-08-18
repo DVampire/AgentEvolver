@@ -63,31 +63,32 @@ def write_session_manifest(
 
 def ensure_session_sandbox(
     ctx: Any,
-    project_root: str | Path | None = None,
     *,
     owner: str = "local",
     shared_extension_root: str | Path | None = None,
 ) -> ProjectSandbox | None:
-    """Attach ``ctx`` to a deterministic per-session project if it has no roots.
+    """Bind the path manager to ``ctx``'s session, and return that session's sandbox.
 
-    Gateway and CLI contexts already carry these roots.  This fallback brings the
-    direct ``examples/run_*`` entry points under the same workspace boundary.
+    The session lands exactly where the gateway puts one — ``output/<owner>/sessions/<id>``
+    from the layout table — so a task started from a local config and the same task
+    started from the browser use the same directory.
 
-    With ``project_root`` omitted the session lands exactly where the gateway
-    puts one — ``output/<owner>/sessions/<id>`` from the layout table — so a task
-    started from a local config and the same task started from the browser use
-    the same directory. Passing an explicit root stays available for tests and
-    for callers that deliberately want their own tree.
+    Binding rather than describing. The roots used to be written into ``ctx.extra`` as six
+    strings and carried down through every manager, agent, hook and tool, and both halves
+    of that went wrong: ``extension_root`` in the dict was the session's writable staging
+    tree while ``config.extension_root`` was the shared library, so one name meant two
+    opposite directories; and anything holding the dict could rewrite it, which left the
+    layout table advisory. Now the table answers directly, wherever the question is asked.
+
+    ``None`` when this session is already bound — the agent manager calls this on every
+    invocation so a directly-constructed context still gets a sandbox, and re-binding the
+    same session on a nested call would rewrite the manifest for no reason.
     """
-    extra = dict(getattr(ctx, "extra", {}) or {})
-    if extra.get("project_root") and extra.get("workspace_root") and extra.get("extension_root"):
+    session_id = str(getattr(ctx, "id", "") or "direct")
+    if path_manager.session == (owner, session_id):
         return None
 
-    session_id = str(getattr(ctx, "id", "") or "direct")
-    root = (
-        Path(project_root) / session_id if project_root is not None
-        else path_manager.get(P.SESSION, owner=owner, session_id=session_id)
-    )
+    root = path_manager.get(P.SESSION, owner=owner, session_id=session_id)
     sandbox = ProjectSandbox.create(
         root,
         shared_extension_root=shared_extension_root,
@@ -98,7 +99,7 @@ def ensure_session_sandbox(
         owner=owner,
         name=str(getattr(ctx, "name", "") or "interactive"),
     )
-    ctx.extra = {**extra, **sandbox.describe()}
+    path_manager.bind_session(owner, session_id)
     return sandbox
 
 

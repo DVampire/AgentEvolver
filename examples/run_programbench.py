@@ -541,9 +541,12 @@ def bind_task_workspace(ctx, fs_sandbox) -> None:
     rather than assumed: checking only the session tree missed ``output/.runtime`` being
     written into the workspace, because that one is resolved from the layout root directly.
     """
+    # The one path the layout genuinely cannot compute: this is the workspace as seen
+    # from inside the container, and no host-side table can derive a mount point. Declared
+    # through the path manager so it is one visible exception rather than a value
+    # substituted into a context dict, indistinguishable from a default.
     config.workspace_root = CONTAINER_WORKSPACE
-    if getattr(ctx, "extra", None) is not None:
-        ctx.extra["workspace_root"] = CONTAINER_WORKSPACE
+    path_manager.override(P.SESSION_WORKSPACE, CONTAINER_WORKSPACE)
 
     def inside_workspace(path: str) -> bool:
         return path == CONTAINER_WORKSPACE or path.startswith(CONTAINER_WORKSPACE + os.sep)

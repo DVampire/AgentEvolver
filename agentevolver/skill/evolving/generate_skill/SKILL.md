@@ -38,7 +38,7 @@ go in `{workspace_root}` — never the project root.
 
 **How registration happens.** You never edit an `__init__.py`, never touch a registry, and never
 restart anything. Put the new component's **absolute path** in your `done_tool.reasoning`; the
-matching `{type}_registration_hook` finds it there, promotes it and registers it. That path is
+`registration_hook` finds it there, promotes it and registers it. That path is
 the whole handoff — a run that omits it fails at the last step with nothing installed, having
 done all the work.
 

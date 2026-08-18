@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -19,7 +18,6 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from agentevolver.paths import P, path_manager
 from agentevolver.utils import get_extension_root, get_package_root
-from agentevolver.utils.path_utils import home_dir
 
 
 _MODULES = ("tool", "agent", "prompt", "skill", "environment", "connector")
@@ -305,10 +303,17 @@ class ProjectSandbox:
         self.mark_promotion(report, "rolled_back")
 
 
-def staged_extension_root(ctx: Any) -> str:
-    """Resolve the staged extension root from a session/agent context."""
-    extra = getattr(ctx, "extra", {}) or {}
-    return str(extra.get("extension_root") or get_extension_root())
+def staged_extension_root(ctx: Any = None) -> str:
+    """This run's writable extension staging tree, or the shared one outside a session.
+
+    ``ctx`` is accepted and ignored. It is kept because every caller has one to hand and
+    removing the parameter would be a wider edit than the change is worth — but the answer
+    no longer comes from it. It came from ``ctx.extra["extension_root"]``, which any holder
+    of the dict could set, and which was spelled the same as ``config.extension_root``
+    while meaning the opposite directory.
+    """
+    roots = path_manager.session_roots()
+    return str(roots["extension"] if roots else get_extension_root())
 
 
 def is_staged_extension_root(extension_root: str) -> bool:
@@ -325,22 +330,47 @@ def validate_staged_extension(extension_root: str) -> Dict[str, Any]:
     return sandbox.validate()
 
 
-def check_session_path(ctx: Any, path: str, *, write: bool) -> Optional[str]:
-    """Return a denial reason when a session path escapes its sandbox roots.
+def session_writable_roots() -> List[Path]:
+    """Where this run may write: its workspace, and its staged extension tree.
 
-    Contexts outside the Gateway do not carry ``project_root`` and retain legacy
-    behavior.  Gateway sessions can read package/log/workspace/staging roots but
-    may write only workspace and the staged extension tree.
+    Not the shared extension library — promotion is the only thing that writes there, and
+    it does so after validation and approval. A run that could write it directly would
+    make every registered component editable by any agent that guessed the path.
     """
-    extra = getattr(ctx, "extra", {}) or {}
-    project_root = extra.get("project_root")
-    if not project_root:
+    roots = path_manager.session_roots()
+    if not roots:
+        return []
+    return [roots["workspace"].resolve(), roots["extension"].resolve()]
+
+
+def session_readable_roots() -> List[Path]:
+    """Where this run may read: everything writable, plus its log tree, the installed
+    package, and the shared extension library it will be promoted into."""
+    roots = path_manager.session_roots()
+    if not roots:
+        return []
+    return session_writable_roots() + [
+        roots["log"].resolve(), roots["package"].resolve(),
+        roots["shared_extension"].resolve(),
+    ]
+
+
+def check_session_path(ctx: Any = None, path: str = "", *, write: bool) -> Optional[str]:
+    """Return a denial reason when a path escapes this run's sandbox roots.
+
+    ``None`` also when no session is bound — a bare script or a unit test has no sandbox
+    to be outside of, and refusing every path there would break callers that never had a
+    boundary to begin with.
+
+    ``ctx`` is accepted and ignored; see :func:`staged_extension_root`. The roots come from
+    the layout table via the bound session, so a context cannot widen its own sandbox by
+    writing to the dict it was handed.
+    """
+    if path_manager.session is None:
         return None
     candidate = Path(path).expanduser().resolve()
-    writable = [Path(value).expanduser().resolve() for value in (extra.get("workspace_root"), extra.get("extension_root")) if value]
-    readable = writable + [Path(value).expanduser().resolve() for value in (extra.get("package_root"), extra.get("log_root")) if value]
-    allowed = writable if write else readable
-    if any(_inside(candidate, root) for root in allowed):
+    allowed = session_writable_roots() if write else session_readable_roots()
+    if not allowed or any(_inside(candidate, root) for root in allowed):
         return None
     access = "write" if write else "read"
     roots = ", ".join(str(root) for root in allowed)

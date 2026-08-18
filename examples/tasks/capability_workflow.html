@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="capability_workflow">
+  <meta name="description" content="Smoke test: the meta agent runs a registered workflow and reports its outcome">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Confirm that a workflow runs end to end. Have a workflow review a small file you
+write first — the sixth capability had a smoke test each, and this one did not.
+</objective>
+
+<requirements>
+- Write `parse_port.py` in the work directory holding exactly this function:
+
+  ```python
+  def parse_port(text):
+      return int(text.split(":")[1])
+  ```
+
+- Then run the `parallel_review` workflow on that file, with a single perspective:
+  `correctness`. Run the workflow — do not review the code yourself, and do not
+  dispatch a sub-agent to stand in for it.
+- Report the name of the workflow you ran and the finding it came back with.
+</requirements>
+
+<acceptance>
+```
+workspace_root/parse_port.py   the function above
+final answer                   names `parallel_review` as the workflow that ran
+                               reports a finding about input it does not validate
+                               (no colon, non-numeric, or index out of range)
+```
+</acceptance>
+</div>
+
+</body>
+</html>

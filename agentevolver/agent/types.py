@@ -822,10 +822,15 @@ class Agent(BaseModel):
     async def _resolve_workspace_root(self, ctx: AgentContext, **kwargs) -> str:
         """Resolve the workspace_root surfaced in the prompt's `{{ workspace_root }}` slot.
 
-        Prefer ctx.workspace_root (injected by MetaAgent for sub-agents) over
-        self.base_dir so all agents in a MetaAgent run share the same directory.
-        The agent runs inside the container its tools run in, so this path is already
-        the working directory those tools see.
+        The run's bound workspace, falling back to this agent's own ``base_dir`` outside a
+        session. Every agent in one run therefore shares a directory, which is what a
+        MetaAgent dispatching sub-agents needs — the sub-agent has to be able to open what
+        the parent wrote. The agent runs inside the container its tools run in, so this
+        path is already the working directory those tools see.
+
+        The docstring used to say it preferred ``ctx.workspace_root``; it never read the
+        context at all, and the fact that nothing broke is the evidence that the roots
+        travelling through contexts were not the ones being used.
         """
         return assemble_workspace_path(config.workspace_root or self.base_dir)
 
@@ -906,11 +911,17 @@ class Agent(BaseModel):
             ctx.extra["model_name"] = self.model_name
 
         workspace_root = await self._resolve_workspace_root(ctx=ctx, **kwargs)
-        roots = getattr(ctx, "extra", {}) or {}
-        extension_root = str(roots.get("extension_root") or get_extension_root())
-        package_root = str(roots.get("package_root") or get_package_root())
-        project_root = str(roots.get("project_root") or getattr(config, "project_root", ""))
-        log_root = str(roots.get("log_root") or getattr(config, "log_root", ""))
+        # The roots the agent is told about come from the layout table for the session
+        # this run is bound to. They used to be read out of `ctx.extra`, where they had
+        # been copied — and where `extension_root` named the session's staging tree while
+        # the identically-spelled `config.extension_root` named the shared library. An
+        # agent told the wrong one writes where promotion will refuse to look.
+        from agentevolver.paths import P, path_manager
+        roots = path_manager.session_roots()
+        extension_root = str(roots["extension"] if roots else get_extension_root())
+        package_root = str(roots["package"] if roots else get_package_root())
+        project_root = str(roots["project"] if roots else getattr(config, "project_root", ""))
+        log_root = str(roots["log"] if roots else getattr(config, "log_root", ""))
 
         system_modules = dict(
             max_actions=self.max_actions,

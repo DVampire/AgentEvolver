@@ -1,7 +1,7 @@
 """TEMPLATE — a tool-calling agent (LLM think-and-act loop).
 
-Copy to `extension/agent/{name}.py`, rename the class, fill name/description, and
-pair it with an HTML prompt at `extension/prompt/{name}.html` (see
+Copy to `{extension_root}/agent/{name}.py`, rename the class, fill name/description, and
+pair it with an HTML prompt at `{extension_root}/prompt/{name}.html` (see
 `html_prompt_template.html`). This is the common agent type: it reasons and acts
 step by step using tools/skills/connectors, driven by the base-class loop.
 

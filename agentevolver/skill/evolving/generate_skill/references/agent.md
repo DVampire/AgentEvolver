@@ -30,7 +30,7 @@ An agent has up to three files:
 - `{extension_root}/prompt/{name}.html` — the HTML prompt (REQUIRED for tool-calling agents; procedural agents omit it).
 - `{extension_root}/configs/agents/{name}.py` — the config dict.
 
-**Registration is automatic via a hook**: after writing the files, include the Python file path in your `done_tool` reasoning — the `agent_registration_hook` locates and registers it. The class name in `done_tool` reasoning helps it resolve.
+**Registration is automatic via a hook**: after writing the files, include the Python file path in your `done_tool` reasoning — the `registration_hook` locates and registers it. The class name in `done_tool` reasoning helps it resolve.
 
 ---
 
@@ -55,13 +55,13 @@ The base `Agent` already implements the standard think-and-act loop (`__call__`)
 **Do NOT override** `_get_agent_context`, `_get_messages`, or `_think_and_act` unless the agent genuinely needs bespoke behavior — reviewers treat unnecessary overrides as a defect. The only common reason to put real logic in `__call__` is an agent that must **register a produced artifact**: it calls `super().__call__(...)`, then fires a registration hook on the result (see the variant in `tool_calling_agent_template.py`).
 
 Steps:
-1. Read `tool_calling_agent_template.py`, copy it to `extension/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
+1. Read `tool_calling_agent_template.py`, copy it to `{extension_root}/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
 2. Write the HTML prompt (next section).
 3. `python -m py_compile /abs/path/{name}.py`; then put the `.py` path in `done_tool` reasoning to register.
 
 ### Writing the HTML prompt (this is where agent quality lives)
 
-Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta name="name">` to the agent's name, and fill each block. The prompt is the agent's brain — treat it with the same care as a skill.
+Copy `html_prompt_template.html` to `{extension_root}/prompt/{name}.html`, set `<meta name="name">` to the agent's name, and fill each block. The prompt is the agent's brain — treat it with the same care as a skill.
 
 **Structure (do not break it):**
 - **system**: `profile`, `language-settings`, `project`, `input-rules`, `constraint-rules`, `task-rules`, `context-rules`, `response-protocol`.
@@ -79,7 +79,7 @@ Copy `html_prompt_template.html` to `extension/prompt/{name}.html`, set `<meta n
 - `response-protocol` *(shared)* — that it acts by **calling tools natively** (not by emitting a JSON plan), and signals completion only via `done_tool`.
 - `capability-context` + `agent-context` *(shared frame)* — the capability and live-state slots; only the template variables below go here.
 
-> **Shared blocks & modules.** The built-in default agents in `agentevolver/prompt/default/` factor the shared blocks (`language-settings`, `constraint-rules`, `context-rules`, `response-protocol`, `agent-context`) into `agentevolver/prompt/module/*.html`, referenced with `<module src="../module/NAME.html"></module>` (the server inlines them into the message; `prompt.js` inlines them for browser viewing). **Generated agents keep these blocks inline** — do NOT use `<module src>` in an `extension/prompt/` file: module `src` is resolved relative to the prompt file, so `../module/...` only exists under `agentevolver/prompt/default/` and would fail to load from `extension/prompt/`.
+> **Shared blocks & modules.** The built-in default agents in `agentevolver/prompt/default/` factor the shared blocks (`language-settings`, `constraint-rules`, `context-rules`, `response-protocol`, `agent-context`) into `agentevolver/prompt/module/*.html`, referenced with `<module src="../module/NAME.html"></module>` (the server inlines them into the message; `prompt.js` inlines them for browser viewing). **Generated agents keep these blocks inline** — do NOT use `<module src>` in an `{extension_root}/prompt/` file: module `src` is resolved relative to the prompt file, so `../module/...` only exists under `agentevolver/prompt/default/` and would fail to load from `{extension_root}/prompt/`.
 
 **Template-variable contract** — use only the variables the base context builder provides, spelled exactly:
 `{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ todo }}`, `{{ available_tools }}`, `{{ available_skills }}`, `{{ available_connectors }}`, plus the system-side `{{ extension_root }}`, `{{ workspace_root }}`. Inventing a variable leaves an empty slot; misspelling one silently drops that context.

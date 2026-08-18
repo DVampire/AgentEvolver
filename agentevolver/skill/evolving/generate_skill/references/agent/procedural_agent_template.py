@@ -1,6 +1,6 @@
 """TEMPLATE — a procedural agent (deterministic, code-driven; NO LLM loop).
 
-Copy to `extension/agent/{name}.py`, rename the class, and implement the steps.
+Copy to `{extension_root}/agent/{name}.py`, rename the class, and implement the steps.
 A procedural agent has NO HTML prompt — it does not reason step by step. Use it when
 the task is a fixed pipeline (e.g. read → process → report) that you can express in
 code and that calls tools directly. Implement ``run_procedure``; never override

@@ -20,7 +20,7 @@ An environment is a directory: `{extension_root}/environment/{name}/`
 ├── ENVIRONMENT.md    # REQUIRED — YAML frontmatter + body (State / Vision / Actions)
 └── __init__.py       # imports the class so it registers on load
 ```
-**Registration is automatic via a hook**: after writing the files, include the environment directory (or `environment.py`) path in your `done_tool` reasoning — the `environment_registration_hook` registers it.
+**Registration is automatic via a hook**: after writing the files, include the environment directory (or `environment.py`) path in your `done_tool` reasoning — the `registration_hook` registers it.
 
 **Start from the templates**: read `references/environment/environment_template.py` (the class) and `references/environment/environment_md_template.md` (the manifest), copy them, and adapt.
 

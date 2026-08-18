@@ -177,16 +177,15 @@ def test_the_sandbox_names_its_roots_the_same_way_the_table_does(monkeypatch, tm
     from agentevolver.sandbox.project import ProjectSandbox
 
     sandbox = ProjectSandbox.create(tmp_path / "sess")
-    table = {
-        "workspace": path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="s").name,
-        "log": path_manager.get(P.SESSION_TRACE, owner="o", session_id="s").parent.name,
-    }
-    assert sandbox.workspace_root.name == table["workspace"], (
-        f"the table says a session's workspace is {table['workspace']!r}; "
-        f"the sandbox creates {sandbox.workspace_root.name!r}")
-    assert sandbox.log_root.name == table["log"], (
-        f"the table puts session logs under {table['log']!r}; "
-        f"the sandbox creates {sandbox.log_root.name!r}")
+    for name, key, built in (
+        ("workspace", P.SESSION_WORKSPACE, sandbox.workspace_root),
+        ("log", P.SESSION_LOG, sandbox.log_root),
+        ("extension", P.SESSION_EXTENSION, sandbox.extension_root),
+    ):
+        declared = path_manager.get(key, owner="o", session_id="s").name
+        assert built.name == declared, (
+            f"the table says a session's {name} is {declared!r}; "
+            f"the sandbox creates {built.name!r}")
 
 
 def test_a_direct_runner_binds_its_roots_before_the_managers_start(monkeypatch) -> None:
@@ -246,3 +245,138 @@ def test_no_module_joins_its_own_directory_onto_a_root() -> None:
     assert not offenders, (
         "these join a directory onto a root themselves; declare it in the layout table "
         "and resolve it with `path_manager.under`:\n" + "\n".join(offenders))
+
+
+# ---------------------------------------------------------------------------
+# The bound session
+# ---------------------------------------------------------------------------
+def test_a_session_scoped_key_needs_no_arguments_once_the_run_is_bound() -> None:
+    """The reason binding exists.
+
+    A tool three layers down asking where it may write has no owner or session id to pass
+    — it was never handed them. Before, the roots were copied into `ctx.extra` and carried
+    to it; the copy could be rewritten by anything holding the dict, and `extension_root`
+    there meant the session's staging tree while the identically-named `config` attribute
+    meant the shared library.
+    """
+    path_manager.bind_session("someone", "run7")
+    try:
+        assert path_manager.get(P.SESSION_EXTENSION) == path_manager.get(
+            P.SESSION_EXTENSION, owner="someone", session_id="run7")
+    finally:
+        path_manager.unbind_session()
+
+
+def test_outside_a_session_the_same_key_is_an_error_rather_than_a_guess() -> None:
+    """Unbound, there is no run to answer for, and a guess would be a wrong path.
+
+    Specifically it would be `output/{owner}/...` with the braces intact, which surfaces
+    much later as a directory nobody can explain.
+    """
+    assert path_manager.session is None
+    with pytest.raises(ValueError, match="owner"):
+        path_manager.get(P.SESSION_EXTENSION)
+
+
+def test_binding_a_different_session_does_not_leave_the_previous_ones_override() -> None:
+    """An override describes one run's environment — a container's view of its mount.
+
+    Carried into the next run it would point that run's workspace at a directory belonging
+    to a container that is already gone.
+    """
+    path_manager.bind_session("o", "first")
+    path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+    assert path_manager.get(P.SESSION_WORKSPACE) == Path("/workspace")
+    try:
+        path_manager.bind_session("o", "second")
+        assert path_manager.get(P.SESSION_WORKSPACE) != Path("/workspace")
+    finally:
+        path_manager.unbind_session()
+
+
+def test_an_override_answers_for_this_run_and_not_for_a_named_one() -> None:
+    """`override` states where *this* run's workspace is, not where that key always leads.
+
+    ProgramBench needs both in one process: the agent sees `/workspace` (its own view
+    inside the container) while the host side still has to resolve the real directory to
+    mount there. One would have to be wrong if an override answered every call.
+    """
+    path_manager.bind_session("o", "run9")
+    path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+    try:
+        assert path_manager.get(P.SESSION_WORKSPACE) == Path("/workspace")
+        host = path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="run9")
+        assert host != Path("/workspace") and host.is_absolute()
+    finally:
+        path_manager.unbind_session()
+
+
+def test_session_roots_name_the_staging_tree_apart_from_the_shared_library() -> None:
+    """The distinction the old naming lost.
+
+    `extension` is where this run writes; `shared_extension` is the durable library that
+    only promotion writes into. Spelled the same, an agent told the shared one writes
+    where promotion refuses to look, and the run fails at its last step having done all
+    the work.
+    """
+    path_manager.bind_session("o", "run10")
+    try:
+        roots = path_manager.session_roots()
+        assert set(roots) == {"project", "workspace", "log", "extension",
+                              "shared_extension", "package"}
+        assert roots["extension"] != roots["shared_extension"]
+        assert roots["extension"].is_relative_to(roots["project"])
+        assert not roots["shared_extension"].is_relative_to(roots["project"])
+    finally:
+        path_manager.unbind_session()
+
+
+def test_unbinding_closes_the_sandbox_boundary_rather_than_leaving_it_open() -> None:
+    """A leaked binding is not a harmless leftover.
+
+    The sandbox check is enforced only for a bound run, so a binding left behind makes
+    unrelated code — the next test, a bare script — a run whose allowed roots belong to
+    somebody else. Nineteen tests failed exactly this way, refusing their own `tmp_path`
+    as "outside allowed roots".
+    """
+    from agentevolver.sandbox.project import check_session_path
+
+    path_manager.bind_session("o", "run11")
+    outside = str(Path("/etc/cron.d/pwned"))
+    assert check_session_path(None, outside, write=True) is not None
+    path_manager.unbind_session()
+    assert check_session_path(None, outside, write=True) is None
+
+
+def test_no_root_travels_through_a_context() -> None:
+    """The rule the binding replaced, kept from coming back.
+
+    A root read out of `ctx.extra` is a copy, and a copy is authoritative to whoever holds
+    it: any code with the dict could widen its own sandbox, and the two spellings of
+    `extension_root` — the session's staging tree in some modules, the shared library in
+    others — were indistinguishable at the point of use. Both failures were quiet. This
+    scan is loud.
+
+    Scoped to the six root names, so an unrelated key in `extra` (a sandbox handle, a
+    plugin allowlist) is unaffected — those are not paths and do not belong to the table.
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    roots = "project_root|workspace_root|log_root|extension_root|package_root|shared_extension_root"
+    pattern = re.compile(
+        rf"""(extra|roots)\s*(\.get\(\s*|\[\s*)["']({roots})["']"""
+    )
+    offenders = []
+    for source in sorted((root / "agentevolver").rglob("*.py")) + \
+                  sorted((root / "examples").glob("*.py")):
+        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#") or "``" in line:
+                continue          # a comment or a docstring may name the old shape
+            if pattern.search(line):
+                offenders.append(f"{source.relative_to(root)}:{number}: {stripped}")
+    assert not offenders, (
+        "these read a root out of a context; ask path_manager.session_roots() instead:\n"
+        + "\n".join(offenders)
+    )

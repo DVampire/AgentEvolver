@@ -32,12 +32,7 @@ Built-in hooks (`default/`):
 | `plan_mode_hook` | Refuses actions not declared free of effects until a person approves the plan |
 | `snapshot_hook` | Saves each step's rendered messages as HTML |
 | `compact` | Generic summariser for compressing record lists |
-| `tool_registration_hook` | Registers a generated tool file |
-| `skill_registration_hook` | Registers a generated skill directory |
-| `agent_registration_hook` | Registers a generated agent class (and prompt) |
-| `environment_registration_hook` | Registers a generated environment class |
-| `connector_registration_hook` | Registers a generated connector directory |
-| `workflow_registration_hook` | Validates and registers generated Workflow HTML |
+| `registration_hook` | Installs what an evolution run generated, for all eight component types |
 
 Hooks observe or gate lifecycle events; core business logic stays in the owning module.
 The no-progress hook is stateless: evidence and escalation counters are stored on each

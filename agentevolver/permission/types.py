@@ -8,6 +8,7 @@ import fnmatch
 import os
 import re
 import shlex
+from pathlib import Path
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
@@ -143,6 +144,15 @@ _GIT_WRITE_SUBCOMMANDS = frozenset({
     "gc", "prune", "pack-refs", "reflog", "config",
 })
 
+#: Commands whose path arguments are places they write. Not a complete list of ways to
+#: write a file — see `_check_shared_extension_write` for why one is not attempted.
+_WRITING_COMMANDS = frozenset({
+    "cp", "mv", "rm", "rmdir", "mkdir", "touch", "ln", "install", "rsync", "dd",
+    "tee", "truncate", "chmod", "chown", "unzip", "tar",
+})
+#: An output redirect and its target: `> f`, `>> f`, `2> f`. Not `>&`, not a here-doc.
+_REDIRECT_TARGET_RE = re.compile(r"(?:^|[\s;&|])\d?>{1,2}\s*(?P<path>[^\s;&|<>]+)")
+
 _SED_INPLACE_RE = re.compile(r"\bsed\b.*-[a-zA-Z]*i")
 _REDIRECT_WRITE_RE = re.compile(r"(?<![<>])>(?!>)")
 _SHELL_COMPOSITION_RE = re.compile(r"(?:&&|\|\||[;|`]|\$\(|\n)")
@@ -208,6 +218,89 @@ def _validate_mode(command: str, mode: PermissionMode) -> Optional[ValidationRes
     return None
 
 
+def _written_paths(command: str) -> List[str]:
+    """Absolute paths this command names as somewhere it writes.
+
+    Redirect targets, and the arguments of commands whose job is to put bytes somewhere.
+    Relative paths are left out: bash runs from the run's workspace, so a relative path
+    is inside the sandbox by construction.
+
+    Deliberately incomplete, and not fixable — `python -c "open('/x','w')"` writes a file
+    this cannot see, as does any script, heredoc or subprocess. What it catches is a path
+    written out plainly, which is what an agent produces when it is following an
+    instruction about where to put something.
+    """
+    found: List[str] = []
+    for match in _REDIRECT_TARGET_RE.finditer(command):
+        found.append(match.group("path"))
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    writing = False
+    for token in tokens:
+        base = os.path.basename(token)
+        if base in _WRITING_COMMANDS or (base == "sed" and _SED_INPLACE_RE.search(command)):
+            writing = True
+            continue
+        if token in {"&&", "||", ";", "|"}:
+            writing = False
+            continue
+        if writing and not token.startswith("-"):
+            found.append(token)
+    return [path.strip("\"'") for path in found
+            if os.path.isabs(path.strip("\"'"))]
+
+
+def _check_shared_extension_write(command: str) -> Optional[ValidationResult]:
+    """Refuse a write into the shared extension library, in every permission mode.
+
+    Not an ordinary directory, and not an ordinary access rule. The shared tree is what
+    promotion writes into, and four things are kept in step by that one code path:
+    ``.versions/`` (history), ``.promotion-backups/`` (what a rollback restores),
+    ``manifest.json`` (the registry), and the validation that runs before any of it. A
+    redirect straight into the tree updates none of them — the component is *there*, and
+    the registry says it is not, the next promotion of the same name overwrites it with no
+    backup, and a rollback restores a version that was never recorded.
+
+    So this is not exempted by ``danger_full_access``. That mode says the system commands
+    on this machine are trusted, which is a statement about the host; it is not a licence
+    to bypass the framework's own bookkeeping. Everything else stays allowed — reading the
+    tree, writing ``/tmp``, installing packages, compiling in the checkout.
+
+    A run's *own* staging tree — where a generated component belongs — needs no exemption:
+    it lives under ``output/<owner>/sessions/<id>/`` while the shared library hangs off the
+    project root, so it never matches. Written as an explicit carve-out first, and the
+    branch turned out to be unreachable; `tests/test_shared_extension_writes.py` asserts
+    the separation that makes it unnecessary, so a layout change that puts one inside the
+    other fails there rather than silently blocking every generate run.
+    """
+    from agentevolver.paths import P, path_manager
+
+    written = _written_paths(command)
+    if not written:
+        return None
+    shared = path_manager.get(P.EXTENSION).resolve()
+    for raw in written:
+        path = Path(raw).expanduser()
+        try:
+            path = path.resolve()
+        except OSError:                      # a path that cannot be resolved cannot be written
+            continue
+        if not (path == shared or shared in path.parents):
+            continue
+        roots = path_manager.session_roots()
+        staged = roots["extension"] if roots else None
+        return ValidationResult.block(
+            f"Refusing to write inside the shared extension library: {raw!r}. That tree is "
+            f"written by promotion, which also records the version, the rollback backup "
+            f"and the registry entry; a direct write leaves a component the registry does "
+            f"not know about."
+            + (f" Write to this run's staging tree instead: {staged}" if staged else "")
+        )
+    return None
+
+
 def _validate_sed(command: str, mode: PermissionMode) -> Optional[ValidationResult]:
     if _SED_INPLACE_RE.search(command):
         if mode == PermissionMode.READ_ONLY:
@@ -255,6 +348,7 @@ def validate_command(command: str, mode: PermissionMode, workspace: str = "") ->
     for check in (
         lambda: _validate_mode(command, mode),
         lambda: _validate_sed(command, mode),
+        lambda: _check_shared_extension_write(command),
         lambda: _check_destructive(command),
     ):
         result = check()

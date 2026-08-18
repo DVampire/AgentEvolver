@@ -8,7 +8,7 @@ metadata: {}
 ---
 
 <!--
-TEMPLATE — SKILL.md. Copy to `extension/skill/{name}/SKILL.md`, fill the frontmatter
+TEMPLATE — SKILL.md. Copy to `{extension_root}/skill/{name}/SKILL.md`, fill the frontmatter
 and body. `type` is one (or more) of: `worker` (an SOP for one agent, visible to
 sub-agents) / `orchestrator` (a composition recipe for MetaAgent). Add optional
 subdirectories only when needed: scripts/ (Python run via bash_tool), references/

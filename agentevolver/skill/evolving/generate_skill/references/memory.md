@@ -15,7 +15,7 @@ A memory system is a **single Python file** (like a tool, unlike an environment)
 ```
 {extension_root}/memory/{name}.py
 ```
-**Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `memory_registration_hook` registers it.
+**Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `registration_hook` registers it.
 
 ### The Python class
 
