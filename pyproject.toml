@@ -36,6 +36,10 @@ dependencies = [
     "requests",
     "validators",
     "mcp",
+    # `connector/context.py` imports `langchain_mcp_adapters` to reach an MCP server.
+    # `mcp` alone does not bring it: it was present only because something else pulled it
+    # in, so a clean install left every connector call failing on the import.
+    "langchain-mcp-adapters",
     "crawl4ai>=0.8.6",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
@@ -59,6 +63,9 @@ dependencies = [
     "xlrd>=2.0.2",
     "lxml",
     "defusedxml",
+    # `utils/screenshot_utils.py` imports PIL at module level, so this is not optional
+    # the way the plugins' own imports are — it was present only transitively.
+    "pillow",
     # secrets
     "hvac>=2.4.0",
 ]
