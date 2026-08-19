@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="connector_generate">
+  <meta name="description" content="Generate unit_convert connector with its own local MCP server">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Generate a connector called `unit_convert`. No server exists for it yet, so build one:
+a local MCP server the connector reaches over stdio.
+</objective>
+
+<requirements>
+- Write `server.py` in the connector directory — a stdio MCP server with no dependency
+  on anything outside the Python standard library and the MCP SDK. It exposes:
+  - `convert_length` — a value between metres, feet, miles and nautical miles.
+  - `convert_temperature` — a value between celsius, fahrenheit and kelvin.
+  Both report the unit they converted from and to, not just a bare number.
+- Write `CONNECTOR.md` declaring the stdio connection. Use `command: python` and the
+  relative path `server.py`, never an absolute one — the connector has to keep working
+  on another checkout.
+- The declared `actions` must be exactly what the server offers. Start the server and
+  list its tools to check, rather than trusting what you wrote.
+</requirements>
+</div>
+
+</body>
+</html>
