@@ -4,7 +4,7 @@ from typing import List, Optional
 from agentevolver.registry import COMMAND
 from agentevolver.command.types import Command, CommandType, CommandContext
 from agentevolver.response.types import Response
-from agentevolver.command.default._helpers import get_manager, KNOWN_TYPES
+from agentevolver.command.default._helpers import call, get_manager, types_supporting
 
 
 @COMMAND.register_module(force=True)
@@ -20,13 +20,16 @@ class UnregisterCommand(Command):
             return self.fail(f"usage: {self.usage}")
         ctype, name = args[0], args[1]
 
+        # What this command actually needs, rather than a hand-kept list of types. The
+        # list was short by `workflow`, `memory` and `plugin` — components the framework
+        # generates and registers — so this answered "Unknown type" for all three.
+        eligible = types_supporting("unregister")
+        if ctype not in eligible:
+            return self.fail(
+                f"unregister is not available for '{ctype}'. Available: {', '.join(eligible)}")
         mgr = get_manager(ctype)
-        if mgr is None:
-            return self.fail(f"Unknown type '{ctype}'. Known: {KNOWN_TYPES}")
-        if not hasattr(mgr, "unregister"):
-            return self.fail(f"The {ctype} manager does not support unregister.")
 
-        ok = await mgr.unregister(name)
+        ok = await call(mgr, "unregister", name)
         if ok:
             return self.ok(f"Unregistered {ctype}/{name}.")
         return self.fail(f"{ctype}/{name} not found.")
