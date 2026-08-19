@@ -16,6 +16,15 @@ callable, whether the plan gate can rule on it, what an agent mounts it as. Each
 restatement was a place the next type would have to be remembered, and a place
 two answers could disagree.
 
+Its **artifact shape** — directory or file, which entry file, which extension — is here
+too, for the same reason. Three places knew it independently: the registration hook that
+installs a generated component, the sandbox that promotes one out of staging, and the skill
+that tells a run where to write. They disagreed by omission rather than by argument, and
+the omissions were invisible: the sandbox's list of modules stopped at six, so ``workflow``,
+``plugin`` and ``memory`` could be generated and registered but never *promoted* — a run
+would build one, and promotion would answer "Requested staged extension component was not
+found" for a file sitting right there.
+
 Two properties do most of the explaining, and neither is "is it a capability":
 
 ``container``
@@ -61,6 +70,13 @@ class CapabilityType:
     #: :data:`COMPONENT_TYPES` and deliberately not in :data:`CAPABILITY_TYPES`,
     #: because everything that walks the latter is building a callable roster.
     mounted: bool = True
+    #: Whether one member of this type is a directory rather than a single file.
+    #: A skill is a directory with a manifest; a tool is one ``.py``.
+    directory: bool = False
+    #: For a directory holding a Python class, the file its loader reads.
+    entry: str = ""
+    #: The file extension, for the single-file case.
+    suffix: str = ".py"
 
 
 def _tool_manager() -> Any:
@@ -107,15 +123,20 @@ def _memory_manager() -> Any:
 #: pickers appear on the canvas, so it is part of the UI and not arbitrary.
 CAPABILITY_TYPES: Tuple[CapabilityType, ...] = (
     CapabilityType("tool", _tool_manager, container=False, judgeable=True, mount_type="tools"),
-    CapabilityType("skill", _skill_manager, container=False, judgeable=True, mount_type="skills"),
-    CapabilityType("connector", _connector_manager, container=True, judgeable=True, mount_type="connectors"),
+    CapabilityType("skill", _skill_manager, container=False, judgeable=True, mount_type="skills",
+                   directory=True),
+    CapabilityType("connector", _connector_manager, container=True, judgeable=True,
+                   mount_type="connectors", directory=True),
     CapabilityType("agent", _agent_manager, container=False, judgeable=False, mount_type="agents"),
-    CapabilityType("environment", _environment_manager, container=True, judgeable=True, mount_type="environments"),
-    CapabilityType("workflow", _workflow_manager, container=False, judgeable=False, mount_type="workflows"),
+    CapabilityType("environment", _environment_manager, container=True, judgeable=True,
+                   mount_type="environments", directory=True, entry="environment.py"),
+    CapabilityType("workflow", _workflow_manager, container=False, judgeable=False,
+                   mount_type="workflows", suffix=".html"),
     # Appended rather than grouped with the other containers: the order is the
     # order of an agent node's mount pickers, and moving an existing one would
     # rearrange a panel people already know.
-    CapabilityType("plugin", _plugin_manager, container=True, judgeable=True, mount_type="plugins"),
+    CapabilityType("plugin", _plugin_manager, container=True, judgeable=True, mount_type="plugins",
+                   directory=True, entry="plugin.py"),
 )
 
 #: Every component the framework registers, versions and can evolve — the seven

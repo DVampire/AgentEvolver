@@ -20,9 +20,22 @@ from agentevolver.paths import P, path_manager
 from agentevolver.utils import get_extension_root, get_package_root
 
 
-_MODULES = ("tool", "agent", "prompt", "skill", "environment", "connector")
-_DIRECTORY_MODULES = {"skill", "environment", "connector"}
-_FILE_SUFFIX = {"tool": ".py", "agent": ".py", "prompt": ".html"}
+#: What a promotable component looks like on disk, per module. Derived from the capability
+#: table rather than restated, because restating it is how three of the eight went missing:
+#: this list stopped at six modules, so a generated ``workflow``, ``plugin`` or ``memory``
+#: could be registered but never promoted — ``_entries`` never walked its directory, and
+#: promotion answered "Requested staged extension component was not found" for a file that
+#: was sitting right there.
+#:
+#: ``prompt`` is added on top and is not a component: it is not generated, versioned or
+#: evolved on its own, but an agent's prompt is promoted beside the agent, so promotion has
+#: to know its shape.
+def _promotable_shapes() -> Dict[str, tuple]:
+    from agentevolver.capability.types import COMPONENT_TYPES
+
+    shapes = {entry.type: (entry.directory, entry.suffix) for entry in COMPONENT_TYPES}
+    shapes["prompt"] = (False, ".html")
+    return shapes
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -153,17 +166,18 @@ class ProjectSandbox:
         temporary.replace(self.manifest_path)
 
     def _entries(self) -> Iterable[tuple[str, Path]]:
-        for module in _MODULES:
+        """Every staged component, by module, in a stable order."""
+        for module, (directory, suffix) in _promotable_shapes().items():
             module_root = self.extension_root / module
             if not module_root.is_dir():
                 continue
             for entry in sorted(module_root.iterdir()):
                 if entry.name.startswith("."):
                     continue
-                if module in _DIRECTORY_MODULES:
+                if directory:
                     if entry.is_dir():
                         yield module, entry
-                elif entry.is_file() and entry.suffix == _FILE_SUFFIX[module]:
+                elif entry.is_file() and entry.suffix == suffix:
                     yield module, entry
 
     def staged_components(self) -> List[Dict[str, Any]]:

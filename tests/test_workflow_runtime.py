@@ -912,9 +912,10 @@ def test_the_registration_hook_finds_the_artifact_even_when_its_path_has_spaces(
     spaces, which is what breaks a naive whitespace split — the workflow would be written,
     reported as created, and never registered, leaving a file nothing loads.
     """
-    from agentevolver.hook.default.registration import SHAPES, resolve_artifact, _mentions
+    from agentevolver.capability.types import component_type
+    from agentevolver.hook.default.registration import resolve_artifact, _mentions
 
-    shape = SHAPES["workflow"]
+    shape = component_type("workflow")
     directory = tmp_path / "extension" / "workflow" / "review files"
     directory.mkdir(parents=True)
     artifact = directory / "review workflow.html"

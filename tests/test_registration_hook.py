@@ -18,11 +18,13 @@ from typing import Any, Dict, Optional
 
 import pytest
 
+from agentevolver.capability.types import COMPONENT_TYPES, component_type
 from agentevolver.hook.default.registration import (
     SHAPES,
     RegistrationHook,
     _mentions,
     resolve_artifact,
+    shape_for,
 )
 from agentevolver.hook.types import HookContext, HookDecision
 
@@ -34,18 +36,64 @@ def _ctx(**payload: Any) -> HookContext:
 # --------------------------------------------------------------------------- #
 # Coverage
 # --------------------------------------------------------------------------- #
-def test_every_evolvable_component_type_has_a_shape():
-    """The table and the framework's list of evolvable modules are the same eight.
+def test_every_evolvable_component_type_can_be_installed():
+    """Generation is offered for exactly the types installation handles.
 
-    A type present in one and absent from the other is the plugin bug again: generation
-    is offered for something installation cannot handle, and the run finds out last.
+    A type present in one and absent from the other is the plugin bug: a run builds the
+    thing, and finds out at its last step that nothing knows how to install it.
     """
     from agentevolver.extension import EVOLVABLE_MODULES
 
-    assert set(SHAPES) == set(EVOLVABLE_MODULES), (
-        f"only in SHAPES: {sorted(set(SHAPES) - set(EVOLVABLE_MODULES))}; "
-        f"only in EVOLVABLE_MODULES: {sorted(set(EVOLVABLE_MODULES) - set(SHAPES))}"
+    installable = {e.type for e in COMPONENT_TYPES if shape_for(e.type) is not None}
+    assert installable == set(EVOLVABLE_MODULES), (
+        f"installable but not evolvable: {sorted(installable - set(EVOLVABLE_MODULES))}; "
+        f"evolvable but not installable: {sorted(set(EVOLVABLE_MODULES) - installable)}"
     )
+
+
+def test_only_the_two_types_that_need_to_differ_carry_a_behaviour_row():
+    """Six of the eight install identically, and a row that says nothing goes stale.
+
+    `SHAPES` used to hold one row per type, six of them repeating the defaults — and the
+    artifact shape as well, which promotion held a second copy of and got wrong.
+    """
+    assert set(SHAPES) == {"agent", "workflow"}
+    for module in ("tool", "skill", "connector", "plugin", "environment", "memory"):
+        assert shape_for(module) is shape_for("tool"), f"{module} takes the default"
+
+
+def test_promotion_walks_every_component_type():
+    """The bug this refactor was chasing.
+
+    `ProjectSandbox` kept its own list of promotable modules and it stopped at six, so a
+    generated workflow, plugin or memory was registered and then refused by promotion —
+    "Requested staged extension component was not found", for a file sitting right there.
+    Both now read the capability table.
+    """
+    from agentevolver.sandbox.project import _promotable_shapes
+
+    promotable = set(_promotable_shapes())
+    missing = {e.type for e in COMPONENT_TYPES} - promotable
+    assert not missing, f"generated but never promotable: {sorted(missing)}"
+    assert "prompt" in promotable, (
+        "an agent's prompt is promoted beside the agent; promotion has to know its shape"
+    )
+
+
+def test_promotion_and_installation_agree_on_what_each_type_looks_like():
+    """Two readers of one fact, checked against each other rather than trusted.
+
+    They disagreed for as long as each had its own copy, and the disagreement was silent:
+    one list simply had fewer entries than the other.
+    """
+    from agentevolver.sandbox.project import _promotable_shapes
+
+    shapes = _promotable_shapes()
+    for entry in COMPONENT_TYPES:
+        assert shapes[entry.type] == (entry.directory, entry.suffix), (
+            f"{entry.type}: promotion sees {shapes[entry.type]}, "
+            f"the capability table says {(entry.directory, entry.suffix)}"
+        )
 
 
 def test_there_is_exactly_one_registration_hook():
@@ -91,12 +139,12 @@ def test_the_dispatcher_asks_for_that_one_hook_by_name():
     ("plugin", True, "plugin.py", ".py"),
     ("environment", True, "environment.py", ".py"),
 ])
-def test_each_row_describes_its_types_real_shape(module, directory, entry, suffix):
-    """The rows are the whole difference between the eight, so they are checked one by
-    one: a skill is a directory, a workflow is `.html`, an environment must hold the file
-    its loader reads."""
-    shape = SHAPES[module]
-    assert (shape.directory, shape.entry, shape.suffix) == (directory, entry, suffix)
+def test_each_type_declares_its_real_artifact_shape(module, directory, entry, suffix):
+    """Checked one by one, because these are what every reader of the table relies on:
+    a skill is a directory, a workflow is `.html`, an environment must hold the file its
+    loader reads."""
+    declared = component_type(module)
+    assert (declared.directory, declared.entry, declared.suffix) == (directory, entry, suffix)
 
 
 # --------------------------------------------------------------------------- #
@@ -167,7 +215,7 @@ def test_a_file_type_is_found_from_a_path_in_prose(bound_session):
         module="tool", target_name=None,
         reasoning=f"Wrote the tool to extension/tool/web_search_tool.py and verified it.",
         extension_root=str(bound_session["extension"]),
-        matches=_mentions("tool", SHAPES["tool"]),
+        matches=_mentions("tool", component_type("tool")),
     )
     assert found == str(artifact)
 
@@ -182,7 +230,7 @@ def test_a_directory_type_is_found_when_the_run_names_its_entry_file(bound_sessi
         module="environment", directory=True, entry="environment.py", target_name=None,
         reasoning="Created `extension/environment/shell_env/environment.py`.",
         extension_root=str(bound_session["extension"]),
-        matches=_mentions("environment", SHAPES["environment"]),
+        matches=_mentions("environment", component_type("environment")),
     )
     assert found == str(directory.parent)
 
@@ -196,7 +244,7 @@ def test_a_directory_missing_its_entry_file_is_not_accepted(bound_session):
         module="plugin", directory=True, entry="plugin.py", target_name=None,
         reasoning="Created extension/plugin/notes/",
         extension_root=str(bound_session["extension"]),
-        matches=_mentions("plugin", SHAPES["plugin"]),
+        matches=_mentions("plugin", component_type("plugin")),
     ) is None
 
 
@@ -213,7 +261,7 @@ def test_a_source_file_the_run_merely_quoted_is_not_registered(tmp_path, bound_s
         module="tool", target_name=None,
         reasoning=f"Modelled it on {quoted}, then wrote mine.",
         extension_root=str(bound_session["extension"]),
-        matches=_mentions("tool", SHAPES["tool"]),
+        matches=_mentions("tool", component_type("tool")),
     ) is None
 
 
@@ -225,7 +273,7 @@ def test_a_path_from_another_module_does_not_resolve(bound_session):
         module="skill", directory=True, target_name=None,
         reasoning=f"See {other} for the pattern.",
         extension_root=str(bound_session["extension"]),
-        matches=_mentions("skill", SHAPES["skill"]),
+        matches=_mentions("skill", component_type("skill")),
     ) is None
 
 
@@ -239,7 +287,7 @@ def test_a_structured_path_is_believed_without_the_prose_filter(tmp_path, bound_
     assert resolve_artifact(
         module="tool", target_name=None, artifact_path=str(artifact),
         extension_root=str(bound_session["extension"]),
-        matches=_mentions("tool", SHAPES["tool"]),
+        matches=_mentions("tool", component_type("tool")),
     ) == str(artifact)
 
 

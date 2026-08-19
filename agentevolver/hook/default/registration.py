@@ -161,32 +161,47 @@ async def _prompt_only_change(extra: Dict[str, Any]) -> Optional[HookResult]:
 
 @dataclass(frozen=True)
 class Shape:
-    """What installing one component type does differently from installing any other."""
+    """What installing one component type *does* differently from installing any other.
 
-    directory: bool = False
-    entry: str = ""
-    suffix: str = ".py"
+    Behaviour only. What the artifact looks like on disk — directory or file, entry file,
+    extension — is a fact about the type, not about installing it, and lives on the
+    capability table where the sandbox's promotion reads the same answer. Held here as
+    well, the two drifted: promotion's copy stopped at six modules while this one had
+    eight, so three types could be registered and never promoted.
+    """
+
     config: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]] = _evolving
     prepare: Callable[[str], str] = _as_written
     after: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
     recover: Optional[Callable[[Dict[str, Any]], Awaitable[Optional[HookResult]]]] = None
 
 
-#: One row per evolvable component type. `test_registration_hook.py` holds this to the
-#: same eight types the rest of the framework evolves, so adding a ninth without saying
-#: how it installs fails there rather than at the end of a generate run.
+#: The types whose installation differs from the default at all. Everything else — six of
+#: the eight — takes `Shape()` unchanged, which is why this is a lookup with a default
+#: rather than one row per type: a row that says nothing is a row that can go stale.
 SHAPES: Dict[str, Shape] = {
-    "tool": Shape(),
-    "memory": Shape(),
-    "skill": Shape(directory=True),
-    "connector": Shape(directory=True),
-    "plugin": Shape(directory=True, entry="plugin.py"),
-    "environment": Shape(directory=True, entry="environment.py"),
     "agent": Shape(
         config=_agent_config, after=_register_sibling_prompt, recover=_prompt_only_change,
     ),
-    "workflow": Shape(suffix=".html", config=_no_config, prepare=_activate_and_compile),
+    "workflow": Shape(config=_no_config, prepare=_activate_and_compile),
 }
+
+#: The default, for the six types that answer none of the four questions.
+DEFAULT_SHAPE = Shape()
+
+
+def shape_for(module: str) -> Optional[Shape]:
+    """How to install ``module``, or ``None`` when it is not an evolvable component.
+
+    The set of installable types comes from the capability table, so a ninth type is
+    installable the moment it is declared there — with default behaviour, which is right
+    for six of the eight that exist.
+    """
+    from agentevolver.capability.types import component_type
+
+    if component_type(module) is None:
+        return None
+    return SHAPES.get(module, DEFAULT_SHAPE)
 
 
 # --------------------------------------------------------------------------- #
@@ -269,7 +284,7 @@ def resolve_artifact(
     return None
 
 
-def _mentions(module: str, shape: Shape) -> Callable[[str], bool]:
+def _mentions(module: str, entry: Any) -> Callable[[str], bool]:
     """Whether a path mentioned in prose could be this type's artifact.
 
     Both halves earn their place. Without ``extension/``, a run that quotes the source
@@ -280,7 +295,7 @@ def _mentions(module: str, shape: Shape) -> Callable[[str], bool]:
     def matches(candidate: str) -> bool:
         if "extension/" not in candidate or f"/{module}/" not in candidate:
             return False
-        return shape.directory or candidate.endswith(shape.suffix)
+        return entry.directory or candidate.endswith(entry.suffix)
 
     return matches
 
@@ -314,17 +329,21 @@ class RegistrationHook(Hook):
             ``HookResult.allow()`` on success, or ``HookResult.block(reason)`` when the
             type is unknown, the artifact cannot be located, or registration fails.
         """
+        from agentevolver.capability.types import component_type
+
         extra = ctx.input or {}
         module = str(extra.get("target_type") or "")
-        shape = SHAPES.get(module)
-        if shape is None:
+        entry = component_type(module)
+        shape = shape_for(module)
+        if entry is None or shape is None:
             # Read from the run's context rather than guessed from its output: a generate
             # run's target does not exist yet, so nothing can be looked up, and a wrong
             # guess searches the wrong module — which surfaces as "could not locate the
             # generated file" rather than as the type being wrong.
-            msg = (f"target_type must be one of {', '.join(sorted(SHAPES))}; got "
-                   f"{module!r}. Without it there is no way to know what was built or "
-                   f"how to install it.")
+            from agentevolver.capability.types import COMPONENT_TYPES
+            known = ", ".join(sorted(e.type for e in COMPONENT_TYPES))
+            msg = (f"target_type must be one of {known}; got {module!r}. Without it there "
+                   f"is no way to know what was built or how to install it.")
             logger.warning(f"| ⚠️  registration_hook: {msg}")
             return HookResult.block(f"[registration failed] {msg}")
 
@@ -333,14 +352,14 @@ class RegistrationHook(Hook):
         # which meant the dispatcher and the agent's prompt each resolved it separately —
         # and a run whose prompt named the shared tree wrote where this could not find it.
         extension_root: str = staged_extension_root()
-        noun = "directory" if shape.directory else "file"
+        noun = "directory" if entry.directory else "file"
 
         path = resolve_artifact(
-            module=module, directory=shape.directory, entry=shape.entry,
-            suffix=shape.suffix, target_name=target_name,
+            module=module, directory=entry.directory, entry=entry.entry,
+            suffix=entry.suffix, target_name=target_name,
             artifact_path=extra.get("artifact_path"),
             reasoning=extra.get("reasoning") or "", extension_root=extension_root,
-            matches=_mentions(module, shape),
+            matches=_mentions(module, entry),
         )
         if not path:
             recovered = await shape.recover(extra) if shape.recover else None
@@ -381,4 +400,5 @@ class RegistrationHook(Hook):
             )
 
 
-__all__ = ["RegistrationHook", "SHAPES", "Shape", "resolve_artifact"]
+__all__ = ["DEFAULT_SHAPE", "RegistrationHook", "SHAPES", "Shape",
+           "resolve_artifact", "shape_for"]
