@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="plugin_generate">
+  <meta name="description" content="Generate text_metrics plugin">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Generate a plugin called `text_metrics` holding two tools that report measurable
+properties of a piece of text.
+</objective>
+
+<requirements>
+- `readability` — returns sentence count, average sentence length, and a
+  Flesch-Kincaid grade estimate.
+- `repetition` — returns the most repeated words above a length threshold, with counts.
+- Both take the text either inline or as a file path in the work directory.
+- Failures come back through `_fail` with the tool id in the message, never raised.
+</requirements>
+</div>
+
+</body>
+</html>

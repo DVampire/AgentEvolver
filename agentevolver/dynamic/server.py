@@ -579,12 +579,37 @@ class DynamicModuleManager:
         
         return imports
     
+    @staticmethod
+    def _ensure_parent_packages(module_name: str) -> None:
+        """Make sure every dotted parent of ``module_name`` exists as a package.
+
+        Extensions are loaded under names like ``ext.plugin.text_metrics``, and nothing
+        called ``ext`` exists anywhere — it is a namespace this manager invented so that
+        two versions of one component never collide in ``sys.modules``. Python does not
+        mind that for a plain module: it only looks the name up. It minds a great deal
+        the moment code inside asks for something relative, because the first thing it
+        does is import the parent.
+
+        Each level is created empty and marked as a package. They hold nothing; they
+        exist so the names resolve.
+        """
+        parts = module_name.split(".")[:-1]
+        for depth in range(1, len(parts) + 1):
+            parent = ".".join(parts[:depth])
+            if parent in sys.modules:
+                continue
+            spec = importlib.util.spec_from_loader(parent, loader=None, is_package=True)
+            package = importlib.util.module_from_spec(spec)
+            package.__path__ = []          # a namespace package: no directory of its own
+            sys.modules[parent] = package
+
     def load_code(self, 
                         code: str, 
                         module_name: Optional[str] = None, 
                         context: Optional[str] = None,
                         inject_imports: Optional[Dict[str, Any]] = None,
-                        source_file: Optional[str] = None) -> str:
+                        source_file: Optional[str] = None,
+                        package_dir: Optional[str] = None) -> str:
         """Load code into a virtual module and return the module name.
         
         Args:
@@ -599,7 +624,16 @@ class DynamicModuleManager:
                          (``TypeError: <module 'ext.memory.x'> is a built-in module``),
                          which is what made reading an extension's own source fail, and
                          what leaves its frames pathless in a traceback.
-            
+            package_dir: The directory this code is the entry point of, for a component
+                         that is a directory rather than a single file. Makes the module
+                         a *package*, so the code in it can import its own siblings —
+                         which a plugin must: its shape is ``plugin.py`` beside one
+                         ``PluginTool`` per file under ``tools/``, and the entry point
+                         reaches them with ``from .tools.x import Y``. Without this the
+                         module was a plain module with a dotted name whose parents did
+                         not exist, so every generated plugin failed to load with
+                         ``No module named 'ext'``.
+
         Returns:
             The module name that was used
             
@@ -608,13 +642,26 @@ class DynamicModuleManager:
         """
         if module_name is None:
             module_name = self._generate_module_name()
-        
+
+        # A dotted name needs its parents present before anything resolves relative to
+        # it, and these parents are ours to make — `ext`, `ext.plugin`. Nothing else
+        # creates them, because no such package exists on disk.
+        self._ensure_parent_packages(module_name)
+
         # Create a new module object (virtual, in memory only)
+        locations = [str(package_dir)] if package_dir else None
         spec = importlib.util.spec_from_loader(module_name, loader=None,
-                                               origin=source_file)
+                                               origin=source_file,
+                                               is_package=bool(package_dir))
         module = importlib.util.module_from_spec(spec)
         if source_file:
             module.__file__ = source_file
+        if locations is not None:
+            # `__path__` is what sends the ordinary import machinery into this directory
+            # looking for `tools/x.py`; `__package__` is what `from .` counts from.
+            spec.submodule_search_locations = locations
+            module.__path__ = locations
+            module.__package__ = module_name
         
         # Determine imports to inject
         if inject_imports is None:
@@ -628,18 +675,28 @@ class DynamicModuleManager:
         for name, obj in inject_imports.items():
             setattr(module, name, obj)
         
-        # Compiled against the real path, not exec'd as a bare string. `exec(code, ...)`
-        # compiles with the filename "<string>", which every function in the module then
-        # carries as its `co_filename` — so `inspect.getsource` on a method fails even
-        # when the module knows its own `__file__`, and a traceback through extension
-        # code shows no file and no source line. Naming the file here fixes both, and is
-        # why an environment's actions could not report their source.
-        exec(compile(code, source_file or f"<{module_name}>", "exec"), module.__dict__)
-        
-        # Add to sys.modules so Python treats it as a real importable module
-        # This is a runtime virtual module - no file on disk needed
+        # Registered before it runs, which is what the import system itself does. The
+        # code about to execute may import something *from this package* — a plugin's
+        # `plugin.py` opens with `from .tools.x import Y` — and that import looks the
+        # parent up in `sys.modules`. Registered afterwards, the parent is missing at
+        # exactly the moment it is needed, and the failure reads `No module named
+        # 'ext.plugin.text_metrics'` while the module of that name is being built.
         sys.modules[module_name] = module
-        
+        try:
+            # Compiled against the real path, not exec'd as a bare string. `exec(code, ...)`
+            # compiles with the filename "<string>", which every function in the module then
+            # carries as its `co_filename` — so `inspect.getsource` on a method fails even
+            # when the module knows its own `__file__`, and a traceback through extension
+            # code shows no file and no source line. Naming the file here fixes both, and is
+            # why an environment's actions could not report their source.
+            exec(compile(code, source_file or f"<{module_name}>", "exec"), module.__dict__)
+        except BaseException:
+            # A half-built module left in `sys.modules` is worse than none: the next load
+            # of the same name finds it, skips execution, and hands back a class that was
+            # never defined.
+            sys.modules.pop(module_name, None)
+            raise
+
         # Store reference
         self._loaded_modules[module_name] = module
         
@@ -652,7 +709,8 @@ class DynamicModuleManager:
                    module_name: Optional[str] = None,
                    context: Optional[str] = None,
                    inject_imports: Optional[Dict[str, Any]] = None,
-                   source_file: Optional[str] = None) -> Type[T]:
+                   source_file: Optional[str] = None,
+                   package_dir: Optional[str] = None) -> Type[T]:
         """Dynamically load a class from source code.
         
         This function creates a virtual Python module in memory (not on disk) by:
@@ -690,11 +748,11 @@ class DynamicModuleManager:
         # Load code into module first (needed to find classes)
         if module_name is None:
             module_name = self.load_code(code, context=context, inject_imports=inject_imports,
-                                         source_file=source_file)
+                                         source_file=source_file, package_dir=package_dir)
         else:
             if module_name not in self._loaded_modules:
                 self.load_code(code, module_name, context=context, inject_imports=inject_imports,
-                               source_file=source_file)
+                               source_file=source_file, package_dir=package_dir)
         
         # Get module
         module = self._loaded_modules[module_name]
@@ -757,7 +815,8 @@ class DynamicModuleManager:
                              base_class: Optional[Type[T]] = None,
                              module_name: Optional[str] = None,
                              context: Optional[str] = None,
-                             inject_imports: Optional[Dict[str, Any]] = None) -> Type[T]:
+                             inject_imports: Optional[Dict[str, Any]] = None,
+                             package_dir: Optional[str] = None) -> Type[T]:
         """Load a class from a Python file on disk.
 
         Thin wrapper over :meth:`load_class` that reads the file first. Pass an
@@ -772,6 +831,8 @@ class DynamicModuleManager:
             module_name: Optional explicit (version-scoped) module name.
             context: Optional context ("tool"/"agent"/...) for auto-injection.
             inject_imports: Optional manual import injections.
+            package_dir: For a directory-shaped component, the directory ``file_path``
+                is the entry point of — so its own modules are importable from it.
 
         Returns:
             The loaded class.
@@ -786,6 +847,7 @@ class DynamicModuleManager:
         # source, frames, line numbers — answered "built-in module".
         return self.load_class(
             code,
+            package_dir=package_dir,
             class_name=class_name,
             base_class=base_class,
             module_name=module_name,

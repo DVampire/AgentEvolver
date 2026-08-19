@@ -585,15 +585,24 @@ class ExtensionManagerServer(BaseModel):
         # Directory-type class modules (environment) keep the class in a fixed entry
         # file inside the dir; single-file class modules (tool/agent) load the file itself.
         entry = _CLASS_ENTRY.get(module)
+        package_dir = None
         if entry and os.path.isdir(abspath):
             class_file = os.path.join(abspath, entry)
             stem = os.path.basename(os.path.normpath(abspath))
+            # The entry file is loaded as a package rooted at its own directory, so code
+            # in it can import its siblings. A plugin has to: its shape is `plugin.py`
+            # beside one `PluginTool` per file under `tools/`, reached with
+            # `from .tools.x import Y`. Loaded as a plain module, that import looked for
+            # a parent package nobody had created and every generated plugin died with
+            # `No module named 'ext'`.
+            package_dir = abspath
         else:
             class_file = abspath
             stem = os.path.splitext(os.path.basename(abspath))[0]
         module_name = f"ext.{module}.{stem}"
         cls = dynamic_manager.load_class_from_path(
-            class_file, base_class=base_cls, context=module, module_name=module_name
+            class_file, base_class=base_cls, context=module, module_name=module_name,
+            package_dir=package_dir,
         )
         cls.__source_file__ = class_file
         with open(class_file, "r", encoding="utf-8") as f:

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="memory_generate">
+  <meta name="description" content="Generate failure_focused_memory">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+<objective>
+Generate a memory system called `failure_focused_memory` that keeps what went wrong
+in view for longer than what went right.
+</objective>
+
+<requirements>
+- Render the most recent turns as usual, but never let a failed tool call fall out of
+  the view while any of the budget remains — a run that keeps repeating one broken
+  command is a run that has forgotten it already failed.
+- Successes older than the recent window may be summarised or dropped.
+- Stay within the same bounded size the base class respects; this is a change of
+  selection, not an excuse to render everything.
+</requirements>
+</div>
+
+</body>
+</html>
