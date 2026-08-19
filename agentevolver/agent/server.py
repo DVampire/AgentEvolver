@@ -115,7 +115,7 @@ class AgentManagerServer(BaseModel):
 
         The only type that had no ``get_instruction``, which is why sub-agents never
         reached the capability block of a prompt: the generic builder asks the manager
-        named by ``CAPABILITY_TYPES``, and this one could not answer. The prompts told
+        named by ``MOUNTED_TYPES``, and this one could not answer. The prompts told
         the model to "dispatch a sub-agent from Available Sub-Agents" while nothing
         produced that list, so the roster had to be inferred from the ``*_agent`` entries
         in the tool schemas.

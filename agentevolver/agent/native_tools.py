@@ -7,7 +7,7 @@ into native function-calling schemas (``*.function_callings(allowlist, types)``)
 this module only COMPOSES those per-manager outputs and builds one routing table
 (function name → owning manager) so a returned tool_call can be dispatched back.
 
-Which managers to ask comes from :data:`CAPABILITY_TYPES` rather than from a list
+Which managers to ask comes from :data:`MOUNTED_TYPES` rather than from a list
 here. The two used to be separate, and the way that failed is the way it always
 does: a capability type existed, was registered, was callable by name — and was
 absent from the model's tool list, because this file had not been told about it.
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-from agentevolver.capability import CAPABILITY_TYPES
+from agentevolver.capability import MOUNTED_TYPES
 from agentevolver.tool.types import Tool
 
 # Routing table value: a tuple describing how to dispatch a tool_call by name:
@@ -105,7 +105,7 @@ async def assemble_native_tools(
     extra = getattr(ctx, "extra", None) or {}
     pairs: List[Tuple[Dict[str, Any], Route]] = []
 
-    for entry in CAPABILITY_TYPES:
+    for entry in MOUNTED_TYPES:
         if not _projects(entry.type, agent, extra, include_agents):
             continue
         pairs += await entry.manager().function_callings(

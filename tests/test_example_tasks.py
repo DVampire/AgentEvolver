@@ -35,9 +35,12 @@ def test_every_capability_type_has_a_smoke_task():
     Asserted in both directions: a type with no file is a capability nothing exercises,
     and a file with no type is a smoke test for something that no longer exists.
     """
-    from agentevolver.capability.types import CAPABILITY_TYPES
+    from agentevolver.capability.types import MOUNTED_TYPES
 
-    types = {entry.type for entry in CAPABILITY_TYPES}
+    # Everything an agent is handed, not only the six it *calls*: `environment` is mounted
+    # the same way and reached through the same dispatch, so a smoke test that skipped it
+    # would leave the one type whose actions have real side effects unexercised.
+    types = {entry.type for entry in MOUNTED_TYPES}
     files = {p.stem[len("capability_"):] for p in TASKS.glob("capability_*.html")}
     assert files == types, (
         f"capability types with no smoke task: {sorted(types - files)}; "

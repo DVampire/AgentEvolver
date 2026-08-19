@@ -1014,15 +1014,15 @@ class TestEnvironmentInstruction:
         Environment context reached only the two agents that inherited a mixin, and the
         failure was silent: an absent prompt section looks like an environment with
         nothing to say. It is assembled on the base class now, for every type in
-        `CAPABILITY_TYPES`, so a type is served by existing rather than by being named.
+        `MOUNTED_TYPES`, so a type is served by existing rather than by being named.
         """
         import inspect
 
         from agentevolver.agent.types import Agent
-        from agentevolver.capability import CAPABILITY_TYPES
+        from agentevolver.capability import MOUNTED_TYPES
 
-        assert "environment" in {entry.type for entry in CAPABILITY_TYPES}
-        assert "for entry in CAPABILITY_TYPES" in inspect.getsource(Agent._get_messages), (
+        assert "environment" in {entry.type for entry in MOUNTED_TYPES}
+        assert "for entry in MOUNTED_TYPES" in inspect.getsource(Agent._get_messages), (
             "capability contexts are named one by one again, which is how environment "
             "was missed the first time"
         )

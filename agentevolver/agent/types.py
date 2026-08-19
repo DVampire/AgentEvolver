@@ -27,7 +27,7 @@ from inspect import isawaitable
 
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
-from agentevolver.capability import CAPABILITY_TYPES, capability_type as capability_type_entry
+from agentevolver.capability import MOUNTED_TYPES, mounted_type as mounted_type_entry
 from agentevolver.message import ContentPartText, HumanMessage, Message
 from agentevolver.prompt import prompt_manager
 from agentevolver.tool import tool_manager
@@ -110,8 +110,11 @@ _INHERITED_CONTEXT_MAX = 12_000
 #: which carries an execution record and the ``done_tool`` terminal, and ``agent``,
 #: which can be backgrounded. Derived from the table so a new type joins the plain
 #: path by existing rather than by someone remembering this line.
+#: From `MOUNTED_TYPES`, not `CAPABILITY_TYPES`: `environment` dispatches through exactly
+#: this path — a manager, a name and an action — and is not a capability. Narrowed to the
+#: six that were, it would have fallen through to nothing.
 _PLAIN_CAPABILITY_TYPES = frozenset(
-    entry.type for entry in CAPABILITY_TYPES if entry.type not in {"tool", "agent"})
+    entry.type for entry in MOUNTED_TYPES if entry.type not in {"tool", "agent"})
 
 #: Consecutive turns that change nothing before the agent is told so in its own context.
 #: Low, because the remedy is cheap — make the edit you were about to justify — and the
@@ -674,7 +677,7 @@ class Agent(BaseModel):
         module omits a block whose slot is blank, so a type this agent does not have
         costs it no prompt at all.
         """
-        entry = capability_type_entry(capability_type)
+        entry = mounted_type_entry(capability_type)
         content = entry.manager().get_instruction(
             allowlist=self._capability_allowlist(capability_type, ctx), types=types,
             level="brief", **extra)
@@ -947,7 +950,7 @@ class Agent(BaseModel):
         # one more register to remember: `agent` was missing from it, which is why a
         # prompt told the model to "dispatch a sub-agent from Available Sub-Agents" while
         # nothing produced that roster.
-        for entry in CAPABILITY_TYPES:
+        for entry in MOUNTED_TYPES:
             agent_message_modules.update(await self._capability_slots(entry, ctx))
         
         response = await prompt_manager(
@@ -1856,7 +1859,7 @@ class Agent(BaseModel):
             # manager answers and whether the route names a member. Four copies of
             # these five lines is where "the fifth one behaves slightly differently"
             # came from, so they run one path.
-            entry = capability_type_entry(capability_type)
+            entry = mounted_type_entry(capability_type)
             member = route[2] if len(route) > 2 else ""
             label = f"{capability_type.capitalize()} {route[1]!r}" + (f" action {member!r}" if member else "")
             manager = entry.manager()

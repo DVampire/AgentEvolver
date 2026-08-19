@@ -6,7 +6,7 @@ the list, so prompts told the model to "dispatch a sub-agent from Available Sub-
 while nothing produced that roster — the model had to infer it from the `*_agent` entries
 in its tool schemas. `plugin` was missing from most of the blocks.
 
-Both halves are derived now: the assembly walks `CAPABILITY_TYPES`, and one shared module
+Both halves are derived now: the assembly walks `MOUNTED_TYPES`, and one shared module
 holds the blocks. These tests hold that derivation in place, because the failure it
 replaces is silent in both directions — a type with no roster looks like a type with
 nothing registered, and a slot no template renders looks like a slot with nothing in it.
@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from agentevolver.agent.types import Agent
-from agentevolver.capability import CAPABILITY_TYPES
+from agentevolver.capability import MOUNTED_TYPES
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPTS = ROOT / "agentevolver" / "prompt"
@@ -37,7 +37,7 @@ def _module_slots() -> set[str]:
     return set(re.findall(r"\{\{ *(available_\w+) *\}\}", MODULE.read_text(encoding="utf-8")))
 
 
-@pytest.mark.parametrize("entry", [e for e in CAPABILITY_TYPES if e.type not in IN_ITS_OWN_BLOCK],
+@pytest.mark.parametrize("entry", [e for e in MOUNTED_TYPES if e.type not in IN_ITS_OWN_BLOCK],
                          ids=lambda e: e.type)
 def test_every_callable_type_has_a_slot_in_the_shared_block(entry):
     """A type registered, addressable and callable, and absent from the prompt, is a
@@ -48,11 +48,11 @@ def test_every_callable_type_has_a_slot_in_the_shared_block(entry):
 def test_the_block_names_no_slot_that_no_type_produces():
     """A slot for a type nobody registers renders empty forever and reads as a type with
     nothing in it — the same shape as the bug this file exists for, pointing the other way."""
-    produced = {f"available_{entry.mount_type}" for entry in CAPABILITY_TYPES}
+    produced = {f"available_{entry.mount_type}" for entry in MOUNTED_TYPES}
     assert _module_slots() <= produced, f"orphan slots: {_module_slots() - produced}"
 
 
-@pytest.mark.parametrize("entry", list(CAPABILITY_TYPES), ids=lambda e: e.type)
+@pytest.mark.parametrize("entry", list(MOUNTED_TYPES), ids=lambda e: e.type)
 def test_every_type_can_answer_the_roster_call(entry):
     """The generic builder asks the manager named by the table. `agent` had no
     `get_instruction`, which is the whole reason sub-agents never reached a prompt."""
@@ -67,7 +67,7 @@ def test_the_assembly_walks_the_table_rather_than_a_list():
     """Read from the source: a list here is the register that went stale, and it goes
     stale silently — the type simply does not appear."""
     source = inspect.getsource(Agent._get_messages)
-    assert "for entry in CAPABILITY_TYPES" in source, (
+    assert "for entry in MOUNTED_TYPES" in source, (
         "capability contexts are assembled from a hand-written list again"
     )
 

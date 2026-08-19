@@ -522,3 +522,93 @@ def test_evolvable_modules_is_exactly_the_component_types():
 
     assert set(EVOLVABLE_MODULES) == {e.type for e in COMPONENT_TYPES}
     assert "prompt" not in EVOLVABLE_MODULES
+
+
+# --------------------------------------------------------------------------- #
+# Three relations, not one list
+# --------------------------------------------------------------------------- #
+def test_the_three_roles_partition_the_eight_component_types():
+    """A capability is used, an environment is inhabited, a memory is had.
+
+    The table carried one distinction — `mounted: bool` — which could say that `memory`
+    was not in a roster but had no way to say `environment` was in one it did not belong
+    in. So `environment` sat in `CAPABILITY_TYPES` and three separate patches took it back
+    out: a slots override, a template of its own, and a state block.
+    """
+    from agentevolver.capability.types import COMPONENT_TYPES, Role
+
+    by_role = {}
+    for entry in COMPONENT_TYPES:
+        by_role.setdefault(entry.role, set()).add(entry.type)
+
+    assert by_role[Role.CAPABILITY] == {
+        "tool", "skill", "connector", "agent", "workflow", "plugin"}
+    assert by_role[Role.ENVIRONMENT] == {"environment"}
+    assert by_role[Role.MEMORY] == {"memory"}
+
+
+def test_capability_means_the_six_an_agent_calls():
+    """The name is the point of the change: it held seven, and one of them was not one."""
+    from agentevolver.capability.types import CAPABILITY_TYPES
+
+    assert {e.type for e in CAPABILITY_TYPES} == {
+        "tool", "skill", "connector", "agent", "workflow", "plugin"}
+    assert "environment" not in {e.type for e in CAPABILITY_TYPES}
+    assert "memory" not in {e.type for e in CAPABILITY_TYPES}
+
+
+def test_the_six_capabilities_are_exactly_the_six_roster_blocks():
+    """What makes the name honest, checked against the template that renders them.
+
+    `capability_context.html` has always had six blocks. The constant had seven, so the
+    two could only be reconciled by knowing which row to skip.
+    """
+    import re
+    from pathlib import Path
+
+    from agentevolver.capability.types import CAPABILITY_TYPES
+
+    template = Path("agentevolver/prompt/module/capability_context.html").read_text()
+    rendered = set(re.findall(r"\{\{ available_(\w+) \}\}", template))
+    assert rendered == {e.mount_type for e in CAPABILITY_TYPES}
+
+
+def test_the_sets_nest():
+    """capability ⊂ mounted ⊂ component ⊂ stored, each adding exactly one kind of row."""
+    from agentevolver.capability.types import (
+        CAPABILITY_TYPES, COMPONENT_TYPES, MOUNTED_TYPES, STORED_TYPES,
+    )
+
+    capability, mounted = set(CAPABILITY_TYPES), set(MOUNTED_TYPES)
+    component, stored = set(COMPONENT_TYPES), set(STORED_TYPES)
+    assert capability < mounted < component < stored
+    assert {e.type for e in mounted - capability} == {"environment"}
+    assert {e.type for e in component - mounted} == {"memory"}
+    assert {e.type for e in stored - component} == {"prompt"}
+
+
+def test_the_canvas_mount_order_is_unchanged():
+    """The order is a panel people already know, so narrowing the table must not move it.
+
+    `environment` is fifth. Deriving `MOUNTED_TYPES` as "capabilities plus environment"
+    would have appended it, silently rearranging every agent node's mount picker.
+    """
+    from agentevolver.capability import AGENT_MOUNT_TYPES
+
+    assert AGENT_MOUNT_TYPES == (
+        "tools", "skills", "connectors", "agents", "environments", "workflows", "plugins")
+
+
+def test_dispatch_and_the_plan_gate_look_up_all_seven():
+    """`capability_type` answers `None` for `environment` now — correctly, and dangerously.
+
+    Three callers ask by name: prompt assembly, action dispatch, and the plan gate. All
+    three act on a type the agent was handed, and none cares whether the agent calls it or
+    acts in it. Left on `capability_type`, the gate would stop judging environment actions
+    and the other two would raise on the missing entry.
+    """
+    from agentevolver.capability import capability_type, mounted_type
+
+    assert capability_type("environment") is None
+    assert mounted_type("environment") is not None
+    assert mounted_type("memory") is None, "memory is not mounted; it is merged into context"

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from agentevolver.capability import CAPABILITY_TYPES, capability_type as capability_type_entry
+from agentevolver.capability import MOUNTED_TYPES, mounted_type as capability_type_entry
 from agentevolver.logger import logger
 from agentevolver.plan.types import PlanState, _now
 from agentevolver.utils import Singleton
@@ -44,11 +44,11 @@ ALWAYS_ALLOWED = frozenset({"exit_plan_mode", "ask_user_question", "done_tool"})
 #: outright: its effects are whatever the thing it runs does, and that is not
 #: knowable from a declaration.
 #:
-#: Read off :data:`CAPABILITY_TYPES` rather than listed again, because a list here
+#: Read off :data:`MOUNTED_TYPES` rather than listed again, because a list here
 #: is a second answer to a question that table already answers — and the way a new
 #: capability type quietly arrives judgeable-by-omission or refused-by-omission
 #: depending on which of the two someone remembered to edit.
-_JUDGEABLE_TYPES = frozenset(entry.type for entry in CAPABILITY_TYPES if entry.judgeable)
+_JUDGEABLE_TYPES = frozenset(entry.type for entry in MOUNTED_TYPES if entry.judgeable)
 
 
 def action_is_allowed(capability_type: str, name: str,

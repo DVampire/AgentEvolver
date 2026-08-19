@@ -34,7 +34,7 @@ from agentevolver.plan import plan_manager
 from agentevolver.canvas.types import FlowGraph
 from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
-from agentevolver.capability import CAPABILITY_TYPES
+from agentevolver.capability import MOUNTED_TYPES
 from agentevolver.config import config
 from agentevolver.connector import connector_manager
 from agentevolver.data import data_manager
@@ -1126,11 +1126,11 @@ class AgentGateway:
         from inspect import getfile
 
         ext_root = os.path.realpath(str(getattr(config, "extension_root", "") or "")) or None
-        # Read off `CAPABILITY_TYPES` rather than listed again. Written out by hand, this
+        # Read off `MOUNTED_TYPES` rather than listed again. Written out by hand, this
         # map missed `plugin` for as long as the type existed: a capability registered,
         # addressable and callable, and absent from the list a person browses.
-        managers = {entry.mount_type: entry.manager() for entry in CAPABILITY_TYPES}
-        type_of = {entry.mount_type: entry.type for entry in CAPABILITY_TYPES}
+        managers = {entry.mount_type: entry.manager() for entry in MOUNTED_TYPES}
+        type_of = {entry.mount_type: entry.type for entry in MOUNTED_TYPES}
         # Not capability types, and deliberately not added to that table: a command is a
         # human's control surface and a canvas flow is a saved drawing. Neither is
         # something a model calls, which is what the table describes.
@@ -2649,7 +2649,7 @@ class AgentGateway:
 
     async def _available_capabilities(self) -> Dict[str, list[str]]:
         catalog: Dict[str, list[str]] = {}
-        for entry in CAPABILITY_TYPES:
+        for entry in MOUNTED_TYPES:
             listing = entry.manager().list()
             catalog[entry.mount_type] = await listing if asyncio.iscoroutine(listing) else listing
         catalog["commands"] = await command_manager.list()
