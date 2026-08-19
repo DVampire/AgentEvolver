@@ -446,3 +446,79 @@ async def test_a_workflow_that_is_not_a_document_is_blocked_with_the_reason(boun
     ))
     assert result.decision == HookDecision.BLOCK
     assert "DOCTYPE" in result.reason
+
+
+# --------------------------------------------------------------------------- #
+# One table, and everyone reading from it
+# --------------------------------------------------------------------------- #
+def test_the_extension_tree_still_sees_what_it_saw_before_the_tables_were_derived():
+    """Six hand-written tables in `extension/server.py` describing the same nine types.
+
+    None of them was wrong, which is the point: a seventh copy elsewhere was — promotion's
+    list stopped at six modules — and these six would have gone the same way the next time
+    a type was added. So they are derived now.
+
+    Asserted against the literal values they held before, not against the same derivation
+    that produces them: written the second way this is a tautology, and a mutation removing
+    `plugin`'s manifest or `memory`'s `class_based` changed both sides at once and passed.
+    These are the facts, and the derivation has to keep producing them.
+    """
+    import agentevolver.extension.server as extension_server
+
+    assert set(extension_server._MODULES) == {
+        "tool", "agent", "prompt", "skill", "environment", "connector", "workflow",
+        "memory", "plugin"}
+    assert extension_server._CLASS_MODULES == {
+        "tool", "agent", "environment", "memory", "plugin"}
+    assert extension_server._DIR_MODULES == {"skill", "environment", "connector", "plugin"}
+    assert extension_server._CLASS_ENTRY == {
+        "environment": "environment.py", "plugin": "plugin.py"}
+    assert extension_server._MANIFEST_FILE == {
+        "skill": "SKILL.md", "environment": "ENVIRONMENT.md",
+        "connector": "CONNECTOR.md", "plugin": "PLUGIN.md"}
+    assert extension_server._EXT == {
+        "tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "",
+        "connector": "", "workflow": ".html", "memory": ".py", "plugin": ""}
+
+
+def test_promotion_sees_the_same_shapes_the_extension_tree_does():
+    """The two readers, checked against each other rather than each against the table.
+
+    They disagreed for as long as each kept its own copy, and silently: one simply had
+    fewer entries. `_EXT` spells a directory as `""` while the capability table keeps the
+    suffix and a `directory` flag, so the comparison is on what each actually means.
+    """
+    import agentevolver.extension.server as extension_server
+    from agentevolver.sandbox.project import _promotable_shapes
+
+    promotion = _promotable_shapes()
+    assert set(promotion) == set(extension_server._MODULES)
+    for module, (directory, suffix) in promotion.items():
+        assert directory == (module in extension_server._DIR_MODULES), module
+        assert ("" if directory else suffix) == extension_server._EXT[module], module
+
+
+def test_prompt_is_stored_but_is_not_a_component():
+    """The one row that has to be in one set and not the other.
+
+    An evolution agent never targets a prompt — a prompt-only change is registered as part
+    of the agent it belongs to — but the tree stores one, promotion copies one and the
+    commands address one. Kept as a row rather than as a line each place appends: both
+    `extension/server.py` and `sandbox/project.py` had appended their own.
+    """
+    from agentevolver.capability.types import (
+        COMPONENT_TYPES, STORED_TYPES, component_type, stored_type,
+    )
+
+    assert {e.type for e in STORED_TYPES} - {e.type for e in COMPONENT_TYPES} == {"prompt"}
+    assert component_type("prompt") is None, "a prompt is not something an agent evolves"
+    assert stored_type("prompt") is not None, "but the extension tree stores one"
+
+
+def test_evolvable_modules_is_exactly_the_component_types():
+    """What `/create`, the dispatcher and the generate agents all gate on."""
+    from agentevolver.capability.types import COMPONENT_TYPES
+    from agentevolver.extension import EVOLVABLE_MODULES
+
+    assert set(EVOLVABLE_MODULES) == {e.type for e in COMPONENT_TYPES}
+    assert "prompt" not in EVOLVABLE_MODULES

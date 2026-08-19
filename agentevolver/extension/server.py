@@ -37,23 +37,28 @@ from agentevolver.utils import get_extension_root
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.extension.types import Manifest, ManifestComponent
 
+# Six tables describing the same nine module types stood here, written out by hand. They
+# are the capability table's own fields now, because a seventh copy elsewhere had already
+# gone wrong in a way none of these did: `ProjectSandbox`'s list of promotable modules
+# stopped at six, so a generated workflow, plugin or memory could be registered and never
+# promoted. Restating a fact is how the copies drift; deriving it is how they cannot.
+from agentevolver.capability.types import COMPONENT_TYPES, STORED_TYPES
+
+# All modules the extension tree may carry — the eight components plus `prompt`.
+_MODULES = [entry.type for entry in STORED_TYPES]
 # Modules whose components are class-based (loaded via dynamic_manager).
-_CLASS_MODULES = {"tool", "agent", "environment", "memory", "plugin"}
-# All modules the extension tree may carry.
-_MODULES = ["tool", "agent", "prompt", "skill", "environment", "connector", "workflow", "memory", "plugin"]
+_CLASS_MODULES = {entry.type for entry in STORED_TYPES if entry.class_based}
 # Active-file extension per module ("" => the component is a directory).
-_EXT = {"tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "", "connector": "", "workflow": ".html", "memory": ".py", "plugin": ""}
+_EXT = {entry.type: ("" if entry.directory else entry.suffix) for entry in STORED_TYPES}
 # Directory-type modules: the active component is a directory holding a manifest file.
-_DIR_MODULES = {"skill", "environment", "connector", "plugin"}
+_DIR_MODULES = {entry.type for entry in STORED_TYPES if entry.directory}
 # What the evolution agents can create, improve and judge: everything installable
 # except a prompt, which is not evolved on its own — an agent's registration hook
-# takes a prompt-only change as part of that agent. Derived from the list above so
-# that a new module type joins it by existing rather than by being remembered.
-EVOLVABLE_MODULES = tuple(m for m in _MODULES if m != "prompt")
-_MANIFEST_FILE = {"skill": "SKILL.md", "environment": "ENVIRONMENT.md", "connector": "CONNECTOR.md",
-                  "plugin": "PLUGIN.md"}
+# takes a prompt-only change as part of that agent.
+EVOLVABLE_MODULES = tuple(entry.type for entry in COMPONENT_TYPES)
+_MANIFEST_FILE = {entry.type: entry.manifest for entry in STORED_TYPES if entry.manifest}
 # For directory-type class modules, the Python class lives in this file inside the dir.
-_CLASS_ENTRY = {"environment": "environment.py", "plugin": "plugin.py"}
+_CLASS_ENTRY = {entry.type: entry.entry for entry in STORED_TYPES if entry.entry}
 
 _ARCHIVE = ".versions"
 

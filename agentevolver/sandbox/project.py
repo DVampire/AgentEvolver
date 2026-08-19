@@ -27,15 +27,14 @@ from agentevolver.utils import get_extension_root, get_package_root
 #: promotion answered "Requested staged extension component was not found" for a file that
 #: was sitting right there.
 #:
-#: ``prompt`` is added on top and is not a component: it is not generated, versioned or
-#: evolved on its own, but an agent's prompt is promoted beside the agent, so promotion has
-#: to know its shape.
+#: ``prompt`` is in there and is not a component — it is not generated or evolved on its
+#: own — but an agent's prompt is promoted beside the agent, so promotion has to know its
+#: shape. It is described in the capability table rather than appended here, which is what
+#: this function used to do and what `extension/server.py` used to do separately.
 def _promotable_shapes() -> Dict[str, tuple]:
-    from agentevolver.capability.types import COMPONENT_TYPES
+    from agentevolver.capability.types import STORED_TYPES
 
-    shapes = {entry.type: (entry.directory, entry.suffix) for entry in COMPONENT_TYPES}
-    shapes["prompt"] = (False, ".html")
-    return shapes
+    return {entry.type: (entry.directory, entry.suffix) for entry in STORED_TYPES}
 
 
 def _inside(path: Path, root: Path) -> bool:

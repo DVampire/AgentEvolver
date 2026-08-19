@@ -73,6 +73,11 @@ class CapabilityType:
     #: Whether one member of this type is a directory rather than a single file.
     #: A skill is a directory with a manifest; a tool is one ``.py``.
     directory: bool = False
+    #: Whether a member is a Python class, loaded through ``dynamic_manager``. A skill and
+    #: a connector are documents; a tool and a plugin are code.
+    class_based: bool = False
+    #: For a directory type, the manifest file the loader looks for inside it.
+    manifest: str = ""
     #: For a directory holding a Python class, the file its loader reads.
     entry: str = ""
     #: The file extension, for the single-file case.
@@ -119,24 +124,32 @@ def _memory_manager() -> Any:
     return memory_manager
 
 
+def _prompt_manager() -> Any:
+    from agentevolver.prompt.server import prompt_manager
+    return prompt_manager
+
+
 #: Every model-callable capability type. The order is the order an agent's mount
 #: pickers appear on the canvas, so it is part of the UI and not arbitrary.
 CAPABILITY_TYPES: Tuple[CapabilityType, ...] = (
-    CapabilityType("tool", _tool_manager, container=False, judgeable=True, mount_type="tools"),
+    CapabilityType("tool", _tool_manager, container=False, judgeable=True, mount_type="tools",
+                   class_based=True),
     CapabilityType("skill", _skill_manager, container=False, judgeable=True, mount_type="skills",
-                   directory=True),
+                   directory=True, manifest="SKILL.md"),
     CapabilityType("connector", _connector_manager, container=True, judgeable=True,
-                   mount_type="connectors", directory=True),
-    CapabilityType("agent", _agent_manager, container=False, judgeable=False, mount_type="agents"),
+                   mount_type="connectors", directory=True, manifest="CONNECTOR.md"),
+    CapabilityType("agent", _agent_manager, container=False, judgeable=False, mount_type="agents",
+                   class_based=True),
     CapabilityType("environment", _environment_manager, container=True, judgeable=True,
-                   mount_type="environments", directory=True, entry="environment.py"),
+                   mount_type="environments", directory=True, class_based=True,
+                   entry="environment.py", manifest="ENVIRONMENT.md"),
     CapabilityType("workflow", _workflow_manager, container=False, judgeable=False,
                    mount_type="workflows", suffix=".html"),
     # Appended rather than grouped with the other containers: the order is the
     # order of an agent node's mount pickers, and moving an existing one would
     # rearrange a panel people already know.
     CapabilityType("plugin", _plugin_manager, container=True, judgeable=True, mount_type="plugins",
-                   directory=True, entry="plugin.py"),
+                   directory=True, class_based=True, entry="plugin.py", manifest="PLUGIN.md"),
 )
 
 #: Every component the framework registers, versions and can evolve — the seven
@@ -147,10 +160,27 @@ CAPABILITY_TYPES: Tuple[CapabilityType, ...] = (
 #: call.
 COMPONENT_TYPES: Tuple[CapabilityType, ...] = CAPABILITY_TYPES + (
     CapabilityType("memory", _memory_manager, container=False, judgeable=True,
-                   mount_type="memories", mounted=False),
+                   mount_type="memories", mounted=False, class_based=True),
 )
 
+#: ``prompt`` is not a component: it is not generated, versioned or evolved on its own —
+#: an agent's registration hook takes a prompt-only change as part of that agent. But the
+#: extension tree stores one, promotion copies one, and the commands address one, so its
+#: shape has to be written down somewhere. Written here, next to the others, because the
+#: alternative was each of those three places appending its own line about prompts:
+#: ``extension/server.py`` and ``sandbox/project.py`` each did, and a fourth would have
+#: been added the next time something walked the tree.
+PROMPT: CapabilityType = CapabilityType(
+    "prompt", _prompt_manager, container=False, judgeable=True, mount_type="prompts",
+    mounted=False, suffix=".html",
+)
+
+#: Everything the extension tree stores — the eight components plus ``prompt``. What a
+#: walker of the tree iterates; :data:`COMPONENT_TYPES` is what an evolution agent works on.
+STORED_TYPES: Tuple[CapabilityType, ...] = COMPONENT_TYPES + (PROMPT,)
+
 _BY_TYPE: Dict[str, CapabilityType] = {entry.type: entry for entry in COMPONENT_TYPES}
+_BY_STORED_TYPE: Dict[str, CapabilityType] = {entry.type: entry for entry in STORED_TYPES}
 
 
 def component_type(name: str) -> Optional[CapabilityType]:
@@ -161,6 +191,16 @@ def component_type(name: str) -> Optional[CapabilityType]:
     given without guarding first.
     """
     return _BY_TYPE.get(name)
+
+
+def stored_type(name: str) -> Optional[CapabilityType]:
+    """The entry for anything the extension tree stores, ``prompt`` included.
+
+    Wider than :func:`component_type` by exactly that one row. A caller walking the tree
+    wants this; a caller asking what an evolution agent may build wants the other, and
+    the difference is why they are two functions rather than one with a flag.
+    """
+    return _BY_STORED_TYPE.get(name)
 
 
 def capability_type(name: str) -> Optional[CapabilityType]:
@@ -185,5 +225,6 @@ AGENT_MOUNT_TYPES: Tuple[str, ...] = tuple(entry.mount_type for entry in CAPABIL
 
 __all__ = [
     "AGENT_MOUNT_TYPES", "CAPABILITY_TYPES", "CAPABILITY_TYPE_NAMES",
-    "CapabilityType", "capability_type",
+    "COMPONENT_TYPES", "COMPONENT_TYPE_NAMES", "PROMPT", "STORED_TYPES",
+    "CapabilityType", "capability_type", "component_type", "stored_type",
 ]
