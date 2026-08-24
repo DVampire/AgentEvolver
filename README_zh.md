@@ -432,7 +432,7 @@ AgentEvolver/
 | [在线主页](https://dvampire.github.io/AgentEvolver/) | 项目定位、架构、特点、取舍和快速开始 |
 | [完整教程](https://dvampire.github.io/AgentEvolver/tutorial.html) | 十三章：系统认知、安装、入口选择、首次运行、输出目录、能力扩展、SFT/RL 轨迹导出、Web UI、安全、组件进化与排障 |
 | [架构指南](https://dvampire.github.io/AgentEvolver/architecture.html) | Runtime 边界、事件日志投影、扩展生命周期与训练数据飞轮 |
-| [模块手册](https://dvampire.github.io/AgentEvolver/modules.html) | 全部 49 个模块的可搜索、可展开参考：运行位置、公共 API 与源码入口 |
+| [模块手册](https://dvampire.github.io/AgentEvolver/modules.html) | 全部 48 个模块的可搜索、可展开参考：运行位置、公共 API 与源码入口 |
 | [Web UI 演示](https://dvampire.github.io/AgentEvolver/ui.html) | 11 个短视频逐项展示工作台 |
 | [贡献者指南](https://dvampire.github.io/AgentEvolver/development.html) | 模块契约、验证门禁、不变式与安全扩展模式 |
 | [`scripts/INSTALL_zh.md`](scripts/INSTALL_zh.md) | 安装、可选 extras、Vault 与环境配置 |

@@ -2178,7 +2178,6 @@ class Agent(BaseModel):
         for label, forget in (("delegated children", self._forget_delegated),
                               ("jobs", self._forget_jobs),
                               ("terminals", self._forget_terminals),
-                              ("language servers", self._forget_language_servers),
                               ("attachments", self._forget_attachments)):
             try:
                 forget(session_id)
@@ -2206,11 +2205,6 @@ class Agent(BaseModel):
     def _forget_terminals(session_id: str) -> None:
         from agentevolver.terminal import terminal_manager
         terminal_manager.forget(session_id)
-
-    @staticmethod
-    def _forget_language_servers(session_id: str) -> None:
-        from agentevolver.lsp import lsp_manager
-        lsp_manager.forget(session_id)
 
 
     def _lifecycle_input(self, run: "_AgentRun") -> Dict[str, Any]:

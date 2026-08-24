@@ -90,7 +90,7 @@ AgentEvolver makes those methods first-class components:
 
 The model reaches most of this by calling tools itself: starting a job and collecting it
 later, opening a terminal and typing into it, backgrounding a sub-agent and picking its
-answer up, asking a language server where a symbol is defined, reading an image, searching
+answer up, reading an image, searching
 what earlier runs tried. [`docs/tool-catalog.md`](docs/tool-catalog.md) is generated from
 the live registry and lists every one of them with its parameters and permission mode.
 
@@ -458,7 +458,7 @@ Framework writes are resolved centrally through `agentevolver.paths`. The main w
 | [Website](https://dvampire.github.io/AgentEvolver/) | Positioning, architecture, characteristics, trade-offs, and quick start |
 | [Complete tutorial](https://dvampire.github.io/AgentEvolver/tutorial.html) | Thirteen chapters: mental model, installation, entry points, first run, output tree, extensions, SFT/RL trajectory export, Web UI, safety, evolution, and troubleshooting |
 | [Architecture guide](https://dvampire.github.io/AgentEvolver/architecture.html) | Runtime boundaries, event log projections, extension lifecycle, and the training-data flywheel |
-| [Module reference](https://dvampire.github.io/AgentEvolver/modules.html) | Searchable and expandable guide to all 49 modules, their runtime placement, public API, and source |
+| [Module reference](https://dvampire.github.io/AgentEvolver/modules.html) | Searchable and expandable guide to all 48 modules, their runtime placement, public API, and source |
 | [Web UI tour](https://dvampire.github.io/AgentEvolver/ui.html) | Eleven short clips showing the workbench feature by feature |
 | [Contributor guide](https://dvampire.github.io/AgentEvolver/development.html) | Module contracts, verification gates, invariants, and safe extension patterns |
 | [`scripts/INSTALL.md`](scripts/INSTALL.md) | Installation, optional extras, Vault, and environment setup |

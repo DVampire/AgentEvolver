@@ -5,12 +5,16 @@ The repository used both words for one question. `Response.type`, `Command.type`
 .kind` and a sandbox's `kind` said `kind`. Nothing decided between them, so which word a
 new field got depended on which file its author had open.
 
-Two exceptions are real and are registered below rather than argued about each time. An
-external specification owns its own field names — renaming LSP's `Symbol.kind` produces
-something that is not LSP — and a discriminated envelope needs a word that is not already
-taken by the thing it carries: `GatewayEvent` answers both "which message shape is this"
-and "which event is it", and the capability API answers both "which family" and "what type
-does this skill declare". Those keep `kind` for the first question.
+One exception is real and is registered below rather than argued about each time: a
+discriminated envelope needs a word that is not already taken by the thing it carries.
+`GatewayEvent` answers both "which message shape is this" and "which event is it", and the
+capability API answers both "which family" and "what type does this skill declare". Those
+keep `kind` for the first question.
+
+There was a second — an external specification owns its own field names, so renaming LSP's
+`Symbol.kind` would produce something that is not LSP. It has no members now that the `lsp`
+module is gone, and the rule stands ready for the next vendored wire format rather than
+being written down against nothing.
 
 Renaming a keyword parameter is the part that bites. Four call sites survived a grep during
 one rename in this repository, and `tests/test_port.py` records three more from an earlier
@@ -32,10 +36,6 @@ ROOT = Path(__file__).resolve().parents[1]
 #:
 #: Prefixes match against repository-relative paths.
 ALLOWED = {
-    # An external specification owns its own field names.
-    "agentevolver/lsp/": "LSP's own wire field (`Symbol.kind`, `ResultKind`)",
-    "agentevolver/tool/default/lsp.py": "renders LSP results, which carry `kind`",
-    "tests/test_lsp.py": "exercises the LSP shapes",
     # A discriminated envelope, where `type` already answers a different question.
     "agentevolver/gateway/types.py": "envelope discriminator beside the event's own `type`",
     "agentevolver/gateway/typescript.py": "renders that discriminator",

@@ -50,7 +50,6 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`jina_search_tool`](#jina_search_tool) | `workspace_write` | not declared | `JinaSearch` | `agentevolver.tool.default.search.jina_search` |
 | [`journal_tool`](#journal_tool) | `workspace_write` | yes | `JournalTool` | `agentevolver.tool.default.journal` |
 | [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
-| [`lsp_tool`](#lsp_tool) | `read_only` | no | `LspTool` | `agentevolver.tool.default.lsp` |
 | [`mdify_tool`](#mdify_tool) | `workspace_write` | not declared | `MdifyTool` | `agentevolver.tool.default.mdify` |
 | [`media_search_tool`](#media_search_tool) | `workspace_write` | yes | `MediaSearchTool` | `agentevolver.tool.default.media_search` |
 | [`read_file_tool`](#read_file_tool) | `read_only` | no | `ReadFileTool` | `agentevolver.tool.default.read_file` |
@@ -72,7 +71,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-43 tools.
+42 tools.
 
 ## `ask_user_question`
 
@@ -331,19 +330,6 @@ Permission mode: `read_only` · reports only · call budget 60s
 | `path` | `str` | yes | — |
 | `depth` | `int` | no | `3` |
 | `ignore` | `Optional[List[str]]` | no | `None` |
-
-## `lsp_tool`
-
-Ask a language server for a symbol's definition, references, hover type, or a file's symbols.
-
-Permission mode: `read_only` · reports only · call budget 90s
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `operation` | `str` | yes | — |
-| `path` | `str` | yes | — |
-| `line` | `Optional[int]` | no | `None` |
-| `character` | `int` | no | `1` |
 
 ## `mdify_tool`
 

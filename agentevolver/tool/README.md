@@ -56,7 +56,6 @@ rather than on the record.
 | `glob_search_tool` | no | Find files by glob pattern. Names, not contents. |
 | `grep_search_tool` | no | Find lines by regex or literal. Contents, not names. |
 | `read_image_tool` | no | Look at an image file. Needs a model that accepts image input. |
-| `lsp_tool` | no | Ask a language server for a definition, references, hover type, or a file's symbols. |
 | `mdify_tool` | | Convert a local file (PDF, docx, …) to markdown via markitdown. |
 
 ### Running things
@@ -242,7 +241,7 @@ Generic policy cannot safely infer meaning from names such as `path`, `text`, or
 implementation understands. Tool Manager evaluates it as a call-local monotonic guard
 before entering `__call__`; a broken intent builder fails closed as `guard_error`.
 
-The bash, read/write/edit file, image read and LSP tools declare this intent today; the
+The bash, read/write/edit file and image read tools declare this intent today; the
 terminal environment makes the same check in its `open` and `send` actions. Their existing internal checks remain temporarily as defense in depth for
 legacy code that invokes a Tool instance directly. New runtime paths must call
 `tool_manager`, not `Tool.__call__`, so policy, timeout, spill, error codes, and Trace

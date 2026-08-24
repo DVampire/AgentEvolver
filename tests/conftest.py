@@ -42,7 +42,7 @@ def _unbound_path_manager():
     `path_manager.bind_session` is process-global on purpose — runs are serialized, and
     the gateway rebinds per task — but a test that binds and does not unbind changes what
     every later test resolves. The failure is not local either: with a session bound, the
-    sandbox boundary switches on, and nineteen tests across `lsp`, `read_image`,
+    sandbox boundary switches on, and nineteen tests across `read_image`,
     `tool_robustness` and `ssh_environment` began refusing their own `tmp_path` fixtures
     as "outside allowed roots", because the roots belonged to a session some earlier test
     had opened.

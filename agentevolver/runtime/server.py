@@ -399,7 +399,7 @@ class RuntimeManager(metaclass=Singleton):
     def forget(self, session_id: str) -> None:
         """Stop and drop every background child a finished session delegated.
 
-        Called from the run's own teardown alongside jobs, terminals and language servers.
+        Called from the run's own teardown alongside jobs and terminals.
         A background child outlives the step that started it by design and must not
         outlive the run: nothing else would ever stop it, and in a long-lived host it
         would keep calling a model on a task whose answer nobody can collect.
