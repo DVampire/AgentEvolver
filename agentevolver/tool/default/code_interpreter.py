@@ -11,7 +11,7 @@ agent did not already have (``bash_tool`` runs here too) and cost it the thing
 that mattered: the container mounted nothing, so code could not read the files
 the agent had just written into the workspace.
 
-Code that calls *tools* rather than computing is a different tool: `run_code_tool`
+Code that calls *tools* rather than computing is a different tool: `batch_call_tool`
 (``agentevolver/tool/default/code_mode/``) runs a program whose tool calls go back through
 the agent's guarded dispatch. It keeps no state, which is exactly the trade this one makes
 in the other direction.

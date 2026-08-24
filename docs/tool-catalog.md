@@ -30,6 +30,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | --- | --- | --- | --- | --- |
 | [`ask_user_question`](#ask_user_question) | `read_only` | no | `AskUserTool` | `agentevolver.tool.default.ask_user` |
 | [`bash_tool`](#bash_tool) | `workspace_write` | not declared | `BashTool` | `agentevolver.tool.default.bash` |
+| [`batch_call_tool`](#batch_call_tool) | `danger_full_access` | not declared | `BatchCallTool` | `agentevolver.tool.default.code_mode.batch_call` |
 | [`code_interpreter_tool`](#code_interpreter_tool) | `danger_full_access` | not declared | `CodeInterpreterTool` | `agentevolver.tool.default.code_interpreter` |
 | [`create_goal_tool`](#create_goal_tool) | `workspace_write` | yes | `CreateGoalTool` | `agentevolver.tool.default.goal` |
 | [`deploy_tool`](#deploy_tool) | `danger_full_access` | yes | `DeployTool` | `agentevolver.tool.default.deploy` |
@@ -60,7 +61,6 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`reformulator_tool`](#reformulator_tool) | `workspace_write` | not declared | `ReformulatorTool` | `agentevolver.tool.other.reformulator` |
 | [`reply_tool`](#reply_tool) | `read_only` | not declared | `ReplyTool` | `agentevolver.tool.default.reply` |
 | [`report_tool`](#report_tool) | `read_only` | no | `ReportTool` | `agentevolver.tool.default.report` |
-| [`run_code_tool`](#run_code_tool) | `danger_full_access` | not declared | `RunCodeTool` | `agentevolver.tool.default.code_mode.run_code` |
 | [`schedule_create_tool`](#schedule_create_tool) | `workspace_write` | yes | `ScheduleCreateTool` | `agentevolver.tool.default.schedule` |
 | [`send_message_tool`](#send_message_tool) | `workspace_write` | yes | `SendMessageTool` | `agentevolver.tool.default.send_message` |
 | [`serper_search_tool`](#serper_search_tool) | `workspace_write` | not declared | `SerperSearch` | `agentevolver.tool.default.search.serper_search` |
@@ -106,6 +106,17 @@ Permission mode: `workspace_write` · does not declare whether it changes state 
 | `stdin` | `str` | no | `''` |
 | `timeout` | `Optional[int]` | no | `None` |
 | `run_in_background` | `bool` | no | `False` |
+
+## `batch_call_tool`
+
+Make a batch of tool calls in one turn, by writing a short Python program that calls them. Use it for a loop, a search, or the same edit across a list — not for a single call.
+
+Permission mode: `danger_full_access` · does not declare whether it changes state · call budget 660s
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `code` | `str` | yes | — |
+| `description` | `str` | no | `''` |
 
 ## `code_interpreter_tool`
 
@@ -450,17 +461,6 @@ Permission mode: `read_only` · reports only
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
 | `output` | `str` | yes | — |
-
-## `run_code_tool`
-
-Run a Python program that calls your other tools directly, so a batch of tool work costs one turn instead of one turn per call.
-
-Permission mode: `danger_full_access` · does not declare whether it changes state · call budget 660s
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `code` | `str` | yes | — |
-| `description` | `str` | no | `''` |
 
 ## `schedule_create_tool`
 

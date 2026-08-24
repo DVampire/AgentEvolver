@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 #: The tool that carries a program, named here because two modules have to agree on it:
 #: the tool declares it, and the agent recognises it as the one dispatch that is handed a
 #: way to dispatch further actions. Written once so a rename cannot half-happen.
-RUN_CODE_TOOL = "run_code_tool"
+BATCH_CALL_TOOL = "batch_call_tool"
 
 #: Ceiling on what one program's captured output contributes to the result, in
 #: characters. The tool pipeline already bounds a whole result (``OUTPUT_LIMIT``), but
@@ -106,7 +106,7 @@ class GuardedDispatch:
 
 __all__ = [
     "MAX_LOG_CHARS",
-    "RUN_CODE_TOOL",
+    "BATCH_CALL_TOOL",
     "CodeFailure",
     "CodeFailureType",
     "CodeRunResult",

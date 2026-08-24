@@ -17,7 +17,7 @@ from .deploy import DeployTool
 from .evolution import EvolutionTool
 from .journal import JournalTool
 from .escalate import EscalateTool
-from .code_mode import RunCodeTool
+from .code_mode import BatchCallTool
 from .job import JobKillTool, JobListTool, JobOutputTool
 from .ask_user import AskUserTool
 from .exit_plan_mode import ExitPlanModeTool
@@ -72,7 +72,7 @@ __all__ = [
     "SendMessageTool",
     "ReportTool",
     "ReadImageTool",
-    "RunCodeTool",
+    "BatchCallTool",
     "TerminalCloseTool",
     "TerminalSignalTool",
     "TerminalListTool",

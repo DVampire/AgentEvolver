@@ -1,6 +1,6 @@
 ---
 name: tool_default_code_mode
-description: "The run_code_tool transport: a model-written program calls the agent's tools directly, and every call it makes re-enters the agent's own guarded dispatch."
+description: "The batch_call_tool transport: a model-written program calls the agent's tools directly, and every call it makes re-enters the agent's own guarded dispatch."
 version: 1.0.0
 type: module
 category: tool
@@ -9,12 +9,12 @@ metadata: {}
 ---
 # Code mode
 
-The `run_code_tool` transport: a model-written program calls the agent's tools directly,
+The `batch_call_tool` transport: a model-written program calls the agent's tools directly,
 and every call it makes re-enters the agent's own guarded dispatch.
 
 | Path | Responsibility |
 |---|---|
-| `run_code.py` | `RunCodeTool` — turns a `GuardedDispatch` into bindings and runs the program |
+| `batch_call.py` | `BatchCallTool` — turns a `GuardedDispatch` into bindings and runs the program |
 | `sdk.py` | The declarations the model reads: one signature per callable tool, plus the calling convention |
 
 ## The route a call takes
@@ -42,7 +42,7 @@ program: await tools.write_file_tool(...)
 Nothing is skipped and nothing is duplicated, because it is not a second implementation of
 dispatch — it is the same method, called again.
 
-The nested call's `root_call_id` identifies the outer model-emitted `run_code_tool` call;
+The nested call's `root_call_id` identifies the outer model-emitted `batch_call_tool` call;
 `parent_call_id` identifies its immediate program. These IDs and the Tool pipeline's stable
 failure code are copied into Trace. A denied binding raises inside the program, while the
 durable result remains a normal failed Tool observation—Code Mode cannot mistake refusal
@@ -63,7 +63,7 @@ report it.
 
 ## What a program may not call
 
-`run_code_tool` (a program starting a program) and `done_tool`. Completion is a decision
+`batch_call_tool` (a program starting a program) and `done_tool`. Completion is a decision
 about the run: the loop reads it from a dispatched action, so a `done` inside a program
 would be answered by the program while the run carried on without it.
 
@@ -71,7 +71,7 @@ would be answered by the program while the run carried on without it.
 
 Both run model-written Python; they are not alternatives.
 
-| | `code_interpreter_tool` | `run_code_tool` |
+| | `code_interpreter_tool` | `batch_call_tool` |
 |---|---|---|
 | what the code does | computes | calls tools |
 | state between calls | persists (a kernel) | none (a fresh process) |

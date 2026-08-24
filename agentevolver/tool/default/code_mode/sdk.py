@@ -15,16 +15,16 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
 
-from agentevolver.code import RUN_CODE_TOOL
+from agentevolver.code import BATCH_CALL_TOOL
 
 #: Tools a program may never call, whatever the roster says.
 #:
-#: `run_code_tool` because a program starting a program is a recursion with no purpose
+#: `batch_call_tool` because a program starting a program is a recursion with no purpose
 #: that the transport itself cannot bound. `done_tool` because completion is a decision
 #: about the whole task: the loop reads it from a dispatched action, and a `done` buried
 #: inside a program would be answered by the program, not by the run — the agent would
 #: believe it had finished while the loop kept going.
-UNCALLABLE = (RUN_CODE_TOOL, "done_tool")
+UNCALLABLE = (BATCH_CALL_TOOL, "done_tool")
 
 #: JSON Schema type -> what to write in a Python signature. Anything unlisted is `Any`,
 #: which is honest: the model reads the tool's own card for what an odd parameter takes.
@@ -83,16 +83,16 @@ def render_sdk(schemas: Sequence[Dict[str, Any]]) -> str:
 def code_mode_section(sdk: str) -> str:
     """The prompt section: what a program may call, and the rules it is called under.
 
-    Empty when nothing is callable. An agent holding `run_code_tool` and no other tool
+    Empty when nothing is callable. An agent holding `batch_call_tool` and no other tool
     can still run a program, but telling it about a calling convention with nothing to
     call invites a program written around tools that are not there.
     """
     if not sdk.strip():
         return ""
     return "\n".join([
-        "### Calling tools from a program (`run_code_tool`)",
+        "### Calling tools from a program (`batch_call_tool`)",
         "",
-        "These tools are also callable from inside a `run_code_tool` program, with the "
+        "These tools are also callable from inside a `batch_call_tool` program, with the "
         "arguments documented above. Three reads is one program instead of three turns, "
         "and only what the program prints or returns comes back — so a search whose "
         "output you only need the count of costs you the count.",

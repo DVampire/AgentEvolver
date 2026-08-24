@@ -58,46 +58,46 @@ agent_names = [
     "monitor_agent",
     # browser agent — drives a real browser to VERIFY web/UI deliverables hands-on
     # (render, click, check images/console) via the browser_environment.
-    "browser_agent",
+    # "browser_agent",
     "generate_agent",
     "optimize_agent",
     "evaluate_agent",
 ]
 tool_names = [
     "bash_tool",
-    "read_image_tool",
-    "ask_user_question",
-    "exit_plan_mode",
-    "get_goal_tool",
-    "create_goal_tool",
-    "update_goal_tool",
-    "schedule_create_tool",
-    "session_search_tool",
-    "session_event_search_tool",
-    "session_read_tool",
-    "session_event_read_tool",
-    "session_trace_tool",
+    # "read_image_tool",
+    # "ask_user_question",
+    # "exit_plan_mode",
+    # "get_goal_tool",
+    # "create_goal_tool",
+    # "update_goal_tool",
+    # "schedule_create_tool",
+    # "session_search_tool",
+    # "session_event_search_tool",
+    # "session_read_tool",
+    # "session_event_read_tool",
+    # "session_trace_tool",
     # background work — start something long with bash_tool(run_in_background),
     # then keep working and collect it instead of spending a step waiting
-    "job_list_tool",
-    "job_output_tool",
-    "job_kill_tool",
+    # "job_list_tool",
+    # "job_output_tool",
+    # "job_kill_tool",
     "done_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
     "list_dir_tool",
-    "git_tool",
-    "deploy_tool",
+    # "git_tool",
+    # "deploy_tool",
     "evolution_tool",
     "escalate_tool",
     "reply_tool",
     "report_tool",
-    "send_message_tool",
+    # "send_message_tool",
     # web retrieval — search the web, fetch a page, and download REAL images to bundle
-    "web_searcher_tool",
-    "web_fetcher_tool",
-    "media_search_tool",
+    # "web_searcher_tool",
+    # "web_fetcher_tool",
+    # "media_search_tool",
 ]
 # Resident rosters are what reaches the model on every step, as a tool schema each. The
 # rest of the registry is not gone: `inspect_tool` reads any registered
@@ -109,18 +109,18 @@ skill_names = [
     # write each of the eight component types is `generate_skill` / `optimize_skill` /
     # `evaluate_skill`, which the three agents load themselves — MetaAgent only dispatches.
     "self_evolving_skill",
-    # The everyday four.
-    "code_review_skill",
-    "verify_skill",
-    "run_skill",
-    "deep_research_skill",
-    # Deliverable craft, named by the report and artifact prompts.
-    "report_design_skill",
-    "artifact_design_skill",
+    # # The everyday four.
+    # "code_review_skill",
+    # "verify_skill",
+    # "run_skill",
+    # "deep_research_skill",
+    # # Deliverable craft, named by the report and artifact prompts.
+    # "report_design_skill",
+    # "artifact_design_skill",
 ]
 connector_names = [
-    "chemistry_connector",
-    "literature_graph_connector",
+    # "chemistry_connector",
+    # "literature_graph_connector",
 ]
 
 #-----------------ENVIRONMENT CONFIGS-----------------
@@ -129,9 +129,9 @@ connector_names = [
 # (opensandbox/chrome) spawned via the Docker socket and driven over CDP — so the
 # base image needs no chromium of its own. use_sandbox=True selects that peer.
 env_names = [
-    "browser_environment",
-    "computer_environment",
-    "remote_host",
+    # "browser_environment",
+    # "computer_environment",
+    # "remote_host",
 ]
 
 # ---------------- COMPUTER (DESKTOP) ----------------

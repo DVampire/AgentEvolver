@@ -65,7 +65,7 @@ rather than on the record.
 |---|---|---|
 | `bash_tool` | | One shell command, one call. Starts in the workspace. |
 | `code_interpreter_tool` | | A persistent interpreter: variables, imports and open files survive between calls; figures come back as images. |
-| `run_code_tool` | | A Python program that calls *your other tools* directly, so a batch of tool work costs one turn instead of one per call. |
+| `batch_call_tool` | | A batch of tool calls in one turn, expressed as a short Python program. For a loop, a search, or one edit across a list — not for a single call. |
 | `terminal_open_tool` | yes | Open a terminal that stays alive between calls. |
 | `terminal_send_tool` | | Type into an open terminal and read what appears. |
 | `terminal_read_tool` | no | Read a terminal's output without typing at it. |
@@ -81,7 +81,7 @@ are four different lifetimes, not four spellings of one. Job and terminal handle
 owner-fenced by Session (see above), so an id guessed from another session resolves to
 nothing.
 
-`code_interpreter_tool` and `run_code_tool` look like the same tool twice and cannot be
+`code_interpreter_tool` and `batch_call_tool` look like the same tool twice and cannot be
 merged. The interpreter's code calls no tools; the program's calls are the entire point of
 it, and they go back out through a `GuardedDispatch` the agent builds **for the turn that is
 running** — a closure over this turn's routing table, its session/task/step coordinates and

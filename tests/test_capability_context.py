@@ -107,7 +107,7 @@ def test_an_absent_roster_renders_nothing_rather_than_a_notice():
 
 def test_the_code_mode_convention_rides_on_a_slot_that_is_rendered():
     """It was appended to `tool_context`, which no template names, so an agent holding
-    `run_code_tool` was never told how to call anything from a program."""
+    `batch_call_tool` was never told how to call anything from a program."""
     source = inspect.getsource(Agent._get_tool_context)
     assert "available_tools" in source and "tool_context" not in source.replace("_get_tool_context", "")
 

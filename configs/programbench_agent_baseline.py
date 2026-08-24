@@ -37,7 +37,7 @@ with read_base():
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
     from .tools.bash import bash_tool
-    from .tools.run_code import run_code_tool
+    from .tools.batch_call import batch_call_tool
     from .tools.terminal_open import terminal_open_tool
     from .tools.terminal_send import terminal_send_tool
     from .tools.terminal_read import terminal_read_tool
@@ -98,7 +98,7 @@ tool_names = [
     # or routes its IO into a container — the isolation comes from the agent being
     # started *inside* the task container, not from the tools knowing about one.
     "bash_tool",
-    "run_code_tool",
+    "batch_call_tool",
     "terminal_open_tool",
     "terminal_send_tool",
     "terminal_read_tool",

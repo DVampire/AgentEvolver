@@ -10,7 +10,7 @@ with read_base():
     from .base import memory_config, window_size, max_tokens, model_roles
     from .agents.general_agent import general_agent
     from .tools.bash import bash_tool
-    from .tools.run_code import run_code_tool
+    from .tools.batch_call import batch_call_tool
     from .tools.read_image import read_image_tool
     from .tools.terminal_open import terminal_open_tool
     from .tools.terminal_send import terminal_send_tool
@@ -42,7 +42,7 @@ memory_names = ["file_system_memory"]
 agent_names = ["general_agent"]
 tool_names = [
     "bash_tool",
-    "run_code_tool",
+    "batch_call_tool",
     "read_image_tool",
     "terminal_open_tool",
     "terminal_send_tool",

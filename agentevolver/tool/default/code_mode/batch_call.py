@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
-from agentevolver.code import RUN_CODE_TOOL, GuardedDispatch, code_runtime
+from agentevolver.code import BATCH_CALL_TOOL, GuardedDispatch, code_runtime
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
@@ -36,13 +36,14 @@ from agentevolver.tool.default.code_mode.sdk import callable_names
 from agentevolver.tool.types import Tool
 
 _DESCRIPTION = (
-    "Run a Python program that calls your other tools directly, so a batch of tool work "
-    "costs one turn instead of one turn per call."
+    "Make a batch of tool calls in one turn, by writing a short Python program that calls "
+    "them. Use it for a loop, a search, or the same edit across a list — not for a single "
+    "call."
 )
 
 _GUIDANCE = """
-Run a Python program that calls your other tools directly, so a batch of tool work costs
-one turn instead of one turn per call.
+Make a batch of tool calls in one turn. You write a short Python program; the calls it
+makes are the point, and the code is only how you express the batch.
 
 The code you send is the BODY of an async function: `await` and `return` work at the top
 level of it. Call a tool as `await tools.<tool_name>(argument=value)`, keyword arguments
@@ -68,19 +69,19 @@ run one at a time, in the order you want them applied.
 """
 
 _EXAMPLES = [
-    '{"name": "run_code_tool", "args": {"code": "found = []\\\\nfor path in [\'a.py\', \'b.py\']:\\\\n    text = await tools.read_file_tool(file_path=path)\\\\n    if \'TODO\' in text:\\\\n        found.append(path)\\\\nprint(found)\\\\nreturn f\'{len(found)} files have TODOs\'", "description": "Find which files carry TODOs"}}',
+    '{"name": "batch_call_tool", "args": {"code": "found = []\\\\nfor path in [\'a.py\', \'b.py\']:\\\\n    text = await tools.read_file_tool(file_path=path)\\\\n    if \'TODO\' in text:\\\\n        found.append(path)\\\\nprint(found)\\\\nreturn f\'{len(found)} files have TODOs\'", "description": "Find which files carry TODOs"}}',
 ]
 
 
 @TOOL.register_module(force=True)
-class RunCodeTool(Tool):
+class BatchCallTool(Tool):
     """Execute a model-written program whose tool calls re-enter the guarded dispatch."""
 
-    #: Spelled out rather than taken from ``RUN_CODE_TOOL``, because the registration
+    #: Spelled out rather than taken from ``BATCH_CALL_TOOL``, because the registration
     #: check and the catalog generator both read this line from the source without
     #: importing it — a name behind a constant is a tool they cannot see. The two are
     #: held together by a test instead.
-    name: str = "run_code_tool"
+    name: str = "batch_call_tool"
     description: str = _DESCRIPTION
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
@@ -172,4 +173,4 @@ class RunCodeTool(Tool):
                 for name in callable_names(dispatch.names)}
 
 
-__all__ = ["RunCodeTool"]
+__all__ = ["BatchCallTool"]

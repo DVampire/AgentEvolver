@@ -1,10 +1,10 @@
-"""Code mode: the `run_code_tool` transport and the SDK that declares tools to a program."""
+"""Code mode: the `batch_call_tool` transport and the SDK that declares tools to a program."""
 
-from .run_code import RunCodeTool
+from .batch_call import BatchCallTool
 from .sdk import UNCALLABLE, callable_names, code_mode_section, render_sdk, sdk_for, signature
 
 __all__ = [
-    "RunCodeTool",
+    "BatchCallTool",
     "UNCALLABLE",
     "callable_names",
     "code_mode_section",

@@ -3,7 +3,7 @@ with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.code_agent import code_agent
     from .tools.bash import bash_tool
-    from .tools.run_code import run_code_tool
+    from .tools.batch_call import batch_call_tool
     from .tools.read_image import read_image_tool
     from .tools.terminal_open import terminal_open_tool
     from .tools.terminal_send import terminal_send_tool
@@ -45,7 +45,7 @@ agent_names = [
 ]
 tool_names = [
     "bash_tool",
-    "run_code_tool",
+    "batch_call_tool",
     "read_image_tool",
     "terminal_open_tool",
     "terminal_send_tool",

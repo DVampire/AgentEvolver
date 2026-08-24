@@ -20,7 +20,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Type, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentevolver.code import RUN_CODE_TOOL, GuardedDispatch
+from agentevolver.code import BATCH_CALL_TOOL, GuardedDispatch
 from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
 from inspect import isawaitable
@@ -671,7 +671,7 @@ class Agent(BaseModel):
         Returns one slot, ``available_<mount_type>``, which is the one a template
         renders. A second, headed ``<type>_context`` was produced beside it and no
         template ever named it — the Code Mode calling convention was appended to that
-        key, so an agent holding ``run_code_tool`` was never told how to call anything.
+        key, so an agent holding ``batch_call_tool`` was never told how to call anything.
 
         An empty roster renders as empty rather than as a notice: the shared capability
         module omits a block whose slot is blank, so a type this agent does not have
@@ -797,7 +797,7 @@ class Agent(BaseModel):
 
 
     async def _code_mode_section(self, allowlist: Optional[List[str]]) -> str:
-        """Declare the visible tools as functions, for agents that hold `run_code_tool`.
+        """Declare the visible tools as functions, for agents that hold `batch_call_tool`.
 
         Rendered from the same roster the tool cards above it come from, and only when the
         transport is actually in that roster — an agent that cannot run a program has no
@@ -807,7 +807,7 @@ class Agent(BaseModel):
         from agentevolver.tool.default.code_mode.sdk import code_mode_section, sdk_for
 
         names = list(allowlist) if allowlist is not None else await tool_manager.list()
-        if RUN_CODE_TOOL not in names:
+        if BATCH_CALL_TOOL not in names:
             return ""
         return code_mode_section(await sdk_for(names, tool_manager))
 
@@ -1677,13 +1677,13 @@ class Agent(BaseModel):
         try:
             if route is None:
                 raise ValueError(f"Unknown tool '{call.name}' (not in the assembled tool set)")
-            # `run_code_tool` carries a program whose tool calls come back through THIS
+            # `batch_call_tool` carries a program whose tool calls come back through THIS
             # method. It is the only dispatch handed a way to dispatch, and it is handed
             # one bound to this turn — so a call from inside a program is checked against
             # the same roster, gated by the same plan mode, and recorded by the same
             # hooks as the call the model could have made itself.
             bridge = None
-            if capability_type == "tool" and route[1] == RUN_CODE_TOOL:
+            if capability_type == "tool" and route[1] == BATCH_CALL_TOOL:
                 bridge = self._guarded_dispatch(routing, task_id, step_number, ctx,
                                                 parent_ref, call.id)
             tool_execution_context = {
@@ -1743,7 +1743,7 @@ class Agent(BaseModel):
     ) -> GuardedDispatch:
         """A callable that runs ONE tool call through this agent's own action path.
 
-        Handed to `run_code_tool` so a program's `await tools.x(...)` is dispatched by
+        Handed to `batch_call_tool` so a program's `await tools.x(...)` is dispatched by
         `_run_one`, not by a private line to the tool manager. That distinction is the
         whole safety argument for code mode: everything a call is checked by lives in
         `_run_one` and in the tool itself, so a second dispatcher — however careful — would
@@ -1798,7 +1798,7 @@ class Agent(BaseModel):
         knows how each capability kind executes. Returns
         ``(action_result, done, result, reasoning, error, execution_metadata)``.
 
-        ``bridge`` is set only for `run_code_tool`, and is that tool's only way to reach
+        ``bridge`` is set only for `batch_call_tool`, and is that tool's only way to reach
         another capability.
 
         ``agent`` is a capability like any other: dispatching one runs a sub-agent to

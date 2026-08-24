@@ -25,13 +25,13 @@ import pytest
 import pytest_asyncio
 
 from agentevolver.agent.types import Agent, AgentContext
-from agentevolver.code import RUN_CODE_TOOL, CodeFailureType, code_runtime
+from agentevolver.code import BATCH_CALL_TOOL, CodeFailureType, code_runtime
 from agentevolver.config import config
 from agentevolver.hook.context import HookContextManager
 from agentevolver.hook.server import hook_manager
 from agentevolver.plan.server import PlanManagerServer, action_is_allowed, declaration_of
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.tool.default.code_mode import RunCodeTool
+from agentevolver.tool.default.code_mode import BatchCallTool
 from agentevolver.tool.default.code_mode.sdk import (
     UNCALLABLE,
     callable_names,
@@ -68,7 +68,7 @@ async def bench(monkeypatch, tmp_path):
     workspace.mkdir()
     monkeypatch.setattr(config, "workspace_root", str(workspace), raising=False)
 
-    for tool in (ReadOnlyProbe, WriteFileTool, RunCodeTool):
+    for tool in (ReadOnlyProbe, WriteFileTool, BatchCallTool):
         await tool_manager.register(tool, config={})
         # `register()` builds its ToolConfig without the class's own `mutates` — only the
         # startup registry load reads that field — so every tool registered here would
@@ -87,7 +87,7 @@ async def bench(monkeypatch, tmp_path):
     routing = {
         "read_only_probe_tool": ("tool", "read_only_probe_tool"),
         "write_file_tool": ("tool", "write_file_tool"),
-        RUN_CODE_TOOL: ("tool", RUN_CODE_TOOL),
+        BATCH_CALL_TOOL: ("tool", BATCH_CALL_TOOL),
         "done_tool": ("tool", "done_tool"),
         "some_skill": ("skill", "some_skill"),
     }
@@ -126,7 +126,7 @@ async def plans(monkeypatch):
 
 async def run_program(bench, code):
     """Run one program the way the agent's dispatch hands it over."""
-    return await RunCodeTool()(code=code, description="a test program",
+    return await BatchCallTool()(code=code, description="a test program",
                                ctx=bench["ctx"], sub_dispatch=bench["dispatch"])
 
 
@@ -295,16 +295,16 @@ print(await tools.read_only_probe_tool(value='reading is fine'))
 async def test_a_program_may_not_start_another_program_or_finish_the_task(bench):
     """Two names are withheld from the bindings, for unrelated reasons.
 
-    `run_code_tool` because a program starting a program recurses with nothing bounding
+    `batch_call_tool` because a program starting a program recurses with nothing bounding
     it. `done_tool` because completion is read from a dispatched action: a `done` inside
     a program would be answered to the program, so the model would believe the task was
     finished while the loop carried on without a result.
     """
-    assert RUN_CODE_TOOL not in bench["dispatch"].names
+    assert BATCH_CALL_TOOL not in bench["dispatch"].names
     assert "done_tool" not in bench["dispatch"].names
 
     result = await run_program(bench, """
-for name in ('run_code_tool', 'done_tool'):
+for name in ('batch_call_tool', 'done_tool'):
     try:
         await tools[name](code='pass')
     except ToolCallError as error:
@@ -322,7 +322,7 @@ async def test_without_an_agents_dispatch_a_program_can_call_nothing(bench):
     unchecked path to every tool that appears only outside a dispatch, which is exactly
     where nobody looks. Called with no dispatch, the tool binds an empty table.
     """
-    result = await RunCodeTool()(
+    result = await BatchCallTool()(
         code="return await tools.read_only_probe_tool(value='x')",
         ctx=bench["ctx"])
 
@@ -340,7 +340,7 @@ def test_only_the_code_transport_is_handed_a_way_to_dispatch():
     """
     source = inspect.getsource(Agent._run_one)
 
-    assert "route[1] == RUN_CODE_TOOL" in source
+    assert "route[1] == BATCH_CALL_TOOL" in source
     assert "self._guarded_dispatch(" in source
     # And the dispatcher must be the agent's own per-action method, not a fresh path.
     dispatcher = inspect.getsource(Agent._guarded_dispatch)
@@ -408,7 +408,7 @@ def test_the_section_is_written_only_for_an_agent_that_holds_the_transport():
     """A calling convention for a tool the agent does not have is prompt it pays for
     every step and can never use."""
     assert code_mode_section("") == ""
-    assert "run_code_tool" in code_mode_section("async def x() -> str")
+    assert "batch_call_tool" in code_mode_section("async def x() -> str")
 
 
 @pytest.mark.asyncio
@@ -424,10 +424,10 @@ async def test_the_declarations_reach_the_model_beside_the_tool_cards(bench):
 
     assert await agent._code_mode_section(["write_file_tool"]) == ""
 
-    section = await agent._code_mode_section(["write_file_tool", RUN_CODE_TOOL])
+    section = await agent._code_mode_section(["write_file_tool", BATCH_CALL_TOOL])
     assert "async def write_file_tool(*, path: str, content: str) -> str" in section
     # The transport declares itself as a tool, not as something a program may call.
-    assert "async def run_code_tool(" not in section
+    assert "async def batch_call_tool(" not in section
 
 
 def test_the_names_declared_are_the_names_that_bind(bench):
@@ -451,10 +451,10 @@ async def test_a_program_is_not_declared_free_of_effects(bench):
     arbitrary programs effect-free would open the gate for everything reachable through
     it — the one hole this whole file exists to keep shut.
     """
-    declaration = await declaration_of("tool", RUN_CODE_TOOL)
+    declaration = await declaration_of("tool", BATCH_CALL_TOOL)
 
     assert declaration["mutates"] is None
-    assert action_is_allowed("tool", RUN_CODE_TOOL, declaration) is False
+    assert action_is_allowed("tool", BATCH_CALL_TOOL, declaration) is False
 
 
 def test_the_transport_name_is_the_one_the_agent_looks_for():
@@ -462,7 +462,7 @@ def test_the_transport_name_is_the_one_the_agent_looks_for():
     check and the catalog generator read it from source without importing it, and as a
     constant, because the agent recognises the one dispatch it hands a dispatcher to. A
     rename that changes one leaves the transport with no bindings and no error."""
-    assert RunCodeTool.model_fields["name"].default == RUN_CODE_TOOL
+    assert BatchCallTool.model_fields["name"].default == BATCH_CALL_TOOL
 
 
 def test_the_programs_own_budget_is_smaller_than_the_call_budget():
@@ -472,7 +472,7 @@ def test_the_programs_own_budget_is_smaller_than_the_call_budget():
     the output the program had already produced — and that output is how the model
     learns which part was slow.
     """
-    tool = RunCodeTool()
+    tool = BatchCallTool()
 
     assert tool.timeout < tool.call_timeout_seconds
 
