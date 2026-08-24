@@ -17,6 +17,8 @@ the plan that was just refused.
 """
 
 import asyncio
+import contextlib
+import io
 
 import pytest
 
@@ -451,3 +453,71 @@ def test_the_gateway_follows_the_manager_rather_than_its_own_command():
     assert source.count('_publish("plan.mode.changed"') == 1, (
         "plan.mode.changed is published from more than one place; the UI would see the "
         "same transition twice")
+
+
+# --------------------------------------------------------------------------- #
+# The declaration the gate reads has to be the one the tool wrote
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_a_built_in_keeps_the_declaration_it_wrote_after_registration():
+    """Every test above hands `action_is_allowed` a dictionary built by hand.
+
+    That checks the gate's arithmetic and nothing about its input, so the two halves
+    could disagree indefinitely — and they did.
+    `test_a_read_only_capability_runs_even_without_a_mutates_declaration` passes
+    `{"mutates": None, "permission_mode": "read_only"}` and names `escalate_tool` as
+    the tool that declares it. `escalate_tool` does declare exactly that. The registry
+    was dropping the second field on the way in: `_load_from_registry` carried
+    `mutates` and `call_timeout_seconds` off the class and not `permission_mode`, so
+    `get_info` reported the `ToolConfig` fallback, `workspace_write`.
+
+    The effect was that plan mode refused `escalate_tool` and `reply_tool` — the two
+    ways an agent has of reaching a person while the gate is shut — and the suite
+    stayed green, because the unit test asserted on `EscalateTool()` and the gate read
+    the registry.
+
+    So this one goes through the manager. `permission_mode` is asserted rather than
+    the verdict, because a verdict can come out right for the wrong reason: the gate
+    would also pass this tool if someone added it to `ALWAYS_ALLOWED`.
+    """
+    import agentevolver.tool.default  # noqa: F401 — importing is what registers them
+    from agentevolver.tool import tool_manager
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        await tool_manager.initialize(tool_names=["escalate_tool", "reply_tool",
+                                                  "read_file_tool", "bash_tool"])
+
+    for name, declared in (("escalate_tool", "read_only"), ("reply_tool", "read_only"),
+                           ("read_file_tool", "read_only"), ("bash_tool", "workspace_write")):
+        info = await tool_manager.get_info(name)
+        assert info is not None, f"{name} did not register"
+        assert info.permission_mode == declared, (
+            f"{name} declares permission_mode={declared!r} on its class, and the registry "
+            f"reports {info.permission_mode!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_gate_reads_a_real_declaration_and_lets_the_agent_speak():
+    """End to end, with nothing hand-built: register, read, decide.
+
+    Talking to a person is the one thing that must work while the gate is shut, and
+    two of the three ways of doing it were reaching the gate as `workspace_write`.
+    """
+    import agentevolver.tool.default  # noqa: F401
+    from agentevolver.plan import declaration_of
+    from agentevolver.tool import tool_manager
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        await tool_manager.initialize(
+            tool_names=["escalate_tool", "reply_tool", "report_tool", "bash_tool",
+                        "write_file_tool"])
+
+    for name in ("escalate_tool", "reply_tool", "report_tool"):
+        assert action_is_allowed("tool", name, await declaration_of("tool", name)) is True, (
+            f"{name} is how the agent reaches a person; plan mode must not block it"
+        )
+    for name in ("bash_tool", "write_file_tool"):
+        assert action_is_allowed("tool", name, await declaration_of("tool", name)) is False, (
+            f"{name} can change things and must stay behind the gate"
+        )

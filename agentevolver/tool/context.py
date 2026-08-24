@@ -251,10 +251,16 @@ class ToolContextManager(BaseModel):
                 tool_description = tool_cls.model_fields['description'].default
                 tool_metadata = tool_cls.model_fields['metadata'].default
                 # Behavioural declarations, read off the class so the registry carries what
-                # the tool says about itself. Both were being dropped here, which left them
-                # None on every registered config no matter what a tool declared.
+                # the tool says about itself. All three were being dropped here, which left
+                # them at their fallback on every registered config no matter what a tool
+                # declared. `permission_mode` outlived the first fix by one field: its
+                # fallback is `workspace_write`, so a built-in that declared `read_only`
+                # was reported as writing, and plan mode refused `escalate_tool` and
+                # `reply_tool` — the two ways an agent has of talking to a person while
+                # the gate is shut.
                 tool_mutates = _field_default(tool_cls, "mutates")
                 tool_call_timeout = _field_default(tool_cls, "call_timeout_seconds")
+                tool_permission_mode = _field_default(tool_cls, "permission_mode")
 
                 # Get or generate version from version_manager
                 tool_version = await version_manager.get_version("tool", tool_name)
@@ -285,6 +291,7 @@ class ToolContextManager(BaseModel):
                     metadata=tool_metadata,
                     enable_evolving=tool_enable_evolving,
                     mutates=tool_mutates,
+                    permission_mode=tool_permission_mode,
                     call_timeout_seconds=tool_call_timeout,
                     code=tool_code,
                     path=tool_path,
