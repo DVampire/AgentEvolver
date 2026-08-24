@@ -89,8 +89,25 @@ class Environment(BaseModel):
                     # function_calling, text, and args_schema are computed on-demand via properties
                     self.actions[action_name] = action_config
     
-    async def get_state(self) -> Dict[str, Any]:
-        """Get the state of the environment"""
+    async def get_state(self, ctx: Optional["EnvironmentContext"] = None,
+                        **kwargs: Any) -> Dict[str, Any]:
+        """What is true in this environment right now, rendered into the prompt each step.
+
+        `ctx` and `**kwargs` are part of the signature because the caller passes them:
+        `EnvironmentContextManager.get_state` always calls
+        ``instance.get_state(ctx=...)``. Declaring `get_state(self)` here — which it did
+        — meant the base class disagreed with its only caller, and the six built-ins
+        agreed with the caller instead. An evolved environment then wrote
+        ``def get_state(self)``, matching this class, and raised `TypeError` on every
+        single step. The framework produced a component that obeyed the contract and
+        could not run.
+
+        `**kwargs` rather than `ctx` alone so a subclass may take an argument of its own
+        — `ssh` takes `host` — without the caller having to know which subclass it holds.
+
+        Returns a mapping; `{"success": True, "state": ""}` is how an environment says
+        it has nothing to show, and is cheaper than raising.
+        """
         raise NotImplementedError("Get state method not implemented")
 
     async def live_view(self, ctx: "EnvironmentContext") -> Optional[EnvironmentView]:

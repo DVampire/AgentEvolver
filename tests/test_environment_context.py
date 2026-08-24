@@ -194,3 +194,47 @@ def test_every_shipped_prompt_can_render_the_state():
     missing = [p.name for p in sorted((root / "default").glob("*.html"))
                if "module/agent_context.html" not in p.read_text(encoding="utf-8")]
     assert not missing, f"prompts that cannot render environment-state: {missing}"
+
+
+# --------------------------------------------------------------------------- #
+# Every environment's get_state has to accept the call its only caller makes
+# --------------------------------------------------------------------------- #
+def test_every_environment_accepts_the_get_state_call_the_manager_makes():
+    """`EnvironmentContextManager.get_state` always passes `ctx=`. Nothing enforced it.
+
+    The base class declared `async def get_state(self)` — no `ctx`, no `**kwargs` — so
+    it disagreed with its only caller, and all six built-ins agreed with the caller
+    instead. Nothing noticed, because the caller wraps the call and logs a warning
+    rather than raising:
+
+        ⚠️ could not read grid_maze_environment state:
+           GridMazeEnvironment.get_state() got an unexpected keyword argument 'ctx'
+
+    once per step, forever. Which is how an *evolved* environment — one that wrote
+    `def get_state(self)`, matching the base class exactly — shipped with a state the
+    agent never saw. The framework produced a component that obeyed the contract and
+    could not run, and the contract was the thing that was wrong.
+
+    Signature-checked rather than called: calling would start browsers and containers.
+    """
+    import inspect
+
+    import agentevolver.environment.default  # noqa: F401 — importing is what registers them
+    from agentevolver.registry import ENVIRONMENT
+
+    wrong = []
+    for name, cls in sorted(ENVIRONMENT.module_dict.items()):
+        method = getattr(cls, "get_state", None)
+        if method is None:
+            continue
+        if not inspect.iscoroutinefunction(method):
+            wrong.append(f"{name}.get_state is not async; the manager awaits it")
+            continue
+        parameters = inspect.signature(method).parameters
+        takes_ctx = "ctx" in parameters or any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+        if not takes_ctx:
+            wrong.append(f"{name}.get_state{inspect.signature(method)} cannot take `ctx=`")
+
+    assert not wrong, ("these environments reject the call the manager makes:\n  "
+                       + "\n  ".join(wrong))

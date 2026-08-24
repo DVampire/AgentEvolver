@@ -20,7 +20,14 @@ from agentevolver.prompt.types import parse_prompt_file
 # from test_prompt_structure_agrees_across_files.py
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
+#: `module/` is where the layout actually lives — `<capability-context>` and its leaves
+#: are written once there and pulled into each agent by `<module src>`. It was missing
+#: from this list, so `_leaves_used_in_templates` (which reads raw text, not inlined)
+#: found its leaves only in `extension/prompt/gaia_answer_agent.html`: a generated,
+#: fully-expanded prompt that happened to be committed. Clearing the extension tree
+#: emptied the guard, and it said so — which is the one thing that made this visible.
 TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
+            sorted((ROOT / "agentevolver" / "prompt" / "module").glob("*.html")) + \
             sorted((ROOT / "extension" / "prompt").glob("*.html"))
 # Read per test, not at import. Collection happens before session fixtures, so a
 # module-level read captures whatever is on disk at that instant — including a mutation
@@ -173,7 +180,14 @@ def test_the_agent_authoring_guide_describes_the_shape_it_will_be_read_against()
 # from test_prompt_documents_capabilities.py
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
+#: `module/` is where the layout actually lives — `<capability-context>` and its leaves
+#: are written once there and pulled into each agent by `<module src>`. It was missing
+#: from this list, so `_leaves_used_in_templates` (which reads raw text, not inlined)
+#: found its leaves only in `extension/prompt/gaia_answer_agent.html`: a generated,
+#: fully-expanded prompt that happened to be committed. Clearing the extension tree
+#: emptied the guard, and it said so — which is the one thing that made this visible.
 TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
+            sorted((ROOT / "agentevolver" / "prompt" / "module").glob("*.html")) + \
             sorted((ROOT / "extension" / "prompt").glob("*.html"))
 
 
