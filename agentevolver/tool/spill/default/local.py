@@ -11,7 +11,7 @@ from typing import Optional
 
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
-from agentevolver.spill.types import SpillRef, SpillSource, SpillStore
+from agentevolver.tool.spill.types import SpillRef, SpillSource, SpillStore
 
 #: Anything outside this becomes ``_``. Applied to the *suggested* name only, which
 #: reaches us from a tool and therefore from arguments a model wrote.

@@ -14,7 +14,7 @@ Parks an oversized tool result on disk and hands the agent a locator plus a retr
 | Path | Responsibility |
 |---|---|
 | `types.py` | The `SpillStore` contract, plus `SpillSource` and `SpillRef` |
-| `server.py` | `spill_manager` — holds the active store, absorbs storage failures |
+| `__init__.py` | `save_text` / `use_store` — the active store, and the failure it absorbs |
 | `default/local.py` | `LocalSpillStore` — owner-only files under `output/.runtime/spill` |
 
 ## Why it exists
@@ -36,7 +36,7 @@ it already has instead of paying for the command twice.
 locator, the exact character count, and a sentence telling the agent how to read it
 back. It raises on a genuine storage failure.
 
-`spill_manager.save_text` is the caller-facing wrapper and **never raises**: it
+`save_text` is the caller-facing wrapper and **never raises**: it
 logs and returns `None`. That asymmetry is deliberate. The caller is already
 holding a result the tool produced successfully, and a full disk is a reason to
 lose the transcript, not a reason to report the command as failed. The tool

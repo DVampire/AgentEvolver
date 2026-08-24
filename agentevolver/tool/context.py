@@ -25,8 +25,7 @@ from agentevolver.tool.execution import (
     ToolExecutionPipeline,
 )
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.spill import spill_manager
-from agentevolver.spill.types import SpillSource
+from agentevolver.tool.spill import SpillSource, save_text as spill_text
 from agentevolver.version import version_manager
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import TOOL
@@ -1078,7 +1077,7 @@ class ToolContextManager(BaseModel):
         if not isinstance(message, str) or len(message) <= OUTPUT_LIMIT:
             return response
 
-        ref = await spill_manager.save_text(
+        ref = await spill_text(
             message,
             SpillSource(tool_name=name, call_id=str(getattr(ctx, "id", "") or ""), label="result"),
             session_key=str((getattr(ctx, "extra", {}) or {}).get("project_root") or ""),

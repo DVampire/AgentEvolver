@@ -49,7 +49,7 @@ It is not, on three counts, and each one matters here:
 - **It stores text.** `save_text` takes a `str` and the local store opens the file in text
   mode. Base64 through a field documented as "the full text to save" would be a lie about
   what is in the file, and it doubles the size of something already large.
-- **It is best-effort.** `spill_manager.save_text` returns `None` when the store fails,
+- **It is best-effort.** `spill.save_text` returns `None` when the store fails,
   deliberately: losing a transcript is better than failing a command that already ran. An
   attachment cannot degrade that way. Reporting an image as attached when the bytes were
   never written puts a reference in front of the model to something that is not there, and

@@ -31,8 +31,7 @@ from agentevolver.session.query import (
     MAX_OUTLINE,
     session_query,
 )
-from agentevolver.spill import spill_manager
-from agentevolver.spill.types import SpillSource
+from agentevolver.tool.spill import SpillSource, save_text as spill_text
 from agentevolver.tool.types import Tool
 
 #: An event read inline above this goes to the spill store instead, and the tool
@@ -381,7 +380,7 @@ class SessionEventReadTool(Tool):
             links.append(f"later replaced on the surface by seq {window.shadowed_by}")
 
         if len(body) > INLINE_EVENT_CHARS:
-            ref = await spill_manager.save_text(
+            ref = await spill_text(
                 body,
                 SpillSource(tool_name=self.name, call_id=_call_id(kwargs), label="event"),
                 session_key=_session_key(kwargs),

@@ -16,7 +16,7 @@ under the machine-level runtime root.
 |---|---|
 | `LocalSpillStore` | An absolute filesystem path under `output/.runtime/spill` |
 
-`LocalSpillStore` is the default: `spill_manager` instantiates it on first use when no
+`LocalSpillStore` is the default: `spill.store()` instantiates it on first use when no
 other store has been registered, so spilling works with no configuration.
 
 Its retrieval hint names `read_file_tool`, `grep_search_tool`, and `bash_tool`, because

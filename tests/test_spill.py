@@ -12,9 +12,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.spill import spill_manager
-from agentevolver.spill.default import LocalSpillStore
-from agentevolver.spill.types import SpillRef, SpillSource
+from agentevolver.tool import spill
+from agentevolver.tool.spill import SpillRef, SpillSource
+from agentevolver.tool.spill.default import LocalSpillStore
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import OUTPUT_LIMIT, Tool
 from agentevolver.response.types import Response, ResponseType
@@ -98,19 +98,19 @@ def test_store_separates_sessions(spill_root):
     assert Path(a.locator).parent != Path(b.locator).parent
 
 
-def test_manager_absorbs_a_storage_failure(spill_root, monkeypatch):
+def test_a_storage_failure_is_absorbed(spill_root, monkeypatch):
     """A full disk loses the transcript. It must not also lose the command's result."""
 
     class _Broken(LocalSpillStore):
         async def save_text(self, *args, **kwargs):
             raise OSError("No space left on device")
 
-    spill_manager.register(_Broken())
+    spill.use_store(_Broken())
     try:
-        assert asyncio.run(spill_manager.save_text(
+        assert asyncio.run(spill.save_text(
             "x" * 100, SpillSource(tool_name="t"), session_key="s")) is None
     finally:
-        spill_manager.register(LocalSpillStore())
+        spill.use_store(None)   # back to the default on the next call
 
 
 # --------------------------------------------------------------------------- #
@@ -155,13 +155,13 @@ def test_a_failed_spill_still_returns_the_excerpt(spill_root, tmp_path):
         async def save_text(self, *args, **kwargs):
             raise OSError("backend down")
 
-    spill_manager.register(_Broken())
+    spill.use_store(_Broken())
     try:
         manager = _manager_for(tmp_path, _Loud())
         resp = asyncio.run(manager(name="loud_tool", input={},
                                    ctx=SimpleNamespace(id="c", extra={})))
     finally:
-        spill_manager.register(LocalSpillStore())
+        spill.use_store(None)   # back to the default on the next call
 
     assert resp.success is True                      # the tool did its job
     assert "characters elided" in resp.message       # still bounded

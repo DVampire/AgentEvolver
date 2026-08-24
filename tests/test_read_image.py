@@ -229,7 +229,7 @@ def test_an_image_over_the_size_limit_is_refused_with_the_number(tmp_path, visio
 def test_a_storage_failure_raises_instead_of_reporting_success(tmp_path, monkeypatch):
     """Unlike the spill store next door, this one must not degrade quietly.
 
-    `spill_manager.save_text` returns None when it cannot write, on purpose: losing a
+    `spill.save_text` returns None when it cannot write, on purpose: losing a
     transcript beats failing a command that already ran. Copying that here would put a
     reference in front of the model to bytes that are not on disk, and the failure would
     surface a call later with nothing pointing back to this one.
