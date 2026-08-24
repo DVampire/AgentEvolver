@@ -6,29 +6,16 @@ with read_base():
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
     from .agents.monitor_agent import monitor_agent
-    from .agents.browser_agent import browser_agent
     from .agents.generate_agent import generate_agent
     from .agents.optimize_agent import optimize_agent
     from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
-    from .tools.read_image import read_image_tool
     from .tools.ask_user import ask_user_question
     from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.get_goal import get_goal_tool
-    from .tools.create_goal import create_goal_tool
-    from .tools.update_goal import update_goal_tool
-    from .tools.schedule_create import schedule_create_tool
-    from .tools.session_search import session_search_tool
-    from .tools.session_event_search import session_event_search_tool
-    from .tools.session_read import session_read_tool
-    from .tools.session_event_read import session_event_read_tool
-    from .tools.session_trace import session_trace_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
     from .tools.list_dir import list_dir_tool
-    from .tools.git import git_tool
-    from .tools.deploy import deploy_tool
     from .tools.evolution import evolution_tool
     from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
@@ -53,43 +40,31 @@ agent_names = [
     "general_agent",
     "reviewer_agent",
     "monitor_agent",
-    # browser agent — drives a real browser to VERIFY web/UI deliverables hands-on
-    # (render, click, check images/console) via the browser_environment.
-    # "browser_agent",
     "generate_agent",
     "optimize_agent",
     "evaluate_agent",
 ]
+# The basics, and nothing else. Anything not here is still reachable — `inspect_tool`
+# reads any registered capability by name — so this is what rides on every step as a
+# schema, not what the run is capable of.
 tool_names = [
+    # Read, write, look around, run something.
     "bash_tool",
-    # "read_image_tool",
-    # "ask_user_question",
-    # "exit_plan_mode",
-    # "get_goal_tool",
-    # "create_goal_tool",
-    # "update_goal_tool",
-    # "schedule_create_tool",
-    # "session_search_tool",
-    # "session_event_search_tool",
-    # "session_read_tool",
-    # "session_event_read_tool",
-    # "session_trace_tool",
-    "done_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
     "list_dir_tool",
-    # "git_tool",
-    # "deploy_tool",
-    "evolution_tool",
+    # Talk to the person, and to whoever dispatched this run.
+    "ask_user_question",
     "escalate_tool",
     "reply_tool",
     "report_tool",
-    # "send_message_tool",
-    # web retrieval — search the web, fetch a page, and download REAL images to bundle
-    # "web_searcher_tool",
-    # "web_fetcher_tool",
-    # "media_search_tool",
+    "done_tool",
+    # Plan mode's only exit. The gate refuses everything with effects until a person
+    # approves, so without this a run that enters plan mode has no legal move left.
+    "exit_plan_mode",
+    # MetaAgent's own reason to exist.
+    "evolution_tool",
 ]
 # Resident rosters are what reaches the model on every step, as a tool schema each. The
 # rest of the registry is not gone: `inspect_tool` reads any registered
@@ -110,61 +85,28 @@ skill_names = [
     # "report_design_skill",
     # "artifact_design_skill",
 ]
-connector_names = [
-    # "chemistry_connector",
-    # "literature_graph_connector",
-]
-
-#-----------------ENVIRONMENT CONFIGS-----------------
-# browser_agent verifies web/UI deliverables in a real browser. Under Model X the
-# agent runs in the base container; the browser runs as a separate peer container
-# (opensandbox/chrome) spawned via the Docker socket and driven over CDP — so the
-# base image needs no chromium of its own. use_sandbox=True selects that peer.
+# The baseline mounts one environment, and only because `bash_tool` cannot be mounted
+# without it. `run_in_background` is an unconditional parameter of bash: with no job
+# environment the agent gets a job id it can never read or kill — a capability that
+# looks available and silently drops results, which is worse than not having it.
+#
+# It is close to free. `JobEnvironment.get_state` returns an empty string while nothing
+# is outstanding, so an idle job environment costs three action schemas and no prompt
+# at all. Everything else — browser, computer, remote_host — is added per run.
 env_names = [
     "job",
-    # "browser_environment",
-    # "computer_environment",
-    # "remote_host",
 ]
 
-# ---------------- COMPUTER (DESKTOP) ----------------
-# A whole Linux desktop the agent drives with mouse and keyboard. The container is
-# started on first use, not at boot, so listing it here costs nothing until something
-# actually opens it.
-computer_environment = dict(
-    width=1920,
-    height=1080,
-    use_som=True,
-    sandbox_timeout_minutes=60,
-)
+# Absent means *all*, not none: `plugin_manager.initialize(None)` builds every
+# registered plugin, and `agentevolver/plugins/` is 517 files. Stating the empty list
+# is what actually turns them off.
+plugin_names = []
+connector_names = []
+workflow_names = []
 
-# ---------------- REMOTE HOSTS (SSH) ----------------
-# Ships with no machines. A remote agent must never connect somewhere nobody named, and
-# an example host in a shipped config is exactly how that happens. Add machines from the
-# frontend's "Remote machines" panel — they persist to output/.runtime/ssh_hosts.json —
-# or seed them here for a deployment that always has the same ones.
-remote_host = dict(
-    hosts=[],
-    allow_launch=True,
-    max_upload_mb=500,
-    live_view=True,
-    state_entries=20,
-)
-browser_environment = dict(
-    base_dir="environment/browser",
-    headless=True,          # ignored when vnc=True (chrome-vnc forces headful)
-    viewport=dict(width=1280, height=900),
-    use_sandbox=True,
-    vnc=True,               # use the chrome-vnc sandbox (headful Chrome + live noVNC view)
-    use_som=True,
-    state_detail="elements",
-    max_state_elements=0,
-    command_timeout=30.0,
-)
 
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(enable_evolving=False)
-git_tool.update(timeout=60)
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
 file_system_memory.update(
@@ -199,14 +141,6 @@ reviewer_agent.update(
 
 monitor_agent.update(
     enable_evolving=False,
-)
-
-browser_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    env_name="browser_environment",
-    enable_evolving=False,
-    use_memory=True,
 )
 
 #-----------------EVOLUTION AGENT CONFIGS-----------------
