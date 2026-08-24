@@ -749,40 +749,6 @@ def inner_command(instance, args) -> str:
     return " ".join(parts)
 
 
-def ignore_our_scaffolding(workspace: str) -> None:
-    """Keep our own files out of a submission the agent builds with `git archive`.
-
-    `_SCAFFOLDING` is applied when the whole tree is tarred, and that is the fallback
-    path. The preferred path is `git archive HEAD` — the committed tree — which no filter
-    of ours touches. So a run whose agent does `git add -A` ships our scaffolding no
-    matter what the tar step excludes.
-
-    Appended rather than written, and only for entries not already listed: the seeded
-    workspace may ship a `.gitignore` of the task's own, and replacing it would discard
-    build-artifact rules the task document tells the agent to rely on.
-    """
-    path = os.path.join(workspace, ".gitignore")
-    try:
-        existing = ""
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as handle:
-                existing = handle.read()
-        listed = {line.strip() for line in existing.splitlines()}
-        missing = [entry for entry in _SCAFFOLDING if entry not in listed]
-        if not missing:
-            return
-        with open(path, "a", encoding="utf-8") as handle:
-            if existing and not existing.endswith("\n"):
-                handle.write("\n")
-            handle.write("# Added by run_programbench.py: ours, not part of the reconstruction.\n")
-            handle.write("".join(f"{entry}\n" for entry in missing))
-        logger.info(f"| 🚫 .gitignore now excludes {', '.join(missing)}")
-    except OSError as error:                                          # noqa: BLE001
-        # Not fatal: the tar-step filter still covers the fallback path, and failing the
-        # whole instance over a .gitignore would cost a run to protect a tidiness rule.
-        logger.warning(f"| ⚠️ Could not extend {path}: {error}")
-
-
 def seed_workspace(image_ref: str, destination: str) -> None:
     """Copy the image's `/workspace` into `destination` so it can be mounted back in.
 
@@ -807,7 +773,23 @@ def seed_workspace(image_ref: str, destination: str) -> None:
     result = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "sh",
          "-v", f"{destination}:/seed", image_ref, "-c",
-         'rm -rf /seed/..?* /seed/.[!.]* /seed/* 2>/dev/null; cp -a /workspace/. /seed/'],
+         # The .gitignore lines go in here rather than after the copy, and that is not a
+         # tidiness choice: `cp -a` reproduces ownership, so the seeded tree belongs to
+         # root and uid 1000 — the account this launcher runs as cannot write into it.
+         # Doing it on the host failed with EACCES and only logged a warning, which left
+         # the `git archive HEAD` path unprotected while looking fine.
+         #
+         # Appended, and only what is not already listed: the image may ship a .gitignore
+         # of the task's own, and replacing it would discard build-artifact rules the task
+         # document tells the agent to rely on. Ownership is then handed to uid 1000 so the
+         # agent can keep editing it.
+         'rm -rf /seed/..?* /seed/.[!.]* /seed/* 2>/dev/null; cp -a /workspace/. /seed/; '
+         + "".join(
+             f'grep -qxF {shlex.quote(entry)} /seed/.gitignore 2>/dev/null || '
+             f'echo {shlex.quote(entry)} >> /seed/.gitignore; '
+             for entry in _SCAFFOLDING
+         )
+         + 'chown 1000:1000 /seed/.gitignore'],
         capture_output=True, text=True, timeout=600,
     )
     if result.returncode != 0:
@@ -944,7 +926,6 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
             seed_workspace(image_ref, workspace_dir)
-            ignore_our_scaffolding(workspace_dir)
             grant_to_container_user(session_path)
             grant_to_container_user(os.path.join(root, "extension"))
             logger.info(
