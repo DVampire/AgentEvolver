@@ -1,6 +1,6 @@
 ---
 name: utils
-description: "Contains dependency-light helpers shared across modules: path assembly, file locking, concurrency, names, strings, URLs, screenshots, tokens, argument parsing, and plan models."
+description: "Contains dependency-light helpers shared across modules: path assembly, file locking, concurrency, queues, names, strings, URLs, screenshots, tokens, argument parsing, and plan models."
 version: 1.0.0
 type: module
 category: utils

@@ -131,6 +131,8 @@ class TaskManager(metaclass=Singleton):
         handler: Optional[TaskHandler] = None,
     ) -> None:
         """Set log_root, attach handler, and load persisted pending tasks."""
+        from agentevolver.paths import path_manager as _path_manager
+        _path_manager.on_rebind(self._follow_session)
         self._log_root = log_root
         self._handler = handler
         # Directory is created on first save, so a host that binds a session later
@@ -144,6 +146,21 @@ class TaskManager(metaclass=Singleton):
             f"| 📋 TaskManager initialised — {len(self._records)} task(s) loaded "
             f"(log_root={log_root})"
         )
+
+    def _follow_session(self) -> None:
+        """Re-point at the newly bound session's log root.
+
+        Subscribed to `path_manager` rather than called by the gateway. Six managers used
+        to be re-pointed by name on every session change, which meant six copies of "the
+        current log root" kept in step by remembering to add a line — and the forgotten
+        line writes this session's files into the previous session's directory without
+        erroring.
+        """
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        if roots:
+            self.rebind(str(roots["log"]))
 
     def rebind(self, log_root: str) -> None:
         """Re-point task persistence at a newly bound session's task directory.

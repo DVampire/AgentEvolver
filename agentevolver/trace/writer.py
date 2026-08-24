@@ -18,7 +18,7 @@ from typing import Dict, Optional
 
 from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import TraceEvent
 
 

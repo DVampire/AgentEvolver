@@ -50,9 +50,12 @@ def test_a_registered_file_may_stay_dark():
     Tempting to assert only the failing direction, which would still pass if the register
     were ignored entirely and every dark file failed forever.
     """
-    registered = {"agentevolver/docker/server.py": "scaffold — not yet implemented"}
+    # A path that does not exist, deliberately: this asserts the register's *mechanism*,
+    # and naming a real file couples the test to that file staying dark — which is how it
+    # came to name `agentevolver/docker/server.py`, a scaffold that has since been deleted.
+    registered = {"agentevolver/somewhere/unfinished.py": "scaffold — not yet implemented"}
 
-    assert violations({"agentevolver/docker/server.py": 0}, _HEALTHY, registered) == []
+    assert violations({"agentevolver/somewhere/unfinished.py": 0}, _HEALTHY, registered) == []
 
 
 def test_a_covered_file_is_not_reported_dark():

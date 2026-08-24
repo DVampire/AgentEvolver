@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.response import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolContext

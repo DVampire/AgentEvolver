@@ -120,7 +120,5 @@ Follow these rules when adding or generating code so the framework can discover 
 | `MEMORY_SYSTEM`   | `agentevolver.memory`      | `@MEMORY_SYSTEM.register_module()`     |
 | `SANDBOX`         | `agentevolver.sandbox`     | `@SANDBOX.register_module()`           |
 | `DEPLOYER`        | `agentevolver.deploy`      | `@DEPLOYER.register_module()`          |
-| `E2B`             | `agentevolver.e2b`         | `@E2B.register_module()`               |
-| `DOCKER`          | `agentevolver.docker`      | `@DOCKER.register_module()`            |
 
 > **Not registry-based:** `connector` (MCP servers), `protocol`, and `trajectory` are managed by their `*_manager` singletons directly — connectors are discovered by scanning `CONNECTOR.md` directories (like skills scan `SKILL.md`), not by a class decorator.

@@ -27,7 +27,7 @@ from typing import Optional
 
 from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import TraceEvent, parse_trace_event
 from agentevolver.trace.persistence import TracePersistence, create_trace_persistence
 from agentevolver.utils import Singleton
@@ -80,6 +80,8 @@ class TraceManager(metaclass=Singleton):
 
         If log_root is omitted, defaults to ``{config.log_root}/trace``.
         """
+        from agentevolver.paths import path_manager as _path_manager
+        _path_manager.on_rebind(self._follow_session)
         if self._initialized:
             return
         if log_root is None:
@@ -97,6 +99,21 @@ class TraceManager(metaclass=Singleton):
             f"| 🔍 TraceManager initialised "
             f"(log_root={log_root}, persistence={self._persistence_backend})"
         )
+
+    def _follow_session(self) -> None:
+        """Re-point at the newly bound session's log root.
+
+        Subscribed to `path_manager` rather than called by the gateway. Six managers used
+        to be re-pointed by name on every session change, which meant six copies of "the
+        current log root" kept in step by remembering to add a line — and the forgotten
+        line writes this session's files into the previous session's directory without
+        erroring.
+        """
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        if roots:
+            self.rebind(str(roots["log"]))
 
     def rebind(self, log_root: str) -> None:
         """Re-point the trace root at ``<log_root>/trace`` for a newly bound session.

@@ -35,10 +35,6 @@ NEVER_EXECUTED: Dict[str, str] = {
     # --- Not implemented yet -------------------------------------------------
     # Both say so in their own docstrings. There is no behaviour here to test; when one
     # grows a body it also leaves this list, and the gate will insist on that.
-    "agentevolver/docker/__init__.py": "scaffold — sandbox manager not yet implemented",
-    "agentevolver/docker/server.py": "scaffold — sandbox manager not yet implemented",
-    "agentevolver/e2b/__init__.py": "scaffold — sandbox manager not yet implemented",
-    "agentevolver/e2b/server.py": "scaffold — sandbox manager not yet implemented",
 
     # --- Process entry point -------------------------------------------------
     # Runs only under `python -m agentevolver.gateway`. Importing it *is* running it, so

@@ -2242,16 +2242,14 @@ class AgentGateway:
         bind_session_roots(config, session.sandbox)
         # …and point the layout table at this session, so every caller that asks for a
         # session-scoped path gets this one's without having been handed it.
+        # One call, not a list. Binding announces itself, and the managers that keep a
+        # directory derived from the session subscribe at `initialize()` — so a new one
+        # follows by subscribing rather than by being added here. This was four `rebind`
+        # calls naming four managers, which is four copies of "the current log root" held
+        # in step by remembering to edit this block.
         path_manager.bind_session(session.owner, session.context.id)
-        # Managers cached their base_dir at initialize(); re-point the ones that
-        # persist per-run output. Writers that read config at write time (the
-        # snapshot hook) follow the rebound config automatically.
-        trace_manager.rebind(config.log_root)
-        memory_manager.rebind(config.log_root)
-        trajectory_manager.rebind(config.log_root)
-        task_manager.rebind(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
-        # Boot ran without a file sink (no session existed yet); attach it now so the
-        # run log lands in this session too.
+        # The logger is not one of them: its sink is a *file*, named from config rather
+        # than derived from a root, and boot ran without one because no session existed.
         logger.rebind(config.log_path)
         self._bound_session_id = session.context.id
         logger.info(f"| 📁 Runtime bound to session {session.context.id}: {config.log_root}")

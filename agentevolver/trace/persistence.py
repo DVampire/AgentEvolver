@@ -15,7 +15,7 @@ import sqlite3
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from agentevolver.logger import logger
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import TraceEvent
 
 

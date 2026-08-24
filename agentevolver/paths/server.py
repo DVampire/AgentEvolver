@@ -34,7 +34,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from agentevolver.paths.types import LAYOUT, P
 
@@ -57,6 +57,10 @@ class PathManagerServer:
         #: Paths the layout genuinely cannot compute, keyed by the entry they stand in
         #: for. See :meth:`override`.
         self._overrides: Dict[P, Path] = {}
+        #: Called after every rebind. A manager that keeps a directory derived from the
+        #: session subscribes here, so a session change reaches it without the caller
+        #: having to name it. See :meth:`on_rebind`.
+        self._listeners: List[Callable[[], None]] = []
 
     # ================================================================== #
     # 1. Roots — where the tree hangs off
@@ -124,6 +128,54 @@ class PathManagerServer:
         if (owner, session_id) != (self._owner, self._session_id):
             self._overrides.clear()
         self._owner, self._session_id = str(owner), str(session_id)
+        self._announce()
+
+    def _listener_list(self) -> List[Callable[[], None]]:
+        """The subscriber list, created on demand.
+
+        This manager is shared process-wide and may have been constructed before the field
+        existed, in which case ``__init__`` never runs again for it and a plain attribute
+        would be missing on exactly the long-lived instance everything uses. The same shape
+        has bitten ``plan_manager`` and ``ExtensionManager`` already.
+        """
+        listeners = getattr(self, "_listeners", None)
+        if listeners is None:
+            listeners = []
+            self._listeners = listeners
+        return listeners
+
+    def on_rebind(self, listener: Callable[[], None]) -> None:
+        """Be told when the bound session changes, so a derived directory can follow it.
+
+        Six managers kept their own copy of "the current log root", and the gateway
+        re-pointed each of them by name on every session change. Six copies that can
+        disagree, held in step by remembering to add a line — and the line that is
+        forgotten writes one session's files into the previous session's directory,
+        without erroring.
+
+        So the transition announces itself. That is the fix ``plan_manager`` already
+        documents for the same shape: a state that changes without saying so leaves every
+        holder of a value derived from it quietly wrong.
+
+        Idempotent — a manager that initializes twice subscribes once.
+        """
+        listeners = self._listener_list()
+        if listener not in listeners:
+            listeners.append(listener)
+
+    def _announce(self) -> None:
+        """Tell every subscriber the session moved.
+
+        A listener that raises must not stop the rebind: the session has already changed,
+        and refusing to finish because one manager failed would leave the others bound to
+        a session the caller believes it has left.
+        """
+        for listener in tuple(self._listener_list()):
+            try:
+                listener()
+            except Exception as error:                              # noqa: BLE001
+                from agentevolver.logger import logger
+                logger.warning(f"| ⚠️ Path rebind listener failed: {error}")
 
     def unbind_session(self) -> None:
         """Forget the current session; session-scoped keys need explicit parameters again.

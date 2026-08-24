@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import (
     EventConfidence,
     EventProvenance,

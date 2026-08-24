@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.trace.persistence import SQLiteTracePersistence, create_trace_persistence
 from agentevolver.trace.server import TraceManager
 from agentevolver.trace.types import TraceEvent, TraceEventType

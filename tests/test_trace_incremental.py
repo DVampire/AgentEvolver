@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.trace.projection import (
     ProjectionVersionMismatch,
     ProjectionWatermarkError,

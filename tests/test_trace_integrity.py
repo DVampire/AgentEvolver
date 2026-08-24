@@ -13,7 +13,7 @@ from agentevolver.config.validate import validate_assembly
 from agentevolver.message import HumanMessage
 from agentevolver.model.context import ModelContextManager
 from agentevolver.model.types import ModelConfig, ModelContext
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 from agentevolver.response import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolContext

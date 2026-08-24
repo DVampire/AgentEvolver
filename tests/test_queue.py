@@ -13,7 +13,7 @@ import asyncio
 
 import pytest
 
-from agentevolver.queue import AsyncQueue
+from agentevolver.utils import AsyncQueue
 
 
 # --------------------------------------------------------------------------- #

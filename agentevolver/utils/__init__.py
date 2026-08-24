@@ -1,5 +1,6 @@
 from .path_utils import assemble_workspace_path, assemble_resource_path, get_extension_root, get_package_root, project_path
 from .singleton import Singleton
+from .queue import AsyncQueue
 from .utils import (
     _is_package_available,
     gather_with_concurrency,

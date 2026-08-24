@@ -51,6 +51,8 @@ class TrajectoryManagerServer:
         from agentevolver.config import config
         from agentevolver.utils import assemble_workspace_path
 
+        path_manager.on_rebind(self._follow_session)
+
         try:
             log_root = config.log_root
         except (AttributeError, KeyError):
@@ -58,6 +60,21 @@ class TrajectoryManagerServer:
             log_root = "workspace_root"
         self.base_dir = assemble_workspace_path(path_manager.under(log_root, P.LOG_MODULE, module="trajectory"))
         logger.info(f"| 📁 Trajectory manager base directory: {self.base_dir}")
+
+    def _follow_session(self) -> None:
+        """Re-point at the newly bound session's log root.
+
+        Subscribed to `path_manager` rather than called by the gateway. Six managers used
+        to be re-pointed by name on every session change, which meant six copies of "the
+        current log root" kept in step by remembering to add a line — and the forgotten
+        line writes this session's files into the previous session's directory without
+        erroring.
+        """
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        if roots:
+            self.rebind(str(roots["log"]))
 
     def rebind(self, log_root: str) -> None:
         """Re-point persistence at ``<log_root>/trajectory`` for a newly bound session.
