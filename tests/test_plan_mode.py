@@ -666,26 +666,6 @@ def test_the_auto_notice_is_not_delivered_as_an_error():
     )
 
 
-def test_the_layout_and_the_derived_plan_path_agree():
-    """`P.SESSION_PLAN` is what a reader looks up; `plan_path()` is what runs.
-
-    They are two statements of one location, and the layout entry spells out the
-    `workspace` segment a second time. Composing in code is what makes an override
-    move the plan with the workspace — but it also means the table could drift and
-    nothing would notice, since nothing resolves that key any more. This is what
-    notices.
-    """
-    from agentevolver.paths import P, path_manager
-    from agentevolver.plan import plan_path
-
-    path_manager.bind_session("local", "layout_agree")
-    try:
-        assert plan_path() == path_manager.get(P.SESSION_PLAN), (
-            "the layout table and the derived path disagree about where plan.md lives")
-    finally:
-        path_manager.unbind_session()
-
-
 def test_the_plan_follows_a_container_mount_override():
     """An override on the *workspace* has to move the plan, because the plan is in it.
 

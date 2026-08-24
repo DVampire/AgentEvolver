@@ -257,9 +257,12 @@ class PathManagerServer:
         """Resolve a layout key to an absolute path.
 
         Parameters the bound session knows — ``owner``, ``session_id`` — may be omitted
-        and are filled in from it. Passing them explicitly asks about a *specific*
-        session, which is why an override (a statement about the current run) does not
-        answer such a call.
+        and are filled in from it. Passing them names a *specific* session, and an
+        override is a statement about the current run, so the two only meet when the
+        session named is the bound one — which they often are. Naming the run you are
+        in is not a way to be told about a different one, and it used to be: `approve()`
+        passes the id of the session whose plan it is writing, and that spelling alone
+        moved the file to a path the agent could not write.
 
         Args:
             key: Which path, from :class:`~agentevolver.paths.types.P`.
@@ -277,8 +280,18 @@ class PathManagerServer:
         except KeyError:
             raise KeyError(f"No layout entry for {key!r}") from None
 
-        if not params and key in self._overrides:
-            return self._materialize(self._overrides[key], create=create)
+        # An empty value is not an answer. A caller with an optional `owner` passes ""
+        # when it has none, and keeping it made `{**session_params, **params}` overwrite
+        # the bound session's value with nothing — so two modules grew their own
+        # `owner or bound_owner` to undo it. Dropped here, and neither needs to.
+        params = {name: value for name, value in params.items() if value not in ("", None)}
+
+        if self._names_the_bound_session(params):
+            if key in self._overrides:
+                return self._materialize(self._overrides[key], create=create)
+            nested = self._under_an_override(key, template)
+            if nested is not None:
+                return self._materialize(nested, create=create)
 
         required = set(_PLACEHOLDER.findall(template))
         params = {**self._session_params(required), **params}
@@ -289,6 +302,61 @@ class PathManagerServer:
         root, template = self._rebase(template)
         path = (root / template.format(**params)) if template else root
         return self._materialize(path, create=create)
+
+    def _names_the_bound_session(self, params: Dict[str, str]) -> bool:
+        """Whether this call is about the run that is bound, however it was spelled.
+
+        Nothing passed means the current run. So does passing its own owner and session
+        id, which is what a caller holding a context does — and treating that as "a
+        different session" is how an override stopped answering for the very run that
+        declared it.
+
+        Any other parameter (`module`, `run_id`, a different owner) makes it a question
+        about something else, and overrides stay out of it.
+        """
+        if not params:
+            return True
+        bound = self.session
+        if bound is None:
+            return False
+        owner, session_id = bound
+        known = {"owner": owner, "session_id": session_id}
+        return all(name in known and value == known[name] for name, value in params.items())
+
+    def _under_an_override(self, key: P, template: str) -> Optional[Path]:
+        """The path for a key that lives *inside* an overridden one, or None.
+
+        An override replaces one key. Everything nested under it kept resolving from the
+        table, so overriding `SESSION_WORKSPACE` to a container's mount point moved the
+        workspace and left `workspace/plan.md` and `workspace/notebooks` at the host
+        layout path. Two names for one directory, and whichever a caller happened to use
+        decided whether it worked.
+
+        Cascading here rather than at each nested key, because there is nothing special
+        about those two: the rule is that a declaration about a directory is a declaration
+        about what is in it, and the next key added under an overridden one gets it for
+        free.
+
+        The suffix carries no placeholders in practice — a nested key adds fixed segments
+        to its parent — and one that did would be resolved against the same session
+        parameters, so it is formatted rather than assumed literal.
+        """
+        for overridden, replacement in self._overrides.items():
+            parent = self._layout.get(overridden)
+            if not parent:
+                continue
+            prefix = parent.rstrip("/") + "/"
+            if not template.startswith(prefix):
+                continue
+            suffix = template[len(prefix):]
+            required = set(_PLACEHOLDER.findall(suffix))
+            if required:
+                params = self._session_params(required)
+                if required - params.keys():
+                    return None
+                suffix = suffix.format(**params)
+            return Path(replacement) / suffix
+        return None
 
     def under(self, root: str | Path, key: P, *, create: bool = False, **params: str) -> Path:
         """Resolve a key against a root the caller supplies.

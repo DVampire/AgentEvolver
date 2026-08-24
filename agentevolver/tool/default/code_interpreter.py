@@ -192,8 +192,11 @@ class CodeInterpreterTool(Tool):
         result = await kernel_manager.execute(
             code, key=key, kernel_name=kernel_for(language), language=language,
             # The project's workspace, so the kernel starts where bash starts and
-            # relative paths mean the same thing to both.
-            workspace=getattr(ctx, "workspace_root", None), origin="agent")
+            # relative paths mean the same thing to both. Read from the config rather
+            # than from `ctx`: neither context class declares `workspace_root` and
+            # nothing assigns it, so `getattr(ctx, ...)` was always None and the kernel
+            # fell through to this same value.
+            workspace=config.workspace_root, origin="agent")
         logger.info(f"| {'✅' if result.success else '⚠️'} code_interpreter ran {language} code")
         return Response(
             type=ResponseType.TOOL,

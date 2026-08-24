@@ -24,28 +24,15 @@ from agentevolver.kernel.types import Notebook
 from agentevolver.paths import P, path_manager
 
 
-def _owner(owner: str) -> str:
-    """The owner to resolve against: the caller's, or the bound run's.
-
-    Defaulting to `"local"` was a trap rather than a default. Every caller here happens
-    to pass `session.owner`, so it was never reached — and a new caller that omitted it
-    would have read and written another owner's notebooks with no error at all.
-    """
-    if owner:
-        return owner
-    bound = path_manager.session
-    return bound[0] if bound else "local"
-
-
 def directory(session_id: str, *, owner: str = "") -> "Path":
     """The project's notebook directory, created if this is the first look."""
-    return path_manager.get(P.SESSION_NOTEBOOKS, owner=_owner(owner),
+    return path_manager.get(P.SESSION_NOTEBOOKS, owner=owner,
                             session_id=session_id, create=True)
 
 
 def notebooks(session_id: str, *, owner: str = "") -> List[Notebook]:
     """Every ``.ipynb`` in the project's workspace, newest first."""
-    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=_owner(owner), session_id=session_id)
+    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
     if not workspace.is_dir():
         return []
     found: List[Notebook] = []
@@ -93,7 +80,7 @@ def save_history_as_notebook(session_id: str, name: str, *, owner: str = "") -> 
             "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         },
     }, indent=1), encoding="utf-8")
-    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=_owner(owner), session_id=session_id)
+    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
     return Notebook(path=str(path.relative_to(workspace)), title=path.stem,
                     size_bytes=path.stat().st_size, cell_count=len(cells),
                     modified_at=datetime.now(timezone.utc).isoformat())

@@ -383,17 +383,24 @@ def is_binary_file(path: str) -> bool:
 def _fence(workspace: str) -> str:
     """The workspace this check is against, asking the path manager when told nothing.
 
-    `workspace=""` used to mean *no fence*: `check_file_write` skipped containment
-    entirely, so a caller that forgot the argument got no boundary and no complaint. Every
-    caller in the tree does pass it — from `config.workspace_root` — which is exactly what
-    made the default safe-looking and untested.
+    One resolution order, stated once:
 
-    Failing closed instead. The bound session is the same source `check_session_path`
-    reads, so the two boundaries answer from one place, and an override — the container
-    mount point a run declares — reaches both.
+        the caller's argument  →  the bound run's workspace  →  `config.workspace_root`
 
-    Still "" when nothing is bound: a bare script or a unit test has no run to be outside
-    of, and fencing every path there would break callers that never had a boundary.
+    It used to be nine call sites each passing `config.workspace_root`, and an empty
+    `workspace` meaning *no fence at all* — so a caller that forgot got no boundary and no
+    complaint. Nine copies of one answer, and the copies could be stale: `bind_session`
+    and `override` both move the bound run's workspace and neither touches
+    `config.workspace_root`, so a container run's fence was whichever of the two the
+    caller happened to read.
+
+    The bound run comes first because it is the same source `check_session_path` reads, so
+    the two boundaries answer alike and an override — the container mount a run declares —
+    reaches both. `config.workspace_root` stays as the last resort, for an agent
+    constructed without a bound session, which sets it to its own base_dir.
+
+    Still "" when neither is set: a bare script or a unit test has no run to be outside of,
+    and fencing every path there would break callers that never had a boundary.
     """
     if workspace:
         return workspace
@@ -401,8 +408,18 @@ def _fence(workspace: str) -> str:
         from agentevolver.paths import path_manager
 
         roots = path_manager.session_roots()
-        return str(roots["workspace"]) if roots else ""
+        if roots:
+            return str(roots["workspace"])
     except Exception:                                    # noqa: BLE001 — no session, no fence
+        pass
+    try:
+        # Last, and it is a real case rather than a courtesy: an agent constructed
+        # without a bound session sets `config.workspace_root` to its own base_dir, and
+        # that is then the only statement of where the run may write.
+        from agentevolver.config import config
+
+        return str(getattr(config, "workspace_root", "") or "")
+    except Exception:                                    # noqa: BLE001
         return ""
 
 

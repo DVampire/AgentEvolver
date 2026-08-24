@@ -1014,7 +1014,6 @@ class ToolContextManager(BaseModel):
             result = permission_manager.check(
                 tool_instance.name,
                 request,
-                workspace=(config.workspace_root or ""),
             )
             return None if result.allowed else (
                 f"Permission denied: {result.reason or 'operation is not allowed'}"

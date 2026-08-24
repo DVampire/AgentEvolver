@@ -131,7 +131,7 @@ class BatchCallTool(Tool):
             code,
             bindings,
             timeout=self.timeout,
-            workspace=getattr(ctx, "workspace_root", None) or config.workspace_root,
+            workspace=config.workspace_root,
             max_parallel=self.max_parallel_sub_calls,
         )
 

@@ -80,7 +80,6 @@ class ReadFileTool(Tool):
             result = permission_manager.check(
                 self.name,
                 PermissionRequest(op=Operation.READ, target=path),
-                workspace=(config.workspace_root or ""),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

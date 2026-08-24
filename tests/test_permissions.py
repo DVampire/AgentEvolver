@@ -129,18 +129,52 @@ def test_an_omitted_workspace_falls_back_to_the_bound_session():
         path_manager.unbind_session()
 
 
-def test_no_bound_session_means_no_fence_rather_than_no_writes():
-    """A bare script or a unit test has no run to be outside of.
+def test_with_no_bound_session_the_config_still_fences():
+    """The fallback is `config.workspace_root`, and dropping it would *weaken* the boundary.
 
-    Fencing every path there would break callers that never had a boundary — the same
-    reason `check_session_path` returns None when nothing is bound.
+    Before this, nine call sites each passed `config.workspace_root`, so a run with no
+    bound session — an agent constructed directly, a script — was still fenced by it.
+    Resolving only from the bound session looks tidier and quietly removes that fence,
+    which is the opposite of the point.
+
+    The order is: the caller's argument, then the bound run, then the config. Only when
+    none of the three answers is there no fence, and then there is genuinely nothing to
+    be outside of.
     """
+    from agentevolver.config import config
     from agentevolver.paths import path_manager
     from agentevolver.permission.types import PermissionMode, check_file_write
 
     path_manager.unbind_session()
-    assert check_file_write("/tmp/anywhere.txt", "x",
+    workspace = str(getattr(config, "workspace_root", "") or "")
+    assert workspace, "this test needs a configured workspace to be about anything"
+
+    assert check_file_write(f"{workspace}/inside.txt", "x",
                             PermissionMode.WORKSPACE_WRITE).allowed
+    assert not check_file_write("/etc/hosts", "x",
+                                PermissionMode.WORKSPACE_WRITE).allowed, (
+        "with no session bound the config workspace is the only fence, and it is gone")
+
+
+def test_the_bound_run_outranks_the_config():
+    """They disagree, and the bound run is the one that is current.
+
+    `bind_session` and `override` both move the bound run's workspace and neither touches
+    `config.workspace_root`. A container run overrides its workspace to the mount point;
+    reading the config there gives the host path, which is what made the fence depend on
+    which of the two a caller happened to consult.
+    """
+    from agentevolver.paths import P, path_manager
+    from agentevolver.permission.types import PermissionMode, check_file_write
+
+    path_manager.bind_session("local", "outranks")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        assert check_file_write("/workspace/x.c", "x",
+                                PermissionMode.WORKSPACE_WRITE).allowed, (
+            "the config's stale workspace won over the bound run's")
+    finally:
+        path_manager.unbind_session()
 
 
 def test_a_container_mount_is_fenced_by_both_boundaries():

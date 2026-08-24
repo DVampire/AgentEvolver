@@ -294,18 +294,39 @@ def test_binding_a_different_session_does_not_leave_the_previous_ones_override()
         path_manager.unbind_session()
 
 
-def test_an_override_answers_for_this_run_and_not_for_a_named_one() -> None:
-    """`override` states where *this* run's workspace is, not where that key always leads.
+def test_an_override_answers_for_this_run_however_it_is_named() -> None:
+    """`override` states where *this* run's workspace is, and naming the run is still it.
 
-    ProgramBench needs both in one process: the agent sees `/workspace` (its own view
-    inside the container) while the host side still has to resolve the real directory to
-    mount there. One would have to be wrong if an override answered every call.
+    This asserted the opposite — that passing the bound owner and session id resolved
+    past the override — on the grounds that ProgramBench needs the agent's `/workspace`
+    and the host's real directory in one process. It does not: `bind_task_workspace` is
+    called from `run_inner`, inside the container, and the launcher is a separate process
+    that never overrides anything. The file has exactly one `path_manager.override` call.
+
+    Meanwhile the behaviour it pinned had a cost. Every key nested under the workspace —
+    `plan.md`, `notebooks` — resolves with `owner=`/`session_id=` from callers holding a
+    context, and each of those calls quietly resolved past the mount point to the host
+    layout path. `plan_manager.approve` names the session whose plan it is writing, and
+    that spelling alone put the file where the agent is not permitted to write.
+
+    The escape hatch is not lost, it is named: `under(project_dir(), key, ...)` says
+    "resolve against the layout root" outright, instead of relying on the side effect of
+    passing parameters.
     """
     path_manager.bind_session("o", "run9")
     path_manager.override(P.SESSION_WORKSPACE, "/workspace")
     try:
         assert path_manager.get(P.SESSION_WORKSPACE) == Path("/workspace")
-        host = path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="run9")
+        assert path_manager.get(P.SESSION_WORKSPACE, owner="o",
+                                session_id="run9") == Path("/workspace")
+
+        # A genuinely different run is a different question.
+        other = path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="run10")
+        assert other != Path("/workspace") and other.is_absolute()
+
+        # And the host path for *this* run, asked for as such.
+        host = path_manager.under(path_manager.project_dir(), P.SESSION_WORKSPACE,
+                                  owner="o", session_id="run9")
         assert host != Path("/workspace") and host.is_absolute()
     finally:
         path_manager.unbind_session()

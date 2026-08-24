@@ -109,45 +109,15 @@ AUTO_MODE_NOTICE = (
 )
 
 
-#: The plan's filename inside the workspace. `P.SESSION_PLAN` states the same location
-#: in the layout table, and `test_the_layout_and_the_derived_plan_path_agree` holds the
-#: two together — the table is what a reader looks at, and this is what runs.
-PLAN_FILENAME = "plan.md"
-
-
 def plan_path(session_id: str = "", *, owner: str = ""):
     """Where a run's plan lives. One answer, so agent and reader open the same file.
 
-    Called with nothing, it asks about *this* run and resolves unparameterised — which
-    is what lets an override answer. A run inside a container declares its workspace at
-    the mount point, and `get(key, session_id=...)` is the call that turns such a
-    declaration off, because explicit params mean "tell me about a specific session".
-    That is the shape that cost the sandbox boundary its container mount; the same call
-    here would have read and written the plan at a path the agent cannot use.
-
-    Both arguments stay available for asking about a *different* run — a UI listing
-    another session's plan — and each falls back to the bound session, so passing only
-    one is not a way to accidentally address `local`.
+    Both arguments are for asking about a *different* run — a UI listing another
+    session's plan. Omitted, or naming the bound run, `path_manager` answers about this
+    one, overrides included: whether a call is about the current session is its rule to
+    know, not something each caller works out again.
     """
-    bound_owner, bound_session = path_manager.session or ("", "")
-    asking_about_this_run = (
-        (not owner or owner == bound_owner) and
-        (not session_id or session_id == bound_session)
-    )
-    if asking_about_this_run:
-        # Derived from the workspace root rather than resolved from `P.SESSION_PLAN`, and
-        # that is the point. Both are templates that spell out the same `workspace`
-        # segment, so a run that overrides its workspace — a container declaring its
-        # mount point — moved one and not the other. Composing means the plan follows the
-        # workspace wherever it is, including to a path the agent can actually write.
-        #
-        # `session_roots()` is the same source the sandbox boundary reads, so the file the
-        # agent is told about and the file it is permitted to write are one answer.
-        roots = path_manager.session_roots()
-        if roots:
-            return roots["workspace"] / PLAN_FILENAME
-    return path_manager.get(P.SESSION_WORKSPACE, owner=owner or bound_owner,
-                            session_id=session_id or bound_session) / PLAN_FILENAME
+    return path_manager.get(P.SESSION_PLAN, owner=owner, session_id=session_id)
 
 
 def read_plan(session_id: str = "", *, owner: str = "") -> str:

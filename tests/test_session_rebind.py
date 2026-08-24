@@ -188,3 +188,75 @@ def test_a_container_mount_override_reaches_the_sandbox_boundary():
             "a traversal out of the mount point is still outside it")
     finally:
         path_manager.unbind_session()
+
+
+def test_an_override_moves_what_lives_inside_it():
+    """A declaration about a directory is a declaration about what is in it.
+
+    `override` replaced one key. Everything nested under it kept resolving from the
+    table, so a run that declared its workspace at a container mount point moved the
+    workspace and left `workspace/plan.md` and `workspace/notebooks` at the host layout
+    path — two names for one directory, and whichever a caller happened to use decided
+    whether the agent could write there.
+
+    Cascading in `get` rather than deriving at each nested key, because there is nothing
+    special about those two: the next key added under an overridden one gets it without
+    anyone remembering. Which is the failure this replaces — the plan was fixed by hand
+    and `session_notebooks`, identical in shape, was not.
+    """
+    from agentevolver.paths import P
+
+    path_manager.bind_session("local", "cascade")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+
+        assert path_manager.get(P.SESSION_WORKSPACE) == Path("/workspace")
+        assert path_manager.get(P.SESSION_PLAN) == Path("/workspace/plan.md")
+        assert path_manager.get(P.SESSION_NOTEBOOKS) == Path("/workspace/notebooks")
+
+        # Only what is inside. A sibling of the overridden key is a different directory.
+        log = path_manager.get(P.SESSION_LOG)
+        assert not str(log).startswith("/workspace"), (
+            f"the cascade escaped the directory it was declared about: {log}")
+    finally:
+        path_manager.unbind_session()
+
+
+def test_asking_about_another_session_is_not_answered_by_this_ones_override():
+    """The cascade inherits the rule it cascades: explicit params mean a specific run."""
+    from agentevolver.paths import P
+
+    path_manager.bind_session("local", "cascade_other")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        other = path_manager.get(P.SESSION_PLAN, owner="local", session_id="someone_else")
+        assert not str(other).startswith("/workspace"), (
+            f"another run's plan was answered from this run's mount point: {other}")
+    finally:
+        path_manager.unbind_session()
+
+
+def test_naming_the_bound_run_is_the_same_question_as_naming_nothing():
+    """Whether a call is about the current session is `path_manager`'s rule to know.
+
+    It used to be the caller's. `plan_path` worked it out — bound owner, bound session,
+    compare — and `kernel/notebooks.py`, identical in shape, did not and so kept the
+    trap. One rule in one place means a module gets the behaviour by resolving a key,
+    not by remembering to reimplement the comparison.
+    """
+    from agentevolver.paths import P
+
+    path_manager.bind_session("local", "same_question")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        bare = path_manager.get(P.SESSION_PLAN)
+        named = path_manager.get(P.SESSION_PLAN, owner="local", session_id="same_question")
+        assert bare == named == Path("/workspace/plan.md")
+        # `notebooks` gets this without a line of its own.
+        assert path_manager.get(P.SESSION_NOTEBOOKS, owner="local",
+                                session_id="same_question") == Path("/workspace/notebooks")
+        # A parameter the bound session does not know keeps it a different question.
+        module_path = path_manager.get(P.LOG_MODULE, module="trace")
+        assert not str(module_path).startswith("/workspace")
+    finally:
+        path_manager.unbind_session()

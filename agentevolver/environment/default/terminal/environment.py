@@ -106,7 +106,6 @@ class TerminalEnvironment(Environment):
             return None
         allowed = permission_manager.check(
             self.name, PermissionRequest(op=Operation.BASH, target=command),
-            workspace=(config.workspace_root or ""),
         )
         return None if allowed.allowed else _fail(f"Permission denied: {allowed.reason}")
 
