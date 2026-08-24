@@ -7,6 +7,13 @@ across the codebase.
 
 Allocations are persisted to ``output/.runtime/ports.json`` (``P.PORTS``),
 so every process and every run sees the same picture of what is bound where.
+
+"Every process" is the load-bearing claim, and it was false. Each `PortManager`
+loaded the file once into an in-memory dict and mutated that; a second framework
+instance — concurrent ProgramBench runs, a gateway beside a script — never saw the
+first's writes, and whichever saved last overwrote the other's registrations. Reads
+returned whatever that stale cache held. Every operation now reads the file fresh and
+writes it back under a cross-process lock, so the picture is genuinely shared.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ from typing import Dict, Optional
 
 from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
+from agentevolver.utils.file_utils import atomic_json_update
 from agentevolver.utils.path_utils import home_dir
 
 # --- Well-known framework HOST service ports (single source of truth) --------
@@ -59,32 +67,25 @@ class PortManager:
     """Reserve, record, and look up host ports, persisted to ``ports.json``."""
 
     def __init__(self) -> None:
+        # An in-process lock still, so coroutines/threads in *this* process do not race
+        # each other into the cross-process one needlessly. Cross-process exclusion is
+        # `atomic_json_update`'s job; this just keeps one process orderly.
         self._lock = threading.RLock()
         self._path: Optional[str] = None
-        self._registry: Dict[str, dict] = {}
 
-    def _ensure_loaded(self) -> None:
-        if self._path is not None:
-            return
-        self._path = str(path_manager.get(P.PORTS, create=True))
-        try:
-            if os.path.exists(self._path):
-                with open(self._path, encoding="utf-8") as f:
-                    self._registry = json.load(f)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"| ⚠️ Could not load port registry: {e}")
-            self._registry = {}
+    def _registry_path(self) -> str:
+        if self._path is None:
+            self._path = str(path_manager.get(P.PORTS, create=True))
+        return self._path
 
-    def _save(self) -> None:
-        if not self._path:
-            return
+    def _read(self) -> Dict[str, dict]:
+        """The registry as it is on disk right now. No cache — a second process may have
+        written since the last call, and returning a stale port is how two runs collide."""
         try:
-            tmp = self._path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self._registry, f, indent=2)
-            os.replace(tmp, self._path)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"| ⚠️ Could not save port registry: {e}")
+            data = json.loads(path_manager.get(P.PORTS, create=True).read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
 
     def register(
         self,
@@ -107,55 +108,69 @@ class PortManager:
           OS-assigned free port. Idempotent per ``name`` (reused across calls and
           runs) unless ``override`` is set.
         - ``type`` labels the entry (``host`` | ``env`` | …) for readability.
+
+        The whole decision — is ``name`` already registered, is ``preferred`` free,
+        what to store — happens inside one cross-process transaction, so two instances
+        allocating at once cannot both pick the same OS-free port between the check and
+        the write.
         """
-        with self._lock:
-            self._ensure_loaded()
-            existing = self._registry.get(name)
-            if port is None:
+        chosen: dict = {}
+
+        def _mutate(registry):
+            registry = registry if isinstance(registry, dict) else {}
+            existing = registry.get(name)
+            actual = port
+            if actual is None:
                 if existing and not override and isinstance(existing.get("port"), int):
-                    return existing
-                port = preferred if (preferred and is_free(preferred)) else os_free_port()
+                    chosen.update(existing)
+                    return registry
+                actual = preferred if (preferred and is_free(preferred)) else os_free_port()
             record = {
                 "name": name,
-                "port": port,
-                "preferred": preferred if preferred is not None else port,
+                "port": actual,
+                "preferred": preferred if preferred is not None else actual,
                 "type": type,
                 "pid": os.getpid(),
                 "updated_at": _now(),
             }
-            self._registry[name] = record
-            self._save()
-            logger.info(f"| 🔌 Port registered: {name} -> {port} ({type})")
-            return record
+            registry[name] = record
+            chosen.update(record)
+            return registry
+
+        with self._lock:
+            atomic_json_update(self._registry_path(), _mutate, default={})
+        logger.info(f"| 🔌 Port registered: {name} -> {chosen.get('port')} ({type})")
+        return chosen
 
     def unregister(self, name: str) -> bool:
         """Drop ``name``'s registration (its port becomes reusable). Returns whether it existed."""
+        existed = {"v": False}
+
+        def _mutate(registry):
+            registry = registry if isinstance(registry, dict) else {}
+            existed["v"] = registry.pop(name, None) is not None
+            return registry
+
         with self._lock:
-            self._ensure_loaded()
-            if self._registry.pop(name, None) is not None:
-                self._save()
-                return True
-            return False
+            atomic_json_update(self._registry_path(), _mutate, default={})
+        return existed["v"]
 
     def get(self, name: str) -> Optional[int]:
         """Return the port registered under ``name``, or None."""
         with self._lock:
-            self._ensure_loaded()
-            rec = self._registry.get(name)
+            rec = self._read().get(name)
             return rec.get("port") if rec else None
 
     def get_info(self, name: str) -> Optional[dict]:
         """Return the full registration record for ``name``, or None."""
         with self._lock:
-            self._ensure_loaded()
-            rec = self._registry.get(name)
+            rec = self._read().get(name)
             return dict(rec) if rec else None
 
     def list(self) -> Dict[str, dict]:
         """Return the whole registry (name -> record)."""
         with self._lock:
-            self._ensure_loaded()
-            return {name: dict(rec) for name, rec in self._registry.items()}
+            return {name: dict(rec) for name, rec in self._read().items()}
 
 
 # Global registry — import this everywhere.

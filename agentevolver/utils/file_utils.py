@@ -1,7 +1,15 @@
 import asyncio
+import contextlib
+import json
 import os
-from typing import Dict, Any, Union
+from pathlib import Path
+from typing import Any, Callable, Dict, Union
 from datetime import datetime
+
+try:
+    import fcntl
+except ImportError:                                          # noqa: F401 — non-POSIX
+    fcntl = None
 
 from agentevolver.utils.singleton import Singleton
 
@@ -64,3 +72,59 @@ class _FileLockContext:
         self._lock.release()
         
 file_lock = FileLock()
+
+
+@contextlib.contextmanager
+def _cross_process_lock(path: Path):
+    """Hold an exclusive lock on a sidecar `.lock` file for the length of the block.
+
+    `FileLock` above is an `asyncio.Lock`: it serialises coroutines inside one process
+    and means nothing to a second process. Several process-global registries —
+    `ports.json`, the sandbox crash ledger — are read-modify-written, and the framework
+    has always assumed one instance per tree root because of it. Running ProgramBench
+    instances concurrently breaks that assumption, and an unlocked read-modify-write
+    there does not merely lose an update: the writers share a fixed temp filename, so an
+    `os.replace` can publish another writer's half-written file.
+
+    The lock is a separate `<path>.lock` rather than the file itself, so the exclusive
+    hold is independent of the atomic replace that swaps the real file underneath it.
+    Without `fcntl` (non-POSIX) it is a no-op — the single-instance assumption then holds
+    as it always did, rather than the process failing.
+    """
+    if fcntl is None:
+        yield
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    handle = open(lock_path, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        with contextlib.suppress(Exception):
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
+
+
+def atomic_json_update(path: Union[str, Path], mutate: Callable[[Any], Any], *,
+                       default: Any = None) -> Any:
+    """Read a JSON file, transform it, and write it back — atomically, across processes.
+
+    `mutate` receives the current value (or `default` when the file is absent or
+    unreadable) and returns the value to store. The whole read-modify-write is under one
+    cross-process lock, so two concurrent callers serialise instead of clobbering, and
+    the write is a temp-file replace named by pid so their temp files never collide.
+
+    Returns whatever `mutate` returned, so a caller can act on the value it just stored.
+    """
+    path = Path(path)
+    with _cross_process_lock(path):
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            current = default
+        updated = mutate(current)
+        tmp = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(updated, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+        return updated

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import List
 
 from agentevolver.paths import P, path_manager
+from agentevolver.utils.file_utils import atomic_json_update
 from agentevolver.logger import logger
 
 
@@ -37,30 +38,38 @@ class Ledger:
         from agentevolver.utils.path_utils import home_dir
         return path_manager.get(P.LEDGER, create=True)
 
+    @staticmethod
+    def _clean(data) -> List[str]:
+        return [str(item) for item in data] if isinstance(data, list) else []
+
     def _load(self) -> List[str]:
         try:
-            data = json.loads(self._path().read_text(encoding="utf-8"))
-            return [str(item) for item in data] if isinstance(data, list) else []
+            return self._clean(json.loads(self._path().read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return []
 
-    def _write(self, ids: List[str]) -> None:
-        path = self._path()
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(sorted(set(ids))), encoding="utf-8")
-        os.replace(temporary, path)
-
     def record(self, sandbox_id: str) -> None:
-        """Note a live sandbox container (call right after successful create)."""
+        """Note a live sandbox container (call right after successful create).
+
+        Read-modify-write under a cross-process lock: a second framework instance —
+        concurrent ProgramBench runs are exactly this — must not read the same ledger,
+        add its own id, and write back over the first instance's, which would leak a
+        container the reaper can no longer see.
+        """
         if not sandbox_id:
             return
-        self._write([*self._load(), str(sandbox_id)])
+        atomic_json_update(self._path(),
+                           lambda ids: sorted(set([*self._clean(ids), str(sandbox_id)])),
+                           default=[])
 
     def forget(self, sandbox_id: str) -> None:
         """Drop a sandbox from the ledger (call after clean destroy)."""
         if not sandbox_id:
             return
-        self._write([item for item in self._load() if item != str(sandbox_id)])
+        atomic_json_update(
+            self._path(),
+            lambda ids: sorted(i for i in self._clean(ids) if i != str(sandbox_id)),
+            default=[])
 
     def stale_ids(self) -> List[str]:
         return self._load()
@@ -109,7 +118,17 @@ class Ledger:
             except Exception as exc:  # noqa: BLE001 — reaping is best-effort by design
                 logger.warning(f"| ⚠️ Sandbox ledger: could not remove {name}: {exc}")
                 remaining.append(sandbox_id)
-        self._write(remaining)
+        # Write back as a set difference, not as an overwrite. Reaping runs on boot and
+        # takes a while (it awaits a container removal per id); a concurrent instance may
+        # have `record`ed a fresh id in the meantime, and replacing the file with
+        # `remaining` would erase that live container from the ledger and leak it. So
+        # remove only the ids this reap actually cleared, against whatever the file holds
+        # now.
+        cleared = {i for i in ids if i not in remaining}
+        atomic_json_update(
+            self._path(),
+            lambda current: sorted(i for i in self._clean(current) if i not in cleared),
+            default=[])
         if reaped:
             logger.warning(f"| 🧹 Reaped {len(reaped)} stale sandbox container(s) from a previous run: {', '.join(reaped)}")
         return reaped
