@@ -88,12 +88,20 @@ running** — a closure over this turn's routing table, its session/task/step co
 its trace lineage, dispatched through the agent's own `_run_one` so the plan gate, the
 permission check and the hook pairs all apply. A program does not get around anything.
 
-That is why the program runs in a fresh process. The interpreter's kernel is held open
-across turns and across runs, so handing it that dispatch would put this turn's authority
-inside something that outlives the turn: a variable left over from an earlier call could
-hold a stale dispatch, and code could stash one in a global and reuse it next turn against
-a routing table it is no longer entitled to. Persistent state and turn-bound authority are
-in conflict, so the two are separate tools rather than one with a flag.
+That is why the program runs in a fresh process, and why the interpreter's code calls no
+tools at all. Its kernel is not the agent's: there is one per project, and
+`code_interpreter_tool`, the Science view's REPL and **JupyterLab** are three entrances to
+the same one (`agentevolver/kernel/server.py`). Giving it a dispatch would put the agent's
+turn-bound authority behind a web UI a person can type into — `await
+tools.write_file_tool(...)` from a notebook cell, under this turn's routing table, with
+none of the plan gate, permission mode or hooks that govern the agent's own actions. The
+kernel is keyed by project and outlives every conversation, so that entrance would stay
+open.
+
+Even setting the person aside, persistent state and turn-bound authority are in conflict: a
+variable left from an earlier call could hold a stale dispatch, and code could stash one in
+a global to reuse next turn against a routing table it is no longer entitled to. Two tools,
+not one with a flag.
 
 Their return contracts are opposite for the same reason. The interpreter returns everything
 the code produced, figures included; the program returns only what it printed or returned —
