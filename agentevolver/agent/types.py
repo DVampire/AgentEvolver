@@ -626,16 +626,31 @@ class Agent(BaseModel):
         action_errors = kwargs.get("action_errors") or []
         errors_body = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
 
-        # Running todo — injected every step (like memory) when the agent uses todo_tool,
-        # so its plan/checklist is always visible without spending a `show` action.
-        todo_body = ""
+        # The plan, read off disk every step. A file rather than tool-held state: the
+        # agent revises it with the file tools it already has, the person watching opens
+        # the same path, and it survives the run. Read rather than cached because the
+        # agent may have just rewritten it — a cached copy would show the previous plan
+        # on the step that acted on the new one.
+        plan_body = ""
         if ctx is not None:
             try:
-                todo_info = await tool_manager.get_info("todo_tool")
-                if todo_info and todo_info.instance is not None:
-                    todo_body = await todo_info.instance.content(ctx.id)
-            except Exception:
-                todo_body = ""
+                from agentevolver.plan import (
+                    AUTO_MODE_NOTICE,
+                    PlanMode,
+                    plan_manager,
+                    read_plan,
+                )
+
+                session_id = str(getattr(ctx, "id", "") or "")
+                plan_body = read_plan(session_id)
+                if not plan_body and plan_manager.mode(session_id) is PlanMode.AUTO:
+                    # An empty slot would render as no slot at all — `{% if plan %}` —
+                    # so in `auto` the agent would never be told the document is its to
+                    # write. The obligation goes where the plan goes: the one place it
+                    # already reads for the plan, on the step it would have to act on it.
+                    plan_body = f"(no plan yet)\n\n{AUTO_MODE_NOTICE}"
+            except Exception as error:                              # noqa: BLE001
+                logger.warning(f"| ⚠️ [{self.name}] could not read plan.md: {error}")
 
         return {
             "step_info": step_info_body,
@@ -643,7 +658,7 @@ class Agent(BaseModel):
             "constraint_text": constraint_text,
             "workspace": self._workspace_snapshot(ctx),
             "errors": errors_body,
-            "todo": todo_body,
+            "plan": plan_body,
         }
 
     def _capability_allowlist(self, capability_type: str, ctx: "AgentContext"):
@@ -1121,7 +1136,7 @@ class Agent(BaseModel):
         rather than being rewritten, so the prompt prefix can be cached.
 
         The rendered turn carries more than history, though: the budget, the step
-        guidance, the todo list, the workspace snapshot, and the previous step's errors —
+        guidance, the plan, the workspace snapshot, and the previous step's errors —
         which is where the repeat reminder rides. Replacing it wholesale silently turned
         those off, so they are re-attached as a trailing turn instead. That is also where
         they belong for caching: they change every step, and volatile content after the
@@ -1282,7 +1297,7 @@ class Agent(BaseModel):
           cache can keep them.
         - `task` and `memory` are already the projection — the opening turn and the
           conversation itself — so repeating them would state each twice.
-        - What is left (`agent-context`: budget, step guidance, todo, workspace, errors)
+        - What is left (`agent-context`: budget, step guidance, plan, workspace, errors)
           genuinely changes every step, and belongs after the last stable byte.
 
         Getting this split wrong is expensive and quiet. Sending the catalogs *after* the
@@ -2111,8 +2126,15 @@ class Agent(BaseModel):
             from agentevolver.plan import PLAN_MODE_NOTICE, plan_manager
 
             session_id = str(getattr(run.ctx, "id", "") or "")
-            if session_id and plan_manager.active(session_id):
+            if not session_id:
+                return
+            if plan_manager.active(session_id):
                 run.action_errors = [*(run.action_errors or []), PLAN_MODE_NOTICE]
+            # `auto` says nothing here. Its notice is a standing obligation, and
+            # `<errors>` means "the previous step failed" — the agent has learned that
+            # block as a signal something went wrong, so an instruction placed there is
+            # read against its own grain. It rides in the `<plan>` slot instead, which is
+            # where the agent already looks for the plan.
         except Exception as error:                                  # noqa: BLE001
             logger.warning(f"| ⚠️ [{self.name}] could not read plan mode: {error}")
 

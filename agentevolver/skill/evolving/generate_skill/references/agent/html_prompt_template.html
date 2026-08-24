@@ -48,7 +48,7 @@ You are [role]. You receive [input], then you [core behavior] using tools/skills
   - constraints — the live resource budget (used / limit / remaining) and urgency tier (see Constraint Rules). `[No active budget.]` when none is set.
   - step-info — the current step number, the max steps, and the current date/time.
   - memory — working memory and recent steps (see Context Rules).
-  - todo — your running plan/checklist (only if this agent uses `todo_tool`).
+  - plan — `plan.md`, which you write and revise with the file tools.
   - workspace — a live snapshot of your working directory's files.
   - errors — errors from the last step, shown only when the previous step failed.
 - tool_context: available tools with their names and short descriptions. Use only these. Call `inspect_tool` (capability_type="tool") for a tool's worked examples when unsure.
@@ -120,10 +120,10 @@ To act, CALL a tool. Your capabilities — tools, skills, connectors, and enviro
 <memory>
 {{ memory_context }}
 </memory>
-{% if todo %}
-<todo>
-{{ todo }}
-</todo>
+{% if plan %}
+<plan>
+{{ plan }}
+</plan>
 {% endif %}
 <workspace>
 {{ workspace }}

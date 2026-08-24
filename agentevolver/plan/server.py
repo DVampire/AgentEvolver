@@ -21,7 +21,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from agentevolver.capability import MOUNTED_TYPES, mounted_type as capability_type_entry
 from agentevolver.logger import logger
-from agentevolver.plan.types import PlanState, _now
+from agentevolver.paths import P, path_manager
+from agentevolver.plan.types import PlanMode, PlanState, _now
 from agentevolver.utils import Singleton
 
 #: What the model is told when the gate turns an action away. Carries the way out,
@@ -96,6 +97,50 @@ async def declaration_of(capability_type: str, name: str) -> Optional[Dict[str, 
     }
 
 
+#: What the agent is told in `auto`. Not a gate — a standing instruction, repeated
+#: every step for the same reason `PLAN_MODE_NOTICE` is: an obligation that applies to
+#: every action has to be legible at the moment of every action.
+AUTO_MODE_NOTICE = (
+    "Keep `plan.md` current. For anything that is more than one obvious step, write "
+    "the plan there before you start — the goal, the steps, and anything you had to "
+    "guess — and revise it as what you learn changes it. It is rendered back to you "
+    "every step and the person watching reads the same file, so it is how the two of "
+    "you stay agreed on where this is going. A single-step task does not need one."
+)
+
+
+def plan_path(session_id: str, *, owner: str = "local"):
+    """Where this run's plan lives. One answer, so agent and reader open the same file."""
+    return path_manager.get(P.SESSION_PLAN, owner=owner, session_id=session_id)
+
+
+def read_plan(session_id: str, *, owner: str = "local") -> str:
+    """The plan as it stands, or empty. Missing is the ordinary case, not an error."""
+    try:
+        path = plan_path(session_id, owner=owner)
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+    except OSError as error:                                          # noqa: BLE001
+        logger.warning(f"| ⚠️ Could not read plan.md for {session_id}: {error}")
+        return ""
+
+
+def write_plan(session_id: str, text: str, *, owner: str = "local") -> bool:
+    """Put a plan on disk. False if it could not be written.
+
+    Returns rather than raises because every caller is a step that has already
+    succeeded at the thing that mattered — a plan was approved, or the agent revised
+    it — and failing that step over a filesystem error would discard the approval.
+    """
+    try:
+        path = plan_path(session_id, owner=owner)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return True
+    except OSError as error:                                          # noqa: BLE001
+        logger.warning(f"| ⚠️ Could not write plan.md for {session_id}: {error}")
+        return False
+
+
 class PlanManagerServer(metaclass=Singleton):
     """Holds which runs are in plan mode, and what was approved to leave it."""
 
@@ -152,7 +197,31 @@ class PlanManagerServer(metaclass=Singleton):
         return self._states.get(session_id) or PlanState(session_id=session_id)
 
     def active(self, session_id: str) -> bool:
+        """Whether the gate is shut. Only ever true under `PlanMode.PLAN`."""
         return self.state(session_id).active
+
+    def mode(self, session_id: str) -> PlanMode:
+        """Which stance this run is under. `AUTO` for a run nobody has set."""
+        return self.state(session_id).mode
+
+    def set_mode(self, session_id: str, mode: PlanMode) -> PlanState:
+        """Move a run between stances.
+
+        `PLAN` shuts the gate through `enter`, so that transition has one implementation
+        rather than two that can drift. `OFF` and `AUTO` both open it: leaving plan mode
+        by changing the mode is not an approval, and `approved_plan` is cleared so
+        nothing downstream can read a mode change as consent.
+        """
+        if mode is PlanMode.PLAN:
+            return self.enter(session_id)
+        state = self.state(session_id)
+        state.mode = mode
+        state.active = False
+        state.approved_plan = ""
+        self._states[session_id] = state
+        logger.info(f"| 📋 Plan mode for {session_id}: {mode.value}")
+        self._announce(state)
+        return state
 
     def enter(self, session_id: str) -> PlanState:
         """Close the gate on a run.
@@ -161,7 +230,8 @@ class PlanManagerServer(metaclass=Singleton):
         they want to approve the *next* thing, and carrying the last plan forward
         would let a second round of work inherit consent given for the first.
         """
-        state = PlanState(session_id=session_id, active=True, entered_at=_now())
+        state = PlanState(session_id=session_id, mode=PlanMode.PLAN,
+                          active=True, entered_at=_now())
         self._states[session_id] = state
         logger.info(f"| 📋 Plan mode on for {session_id}")
         self._announce(state)
@@ -174,6 +244,11 @@ class PlanManagerServer(metaclass=Singleton):
         state.approved_plan = plan
         state.approved_at = _now()
         self._states[session_id] = state
+        # To disk as well as to the field. Under `PLAN` the gate refuses
+        # `write_file_tool`, so the agent cannot put its own plan on disk — the approval
+        # is the only moment it can happen, and a plan the person approved and then
+        # could not re-read is a review that left no record.
+        write_plan(session_id, plan)
         logger.info(f"| 📋 Plan approved for {session_id} ({len(plan)} chars)")
         self._announce(state)
         return state
@@ -183,8 +258,13 @@ class PlanManagerServer(metaclass=Singleton):
 
         Distinct from :meth:`approve` because ``approved_plan`` stays empty: nothing
         downstream should be able to read a cancelled plan mode as an agreed plan.
+
+        Lands in `AUTO` rather than `OFF`. Calling off a review is a person saying they
+        do not need to approve *this*, which is not the same as saying they want no plan
+        at all — and `AUTO` is what the run would have been in had nobody touched it.
         """
         state = self.state(session_id)
+        state.mode = PlanMode.AUTO
         state.active = False
         self._states[session_id] = state
         logger.info(f"| 📋 Plan mode off for {session_id}")
@@ -198,7 +278,11 @@ class PlanManagerServer(metaclass=Singleton):
 plan_manager = PlanManagerServer()
 
 __all__ = [
+    "AUTO_MODE_NOTICE",
     "PlanManagerServer",
+    "plan_path",
+    "read_plan",
+    "write_plan",
     "plan_manager",
     "action_is_allowed",
     "declaration_of",

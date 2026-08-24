@@ -198,7 +198,6 @@ class _SessionState:
         self.compaction: Optional[Dict[str, Any]] = None
         self._lock = asyncio.Lock()        # guards recent during compaction
         self._write_lock = asyncio.Lock()  # serialises file writes
-        self._todos_lock = asyncio.Lock()  # serialises _apply_todos
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +212,6 @@ class TieredMemory(Memory):
     base_dir: str = Field(default="")
     model_name: str = Field(default="gpt-4.1")
     compact_hook: str = Field(default="compact", description="Hook name used to summarise overflow.")
-    max_todo_length: int = Field(default=80)
 
     recent_max: int = Field(default=30, description="Compact when recent_history exceeds this.")
     recent_fetch: int = Field(default=10, description="Recent records injected by get().")
@@ -381,9 +379,6 @@ class TieredMemory(Memory):
                 changed = True
 
         # ── Explicit snapshots (legacy / external override) ──
-        if "todos" in md:
-            _detached(self._apply_todos(state, md["todos"]), "todo update")
-            changed = True
         if "flow_steps" in md:
             state.flow_steps = [
                 FlowStep(step=s.get("step", i + 1), label=s.get("label", "")[:_FLOW_LABEL_MAX],
@@ -404,36 +399,6 @@ class TieredMemory(Memory):
             changed = True
 
         return changed
-
-    async def _apply_todos(self, state: _SessionState, raw_todos: List[Dict[str, Any]]) -> None:
-        """Replace todos from an explicit snapshot, summarising long descriptions."""
-        async with state._todos_lock:
-            descs = await asyncio.gather(
-                *[self._maybe_summarize(t.get("description", "")) for t in raw_todos],
-                return_exceptions=True,
-            )
-            state.todos = [
-                TodoEntry(id=t.get("id", ""),
-                          description=d if isinstance(d, str) else t.get("description", ""),
-                          agent_name=t.get("agent_name", ""), status=t.get("status", "pending"))
-                for t, d in zip(raw_todos, descs)
-            ]
-            await self._persist(state)
-
-    async def _maybe_summarize(self, description: str) -> str:
-        if len(description) <= self.max_todo_length:
-            return description
-        try:
-            response = await model_manager(name=self.model_name, input={"messages": [
-                SystemMessage(content="You are a concise summariser."),
-                HumanMessage(content=(
-                    f"Summarise this task description in at most {self.max_todo_length} characters. "
-                    f"Return ONLY the summary, no extra text.\n\n{description}")),
-            ]})
-            return response.message.strip()[: self.max_todo_length]
-        except Exception as e:
-            logger.warning(f"| ⚠️ {self.name}: todo summarisation failed ({e}), truncating")
-            return description[: self.max_todo_length]
 
     # ------------------------------------------------------------------
     # recent → working compaction (via the compact hook)

@@ -69,12 +69,63 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--plan-mode",
+        choices=["off", "auto", "plan"],
+        default="auto",
+        help=(
+            "How much planning this run is held to. `auto` (the default) leaves it to "
+            "the agent: it keeps plan.md current for anything past one obvious step, and "
+            "nothing is gated. `plan` refuses every action that changes anything until "
+            "you approve a plan through `exit_plan_mode` — reading and reasoning are "
+            "unaffected. `off` asks for nothing. Before this flag a script run could "
+            "only reach one of the three: `plan.set` is a gateway command, so plan mode "
+            "was unreachable outside the UI."
+        ),
+    )
+    parser.add_argument(
         "--cfg-options",
         nargs="+",
         action=DictAction,
         help="Override config options in key=value format",
     )
     return parser.parse_args()
+
+
+async def answer_from_the_terminal(session_id: str, stop: asyncio.Event) -> None:
+    """Answer the agent's questions from this terminal, while a script run has nobody else.
+
+    `ask_user_question` and `exit_plan_mode` suspend on a rendezvous the gateway
+    normally resolves from the UI. A script run has no UI, so before this the agent put
+    its plan up for review and waited out `DEFAULT_QUESTION_TIMEOUT_S` — an hour of
+    silence, then a timeout, then the gate still shut. Nobody was listening; the run
+    just took an hour to find out.
+
+    A person running this command *is* here, so ask them. Runs until the task ends
+    rather than once, because a run may ask more than once — a declined plan is
+    followed by another.
+    """
+    from agentevolver.conversation.question import question_manager
+    from agentevolver.conversation.types import UserAnswer
+
+    while not stop.is_set():
+        for record in question_manager.pending(session_id):
+            for question in record.questions:
+                print(f"\n{'=' * 70}\n{question.header or 'Question'}: {question.question}")
+                if question.detail:
+                    print(f"\n{question.detail}")
+                labels = [option.label for option in question.options]
+                for index, option in enumerate(question.options, 1):
+                    suffix = f" — {option.description}" if option.description else ""
+                    print(f"  {index}. {option.label}{suffix}")
+                # Read in a thread: `input()` would block the loop the agent runs on,
+                # so the answer would arrive only after everything else had finished.
+                raw = (await asyncio.to_thread(input, "\nAnswer (number, or free text): ")).strip()
+                if raw.isdigit() and 1 <= int(raw) <= len(labels):
+                    answer = UserAnswer(id=question.id, selected=[labels[int(raw) - 1]])
+                else:
+                    answer = UserAnswer(id=question.id, custom=raw)
+                question_manager.answer(record.id, [answer])
+        await asyncio.sleep(0.5)
 
 
 async def run_agent(record: TaskRecord, ctx: SessionContext):
@@ -200,6 +251,22 @@ async def main():
     )
     logger.info(f"| ✅ Session id: {session_id}, Task id: {task_id}")
 
+    # After submit, so the stance is set before the first turn runs. Setting it earlier
+    # would work too; setting it later is a race the agent wins by acting first.
+    from agentevolver.plan import PlanMode, plan_manager
+    plan_manager.set_mode(session_id, PlanMode(args.plan_mode))
+    if args.plan_mode == "plan":
+        logger.info(f"| 📋 Plan mode: plan. Nothing with effects runs until a plan is "
+                    f"approved — answer the review in this terminal.")
+    else:
+        logger.info(f"| 📋 Plan mode: {args.plan_mode}")
+
+    # Answering runs beside the task, not after it: the agent suspends mid-run waiting
+    # for the reply, so a loop that started once the task finished would never start.
+    answering_stop = asyncio.Event()
+    answering = asyncio.create_task(
+        answer_from_the_terminal(session_id, answering_stop), name="terminal-answers")
+
     # --- Wait for completion ---
     while True:
         record = await task_manager.get(task_id)
@@ -208,6 +275,9 @@ async def main():
         ):
             break
         await asyncio.sleep(1)
+
+    answering_stop.set()
+    answering.cancel()
 
     record = await task_manager.get(task_id)
     if record.task.status == TaskStatus.DONE:

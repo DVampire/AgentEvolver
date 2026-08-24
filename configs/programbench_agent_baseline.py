@@ -85,30 +85,17 @@ agent_names = [
 # were excluded while that was not true — a write would have landed on the host
 # and gone missing from extract_submission()'s tar of the container.
 tool_names = [
-    # These run wherever the agent process runs. Nothing here reads a sandbox handle
-    # or routes its IO into a container — the isolation comes from the agent being
-    # started *inside* the task container, not from the tools knowing about one.
+    # Read, write, look around, run something.
     "bash_tool",
-    "batch_call_tool",
-    "ask_user_question",
-    "exit_plan_mode",
-    # background work — start something long with bash_tool(run_in_background),
-    # then keep working and collect it instead of spending a step waiting
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
     "list_dir_tool",
-    "git_tool",
-    "grep_search_tool",
-    "glob_search_tool",
-    # control plane — no filesystem of their own
-    "done_tool",
     "escalate_tool",
     "reply_tool",
     "report_tool",
-    "send_message_tool",
-    "todo_tool",
-    "code_interpreter_tool",
+    "done_tool",
+    "code_interpreter_tool"
 ]
 
 # Verification methodology, present in both arms.
@@ -117,13 +104,16 @@ skill_names = [
 
 connector_names = []
 env_names = [
-    # Both were replacements for tools this config already had: the six terminal
-    # tools, and the three job tools. As environments they also put what each
-    # open terminal shows, and what is still running, in front of the agent every
-    # step rather than only when it asks.
     "terminal",
     "job",
 ]
+
+# Absent means *all*, not none: `plugin_manager.initialize(None)` builds every
+# registered plugin, and `agentevolver/plugins/` is 517 files. Stating the empty list
+# is what actually turns them off.
+plugin_names = []
+connector_names = []
+workflow_names = []
 
 #-----------------SANDBOX EGRESS-----------------
 # The benchmark's anti-cheat is that the agent's shell cannot reach the internet: it must

@@ -61,16 +61,21 @@ def test_argument_order_is_not_a_difference():
 def test_bookkeeping_between_repeats_does_not_launder_the_loop():
     """This is what makes the exclusion list worth having.
 
-    A loop with `todo_tool` interleaved is still a loop; if the bookkeeping call reset
+    A loop with `inspect_tool` interleaved is still a loop; if the bookkeeping call reset
     the chain, an agent could repeat forever and never be told.
+
+    Was written against `todo_tool`, which is gone — the running plan is `plan.md` now,
+    kept with the ordinary file tools. Those are deliberately *not* transparent: editing
+    a file is work, and a run that alternates edit-and-repeat is not looping.
     """
     chain = _run([
         [_action("grep_search_tool", pattern="x")],
-        [_action("todo_tool", items=[])],
+        [_action("inspect_tool", capability_type="tool", target="bash_tool")],
         [_action("grep_search_tool", pattern="x")],
     ])
     assert chain["count"] == 2
-    assert "todo_tool" in TRANSPARENT
+    assert "inspect_tool" in TRANSPARENT
+    assert "write_file_tool" not in TRANSPARENT and "edit_file_tool" not in TRANSPARENT
 
 
 def test_a_multi_call_batch_repeats_like_any_other():

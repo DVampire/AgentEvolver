@@ -47,7 +47,7 @@ _CREATE_GUIDANCE = """
 Write down the long-running objective a person actually asked for, so it survives this
 conversation and any restart. Use it when someone states something the session is *for* —
 not for a single request you can finish now, and not for your own plan of work (that is
-todo_tool).
+plan.md).
 
 - Takes a direct human request. Working autonomously, or as a dispatched sub-agent, you
   cannot create a goal — and that is the point: the objective you are measured against is

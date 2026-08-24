@@ -30,7 +30,7 @@ from agentevolver.conversation import (
     question_manager,
     title_from,
 )
-from agentevolver.plan import plan_manager
+from agentevolver.plan import PlanMode, plan_manager
 from agentevolver.canvas.types import FlowGraph
 from agentevolver.command import command_manager
 from agentevolver.command.types import CommandContext
@@ -832,20 +832,29 @@ class AgentGateway:
         return plan_manager.state(session.context.id).summary()
 
     async def _command_plan_set(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Turn plan mode on or off for this project.
+        """Set this project's planning stance: `off`, `auto` or `plan`.
 
-        Turning it off here is the person calling it off, which is not the same as
-        approving a plan — `plan_manager.leave` records no approval, so nothing
-        downstream can read a cancelled plan mode as an agreed plan.
+        Takes `mode`. `active` is still accepted because the UI sends it and an older
+        client must not break on a new server: `true` means `plan`, `false` means
+        `auto` — the stance a run has when nobody has touched it, and what `leave`
+        already did. Turning the gate off is the person calling the review off, which is
+        not the same as approving a plan: no `approved_plan` is recorded either way, so
+        nothing downstream can read a cancelled review as an agreed plan.
         """
         session = self._sessions[self._require_session_id(params)]
-        active = bool(params.get("active", True))
+        raw = params.get("mode")
+        if raw is None:
+            raw = PlanMode.PLAN if bool(params.get("active", True)) else PlanMode.AUTO
+        try:
+            mode = PlanMode(str(raw))
+        except ValueError:
+            raise ValueError(
+                f"unknown plan mode {raw!r}; expected one of "
+                f"{', '.join(m.value for m in PlanMode)}") from None
         # No publish here: the transition announces itself, so this path and the
         # agent's own `exit_plan_mode` reach the UI the same way. Publishing here as
         # well would send it twice.
-        state = (plan_manager.enter(session.context.id) if active
-                 else plan_manager.leave(session.context.id))
-        return state.summary()
+        return plan_manager.set_mode(session.context.id, mode).summary()
 
     async def _command_session_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)

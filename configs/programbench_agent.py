@@ -100,34 +100,17 @@ agent_names = [
 
 # Basic tools only — see the module docstring for what is deliberately absent.
 tool_names = [
-    # These run wherever the agent process runs. Nothing here reads a sandbox handle
-    # or routes its IO into a container — the isolation comes from the agent being
-    # started *inside* the task container, not from the tools knowing about one.
-    # Kept in step with the other arm — the two differ only in evolution
-    # capability, so any tool asymmetry would confound the comparison.
+    # Read, write, look around, run something.
     "bash_tool",
-    "batch_call_tool",
-    "ask_user_question",
-    "exit_plan_mode",
-    # background work — start something long with bash_tool(run_in_background),
-    # then keep working and collect it instead of spending a step waiting
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
     "list_dir_tool",
-    "git_tool",
-    "grep_search_tool",
-    "glob_search_tool",
-    "code_interpreter_tool",
-    # control plane — no filesystem of their own
-    "done_tool",
     "escalate_tool",
     "reply_tool",
     "report_tool",
-    "send_message_tool",
-    "todo_tool",
-    # evolution arm only
-    "deploy_tool",
+    "done_tool",
+    "code_interpreter_tool",
     "evolution_tool",
 ]
 

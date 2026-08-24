@@ -49,7 +49,6 @@ tool_names = [
     "code_interpreter_tool",
     "done_tool",
     "inspect_tool",
-    "todo_tool",
 ]
 skill_names = []
 connector_names = []

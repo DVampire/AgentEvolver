@@ -31,7 +31,6 @@ agent_names = [
 tool_names = [
     'bash_tool',
     'done_tool',
-    'todo_tool',
 ]
 skill_names = []
 connector_names = []

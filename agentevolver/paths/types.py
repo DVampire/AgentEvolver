@@ -105,6 +105,7 @@ class P(str, Enum):
     #: process and must not be reachable by the file tools the agent uses on its
     #: own work, or the agent could rewrite the objective it is measured against.
     SESSION_GOALS = "session_goals"
+    SESSION_PLAN = "session_plan"
     #: Editor state — open tabs, layout. Per session, unlike the extensions and
     #: agent logins beside it, which are worth sharing across all of them.
     SESSION_IDE_USER_DATA = "session_ide_user_data"
@@ -177,6 +178,17 @@ LAYOUT: Dict[P, str] = {
     P.CONVERSATION_EVENTS: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.jsonl",
     P.CONVERSATION_META: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.json",
     P.SESSION_GOALS: "output/{owner}/sessions/{session_id}/goals.json",
+    #: The run's plan, as a document. A file rather than a field so the person
+    #: watching can read it, the agent can revise it with the tools it already has,
+    #: and it outlives the process — a plan held only in `PlanState` was gone the
+    #: moment the run ended, including the one a person had just approved.
+    #:
+    #: Inside the workspace, not beside it. Every other session-level file here is
+    #: framework state the agent never touches; this one the agent writes, and
+    #: `workspace_write` is exactly the permission it holds. A sibling of `workspace/`
+    #: refused `write_file_tool` — "outside the writable roots" — which would have made
+    #: `auto` a mode that asks for a document the agent is not allowed to create.
+    P.SESSION_PLAN: "output/{owner}/sessions/{session_id}/workspace/plan.md",
     P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
     P.SESSION_NOTEBOOKS: "output/{owner}/sessions/{session_id}/workspace/notebooks",
     P.RUN: "output/{owner}/runs/{run_id}",

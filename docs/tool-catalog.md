@@ -65,13 +65,12 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`session_read_tool`](#session_read_tool) | `read_only` | no | `SessionReadTool` | `agentevolver.tool.default.session_query` |
 | [`session_search_tool`](#session_search_tool) | `read_only` | no | `SessionSearchTool` | `agentevolver.tool.default.session_query` |
 | [`session_trace_tool`](#session_trace_tool) | `read_only` | no | `SessionTraceTool` | `agentevolver.tool.default.session_query` |
-| [`todo_tool`](#todo_tool) | `workspace_write` | not declared | `TodoTool` | `agentevolver.tool.default.todo` |
 | [`update_goal_tool`](#update_goal_tool) | `workspace_write` | yes | `UpdateGoalTool` | `agentevolver.tool.default.goal` |
 | [`web_fetcher_tool`](#web_fetcher_tool) | `workspace_write` | no | `WebFetcherTool` | `agentevolver.tool.default.web_fetcher` |
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-42 tools.
+41 tools.
 
 ## `ask_user_question`
 
@@ -510,25 +509,6 @@ Permission mode: `read_only` · reports only
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
 | `session_id` | `str` | yes | — |
-
-## `todo_tool`
-
-Manage a todo.md file with task decomposition and step tracking.
-
-Permission mode: `workspace_write` · does not declare whether it changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `action` | `str` | yes | — |
-| `task` | `Optional[str]` | no | `None` |
-| `step_id` | `Optional[str]` | no | `None` |
-| `status` | `Optional[str]` | no | `None` |
-| `result` | `Optional[str]` | no | `None` |
-| `priority` | `Optional[str]` | no | `'medium'` |
-| `category` | `Optional[str]` | no | `None` |
-| `parameters` | `Optional[Dict[str, Any]]` | no | `None` |
-| `after_step_id` | `Optional[str]` | no | `None` |
-| `export_path` | `Optional[str]` | no | `None` |
 
 ## `update_goal_tool`
 

@@ -38,9 +38,9 @@ from agentevolver.registry import HOOK
 THRESHOLDS: Tuple[int, ...] = (3, 5, 8)
 
 #: Tools that neither advance nor reset the chain. Bookkeeping the model interleaves
-#: into a loop must not launder it: with `todo_tool` transparent,
-#: ``grep X → todo_tool → grep X`` is still two consecutive ``grep X``.
-TRANSPARENT = frozenset({"todo_tool", "journal_tool", "inspect_tool", "reply_tool"})
+#: into a loop must not launder it: with `inspect_tool` transparent,
+#: ``grep X → inspect_tool → grep X`` is still two consecutive ``grep X``.
+TRANSPARENT = frozenset({"journal_tool", "inspect_tool", "reply_tool"})
 
 #: Cap on arguments quoted back in a reminder. The chain key always compares the FULL
 #: signature; this bounds only what is repeated into the prompt, so a looping `write`

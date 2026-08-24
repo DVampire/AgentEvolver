@@ -494,22 +494,43 @@ def test_grep_search_skips_binaries(tmp_path):
     assert [r["file"].split("/")[-1] for r in resp.data["results"]] == ["notes.txt"]
 
 
-def test_todo_state_lives_with_the_other_tools_state(tmp_path):
-    """A todo list is the tool's own bookkeeping, and every other tool keeps its state
-    under <log_root>/tool. Defaulting into the workspace put a `todo_tool/` directory in
-    the middle of the user's deliverable — and where a run's workspace gets packaged up,
-    shipped it along with the work."""
-    from agentevolver.tool.default.todo import TodoTool
+def test_a_tools_own_bookkeeping_stays_out_of_the_deliverable(tmp_path):
+    """A tool's state belongs under <log_root>/tool, never in the workspace.
+
+    Defaulting into the workspace put a tool's directory in the middle of the user's
+    deliverable — and where a run's workspace gets packaged up, shipped it along with
+    the work. Written against `todo_tool` originally; `journal_tool` carries the same
+    kind of state and the rule is the tool's, not that tool's.
+
+    `plan.md` is the deliberate exception and lives in the workspace: it is not the
+    framework's bookkeeping but a document the agent writes and the person reads, and
+    `workspace_write` is the permission the agent holds. See
+    `test_the_agent_is_allowed_to_write_its_own_plan`.
+    """
+    import agentevolver.tool.default  # noqa: F401 — importing is what registers them
+    from agentevolver.registry import TOOL
 
     config.workspace_root = str(tmp_path / "workspace")
     config.log_root = str(tmp_path / "log")
     os.makedirs(config.workspace_root, exist_ok=True)
 
-    tool = TodoTool()
-    assert tool.base_dir == os.path.join(config.log_root, "tool", "todo_tool")
-    assert config.workspace_root not in tool.base_dir
-    # Nothing of ours appears in the deliverable directory.
-    assert os.listdir(config.workspace_root) == []
+    # Across the registry rather than one named tool. The original named `todo_tool` and
+    # died with it; the rule is every tool's, and the next tool to grow a `base_dir` is
+    # the one that needs checking.
+    offenders = []
+    for name, cls in sorted(TOOL.module_dict.items()):
+        if "base_dir" not in getattr(cls, "model_fields", {}):
+            continue
+        try:
+            instance = cls()
+        except Exception:                                     # noqa: BLE001 — needs args
+            continue
+        if config.workspace_root in str(getattr(instance, "base_dir", "") or ""):
+            offenders.append(f"{name} keeps state at {instance.base_dir}")
+
+    assert not offenders, ("tool state inside the deliverable:\n  " + "\n  ".join(offenders))
+    assert os.listdir(config.workspace_root) == [], (
+        "constructing the tools wrote into the workspace")
 
 
 # --------------------------------------------------------------------------- #

@@ -521,3 +521,135 @@ async def test_the_gate_reads_a_real_declaration_and_lets_the_agent_speak():
         assert action_is_allowed("tool", name, await declaration_of("tool", name)) is False, (
             f"{name} can change things and must stay behind the gate"
         )
+
+
+# --------------------------------------------------------------------------- #
+# In auto mode the agent writes plan.md itself, so it has to be allowed to
+# --------------------------------------------------------------------------- #
+def test_the_agent_is_allowed_to_write_its_own_plan():
+    """`auto` asks the agent for a document. It must be somewhere the agent may write.
+
+    `plan.md` first went beside `workspace/`, with the framework's other session files,
+    and `workspace_write` refused it: "outside the writable roots". Nothing raised —
+    `auto` would simply have been a mode that asks every run for a plan the agent is not
+    permitted to create, and the refusal would have read as the agent's mistake.
+
+    Checked through `permission_manager` rather than by comparing strings, because the
+    permission system is what actually decides, and a path can look contained while the
+    boundary resolves differently.
+    """
+    from agentevolver.paths import P, path_manager
+    from agentevolver.permission import permission_manager
+    from agentevolver.permission.types import Operation, PermissionMode, PermissionRequest
+
+    workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id="plan_probe")
+    plan = path_manager.get(P.SESSION_PLAN, owner="local", session_id="plan_probe")
+
+    permission_manager.register(entity_name="plan_probe_tool",
+                                mode=PermissionMode.WORKSPACE_WRITE, workspace=str(workspace))
+    try:
+        verdict = permission_manager.check(
+            "plan_probe_tool", PermissionRequest(op=Operation.WRITE, target=str(plan)))
+        assert verdict.allowed, (
+            f"a workspace_write tool cannot write {plan}: {verdict.reason}. In auto mode "
+            f"the agent maintains this file with write_file_tool."
+        )
+    finally:
+        permission_manager.unregister("plan_probe_tool")
+
+
+def test_auto_is_the_default_stance():
+    """A run nobody configured plans adaptively rather than not at all."""
+    from agentevolver.plan import PlanMode, plan_manager
+
+    assert plan_manager.mode("a-run-nobody-set") is PlanMode.AUTO
+    assert plan_manager.active("a-run-nobody-set") is False, (
+        "auto must not gate: the agent decides whether to plan, and nothing is refused"
+    )
+
+
+def test_an_approved_plan_lands_on_disk_because_the_gate_forbids_writing_it():
+    """Under `plan` the agent cannot write `plan.md` — `write_file_tool` is refused.
+
+    So the approval is the only moment the document can be created. A review that left
+    no file would mean the plan a person agreed to was unreadable one step later, while
+    every *auto* run had one.
+    """
+    from agentevolver.plan import plan_manager, read_plan, write_plan
+
+    session = "plan_write_probe"
+    plan_manager.enter(session)
+    assert plan_manager.active(session) is True
+    plan_manager.approve(session, "## Goal\nship it\n")
+    try:
+        assert read_plan(session) == "## Goal\nship it\n"
+        assert plan_manager.active(session) is False
+    finally:
+        write_plan(session, "")
+        plan_manager.forget(session)
+
+
+@pytest.mark.asyncio
+async def test_in_auto_the_empty_plan_slot_still_says_what_to_do(tmp_path):
+    """`{% if plan %}` renders nothing for an empty string.
+
+    So in `auto` — the default, and therefore most runs — an agent that has not written
+    `plan.md` yet would see no plan block at all, and never be told the document is its
+    to write. The obligation has to ride in the slot, not beside it.
+
+    Not in `<errors>`, which is where this notice started: that block means "the previous
+    step failed", and the agent has learned it as a signal something went wrong. A
+    standing instruction placed there is read against its own grain.
+    """
+    from agentevolver.agent.actor.code_agent import CodeAgent
+    from agentevolver.plan import AUTO_MODE_NOTICE, PlanMode, plan_manager
+
+    class _Ctx:
+        id = "auto_slot_probe"
+
+    plan_manager.set_mode("auto_slot_probe", PlanMode.AUTO)
+    try:
+        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())     # noqa: SLF001
+        assert slots["plan"], "the plan slot is empty, so the template renders no block"
+        assert AUTO_MODE_NOTICE in slots["plan"]
+    finally:
+        plan_manager.forget("auto_slot_probe")
+
+
+@pytest.mark.asyncio
+async def test_a_written_plan_replaces_the_prompt_rather_than_joining_it(tmp_path):
+    """Once there is a plan, the slot is the plan. The nudge would be noise beside it."""
+    from agentevolver.agent.actor.code_agent import CodeAgent
+    from agentevolver.plan import AUTO_MODE_NOTICE, PlanMode, plan_manager, write_plan
+
+    class _Ctx:
+        id = "auto_slot_written"
+
+    plan_manager.set_mode("auto_slot_written", PlanMode.AUTO)
+    write_plan("auto_slot_written", "## Goal\nmeasure the thing\n")
+    try:
+        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())     # noqa: SLF001
+        assert "measure the thing" in slots["plan"]
+        assert AUTO_MODE_NOTICE not in slots["plan"]
+    finally:
+        write_plan("auto_slot_written", "")
+        plan_manager.forget("auto_slot_written")
+
+
+def test_the_auto_notice_is_not_delivered_as_an_error():
+    """The two notices reach the agent by different routes, deliberately.
+
+    `plan` accompanies a refusal, so `<errors>` is where it belongs. `auto` refuses
+    nothing, so it must not arrive there — this asserts the announcement path does not
+    mention it at all, since that is the mistake that was made.
+    """
+    import inspect
+
+    from agentevolver.agent.types import Agent
+
+    source = inspect.getsource(Agent._announce_plan_mode)            # noqa: SLF001
+    assert "PLAN_MODE_NOTICE" in source
+    assert "AUTO_MODE_NOTICE" not in source, (
+        "the auto notice is being delivered through action_errors, which renders as "
+        "<errors> — a block that means the previous step failed"
+    )

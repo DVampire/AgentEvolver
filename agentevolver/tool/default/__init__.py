@@ -11,7 +11,6 @@ from .write_file import WriteFileTool
 from .edit_file import EditFileTool
 from .list_dir import ListDirTool
 from .git import GitTool
-from .todo import TodoTool
 from .deploy import DeployTool
 from .evolution import EvolutionTool
 from .journal import JournalTool
@@ -49,7 +48,6 @@ __all__ = [
     "EditFileTool",
     "ListDirTool",
     "GitTool",
-    "TodoTool",
     "DeployTool",
     "EvolutionTool",
     "JournalTool",
