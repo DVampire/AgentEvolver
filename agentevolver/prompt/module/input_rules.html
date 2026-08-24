@@ -31,9 +31,11 @@
   reusable, and what has changed since is stated in that block instead. It supersedes the
   catalog for the entries it names and for nothing else — anything it does not mention is
   still exactly as listed above.
-- environment-context: the environment you are working *in*, when you have one, with its
-  available actions and current state. It is not in capability-context because you do not
-  call it in passing — you act inside it.
+- environment-context: the environments you are working *in*, when you have any, with the
+  actions each one offers. It is not in capability-context because you do not call an
+  environment in passing — you act inside it. What each one holds right now is separate,
+  under agent-context, because the roster does not change between steps and the state
+  changes every step.
 - agent-context: your current state, with these sub-modules:
   - task — your ultimate objective (see Task Rules).
   - inherited-context — what the caller handed down, when you were dispatched by someone.

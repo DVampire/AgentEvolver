@@ -81,16 +81,26 @@ class SSHAgent(Agent):
         each step is what keeps its picture of the machine from going stale — the same
         reason the browser agent re-reads the page.
         """
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-        state = await environment_manager.get_state(self.env_name, ctx=ctx)
-        # The same slot every environment-backed agent fills. It was `remote_state`
-        # here, `browser_state` there and rendered as `desktop-state` in a third — three
-        # spellings of one thing, of which only one ever had a stylesheet rule.
-        base["environment_state"] = (
-            state.get("state") if state else "[Remote state unavailable — the host may be "
-                                             "unreachable; try a `run` to confirm.]"
-        )
-        return base
+        return await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
+
+    async def _get_environment_context(self, ctx) -> Dict[str, Any]:
+        """The base class reads every mounted environment; this one adds what to do about it.
+
+        Fetching used to happen in `_get_agent_context` here and in `BrowserAgent`, because
+        the base class had no environment method at all. It has one now and it runs *after*
+        `_get_agent_context`, so an override there would be overwritten — and, for the
+        browser, would cost a second screenshot to produce the value being discarded.
+
+        What is kept is the sentence: an unreachable host is not a missing feature, and an
+        agent told only "unavailable" re-reads the state instead of testing the connection.
+        """
+        slots = await super()._get_environment_context(ctx)
+        if not slots.get("environment_state"):
+            slots["environment_state"] = (
+                "[Remote state unavailable — the host may be unreachable; try a `run` "
+                "to confirm.]"
+            )
+        return slots
 
     async def __call__(
         self,

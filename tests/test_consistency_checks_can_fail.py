@@ -70,12 +70,16 @@ MUTATIONS = [
     # Re-pointed when the inlined blocks became one shared module: the anchor was the
     # literal `<capability-context>` opening the user turn, and no template writes that
     # any more. A mutation whose anchor has moved silently tests nothing.
+    # Re-pointed when `environment_context` landed between the two: the anchor named the
+    # capability module followed directly by the agent module, and this case had started
+    # matching nothing. It said so rather than passing quietly, which is the whole reason
+    # this file exists.
     ("a template puts state before capabilities",
      "agentevolver/prompt/default/code_agent.html",
-     '<module src="../module/capability_context.html"></module>\n\n'
-     '<module src="../module/agent_context.html"></module>',
-     '<module src="../module/agent_context.html"></module>\n\n'
-     '<module src="../module/capability_context.html"></module>', STRUCTURE),
+     '<module src="../module/capability_context.html"></module>\n'
+     '<module src="../module/environment_context.html"></module>',
+     '<module src="../module/agent_context.html"></module>\n'
+     '<module src="../module/environment_context.html"></module>', STRUCTURE),
 
     # A tool's description is one of the facts the committed catalog copies out of the
     # code. Changing it and leaving the document alone is what "the generated file went

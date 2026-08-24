@@ -96,16 +96,31 @@ class BrowserAgent(Agent):
         """
         base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
 
-        browser_state = kwargs.get("browser_state")
-        base["environment_state"] = (browser_state.get("state") if browser_state
-                                    else "[Environment state unavailable.]")
-
+        # `environment_state` is filled by `_get_environment_context` below, not here: the
+        # base class fills that slot after this method returns, so a value set here would
+        # be overwritten — and re-fetched, which for a browser means a second screenshot of
+        # the page this step already observed.
+        self._observed_state = kwargs.get("browser_state")
         base["workspace"] = self._workspace_snapshot(ctx)
 
         action_errors = kwargs.get("action_errors") or []
         base["errors"] = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
 
         return base
+
+    async def _get_environment_context(self, ctx: AgentContext) -> Dict[str, Any]:
+        """The page this step already observed, rather than a fresh read of it.
+
+        This agent runs an observe-act loop: it fetches the state at the top of each step
+        and plans against it. The base class would fetch it again here, one screenshot
+        later and describing a page the plan was not made against — so the observation is
+        reused and only the roster comes from the base.
+        """
+        slots = await super()._get_environment_context(ctx)
+        observed = getattr(self, "_observed_state", None)
+        slots["environment_state"] = (observed.get("state") if observed
+                                      else "[Environment state unavailable.]")
+        return slots
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Return an empty tool context: this is a pure environment agent with no tools

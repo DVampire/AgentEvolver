@@ -719,19 +719,94 @@ class Agent(BaseModel):
         return await self._get_capability_context("agent", ctx, exclude=self.name)
 
     async def _capability_environment_slots(self, ctx: AgentContext) -> Dict[str, Any]:
-        """Environments, headed in a block of their own.
+        """The environment path, reached through the capability walk that visits every type.
 
-        An agent works *in* an environment rather than calling it in passing, so this
-        renders through ``environment_context.html`` beside the capability block rather
-        than inside it.
-
-        One slot, not two: ``available_<mount_type>`` is what the generic path returns
-        and no template ever named ``available_environments``, so the roster was built
-        and then rendered under a second key — the same duplicate-slot shape that lost
-        the Code Mode section under ``tool_context``.
+        `MOUNTED_TYPES` is what prompt assembly iterates, and `environment` is a row in it
+        — so this is where the walk arrives for that row, and it hands straight off to
+        :meth:`_get_environment_context`. The name stays `_capability_*` because that is
+        the hook `_capability_slots` looks for; what it returns is not a capability roster.
         """
-        body = (await self._get_capability_context("environment", ctx))["available_environments"]
-        return {"environment_context": f"### Available Environments\n{body}" if body else ""}
+        return await self._get_environment_context(ctx)
+
+    async def _get_environment_context(self, ctx: AgentContext) -> Dict[str, Any]:
+        """The environments this agent works in: the roster, and what each one looks like now.
+
+        The third of the three context methods, and the one that did not exist. An agent
+        *uses* a capability, is *in* an environment and *has* a memory — the type table says
+        so — but only two of those had a method. Environments borrowed
+        :meth:`_get_capability_context`, which asks a manager for its roster and nothing
+        else, so the base class could name an environment and never see inside it. The live
+        state existed only in `BrowserAgent` and `SSHAgent`, each overriding
+        `_get_agent_context` to fetch it — which meant "works in an environment" was a
+        property of two agent classes rather than of holding an environment.
+
+        Two slots:
+
+        ``environment_context``
+            The roster. A catalog that does not change between steps, so it renders beside
+            the capabilities, before the state — everything after the state is re-read at
+            full price every step.
+
+        ``environment_state``
+            What each mounted environment holds right now, refreshed every step. This is
+            the half that makes "in" mean something: a roster tells an agent a browser
+            exists, a state tells it which page is open.
+
+        Every mounted environment is asked, not only an active one. An agent given two is
+        in both, and deciding which one is "current" from the outside is guessing —
+        `SSHAgent` reads a host and a workspace, `BrowserAgent` a page; neither is the
+        other's context. An agent with none gets two empty strings, and the templates omit
+        both blocks, so this costs nothing where nothing is mounted.
+        """
+        roster = (await self._get_capability_context("environment", ctx))["available_environments"]
+        slots = {
+            "environment_context": f"### Available Environments\n{roster}" if roster else "",
+            "environment_state": await self._environment_state(ctx),
+        }
+        return slots
+
+    async def _environment_state(self, ctx: AgentContext) -> str:
+        """Each mounted environment's live state, headed by name when there is more than one.
+
+        A failure to read one is reported in place rather than raised: an environment that
+        cannot be reached is a fact the agent needs — it is about to try to act in it — and
+        losing the whole prompt build over it would turn a broken browser into a broken run.
+        """
+        from agentevolver.capability import ENVIRONMENT_TYPE
+
+        names = await self._mounted_environment_names(ctx)
+        if not names:
+            return ""
+        manager = ENVIRONMENT_TYPE.manager()
+        blocks: List[str] = []
+        for name in names:
+            try:
+                state = await manager.get_state(name, ctx=ctx)
+            except Exception as error:                       # noqa: BLE001
+                logger.warning(f"| ⚠️ [{self.name}] could not read {name} state: {error}")
+                blocks.append(f"[{name}: unavailable — {error}]")
+                continue
+            body = state.get("state") if isinstance(state, dict) else state
+            if not body:
+                continue
+            blocks.append(str(body) if len(names) == 1 else f"#### {name}\n{body}")
+        return "\n\n".join(blocks)
+
+    async def _mounted_environment_names(self, ctx: AgentContext) -> List[str]:
+        """Which environments this agent holds.
+
+        The allowlist when the run set one, the whole registry otherwise — the same rule
+        every other capability type follows, so an agent is never shown a roster it cannot
+        act on nor asked for the state of something it does not hold.
+        """
+        from agentevolver.capability import ENVIRONMENT_TYPE
+
+        allowed = self._capability_allowlist("environment", ctx)
+        if allowed is not None:
+            return list(allowed)
+        listing = ENVIRONMENT_TYPE.manager().list()
+        names = await listing if isawaitable(listing) else listing
+        return list(names or [])
 
     async def _capability_tool_slots(self, ctx: AgentContext) -> Dict[str, Any]:
         """Tools, plus the Code Mode calling convention when this agent can run a program."""
