@@ -14,7 +14,6 @@ contains two answers with no way to tell which is current.
 | Tier | Its job | What does **not** belong there |
 |---|---|---|
 | [README.md](../README.md) / [README_zh.md](../README_zh.md) | What this project is and how to start using it | Contributor procedure, design rationale, per-module detail |
-| [PROJECT.md](../PROJECT.md) | Standing orders for anyone (human or agent) working in this repo — short rules, each linking its home | Stories, worked examples, anything restated from the page it links |
 | Module `README.md` | That module's contract: what it owns, its shape, its extension points | Restating a docstring, another module's concerns |
 | Docstrings | The local contract: behaviour, failure modes, ownership, timing, non-obvious orientation | Reasoning transcripts, test walkthroughs, code restatement |
 | [tests/README.md](../tests/README.md) | How a test in this repo is written, and why | What any individual test asserts |
@@ -23,8 +22,12 @@ contains two answers with no way to tell which is current.
 | [cookbook/](cookbook/adding-a-tool.md) | Step-by-step procedures, ending in a verify step | Design rationale — link the decision record instead |
 | `docs/<topic>.md` | A reference for one subject: current behaviour, lookup-shaped | Teaching sequences that belong in a tutorial |
 
-Placement, in one line: **bug → postmortem; rationale → decision record; contract → docstring
-or module README; standing order → PROJECT.md with a link to its home.**
+Placement, in one line: **bug → postmortem; rationale → decision record; contract, and the
+standing orders that go with it → the docstring or module README that owns the thing.**
+
+There is deliberately no repo-wide standing-orders page. `PROJECT.md` was one, and every
+rule on it was a second copy of something with an owner — so it drifted from all of them at
+once, silently, because nothing imports a document.
 
 ## Writing rules
 

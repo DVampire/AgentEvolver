@@ -48,7 +48,6 @@
       <div class="mod"><div class="mod-h"><b>session</b><span>1,010</span></div><p data-i18n="m_session">Defines shared invocation context and session-scoped project state.</p></div>
       <div class="mod"><div class="mod-h"><b>message</b><span>323</span></div><p data-i18n="m_message">Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads.</p></div>
       <div class="mod"><div class="mod-h"><b>response</b><span>36</span></div><p data-i18n="m_response">Defines the normalized `Response` and `ResponseType` returned across Agents, Tools, Skills, Connectors, and Environments.</p></div>
-      <div class="mod"><div class="mod-h"><b>queue</b><span>83</span></div><p data-i18n="m_queue">Provides the reusable `AsyncQueue` primitive used by asynchronous framework components.</p></div>
       <div class="mod"><div class="mod-h"><b>protocol</b><span>288</span></div><p data-i18n="m_protocol">Defines typed agent-to-agent conversations over Runtime delivery.</p></div>
     </div>
   </section>
@@ -89,7 +88,6 @@
       <div class="mod"><div class="mod-h"><b>process</b><span>760</span></div><p data-i18n="m_process">Pure record/text transforms — the transform stage of a data pipeline.</p></div>
       <div class="mod"><div class="mod-h"><b>kernel</b><span>649</span></div><p data-i18n="m_kernel">One Jupyter Server per project, and one kernel the agent, the Science REPL and JupyterLab all share.</p></div>
       <div class="mod"><div class="mod-h"><b>lsp</b><span>1,468</span></div><p data-i18n="m_lsp">Asks a language server what a symbol is — its definition, its references, its type — so an edit rests on what the code means rather than on where its name happens to appear.</p></div>
-      <div class="mod"><div class="mod-h"><b>docker</b><span>39</span></div><p data-i18n="m_docker">Provides the Docker backend integration point through `docker_manager`.</p></div>
       <div class="mod"><div class="mod-h"><b>e2b</b><span>39</span></div><p data-i18n="m_e2b">Provides the E2B backend integration point through `e2b_manager`.</p></div>
       <div class="mod"><div class="mod-h"><b>ide</b><span>334</span></div><p data-i18n="m_ide">Full VS Code (openvscode-server) in the browser, one container per gateway session, editing the same workspace the agent edits.</p></div>
       <div class="mod"><div class="mod-h"><b>science</b><span>350</span></div><p data-i18n="m_science">The workstation half of a project: a conversation with the agent, over one kernel the agent, the REPL and JupyterLab all share.</p></div>
@@ -116,7 +114,6 @@
       <div class="mod"><div class="mod-h"><b>extension</b><span>1,112</span></div><p data-i18n="m_extension">Manages generated extension manifests and their promotion into the active framework.</p></div>
       <div class="mod"><div class="mod-h"><b>dynamic</b><span>1,065</span></div><p data-i18n="m_dynamic">Loads generated Python source into controlled runtime modules and derives callable metadata such as parameters, argument models, and function-calling schemas.</p></div>
       <div class="mod"><div class="mod-h"><b>version</b><span>372</span></div><p data-i18n="m_version">Tracks versions of evolvable framework entities and generates validated next versions.</p></div>
-      <div class="mod"><div class="mod-h"><b>scope</b><span>144</span></div><p data-i18n="m_scope">A registration scope owns every registration made through it and removes them as a unit — in reverse order, surviving a failure partway through, and reporting what is still installed.</p></div>
       <div class="mod"><div class="mod-h"><b>capability</b><span>112</span></div><p data-i18n="m_capability">Every callable Manager exposes `get_schema(name, action=None, format=&quot;json&quot;)`.</p></div>
       <div class="mod"><div class="mod-h"><b>benchmark</b><span>3,172</span></div><p data-i18n="m_benchmark">Provides versioned benchmark definitions and the manager used to load and execute them.</p></div>
       <div class="mod"><div class="mod-h"><b>data</b><span>767</span></div><p data-i18n="m_data">Contains dataset adapters used by the Benchmark module, including AIME, GPQA, GSM8K, LeetCode, HLE, DeepWeb, and ProgramBench.</p></div>
@@ -135,7 +132,6 @@
       <div class="mod"><div class="mod-h"><b>permission</b><span>719</span></div><p data-i18n="m_permission">Evaluates command and filesystem operations against explicit permission modes and policies.</p></div>
       <div class="mod"><div class="mod-h"><b>hook</b><span>2,387</span></div><p data-i18n="m_hook">Provides lifecycle interception points for tracing, compaction, registration, promotion, and other cross-cutting behavior.</p></div>
       <div class="mod"><div class="mod-h"><b>utils</b><span>1,708</span></div><p data-i18n="m_utils">Contains dependency-light helpers shared across modules: path assembly, file locking, concurrency, names, strings, URLs, screenshots, tokens, argument parsing, and plan models.</p></div>
-      <div class="mod"><div class="mod-h"><b>spill</b><span>258</span></div><p data-i18n="m_spill">Parks an oversized tool result on disk and hands the agent a locator plus a retrieval hint, so output too large to show is bounded rather than lost.</p></div>
       <div class="mod"><div class="mod-h"><b>attachment</b><span>212</span></div><p data-i18n="m_attachment">Pins the bytes of an image the agent read and re-attaches it to every later request, so an image enters the model&#x27;s context and stays there instead of vanishing with the step that read it.</p></div>
       <div class="mod"><div class="mod-h"><b>deploy</b><span>769</span></div><p data-i18n="m_deploy">Deploys web artifacts from controlled source directories and records their URLs, health, resources, and lifecycle state.</p></div>
       <div class="mod"><div class="mod-h"><b>conversation</b><span>612</span></div><p data-i18n="m_conversation">Lines of dialogue inside a project — their transcripts and their identity.</p></div>
@@ -167,7 +163,6 @@ window.I18N = {
  "m_session": "Defines shared invocation context and session-scoped project state.",
  "m_message": "Defines provider-neutral conversation messages, multimodal content parts, tool calls, and function-call payloads.",
  "m_response": "Defines the normalized `Response` and `ResponseType` returned across Agents, Tools, Skills, Connectors, and Environments.",
- "m_queue": "Provides the reusable `AsyncQueue` primitive used by asynchronous framework components.",
  "m_protocol": "Defines typed agent-to-agent conversations over Runtime delivery.",
  "g_context": "Context &amp; memory",
  "gb_context": "What the model is shown, and what a finished run leaves behind.",
@@ -193,7 +188,6 @@ window.I18N = {
  "m_process": "Pure record/text transforms — the transform stage of a data pipeline.",
  "m_kernel": "One Jupyter Server per project, and one kernel the agent, the Science REPL and JupyterLab all share.",
  "m_lsp": "Asks a language server what a symbol is — its definition, its references, its type — so an edit rests on what the code means rather than on where its name happens to appear.",
- "m_docker": "Provides the Docker backend integration point through `docker_manager`.",
  "m_e2b": "Provides the E2B backend integration point through `e2b_manager`.",
  "m_ide": "Full VS Code (openvscode-server) in the browser, one container per gateway session, editing the same workspace the agent edits.",
  "m_science": "The workstation half of a project: a conversation with the agent, over one kernel the agent, the REPL and JupyterLab all share.",
@@ -210,7 +204,6 @@ window.I18N = {
  "m_extension": "Manages generated extension manifests and their promotion into the active framework.",
  "m_dynamic": "Loads generated Python source into controlled runtime modules and derives callable metadata such as parameters, argument models, and function-calling schemas.",
  "m_version": "Tracks versions of evolvable framework entities and generates validated next versions.",
- "m_scope": "A registration scope owns every registration made through it and removes them as a unit — in reverse order, surviving a failure partway through, and reporting what is still installed.",
  "m_capability": "Every callable Manager exposes `get_schema(name, action=None, format=\"json\")`.",
  "m_benchmark": "Provides versioned benchmark definitions and the manager used to load and execute them.",
  "m_data": "Contains dataset adapters used by the Benchmark module, including AIME, GPQA, GSM8K, LeetCode, HLE, DeepWeb, and ProgramBench.",
@@ -224,7 +217,6 @@ window.I18N = {
  "m_permission": "Evaluates command and filesystem operations against explicit permission modes and policies.",
  "m_hook": "Provides lifecycle interception points for tracing, compaction, registration, promotion, and other cross-cutting behavior.",
  "m_utils": "Contains dependency-light helpers shared across modules: path assembly, file locking, concurrency, names, strings, URLs, screenshots, tokens, argument parsing, and plan models.",
- "m_spill": "Parks an oversized tool result on disk and hands the agent a locator plus a retrieval hint, so output too large to show is bounded rather than lost.",
  "m_attachment": "Pins the bytes of an image the agent read and re-attaches it to every later request, so an image enters the model's context and stays there instead of vanishing with the step that read it.",
  "m_deploy": "Deploys web artifacts from controlled source directories and records their URLs, health, resources, and lifecycle state.",
  "m_conversation": "Lines of dialogue inside a project — their transcripts and their identity.",
@@ -252,7 +244,6 @@ window.I18N = {
  "m_session": "定义共享的调用上下文与会话级的项目状态。",
  "m_message": "定义与提供商无关的对话消息、多模态内容片段、工具调用与函数声明。",
  "m_response": "定义 Agent、Tool、Skill 等各处统一返回的 `Response` 与 `ResponseType`。",
- "m_queue": "提供框架内异步组件复用的 `AsyncQueue` 原语。",
  "m_protocol": "定义经由 Runtime 投递的、带类型的 agent 间对话。",
  "g_context": "上下文与记忆",
  "gb_context": "模型被展示了什么，以及一次跑完的运行留下了什么。",
@@ -278,7 +269,6 @@ window.I18N = {
  "m_process": "纯粹的记录/文本变换——数据管线里的变换阶段。",
  "m_kernel": "一个项目一个 Jupyter Server，一个内核被 agent、Science REPL 和 JupyterLab 共用。",
  "m_lsp": "向语言服务器询问一个符号是什么——定义、引用、类型。",
- "m_docker": "通过 `docker_manager` 提供 Docker 后端的接入点。",
  "m_e2b": "通过 `e2b_manager` 提供 E2B 后端的接入点。",
  "m_ide": "浏览器里的完整 VS Code，一个网关会话一个容器。",
  "m_science": "项目的工作台那一半：与 agent 的对话，跑在同一个内核上。",
@@ -295,7 +285,6 @@ window.I18N = {
  "m_extension": "管理生成出的扩展清单及其向活跃框架的晋升。",
  "m_dynamic": "把生成的 Python 源码加载进受控的运行时模块，并推导出可调用的元数据。",
  "m_version": "追踪可进化框架实体的版本，并生成经过校验的下一个版本。",
- "m_scope": "一个注册作用域持有经它做的每一次注册，并把它们作为一个整体撤销。",
  "m_capability": "每个可调用的 Manager 都暴露 `get_schema(name, action=None, format=\"json\")`。",
  "m_benchmark": "提供版本化的基准定义，以及用于加载和执行它们的管理器。",
  "m_data": "包含 Benchmark 模块使用的数据集适配器，含 AIME、GPQA、GSM8K、LeetCode 等。",
@@ -309,7 +298,6 @@ window.I18N = {
  "m_permission": "依据显式的权限模式与策略，评估命令与文件系统操作。",
  "m_hook": "为追踪、压缩、注册、晋升等提供生命周期拦截点。",
  "m_utils": "跨模块共享的轻依赖助手：路径拼装、文件锁、并发工具等。",
- "m_spill": "把超大的工具结果暂存到磁盘，并交给 agent 一个定位符加取回提示。",
  "m_attachment": "钉住 agent 读过的图片字节，并在之后每次请求里重新附上。",
  "m_deploy": "从受控的源目录部署 Web 产物，并记录它们的 URL、健康状况与资源。",
  "m_conversation": "项目内部的一条条对话线——它们的记录与身份。",

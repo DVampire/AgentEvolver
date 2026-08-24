@@ -47,7 +47,6 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGETS: dict[str, int] = {
     "README.md": 3_500,
     "README_zh.md": 5_800,          # ≈ the English ceiling in characters; see above
-    "PROJECT.md": 1_200,
     "docs/DOC-STANDARD.md": 1_000,
     "docs/decisions/README.md": 650,
     "docs/postmortems/README.md": 400,
@@ -124,7 +123,7 @@ def test_the_standing_documents_are_all_budgeted():
     `docs/` also holds tiers that are deliberately unbudgeted, so this checks only the flat
     files directly under it plus the repository-root READMEs — the ones everybody reads.
     """
-    standing = {"README.md", "README_zh.md", "PROJECT.md"}
+    standing = {"README.md", "README_zh.md"}
     standing |= {f"docs/{path.name}" for path in (ROOT / "docs").glob("*.md")}
 
     generated = {"docs/tool-catalog.md"}          # gated by test_tool_catalog.py instead

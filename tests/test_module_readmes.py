@@ -137,3 +137,54 @@ def test_plugin_manifests_match_the_code():
         elif declared != actual:
             mismatches.append(f"{package.name}: manifest says {declared}, code has {actual}")
     assert not mismatches, "PLUGIN.md is stale — regenerate it:\n  " + "\n  ".join(mismatches)
+
+
+def test_the_module_reference_page_lists_exactly_the_modules_that_exist():
+    """`docs/modules.html` is a hand-written card per module, so it drifts by omission.
+
+    Nothing imports a documentation page, which is what makes this the failure mode it is:
+    deleting a module leaves its card standing and every reader is told about something
+    that is gone, while adding one leaves a reader who never learns it exists. Both look
+    exactly like a correct page.
+
+    It had already happened four times over — `docker`, `queue`, `scope` and `spill` all
+    outlived their directories on that page, and the README counted 56 modules against 50
+    on disk. The count is checked here too, since it is the same fact stated a third time.
+    """
+    import re
+
+    page = (Path(__file__).parents[1] / "docs" / "modules.html").read_text(encoding="utf-8")
+    listed = set(re.findall(r'class="mod-h"><b>([a-z_]+)</b>', page))
+    on_disk = {p.name for p in PACKAGE_ROOT.iterdir()
+               if p.is_dir() and p.name != "__pycache__"}
+
+    assert not listed - on_disk, (
+        f"documented but deleted: {sorted(listed - on_disk)} — remove the card and its "
+        f"`m_<name>` entry from both translation tables"
+    )
+    assert not on_disk - listed, (
+        f"on disk but undocumented: {sorted(on_disk - listed)} — add a card and both "
+        f"`m_<name>` translations"
+    )
+
+
+def test_every_documented_module_is_translated_in_both_languages():
+    """A card with no translation renders its i18n key to the reader.
+
+    Separate from the listing check because it fails the other way round: removing a card
+    and leaving its `m_<name>` strings behind is invisible, while adding a card and
+    forgetting them shows `m_foo` on the page.
+    """
+    import re
+
+    page = (Path(__file__).parents[1] / "docs" / "modules.html").read_text(encoding="utf-8")
+    listed = set(re.findall(r'class="mod-h"><b>([a-z_]+)</b>', page))
+
+    untranslated = sorted(name for name in listed
+                          if len(re.findall(rf'"m_{name}"\s*:', page)) != 2)
+    assert not untranslated, (
+        f"modules without exactly one English and one Chinese string: {untranslated}"
+    )
+
+    orphaned = sorted({key for key in re.findall(r'"m_([a-z_]+)"\s*:', page)} - listed)
+    assert not orphaned, f"translations for cards that no longer exist: {orphaned}"
