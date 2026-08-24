@@ -19,6 +19,7 @@ the plan that was just refused.
 import asyncio
 import contextlib
 import io
+from pathlib import Path
 
 import pytest
 
@@ -578,15 +579,19 @@ def test_an_approved_plan_lands_on_disk_because_the_gate_forbids_writing_it():
     from agentevolver.plan import plan_manager, read_plan, write_plan
 
     session = "plan_write_probe"
+    from agentevolver.paths import path_manager
+
+    path_manager.bind_session("local", session)
     plan_manager.enter(session)
     assert plan_manager.active(session) is True
     plan_manager.approve(session, "## Goal\nship it\n")
     try:
-        assert read_plan(session) == "## Goal\nship it\n"
+        assert read_plan() == "## Goal\nship it\n"
         assert plan_manager.active(session) is False
     finally:
-        write_plan(session, "")
+        write_plan("")
         plan_manager.forget(session)
+        path_manager.unbind_session()
 
 
 @pytest.mark.asyncio
@@ -625,15 +630,21 @@ async def test_a_written_plan_replaces_the_prompt_rather_than_joining_it(tmp_pat
     class _Ctx:
         id = "auto_slot_written"
 
+    from agentevolver.paths import path_manager
+
+    # Bound, because that is what `read_plan()` resolves against — the slot shows the
+    # run being rendered, not whatever session id happens to be passed around.
+    path_manager.bind_session("local", "auto_slot_written")
     plan_manager.set_mode("auto_slot_written", PlanMode.AUTO)
-    write_plan("auto_slot_written", "## Goal\nmeasure the thing\n")
+    write_plan("## Goal\nmeasure the thing\n")
     try:
         slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())     # noqa: SLF001
         assert "measure the thing" in slots["plan"]
         assert AUTO_MODE_NOTICE not in slots["plan"]
     finally:
-        write_plan("auto_slot_written", "")
+        write_plan("")
         plan_manager.forget("auto_slot_written")
+        path_manager.unbind_session()
 
 
 def test_the_auto_notice_is_not_delivered_as_an_error():
@@ -653,3 +664,69 @@ def test_the_auto_notice_is_not_delivered_as_an_error():
         "the auto notice is being delivered through action_errors, which renders as "
         "<errors> — a block that means the previous step failed"
     )
+
+
+def test_the_layout_and_the_derived_plan_path_agree():
+    """`P.SESSION_PLAN` is what a reader looks up; `plan_path()` is what runs.
+
+    They are two statements of one location, and the layout entry spells out the
+    `workspace` segment a second time. Composing in code is what makes an override
+    move the plan with the workspace — but it also means the table could drift and
+    nothing would notice, since nothing resolves that key any more. This is what
+    notices.
+    """
+    from agentevolver.paths import P, path_manager
+    from agentevolver.plan import plan_path
+
+    path_manager.bind_session("local", "layout_agree")
+    try:
+        assert plan_path() == path_manager.get(P.SESSION_PLAN), (
+            "the layout table and the derived path disagree about where plan.md lives")
+    finally:
+        path_manager.unbind_session()
+
+
+def test_the_plan_follows_a_container_mount_override():
+    """An override on the *workspace* has to move the plan, because the plan is in it.
+
+    Resolving `P.SESSION_PLAN` directly did not: it is its own template, spelling out
+    the workspace segment again, so overriding `SESSION_WORKSPACE` moved one and left
+    the other. Inside a container that meant the agent was told about — and the approval
+    wrote to — the host-layout path, which happens to be the same file through a second
+    mount. Right by accident, and the same accident the sandbox boundary did not get.
+    """
+    from agentevolver.paths import P, path_manager
+    from agentevolver.plan import plan_path
+
+    path_manager.bind_session("local", "mount_plan")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        assert plan_path() == Path("/workspace/plan.md"), (
+            f"the plan did not follow the workspace: {plan_path()}")
+        # And the boundary agrees, so the agent may write what it is told about.
+        from agentevolver.sandbox.project import check_session_path
+        assert check_session_path(path=str(plan_path()), write=True) is None
+    finally:
+        path_manager.unbind_session()
+
+
+def test_naming_this_run_is_not_a_way_to_lose_the_override():
+    """`approve()` names the session it is approving, and that session is this one.
+
+    Passing an id is how a caller asks about a *different* run, which is why an override
+    does not answer such a call. But `plan_manager.approve(session_id, plan)` names the
+    current one, so the rule is "the bound run, however it is spelled" rather than
+    "only when nothing is passed".
+    """
+    from agentevolver.paths import P, path_manager
+    from agentevolver.plan import plan_path
+
+    path_manager.bind_session("local", "named_run")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        assert plan_path("named_run") == Path("/workspace/plan.md")
+        assert plan_path(owner="local") == Path("/workspace/plan.md")
+        # A genuinely different run is a different question, and gets the table's answer.
+        assert plan_path("some_other_run") != Path("/workspace/plan.md")
+    finally:
+        path_manager.unbind_session()

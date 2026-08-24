@@ -642,7 +642,9 @@ class Agent(BaseModel):
                 )
 
                 session_id = str(getattr(ctx, "id", "") or "")
-                plan_body = read_plan(session_id)
+                # No session id passed: this is the run being rendered, and naming it
+                # takes the parameterised path, which no override answers.
+                plan_body = read_plan()
                 if not plan_body and plan_manager.mode(session_id) is PlanMode.AUTO:
                     # An empty slot would render as no slot at all — `{% if plan %}` —
                     # so in `auto` the agent would never be told the document is its to

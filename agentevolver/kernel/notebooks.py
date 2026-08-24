@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List
 
 from agentevolver.kernel.server import kernel_manager
@@ -23,14 +24,28 @@ from agentevolver.kernel.types import Notebook
 from agentevolver.paths import P, path_manager
 
 
-def directory(session_id: str, *, owner: str = "local"):
+def _owner(owner: str) -> str:
+    """The owner to resolve against: the caller's, or the bound run's.
+
+    Defaulting to `"local"` was a trap rather than a default. Every caller here happens
+    to pass `session.owner`, so it was never reached — and a new caller that omitted it
+    would have read and written another owner's notebooks with no error at all.
+    """
+    if owner:
+        return owner
+    bound = path_manager.session
+    return bound[0] if bound else "local"
+
+
+def directory(session_id: str, *, owner: str = "") -> "Path":
     """The project's notebook directory, created if this is the first look."""
-    return path_manager.get(P.SESSION_NOTEBOOKS, owner=owner, session_id=session_id, create=True)
+    return path_manager.get(P.SESSION_NOTEBOOKS, owner=_owner(owner),
+                            session_id=session_id, create=True)
 
 
-def notebooks(session_id: str, *, owner: str = "local") -> List[Notebook]:
+def notebooks(session_id: str, *, owner: str = "") -> List[Notebook]:
     """Every ``.ipynb`` in the project's workspace, newest first."""
-    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
+    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=_owner(owner), session_id=session_id)
     if not workspace.is_dir():
         return []
     found: List[Notebook] = []
@@ -50,7 +65,7 @@ def notebooks(session_id: str, *, owner: str = "local") -> List[Notebook]:
     return sorted(found, key=lambda item: item.modified_at, reverse=True)
 
 
-def save_history_as_notebook(session_id: str, name: str, *, owner: str = "local") -> Notebook:
+def save_history_as_notebook(session_id: str, name: str, *, owner: str = "") -> Notebook:
     """Write what has run in this project's kernel out as a real ``.ipynb``.
 
     The panel is the kernel's live history, not a document; this is how you keep
@@ -78,7 +93,7 @@ def save_history_as_notebook(session_id: str, name: str, *, owner: str = "local"
             "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         },
     }, indent=1), encoding="utf-8")
-    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=session_id)
+    workspace = path_manager.get(P.SESSION_WORKSPACE, owner=_owner(owner), session_id=session_id)
     return Notebook(path=str(path.relative_to(workspace)), title=path.stem,
                     size_bytes=path.stat().st_size, cell_count=len(cells),
                     modified_at=datetime.now(timezone.utc).isoformat())
