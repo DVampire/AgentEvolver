@@ -347,11 +347,30 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
 
     if info["source"] is None:
         info["source"] = "full-tree"
+        unreadable = []
         with tarfile.open(tarball, "w:gz") as handle:
             for entry in sorted(os.listdir(workspace)):
                 if entry in _SCAFFOLDING:
                     continue
-                handle.add(os.path.join(workspace, entry), arcname=entry)
+                try:
+                    handle.add(os.path.join(workspace, entry), arcname=entry)
+                except (PermissionError, OSError) as error:
+                    # Skip it rather than abort. The reference binary is root-owned and
+                    # mode `---x--x--x` — executable, deliberately not readable — and the
+                    # agent is *told* to rename it to `reference_executable`, which
+                    # `_SCAFFOLDING` then excludes. An agent that never renamed it left it
+                    # here as `executable`, tarring raised EACCES, and the whole
+                    # submission failed: "[Errno 13] Permission denied:
+                    # '/workspace/executable'". That turns a weak submission into no
+                    # submission, which scores zero for a reason unrelated to the work.
+                    #
+                    # Nothing readable is lost by skipping — and if the skipped file was
+                    # the deliverable, the grader compiles from source anyway.
+                    unreadable.append(f"{entry} ({error.strerror or error})")
+        if unreadable:
+            info["skipped_unreadable"] = unreadable
+            logger.warning(f"| ⚠️ Left out of the submission, unreadable: "
+                           f"{', '.join(unreadable)}")
 
     # Unpack a browsable copy beside the tarball so the reconstruction can be read
     # without untarring it by hand. The scorer still consumes submission.tar.gz.

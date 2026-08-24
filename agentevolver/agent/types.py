@@ -93,6 +93,17 @@ _NO_PROGRESS_STRIKES_BEFORE_ANY_CHANGE = 8
 #: is reported rather than converted into an exhausted budget.
 _THINK_FAILURES_BEFORE_GIVING_UP = 3
 
+#: Consecutive *degenerate* turns — the model returned successfully with neither
+#: reasoning nor a tool call — before a run stops. Distinct from a think failure (the
+#: call raised) and from a text-only turn (reasoning, but no call, which the nudge
+#: handles): this is a call that succeeded and said nothing at all. One ProgramBench
+#: instance did exactly this for all 100 of its steps — empty reasoning, empty tool
+#: calls, `step += 1` each time — and burned the whole budget to a zero score with
+#: nothing logged as wrong. A handful rides out a transient upstream hiccup; beyond that
+#: the model is not going to start answering, and the budget is better not spent finding
+#: that out one empty step at a time.
+_EMPTY_TURNS_BEFORE_GIVING_UP = 5
+
 #: How many times one run may fold history to make an oversized request fit. Folding is
 #: lossy — the summary replaces turns the model can no longer read in full — so a run that
 #: needs it repeatedly is not recovering, it is shrinking toward a prompt that no longer
@@ -401,6 +412,7 @@ class _AgentRun:
         #: its whole budget doing that: 958 steps in 44 seconds, reported as a stack
         #: overflow rather than as the model error logged on the first one.
         self.think_failures = 0
+        self.empty_turns = 0
         #: Action mix, so an agent can see about itself what it otherwise cannot: that it
         #: has been measuring rather than changing anything. Measuring always succeeds and
         #: never breaks the build, so an unsure agent keeps doing it and its history reads
@@ -2334,6 +2346,29 @@ class Agent(BaseModel):
             await self._post_step(run.task_id, run.step, run.ctx, messages,
                                   reasoning=decision["reasoning"], plan=[], step_tokens=decision["step_tokens"],
                                   step_usage=decision.get("step_usage"), done=False)
+
+            # A turn with neither reasoning nor a call is degenerate — a successful model
+            # response that said nothing — not a model thinking out loud. The nudge below
+            # assumes there was text to nudge; when there was not, repeating it every step
+            # is how a run spends its whole budget on empty turns. Counted separately from
+            # think_failures because the call did not fail, and stopped before the budget
+            # is gone rather than after.
+            if not (decision.get("reasoning") or "").strip():
+                run.empty_turns += 1
+                if run.empty_turns >= _EMPTY_TURNS_BEFORE_GIVING_UP:
+                    logger.error(
+                        f"| 🛑 [{self.name}] giving up after {run.empty_turns} consecutive "
+                        f"empty turns: the model is returning neither reasoning nor a tool call")
+                    run.done = False
+                    run.result = (
+                        f"The model returned {run.empty_turns} empty responses in a row "
+                        f"(no reasoning, no tool call); the run cannot make progress.")
+                    run.reasoning = "Consecutive empty model responses."
+                    await self._conclude(run)
+                    return False
+            else:
+                run.empty_turns = 0
+
             run.action_errors = [
                 "You produced text but called no tool. Take the next action by calling a tool, "
                 "or if the task is COMPLETE call `done_tool` with the result now."]
