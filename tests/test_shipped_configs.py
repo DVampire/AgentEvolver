@@ -121,3 +121,59 @@ def test_every_environment_a_config_names_is_registered(path):
     unknown = [name for name in (getattr(config, "env_names", None) or [])
                if name not in known]
     assert not unknown, f"named in env_names but not registered: {unknown}"
+
+
+def test_a_commented_out_capability_still_names_one_that_exists():
+    """A config's commented-out lines are a menu, and a menu goes stale silently.
+
+    `tool_names` and `env_names` carry as many commented entries as live ones — that is
+    how a shipped config offers a capability without turning it on. Every check above
+    reads only the live entries, so a renamed or deleted capability rots in the comments
+    with the suite green, and the reader who uncomments it gets a registry miss.
+
+    It had already happened: `# "job_list_tool"`, `# "job_output_tool"` and
+    `# "job_kill_tool"` outlived the tools by a migration, above an `env_names` block
+    that had `"job"` switched on the whole time. The comment did not merely fail to
+    work — it pointed at three dead names for a capability that was already live.
+
+    Only quoted names on comment lines count, so prose that mentions a tool is not a
+    false positive; a commented-out list entry always carries its quotes.
+    """
+    import re
+
+    import agentevolver.environment.default  # noqa: F401 — importing is what registers them
+    import agentevolver.tool.default  # noqa: F401
+    from agentevolver.registry import ENVIRONMENT, TOOL
+
+    live = {
+        field.default
+        for registry in (TOOL, ENVIRONMENT)
+        for cls in registry.module_dict.values()
+        for field in [getattr(cls, "model_fields", {}).get("name")]
+        if field is not None and isinstance(field.default, str)
+    }
+
+    # An agent is not in a registry — it is a config fragment beside this one, and the
+    # fragment file is the thing a commented-out name would be missing.
+    agents = {path.stem for path in (CONFIGS / "agents").glob("*.py")}
+
+    stale = []
+    for path in sorted(CONFIGS.rglob("*.py")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip().startswith("#"):
+                continue
+            for name in re.findall(r'"([a-z][a-z0-9_]*)"\s*,', line):
+                if name.endswith("_agent"):
+                    known = name in agents
+                elif name.endswith(("_tool", "_environment")):
+                    known = name in live
+                else:
+                    continue
+                if not known:
+                    stale.append(f"{path.relative_to(CONFIGS.parent)}:{number} {name}")
+
+    assert not stale, (
+        "commented-out entries naming capabilities that no longer exist:\n  "
+        + "\n  ".join(stale)
+        + "\nDelete the line, or update it to what replaced the capability."
+    )

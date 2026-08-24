@@ -74,11 +74,6 @@ tool_names = [
     # "session_read_tool",
     # "session_event_read_tool",
     # "session_trace_tool",
-    # background work — start something long with bash_tool(run_in_background),
-    # then keep working and collect it instead of spending a step waiting
-    # "job_list_tool",
-    # "job_output_tool",
-    # "job_kill_tool",
     "done_tool",
     "read_file_tool",
     "write_file_tool",
