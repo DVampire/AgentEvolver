@@ -42,15 +42,9 @@ with read_base():
     from .agents.code_agent import code_agent
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
-    from .agents.tool_generate_agent import tool_generate_agent
-    from .agents.tool_optimize_agent import tool_optimize_agent
-    from .agents.tool_evaluate_agent import tool_evaluate_agent
-    from .agents.agent_generate_agent import agent_generate_agent
-    from .agents.agent_optimize_agent import agent_optimize_agent
-    from .agents.agent_evaluate_agent import agent_evaluate_agent
-    from .agents.skill_generate_agent import skill_generate_agent
-    from .agents.skill_optimize_agent import skill_optimize_agent
-    from .agents.skill_evaluate_agent import skill_evaluate_agent
+    from .agents.generate_agent import generate_agent
+    from .agents.optimize_agent import optimize_agent
+    from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
     from .tools.run_code import run_code_tool
     from .tools.terminal_open import terminal_open_tool
@@ -105,16 +99,12 @@ agent_names = [
     "code_agent",
     "general_agent",
     "reviewer_agent",
-    # self-evolution triads — stripped by run_programbench.py --no-evolve
-    "tool_generate_agent",
-    "tool_optimize_agent",
-    "tool_evaluate_agent",
-    "agent_generate_agent",
-    "agent_optimize_agent",
-    "agent_evaluate_agent",
-    "skill_generate_agent",
-    "skill_optimize_agent",
-    "skill_evaluate_agent",
+    # self-evolution: one agent per role, each building whichever component type it is
+    # told to. This was nine — one per (role x type) — and the type is an input to the
+    # run rather than a different agent.
+    "generate_agent",
+    "optimize_agent",
+    "evaluate_agent",
 ]
 
 # Basic tools only — see the module docstring for what is deliberately absent.
@@ -279,8 +269,8 @@ reviewer_agent.update(
     max_token=MAX_TOKEN,
 )
 
-#-----------------GENERATOR AGENT CONFIGS-----------------
-tool_generate_agent.update(
+#-----------------EVOLUTION AGENT CONFIGS-----------------
+_EVOLUTION = dict(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -289,88 +279,9 @@ tool_generate_agent.update(
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
-
-agent_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-skill_generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-#-----------------OPTIMIZER AGENT CONFIGS-----------------
-tool_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-agent_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-skill_optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-#-----------------EVALUATOR AGENT CONFIGS-----------------
-tool_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-agent_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-skill_evaluate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
+generate_agent.update(**_EVOLUTION)
+optimize_agent.update(**_EVOLUTION)
+evaluate_agent.update(**_EVOLUTION)
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(
