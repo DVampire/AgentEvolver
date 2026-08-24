@@ -5,7 +5,7 @@ rather than switched off. Three differences, and only three:
 
 | | programbench_agent.py | this file |
 |---|---|---|
-| `agent_names` | 4 actors + 9 generate/optimize/evaluate agents | 4 actors |
+| `agent_names` | 4 actors + generate/optimize/evaluate | 4 actors |
 | `tool_names` | basic + `evolution_tool` | basic |
 | `skill_names` | `self_evolving_skill` | none |
 
@@ -37,9 +37,10 @@ with read_base():
     from .agents.general_agent import general_agent
     from .agents.reviewer_agent import reviewer_agent
     from .tools.bash import bash_tool
-    from .tools.batch_call import batch_call_tool
-    from .tools.ask_user import ask_user_question
-    from .tools.exit_plan_mode import exit_plan_mode
+    from .tools.read_file import read_file_tool
+    from .tools.write_file import write_file_tool
+    from .tools.edit_file import edit_file_tool
+    from .tools.list_dir import list_dir_tool
     from .tools.code_interpreter import code_interpreter_tool
     from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
@@ -95,14 +96,19 @@ tool_names = [
     "reply_tool",
     "report_tool",
     "done_tool",
-    "code_interpreter_tool"
+    "code_interpreter_tool",
 ]
 
-# Verification methodology, present in both arms.
-skill_names = [
-]
+# Empty, and that is what the arm measures: what the tool roster alone achieves. Worth
+# reading beside the score — the first run with an empty skill list scored 53 on cmatrix
+# and the run that added five verification skills scored 92, though those runs also
+# differed in model route and prompt version, so the gap is not the skills' alone.
+#
+# Whatever goes here must go in the evolving arm too, minus `self_evolving_skill`. The
+# two arms differ in evolution capability and nothing else; a skill in one and not the
+# other turns the comparison into a skill benchmark.
+skill_names = []
 
-connector_names = []
 env_names = [
     "terminal",
     "job",

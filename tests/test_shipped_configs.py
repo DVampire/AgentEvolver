@@ -177,3 +177,59 @@ def test_a_commented_out_capability_still_names_one_that_exists():
         + "\n  ".join(stale)
         + "\nDelete the line, or update it to what replaced the capability."
     )
+
+
+def test_the_two_programbench_arms_differ_only_in_evolution():
+    """The comparison is only worth reading if the arms are equal in everything else.
+
+    Both files say so, in the control arm's own words: "the two arms differ only in the
+    evolution roster; a mismatch turns the comparison into a model benchmark." Nothing
+    checked it, and the two rosters are edited separately, pages apart, in two files.
+
+    A drift here does not fail anything — it produces a number, and the number looks
+    like a result. That is the whole reason this is a test and not a comment: the arm
+    that quietly gained a tool or lost an environment still scores, and the score is
+    then a measurement of the difference nobody meant to introduce.
+
+    The permitted difference is exactly the evolution capability: the three
+    generate/optimize/evaluate agents, `evolution_tool`, and `self_evolving_skill`.
+    """
+    import argparse
+    import contextlib
+    import io
+
+    from agentevolver.config import config
+
+    EVOLUTION = {
+        "agent_names": {"generate_agent", "optimize_agent", "evaluate_agent"},
+        "tool_names": {"evolution_tool"},
+        "skill_names": {"self_evolving_skill"},
+    }
+    ROSTERS = ("agent_names", "tool_names", "skill_names", "env_names",
+               "memory_names", "connector_names", "plugin_names", "workflow_names")
+
+    arms = {}
+    for name in ("programbench_agent", "programbench_agent_baseline"):
+        with contextlib.redirect_stdout(io.StringIO()):
+            config.initialize(config_path=str(CONFIGS / f"{name}.py"), args=argparse.Namespace())
+        arms[name] = {key: set(getattr(config, key, None) or []) for key in ROSTERS}
+        arms[name]["model_name"] = getattr(config, "model_name", None)
+
+    evolving, baseline = arms["programbench_agent"], arms["programbench_agent_baseline"]
+
+    assert evolving["model_name"] == baseline["model_name"], (
+        f"the arms run different models ({evolving['model_name']} vs "
+        f"{baseline['model_name']}) — that is a model benchmark, not an evolution one"
+    )
+
+    for key in ROSTERS:
+        extra = evolving[key] - baseline[key]
+        missing = baseline[key] - evolving[key]
+        assert extra == EVOLUTION.get(key, set()), (
+            f"{key}: the evolving arm has {sorted(extra)} that the control lacks; only "
+            f"{sorted(EVOLUTION.get(key, set())) or 'nothing'} may differ"
+        )
+        assert not missing, (
+            f"{key}: the control arm has {sorted(missing)} that the evolving arm lacks — "
+            f"the control must never carry more than the evolving arm"
+        )

@@ -97,11 +97,16 @@ IMAGE_TAG = "task_cleanroom_v6"
 #: the remaining 43 could not compare anything against it.
 REFERENCE_COPY = "reference_executable"
 
-#: Ours, not the agent's, and therefore not part of the reconstruction. Only the stashed
-#: reference is left here: task attachments used to land in the workspace too, and that is
-#: fixed at the source now — they stage under log_root, where they are readable without
-#: sitting in the middle of the deliverable.
-_SCAFFOLDING = (REFERENCE_COPY,)
+#: Ours, not the agent's, and therefore not part of the reconstruction. Task attachments
+#: used to land in the workspace too, and that is fixed at the source — they stage under
+#: log_root, where they are readable without sitting in the middle of the deliverable.
+#:
+#: `plan.md` is here for the opposite reason: it *has* to be in the workspace, because it
+#: is a document the agent writes and `workspace_write` is the permission the agent holds
+#: — a sibling of `workspace/` is refused as "outside the writable roots". So it cannot be
+#: staged elsewhere, and the deliverable strips it instead. It is the run's reasoning
+#: about the task, not part of the program being reconstructed.
+_SCAFFOLDING = (REFERENCE_COPY, "plan.md")
 
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"
@@ -744,6 +749,40 @@ def inner_command(instance, args) -> str:
     return " ".join(parts)
 
 
+def ignore_our_scaffolding(workspace: str) -> None:
+    """Keep our own files out of a submission the agent builds with `git archive`.
+
+    `_SCAFFOLDING` is applied when the whole tree is tarred, and that is the fallback
+    path. The preferred path is `git archive HEAD` — the committed tree — which no filter
+    of ours touches. So a run whose agent does `git add -A` ships our scaffolding no
+    matter what the tar step excludes.
+
+    Appended rather than written, and only for entries not already listed: the seeded
+    workspace may ship a `.gitignore` of the task's own, and replacing it would discard
+    build-artifact rules the task document tells the agent to rely on.
+    """
+    path = os.path.join(workspace, ".gitignore")
+    try:
+        existing = ""
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = handle.read()
+        listed = {line.strip() for line in existing.splitlines()}
+        missing = [entry for entry in _SCAFFOLDING if entry not in listed]
+        if not missing:
+            return
+        with open(path, "a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write("# Added by run_programbench.py: ours, not part of the reconstruction.\n")
+            handle.write("".join(f"{entry}\n" for entry in missing))
+        logger.info(f"| 🚫 .gitignore now excludes {', '.join(missing)}")
+    except OSError as error:                                          # noqa: BLE001
+        # Not fatal: the tar-step filter still covers the fallback path, and failing the
+        # whole instance over a .gitignore would cost a run to protect a tidiness rule.
+        logger.warning(f"| ⚠️ Could not extend {path}: {error}")
+
+
 def seed_workspace(image_ref: str, destination: str) -> None:
     """Copy the image's `/workspace` into `destination` so it can be mounted back in.
 
@@ -905,6 +944,7 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
             seed_workspace(image_ref, workspace_dir)
+            ignore_our_scaffolding(workspace_dir)
             grant_to_container_user(session_path)
             grant_to_container_user(os.path.join(root, "extension"))
             logger.info(
