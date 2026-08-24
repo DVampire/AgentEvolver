@@ -88,3 +88,36 @@ def test_every_tool_a_config_names_is_registered(path):
     unknown = [name for name in (getattr(config, "tool_names", None) or [])
                if name not in known]
     assert not unknown, f"named in tool_names but not registered: {unknown}"
+
+
+@pytest.mark.parametrize("path", _entry_points(), ids=lambda p: p.stem)
+def test_every_environment_a_config_names_is_registered(path):
+    """A config may only mount environments that exist.
+
+    The third of the same failure: `env_names` is strings, so a renamed or missing
+    environment leaves a config that loads fine and fails when the manager is asked for it.
+
+    This one also guards a migration shape. Turning tools into an environment means
+    deleting names from `tool_names` and adding one to `env_names`, and the two halves are
+    edited separately — the terminal migration did the first for every config and the
+    second for only some, so two agents silently lost the capability entirely. A name that
+    does not resolve fails here; the *absence* of a name cannot be caught generically,
+    which is why `test_every_agent_with_bash_can_collect_a_background_job` states that one
+    dependency by hand.
+    """
+    import agentevolver.environment.default  # noqa: F401 — importing is what registers them
+    from agentevolver.config import config
+    from agentevolver.registry import ENVIRONMENT
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        config.initialize(config_path=str(path), args=argparse.Namespace())
+
+    known = {
+        field.default
+        for cls in ENVIRONMENT.module_dict.values()
+        for field in [getattr(cls, "model_fields", {}).get("name")]
+        if field is not None and isinstance(field.default, str)
+    }
+    unknown = [name for name in (getattr(config, "env_names", None) or [])
+               if name not in known]
+    assert not unknown, f"named in env_names but not registered: {unknown}"

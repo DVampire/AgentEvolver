@@ -48,9 +48,6 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`http_request_tool`](#http_request_tool) | `read_only` | not declared | `HttpRequestTool` | `agentevolver.tool.default.data_sources` |
 | [`inspect_tool`](#inspect_tool) | `read_only` | no | `InspectTool` | `agentevolver.tool.default.inspect` |
 | [`jina_search_tool`](#jina_search_tool) | `workspace_write` | not declared | `JinaSearch` | `agentevolver.tool.default.search.jina_search` |
-| [`job_kill_tool`](#job_kill_tool) | `workspace_write` | not declared | `JobKillTool` | `agentevolver.tool.default.job` |
-| [`job_list_tool`](#job_list_tool) | `read_only` | not declared | `JobListTool` | `agentevolver.tool.default.job` |
-| [`job_output_tool`](#job_output_tool) | `read_only` | not declared | `JobOutputTool` | `agentevolver.tool.default.job` |
 | [`journal_tool`](#journal_tool) | `workspace_write` | yes | `JournalTool` | `agentevolver.tool.default.journal` |
 | [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
 | [`lsp_tool`](#lsp_tool) | `read_only` | no | `LspTool` | `agentevolver.tool.default.lsp` |
@@ -75,7 +72,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-46 tools.
+43 tools.
 
 ## `ask_user_question`
 
@@ -312,35 +309,6 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 | `country` | `Optional[str]` | no | `'us'` |
 | `lang` | `Optional[str]` | no | `'en'` |
 | `filter_year` | `Optional[int]` | no | `None` |
-
-## `job_kill_tool`
-
-Stop a running background job.
-
-Permission mode: `workspace_write` · does not declare whether it changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `job_id` | `str` | yes | — |
-
-## `job_list_tool`
-
-List background jobs and whether each is still running.
-
-Permission mode: `read_only` · does not declare whether it changes state
-
-Takes no arguments.
-
-## `job_output_tool`
-
-Read what a background job has printed so far.
-
-Permission mode: `read_only` · does not declare whether it changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `job_id` | `str` | yes | — |
-| `tail` | `Optional[int]` | no | `None` |
 
 ## `journal_tool`
 

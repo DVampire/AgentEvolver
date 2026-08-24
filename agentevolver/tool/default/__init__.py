@@ -18,7 +18,6 @@ from .evolution import EvolutionTool
 from .journal import JournalTool
 from .escalate import EscalateTool
 from .code_mode import BatchCallTool
-from .job import JobKillTool, JobListTool, JobOutputTool
 from .ask_user import AskUserTool
 from .exit_plan_mode import ExitPlanModeTool
 from .goal import CreateGoalTool, GetGoalTool, UpdateGoalTool
@@ -56,10 +55,7 @@ __all__ = [
     "EvolutionTool",
     "JournalTool",
     "EscalateTool",
-    "JobOutputTool",
-    "JobListTool",
     "MediaSearchTool",
-    "JobKillTool",
     "LspTool",
     "SendMessageTool",
     "ReportTool",

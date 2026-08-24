@@ -39,7 +39,7 @@ define Workflows in the Workflow module rather than here.
 
 ## The built-in tools
 
-Forty-six registered tools, grouped by what they act on. `mutates` is the registry-owned
+Forty-three registered tools, grouped by what they act on. `mutates` is the registry-owned
 declaration the pipeline reads at step 5: **yes** takes a pre-effect durability checkpoint,
 **no** skips it, and *blank* means the tool has not declared one — which is treated as
 "yes", so an undeclared mutation is never missed and the cost of silence falls on the tool
@@ -66,16 +66,22 @@ rather than on the record.
 | `bash_tool` | | One shell command, one call. Starts in the workspace. |
 | `code_interpreter_tool` | | A persistent interpreter: variables, imports and open files survive between calls; figures come back as images. |
 | `batch_call_tool` | | A batch of tool calls in one turn, expressed as a short Python program. For a loop, a search, or one edit across a list — not for a single call. |
-| `job_list_tool` | | List background jobs and whether each is still running. |
-| `job_output_tool` | | Read what a background job has printed so far. |
-| `job_kill_tool` | | Stop a running background job. |
 
 A one-shot command, a persistent interpreter, a persistent terminal and a background job
-are four different lifetimes, not four spellings of one — and only three of them are here.
-**Terminals are an environment** (`agentevolver/environment/default/terminal/`): a shell
-holding a directory, a virtualenv, an ssh session and a half-finished REPL is something an
-agent is *in*, not something it calls, and the giveaway was the tool it needed to look at
-one. What every open terminal is showing now arrives in `environment-state` each step.
+are four different lifetimes, not four spellings of one — and **only two of them are
+tools**. The other two are environments, for the same reason in both cases: each had a
+tool whose whole job was to fetch state the agent should have been looking at already, and
+a tool cannot volunteer anything.
+
+- **Terminals** (`environment/default/terminal/`) — a shell holding a directory, a
+  virtualenv, an ssh session and a half-finished REPL. `terminal_read_tool` was the
+  giveaway; what every open terminal is showing now arrives in `environment-state` each
+  step.
+- **Background work** (`environment/default/job/`) — a backgrounded command, a
+  backgrounded terminal send, a dispatched sub-agent, a reminder. `job_list_tool` was the
+  giveaway, and background work is the worse case: it is silent by construction, so
+  finished, failed and hung all look identical from outside — like nothing at all.
+
 Job and terminal handles are owner-fenced by Session (see above), so an id guessed from
 another session resolves to nothing.
 

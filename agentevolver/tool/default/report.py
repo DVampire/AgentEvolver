@@ -1,7 +1,7 @@
 """report tool — a sub-agent tells its parent something before it is finished.
 
 The child's write end of the same transcript its result lands in: the job the parent is
-holding for it. Not a second channel — `job_output_tool` reads reports and results in the
+holding for it. Not a second channel — `job__output` reads reports and results in the
 order the child produced them, so a parent collecting a child has one thing to read.
 
 Distinct from `escalate_tool`, which is a rendezvous: escalating suspends the child until

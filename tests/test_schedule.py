@@ -19,7 +19,7 @@ import pytest
 from agentevolver.job import job_manager
 from agentevolver.job.server import MAX_FINISHED_PER_SESSION
 from agentevolver.job.types import JobStatus, ScheduleError
-from agentevolver.tool.default.job import JobKillTool, JobListTool, JobOutputTool
+from agentevolver.environment.default.job import JobEnvironment
 from agentevolver.tool.default.schedule import ScheduleCreateTool
 
 #: A fixed instant to schedule from: 2026-08-15T09:00:00Z. Any constant would do;
@@ -279,12 +279,12 @@ async def test_the_listing_says_how_long_until_it_fires_not_how_long_it_has_sat(
     as work that just began.
     """
     await ScheduleCreateTool()(prompt="check the deploy", after_seconds=900, ctx=_Ctx())
-    listing = await JobListTool()(ctx=_Ctx())
-    assert "in 15m" in listing.message
+    listing = await JobEnvironment().list(ctx=_Ctx())
+    assert "in 15m" in listing["message"]
 
     clock.advance(900)
-    fired = await JobListTool()(ctx=_Ctx())
-    assert "DUE NOW" in fired.message
+    fired = await JobEnvironment().list(ctx=_Ctx())
+    assert "DUE NOW" in fired["message"]
 
 
 @pytest.mark.asyncio
@@ -295,9 +295,9 @@ async def test_cancelling_through_the_tool_does_not_offer_output_that_never_exis
     confirming the one thing it asked for: this will not fire.
     """
     created = await ScheduleCreateTool()(prompt="never mind", after_seconds=900, ctx=_Ctx())
-    result = await JobKillTool()(job_id=created.data["job_id"], ctx=_Ctx())
-    assert result.success
-    assert "will not come due" in result.message
+    result = await JobEnvironment().kill(job_id=created.data["job_id"], ctx=_Ctx())
+    assert result["success"]
+    assert "will not come due" in result["message"]
 
 
 @pytest.mark.asyncio
@@ -306,5 +306,5 @@ async def test_a_due_reminder_can_be_read_with_the_same_tool_as_any_other_job(cl
     created = await ScheduleCreateTool()(prompt="check the ETL", after_seconds=60, ctx=_Ctx())
     clock.advance(60)
     job_manager.claim_due(SESSION)
-    read = await JobOutputTool()(job_id=created.data["job_id"], ctx=_Ctx())
-    assert "check the ETL" in read.message
+    read = await JobEnvironment().output(job_id=created.data["job_id"], ctx=_Ctx())
+    assert "check the ETL" in read["message"]

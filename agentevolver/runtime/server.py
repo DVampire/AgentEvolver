@@ -245,7 +245,7 @@ class RuntimeManager(metaclass=Singleton):
         job = self._register(child, task, ctx, brief.get("parent_ctx"))
 
         # Run through a task rather than awaiting directly, so the job's handle is
-        # something `job_kill_tool` can actually signal. Without it the registry would
+        # something `job__kill` can actually signal. Without it the registry would
         # accept a kill, mark the job dead, and leave the child running — the one failure
         # the job registry exists to prevent.
         inner = asyncio.ensure_future(protocol_manager.delegate(
@@ -329,9 +329,9 @@ class RuntimeManager(metaclass=Singleton):
         lines = [
             f"Started {ref.agent_name} in the background as {ref.job_id}. "
             f"It does not block you; keep working.",
-            f'  job_output_tool(job_id="{ref.job_id}")  — what it has reported and returned',
-            f"  job_list_tool()                      — every job and its state",
-            f'  job_kill_tool(job_id="{ref.job_id}")    — stop it',
+            f'  job__output(job_id="{ref.job_id}")  — what it has reported and returned',
+            f"  job__list()                      — every job and its state",
+            f'  job__kill(job_id="{ref.job_id}")    — stop it',
         ]
         if ref.continuable:
             lines.insert(1, f'  send_message_tool(job_id="{ref.job_id}", message=...) — give it more '
@@ -364,12 +364,12 @@ class RuntimeManager(metaclass=Singleton):
         if not ref.continuable:
             return refused(
                 f"{job_id} is a one-shot sub-agent: it answers once and ends, so there is "
-                f"nothing to continue. Read what it returned with job_output_tool, and "
+                f"nothing to continue. Read what it returned with job__output, and "
                 f"start a continuable one if you need a worker you can keep talking to.")
         if not ref.alive:
             return refused(
                 f"{job_id} has already ended, so the message was NOT delivered. Its output "
-                f"is still readable with job_output_tool.")
+                f"is still readable with job__output.")
 
         # Read before the message is queued, and counting what is already queued as busy:
         # a message sent a moment after another lands behind it, and reporting that one as
@@ -383,7 +383,7 @@ class RuntimeManager(metaclass=Singleton):
         return Response(
             type=ResponseType.AGENT, success=True,
             message=(f"Delivered to {job_id}. {when}\nIt does not answer here — read the "
-                     f'result with job_output_tool(job_id="{job_id}").'),
+                     f'result with job__output(job_id="{job_id}").'),
             data={"job_id": job_id},
         )
 
@@ -418,7 +418,7 @@ class RuntimeManager(metaclass=Singleton):
         """Run one child's turns, one at a time, until it is one-shot-done or stopped.
 
         One coroutine per child, alive for the child's whole life. It is also what
-        ``job_kill_tool`` cancels, which is why the pump is stopped from a ``finally`` here
+        ``job__kill`` cancels, which is why the pump is stopped from a ``finally`` here
         rather than by the killer: the registry signals a handle, and a child whose handle
         dies without stopping its pump is a leak the registry then reports as dead.
         """

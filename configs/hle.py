@@ -14,9 +14,6 @@ with read_base():
     from .tools.read_image import read_image_tool
     from .tools.ask_user import ask_user_question
     from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.job_list import job_list_tool
-    from .tools.job_output import job_output_tool
-    from .tools.job_kill import job_kill_tool
     from .memory.file_system_memory import file_system_memory
     from .benchmarks.hle import hle_benchmark
 
@@ -35,6 +32,7 @@ model_name = "google/gemini-3.1-pro-preview"
 memory_names = ["file_system_memory"]
 agent_names = ["general_agent"]
 env_names = [
+    "job",
     # Terminals are an environment now: what each open one is showing arrives in
     # `environment-state` every step, instead of being fetched with a read tool.
     "terminal",
@@ -48,9 +46,6 @@ tool_names = [
     "exit_plan_mode",
     # background work — start something long with bash_tool(run_in_background),
     # then keep working and collect it instead of spending a step waiting
-    "job_list_tool",
-    "job_output_tool",
-    "job_kill_tool",
     "code_interpreter_tool",
     "done_tool",
     "inspect_tool",

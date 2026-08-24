@@ -7,9 +7,6 @@ with read_base():
     from .tools.read_image import read_image_tool
     from .tools.ask_user import ask_user_question
     from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.job_list import job_list_tool
-    from .tools.job_output import job_output_tool
-    from .tools.job_kill import job_kill_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
@@ -38,6 +35,7 @@ agent_names = [
     "code_agent",
 ]
 env_names = [
+    "job",
     # Terminals are an environment now: what each open one is showing arrives in
     # `environment-state` every step, instead of being fetched with a read tool.
     "terminal",
@@ -51,9 +49,6 @@ tool_names = [
     "exit_plan_mode",
     # background work — start something long with bash_tool(run_in_background),
     # then keep working and collect it instead of spending a step waiting
-    "job_list_tool",
-    "job_output_tool",
-    "job_kill_tool",
     "done_tool",
     "read_file_tool",
     "write_file_tool",

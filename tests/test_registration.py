@@ -107,20 +107,22 @@ def test_every_imported_stub_exists():
 
 
 def test_every_agent_with_bash_can_collect_a_background_job():
-    """`run_in_background` without the `job_*` tools starts work nothing can read.
+    """`run_in_background` without the job environment starts work nothing can read.
 
     The agent is handed a job id and no way to use it — worse than not being able to
     background at all, because the capability looks available and silently drops results.
+
+    It was three `job_*` tools; it is one mounted environment now, and the requirement did
+    not change with the shape. What did change is that mounting it also puts what is still
+    outstanding in front of the agent every step, rather than only when it asks.
     """
     stranded = []
     for path in sorted(CONFIG_DIR.glob("*.py")):
         text = path.read_text(encoding="utf-8")
         if '"bash_tool",' not in text:
             continue
-        missing = [t for t in ("job_list_tool", "job_output_tool", "job_kill_tool")
-                   if f'"{t}",' not in text]
-        if missing:
-            stranded.append(f"{path.name} lacks {missing}")
+        if '"job",' not in text:
+            stranded.append(f"{path.name} does not mount the job environment")
     assert not stranded, ("these agents can start background work but not collect it:\n  "
                           + "\n  ".join(stranded))
 

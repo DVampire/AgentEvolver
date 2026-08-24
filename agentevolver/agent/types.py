@@ -2121,7 +2121,7 @@ class Agent(BaseModel):
         """Hand the model any reminder whose time has come.
 
         A reminder the agent has to remember to look for is not a reminder. `schedule`
-        wrote them and `job_list_tool` could show them, but nothing pushed — so the agent
+        wrote them and `job__list` could show them, but nothing pushed — so the agent
         saw a due reminder only if it happened to list its jobs, which is precisely the
         thing it set the reminder in order not to have to do.
 

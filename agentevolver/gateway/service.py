@@ -728,7 +728,7 @@ class AgentGateway:
     async def _command_job_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Background work this project started, and whether any of it is still running.
 
-        Read-only, and deliberately the same registry the agent's own `job_list_tool`
+        Read-only, and deliberately the same registry the agent's own `job__list`
         reads. Two sources for "what is outstanding" would disagree the moment one of
         them lagged, and the moment they disagree is exactly when someone is trying to
         work out whether it is safe to close the tab.

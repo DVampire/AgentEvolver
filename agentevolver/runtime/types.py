@@ -68,7 +68,7 @@ class AgentRef(BaseModel):
     status:     AgentStatus = AgentStatus.RUNNING
 
     #: Set only on a delegated ref. ``job_id`` is the id the parent's model is given —
-    #: `job_list_tool` / `job_output_tool` / `job_kill_tool` all take the same string.
+    #: `job__list` / `job__output` / `job__kill` all take the same string.
     job_id:            str  = ""
     task:              str  = ""
     parent_session_id: str  = ""
@@ -105,7 +105,7 @@ class AgentRef(BaseModel):
     def label(self) -> str:
         """The job listing's summary — who it is, what it is doing, what it was asked.
 
-        What it is doing is in here because ``job_list_tool`` is where a parent looks to
+        What it is doing is in here because ``job__list`` is where a parent looks to
         recall what it started, and "running" alone cannot separate a child mid-turn from
         one idling with an answer already waiting to be read.
         """

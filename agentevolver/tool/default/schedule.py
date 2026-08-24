@@ -2,7 +2,7 @@
 
 There is one tool here, not three. A reminder is a job that has not started, so the
 questions that would need the other two — what is scheduled, cancel that one — are
-already answered by `job_list_tool` and `job_kill_tool` against the same registry.
+already answered by `job__list` and `job__kill` against the same registry.
 A second list and a second delete would be a second vocabulary for one idea, and the
 agent would have to learn which of the two knew about which piece of work.
 """
@@ -31,8 +31,8 @@ it. Give exactly one of:
 - Delivery is session-local. The reminder lives in this run and dies with it — it does
   not reach anyone after the run ends, and it is not a notification. Something that must
   outlive the run belongs in a file, or in the goal.
-- Reminders are collected, not pushed. A due one appears in `job_list_tool` as DUE NOW;
-  read what it says with `job_output_tool`, and cancel it with `job_kill_tool`.
+- Reminders are collected, not pushed. A due one appears in `job__list` as DUE NOW;
+  read what it says with `job__output`, and cancel it with `job__kill`.
 - A repeating reminder skips what it missed: coming back after an hour gives you one
   reminder, not twelve.
 - The prompt is what you will read later — write it so it makes sense with no memory of
@@ -94,7 +94,7 @@ class ScheduleCreateTool(Tool):
         return Response(
             type=ResponseType.TOOL, success=True,
             message=(f"{job.id} is due in {format_interval(remaining)}{repeat}. It shows as "
-                     f"DUE NOW in job_list_tool when it fires; job_kill_tool cancels it. "
+                     f"DUE NOW in job__list when it fires; job__kill cancels it. "
                      f"Delivery is session-local — it ends when this run does."),
             data={"job_id": job.id, "due_at": job.due_at,
                   "every_seconds": job.every_seconds, "prompt": job.label},

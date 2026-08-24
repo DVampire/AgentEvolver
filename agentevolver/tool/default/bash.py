@@ -175,7 +175,7 @@ class BashTool(Tool):
         process = subprocess.Popen(
             command, shell=True, cwd=cwd, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            # Its own process group, so `job_kill_tool` can signal the whole tree. A
+            # Its own process group, so `job__kill` can signal the whole tree. A
             # shell command is usually a shell that spawned the real work; signalling
             # only the leader leaves that work running while the registry calls it dead.
             start_new_session=True, close_fds=True, text=True, bufsize=1,
@@ -207,9 +207,9 @@ class BashTool(Tool):
                 f"{warning_prefix}Started in the background as {job.id}.\n"
                 f"It is running now; keep working and collect it when you need the "
                 f"result:\n"
-                f"  job_output_tool(job_id=\"{job.id}\")  — what it has printed so far\n"
-                f"  job_list_tool()                      — every job and its state\n"
-                f"  job_kill_tool(job_id=\"{job.id}\")    — stop it"
+                f"  job__output(job_id=\"{job.id}\")  — what it has printed so far\n"
+                f"  job__list()                      — every job and its state\n"
+                f"  job__kill(job_id=\"{job.id}\")    — stop it"
             ),
             data={"job_id": job.id, "status": job.status.value},
         )

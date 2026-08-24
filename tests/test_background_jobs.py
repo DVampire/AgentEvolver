@@ -123,7 +123,7 @@ def test_elapsed_time_separates_working_from_hung():
 @pytest.mark.asyncio
 async def test_a_backgrounded_command_returns_at_once_and_is_collected_later(workspace):
     from agentevolver.tool.default.bash import BashTool
-    from agentevolver.tool.default.job import JobOutputTool
+    from agentevolver.environment.default.job import JobEnvironment
 
     started = await BashTool()(
         command="for i in 1 2 3; do echo line-$i; sleep 0.2; done",
@@ -133,13 +133,13 @@ async def test_a_backgrounded_command_returns_at_once_and_is_collected_later(wor
     assert job_manager.get(job_id).status is JobStatus.RUNNING, \
         "the call returned only after the command finished; it did not background it"
 
-    output = JobOutputTool()
+    output = JobEnvironment()
     assert await _wait_until(lambda: "line-3" in (job_manager.output(job_id) or ""))
     assert await _wait_until(lambda: job_manager.get(job_id).status.is_final)
 
-    collected = await output(job_id=job_id, ctx=_Ctx())
-    assert "line-1" in collected.message and "line-3" in collected.message
-    assert collected.data["exit_code"] == 0
+    collected = await output.output(job_id=job_id, ctx=_Ctx())
+    assert "line-1" in collected["message"] and "line-3" in collected["message"]
+    assert collected["exit_code"] == 0
 
 
 @pytest.mark.asyncio
@@ -149,40 +149,40 @@ async def test_a_running_job_says_so_rather_than_looking_finished(workspace):
     An agent reading it as finished stops collecting, and never sees the rest.
     """
     from agentevolver.tool.default.bash import BashTool
-    from agentevolver.tool.default.job import JobOutputTool
+    from agentevolver.environment.default.job import JobEnvironment
 
     started = await BashTool()(command="sleep 5", run_in_background=True, ctx=_Ctx())
-    result = await JobOutputTool()(job_id=started.data["job_id"], ctx=_Ctx())
-    assert result.data["running"] is True
-    assert "STILL RUNNING" in result.message
+    result = await JobEnvironment().output(job_id=started.data["job_id"], ctx=_Ctx())
+    assert result["running"] is True
+    assert "STILL RUNNING" in result["message"]
     job_manager.kill(started.data["job_id"])
 
 
 @pytest.mark.asyncio
 async def test_killing_keeps_what_the_job_already_said(workspace):
     from agentevolver.tool.default.bash import BashTool
-    from agentevolver.tool.default.job import JobKillTool, JobOutputTool
+    from agentevolver.environment.default.job import JobEnvironment
 
     started = await BashTool()(
         command="echo before-kill; sleep 30", run_in_background=True, ctx=_Ctx())
     job_id = started.data["job_id"]
     assert await _wait_until(lambda: "before-kill" in (job_manager.output(job_id) or ""))
 
-    await JobKillTool()(job_id=job_id, ctx=_Ctx())
-    kept = await JobOutputTool()(job_id=job_id, ctx=_Ctx())
-    assert "before-kill" in kept.message, "the kill destroyed what had already been learned"
+    await JobEnvironment().kill(job_id=job_id, ctx=_Ctx())
+    kept = await JobEnvironment().output(job_id=job_id, ctx=_Ctx())
+    assert "before-kill" in kept["message"], "the kill destroyed what had already been learned"
 
 
 @pytest.mark.asyncio
 async def test_killing_a_finished_job_is_not_an_error(workspace):
     """Reporting it as one invites a retry loop against a dead process."""
-    from agentevolver.tool.default.job import JobKillTool
+    from agentevolver.environment.default.job import JobEnvironment
 
     job = job_manager.register(type="test", label="x", session_id=_Ctx.id)
     job_manager.finish(job.id, exit_code=0)
-    result = await JobKillTool()(job_id=job.id, ctx=_Ctx())
-    assert result.success
-    assert "nothing to stop" in result.message
+    result = await JobEnvironment().kill(job_id=job.id, ctx=_Ctx())
+    assert result["success"]
+    assert "nothing to stop" in result["message"]
 
 
 @pytest.mark.asyncio
@@ -198,12 +198,12 @@ async def test_a_terminal_cannot_be_backgrounded(workspace):
 @pytest.mark.asyncio
 async def test_an_unknown_job_id_names_the_ones_that_exist(workspace):
     """A bare "not found" leaves the agent guessing at a handle it already holds."""
-    from agentevolver.tool.default.job import JobOutputTool
+    from agentevolver.environment.default.job import JobEnvironment
 
     job = job_manager.register(type="test", label="x", session_id=_Ctx.id)
-    result = await JobOutputTool()(job_id="job_nope", ctx=_Ctx())
-    assert not result.success
-    assert job.id in result.message
+    result = await JobEnvironment().output(job_id="job_nope", ctx=_Ctx())
+    assert not result["success"]
+    assert job.id in result["message"]
 
 
 # --------------------------------------------------------------------------- #
@@ -273,3 +273,65 @@ def test_killing_a_job_whose_process_is_already_gone_does_not_raise():
         assert job_manager.kill(job.id) is True
     finally:
         job_manager.forget("gone")
+
+
+# --------------------------------------------------------------------------- #
+# What the agent sees without asking
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_unfinished_work_shows_up_in_the_state(workspace):
+    """The reason this is an environment rather than three tools.
+
+    Background work is silent by construction: a job that finished, one that failed and
+    one that hung look identical from outside — like nothing at all. As tools, "what am I
+    still waiting on" was answered only when the agent thought to ask, which is asking it
+    to remember the thing it delegated the work in order to forget.
+    """
+    from agentevolver.environment.default.job import JobEnvironment
+
+    env = JobEnvironment()
+    assert (await env.get_state(ctx=_Ctx()))["state"] == "", \
+        "with nothing outstanding the state is empty, so the block is omitted entirely"
+
+    job = job_manager.register(type="test", label="a long thing", session_id=_Ctx.id)
+    body = (await env.get_state(ctx=_Ctx()))["state"]
+    assert job.id in body and "a long thing" in body
+
+
+@pytest.mark.asyncio
+async def test_finished_work_leaves_the_state(workspace):
+    """A finished job has said everything it is going to.
+
+    Its output stays readable through `output`, and a line about it every step is prompt
+    spent on something that is over — for the whole rest of the run. `list` is where the
+    history lives.
+    """
+    from agentevolver.environment.default.job import JobEnvironment
+
+    env = JobEnvironment()
+    job = job_manager.register(type="test", label="done thing", session_id=_Ctx.id)
+    assert job.id in (await env.get_state(ctx=_Ctx()))["state"]
+
+    job_manager.finish(job.id, exit_code=0)
+    assert (await env.get_state(ctx=_Ctx()))["state"] == "", \
+        "a finished job stayed in the state, where it costs prompt every step"
+    assert job.id in (await env.list(ctx=_Ctx()))["message"], \
+        "`list` is where finished work is still visible"
+
+
+@pytest.mark.asyncio
+async def test_a_long_listing_is_trimmed_and_says_so(workspace):
+    """The state is a standing picture, not an archive.
+
+    Silently showing the first twelve would read as "twelve is all there is", which is the
+    same failure as an incomplete answer to "what am I waiting on".
+    """
+    from agentevolver.environment.default.job import JobEnvironment
+    from agentevolver.environment.default.job.environment import STATE_JOB_LIMIT
+
+    for index in range(STATE_JOB_LIMIT + 3):
+        job_manager.register(type="test", label=f"job {index}", session_id=_Ctx.id)
+
+    body = (await JobEnvironment().get_state(ctx=_Ctx()))["state"]
+    assert "and 3 more" in body
+    assert "job__list" in body, "the trim must name the way to see the rest"

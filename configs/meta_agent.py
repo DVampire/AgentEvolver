@@ -23,9 +23,6 @@ with read_base():
     from .tools.session_read import session_read_tool
     from .tools.session_event_read import session_event_read_tool
     from .tools.session_trace import session_trace_tool
-    from .tools.job_list import job_list_tool
-    from .tools.job_output import job_output_tool
-    from .tools.job_kill import job_kill_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
@@ -129,6 +126,7 @@ connector_names = [
 # (opensandbox/chrome) spawned via the Docker socket and driven over CDP — so the
 # base image needs no chromium of its own. use_sandbox=True selects that peer.
 env_names = [
+    "job",
     # "browser_environment",
     # "computer_environment",
     # "remote_host",

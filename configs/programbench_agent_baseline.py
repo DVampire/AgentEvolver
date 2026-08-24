@@ -40,9 +40,6 @@ with read_base():
     from .tools.batch_call import batch_call_tool
     from .tools.ask_user import ask_user_question
     from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.job_list import job_list_tool
-    from .tools.job_output import job_output_tool
-    from .tools.job_kill import job_kill_tool
     from .tools.code_interpreter import code_interpreter_tool
     from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
@@ -97,9 +94,6 @@ tool_names = [
     "exit_plan_mode",
     # background work — start something long with bash_tool(run_in_background),
     # then keep working and collect it instead of spending a step waiting
-    "job_list_tool",
-    "job_output_tool",
-    "job_kill_tool",
     "read_file_tool",
     "write_file_tool",
     "edit_file_tool",
@@ -122,7 +116,14 @@ skill_names = [
 ]
 
 connector_names = []
-env_names = []
+env_names = [
+    # Both were replacements for tools this config already had: the six terminal
+    # tools, and the three job tools. As environments they also put what each
+    # open terminal shows, and what is still running, in front of the agent every
+    # step rather than only when it asks.
+    "terminal",
+    "job",
+]
 
 #-----------------SANDBOX EGRESS-----------------
 # The benchmark's anti-cheat is that the agent's shell cannot reach the internet: it must

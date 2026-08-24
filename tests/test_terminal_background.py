@@ -5,7 +5,7 @@ minutes: a build prints nothing for a stretch and looks finished, so the caller 
 burns its whole budget waiting or reads a completion that has not happened.
 
 The registry was already described as kind-agnostic — a background command, a PTY send, a
-spawned agent — and covered two of the three. A `job_list_tool` that answers "what is
+spawned agent — and covered two of the three. A `job__list` that answers "what is
 outstanding" with only some of the outstanding things is worse than not answering: the
 parent working out what it is still waiting on reads the gap as nothing.
 """
@@ -107,14 +107,14 @@ async def test_killing_the_job_stops_watching_and_not_the_command(session):
         text="(sleep 1; echo alive > kept-running.txt)",
         run_in_background=True, ctx=_Ctx())
 
-    from agentevolver.tool.default.job import JobKillTool
-    await JobKillTool()(job_id=started["job_id"], ctx=_Ctx())
+    from agentevolver.environment.default.job import JobEnvironment
+    await JobEnvironment().kill(job_id=started["job_id"], ctx=_Ctx())
 
     from agentevolver.config import config
     from pathlib import Path
     marker = Path(config.workspace_root) / "kept-running.txt"
     assert await _wait_until(lambda: marker.exists()), (
-        "killing the job also stopped the command; job_kill_tool is supposed to stop "
+        "killing the job also stopped the command; job__kill is supposed to stop "
         "watching, and terminal_signal_tool is what stops the command")
 
 

@@ -28,12 +28,12 @@ that sub-agent's next turn and continues the same conversation, so you do not ha
 repeat what you already told it.
 
 This returns confirmation that the message was delivered, not an answer. Collect the
-answer with `job_output_tool` once the turn finishes.
+answer with `job__output` once the turn finishes.
 
 - Only a continuable sub-agent can take one. A one-shot child answers once and ends;
   sending to it fails and says so.
 - If it is mid-turn the message waits until that turn finishes — it cannot redirect work
-  already underway. To stop what it is doing, use `job_kill_tool`.
+  already underway. To stop what it is doing, use `job__kill`.
 - A failure means the message was NOT delivered. Do not assume it arrived.
 """
 

@@ -2,9 +2,6 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .tools.bash import bash_tool
-    from .tools.job_list import job_list_tool
-    from .tools.job_output import job_output_tool
-    from .tools.job_kill import job_kill_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
     from .tools.edit_file import edit_file_tool
@@ -25,11 +22,14 @@ log_path = "agent.log"
 
 model_name = "llm_hub/claude-opus-5"
 
+env_names = [
+    # Background work is an environment: what is still outstanding shows up
+    # every step instead of having to be asked for.
+    "job",
+]
+
 tool_names = [
     "bash_tool",
-    "job_list_tool",
-    "job_output_tool",
-    "job_kill_tool",
     "done_tool",
     "read_file_tool",
     "write_file_tool",

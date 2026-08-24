@@ -37,8 +37,8 @@ carrying a job id as soon as the child holds its brief. Everything else — what
 inherits, who it escalates to, where it reports — is identical, because the only thing
 backgrounding changes is whether the caller spends its own steps waiting.
 
-Both register the child as a `Job` of kind `agent`, so `job_list_tool` / `job_output_tool` /
-`job_kill_tool` reach a delegated child and a backgrounded shell command the same way. A
+Both register the child as a `Job` of kind `agent`, so `job__list` / `job__output` /
+`job__kill` reach a delegated child and a backgrounded shell command the same way. A
 blocked parent gets its child's reports folded into the returned result, because it never
 gets the chance to poll.
 
@@ -48,7 +48,7 @@ A background child has two queues in series, and the outer one is the point. Del
 tasks straight into `_inbox` starts a second run on the same ref while the first is still
 going — `on_start` keys its run by ref name, so the second overwrites the first and the
 first turn's result is lost with nothing logged. `_tasks` is drained by one driver
-coroutine per child, which is also the handle `job_kill_tool` cancels: the driver stops the
+coroutine per child, which is also the handle `job__kill` cancels: the driver stops the
 pump from its own `finally`, so a killed job cannot leave a child still calling a model.
 
 `continuable` decides what happens after a turn. A one-shot child is released; a continuable
