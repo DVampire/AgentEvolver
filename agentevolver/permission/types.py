@@ -380,6 +380,32 @@ def is_binary_file(path: str) -> bool:
         return False
 
 
+def _fence(workspace: str) -> str:
+    """The workspace this check is against, asking the path manager when told nothing.
+
+    `workspace=""` used to mean *no fence*: `check_file_write` skipped containment
+    entirely, so a caller that forgot the argument got no boundary and no complaint. Every
+    caller in the tree does pass it — from `config.workspace_root` — which is exactly what
+    made the default safe-looking and untested.
+
+    Failing closed instead. The bound session is the same source `check_session_path`
+    reads, so the two boundaries answer from one place, and an override — the container
+    mount point a run declares — reaches both.
+
+    Still "" when nothing is bound: a bare script or a unit test has no run to be outside
+    of, and fencing every path there would break callers that never had a boundary.
+    """
+    if workspace:
+        return workspace
+    try:
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        return str(roots["workspace"]) if roots else ""
+    except Exception:                                    # noqa: BLE001 — no session, no fence
+        return ""
+
+
 def check_file_read(path: str, mode: PermissionMode, workspace: str = "") -> ValidationResult:
     try:
         size = os.path.getsize(path)
@@ -405,6 +431,7 @@ def check_file_write(path: str, content: str, mode: PermissionMode, workspace: s
             f"Content too large to write: {len(encoded) / 1024 / 1024:.1f} MB (limit 10 MB)."
         )
 
+    workspace = _fence(workspace)
     if workspace and mode == PermissionMode.WORKSPACE_WRITE:
         try:
             resolved = os.path.realpath(path)

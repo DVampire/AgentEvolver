@@ -97,3 +97,81 @@ def test_full_access_runs_the_command_here_rather_than_reaching_for_a_sandbox(tm
     assert response.success
     assert "hello-sandbox" in response.message
     assert "sandboxed" not in (response.data or {})
+
+
+# --------------------------------------------------------------------------- #
+# A caller that says nothing about the workspace gets the fence, not none
+# --------------------------------------------------------------------------- #
+def test_an_omitted_workspace_falls_back_to_the_bound_session():
+    """`workspace=""` used to mean *no fence*, silently.
+
+    `check_file_write` skipped containment entirely when it was empty, so a caller that
+    forgot the argument was unbounded and nothing said so. Every caller in the tree does
+    pass it — from `config.workspace_root` — which is what made the default look safe
+    while never being exercised. The next tool to call this and forget would have had no
+    boundary at all.
+
+    It now asks `path_manager` instead, which is the same source `check_session_path`
+    reads, so the two boundaries answer from one place.
+    """
+    from agentevolver.paths import path_manager
+    from agentevolver.permission.types import PermissionMode, check_file_write
+
+    path_manager.bind_session("local", "fence_fallback")
+    try:
+        workspace = str(path_manager.session_roots()["workspace"])
+        assert check_file_write(f"{workspace}/inside.txt", "x",
+                                PermissionMode.WORKSPACE_WRITE).allowed
+        assert not check_file_write("/etc/hosts", "x",
+                                    PermissionMode.WORKSPACE_WRITE).allowed, (
+            "an omitted workspace left the write unfenced")
+    finally:
+        path_manager.unbind_session()
+
+
+def test_no_bound_session_means_no_fence_rather_than_no_writes():
+    """A bare script or a unit test has no run to be outside of.
+
+    Fencing every path there would break callers that never had a boundary — the same
+    reason `check_session_path` returns None when nothing is bound.
+    """
+    from agentevolver.paths import path_manager
+    from agentevolver.permission.types import PermissionMode, check_file_write
+
+    path_manager.unbind_session()
+    assert check_file_write("/tmp/anywhere.txt", "x",
+                            PermissionMode.WORKSPACE_WRITE).allowed
+
+
+def test_a_container_mount_is_fenced_by_both_boundaries():
+    """The two checks must agree, and they read different sources.
+
+    `check_session_path` reads `path_manager.session_roots()`; the permission fence reads
+    whatever its caller passed, which is `config.workspace_root`. A run inside a container
+    sets both to the mount point — and the first ignored its override, so
+    `write_file_tool` on `/workspace/cmatrix.c` was refused by the sandbox while the
+    permission fence would have allowed it. Nine refusals on that one file in a single
+    ProgramBench instance.
+
+    Both are asserted here so a future change to either is caught by the same test rather
+    than by a benchmark run.
+    """
+    from agentevolver.paths import P, path_manager
+    from agentevolver.permission.types import PermissionMode, check_file_write
+    from agentevolver.sandbox.project import check_session_path
+
+    path_manager.bind_session("local", "both_fences")
+    try:
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        assert check_session_path(path="/workspace/cmatrix.c", write=True) is None, (
+            "the sandbox boundary ignores the container mount override")
+        assert check_file_write("/workspace/cmatrix.c", "int main(){}",
+                                PermissionMode.WORKSPACE_WRITE).allowed, (
+            "the permission fence ignores the container mount override")
+        for escape in ("/etc/passwd", "/workspace/../etc/passwd"):
+            assert check_session_path(path=escape, write=True), f"sandbox allows {escape}"
+            assert not check_file_write(escape, "x",
+                                        PermissionMode.WORKSPACE_WRITE).allowed, (
+                f"permission fence allows {escape}")
+    finally:
+        path_manager.unbind_session()
