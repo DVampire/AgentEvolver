@@ -10,8 +10,15 @@ metadata: {}
 # Environment
 
 An environment is somewhere with state that an agent acts on — a remote machine, a
-browser, this computer's screen. It exposes **actions**, which are the things a model can
-ask it to do.
+browser, this computer's screen, a terminal holding a shell. It exposes **actions**, which
+are the things a model can ask it to do.
+
+The test for one is not "does it have state" but *what relation the agent has to it*: a
+capability is something the agent **uses**, an environment something it is **in**. The
+terminals were six tools until that question was asked of them, and the giveaway was
+`terminal_read_tool` — a tool whose only job was to fetch state the agent should have been
+looking at already. A tool cannot volunteer anything; an environment's state arrives every
+step.
 
 | File | Responsibility |
 |---|---|

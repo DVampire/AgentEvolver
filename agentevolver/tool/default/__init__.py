@@ -30,14 +30,6 @@ from .session_query import (
     SessionSearchTool,
     SessionTraceTool,
 )
-from .terminal import (
-    TerminalCloseTool,
-    TerminalListTool,
-    TerminalOpenTool,
-    TerminalReadTool,
-    TerminalSendTool,
-    TerminalSignalTool,
-)
 from .reply import ReplyTool
 from .send_message import SendMessageTool
 from .report import ReportTool
@@ -73,12 +65,6 @@ __all__ = [
     "ReportTool",
     "ReadImageTool",
     "BatchCallTool",
-    "TerminalCloseTool",
-    "TerminalSignalTool",
-    "TerminalListTool",
-    "TerminalReadTool",
-    "TerminalSendTool",
-    "TerminalOpenTool",
     "SessionTraceTool",
     "SessionEventReadTool",
     "SessionReadTool",

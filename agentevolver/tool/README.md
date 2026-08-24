@@ -39,7 +39,7 @@ define Workflows in the Workflow module rather than here.
 
 ## The built-in tools
 
-Fifty-two registered tools, grouped by what they act on. `mutates` is the registry-owned
+Forty-six registered tools, grouped by what they act on. `mutates` is the registry-owned
 declaration the pipeline reads at step 5: **yes** takes a pre-effect durability checkpoint,
 **no** skips it, and *blank* means the tool has not declared one — which is treated as
 "yes", so an undeclared mutation is never missed and the cost of silence falls on the tool
@@ -66,20 +66,18 @@ rather than on the record.
 | `bash_tool` | | One shell command, one call. Starts in the workspace. |
 | `code_interpreter_tool` | | A persistent interpreter: variables, imports and open files survive between calls; figures come back as images. |
 | `batch_call_tool` | | A batch of tool calls in one turn, expressed as a short Python program. For a loop, a search, or one edit across a list — not for a single call. |
-| `terminal_open_tool` | yes | Open a terminal that stays alive between calls. |
-| `terminal_send_tool` | | Type into an open terminal and read what appears. |
-| `terminal_read_tool` | no | Read a terminal's output without typing at it. |
-| `terminal_signal_tool` | yes | Interrupt whatever is running in a terminal. |
-| `terminal_close_tool` | yes | Close a terminal and everything in it. |
-| `terminal_list_tool` | no | List this session's open terminals. |
 | `job_list_tool` | | List background jobs and whether each is still running. |
 | `job_output_tool` | | Read what a background job has printed so far. |
 | `job_kill_tool` | | Stop a running background job. |
 
 A one-shot command, a persistent interpreter, a persistent terminal and a background job
-are four different lifetimes, not four spellings of one. Job and terminal handles are
-owner-fenced by Session (see above), so an id guessed from another session resolves to
-nothing.
+are four different lifetimes, not four spellings of one — and only three of them are here.
+**Terminals are an environment** (`agentevolver/environment/default/terminal/`): a shell
+holding a directory, a virtualenv, an ssh session and a half-finished REPL is something an
+agent is *in*, not something it calls, and the giveaway was the tool it needed to look at
+one. What every open terminal is showing now arrives in `environment-state` each step.
+Job and terminal handles are owner-fenced by Session (see above), so an id guessed from
+another session resolves to nothing.
 
 `code_interpreter_tool` and `batch_call_tool` look like the same tool twice and cannot be
 merged. The interpreter's code calls no tools; the program's calls are the entire point of
@@ -238,8 +236,8 @@ Generic policy cannot safely infer meaning from names such as `path`, `text`, or
 implementation understands. Tool Manager evaluates it as a call-local monotonic guard
 before entering `__call__`; a broken intent builder fails closed as `guard_error`.
 
-The bash, read/write/edit file, image read, LSP, and terminal open/send tools declare this
-intent today. Their existing internal checks remain temporarily as defense in depth for
+The bash, read/write/edit file, image read and LSP tools declare this intent today; the
+terminal environment makes the same check in its `open` and `send` actions. Their existing internal checks remain temporarily as defense in depth for
 legacy code that invokes a Tool instance directly. New runtime paths must call
 `tool_manager`, not `Tool.__call__`, so policy, timeout, spill, error codes, and Trace
 lineage cannot be bypassed together.

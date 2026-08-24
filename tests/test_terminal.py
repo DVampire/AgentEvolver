@@ -300,32 +300,96 @@ async def test_a_terminal_that_exits_on_its_own_stays_listed(session):
 
 
 # --------------------------------------------------------------------------- #
-# The tools
+# The actions
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-async def test_the_tools_carry_state_from_one_call_to_the_next(session, tmp_path):
-    """The end-to-end claim, through the surface the agent actually has."""
-    from agentevolver.tool.default.terminal import (
-        TerminalCloseTool, TerminalListTool, TerminalOpenTool, TerminalSendTool,
-    )
+async def test_the_actions_carry_state_from_one_call_to_the_next(session, tmp_path):
+    """The end-to-end claim, through the surface the agent actually has.
 
-    opened = await TerminalOpenTool()(name="work", cwd=str(tmp_path), ctx=_Ctx())
-    assert opened.success
-    terminal_id = opened.data["terminal_id"]
+    Six tools before; one environment now. What is asserted did not change, because the
+    claim never was about tools — it is that the shell stays where it was left, which is
+    the only reason any of this exists.
+    """
+    from agentevolver.environment.default.terminal import TerminalEnvironment
 
-    listed = await TerminalListTool()(ctx=_Ctx())
-    assert terminal_id in listed.message
+    env = TerminalEnvironment()
+    opened = await env.open(name="work", cwd=str(tmp_path), ctx=_Ctx())
+    assert opened["success"]
+    terminal_id = opened["terminal_id"]
 
-    await TerminalSendTool()(terminal_id=terminal_id, text="MARK=persisted", ctx=_Ctx())
-    read_back = await TerminalSendTool()(
-        terminal_id=terminal_id, text='echo "mark=$MARK"', ctx=_Ctx())
-    assert "mark=persisted" in read_back.message
-    assert read_back.data["wait_reason"] in {r.value for r in WaitReason}
+    listed = await env.list(ctx=_Ctx())
+    assert terminal_id in listed["message"]
 
-    closed = await TerminalCloseTool()(terminal_id=terminal_id, ctx=_Ctx())
-    assert closed.success
+    await env.send(terminal_id=terminal_id, text="MARK=persisted", ctx=_Ctx())
+    read_back = await env.send(terminal_id=terminal_id, text='echo "mark=$MARK"', ctx=_Ctx())
+    assert "mark=persisted" in read_back["message"]
+    assert read_back["wait_reason"] in {r.value for r in WaitReason}
+
+    closed = await env.close(terminal_id=terminal_id, ctx=_Ctx())
+    assert closed["success"]
     assert terminal_manager.get(terminal_id) is None, \
         "a closed terminal stayed in the registry, so the agent can still type at it"
+
+
+@pytest.mark.asyncio
+async def test_every_live_terminal_shows_up_in_the_state(session, tmp_path):
+    """What makes this an environment rather than six tools.
+
+    `terminal_read_tool` existed because a tool cannot volunteer anything: the agent had
+    to remember to look, and one that forgets is typing into a shell it has not seen since
+    two commands ago. The state arrives every step instead.
+    """
+    from agentevolver.environment.default.terminal import TerminalEnvironment
+
+    env = TerminalEnvironment()
+    first = (await env.open(name="alpha", cwd=str(tmp_path), ctx=_Ctx()))["terminal_id"]
+    second = (await env.open(name="beta", cwd=str(tmp_path), ctx=_Ctx()))["terminal_id"]
+    await env.send(terminal_id=first, text="echo alpha-marker", ctx=_Ctx())
+
+    body = (await env.get_state(ctx=_Ctx()))["state"]
+    assert "alpha" in body and "beta" in body, "both open terminals must be visible"
+    assert "alpha-marker" in body, "the state must show what a terminal printed"
+
+    await env.close(terminal_id=first, ctx=_Ctx())
+    after = (await env.get_state(ctx=_Ctx()))["state"]
+    assert first not in after, "a closed terminal has nothing live to show"
+    assert second in after
+
+    await env.close(terminal_id=second, ctx=_Ctx())
+    assert (await env.get_state(ctx=_Ctx()))["state"] == "", \
+        "with nothing open the state is empty, so the block is omitted entirely"
+
+
+@pytest.mark.asyncio
+async def test_a_terminal_that_died_on_its_own_says_so_in_the_state(session, tmp_path):
+    """The state change most worth volunteering.
+
+    A build terminal that exits between two steps is invisible otherwise until something
+    types into it and gets `exited` back — and by then the agent has planned a step around
+    a shell that was not there. `close` removes a terminal from the registry outright, so
+    this is only ever about one that ended by itself.
+    """
+    from agentevolver.environment.default.terminal import TerminalEnvironment
+
+    env = TerminalEnvironment()
+    terminal_id = (await env.open(name="doomed", cwd=str(tmp_path), ctx=_Ctx()))["terminal_id"]
+    await env.send(terminal_id=terminal_id, text="exit", ctx=_Ctx())
+
+    import asyncio as _asyncio
+
+    deadline = 15.0
+    while deadline > 0:
+        live = terminal_manager.get(terminal_id)
+        if live is not None and live.status.is_final:
+            break
+        await _asyncio.sleep(0.1)
+        deadline -= 0.1
+    else:
+        raise AssertionError("the shell never registered as exited")
+
+    body = (await env.get_state(ctx=_Ctx()))["state"]
+    assert terminal_id in body, "a terminal that died on its own vanished from the state"
+    assert "EXITED" in body
 
 
 @pytest.mark.asyncio
@@ -335,15 +399,15 @@ async def test_reading_a_terminal_does_not_type_into_it(session):
     An agent whose only way to see a running build is to send something has to interrupt
     the build to read it.
     """
-    from agentevolver.tool.default.terminal import TerminalReadTool
+    from agentevolver.environment.default.terminal import TerminalEnvironment
 
     terminal = _open()
     await terminal.send("echo watched-output", timeout=SEND_TIMEOUT)
     before, _ = terminal.read()
 
-    result = await TerminalReadTool()(terminal_id=terminal.id, ctx=_Ctx())
-    assert result.success
-    assert "watched-output" in result.message
+    result = await TerminalEnvironment().read(terminal_id=terminal.id, ctx=_Ctx())
+    assert result["success"]
+    assert "watched-output" in result["message"]
     after, _ = terminal.read()
     assert after == before
 
@@ -351,9 +415,9 @@ async def test_reading_a_terminal_does_not_type_into_it(session):
 @pytest.mark.asyncio
 async def test_an_unknown_terminal_id_names_the_ones_that_exist(session):
     """A bare "not found" leaves the agent guessing at a handle it is already holding."""
-    from agentevolver.tool.default.terminal import TerminalSendTool
+    from agentevolver.environment.default.terminal import TerminalEnvironment
 
     terminal = _open()
-    result = await TerminalSendTool()(terminal_id="term_nope", text="ls", ctx=_Ctx())
-    assert not result.success
-    assert terminal.id in result.message
+    result = await TerminalEnvironment().send(terminal_id="term_nope", text="ls", ctx=_Ctx())
+    assert not result["success"]
+    assert terminal.id in result["message"]

@@ -69,19 +69,13 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`session_read_tool`](#session_read_tool) | `read_only` | no | `SessionReadTool` | `agentevolver.tool.default.session_query` |
 | [`session_search_tool`](#session_search_tool) | `read_only` | no | `SessionSearchTool` | `agentevolver.tool.default.session_query` |
 | [`session_trace_tool`](#session_trace_tool) | `read_only` | no | `SessionTraceTool` | `agentevolver.tool.default.session_query` |
-| [`terminal_close_tool`](#terminal_close_tool) | `workspace_write` | yes | `TerminalCloseTool` | `agentevolver.tool.default.terminal` |
-| [`terminal_list_tool`](#terminal_list_tool) | `read_only` | no | `TerminalListTool` | `agentevolver.tool.default.terminal` |
-| [`terminal_open_tool`](#terminal_open_tool) | `workspace_write` | yes | `TerminalOpenTool` | `agentevolver.tool.default.terminal` |
-| [`terminal_read_tool`](#terminal_read_tool) | `read_only` | no | `TerminalReadTool` | `agentevolver.tool.default.terminal` |
-| [`terminal_send_tool`](#terminal_send_tool) | `workspace_write` | not declared | `TerminalSendTool` | `agentevolver.tool.default.terminal` |
-| [`terminal_signal_tool`](#terminal_signal_tool) | `workspace_write` | yes | `TerminalSignalTool` | `agentevolver.tool.default.terminal` |
 | [`todo_tool`](#todo_tool) | `workspace_write` | not declared | `TodoTool` | `agentevolver.tool.default.todo` |
 | [`update_goal_tool`](#update_goal_tool) | `workspace_write` | yes | `UpdateGoalTool` | `agentevolver.tool.default.goal` |
 | [`web_fetcher_tool`](#web_fetcher_tool) | `workspace_write` | no | `WebFetcherTool` | `agentevolver.tool.default.web_fetcher` |
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-52 tools.
+46 tools.
 
 ## `ask_user_question`
 
@@ -562,73 +556,6 @@ Permission mode: `read_only` · reports only
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
 | `session_id` | `str` | yes | — |
-
-## `terminal_close_tool`
-
-Close a terminal and everything it is running.
-
-Permission mode: `workspace_write` · changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `terminal_id` | `str` | yes | — |
-
-## `terminal_list_tool`
-
-List the terminals this session has open.
-
-Permission mode: `read_only` · reports only
-
-Takes no arguments.
-
-## `terminal_open_tool`
-
-Open a terminal that stays alive between calls.
-
-Permission mode: `workspace_write` · changes state · call budget 60s
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `name` | `str` | no | `''` |
-| `command` | `Optional[str]` | no | `None` |
-| `cwd` | `Optional[str]` | no | `None` |
-
-## `terminal_read_tool`
-
-Read a terminal's output without typing at it.
-
-Permission mode: `read_only` · reports only
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `terminal_id` | `str` | yes | — |
-| `offset` | `int` | no | `0` |
-| `count` | `int` | no | `200` |
-
-## `terminal_send_tool`
-
-Type into an open terminal and read what appears.
-
-Permission mode: `workspace_write` · does not declare whether it changes state · call budget 60s
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `terminal_id` | `str` | yes | — |
-| `text` | `str` | no | `''` |
-| `submit` | `bool` | no | `True` |
-| `timeout` | `Optional[float]` | no | `None` |
-| `run_in_background` | `bool` | no | `False` |
-
-## `terminal_signal_tool`
-
-Interrupt whatever is running in a terminal.
-
-Permission mode: `workspace_write` · changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `terminal_id` | `str` | yes | — |
-| `signal` | `str` | no | `'SIGINT'` |
 
 ## `todo_tool`
 

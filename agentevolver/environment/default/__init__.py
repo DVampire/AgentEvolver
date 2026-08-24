@@ -10,10 +10,12 @@ from .browser.environment import BrowserEnvironment
 from .artifact_renderer.environment import ArtifactRendererEnvironment
 from .computer.environment import ComputerEnvironment
 from .ssh.environment import SSHEnvironment
+from .terminal.environment import TerminalEnvironment
 
 __all__ = [
     "ArtifactRendererEnvironment",
     "BrowserEnvironment",
     "ComputerEnvironment",
     "SSHEnvironment",
+    "TerminalEnvironment",
 ]
