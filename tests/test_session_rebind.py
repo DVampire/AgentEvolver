@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -143,3 +144,47 @@ def test_every_manager_that_can_rebind_subscribes_to_the_session():
         assert "on_rebind" in source, (
             f"{type(manager).__name__}.initialize does not subscribe, so its rebind is dead"
         )
+
+
+def test_a_container_mount_override_reaches_the_sandbox_boundary():
+    """`path_manager.override` exists for one case, and the boundary did not honour it.
+
+    Its own docstring names that case: "a task running inside a container sees its
+    workspace at the mount point, and no host-side table can derive a mount point from
+    the host path." ProgramBench's inner run overrides `SESSION_WORKSPACE` to
+    `/workspace` for exactly that reason.
+
+    `session_roots()` then resolved every key with `get(key, owner=..., session_id=...)`,
+    and `get` treats explicit params as "tell me about a *specific* session" — a question
+    an override, which is a statement about the current run, deliberately does not
+    answer. The two values passed were the bound session's own, so they added nothing and
+    turned the override off.
+
+    The cost was not abstract. `write_file_tool` on `/workspace/cmatrix.c` — the
+    deliverable, at the path the task document names — was refused as "outside allowed
+    roots" while a `bash` heredoc into the same directory succeeded, because bash is not
+    path-checked the same way. Sixteen refusals in one instance, nine of them the source
+    file being reconstructed, and the agent recorded in its own plan that `/workspace`
+    must be a symlink. It is not: same inode, writable.
+    """
+    from agentevolver.paths import P
+    from agentevolver.sandbox.project import check_session_path, session_writable_roots
+
+    path_manager.bind_session("local", "mount_probe")
+    try:
+        assert check_session_path(path="/workspace/deliverable.c", write=True), (
+            "without the override the mount point must still be outside the boundary")
+
+        path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+
+        assert session_writable_roots()[0] == Path("/workspace"), (
+            f"session_roots() ignored the override: {session_writable_roots()[0]}")
+        assert check_session_path(path="/workspace/deliverable.c", write=True) is None, (
+            "the agent still cannot write the deliverable at the path it is told to use")
+        # The point is a mount alias, not a wider boundary.
+        assert check_session_path(path="/etc/passwd", write=True), (
+            "honouring the override opened the boundary instead of relocating it")
+        assert check_session_path(path="/workspace/../etc/passwd", write=True), (
+            "a traversal out of the mount point is still outside it")
+    finally:
+        path_manager.unbind_session()

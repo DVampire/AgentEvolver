@@ -213,9 +213,19 @@ class PathManagerServer:
         bound = self.session
         if bound is None:
             return {}
-        owner, session_id = bound
+        # Unparameterised on purpose. `owner` and `session_id` *are* the bound session, so
+        # passing them said nothing extra — and `get` treats explicit params as "tell me
+        # about a specific session", which is exactly the call an override does not answer.
+        #
+        # That cost the sandbox boundary. A run inside a container overrides
+        # `SESSION_WORKSPACE` to the mount point, `/workspace`; this dict fed
+        # `session_writable_roots()` the host-layout path instead, so
+        # `write_file_tool` on `/workspace/cmatrix.c` — the deliverable, at the path the
+        # task document names — came back "Sandbox denied write outside allowed roots"
+        # while `bash` heredocs into the same directory worked. Sixteen refusals in one
+        # ProgramBench instance, and the agent concluded `/workspace` was a symlink.
         roots = {
-            name: self.get(key, owner=owner, session_id=session_id)
+            name: self.get(key)
             for name, key in (
                 ("project", P.SESSION),
                 ("workspace", P.SESSION_WORKSPACE),
