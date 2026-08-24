@@ -68,3 +68,28 @@ renders what `as_message()` can only name.
 
 `as_message()` names rich outputs rather than inlining them — a base64 PNG helps
 nobody reading a transcript, and the model only needs to know a figure exists.
+
+## The workstation's furniture
+
+| File | Responsibility |
+|---|---|
+| `notebooks.py` | The project's `.ipynb` files, and the kernel history written out as one |
+| `compute.py` | GPUs, CPU, memory and disk — the host, which is what the kernel gets |
+
+Both were `agentevolver/science/` until they moved here. That module held no
+entity of its own: six of its eleven members forwarded straight to
+`kernel_manager`, and the gateway had already stopped going through it for four
+of the ten `science.*` routes — so the boundary was inconsistent in practice
+before it was removed in principle.
+
+Both are module-level functions rather than a class, for the reason the manager
+criterion gives: the only state either holds is *one* cached GPU reading, and a
+`self` that never distinguishes callers is a global with extra steps.
+
+The Science *view* keeps its name and its `science.*` routes — the view is a
+product surface. What went away is a module standing between it and the kernel.
+
+`upstream()` lives on `kernel_manager` because it is `base_url` minus
+`lab_path`, and those are the two things it owns. Handing the proxy the full
+`base_url` doubles the prefix and every Lab request 404s, while both halves
+still look right on their own.

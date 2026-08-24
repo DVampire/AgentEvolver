@@ -19,9 +19,8 @@ import json
 
 from agentevolver.gateway.types import GatewayCommand
 from agentevolver.gateway.service import AgentGateway
-from agentevolver.kernel import Execution, KernelOutput, kernel_manager
+from agentevolver.kernel import Execution, KernelOutput, compute, kernel_manager
 from agentevolver.paths import P, path_manager
-from agentevolver.science import science_manager
 
 
 class _FakeProject:
@@ -127,21 +126,19 @@ def test_the_history_is_saved_as_a_real_notebook() -> None:
 def test_a_machine_without_gpus_reports_none_rather_than_failing() -> None:
     """Plenty of hosts have no NVIDIA card, so the panel says so instead of
     showing a meter with nothing behind it."""
-    import agentevolver.science.server as module
-
-    original = module.shutil.which
+    original = compute.shutil.which
     try:
-        module.shutil.which = lambda name: None if name == "nvidia-smi" else original(name)
-        assert module._gpu_status() == []  # noqa: SLF001
+        compute.shutil.which = lambda name: None if name == "nvidia-smi" else original(name)
+        assert compute._read_gpus() == []  # noqa: SLF001
     finally:
-        module.shutil.which = original
+        compute.shutil.which = original
 
 
 def test_compute_answers_before_a_kernel_has_started() -> None:
     """Opening the view must not depend on having run something first."""
 
     async def run() -> None:
-        status = await science_manager.compute("no-such-project")
+        status = await compute.status("no-such-project")
         assert status.running is False and status.executions == 0
         # The machine's own numbers are readable regardless.
         assert status.cpu_count and status.cpu_count > 0
@@ -151,9 +148,7 @@ def test_compute_answers_before_a_kernel_has_started() -> None:
 
 def test_the_lab_is_served_under_the_projects_own_path() -> None:
     """Which is what lets the UI host it on whatever origin the browser used."""
-    from agentevolver.science import base_path
-
-    assert base_path("abc123") == "/science/abc123"
+    assert kernel_manager.lab_path("abc123") == "/science/abc123"
 
 
 # --------------------------------------------------------------------------- #
@@ -205,8 +200,6 @@ def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
     """
 
     async def run() -> None:
-        import agentevolver.science.server as module
-
         calls = []
 
         def counted():
@@ -214,17 +207,20 @@ def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
             return [{"index": 0, "name": "Fake", "memory_used_mb": 1,
                      "memory_total_mb": 2, "utilization_percent": 3}]
 
-        manager = module.ScienceManagerServer()
-        original, module._gpu_status = module._gpu_status, counted  # noqa: SLF001
+        original, compute._read_gpus = compute._read_gpus, counted   # noqa: SLF001
+        # The cache is module state, so a previous test's sampler would serve
+        # these reads and the count would pass without proving anything.
+        compute.stop_sampling()
+        compute._gpus, compute._wanted_at = [], 0.0                  # noqa: SLF001
         try:
-            first = await manager.gpus()
+            first = await compute.gpus()
             for _ in range(5):
-                assert await manager.gpus() == first
+                assert await compute.gpus() == first
             # One sample served six reads.
             assert len(calls) == 1
         finally:
-            module._gpu_status = original  # noqa: SLF001
-            await manager.stop_all()
+            compute._read_gpus = original                            # noqa: SLF001
+            compute.stop_sampling()
 
     asyncio.run(run())
 
@@ -283,3 +279,31 @@ def test_the_reaper_never_closes_a_server_whose_kernel_is_working() -> None:
         assert working.last_seen > stale
 
     asyncio.run(run())
+
+
+# --------------------------------------------------------------------------- #
+# The proxy target is the origin, not the origin plus the path
+# --------------------------------------------------------------------------- #
+def test_the_proxy_target_is_the_origin_without_the_labs_own_prefix() -> None:
+    """`base_url` carries `/science/<id>`; the proxy forwards the browser's path verbatim.
+
+    So handing the proxy the full `base_url` doubles the prefix and every Lab request
+    404s — while `base_url`, `lab_path` and the route all still look right on their own.
+    That is why subtracting them belongs here, where both halves are known, and not in
+    the caller: the gateway test for this route mocks `upstream` out entirely, so a
+    wrong subtraction would reach production with the suite green.
+    """
+    class _Project:
+        base_url = "http://127.0.0.1:8888/science/proj-1"
+        last_seen = 0.0
+
+    kernel_manager._projects["proj-1"] = _Project()               # noqa: SLF001
+    try:
+        assert kernel_manager.upstream("proj-1") == "http://127.0.0.1:8888"
+    finally:
+        kernel_manager._projects.pop("proj-1", None)              # noqa: SLF001
+
+
+def test_a_project_that_never_started_has_no_proxy_target() -> None:
+    """None rather than a bare origin: the route answers 404, and the UI says so."""
+    assert kernel_manager.upstream("never-started") is None

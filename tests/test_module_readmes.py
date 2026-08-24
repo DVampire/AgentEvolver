@@ -155,8 +155,12 @@ def test_the_module_reference_page_lists_exactly_the_modules_that_exist():
 
     page = (Path(__file__).parents[1] / "docs" / "modules.html").read_text(encoding="utf-8")
     listed = set(re.findall(r'class="mod-h"><b>([a-z_]+)</b>', page))
+    # A directory is a module when it holds Python, not when it merely exists. Deleting
+    # one leaves its `__pycache__` behind whenever the bytecode was written by another
+    # user — a container run as root, here — and `rm` cannot clear it. Counting that as a
+    # live module would report an undocumented module that is gone.
     on_disk = {p.name for p in PACKAGE_ROOT.iterdir()
-               if p.is_dir() and p.name != "__pycache__"}
+               if p.is_dir() and p.name != "__pycache__" and any(p.glob("*.py"))}
 
     assert not listed - on_disk, (
         f"documented but deleted: {sorted(listed - on_disk)} — remove the card and its "

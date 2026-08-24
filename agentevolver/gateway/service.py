@@ -41,8 +41,9 @@ from agentevolver.data import data_manager
 from agentevolver.environment import environment_manager
 from agentevolver.extension import extension_manager
 from agentevolver.ide import ide_manager
-from agentevolver.science import science_manager
+from agentevolver.kernel import compute as kernel_compute
 from agentevolver.kernel import kernel_manager
+from agentevolver.kernel import notebooks as kernel_notebooks
 from agentevolver.gateway.types import (
     PROTOCOL_VERSION,
     GatewayCommand,
@@ -281,7 +282,8 @@ class AgentGateway:
         self._chat_tasks.clear()
         await task_manager.stop()
         await ide_manager.stop_all()
-        await science_manager.stop_all()
+        kernel_compute.stop_sampling()
+        await kernel_manager.cleanup()
         extension_manager.unsubscribe(self._on_extension_change)
         trace_manager.unsubscribe(self._on_trace_event)
         plan_manager.unsubscribe(self._on_plan_change)
@@ -1616,21 +1618,46 @@ class AgentGateway:
         """
         session_id = self._require_session_id(params)
         session = self._sessions[session_id]
-        return await science_manager.start(
-            session_id, workspace_root=session.sandbox.workspace_root, owner=session.owner)
+        workspace = Path(session.sandbox.workspace_root).expanduser().resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        kernel_notebooks.directory(session_id, owner=session.owner)
+        # An empty cell rather than a bespoke "start" call: it takes the same
+        # path every other execution takes, so there is one way a server comes
+        # up and one place it can go wrong.
+        await kernel_manager.execute("", key=session_id, workspace=str(workspace), origin="user")
+        logger.info(f"| 🔬 Science workstation ready for {session_id} ({workspace})")
+        return self._science_status(session_id)
 
     async def _command_science_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
-        return science_manager.status(session_id)
+        return self._science_status(session_id)
 
     async def _command_science_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
-        return {"session_id": session_id, "stopped": await science_manager.stop(session_id)}
+        return {"session_id": session_id, "stopped": await kernel_manager.shutdown(session_id)}
 
     async def _command_science_compute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """GPUs, CPU, memory and disk — this machine, which is what the kernel gets."""
         session_id = self._require_session_id(params)
-        return (await science_manager.compute(session_id)).model_dump(mode="json")
+        return (await kernel_compute.status(session_id)).model_dump(mode="json")
+
+    @staticmethod
+    def _science_status(session_id: str) -> Dict[str, Any]:
+        """The Science panel's wire shape, which start and status both return.
+
+        A gateway concern, not the kernel's: `KernelStatus` is the kernel's own
+        vocabulary, and `path` is where the UI embeds the Lab relative to its own
+        origin — so it works over any tunnel without a hostname of its own.
+        """
+        kernel = kernel_manager.status(session_id)
+        return {
+            "session_id": session_id,
+            "running": kernel.running,
+            "path": kernel_manager.lab_path(session_id),
+            "busy": kernel.busy,
+            "executions": kernel.executions,
+            "workspace_root": kernel.workspace,
+        }
 
     async def _command_science_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """What has run in this project's kernel, agent and user alike.
@@ -1699,7 +1726,7 @@ class AgentGateway:
         owner = self._sessions[session_id].owner
         return {"session_id": session_id,
                 "notebooks": [item.model_dump(mode="json")
-                              for item in science_manager.notebooks(session_id, owner=owner)]}
+                              for item in kernel_notebooks.notebooks(session_id, owner=owner)]}
 
     async def _command_science_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Write the kernel's history out as a real .ipynb.
@@ -1709,7 +1736,7 @@ class AgentGateway:
         """
         session_id = self._require_session_id(params)
         owner = self._sessions[session_id].owner
-        notebook = science_manager.save_history_as_notebook(
+        notebook = kernel_notebooks.save_history_as_notebook(
             session_id, str(params.get("name") or "session"), owner=owner)
         return {"session_id": session_id, "notebook": notebook.model_dump(mode="json")}
 

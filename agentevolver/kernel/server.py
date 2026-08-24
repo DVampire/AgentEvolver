@@ -111,6 +111,17 @@ class KernelManagerServer(BaseModel):
         """
         return f"/science/{key}"
 
+    def upstream(self, key: str) -> Optional[str]:
+        """Proxy target for this project's JupyterLab, or None if not started.
+
+        `base_url` already carries the `lab_path` prefix and the proxy forwards
+        the browser's path verbatim, so what the proxy needs is the origin
+        *without* it. Both halves are known here and nowhere else, which is why
+        subtracting them is not the caller's job.
+        """
+        base = self.base_url(key)
+        return base.removesuffix(self.lab_path(key)) if base else None
+
     async def _ensure_server(self, key: str, workspace: Optional[str] = None) -> _Project:
         """This project's Jupyter Server, starting one if needed."""
         existing = self._projects.get(key)
@@ -363,9 +374,9 @@ class KernelManagerServer(BaseModel):
             finally:
                 project.busy = False
 
-            # An empty cell is how the server gets booted (see
-            # ScienceManagerServer.start): it runs through the same path as
-            # everything else, but there is nothing to show for it.
+            # An empty cell is how the Science view boots the server: it runs
+            # through the same path as everything else, but there is nothing to
+            # show for it.
             if not code.strip():
                 return result
 

@@ -268,9 +268,9 @@ def test_asking_for_a_port_resolves_that_port_and_not_the_editor(guarded: TestCl
 def test_a_started_workstation_resolves_to_its_jupyter_origin(guarded: TestClient):
     """The science route has no `port` form: everything a notebook starts is reached
     through jupyter-server-proxy on the one origin, so there is nothing else to select."""
-    from agentevolver.science import science_manager
+    from agentevolver.kernel import kernel_manager
 
-    with patch.object(science_manager, "upstream", return_value="http://127.0.0.1:8888"):
+    with patch.object(kernel_manager, "upstream", return_value="http://127.0.0.1:8888"):
         body = guarded.get("/science/resolve/a-project").json()
 
     assert body == {"ok": True, "upstream": "http://127.0.0.1:8888"}

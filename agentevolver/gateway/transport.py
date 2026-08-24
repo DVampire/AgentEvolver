@@ -106,9 +106,9 @@ def create_websocket_app(
         ``port``: anything a notebook starts is reached through
         jupyter-server-proxy on that same one.
         """
-        from agentevolver.science import science_manager
+        from agentevolver.kernel import kernel_manager
 
-        upstream = science_manager.upstream(session_id)
+        upstream = kernel_manager.upstream(session_id)
         if not upstream:
             return JSONResponse({"ok": False, "error": "no workstation for this project"}, status_code=404)
         return JSONResponse({"ok": True, "upstream": upstream})
