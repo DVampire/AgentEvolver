@@ -73,9 +73,11 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["playwright", "browser-use[cli]"]   # browser automation environment
 chem = ["rdkit"]                           # chemistry skills (rdkit)
-sandbox = ["e2b", "docker", "opensandbox", "opensandbox-server"]  # remote / container sandboxes
+sandbox = ["opensandbox", "opensandbox-server"]  # remote sandbox backend
 benchmark = ["programbench"]               # ProgramBench task/eval data (examples/run_programbench.py)
-all = ["playwright", "browser-use[cli]", "rdkit", "e2b", "docker", "programbench", "opensandbox", "opensandbox-server"]
+# Derived, not re-listed: adding a package to an extra above must not require
+# remembering to add it here too. That is how "e2b" outlived its module in both.
+all = ["agentevolver[browser,chem,sandbox,benchmark]"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [tool.pytest.ini_options]

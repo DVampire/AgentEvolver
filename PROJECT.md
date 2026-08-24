@@ -31,13 +31,11 @@ AgentEvolver/
 │   ├── environment/        # Execution environments (browser, sandbox, ...)
 │   ├── sandbox/            # Isolated execution containers — opensandbox backend (infra, not evolvable)
 │   ├── deploy/             # Run a web service in a sandbox + bind a URL (Deployer profiles)
-│   ├── docker/ · e2b/      # Alternate sandbox backends (scaffolds)
 │   ├── benchmark/          # Benchmarks (in src; not hot-pluggable). aime/gpqa/gsm8k/hle/leetcode/...;
 │   │                       #   read datasets/ first, else download from HF (ensure_dataset)
 │   ├── extension/          # ExtensionManager — loads/evolves the external extension/ tree
 │   ├── memory/             # Memory systems (tiered per-session)
 │   ├── hook/               # Hook pipeline (compact, memory, trace, repeat-call reminder, ...)
-│   ├── spill/              # Oversized tool output parked on disk; the excerpt carries a locator (infra)
 │   ├── attachment/         # Images the agent read, pinned and re-attached to every later turn (infra)
 │   ├── trace/              # Observability — raw event log (TraceManager + UI server)
 │   ├── trajectory/         # Trainable projection of a run (SFT/RL records)
@@ -48,7 +46,7 @@ AgentEvolver/
 │   ├── data/               # Dataset loaders (DATASET registry)
 │   ├── task/ · session/ · permission/ · version/ · config/ · dynamic/
 │   │                       #   Task mgmt · session isolation · perms · versioning · config · dynamic class loading
-│   ├── queue/ · response/ · message/ · visual/ · logger/ · utils/   # Primitives & shared infra
+│   ├── response/ · message/ · visual/ · logger/ · utils/   # Primitives & shared infra
 │   └── registry.py         # mmengine Registry instances (see Registries below)
 ├── configs/                # mmengine config files (base.py, meta_agent.py, agents/, tools/, memory/)
 ├── datasets/               # Vendored benchmark datasets
