@@ -43,7 +43,16 @@ class TestLandingWindow:
         # max_step <= 0 is stored as 1e8; there is no end to land before, so the directive
         # must never fire (it would nag every step of an open-ended run).
         assert not _in_landing_window(0, int(1e8))
-        assert not _in_landing_window(10_000_000, int(1e8))
+        assert not _in_landing_window(99_999_999, int(1e8))
+
+    def test_a_large_but_finite_budget_below_the_sentinel_still_lands(self):
+        # The guard must key off the unbounded sentinel (1e8), not an order of magnitude
+        # below it: a run configured with a large finite budget must still land, or it is
+        # hard-stopped mid-action with nothing persisted — the failure this feature prevents.
+        big = 5_000_000  # well above the old 1e7 cutoff, still a real ceiling
+        assert not _in_landing_window(big - 4, big)
+        assert _in_landing_window(big - 3, big)
+        assert _in_landing_window(big - 1, big)
 
     def test_the_reserve_never_exceeds_the_configured_handful(self):
         # However large the budget, the window is at most _LANDING_RESERVE_STEPS wide.

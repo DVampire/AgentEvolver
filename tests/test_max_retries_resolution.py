@@ -33,6 +33,12 @@ def test_it_falls_back_to_the_default_when_neither_is_set():
     assert _resolve_max_retries(None, None) == _DEFAULT_MAX_RETRIES
 
 
+def test_a_configured_zero_is_honoured_not_treated_as_unset():
+    # A route may want exactly one attempt (no retries); `0 or 3` would silently make it 3.
+    assert _resolve_max_retries(None, _cfg(0)) == 0
+    assert _resolve_max_retries(0, _cfg(6)) == 0
+
+
 def test_a_config_without_the_attribute_still_resolves():
     # getattr guard: an object that predates the field must not raise.
     assert _resolve_max_retries(None, object()) == _DEFAULT_MAX_RETRIES

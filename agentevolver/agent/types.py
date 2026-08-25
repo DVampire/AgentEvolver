@@ -127,13 +127,18 @@ _INHERITED_CONTEXT_MAX = 12_000
 #: total budget is unchanged; scaled down for tiny budgets so it never swallows the run.
 _LANDING_RESERVE_STEPS = 3
 
+#: The value `max_step` is stored as when a run is configured unbounded (`max_step <= 0`);
+#: mirrors the sentinel used where the budget is normalised. A run at this ceiling has no
+#: end to land before, so the landing window and the cost denominator both suppress it.
+_UNBOUNDED_MAX_STEP = int(1e8)
+
 
 def _in_landing_window(step: int, max_step: int) -> bool:
     """True when a run at ``step`` (0-based, about to take step+1) is within the reserved
     landing window before the hard ``max_step`` stop. False for an effectively-unbounded
-    budget (``max_step`` is set to 1e8 when <=0), which has no end to land before. The
+    budget (``max_step == _UNBOUNDED_MAX_STEP``), which has no end to land before. The
     reserve is scaled down for a tiny budget so it never swallows the whole run."""
-    if max_step >= 1e7:
+    if max_step >= _UNBOUNDED_MAX_STEP:
         return False
     reserve = max(1, min(_LANDING_RESERVE_STEPS, max_step // 4))
     return step >= max_step - reserve
@@ -164,7 +169,13 @@ def _delegation_summary(data: Optional[Dict[str, Any]]) -> str:
         outcome = "cut off at the step ceiling — result is PARTIAL, it did not signal completion"
     else:
         outcome = "stopped without finishing — result may be PARTIAL"
-    cost = f"; used {step}/{max_step} steps" if step is not None and max_step else ""
+    # Suppress the denominator for an unbounded child — "used 5/100000000 steps" is noise.
+    if step is not None and max_step and max_step < _UNBOUNDED_MAX_STEP:
+        cost = f"; used {step}/{max_step} steps"
+    elif step is not None:
+        cost = f"; used {step} steps"
+    else:
+        cost = ""
     return f"\n\n[dispatch status: {outcome}{cost}]"
 
 #: Capability types the dispatch handles with one path: everything except ``tool``,
@@ -692,8 +703,7 @@ class Agent(BaseModel):
         # tiers — a run cut off mid-action ships only what it already persisted, so spend
         # these steps landing, not starting. Kept general: "persist" is save/commit/write,
         # whatever this task's deliverable is; the agent knows what that means for its work.
-        _run = kwargs.get("_run")
-        if _run is not None and getattr(_run, "landing", False):
+        if run is not None and getattr(run, "landing", False):
             constraint_text += (
                 "\n\n⚠️ LANDING WINDOW — only the last few steps remain before a hard stop "
                 "that discards any unfinished action and marks the task incomplete. Do NOT "
@@ -2026,20 +2036,30 @@ class Agent(BaseModel):
                 return started.message, False, None, None, None, None
             resp = await runtime_manager.delegate(child, inp.get("task", ""), **brief)
             # Hand back the child's result plus a deterministic completion envelope, so the
-            # orchestrator can tell a finished result from a cut-off partial one — and do it
-            # whether or not the child called done_tool. A worker that hits its step ceiling
-            # returns success=False but has usually produced real work (a tight worker budget
-            # makes this common); raising here discarded that work behind a bare "failed" and
-            # denied the orchestrator both the partial result and the envelope that says it is
-            # partial. The envelope carries the status the meta needs to decide what is next,
-            # so a not-finished dispatch is an observation to build on, not an exception.
+            # orchestrator can tell a finished result from a cut-off one — whether or not the
+            # child called done_tool, and without an exception discarding the work.
+            output = (resp.message or "") + _delegation_summary(resp.data)
             if resp.success:
                 logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success=True)")
-            else:
+                return output, False, None, None, None, None
+            # A not-finished dispatch splits two ways. A worker that hit its step ceiling or a
+            # resource limit has usually produced real work (a tight worker budget makes this
+            # routine) — that is a partial result to build on, not an error, so its work and
+            # envelope go back with no error flag. But success=False also covers genuine
+            # failures — model-not-found, a run of empty turns, repeated think failures — and
+            # those must still surface as a failed action rather than be mistaken for partial
+            # progress; they keep the error flag (while still handing back whatever text and
+            # envelope exist, which is never worse than the bare exception this replaced).
+            data = resp.data or {}
+            step, max_step = data.get("step"), data.get("max_step")
+            hit_ceiling = step is not None and max_step and step >= max_step
+            partial_stop = hit_ceiling or data.get("stopped_by_constraint")
+            if partial_stop:
                 logger.warning(f"| ⚠️ [{self.name}] Sub-agent '{route[1]}' did not finish "
-                               f"(step {(resp.data or {}).get('step')}/{(resp.data or {}).get('max_step')}) "
-                               f"— handing back its partial result")
-            return (resp.message or "") + _delegation_summary(resp.data), False, None, None, None, None
+                               f"(step {step}/{max_step}) — handing back its partial result")
+                return output, False, None, None, None, None
+            logger.warning(f"| ❌ [{self.name}] Sub-agent '{route[1]}' failed: {(resp.message or '')[:120]}")
+            return output, False, None, None, (resp.message or f"Sub-agent {route[1]!r} failed"), None
         if capability_type in _PLAIN_CAPABILITY_TYPES:
             # Skill, connector, environment, workflow and plugin differ only in which
             # manager answers and whether the route names a member. Four copies of

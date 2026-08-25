@@ -72,7 +72,10 @@ def _resolve_max_retries(per_call: Optional[int], model_config: Any) -> int:
     buffered and streaming call paths resolve it identically."""
     if per_call is not None:
         return per_call
-    return getattr(model_config, "max_retries", None) or _DEFAULT_MAX_RETRIES
+    configured = getattr(model_config, "max_retries", None)
+    # `is not None`, not truthiness: a configured 0 (a route that wants a single no-retry
+    # attempt) is an explicit choice, and `0 or 3` would silently turn it into 3.
+    return configured if configured is not None else _DEFAULT_MAX_RETRIES
 
 
 def _prepare_request_messages(

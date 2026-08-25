@@ -42,6 +42,14 @@ def test_an_unfinished_stop_short_of_the_ceiling_is_partial():
     assert "12/100 steps" in env
 
 
+def test_an_unbounded_child_does_not_show_a_sentinel_denominator():
+    # max_step <= 0 is stored as 1e8; "used 5/100000000 steps" is noise, so the denominator
+    # is suppressed while the step count it did run is still reported.
+    env = _delegation_summary({"done": True, "step": 5, "max_step": int(1e8)})
+    assert "100000000" not in env
+    assert "used 5 steps" in env
+
+
 def test_missing_data_yields_no_envelope():
     # Never fabricate an envelope from nothing — a missing data blob adds no line.
     assert _delegation_summary(None) == ""

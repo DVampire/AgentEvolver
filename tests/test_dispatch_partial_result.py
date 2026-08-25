@@ -69,13 +69,29 @@ def test_a_clean_finish_still_carries_the_finished_envelope():
     assert error is None
 
 
-def test_an_empty_failed_dispatch_still_returns_rather_than_raises():
-    # Even with nothing produced, the orchestrator gets a labelled observation it can act on
-    # (retry, change strategy), not an exception that aborts its turn.
+def test_a_resource_limit_stop_is_partial_work_not_an_error():
+    # Stopped by a constraint (wall-clock/token) with work done: build on it, no error flag.
     resp = Response(
-        type=ResponseType.AGENT, success=False, message="",
-        data={"done": False, "stopped_by_constraint": False, "step": 3, "max_step": 50},
+        type=ResponseType.AGENT, success=False,
+        message="Wrote the parser; ran out of time before the tests.",
+        data={"done": False, "stopped_by_constraint": True, "step": 20, "max_step": 50},
     )
     output, error = _call_invoke(resp)
-    assert "PARTIAL" in output
-    assert error is None
+    assert "Wrote the parser" in output and "PARTIAL" in output
+    assert error is None, "a resource-limit stop is partial work, not a failed action"
+
+
+def test_a_genuine_early_failure_keeps_its_error_flag():
+    # success=False well short of the ceiling and not constrained is a real failure — a run
+    # of empty turns, a think failure, model-not-found — and must stay a failed action, not
+    # be laundered into 'partial progress'. It still hands back what text/envelope exist.
+    resp = Response(
+        type=ResponseType.AGENT, success=False,
+        message="The model could not be called: model not found.",
+        data={"done": False, "stopped_by_constraint": False, "step": 1, "max_step": 50},
+    )
+    output, error = _call_invoke(resp)
+    assert error is not None, "a hard failure must not be masked as partial work"
+    assert "model not found" in error
+    # the text is still handed back (never worse than the bare exception this replaced)
+    assert "model could not be called" in output
