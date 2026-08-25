@@ -5,15 +5,26 @@ from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
 
-_DESCRIPTION = "Indicate that the task has been completed."
+_DESCRIPTION = "Finish the task (or subtask) and return its result."
 
 _GUIDANCE = """
-- Use this tool to signal that a task or subtask has been finished.
-- Provide the `result` and `reasoning` of the task in the result and reasoning parameters.
+- Call this to finish a task or subtask. `result` is the only thing the caller keeps: for a
+  dispatched sub-agent it is ALL the orchestrator sees of your work — your steps, commands,
+  and files are not visible to it — so a one-line "done" throws away everything it needs.
+- Make `result` a handoff the caller can act on without redoing your work, scaled to the
+  work itself. A trivial task needs a sentence. For a substantial deliverable, state: what
+  you produced and WHERE (the paths/files), what you verified and HOW (the check you ran and
+  its outcome), and what is unfinished, failed, or uncertain — the parts the next step must
+  not assume are done.
+- State outcomes, not a step-by-step narrative of how you got there. Keep the brief "why"
+  in `reasoning`; put what was produced and its current state in `result`.
+- Be honest about partial work: an accurate account of what is and is not done is worth far
+  more to the caller than a result that reads as complete when it is not.
 """
 
 _EXAMPLES = [
-    '{"name": "done_tool", "args": {"reasoning": "The task has been completed successfully.","result": "The task has been completed."}}',
+    '{"name": "done_tool", "args": {"reasoning": "All acceptance checks pass.", "result": "Implemented the CLI in src/main.rs and src/cmd/*.rs; compile.sh builds ./executable offline. Verified: --help, --version and the add/query/remove subcommands match the reference byte-for-byte (check.sh: 14/14 pass). Unfinished: the import subcommand rejects one exotic flag combination the reference accepts."}}',
+    '{"name": "done_tool", "args": {"reasoning": "Answered from the file already in context.", "result": "The timeout is set in config/server.yaml:12 (30s)."}}',
 ]
 
 
@@ -40,8 +51,11 @@ class DoneTool(Tool):
         Indicate that the task has been completed.
 
         Args:
-            reasoning (str): The reasoning of the task completion. Must be provided.
-            result (str): The result of the task completion. Must be provided.
+            reasoning (str): A brief why — how you know the task is complete (or why you
+                are stopping). Must be provided.
+            result (str): The deliverable handoff — what was produced and where, what was
+                verified and how, and what remains. For a sub-agent this is all the caller
+                sees of your work, so make it self-contained. Must be provided.
         """
         # Convert to string in case LLM returns non-string types
         if reasoning is None or reasoning == "":

@@ -141,7 +141,7 @@ Permission mode: `danger_full_access` · changes state
 
 ## `done_tool`
 
-Indicate that the task has been completed.
+Finish the task (or subtask) and return its result.
 
 Permission mode: `workspace_write` · does not declare whether it changes state
 
