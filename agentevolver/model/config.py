@@ -173,6 +173,18 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "max_completion_tokens": max_tokens,
             "timeout": default_timeout,
         },
+        {
+            "model_name": "llm_hub/deepseek-v4-flash",
+            "model_id": "deepseek-v4-flash",
+            "model_type": "chat/completions",
+            # Verified live against the relay under this bare id: a chat/completions call
+            # returns content directly, finish_reason "stop", reasoning_tokens 0 — so it
+            # behaves as a plain chat model here, not a reasoning one, and needs no
+            # reasoning routing. DeepSeek accepts sampling params, so temperature is sent.
+            "temperature": default_temperature,
+            "max_completion_tokens": max_tokens,
+            "timeout": default_timeout,
+        },
     ]
     # gpt-5.6-sol refuses function tools on chat/completions ("use /v1/responses or set
     # reasoning_effort to 'none'"). An agent loop is tool calling, so giving up

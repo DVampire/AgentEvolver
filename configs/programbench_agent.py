@@ -78,7 +78,7 @@ log_path = "agent.log"
 # manager with an unregistered name fails every `_think` instantly instead.
 # Keep this in sync with programbench_agent_baseline.py — the two arms are only
 # comparable while they run the same model.
-model_name = "llm_hub/claude-opus-5"
+model_name = "llm_hub/deepseek-v4-flash"
 
 memory_names = [
     "file_system_memory",
@@ -181,7 +181,15 @@ sandbox_deny_hosts = [
 # Expect longer runs: the task document's stopping rule spends up to two thirds of the
 # budget exploring before it starts converging, so a 1000-step ceiling is a much longer
 # leash than the ~1h that 200-step runs took.
-MAX_STEP = 100
+#
+# Two ceilings, not one, because a MetaAgent step and a worker step are not the same unit.
+# A worker step does the work; a MetaAgent step is a single dispatch. Sharing one 100 let
+# the coordinator run out first while the workers were still mid-reconstruction (measured
+# on the baseline arm's `zoxide` run: 93 dispatches, meta ceiling hit, run ended "not
+# completed" with work still progressing). Kept identical to the baseline arm — the two
+# arms must differ only in the evolution roster.
+WORKER_MAX_STEP = 200
+META_MAX_STEP = 400
 WALL_CLOCK = 21600
 # Not an official number — the official harness caps per-instance *cost*, a different
 # axis. This is a cumulative-token runaway guard, left high enough that steps or wall
@@ -216,7 +224,7 @@ code_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -226,7 +234,7 @@ general_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -236,7 +244,7 @@ reviewer_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -247,7 +255,7 @@ _EVOLUTION = dict(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -261,7 +269,7 @@ meta_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )

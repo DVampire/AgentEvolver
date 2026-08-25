@@ -63,7 +63,7 @@ log_path = "agent.log"
 # so the vendor prefix belongs there and not here. Calling litellm directly with the
 # prefixed spelling appears to work and is a different code path; going through the
 # manager with an unregistered name fails every `_think` instantly instead.
-model_name = "llm_hub/claude-opus-5"
+model_name = "llm_hub/deepseek-v4-flash"
 
 memory_names = [
     "file_system_memory",
@@ -171,7 +171,18 @@ sandbox_deny_hosts = [
 # Expect longer runs: the task document's stopping rule spends up to two thirds of the
 # budget exploring before it starts converging, so a 1000-step ceiling is a much longer
 # leash than the ~1h that 200-step runs took.
-MAX_STEP = 100
+#
+# Two ceilings, not one, because a MetaAgent step and a worker step are not the same unit.
+# A worker step does the work — read the binary's behaviour, write source, compile. A
+# MetaAgent step is a single dispatch: "run general_agent", "now reviewer_agent". Sharing
+# one 100 made the coordinator run out first: on `zoxide` it dispatched 93 times
+# (general -> reviewer -> code, iterating on flag-parsing differences) and hit its own
+# ceiling with the workers still mid-reconstruction, so the run ended "not completed"
+# while the actual work was progressing. The worker ceiling bounds a single
+# reconstruction; the coordinator ceiling is how many rounds of delegation it may run,
+# and is several times larger because each round costs it one step.
+WORKER_MAX_STEP = 200
+META_MAX_STEP = 400
 WALL_CLOCK = 21600
 # Not an official number — the official harness caps per-instance *cost*, a different
 # axis. This is a cumulative-token runaway guard, left high enough that steps or wall
@@ -202,7 +213,7 @@ code_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -212,7 +223,7 @@ general_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -222,7 +233,7 @@ reviewer_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=WORKER_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
@@ -233,7 +244,7 @@ meta_agent.update(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    max_step=MAX_STEP,
+    max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
