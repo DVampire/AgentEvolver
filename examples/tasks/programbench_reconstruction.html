@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="1.0.0">
+  <meta name="version" content="2.0.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -15,453 +15,101 @@
 <objective>
 Reconstruct `{repository}` (language: {language}) from scratch.
 
-You are given only a compiled binary of the program together with its
-documentation, running inside an offline sandbox with no internet access.
-Implement a codebase that reproduces the original program's observable behavior as
-faithfully as possible, plus a `./compile.sh` that builds it.
+You are given only a compiled binary of the program and its documentation, in an
+offline sandbox with no internet. Implement source that reproduces the original's
+observable behaviour as faithfully as you can, plus a `./compile.sh` that builds it.
 </objective>
 
 <environment>
-- Your absolute working directory is `/workspace`. Always use that path, or a path
-  relative to it. Anything under `/home/…` refers to the host machine, not your
-  sandbox, and will not contain the files described here.
-- The compiled binary is at `./executable`. It is not named after the project, and it
-  is mode `---x--x--x` — executable but, by design, not readable. Its *behavior* is
-  available to you; its bytes are not.
-- The project's own documentation sits alongside it. **Its filenames differ from
-  project to project** — a README, a man page, a hand-written guide, a `docs/` tree, a
-  license, an image directory, in some combination. Do not assume any particular name.
-- A git repository is already initialized, with one `Initial commit` containing exactly
-  the documentation files the project shipped. `./executable` is untracked. Commit your
-  solution into this repository.
-- There is no internet. Nothing can be fetched, cloned or installed from a registry.
+- Your working directory is `/workspace`; use that path or one relative to it. Paths
+  under `/home/…` are the host machine, not your sandbox.
+- The compiled binary is at `./executable`. It is mode `---x--x--x` — runnable but, by
+  design, not readable: its behaviour is available to you, its bytes are not.
+- The project's documentation sits alongside it. **Filenames vary by project** — a
+  README, a man page, a guide, a `docs/` tree, a license, in some combination. Enumerate;
+  do not assume names.
+- A git repo is initialized with one `Initial commit` holding the shipped docs;
+  `./executable` is untracked. Commit your solution into this repo.
+- No internet: nothing can be fetched, cloned, or installed from a registry.
 </environment>
 
 <preserve-the-reference>
-Do this before you build anything. Your `compile.sh` has to write `./executable`,
-which is exactly where the reference binary sits — so your first build destroys the
-only oracle you have, and nothing will warn you.
+Do this first. Your `compile.sh` writes `./executable` — exactly where the reference
+sits — so your first build would destroy your only oracle, with no warning.
 
-**Rename it. Do not try to copy it.**
+**Rename it (do not `cp` — its mode lets it be executed, not read):**
 
 ```bash
 mv /workspace/executable /workspace/reference_executable
 ```
 
-`cp` cannot read the reference — its mode is `---x--x--x`, so it may be executed and
-not read, and a copy would have to read it. A rename only needs write permission on
-the directory, so it works, and the renamed file is still runnable. Reach for `cp`
-here and you get "Permission denied" and may conclude the file is broken; it is not,
-and neither are you doing anything wrong by renaming it.
-
-From then on `./reference_executable` is expected behavior and `./executable` is
-yours. Do not commit `reference_executable`; it is scaffolding, not deliverable.
-
-**Always put `timeout` in front of either binary:**
-
-```bash
-timeout 2 ./reference_executable --help; echo "exit=$?"
-```
-
-Many of these programs do not exit on their own — a TUI, a REPL, a server, a
-watcher — and a half-finished reconstruction can hang on input the reference
-handles instantly. Discover that in two seconds through exit code 124 rather than
-by blocking your shell for minutes. This matters most in the batched comparisons
-you most want to run: one unguarded hang stalls the whole turn.
+From then on `./reference_executable` is the oracle and `./executable` is yours. Do not
+commit `reference_executable`; it is scaffolding. Always guard runs of either binary with
+`timeout` (e.g. `timeout 2 ./reference_executable --help`) — many of these programs (a
+TUI, REPL, server, watcher) do not exit on their own, and an unguarded run hangs the turn.
 </preserve-the-reference>
 
-<gather-the-brief>
-Do this before anything else, and do it completely. **There is no separate problem
-statement.** The documentation shipped in the workspace, plus the reference's own
-observable behavior, *is* the specification you are graded against. Every flag,
-default, message and exit status you will be tested on is derivable from those two
-sources and nowhere else. Skimming here is the single cheapest way to lose score:
-you cannot reproduce a behavior you never learned exists.
+<method>
+There is no separate problem statement: the shipped documentation plus the reference's
+own observable behaviour **is** the specification you are graded against. Read the docs
+(roff markup is readable as-is; `man`/`groff` are unavailable), then learn behaviour the
+docs omit by asking the reference — it costs one command and always answers. The docs give
+the interface; only the reference gives the behaviour: which values an option accepts,
+whether comparison is case-sensitive, what a flag does given twice, the exit status and
+which stream a message goes to, behaviour at the edges (empty, zero, negative, out of
+range), long vs short forms, bundled flags, `--opt=value` vs `--opt value`.
 
-Since filenames vary by project, enumerate rather than guess. One turn:
-
-```bash
-ls -la
-find . -path ./.git -prune -o -type f -print
-git show --stat --oneline HEAD          # the exact file list the project shipped
-timeout 2 ./executable --help; echo "exit=$?"
-timeout 2 ./executable --version; echo "exit=$?"
-```
-
-Then read **every** text file end to end — not the first screen. `wc -l` them first so
-you know what "end to end" costs, and read the whole of each one:
-
-- A **man page** (`*.1`, `*.8`, …) is usually the densest spec in the workspace: it
-  enumerates every flag with its exact semantics and defaults. Read it with `cat`.
-  `man`, `nroff` and `groff` are unavailable here, so do not spend turns on them —
-  roff markup (`.TP`, `.B`, `\-`) is readable as-is.
-- A **README** gives the purpose, usage line and often the exact `--help` text.
-- A **hand-written guide, `docs/` tree, CHANGELOG or usage note** carries behavior
-  that appears nowhere else.
-- A **license** is the one file you can skip.
-- **Images** cannot be read, but their names hint at what modes exist.
-
-Extract what you read into the checklist below as you go. If `--help` and the man page
-disagree, the reference's actual behavior wins — check it.
-</gather-the-brief>
-
-<map-the-surface>
-What "observable behavior" means depends on what kind of program this is, so decide
-that first, from the documentation and a few probe runs.
-
-- A **command-line tool**: its flags, their effects, and how it rejects bad input.
-- A **filter or converter**: the mapping from input to output. Feed it
-  representative inputs and compare output bytes.
-- A **compiler or interpreter**: what it does to the source it is given — output,
-  exit status, diagnostics.
-- A **TUI, editor or viewer**: what it prints before entering, and on leaving, the
-  interactive screen, plus its non-interactive flags. Do not try to reproduce
-  frame-by-frame rendering.
-- A **server or daemon**: its startup output, configuration handling, and how it
-  reports readiness or refuses to start. Do not chase live protocol traffic.
-- A **library that ships a CLI**: treat the CLI as the surface. That is what is
-  observable.
-
-Write the surface down as a checklist with `todo_tool` before you start fixing
-anything, and mark items off as you verify them. Without a list you will rediscover
-the same three behaviors and never notice the twenty you have not looked at — and
-`todo_tool` specifically, because it comes back into your context every step, so
-consulting it costs nothing while a list in a file has to be re-read.
-</map-the-surface>
-
-<go-wide-before-deep>
-Get *something* correct for every item on the checklist before making any single
-item perfect. A reconstruction that handles twenty features approximately scores
-far better than one that handles three perfectly and crashes on the rest. Only
-after the checklist has been covered once should you go back and refine.
-
-Within an item: run the reference, run yours on the same input, diff, fix. Exit
-status, stdout and stderr all count, and which stream text goes to is part of the
-behavior. Where the documentation or the program's own output shows exact text,
-reproduce it exactly — including leading spaces and line breaks.
-
-**What counts as progress: a difference that used to be there and now is not.** Not a
-measurement taken, not a file written, not an explanation found. Your context reports two
-numbers each step — turns that changed something, and turns that only looked — and they
-are there because this is the one thing you cannot otherwise see about yourself. Every
-command you ran and every output you got is in your history; the ratio between them is
-not, and three runs before you spent 65, 300 and 650 consecutive turns measuring a
-difference they had already located.
-
-Two habits follow.
-
-**Keep the checklist in `todo_tool`, not in a file.** It is injected into your context
-every step, so you see what is done and what is left without spending an action to look —
-and marking an item done is how you and anyone reading the run can tell a turn moved
-something. A checklist in a text file has to be re-read to be used, and re-reading is the
-trap this whole section is about.
-
-**When the diff is down to one line, change that line.** The commonest shape: identical
-output, different exit status. That is one `return` or one `exit`, and it does not need
-another test run, a probe program, or an understanding of the argument parser. A run held
-`--help` at exit 1 for 65 turns having already found the `return 1` — it grepped for it
-twice. Write the change; if it is wrong you will know in one turn and it costs one turn to
-undo.
-
-**Capturing a behavior is not reproducing it.** Once you have the reference's output
-for something — on screen or saved to a file — the next action is to write the code
-that produces the same output. Re-reading your own capture files tells you nothing you
-did not already have, and it is the easiest way to spend a whole budget feeling
-productive: one run captured every flag's output correctly and then spent seven
-consecutive turns `cat`-ing those files back at itself without writing a line of
-source. If you catch yourself reading something you wrote, you already have the
-answer — go implement it. There is no amount of observation that finishes this task.
-</go-wide-before-deep>
+The method is one differential loop per behaviour: run the reference, run yours on the
+same input, diff stdout **and** stderr **and** exit status, fix the difference. Where the
+reference shows exact text, reproduce it exactly, including spaces and line breaks. A cheap
+way to keep this honest is one script that runs both binaries over your list of behaviours
+and prints a pass/fail count — rebuild before running it, or you compare against your old
+binary.
+</method>
 
 <build-gate>
-Non-negotiable: your `compile.sh` must build `./executable` from a clean checkout
-of your source alone. A submission that does not compile scores zero no matter how
-good the source looks, so verify the build early and re-verify it after every
-substantial change. Never leave the build broken while you go explore something
-else.
+Non-negotiable: `./compile.sh` must build `./executable` from a clean checkout of your
+source alone — no downloads, no dependency fetch, no reliance on the docs or reference
+binary still being present. Verify the build early and re-verify after every substantial
+change; never leave it broken while you explore. A submission that does not compile scores
+zero however good the source looks.
 </build-gate>
 
 <how-you-are-graded>
-You never see the tests and cannot run them — they do not exist in this sandbox. The
-reference binary is your only oracle, which is why the differential loop above is the
-whole method and not merely one technique.
+You never see the tests. After you stop, the grader wipes the workspace, extracts only
+your submission, deletes any `./executable` you shipped, runs your `./compile.sh` offline
+with a 15-minute limit, and drives the resulting binary against hidden tests.
 
-After you stop, the grader wipes the workspace, extracts only your submission, deletes
-any `./executable` you shipped, runs your `./compile.sh` **with no network and a
-15-minute limit**, and then drives the binary your build produced against hidden test
-suites. Four consequences worth acting on:
-
-- **`compile.sh` must build from your submitted files alone.** No downloads, no
-  fetch-dependencies step, and no reliance on the documentation or the reference binary
-  still being present — at grading time they are not. Anything the build needs must be
-  a file you leave in the workspace.
-- **Shipping a prebuilt binary is pointless**, and a byte-copy of the reference is
-  detected by hash and removed. Only what `compile.sh` produces is ever run.
-- **The score is a fraction of many individual test cases, not pass/fail.** Partial
-  credit is fine-grained: one more flag handled correctly is one more test passed.
-  That is the concrete reason breadth beats depth.
-- **The tests drive your program the way a user would** — running `./executable` with
-  flags and inputs and checking stdout, stderr and exit status. So most of what is
-  graded is the command-line surface: every flag in **both long and short form**, the
-  exact `--help`/usage text, how invalid, unknown or missing arguments are rejected
-  (the message *and* the exit status), behavior on empty or absent input, and several
-  flags used together. Spend your budget there before anything deeper.
+- The score is a fraction of many individual test cases, not pass/fail — one more flag
+  handled correctly is one more test passed. That is why breadth beats depth.
+- The tests drive the program the way a user would — flags and inputs, checking stdout,
+  stderr, and exit status. Most of what is graded is the command-line surface: every flag
+  in long and short form, the exact usage/`--help` text, how invalid/unknown/missing
+  arguments are rejected (message and exit status), empty or absent input, flags combined.
+- Shipping a prebuilt binary is pointless; a byte-copy of the reference is detected by hash
+  and removed. Only what `compile.sh` produces is run.
 </how-you-are-graded>
 
 <rules>
-These are the benchmark's own rules, not house style. Breaking one invalidates the
-submission; being stricter than they require only costs you score.
-
-**You must not:**
-
-- Search the internet, clone repositories, or download the project from a package
-  registry. The network is blocked, so every attempt only costs you a turn.
-- **Wrap or shim the provided binary.** Your `./executable` must be built from your
-  own source by `./compile.sh`. Invoking, copying, embedding or falling back to the
-  reference is not a reconstruction, and writing original code from observed
-  behavior is the entire point.
-- Decompile the reference binary, or run `strace`/`ltrace` on it.
-- Run binary-analysis tools (`objdump`, `readelf`, `nm`, `strings`, Ghidra, …)
-  **on the reference binary**. Its mode is `---x--x--x` precisely so that its bytes
-  are not an available input; if a permissions quirk of your sandbox lets one of
-  these read it anyway, that is not permission to use it.
-
-**You may:**
-
-- Run the reference with any inputs, flags and arguments, and read everything it
-  produces — stdout, stderr, exit status, files it writes.
-- Read the bundled documentation.
-- Run analysis tools on **binaries you built yourself**. Inspecting your own output
-  is ordinary development.
-
-One further piece of advice, not a rule: even where symbol inspection of your own
-build is allowed, it rarely pays. Symbol tables are mostly libc and kernel
-constants, and a single run of `--help` tells you more about behavior than all of
-them. A run that spent a quarter of its budget grepping symbols scored worse than
-one that spent it running the program.
+Breaking one of these invalidates the submission; being stricter than required only costs
+score. **You must not:** search the internet, clone, or download from a registry; wrap,
+shim, copy, embed, or fall back to the reference binary (your `./executable` must be built
+from your own source); decompile the reference or run `strace`/`ltrace` on it; run
+binary-analysis tools (`objdump`, `readelf`, `nm`, `strings`, …) on the reference. **You
+may:** run the reference with any inputs and read everything it produces; read the docs;
+run analysis tools on binaries you built yourself.
 </rules>
 
-<ask-what-the-documentation-does-not>
-The documentation specifies the *interface*, not the *behaviour*. It tells you that an
-option exists and roughly what it is for; it does not tell you which values that option
-accepts, whether it compares them case-insensitively, what happens when it is given
-twice, or what it does with a value at the edge of its range. That information exists in exactly one place — the reference — and
-it only answers questions you think to ask.
-
-This is where reconstructions lose most of their score, and the reason is worth naming:
-every other instruction here points you at something in front of you. Read the docs. Run
-the reference. Diff the output. All of it is *extraction*, and extraction stops at the
-edge of the text. The behaviours you are graded on do not stop there.
-
-So use what you already know about programs of this kind. You have seen thousands of
-them. Before you accept an option as finished, ask what a program like this would
-plausibly do that its documentation would not bother to state — and then ask the
-reference, because it costs one command and it always answers:
-
-- Is the comparison case-sensitive? (`red` / `Red` / `RED`)
-- Does it accept `--opt=value` as well as `--opt value`? A bare `-ovalue`?
-- Can flags be bundled — `-abc` for `-a -b -c`?
-- What happens when an option is given twice? Does the last one win?
-- Are there abbreviations, aliases, deprecated spellings?
-- What about the edges: empty, zero, negative, one past the maximum, a value of the wrong
-  type entirely?
-- Does argument order matter? Flags after a positional argument?
-- What is the exit status in each case, and which stream does the message go to?
-
-None of that list is specific to any one program, and none of it appears in any man page.
-Each line is one command against the reference. A behaviour it turns out not to have
-costs you a single check; a behaviour it does have, and you never asked about, costs you
-every test that exercises it — one reconstruction lost twenty-seven tests to a single
-unasked question about letter case.
-</ask-what-the-documentation-does-not>
-
-<know-when-you-are-done>
-You cannot see the tests, so "done" in the grader's sense is not knowable. What is
-knowable is "no difference I can find remains", and that is worth making into a number
-you can read rather than a feeling you arrive at.
-
-**Write one script that checks everything, early, and keep it current.** For each item on
-your checklist it runs the reference and your build on the same input, compares stdout,
-stderr and exit status, and prints one line per item plus a final count:
-
-```bash
-#: check.sh — the only question that matters, answered in one command
-pass=0; fail=0
-check() {                    # check "<label>" [stdin-file|""] <args...>
-  label="$1"; input="$2"; shift 2
-  if [ -n "$input" ]; then
-    r=$(timeout 2 ./reference_executable "$@" < "$input" 2>&1; echo "exit=$?")
-    m=$(timeout 2 ./executable          "$@" < "$input" 2>&1; echo "exit=$?")
-  else
-    r=$(timeout 2 ./reference_executable "$@" 2>&1; echo "exit=$?")
-    m=$(timeout 2 ./executable          "$@" 2>&1; echo "exit=$?")
-  fi
-  if [ "$r" = "$m" ]; then pass=$((pass+1))
-  else fail=$((fail+1)); echo "DIFF $label"; diff <(echo "$r") <(echo "$m") | head -5
-  fi
-}
-
-check "usage long"   "" --help          # whatever this program calls its usage output
-check "usage short"  "" -h              # long and short forms are separate behaviours
-check "bad input"    "" --no-such-thing # however it rejects something it cannot accept
-check "reads stdin"  sample.txt         # a filter: feed it, compare the bytes out
-check "reads a file" "" sample.txt      # a compiler or converter: give it the input
-
-# An option that takes a value needs several points in that space, not one:
-check "value ok"     "" --colour red
-check "value case"   "" --colour RED    # the same value, written differently
-check "value edge"   "" --colour ""     # empty, zero, negative, out of range
-check "value bad"    "" --colour nosuch
-echo "PASS=$pass FAIL=$fail"
-```
-
-That shape covers most programs, and the parts that differ are the arguments, not the
-comparison. Where output cannot be captured this way — a program that only draws on a
-terminal, a server that must be talked to — check what it does *around* that: what it
-prints before and after, how it reports being unable to start, what it does with a
-configuration it cannot use. Compare files it writes with `cmp`. Anything you can
-observe twice, you can put in this script.
-
-Three things follow from having it.
-
-**It answers "am I done".** `FAIL=0`, apart from differences you have recorded as
-unreachable, is as finished as this task gets. Nothing else you can do will tell you
-more.
-
-**It is the progress number.** FAIL going down is the only progress there is; if it has
-not moved in ten turns you are working on the wrong item. Run it after every change —
-and rebuild first, or you are comparing against the binary you had before the fix.
-
-**It stops you rediscovering the same three behaviours.** Each new thing you learn about
-the reference becomes another `check` line, so it stays checked for the rest of the run
-instead of being verified once and forgotten.
-
-**One line per option is not coverage.** Do this as a list you work through, not as a
-judgement you make. Go along the usage line and mark every option that *takes a value* —
-they are the ones shown with an argument, `-C color`, `--width N`, `-o FILE`. Each one
-gets four checks, not one:
-
-| | why |
-|---|---|
-| a valid value | the case you already thought of |
-| **the same value written differently** | different case, an abbreviation, an alias |
-| a boundary value | empty, zero, negative, huge, the largest legal one |
-| something invalid | the reject path, which is tested as heavily as the accept path |
-
-Then count: if the usage line shows four options that take values, your script has
-sixteen lines about them. Fewer means you decided one of them did not need it, and that
-decision is the one that costs.
-
-The second row is the one everybody skips, and it is not hypothetical: a reconstruction
-that accepted `red` and rejected `Red` passed its author's single check and failed
-twenty-seven of the grader's, because the reference compared those values
-case-insensitively. Nothing in one check could have revealed that. The run before it had
-been told to check "the same value written differently", wrote a line for every other
-option on the usage line, and still did not write that one — because every other line
-could be copied off the usage text, and this one has to be thought of.
-
-The same applies to whatever mode or behaviour the program has: if it can be started in
-several ways, check that it starts in each of them and stops cleanly, not just that one
-of them works. Thirty more tests were lost that way — the reconstruction never entered
-its main loop at all, and a comparison run without a terminal attached showed no
-difference because neither binary could start.
-
-Record unreachable differences as a comment beside the check you removed, so the count
-stays honest and the next reader knows why.
-</know-when-you-are-done>
-
-<when-to-stop>
-**Finishing early wins you nothing.** Your workspace is collected and graded when the
-run ends, however it ends — whether you declare yourself done or simply run out of
-budget. There is no bonus for stopping sooner and no penalty for using the whole
-allowance, so "am I done?" is the wrong question. The benchmark never answers it either:
-it defines what to produce and nothing about when to stop.
-
-Two questions replace it, and both have answers you can check.
-
-**When do I leave this difference and take the next one?** Whenever it has stopped
-paying: `check.sh`'s FAIL count has not dropped in roughly ten turns, or the difference
-is one of the unreachable shapes below. There is always another item, and the score is the count of
-behaviours you match — twenty approximated beats three perfected.
-
-**How much budget do I keep back to land the work?** About ten steps — one clean build
-from a fresh checkout, a commit, a summary, and slack for the build failing once.
-Reserve an amount, not a fraction: landing costs the same whether your budget is 100
-steps or 1000. Below that line, stop opening anything new and spend what is left making
-sure what you have is committed and builds.
-
-Only then does calling `done_tool` make sense — not because you are finished, but
-because there is nothing left worth the remaining budget.
-
-Exact fidelity is not always reachable either: a version string may embed the
-reference's own build timestamp, and no reconstruction can match that. Do not spend
-budget on differences you have judged unreachable; write them down and move on.
-
-**Nothing here is a prerequisite for anything else.** The checklist items are
-independent, so an unresolved one never blocks the rest — and "I need to understand
-this before proceeding" is, for this task, almost always false. A run that decided the
-reference's crash on one flag was a critical edge case to understand first spent a
-hundred consecutive turns investigating it without writing a line of source, while
-every other item sat finished-or-untouched around it. If something resists, leave it
-and take the next item; you can come back with budget you still have.
-
-Treat a difference as unreachable — record it, move on — as soon as any of these holds:
-
-- **The reference crashes, hangs, or depends on something you do not have.** A
-  segfault, a terminal that is not attached, a device, a locale, a network service. You
-  cannot reproduce a crash faithfully and should not try.
-- **The difference is in a value only the original build could know**: an embedded
-  timestamp, a path from the machine it was compiled on, a commit hash. The commonest
-  form by far, and worth recognising on sight:
-
-  ```
-  reference: version 2.0 (compiled 22:13:51, Jun 11 2026)
-  yours:     version 2.0 (compiled 04:34:42, Aug  1 2026)
-  ```
-
-  That is `__DATE__` and `__TIME__`, fixed when the reference was compiled. Your build
-  cannot produce those characters and no amount of work will change that — hard-coding
-  them is not reproducing behaviour either, and the next instance's would differ again.
-  Record it and move on the moment you see it. A run spent over a hundred turns on this
-  one line while a genuinely fixable difference sat beside it untouched.
-- **You have spent roughly ten turns on one difference without your source changing.**
-  That is the signal, and it is a fact about your own history you can check. Ten turns
-  of investigation that produced no code is not investigation any more.
-
-Concretely:
-
-1. **While more than 10 steps remain**, keep taking checklist items. Leave any single
-   difference after ~10 turns without eliminating one. Rebuild and re-compare after
-   every source change — a comparison against a binary you did not rebuild reports the
-   difference you just fixed, and a run lost a dozen turns that way.
-2. **Below 10 steps, or 10 minutes**, stop opening anything new: build from a clean
-   checkout, confirm `./executable` is produced and behaves, `git add` your source,
-   `compile.sh` and `.gitignore`, commit, and call `done_tool` with an honest summary.
-3. **Call `done_tool` earlier only if** `check.sh` reports FAIL=0 apart from the
-   differences you recorded as unreachable — which is rare, and is not the same as
-   having run out of ideas about the item in front of you.
-</when-to-stop>
-
 <deliverable>
-The submission must contain:
+The submission must contain, committed to git:
+1. **Your own source**, reimplemented from observed behaviour — not wrapped or borrowed.
+2. **`./compile.sh`**, executable, producing `./executable` from that source alone.
+3. **`.gitignore`** covering build artifacts (and `reference_executable`).
 
-1. **Your own source code** — reimplemented from observed behavior, not wrapped or
-   borrowed.
-2. **`./compile.sh`**, executable, producing `./executable` from that source alone
-   on a clean checkout.
-3. **`.gitignore`** covering build artifacts, so they are not committed.
-4. **A git commit** of the above.
-
-If you stop with work outstanding, write what remains into `AGENT_REPORT.md` and
-commit it — an honest account of what is unfinished is worth more than a silent gap.
-
-Whichever stopping condition comes first, your last actions are:
-
-1. Run `./compile.sh` from a clean state and confirm `./executable` is produced and
-   behaves.
-2. `git add` your source, `compile.sh` and `.gitignore`, then commit.
-3. Call `done_tool` with an honest summary of what you reproduced and what you did
-   not.
+Your last actions, whenever you stop: run `./compile.sh` from a clean state and confirm
+`./executable` is produced and behaves; `git add` your source, `compile.sh`, and
+`.gitignore`, then commit; call `done_tool` with an honest summary of what you reproduced
+and what you did not. If work remains, record it in `AGENT_REPORT.md` and commit that too.
 </deliverable>
 
 </div>
