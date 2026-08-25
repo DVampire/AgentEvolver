@@ -178,10 +178,18 @@ sandbox_deny_hosts = [
 # one 100 made the coordinator run out first: on `zoxide` it dispatched 93 times
 # (general -> reviewer -> code, iterating on flag-parsing differences) and hit its own
 # ceiling with the workers still mid-reconstruction, so the run ended "not completed"
-# while the actual work was progressing. The worker ceiling bounds a single
-# reconstruction; the coordinator ceiling is how many rounds of delegation it may run,
-# and is several times larger because each round costs it one step.
-WORKER_MAX_STEP = 200
+# while the actual work was progressing.
+#
+# The worker ceiling is deliberately SMALL. A large per-dispatch budget is what let a
+# single worker over-invest: dispatched to "capture the behaviour", one general_agent ran
+# ~190 steps and recorded 3,534 observations while the coordinator sat at step 4 unable to
+# redirect it, and the run shipped a stub. A tight worker ceiling hands control back to the
+# coordinator often, so it can see partial work and steer to implementation instead of
+# waiting out one worker's whole budget — the mechanism that makes "produce a slice, then
+# the next" actually happen rather than only being asked for in the prompt. The coordinator
+# ceiling stays large because each of its steps is one cheap dispatch, and it now needs
+# more rounds to drive the same total work through shorter worker dispatches.
+WORKER_MAX_STEP = 50
 META_MAX_STEP = 400
 WALL_CLOCK = 21600
 # Not an official number — the official harness caps per-instance *cost*, a different

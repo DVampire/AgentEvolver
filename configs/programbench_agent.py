@@ -184,11 +184,15 @@ sandbox_deny_hosts = [
 #
 # Two ceilings, not one, because a MetaAgent step and a worker step are not the same unit.
 # A worker step does the work; a MetaAgent step is a single dispatch. Sharing one 100 let
-# the coordinator run out first while the workers were still mid-reconstruction (measured
-# on the baseline arm's `zoxide` run: 93 dispatches, meta ceiling hit, run ended "not
-# completed" with work still progressing). Kept identical to the baseline arm — the two
-# arms must differ only in the evolution roster.
-WORKER_MAX_STEP = 200
+# the coordinator run out first while the workers were still mid-reconstruction.
+#
+# The worker ceiling is deliberately SMALL: a large per-dispatch budget let one worker
+# over-invest (a single "capture the behaviour" dispatch ran ~190 steps and recorded 3,534
+# observations while the coordinator sat unable to redirect it, and the run shipped a stub).
+# A tight ceiling hands control back to the coordinator often, so it can steer to
+# implementation instead of waiting out one worker's whole budget. Kept identical to the
+# baseline arm — the two arms must differ only in the evolution roster.
+WORKER_MAX_STEP = 50
 META_MAX_STEP = 400
 WALL_CLOCK = 21600
 # Not an official number — the official harness caps per-instance *cost*, a different
