@@ -61,6 +61,20 @@ def _retry_delay(attempt: int) -> float:
     return min(exponential * jitter, _RETRY_MAX_DELAY)
 
 
+#: Default attempts before a model call is treated as failed. A route with a flaky upstream
+#: raises its own via `ModelConfig.max_retries`; a per-call value overrides both.
+_DEFAULT_MAX_RETRIES = 3
+
+
+def _resolve_max_retries(per_call: Optional[int], model_config: Any) -> int:
+    """Effective attempt budget: an explicit per-call value wins; else the model's own
+    ceiling (set for a flaky route); else the default. Kept in one place so both the
+    buffered and streaming call paths resolve it identically."""
+    if per_call is not None:
+        return per_call
+    return getattr(model_config, "max_retries", None) or _DEFAULT_MAX_RETRIES
+
+
 def _prepare_request_messages(
     *,
     messages: List[Any],
@@ -536,7 +550,7 @@ class ModelContextManager:
                 timeout=m.get("timeout", self.default_timeout),
                 supports_streaming=True, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
-                context_window=m.get("context_window"),
+                context_window=m.get("context_window"), max_retries=m.get("max_retries"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -553,7 +567,7 @@ class ModelContextManager:
                 # as canonical events. Functions are the reason this surface is used.
                 supports_streaming=False, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
-                context_window=m.get("context_window"),
+                context_window=m.get("context_window"), max_retries=m.get("max_retries"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -872,7 +886,9 @@ class ModelContextManager:
         response_format = input.get("response_format")
         stream = input.get("stream", False)
         plugins = input.get("plugins")
-        max_retries = input.get("max_retries", 3)
+        # Resolved against model_config below (a flaky route can raise its own ceiling); a
+        # per-call value still wins.
+        max_retries = input.get("max_retries")
         caller = input.get("caller")
 
         self._current_caller = caller
@@ -888,6 +904,7 @@ class ModelContextManager:
             )
 
         model_config = self.models.get(name)
+        max_retries = _resolve_max_retries(max_retries, model_config)
         last_exc: Exception = None
         try:
             primary_request = _prepare_request_messages(
@@ -1110,7 +1127,9 @@ class ModelContextManager:
         messages = input.get("messages", [])
         tools = input.get("tools")
         response_format = input.get("response_format")
-        max_retries = input.get("max_retries", 3)
+        # Resolved against model_config below (a flaky route can raise its own ceiling); a
+        # per-call value still wins.
+        max_retries = input.get("max_retries")
 
         if name not in self.model_clients:
             raise ValueError(f"Model {name} not found. Available: {list(self.models.keys())}")
@@ -1131,6 +1150,7 @@ class ModelContextManager:
                     yield ev
 
         model_config = self.models.get(name)
+        max_retries = _resolve_max_retries(max_retries, model_config)
 
         # Ordered attempt plan: primary (retried max_retries×) then fallback (once).
         plan: List[tuple] = [(name, max_retries)]

@@ -164,6 +164,14 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "model_name": "llm_hub/claude-opus-5",
             "model_id": "claude-opus-5",
             "model_type": "chat/completions",
+            # The relay routes this to AWS Bedrock (response ids are `msg_bdrk_*`), which
+            # intermittently returns an empty completion (finish_reason null, ~3 tokens):
+            # mostly isolated single misses that one retry clears, with the occasional
+            # longer bad window. Measured on a live run, ~18% of calls came back empty and
+            # the default of 3 attempts left a bad window as a failed step. Raise this
+            # route's ceiling so a transient window is ridden out; the exponential backoff
+            # (1,2,4,… capped 30s) keeps the extra attempts cheap when the model answers.
+            "max_retries": 6,
             # Confirmed against Anthropic's model page: 1M is both the default and the
             # maximum; there is no smaller context variant of Opus 5.
             "context_window": 1_000_000,

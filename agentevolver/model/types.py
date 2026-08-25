@@ -49,6 +49,13 @@ class ModelConfig(BaseModel):
         description="Optional output schema version when required by provider.",
     )
     timeout: Optional[float] = Field(default=None, description="Request timeout in seconds.")
+    max_retries: Optional[int] = Field(
+        default=None,
+        description="Attempts before this model's call is treated as failed. Overrides the "
+        "default of 3 per model — raise it for a route with a flaky upstream (e.g. a relay "
+        "that intermittently returns empty completions) so a transient bad window is ridden "
+        "out rather than surfaced as a failed step. A per-call `max_retries` still wins.",
+    )
     key_pool_name: Optional[str] = Field(default=None, description="Key pool name for round-robin key lookup. Defaults to provider if not set.")
     fallback_model: Optional[str] = Field(
         default=None,
