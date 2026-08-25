@@ -186,9 +186,15 @@ sandbox_deny_hosts = [
 # redirect it, and the run shipped a stub. A tight worker ceiling hands control back to the
 # coordinator often, so it can see partial work and steer to implementation instead of
 # waiting out one worker's whole budget — the mechanism that makes "produce a slice, then
-# the next" actually happen rather than only being asked for in the prompt. The coordinator
-# ceiling stays large because each of its steps is one cheap dispatch, and it now needs
-# more rounds to drive the same total work through shorter worker dispatches.
+# the next" actually happen rather than only being asked for in the prompt.
+#
+# The coordinator ceiling is large because it is now a UNIFIED action budget, not a count
+# of dispatch rounds. The MetaAgent works the way Claude Code's main agent does — it may do
+# work directly with tools when the work needs the context it is holding, and delegate when
+# the work stands on its own — so a coordinator step is a real action (an edit, a build, a
+# check, or a dispatch), not only a hand-off. 400 covers a run that does much of the work
+# itself (a medium reconstruction driven directly is a few hundred actions) as well as one
+# that fans most of it out through short worker dispatches.
 WORKER_MAX_STEP = 50
 META_MAX_STEP = 400
 WALL_CLOCK = 21600

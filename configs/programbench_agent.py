@@ -183,15 +183,18 @@ sandbox_deny_hosts = [
 # leash than the ~1h that 200-step runs took.
 #
 # Two ceilings, not one, because a MetaAgent step and a worker step are not the same unit.
-# A worker step does the work; a MetaAgent step is a single dispatch. Sharing one 100 let
-# the coordinator run out first while the workers were still mid-reconstruction.
 #
 # The worker ceiling is deliberately SMALL: a large per-dispatch budget let one worker
 # over-invest (a single "capture the behaviour" dispatch ran ~190 steps and recorded 3,534
 # observations while the coordinator sat unable to redirect it, and the run shipped a stub).
 # A tight ceiling hands control back to the coordinator often, so it can steer to
-# implementation instead of waiting out one worker's whole budget. Kept identical to the
-# baseline arm — the two arms must differ only in the evolution roster.
+# implementation instead of waiting out one worker's whole budget.
+#
+# The coordinator ceiling is a UNIFIED action budget, not a count of dispatch rounds: the
+# MetaAgent works like Claude Code's main agent — it does work directly with tools when the
+# work needs the context it holds, and delegates when the work stands on its own — so a
+# coordinator step is a real action, not only a hand-off. Kept identical to the baseline
+# arm — the two arms must differ only in the evolution roster.
 WORKER_MAX_STEP = 50
 META_MAX_STEP = 400
 WALL_CLOCK = 21600
