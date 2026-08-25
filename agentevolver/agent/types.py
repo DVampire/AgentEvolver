@@ -2025,11 +2025,20 @@ class Agent(BaseModel):
                             f"{(started.data or {}).get('job_id')}")
                 return started.message, False, None, None, None, None
             resp = await runtime_manager.delegate(child, inp.get("task", ""), **brief)
-            if not resp.success:
-                raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
-            logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
             # Hand back the child's result plus a deterministic completion envelope, so the
-            # orchestrator can tell a finished result from a cut-off partial one.
+            # orchestrator can tell a finished result from a cut-off partial one — and do it
+            # whether or not the child called done_tool. A worker that hits its step ceiling
+            # returns success=False but has usually produced real work (a tight worker budget
+            # makes this common); raising here discarded that work behind a bare "failed" and
+            # denied the orchestrator both the partial result and the envelope that says it is
+            # partial. The envelope carries the status the meta needs to decide what is next,
+            # so a not-finished dispatch is an observation to build on, not an exception.
+            if resp.success:
+                logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success=True)")
+            else:
+                logger.warning(f"| ⚠️ [{self.name}] Sub-agent '{route[1]}' did not finish "
+                               f"(step {(resp.data or {}).get('step')}/{(resp.data or {}).get('max_step')}) "
+                               f"— handing back its partial result")
             return (resp.message or "") + _delegation_summary(resp.data), False, None, None, None, None
         if capability_type in _PLAIN_CAPABILITY_TYPES:
             # Skill, connector, environment, workflow and plugin differ only in which
