@@ -138,6 +138,35 @@ def _in_landing_window(step: int, max_step: int) -> bool:
     reserve = max(1, min(_LANDING_RESERVE_STEPS, max_step // 4))
     return step >= max_step - reserve
 
+
+def _delegation_summary(data: Optional[Dict[str, Any]]) -> str:
+    """A compact, deterministic completion envelope appended to a sub-agent's result when
+    it is handed back to the orchestrator.
+
+    An orchestrator otherwise sees only the child's own final text (`resp.message`), which
+    cannot tell it whether the child *finished* or was cut off with partial work — a worker
+    that hit its step ceiling returns its last words the same way one that called done_tool
+    returns its summary. The deterministic facts are already on `resp.data`; this surfaces
+    the two that decide how much to trust the result — the outcome and the cost — as one
+    tagged line, so a partial result is never mistaken for a finished one. No transcript,
+    no extra model call; just what the run already recorded about how it ended."""
+    if not data:
+        return ""
+    done = data.get("done")
+    step = data.get("step")
+    max_step = data.get("max_step")
+    constrained = data.get("stopped_by_constraint")
+    if done and not constrained:
+        outcome = "finished"
+    elif constrained:
+        outcome = "stopped by a resource limit — result is PARTIAL"
+    elif step is not None and max_step and step >= max_step:
+        outcome = "cut off at the step ceiling — result is PARTIAL, it did not signal completion"
+    else:
+        outcome = "stopped without finishing — result may be PARTIAL"
+    cost = f"; used {step}/{max_step} steps" if step is not None and max_step else ""
+    return f"\n\n[dispatch status: {outcome}{cost}]"
+
 #: Capability types the dispatch handles with one path: everything except ``tool``,
 #: which carries an execution record and the ``done_tool`` terminal, and ``agent``,
 #: which can be backgrounded. Derived from the table so a new type joins the plain
@@ -1999,7 +2028,9 @@ class Agent(BaseModel):
             if not resp.success:
                 raise RuntimeError(resp.message or f"Sub-agent {route[1]!r} failed")
             logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success={resp.success})")
-            return resp.message, False, None, None, None, None
+            # Hand back the child's result plus a deterministic completion envelope, so the
+            # orchestrator can tell a finished result from a cut-off partial one.
+            return (resp.message or "") + _delegation_summary(resp.data), False, None, None, None, None
         if capability_type in _PLAIN_CAPABILITY_TYPES:
             # Skill, connector, environment, workflow and plugin differ only in which
             # manager answers and whether the route names a member. Four copies of
