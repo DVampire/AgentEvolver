@@ -63,7 +63,7 @@ log_path = "agent.log"
 # so the vendor prefix belongs there and not here. Calling litellm directly with the
 # prefixed spelling appears to work and is a different code path; going through the
 # manager with an unregistered name fails every `_think` instantly instead.
-model_name = "llm_hub/deepseek-v4-flash"
+model_name = "llm_hub/claude-opus-5"
 
 memory_names = [
     "file_system_memory",
