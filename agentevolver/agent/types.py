@@ -117,6 +117,27 @@ _COMPACTIONS_PER_RUN = 3
 #: nothing to take.
 _INHERITED_CONTEXT_MAX = 12_000
 
+#: Steps reserved at the end of a bounded run for landing the work. `max_step` is a hard
+#: force-stop: the turn that reaches it is abandoned mid-action and the run is marked "not
+#: completed", so a run that was still writing when it ran out ships whatever it last
+#: persisted — which cost a stopped ProgramBench run its uncommitted refinements. During
+#: the reserved window the prompt carries an unmissable "persist and finish now" directive,
+#: on top of the softer budget tiers, so the agent commits/saves and calls done_tool before
+#: the hard stop rather than being cut off. Taken from `max_step`, not added to it, so the
+#: total budget is unchanged; scaled down for tiny budgets so it never swallows the run.
+_LANDING_RESERVE_STEPS = 3
+
+
+def _in_landing_window(step: int, max_step: int) -> bool:
+    """True when a run at ``step`` (0-based, about to take step+1) is within the reserved
+    landing window before the hard ``max_step`` stop. False for an effectively-unbounded
+    budget (``max_step`` is set to 1e8 when <=0), which has no end to land before. The
+    reserve is scaled down for a tiny budget so it never swallows the whole run."""
+    if max_step >= 1e7:
+        return False
+    reserve = max(1, min(_LANDING_RESERVE_STEPS, max_step // 4))
+    return step >= max_step - reserve
+
 #: Capability types the dispatch handles with one path: everything except ``tool``,
 #: which carries an execution record and the ``done_tool`` terminal, and ``agent``,
 #: which can be backgrounded. Derived from the table so a new type joins the plain
@@ -358,6 +379,11 @@ class _AgentRun:
         self.task_id = task_id
         self.extra_kwargs = extra_kwargs or {}
         self.step = 0
+        #: True once the run enters the reserved landing window (the last few steps before
+        #: the hard max_step stop). While set, the prompt carries a forceful "persist and
+        #: finish now" directive so the agent lands its work instead of being cut off
+        #: mid-action with nothing committed. See `_LANDING_RESERVE_STEPS`.
+        self.landing = False
         self.action_errors: List[str] = []
         # the round currently in flight (this turn's batch)
         self.round_step = 0
@@ -631,6 +657,22 @@ class Agent(BaseModel):
         # Resource budgets collected from the previous step's constraint checks
         constraint_status = kwargs.get("constraint_status") or []
         constraint_text = render_status_text(constraint_status) if constraint_status else "[No active budget.]"
+
+        # Landing window (see `_LANDING_RESERVE_STEPS`): the last steps before the hard
+        # max_step stop. This is the final, unmissable escalation on top of the budget
+        # tiers — a run cut off mid-action ships only what it already persisted, so spend
+        # these steps landing, not starting. Kept general: "persist" is save/commit/write,
+        # whatever this task's deliverable is; the agent knows what that means for its work.
+        _run = kwargs.get("_run")
+        if _run is not None and getattr(_run, "landing", False):
+            constraint_text += (
+                "\n\n⚠️ LANDING WINDOW — only the last few steps remain before a hard stop "
+                "that discards any unfinished action and marks the task incomplete. Do NOT "
+                "start anything new or open another line of investigation. Spend what is "
+                "left making what you already have final and durable: persist it (save, "
+                "commit, or write out your files and results), record anything unfinished, "
+                "then call `done_tool` with your best result. Work you do not persist now "
+                "is lost.")
 
         # Errors from the previous step (shown only when the last step failed) — a
         # universal agent-context sub-module, provided here so subclasses don't each
@@ -2289,7 +2331,12 @@ class Agent(BaseModel):
             await self._conclude(run)
             return False
 
-        logger.info(f"| 🔄 [{self.name}] Step {run.step + 1}/{self.max_step}")
+        # Landing window: the last few steps before the hard max_step stop (see
+        # `_in_landing_window` / `_LANDING_RESERVE_STEPS`).
+        run.landing = _in_landing_window(run.step, self.max_step)
+
+        logger.info(f"| 🔄 [{self.name}] Step {run.step + 1}/{self.max_step}"
+                    + ("  🛬 LANDING" if run.landing else ""))
         # Before the prompt is built, because `_get_messages` rebuilds it from memory and
         # trace — a fold recorded now is already shadowed out of what it renders.
         await self._fold_ahead(run)
