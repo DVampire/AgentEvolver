@@ -51,6 +51,21 @@ _RETRY_MAX_DELAY = 30.0
 #: caused it.
 _RETRY_JITTER = 0.25
 
+#: Flat wait before retrying a transient empty completion. Unlike a rate limit or a
+#: half-open connection — where retrying sooner just re-triggers the same failure and the
+#: exponential backoff is the point — an empty completion is a momentary upstream blip that
+#: the next call almost always answers, so a short fixed pause recovers it without burning
+#: the run's wall clock. It never rides out a sustained bad window (no retry budget can);
+#: that is the relay's to fix.
+_EMPTY_COMPLETION_RETRY_DELAY = 0.5
+
+
+def _is_transient_empty(error: Exception) -> bool:
+    """True for the "Model returned empty message" / "Fallback returned empty message"
+    failures — a transient empty completion that recovers on an immediate retry, as
+    opposed to a rate limit, timeout, or dropped connection that needs real backoff."""
+    return "empty message" in str(error).lower()
+
 
 def _retry_delay(attempt: int) -> float:
     """Seconds to wait before ``attempt`` (1-based), with exponential backoff and jitter."""
@@ -999,8 +1014,19 @@ class ModelContextManager:
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
                 more = attempt < max_retries - 1
                 # Computed before the record so the trace says how long the wait will be,
-                # not merely that there was one.
-                delay = _retry_delay(attempt + 1) if more else None
+                # not merely that there was one. An empty completion is not a rate limit:
+                # it is a transient upstream blip (llm_hub's Bedrock-backed opus route
+                # returns one intermittently) that the very next call almost always
+                # answers, so it gets a short flat wait instead of the exponential backoff
+                # meant for rate limits and half-open connections. On one run 84 empties
+                # spent 6.3 min in exponential backoff that bought nothing; a rate limit or
+                # a dropped stream still gets the long climb, because there retrying sooner
+                # only re-triggers the same rejection.
+                if more:
+                    delay = (_EMPTY_COMPLETION_RETRY_DELAY if _is_transient_empty(e)
+                             else _retry_delay(attempt + 1))
+                else:
+                    delay = None
                 await _record_retry(
                     session_id, name, attempt + 1, max_retries,
                     str(e), delay, self._current_caller,
