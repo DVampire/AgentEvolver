@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="2.0.0">
+  <meta name="version" content="3.0.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -15,9 +15,12 @@
 <objective>
 Reconstruct `{repository}` (language: {language}) from scratch.
 
-You are given only a compiled binary of the program and its documentation, in an
-offline sandbox with no internet. Implement source that reproduces the original's
-observable behaviour as faithfully as you can, plus a `./compile.sh` that builds it.
+This is a reverse-engineering benchmark. You are given a compiled binary and its
+documentation, and nothing else. Write a new, original codebase from scratch that produces
+an executable with behaviour identical to the original, plus a `./compile.sh` that builds
+it. You must figure out the behaviour solely by running and interacting with the provided
+binary and reading its docs — writing original code from observed behaviour is the entire
+point.
 </objective>
 
 <environment>
@@ -30,7 +33,8 @@ observable behaviour as faithfully as you can, plus a `./compile.sh` that builds
   do not assume names.
 - A git repo is initialized with one `Initial commit` holding the shipped docs;
   `./executable` is untracked. Commit your solution into this repo.
-- No internet: nothing can be fetched, cloned, or installed from a registry.
+- No internet, and no project-specific dependencies are pre-installed. Nothing can be
+  fetched, cloned, or installed from a registry.
 </environment>
 
 <preserve-the-reference>
@@ -47,6 +51,7 @@ From then on `./reference_executable` is the oracle and `./executable` is yours.
 commit `reference_executable`; it is scaffolding. Always guard runs of either binary with
 `timeout` (e.g. `timeout 2 ./reference_executable --help`) — many of these programs (a
 TUI, REPL, server, watcher) do not exit on their own, and an unguarded run hangs the turn.
+If you are dealing with a TUI, `tmux`/`libtmux` is available to help you drive and inspect it.
 </preserve-the-reference>
 
 <method>
@@ -68,11 +73,13 @@ binary.
 </method>
 
 <build-gate>
-Non-negotiable: `./compile.sh` must build `./executable` from a clean checkout of your
-source alone — no downloads, no dependency fetch, no reliance on the docs or reference
-binary still being present. Verify the build early and re-verify after every substantial
-change; never leave it broken while you explore. A submission that does not compile scores
-zero however good the source looks.
+Non-negotiable: `./compile.sh` must be executable and must build `./executable` in the
+workspace root from a clean checkout of your source alone. It may install or vendor any
+dependencies the build needs, but only from what is already available offline — no
+downloads, no dependency fetch, no reliance on the docs or the reference binary still
+being present, since at grading time they are not. **If your `compile.sh` fails to compile
+on a fresh checkout, the task has failed** — so verify the build early and re-verify after
+every substantial change; never leave it broken while you explore.
 </build-gate>
 
 <how-you-are-graded>
@@ -91,20 +98,49 @@ with a 15-minute limit, and drives the resulting binary against hidden tests.
 </how-you-are-graded>
 
 <rules>
-Breaking one of these invalidates the submission; being stricter than required only costs
-score. **You must not:** search the internet, clone, or download from a registry; wrap,
-shim, copy, embed, or fall back to the reference binary (your `./executable` must be built
-from your own source); decompile the reference or run `strace`/`ltrace` on it; run
-binary-analysis tools (`objdump`, `readelf`, `nm`, `strings`, …) on the reference. **You
-may:** run the reference with any inputs and read everything it produces; read the docs;
-run analysis tools on binaries you built yourself.
+Your goal is to write original code from scratch that reproduces the executable's
+behaviour. Any approach that shortcuts this — finding existing source, wrapping the
+binary, or installing the original tool — does not count as a solution: it is detected by
+an automated judge, disqualified, scored as a failure, and the trace is posted to a public
+wall of shame. Being stricter than these rules require only costs you score; breaking one
+invalidates the submission.
+
+**You must not — obtain source code.** The only sources of truth are the executable itself
+and its bundled docs. Even if you recognise what the executable is, reimplement it from
+behavioural observation alone. This rules out: cloning or browsing the original repo, its
+forks or mirrors; downloading the project from any registry (`cargo install <p>`,
+`go get github.com/<org>/<p>`, `pip install <p>`, `apt-get source <p>`, `npm install <p>`,
+…); fetching source tarballs from project sites; using a package manager to pull the
+project as a dependency and then reading its cached source (e.g. under `~/.cargo/registry/src/`
+or `$(go env GOPATH)/pkg/mod/`); and searching the web for the project's source or
+implementation details.
+
+**You must not — wrap or reuse the original binary.** Your submission must be a genuine
+reimplementation that does not depend on the provided `./executable` or any pre-built
+version of the same tool at runtime. This rules out: a wrapper that delegates to the
+original (`exec zstd "$@"`); installing the tool and shimming to it (`apt-get install nnn
+&& cp $(which nnn) ./executable`); a `compile.sh` that merely `chmod +x`s or `cp`s the
+provided binary; a main that shells out to an external tool; and re-linking prebuilt `.o`
+files without writing new source.
+
+**You must not — analyse the provided binary's bytes.** All information about
+`./reference_executable` (the renamed `./executable`) must come through its normal user
+interface. Do not decompile it or run disassemblers (`objdump`, Ghidra, `readelf`, `nm`,
+`strings`, …) on it, and do not run `strace`/`ltrace` or similar on it. This restriction
+applies ONLY to the provided reference — you are free to run any analysis tools on binaries
+you build yourself.
+
+**You may:** run the reference with any inputs, flags, arguments, and stdin, and read
+everything it produces (stdout, stderr, exit status, files it writes); and read the bundled
+documentation.
 </rules>
 
 <deliverable>
 The submission must contain, committed to git:
 1. **Your own source**, reimplemented from observed behaviour — not wrapped or borrowed.
 2. **`./compile.sh`**, executable, producing `./executable` from that source alone.
-3. **`.gitignore`** covering build artifacts (and `reference_executable`).
+3. **`.gitignore`** covering the executable and every other build artifact, so they are
+   not committed (`reference_executable` included).
 
 Your last actions, whenever you stop: run `./compile.sh` from a clean state and confirm
 `./executable` is produced and behaves; `git add` your source, `compile.sh`, and
