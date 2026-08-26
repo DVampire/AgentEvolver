@@ -266,6 +266,16 @@ def parse_args():
         "--cfg-options", nargs="+", action=DictAction,
         help="Override config options in key=value format",
     )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Continue from a session's existing workspace instead of re-seeding it from "
+             "the image. The prior run's committed reconstruction, its build script, and "
+             "the preserved reference binary are kept, and the agent is told to build on "
+             "them and close the remaining behaviour gaps rather than start over. Only the "
+             "agent's own reconstruction carries across — no test suite or reference source "
+             "— so it stays within the benchmark's rules; the score then reflects work "
+             "accumulated across runs rather than a single fresh attempt.",
+    )
     args = parser.parse_args()
     if not args.instance_json and not args.task_ids and args.start is None and args.end is None:
         parser.error("specify --task-ids or --start/--end; refusing to run the entire benchmark by default")
@@ -650,6 +660,28 @@ async def run_inner(args) -> int:
 
     content, task_files, task_meta = build_task_content(instance, args.task_file, task_log_root)
 
+    if getattr(args, "resume", False):
+        # The launcher kept a prior run's workspace instead of re-seeding. A fresh agent
+        # reading the task from scratch would try to `mv executable reference_executable`
+        # (there is no `executable` now — the reference is already renamed) and might
+        # rewrite from zero. Tell it what it is walking into: build on what is here, and
+        # spend the run closing the gaps the existing reconstruction still has.
+        content = (
+            "## RESUMING an earlier attempt — do not start over\n\n"
+            "This workspace already holds a substantial reconstruction from a previous run:"
+            " your own source, a working `./compile.sh`, and a git history (see `git log`)."
+            " The reference binary is ALREADY preserved as `./reference_executable` — do NOT"
+            " look for `./executable` to rename, and do NOT rewrite from scratch.\n\n"
+            "Your job now is to CONTINUE and CLOSE THE GAPS: build with `./compile.sh`, run"
+            " your existing differential checks (and write them if none remain) against"
+            " `./reference_executable`, find behaviours that still differ or were never"
+            " exercised — every subcommand, both flag forms, env vars, exit codes and"
+            " streams, edge and error inputs, interactive/subprocess and file-format"
+            " behaviour — fix them, and commit. Use only the reference as the oracle, never"
+            " any external source or the hidden tests. The full task contract follows.\n\n"
+            "---\n\n" + content
+        )
+
     async def handler(record):
         return await agent_manager(
             name="meta_agent",
@@ -736,7 +768,7 @@ async def run_inner(args) -> int:
 # --------------------------------------------------------------------------- #
 # Launcher — one container per instance, on the host
 # --------------------------------------------------------------------------- #
-def inner_command(instance, args) -> str:
+def inner_command(instance, args, resume: bool = False) -> str:
     """The command the launcher runs inside the task container.
 
     Config and task-file paths are rewritten from the host's repo root to the mount
@@ -759,6 +791,10 @@ def inner_command(instance, args) -> str:
         "--config", shlex.quote(args.config.replace(root, CONTAINER_REPO)),
         "--task-file", shlex.quote(args.task_file.replace(root, CONTAINER_REPO)),
     ]
+    if resume:
+        # Only when the launcher actually reused the workspace — so the inner run tells the
+        # agent to build on the prior reconstruction rather than start over.
+        parts.append("--resume")
     overrides = getattr(args, "user_cfg_options", None) or {}
     if overrides:
         parts.append("--cfg-options")
@@ -766,6 +802,28 @@ def inner_command(instance, args) -> str:
             shlex.quote(f"{key}={value}") for key, value in overrides.items()
         )
     return " ".join(parts)
+
+
+def has_resumable_work(workspace_dir: str) -> bool:
+    """True when a session workspace holds a prior reconstruction worth continuing from —
+    a committed solution beyond the shipped initial commit (so `git archive HEAD` would
+    yield source), a build script, and the preserved reference binary that is the oracle.
+    Without the reference on disk there is nothing to reconstruct against, so a resume that
+    found it missing would be worse than a clean re-seed and is declined here."""
+    if not os.path.isdir(workspace_dir):
+        return False
+    reference = os.path.join(workspace_dir, REFERENCE_COPY)
+    compile_sh = os.path.join(workspace_dir, "compile.sh")
+    if not (os.path.exists(reference) and os.path.exists(compile_sh)):
+        return False
+    count = subprocess.run(
+        ["git", "-c", "safe.directory=*", "-C", workspace_dir, "rev-list", "--count", "HEAD"],
+        capture_output=True, text=True,
+    )
+    try:
+        return int(count.stdout.strip() or 0) > 1
+    except ValueError:
+        return False
 
 
 def seed_workspace(image_ref: str, destination: str) -> None:
@@ -944,11 +1002,25 @@ async def run_launcher(args) -> int:
                 P.SESSION_WORKSPACE, owner=SESSION_OWNER, session_id=instance_id))
             session_path = str(path_manager.get(
                 P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
-            seed_workspace(image_ref, workspace_dir)
+            resuming = bool(getattr(args, "resume", False)) and has_resumable_work(workspace_dir)
+            if resuming:
+                logger.info(
+                    f"| ⏩ [{instance_id}] Resuming from the existing workspace "
+                    f"(re-seed skipped): {workspace_dir}"
+                )
+            elif getattr(args, "resume", False):
+                logger.info(
+                    f"| ⏩ [{instance_id}] --resume set but no resumable work found; "
+                    f"seeding fresh instead"
+                )
+                seed_workspace(image_ref, workspace_dir)
+            else:
+                seed_workspace(image_ref, workspace_dir)
             grant_to_container_user(session_path)
             grant_to_container_user(os.path.join(root, "extension"))
             logger.info(
-                f"| 🌱 [{instance_id}] Workspace seeded and mounted: {workspace_dir} "
+                f"| {'⏩' if resuming else '🌱'} [{instance_id}] Workspace "
+                f"{'reused' if resuming else 'seeded'} and mounted: {workspace_dir} "
                 f"(owned by {CONTAINER_USER})"
             )
 
@@ -978,7 +1050,7 @@ async def run_launcher(args) -> int:
                 },
                 timeout_minutes=wall_clock // 60 + 30,
             )
-            command = inner_command(instance, args)
+            command = inner_command(instance, args, resume=resuming)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
             # Generous margin over the agent's own wall clock: the inner run enforces
             # its budget itself, and this only has to outlast it so a run that finishes
