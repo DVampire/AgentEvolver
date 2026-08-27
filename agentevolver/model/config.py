@@ -194,6 +194,24 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "timeout": default_timeout,
         },
         {
+            "model_name": "llm_hub/gpt-5.6-luna",
+            "model_id": "gpt-5.6-luna",
+            "model_type": "chat/completions",
+            # A sibling of gpt-5.6-sol that, unlike sol, DOES accept function tools on
+            # chat/completions (verified live: a tool prompt returns finish_reason
+            # "tool_calls"), so the agent loop can use it directly here rather than on the
+            # Responses surface. Registered as an escape hatch from the Bedrock-routed
+            # `claude-opus-5`: that route currently returns empty completions for
+            # "analyse/run a compiled binary" content — the whole ProgramBench task class —
+            # while this GPT route (OpenAI-backed, not Bedrock) answers it normally
+            # (verified: cmatrix/zip reverse-engineering prompts return real content).
+            # sol itself is unusable through the relay right now (its upstream OpenAI account
+            # returns 401 account_deactivated). No `temperature`: the gpt-5.x reasoning
+            # models reject sampling params like the newer Anthropic ones.
+            "max_completion_tokens": max_tokens,
+            "timeout": default_timeout,
+        },
+        {
             "model_name": "llm_hub/deepseek-v4-flash",
             "model_id": "deepseek-v4-flash",
             "model_type": "chat/completions",
