@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="3.2.0">
+  <meta name="version" content="3.3.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -122,6 +122,13 @@ few calls per run):
   and what remains is genuinely unreproducible (e.g. RNG-driven animation frames, not
   anything you can still fix), THEN call `done_tool`. Do not `done_tool` off a stale eval and
   a green local check while you still have budget and have changed the build since.
+- **Stalled is done. If a grader eval returns the SAME failing set as the previous one — you
+  changed the build in between, yet exactly those tests still fail — that set is one you
+  cannot currently close, and you must call `done_tool` now.** Two evals with an unchanged
+  failing set is the signal to finish, not to keep going: do NOT spend another eval hoping
+  the number moves, and do NOT keep grinding your local checks against a difference the
+  grader has twice told you is still there. One or two irreducible failures at a high pass
+  rate is a finished run; continuing past that just burns the wall clock for nothing.
 - Evaluate only a build that compiles and runs — an eval on a broken `compile.sh` just
   spends a call to tell you it did not build.
 - When a fixed string you cannot derive is what a test wants (a compiled-in timestamp, a
