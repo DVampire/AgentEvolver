@@ -5,8 +5,8 @@ rather than switched off. Three differences, and only three:
 
 | | programbench_agent.py | this file |
 |---|---|---|
-| `agent_names` | 4 actors + generate/optimize/evaluate | 4 actors |
-| `tool_names` | basic + `evolution_tool` | basic |
+| `agent_names` | meta_agent + generate/optimize/evaluate | meta_agent |
+| `tool_names` | bash + done + `evolution_tool` | bash + done |
 | `skill_names` | `self_evolving_skill` | none |
 
 This arm carries no skills at all, so it measures what the tool roster alone
@@ -33,16 +33,7 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.meta_agent import meta_agent
-    from .agents.code_agent import code_agent
-    from .agents.general_agent import general_agent
-    from .agents.reviewer_agent import reviewer_agent
     from .tools.bash import bash_tool
-    from .tools.read_file import read_file_tool
-    from .tools.write_file import write_file_tool
-    from .tools.edit_file import edit_file_tool
-    from .tools.list_dir import list_dir_tool
-    from .tools.code_interpreter import code_interpreter_tool
-    from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "programbench_agent_baseline"
@@ -69,34 +60,21 @@ memory_names = [
     "file_system_memory",
 ]
 
-# Actors only. No generate/optimize/evaluate triads.
+# One actor. The MetaAgent does the whole task itself (like Claude Code's main agent),
+# with no sub-agents — mirroring the single-agent reference that leads this benchmark. No
+# generate/optimize/evaluate triads: this is the control arm.
 agent_names = [
     "meta_agent",
-    "code_agent",
-    "general_agent",
-    "reviewer_agent",
 ]
 
-# No `evolution_tool` — that is what makes this the control arm, and
-# Agent._evolution_enabled() keys off it, so leaving it in would render the
-# evolution rules into the prompt of a run that is supposed to be without them.
-#
-# The file/git tools ARE included: read_file/write_file/edit_file/list_dir/git all
-# read `ctx.extra["sandbox"]` and route their IO into the bound container. They
-# were excluded while that was not true — a write would have landed on the host
-# and gone missing from extract_submission()'s tar of the container.
+# Only bash and done — the whole roster. No `evolution_tool` (that is what makes this the
+# control arm; Agent._evolution_enabled() keys off it). Everything the evolving arm dropped
+# is dropped here too: file read/write/edit, list_dir, the code interpreter, and the
+# multi-agent messaging tools — a single bash tool does all of it, and with one agent there
+# is no one to message. The two arms differ only in the evolution roster.
 tool_names = [
-    # Read, write, look around, run something.
     "bash_tool",
-    "read_file_tool",
-    "write_file_tool",
-    "edit_file_tool",
-    "list_dir_tool",
-    "escalate_tool",
-    "reply_tool",
-    "report_tool",
     "done_tool",
-    "code_interpreter_tool",
 ]
 
 # Empty, and that is what the arm measures: what the tool roster alone achieves. Worth
@@ -109,8 +87,11 @@ tool_names = [
 # other turns the comparison into a skill benchmark.
 skill_names = []
 
+# Only `job` — bash's own plumbing, not a separate capability: bash_tool's
+# `run_in_background` hands back a job id that only the job environment can read, so without
+# it backgrounded work would strand silently (an invariant test_registration.py enforces).
+# `terminal` is dropped — bash_tool's own `tty: true` covers the interactive case.
 env_names = [
-    "terminal",
     "job",
 ]
 
@@ -213,50 +194,11 @@ MAX_TOKEN = 3000000
 #-----------------TOOL CONFIGS-----------------
 bash_tool.update(enable_evolving=False)
 
-# One-shot instead of kernel: the task fixture lives in a peer cleanroom, and a
-# kernel started in the base container cannot see it. A run here asked the
-# interpreter to rewrite print_help()/print_version() in /workspace/cmatrix.c —
-# exactly the fix for this benchmark's largest failure class — and got
-# FileNotFoundError. Without the kernel the script runs inside the peer, at the cost
-# of no cross-call state and no captured figures (neither matters for this task).
-code_interpreter_tool.update(use_kernel=False)
-
 #-----------------MEMORY SYSTEM CONFIG-----------------
 file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
     enable_evolving=False,
-)
-
-#-----------------ACTOR AGENT CONFIGS-----------------
-code_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=WORKER_MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-general_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=WORKER_MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-reviewer_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=WORKER_MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
 )
 
 #-----------------META AGENT CONFIG-----------------

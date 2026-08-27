@@ -175,6 +175,18 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # Confirmed against Anthropic's model page: 1M is both the default and the
             # maximum; there is no smaller context variant of Opus 5.
             "context_window": 1_000_000,
+            # Reasoning must be switched on explicitly, and only this shape works: the relay
+            # rejects `thinking.type.enabled` ("Use thinking.type.adaptive and
+            # output_config.effort") and silently ignores an OpenAI-style `reasoning_effort`
+            # (HTTP 200, no thinking). Verified live against the relay: adaptive + effort in
+            # {low,medium,high,xhigh} are all accepted and return `reasoning_content`.
+            # Without this the route ran at the model's default effort — the reference agent
+            # that leads this benchmark runs Opus 5 at xhigh, and the same scaffold one
+            # effort/generation down scores multiples lower, so effort is a first-order lever.
+            # `medium` is the default; bump per run with
+            # `--cfg-options model.reasoning='{...effort: xhigh...}'` or a catalog edit.
+            # ChatLLMHub forwards this dict verbatim as `extra_body` (see _build_params).
+            "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "medium"}},
             # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
             # the relay answers a request carrying one with "`temperature` is deprecated
             # for this model".

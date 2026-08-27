@@ -39,19 +39,11 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.meta_agent import meta_agent
-    from .agents.code_agent import code_agent
-    from .agents.general_agent import general_agent
-    from .agents.reviewer_agent import reviewer_agent
     from .agents.generate_agent import generate_agent
     from .agents.optimize_agent import optimize_agent
     from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
-    from .tools.batch_call import batch_call_tool
-    from .tools.ask_user import ask_user_question
-    from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.code_interpreter import code_interpreter_tool
     from .tools.evolution import evolution_tool
-    from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "programbench_agent"
@@ -85,32 +77,27 @@ memory_names = [
 ]
 
 agent_names = [
-    # actors
+    # ONE actor. The reference agent that leads this benchmark (mini-SWE-agent, a single
+    # bash-only loop) shows the score comes from the model reasoning hard over many steps,
+    # not from orchestration — a same-scaffold model one generation down drops ~4x. So the
+    # MetaAgent does the whole task itself, the way Claude Code's main agent does, with no
+    # sub-agents to dispatch to.
     "meta_agent",
-    "code_agent",
-    "general_agent",
-    "reviewer_agent",
     # self-evolution: one agent per role, each building whichever component type it is
-    # told to. This was nine — one per (role x type) — and the type is an input to the
-    # run rather than a different agent.
+    # told to. This is the ONLY difference from the baseline arm (see test_shipped_configs).
     "generate_agent",
     "optimize_agent",
     "evaluate_agent",
 ]
 
-# Basic tools only — see the module docstring for what is deliberately absent.
+# Only bash and done. Everything else — file read/write/edit, list_dir, the code
+# interpreter, and the multi-agent messaging tools (escalate/reply/report) — is deleted:
+# a single bash tool does all of it (cat/heredoc/sed to read and write, ls to look around),
+# exactly as the reference agent works, and with one agent there is no one to message. The
+# only addition over the baseline is `evolution_tool`.
 tool_names = [
-    # Read, write, look around, run something.
     "bash_tool",
-    "read_file_tool",
-    "write_file_tool",
-    "edit_file_tool",
-    "list_dir_tool",
-    "escalate_tool",
-    "reply_tool",
-    "report_tool",
     "done_tool",
-    "code_interpreter_tool",
     "evolution_tool",
 ]
 
@@ -122,12 +109,13 @@ skill_names = [
 ]
 
 connector_names = []
+# Only `job`, and it stays because it is bash's own plumbing, not a separate capability:
+# bash_tool's `run_in_background` hands back a job id that only the job environment can
+# read, so dropping it would let backgrounded work (e.g. a long Go build) strand silently
+# — an invariant tests/test_registration.py enforces for any config carrying bash_tool.
+# `terminal` IS dropped: it was a richer multi-terminal multiplexer beyond a single shell,
+# and bash_tool already gives a command a real tty via its own `tty: true` parameter.
 env_names = [
-    # Both were replacements for tools this config already had: the six terminal
-    # tools, and the three job tools. As environments they also put what each
-    # open terminal shows, and what is still running, in front of the agent every
-    # step rather than only when it asks.
-    "terminal",
     "job",
 ]
 
@@ -214,13 +202,6 @@ MAX_TOKEN = 3000000
 # (configs/tools/bash.py) — no need to restate it here, matching meta_agent.py/hle.py.
 bash_tool.update(enable_evolving=False)
 
-# The Jupyter kernel would start in the base container, where the task's /workspace
-# does not exist — a run asked the interpreter to rewrite a file under /workspace and
-# got FileNotFoundError. Without the kernel the script is written into the peer and
-# run there, at the cost of no cross-call state and no captured figures (neither
-# matters here). Same setting as the baseline arm.
-code_interpreter_tool.update(use_kernel=False)
-
 #-----------------MEMORY SYSTEM CONFIG-----------------
 file_system_memory.update(
     base_dir="memory/file_system",
@@ -229,37 +210,6 @@ file_system_memory.update(
     # of what a benchmark run measures, so rewriting it mid-run would change the
     # measurement rather than the solution.
     enable_evolving=False,
-)
-
-#-----------------ACTOR AGENT CONFIGS-----------------
-code_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=WORKER_MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-general_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=WORKER_MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
-)
-
-reviewer_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-    max_step=WORKER_MAX_STEP,
-    timeout=WALL_CLOCK,
-    max_token=MAX_TOKEN,
 )
 
 #-----------------EVOLUTION AGENT CONFIGS-----------------

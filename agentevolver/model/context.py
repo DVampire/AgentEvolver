@@ -564,6 +564,13 @@ class ModelContextManager:
                 provider="llm_hub", key_pool_name="llm_hub",
                 api_base=api_base, api_key=api_key,
                 temperature=m.get("temperature"),
+                # Read from the catalog with a None fallback — NOT ModelConfig's default of
+                # `{"reasoning_effort": "high"}`, which the relay silently ignores (it wants
+                # `thinking.type.adaptive` + `output_config.effort`; an OpenAI-style
+                # `reasoning_effort` returns 200 with no thinking at all). A chat entry that
+                # sets `reasoning` gets exactly that shape as `extra_body`; one that omits it
+                # (e.g. deepseek, a plain chat model) sends none.
+                reasoning=m.get("reasoning") or None,
                 max_completion_tokens=m.get("max_completion_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
                 supports_streaming=True, supports_functions=True, supports_vision=True,
@@ -687,6 +694,11 @@ class ModelContextManager:
                     model=config.model_id,
                     api_key=config.api_key,
                     base_url=config.api_base,
+                    # Forwarded like the OpenRouter/Anthropic/Google branches — this one
+                    # silently dropped it, so a catalog entry's `reasoning` never reached
+                    # the relay and the model ran at its default effort. ChatLLMHub sends
+                    # it through as `extra_body` (see _build_params).
+                    reasoning=config.reasoning or None,
                     # Passed through as-is, like the Anthropic branch: a catalog entry
                     # that omits `temperature` means the model rejects it, and `or
                     # default` would put it back.

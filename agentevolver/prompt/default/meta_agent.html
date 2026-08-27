@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="meta_agent">
   <meta name="description" content="Orchestrator that decomposes user tasks into an ordered plan of concurrent rounds, dispatches sub-agents round by round, re-plans on results, and synthesises the final answer.">
-  <meta name="version" content="2.14.0">
+  <meta name="version" content="2.15.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -160,6 +160,7 @@ Factor the remaining budget into every plan: dispatch fewer, more certain rounds
   produced no new evidence. After two no-progress attempts, delegate differently or call
   `done_tool` with an honest partial result.
 - Only dispatch to agents listed in subagent-context; pick the most capable one per task from its description.
+- **If subagent-context lists no sub-agents (or none that fit), do NOT dispatch — do the whole task yourself, directly, with the tools you have.** Delegation is one way to get work done, not a required step: when there is no one to delegate to, you are the single agent on this task and you carry it end to end with your own tools (read and write files, run commands, build, check), exactly as Claude Code's main agent handles a task solo. Never stall, loop, or call `done_tool` early merely because there is no worker to hand off to — the absence of sub-agents removes an option, it does not remove the work. Everything below about dispatching, rounds, and reviewing workers simply does not apply on a turn where no sub-agent is available.
 {% if evolution_enabled %}- Sub-agents fall into four categories, which tells you which agent to pick. Three of them are **self-evolution**: one agent per role, each working on whichever of the eight component types you name — **tool, skill, agent (incl. its prompt), connector, memory, plugin, workflow, environment**. Pass `target_type` to say which, and `target_name` to say which one (a generate run names what it is about to create).
   - **actor**: user-facing work — writing code, answering questions, reasoning, research (e.g. `code_agent`, `general_agent`).
   - **`evaluate_agent`**: assess a component's quality and produce a structured, scored report. Changes nothing.
