@@ -108,6 +108,18 @@ REFERENCE_COPY = "reference_executable"
 #: about the task, not part of the program being reconstructed.
 _SCAFFOLDING = (REFERENCE_COPY, "plan.md")
 
+#: How long the container is given to LAND after the agent's own wall clock is up — build
+#: the deliverable one last time, package the submission, and write result.json. The inner
+#: WallTimeConstraint stops the agent at its wall clock; everything after that (a fresh
+#: `compile.sh` of a possibly large project, `git archive`, collect, and the result file)
+#: happens outside the agent's budget and must fit here. The old 600s left a run that used
+#: its full wall clock too little room: a 2h chroma run landed at ~7827s against a
+#: `wall_clock + 600 = 7800s` outer timeout, so the container was killed mid-landing and
+#: left no result.json — the run scored as a failure despite a committed reconstruction on
+#: disk. This margin also governs the container timeout, so the two can no longer drift
+#: apart (the container was already granting `+1800`; only the command timeout was tight).
+_LANDING_MARGIN_SECONDS = 1800
+
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"
 CONTAINER_WORKSPACE = "/workspace"
@@ -1048,15 +1060,16 @@ async def run_launcher(args) -> int:
                     "LITELLM_LOCAL_MODEL_COST_MAP": "True",
                     **forwarded,
                 },
-                timeout_minutes=wall_clock // 60 + 30,
+                timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
             )
             command = inner_command(instance, args, resume=resuming)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
-            # Generous margin over the agent's own wall clock: the inner run enforces
-            # its budget itself, and this only has to outlast it so a run that finishes
-            # normally is never cut off mid-write.
+            # Outlast the agent's own wall clock by the landing margin — the same margin the
+            # container timeout above uses, so the command is never the tighter of the two
+            # and a run that used its full budget still gets to build, package, and write its
+            # result before either fires. See `_LANDING_MARGIN_SECONDS`.
             execution = await sandbox.run_command(
-                command, workspace_root=CONTAINER_REPO, timeout=wall_clock + 600,
+                command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS,
             )
             if execution.stdout:
                 print(execution.stdout)
