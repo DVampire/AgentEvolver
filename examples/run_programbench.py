@@ -135,7 +135,10 @@ CONTAINER_WORKSPACE = "/workspace"
 #: single-shot leaderboard runs never had, so its score is not leaderboard-comparable — the
 #: launcher records the count so that caveat is visible.
 CONTAINER_EVAL_BRIDGE = "/run/eval-bridge"
-_EVAL_BUDGET = 4
+# The eval loop is now mandatory (eval → fix → re-eval until the failing set stops
+# shrinking), so give it enough calls to converge on a large failing set — 4 was too few
+# once every done must be preceded by a fresh eval.
+_EVAL_BUDGET = 6
 
 #: The identity the task images are built around (uid/gid 1000), and the reason the run
 #: uses it instead of root. The reference binary is mode `---x--x--x` owned by root:
