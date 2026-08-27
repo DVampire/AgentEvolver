@@ -197,7 +197,13 @@ sandbox_deny_hosts = [
 # arm — the two arms must differ only in the evolution roster.
 WORKER_MAX_STEP = 50
 META_MAX_STEP = 400
-WALL_CLOCK = 21600
+# Hard wall-clock backstop per agent, in seconds — the ceiling of last resort, not the
+# target. A run should stop itself when the coverage sweep's marginal return collapses (see
+# the MetaAgent's finishing discipline); the wall clock only catches a run that would
+# otherwise grind (the old 21600s = 6h ceiling let a resume grind 6h for one extra point).
+# 3h leaves room for a legitimate full reconstruction while making a multi-hour grind
+# impossible. Kept identical to the baseline arm.
+WALL_CLOCK = 10800
 # Not an official number — the official harness caps per-instance *cost*, a different
 # axis. This is a cumulative-token runaway guard, left high enough that steps or wall
 # clock bind first.
