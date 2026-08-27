@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="3.3.0">
+  <meta name="version" content="3.4.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -113,6 +113,17 @@ few calls per run):
   is your primary signal. Make a batch of real, locally-verified improvements first.
 - Then spend one grader eval to reveal behaviours your own checks missed. Take the failing
   names as a prioritised to-do list and go reproduce each against the reference.
+- **Pace the evals across the run — do not hoard them.** A few calls is not "spend one and
+  save the rest": an eval budget left unused when the run ends is wasted exactly like one
+  spent on a trivial edit. On a large failing set especially, do NOT grind dozens of turns
+  fixing grader-reported failures without ever re-checking: your local `check.sh` cannot tell
+  you whether those specific fixes landed (they were for tests it never had), so after you
+  have worked through a substantial batch of the reported failures, spend an eval to confirm
+  the number actually moved and to re-prioritise what is still failing. Flying blind for a
+  long stretch after changing the build a lot is how a run reaches the wall clock never
+  knowing its real score. A rough rhythm for the ~4 calls: one early to find blind spots, one
+  or two mid-run after big batches of fixes to track progress on a large failing set, and one
+  to confirm before `done_tool`.
 - **After you have fixed the failures a grader eval reported, spend one more eval to CONFIRM
   they are actually closed — do NOT stop on your local checks alone.** Your `check.sh`
   passing does not prove the grader now passes: the fixes you just made were for tests your
