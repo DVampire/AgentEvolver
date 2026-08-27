@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="3.1.0">
+  <meta name="version" content="3.2.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -106,14 +106,22 @@ wrong, not what the right answer is; you still reproduce the correct behaviour b
 `./reference_executable`, exactly as always. Do not invent an expected output from a test
 name.
 
-Use it as a blind-spot finder, not a crutch, because it is heavy and rate-limited (a full
-build plus the whole suite runs on the host — minutes per call — and you get only a few
-calls per run):
+Use it as a blind-spot finder AND as your finish line, because it is heavy and rate-limited
+(a full build plus the whole suite runs on the host — minutes per call — and you get only a
+few calls per run):
 - Your own differential loop against `./reference_executable` is free and unlimited — that
   is your primary signal. Make a batch of real, locally-verified improvements first.
 - Then spend one grader eval to reveal behaviours your own checks missed. Take the failing
-  names as a prioritised to-do list, go reproduce each against the reference, and verify
-  locally before spending another.
+  names as a prioritised to-do list and go reproduce each against the reference.
+- **After you have fixed the failures a grader eval reported, spend one more eval to CONFIRM
+  they are actually closed — do NOT stop on your local checks alone.** Your `check.sh`
+  passing does not prove the grader now passes: the fixes you just made were for tests your
+  local checks never had, so only the grader can tell you they landed. A confirming eval is
+  the single most valuable call you make, not a wasted one — always keep one in reserve for
+  it. Concretely: after a round of fixes, re-evaluate; if the failing set shrank as intended
+  and what remains is genuinely unreproducible (e.g. RNG-driven animation frames, not
+  anything you can still fix), THEN call `done_tool`. Do not `done_tool` off a stale eval and
+  a green local check while you still have budget and have changed the build since.
 - Evaluate only a build that compiles and runs — an eval on a broken `compile.sh` just
   spends a call to tell you it did not build.
 - When a fixed string you cannot derive is what a test wants (a compiled-in timestamp, a
