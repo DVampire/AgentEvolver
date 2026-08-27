@@ -166,9 +166,16 @@ class ChatLLMHub(BaseChatModel):
         """Extract reasoning information from message."""
         reasoning = None
         try:
-            # Try to get reasoning directly from message
-            if hasattr(message, 'reasoning') and message.reasoning is not None:
+            # Try to get reasoning directly from message. `reasoning_content` is what this
+            # relay uses for the thinking text (the streaming path in _parse_stream reads it
+            # too); check it alongside `reasoning` so the buffered path stays consistent with
+            # streaming. NB: on the Bedrock route the thinking is redacted — only a
+            # `reasoning_signature` comes back and this stays empty — but a relay that does
+            # expose the text must not have it silently dropped here.
+            if getattr(message, 'reasoning', None) is not None:
                 reasoning = message.reasoning
+            elif getattr(message, 'reasoning_content', None):
+                reasoning = message.reasoning_content
             elif hasattr(message, 'reasoning_details') and message.reasoning_details is not None:
                 # Try to extract from reasoning_details
                 reasoning_details = message.reasoning_details
