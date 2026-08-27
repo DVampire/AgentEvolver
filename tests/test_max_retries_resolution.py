@@ -44,8 +44,11 @@ def test_a_config_without_the_attribute_still_resolves():
     assert _resolve_max_retries(None, object()) == _DEFAULT_MAX_RETRIES
 
 
-def test_the_opus_route_declares_a_raised_ceiling():
-    # The fix itself: the flaky Bedrock-backed opus route asks for more than the default.
+def test_a_route_may_omit_max_retries_and_take_the_default():
+    # The catalog need not set max_retries at all — the opus route leaves it unset now that
+    # a transient empty retries on a short flat wait, so isolated empties are cheap at the
+    # default 3 and a sustained window is the relay's to fix, not more attempts here.
     specs = llm_hub_models(max_tokens=8000, default_temperature=None, default_timeout=600)
     opus = next(m for m in specs["chat"] if m["model_id"] == "claude-opus-5")
-    assert opus["max_retries"] > _DEFAULT_MAX_RETRIES
+    assert opus.get("max_retries") is None
+    assert _resolve_max_retries(None, _cfg(opus.get("max_retries"))) == _DEFAULT_MAX_RETRIES

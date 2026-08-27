@@ -201,9 +201,9 @@ META_MAX_STEP = 400
 # target. A run should stop itself when the coverage sweep's marginal return collapses (see
 # the MetaAgent's finishing discipline); the wall clock only catches a run that would
 # otherwise grind (the old 21600s = 6h ceiling let a resume grind 6h for one extra point).
-# 3h leaves room for a legitimate full reconstruction while making a multi-hour grind
+# 2h is ample for a legitimate full reconstruction while making a multi-hour grind
 # impossible. Kept identical to the baseline arm.
-WALL_CLOCK = 10800
+WALL_CLOCK = 7200
 # Not an official number — the official harness caps per-instance *cost*, a different
 # axis. This is a cumulative-token runaway guard, left high enough that steps or wall
 # clock bind first.

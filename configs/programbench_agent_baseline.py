@@ -202,9 +202,9 @@ META_MAX_STEP = 400
 # (see the MetaAgent's finishing discipline), landing in an hour or two. The wall clock only
 # catches a run that would otherwise grind — a resume once ran 6h (the old 21600s = 6h
 # ceiling) closing one behaviour at a time for a single extra point, exactly the runaway
-# this bounds. 3h leaves ample room for a legitimate full reconstruction while making a
-# multi-hour grind impossible.
-WALL_CLOCK = 10800
+# this bounds. 2h is ample for a legitimate full reconstruction (the good complete runs
+# landed in about that) while making a multi-hour grind impossible.
+WALL_CLOCK = 7200
 # Not an official number — the official harness caps per-instance *cost*, a different
 # axis. This is a cumulative-token runaway guard, left high enough that steps or wall
 # clock bind first.
