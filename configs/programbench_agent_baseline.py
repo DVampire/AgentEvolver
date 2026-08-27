@@ -75,6 +75,10 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
+    # Ask the real hidden suite to score the current build and return which tests still fail
+    # (names only, no expected outputs) — a heavy, host-mediated, rate-limited oracle the
+    # agent chooses when to spend. In both arms, so it is not part of the evolution-only diff.
+    "programbench_eval_tool",
 ]
 
 # Empty, and that is what the arm measures: what the tool roster alone achieves. Worth

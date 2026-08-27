@@ -59,6 +59,7 @@ Usage
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -123,6 +124,18 @@ _LANDING_MARGIN_SECONDS = 1800
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"
 CONTAINER_WORKSPACE = "/workspace"
+
+#: The in-sandbox mount point of the eval bridge, and how many grader evals one run may
+#: request through it. The agent can ask the real hidden suite to score its current build
+#: (via `programbench_eval_tool`) — but only through this host-mediated bridge, because the
+#: tests and the Docker they run in are deliberately outside the offline container. Each
+#: eval is a full build + suite (minutes), so the budget is small: it is a blind-spot
+#: finder to punctuate long stretches of free `./reference_executable` differential work,
+#: not a per-step check. A run that spends any of these is iterating against information the
+#: single-shot leaderboard runs never had, so its score is not leaderboard-comparable — the
+#: launcher records the count so that caveat is visible.
+CONTAINER_EVAL_BRIDGE = "/run/eval-bridge"
+_EVAL_BUDGET = 4
 
 #: The identity the task images are built around (uid/gid 1000), and the reason the run
 #: uses it instead of root. The reference binary is mode `---x--x--x` owned by root:
@@ -403,6 +416,128 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
     info["tarball"] = tarball
     info["files"] = len(os.listdir(extract_dir))
     return info
+
+
+#: How long the host gives one grade before giving up, kept under the in-sandbox tool's own
+#: poll timeout (see programbench_eval.py) so the agent always gets a response rather than
+#: waiting out its own deadline on a grade that already failed.
+_GRADE_TIMEOUT_SECONDS = 1200
+
+
+def _grade_once(workspace_dir: str, instance_id: str, scoring_root: str) -> dict:
+    """Blocking: package the current workspace and score it with the real hidden suite.
+
+    Returns only what the agent is allowed to see — pass/fail counts and the NAMES of the
+    failing tests, plus an ``error_code`` when the build could not be scored at all. It
+    cannot return an expected output because the grader's ``*.eval.json`` does not contain
+    one: each entry is ``name`` + ``status``, so there is no answer key here to leak. This
+    is the property that makes the whole bridge legitimate.
+    """
+    import glob
+
+    inst_dir = os.path.join(scoring_root, instance_id)
+    os.makedirs(inst_dir, exist_ok=True)
+    try:
+        collect_submission(workspace_dir, inst_dir)
+    except Exception as e:  # noqa: BLE001
+        return {"error_code": "package_failed", "error_details": str(e)[:300]}
+
+    eval_out = os.path.join(scoring_root, "eval_out")
+    os.makedirs(eval_out, exist_ok=True)
+    cmd = [
+        "programbench", "eval", scoring_root,
+        "--filter", f"^{re.escape(instance_id)}$", "--force",
+        "--branch-workers", "4", "-o", eval_out,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_GRADE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return {"error_code": "grade_timeout", "error_details": f"grader exceeded {_GRADE_TIMEOUT_SECONDS}s"}
+    except Exception as e:  # noqa: BLE001
+        return {"error_code": "grade_failed", "error_details": str(e)[:300]}
+
+    hits = (glob.glob(os.path.join(eval_out, "**", "*.eval.json"), recursive=True)
+            or glob.glob(os.path.join(scoring_root, "**", "*.eval.json"), recursive=True))
+    if not hits:
+        tail = (proc.stderr or proc.stdout or "").strip()[-300:]
+        return {"error_code": "no_eval_json", "error_details": tail or "grader produced no eval.json"}
+
+    try:
+        with open(hits[0], encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception as e:  # noqa: BLE001
+        return {"error_code": "eval_json_unreadable", "error_details": str(e)[:200]}
+
+    results = data.get("test_results") or []
+    passed = sum(1 for t in results if t.get("status") == "passed")
+    total = len(results)
+    fail_names = [t.get("name") for t in results if t.get("status") != "passed" and t.get("name")]
+    return {
+        "pass": passed,
+        "fail": total - passed,
+        "total": total,
+        "fail_names": fail_names,
+        # A non-null top-level error_code means the whole build failed to compile/run; the
+        # per-test list is then empty and this is what tells the agent to fix the build.
+        "error_code": data.get("error_code"),
+        "error_details": (data.get("error_details") or "")[:300] if data.get("error_code") else None,
+    }
+
+
+async def eval_bridge_watcher(bridge_dir: str, workspace_dir: str, instance_id: str,
+                              budget: int, counter: dict) -> None:
+    """Serve ``programbench_eval_tool`` requests from inside the sandbox, host-side.
+
+    The tool cannot run the grader itself — the hidden suite and the Docker it needs are
+    outside the offline container — so it drops ``request-<n>.json`` on the bind-mounted
+    bridge and blocks. This watcher, running concurrently with the inner agent run, grades
+    once per request (capped at ``budget``) and writes back ``response-<n>.json`` carrying
+    only the narrow report. Cancelled when the inner run finishes.
+    """
+    import asyncio
+
+    os.makedirs(bridge_dir, exist_ok=True)
+    served: set = set()
+    loop = asyncio.get_event_loop()
+    try:
+        while True:
+            for name in sorted(os.listdir(bridge_dir)):
+                if not (name.startswith("request-") and name.endswith(".json")):
+                    continue
+                seq = name[len("request-"):-len(".json")]
+                response_path = os.path.join(bridge_dir, f"response-{seq}.json")
+                if seq in served or os.path.isfile(response_path):
+                    continue
+                served.add(seq)
+                try:
+                    seq_n = int(seq)
+                except ValueError:
+                    continue
+                if seq_n >= budget:
+                    report = {"error_code": "budget_exhausted",
+                              "error_details": f"{seq_n} requested, budget {budget}"}
+                else:
+                    logger.info(f"| 🧪 [{instance_id}] grading eval #{seq_n} for the agent…")
+                    scoring_root = os.path.join(bridge_dir, f"score-{seq_n}")
+                    report = await loop.run_in_executor(
+                        None, _grade_once, workspace_dir, instance_id, scoring_root)
+                    counter["count"] = counter.get("count", 0) + 1
+                    logger.info(
+                        f"| 🧪 [{instance_id}] eval #{seq_n}: pass={report.get('pass')}/"
+                        f"{report.get('total')} error={report.get('error_code')}")
+                tmp = response_path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    json.dump(report, handle)
+                # The container runs as a different uid — the response must be world-readable
+                # for the tool to read it back.
+                os.chmod(tmp, 0o644)
+                os.replace(tmp, response_path)
+            await asyncio.sleep(2.0)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:  # noqa: BLE001
+        # A watcher crash must never take the run down — the eval tool degrades to a timeout.
+        logger.error(f"| ❌ [{instance_id}] eval bridge watcher stopped: {e}")
 
 
 def _reads_the_binary_as_a_file(command: str, tools) -> bool:
@@ -1005,6 +1140,8 @@ async def run_launcher(args) -> int:
         started = time.time()
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
         sandbox = None
+        watcher_task = None
+        eval_counter = {"count": 0}
         try:
             # Seed the session's workspace from the image, then mount it back in as
             # /workspace. The agent's files are then visible *while it works* rather than
@@ -1036,6 +1173,14 @@ async def run_launcher(args) -> int:
                 f"(owned by {CONTAINER_USER})"
             )
 
+            # The eval bridge: a directory shared host<->container that carries the agent's
+            # grader-eval requests out and the narrow reports back (see eval_bridge_watcher
+            # and agentevolver/tool/default/programbench_eval.py). World-writable because the
+            # container writes into it as a different uid than this launcher.
+            bridge_dir = os.path.join(session_path, "eval_bridge")
+            os.makedirs(bridge_dir, exist_ok=True)
+            os.chmod(bridge_dir, 0o777)
+
             sandbox = await sandbox_manager.acquire(
                 "docker",
                 reuse_key=instance_id,
@@ -1045,9 +1190,13 @@ async def run_launcher(args) -> int:
                 network=False,
                 user=CONTAINER_USER,
                 workdir=CONTAINER_WORKSPACE,
-                mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE},
+                mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE,
+                        bridge_dir: CONTAINER_EVAL_BRIDGE},
                 env={
                     "PYTHONPATH": CONTAINER_REPO,
+                    # Where the eval tool drops requests, and how many it may spend.
+                    "AGENTEVOLVER_EVAL_BRIDGE": CONTAINER_EVAL_BRIDGE,
+                    "AGENTEVOLVER_EVAL_BUDGET": str(_EVAL_BUDGET),
                     # The path tree hangs off the current directory, and the agent works in
                     # /workspace — so without this the framework's own bookkeeping lands
                     # inside the deliverable, and `git add -A` commits it. Pointed at the
@@ -1064,6 +1213,10 @@ async def run_launcher(args) -> int:
             )
             command = inner_command(instance, args, resume=resuming)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
+            # Serve the agent's grader-eval requests for as long as it runs. Started here and
+            # cancelled in the finally so a scoring pass in flight cannot outlive the run.
+            watcher_task = asyncio.create_task(
+                eval_bridge_watcher(bridge_dir, workspace_dir, instance_id, _EVAL_BUDGET, eval_counter))
             # Outlast the agent's own wall clock by the landing margin — the same margin the
             # container timeout above uses, so the command is never the tighter of the two
             # and a run that used its full budget still gets to build, package, and write its
@@ -1091,6 +1244,16 @@ async def run_launcher(args) -> int:
             logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
             record["error"] = str(e)
         finally:
+            if watcher_task is not None:
+                watcher_task.cancel()
+                with contextlib.suppress(Exception):
+                    await watcher_task
+            # How many times the agent used the real grader as an oracle. Any non-zero count
+            # means this run saw information the single-shot leaderboard runs did not, so its
+            # score is not directly comparable — recorded here so that caveat is not lost.
+            record["grader_evals"] = eval_counter["count"]
+            if eval_counter["count"]:
+                record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
             # Both trees the run writes into, not just the output one.

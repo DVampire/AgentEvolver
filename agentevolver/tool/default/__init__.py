@@ -15,6 +15,7 @@ from .deploy import DeployTool
 from .evolution import EvolutionTool
 from .journal import JournalTool
 from .escalate import EscalateTool
+from .programbench_eval import ProgramBenchEvalTool
 from .code_mode import BatchCallTool
 from .ask_user import AskUserTool
 from .exit_plan_mode import ExitPlanModeTool
@@ -52,6 +53,7 @@ __all__ = [
     "EvolutionTool",
     "JournalTool",
     "EscalateTool",
+    "ProgramBenchEvalTool",
     "MediaSearchTool",
     "SendMessageTool",
     "ReportTool",

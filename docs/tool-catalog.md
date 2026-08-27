@@ -52,6 +52,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
 | [`mdify_tool`](#mdify_tool) | `workspace_write` | not declared | `MdifyTool` | `agentevolver.tool.default.mdify` |
 | [`media_search_tool`](#media_search_tool) | `workspace_write` | yes | `MediaSearchTool` | `agentevolver.tool.default.media_search` |
+| [`programbench_eval_tool`](#programbench_eval_tool) | `read_only` | not declared | `ProgramBenchEvalTool` | `agentevolver.tool.default.programbench_eval` |
 | [`read_file_tool`](#read_file_tool) | `read_only` | no | `ReadFileTool` | `agentevolver.tool.default.read_file` |
 | [`read_image_tool`](#read_image_tool) | `read_only` | no | `ReadImageTool` | `agentevolver.tool.default.read_image` |
 | [`reformulator_tool`](#reformulator_tool) | `workspace_write` | not declared | `ReformulatorTool` | `agentevolver.tool.other.reformulator` |
@@ -70,7 +71,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-41 tools.
+42 tools.
 
 ## `ask_user_question`
 
@@ -354,6 +355,16 @@ Permission mode: `workspace_write` · changes state
 | `count` | `int` | no | `3` |
 | `name_prefix` | `str` | no | `''` |
 | `media_type` | `str` | no | `'image'` |
+
+## `programbench_eval_tool`
+
+Score your current build against the real hidden test suite and get back the names of the tests that still fail (no expected outputs). A heavy, rate-limited operation.
+
+Permission mode: `read_only` · does not declare whether it changes state
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `focus` | `str` | no | `''` |
 
 ## `read_file_tool`
 

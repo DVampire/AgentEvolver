@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="3.0.0">
+  <meta name="version" content="3.1.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -96,6 +96,32 @@ with a 15-minute limit, and drives the resulting binary against hidden tests.
 - Shipping a prebuilt binary is pointless; a byte-copy of the reference is detected by hash
   and removed. Only what `compile.sh` produces is run.
 </how-you-are-graded>
+
+<checking-against-the-real-grader>
+You have one tool, `programbench_eval_tool`, that scores your CURRENT build against the
+real hidden suite and returns **which tests still fail — their names only, never an
+expected output, input, or any reference source.** A failing name like
+`tests.test_flags.test_invalid_color_exits_nonzero` tells you *which* behaviour is still
+wrong, not what the right answer is; you still reproduce the correct behaviour by probing
+`./reference_executable`, exactly as always. Do not invent an expected output from a test
+name.
+
+Use it as a blind-spot finder, not a crutch, because it is heavy and rate-limited (a full
+build plus the whole suite runs on the host — minutes per call — and you get only a few
+calls per run):
+- Your own differential loop against `./reference_executable` is free and unlimited — that
+  is your primary signal. Make a batch of real, locally-verified improvements first.
+- Then spend one grader eval to reveal behaviours your own checks missed. Take the failing
+  names as a prioritised to-do list, go reproduce each against the reference, and verify
+  locally before spending another.
+- Evaluate only a build that compiles and runs — an eval on a broken `compile.sh` just
+  spends a call to tell you it did not build.
+- When a fixed string you cannot derive is what a test wants (a compiled-in timestamp, a
+  build hash, an embedded version line), that value is still observable: read it from
+  `./reference_executable` and hardcode it. Reproducing observed output is the task, not a
+  shortcut — do not leave it to a macro like `__DATE__`/`__TIME__` that will emit your own
+  build's value instead and never match.
+</checking-against-the-real-grader>
 
 <rules>
 Your goal is to write original code from scratch that reproduces the executable's
