@@ -1165,6 +1165,17 @@ async def run_launcher(args) -> int:
                 seed_workspace(image_ref, workspace_dir)
             else:
                 seed_workspace(image_ref, workspace_dir)
+            # The eval bridge: a directory shared host<->container that carries the agent's
+            # grader-eval requests out and the narrow reports back (see eval_bridge_watcher
+            # and agentevolver/tool/default/programbench_eval.py). Created BEFORE the grant
+            # below, which chowns the whole session tree to the container uid: 0o777 survives
+            # that chown (chown does not touch the mode), so both the container (owner) and
+            # this host launcher (other) can still write — the container drops requests, the
+            # host writes responses.
+            bridge_dir = os.path.join(session_path, "eval_bridge")
+            os.makedirs(bridge_dir, exist_ok=True)
+            os.chmod(bridge_dir, 0o777)
+
             grant_to_container_user(session_path)
             grant_to_container_user(os.path.join(root, "extension"))
             logger.info(
@@ -1172,14 +1183,6 @@ async def run_launcher(args) -> int:
                 f"{'reused' if resuming else 'seeded'} and mounted: {workspace_dir} "
                 f"(owned by {CONTAINER_USER})"
             )
-
-            # The eval bridge: a directory shared host<->container that carries the agent's
-            # grader-eval requests out and the narrow reports back (see eval_bridge_watcher
-            # and agentevolver/tool/default/programbench_eval.py). World-writable because the
-            # container writes into it as a different uid than this launcher.
-            bridge_dir = os.path.join(session_path, "eval_bridge")
-            os.makedirs(bridge_dir, exist_ok=True)
-            os.chmod(bridge_dir, 0o777)
 
             sandbox = await sandbox_manager.acquire(
                 "docker",
