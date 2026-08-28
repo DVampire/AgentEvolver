@@ -183,13 +183,15 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # Without this the route ran at the model's default effort — the reference agent
             # that leads this benchmark runs Opus 5 at xhigh, and the same scaffold one
             # effort/generation down scores multiples lower, so effort is a first-order lever.
-            # `xhigh` is the default — the top effort, matching the reference agent that
-            # leads the benchmark. Effort is a first-order lever on complex tasks: clog
-            # climbed 84.6% → 87.9% going medium → high, and the reference reaches ~100% at
-            # xhigh. Drop to a lower effort per run with
-            # `--cfg-options model.reasoning='{...effort: high...}'` if a run must be cheaper.
+            # `high` is the default. Effort helps up to a point, but past it the extra
+            # thinking eats throughput: on clog, medium→high climbed 84.6%→87.9%, but xhigh
+            # *dropped* to 75.5% — deeper per-step reasoning meant fewer steps (159 vs 185)
+            # and a less complete build. `high` is the sweet spot for these build-heavy tasks;
+            # override to `xhigh` per run with
+            # `--cfg-options model.reasoning='{...effort: xhigh...}'` only if a task is
+            # reasoning-bound rather than build-bound.
             # ChatLLMHub forwards this dict verbatim as `extra_body` (see _build_params).
-            "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}},
+            "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
             # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
             # the relay answers a request carrying one with "`temperature` is deprecated
             # for this model".

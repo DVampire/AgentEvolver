@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
-  <meta name="version" content="3.5.0">
+  <meta name="version" content="3.6.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -131,13 +131,21 @@ few calls per run):
   checks alone, never on an eval that predates your latest fixes. (The one exception: if your
   eval budget is exhausted, `done_tool` on your best build is correct — the rule assumes you
   still have an eval to spend.)
-- **Stalled is done. If a grader eval returns the SAME failing set as the previous one — you
-  changed the build in between, yet exactly those tests still fail — that set is one you
-  cannot currently close, and you must call `done_tool` now.** Two evals with an unchanged
-  failing set is the signal to finish, not to keep going: do NOT spend another eval hoping
-  the number moves, and do NOT keep grinding your local checks against a difference the
-  grader has twice told you is still there. One or two irreducible failures at a high pass
-  rate is a finished run; continuing past that just burns the wall clock for nothing.
+- **An unchanged failing set means your last attempt did not work — CHANGE APPROACH, do not
+  quit.** When a re-eval returns the same failures, it is telling you your fix missed, not
+  that those tests are unclosable. Most of them are reproducible: go back to
+  `./reference_executable`, re-derive the EXACT behaviour for a still-failing test from
+  scratch (you likely misread an edge — a stream, an exit code, exact bytes, a flag
+  interaction), and try a genuinely different fix. Do not conclude a test is impossible off
+  one failed batch, and do not stop with a large failing set still open — a run that gives up
+  the moment a fix batch fails to land leaves reproducible tests on the table (that is exactly
+  how a run scored 75% where a more persistent one scored 88%).
+- **Finish only when what remains is truly irreducible OR you are genuinely out of ideas after
+  different attempts.** `done_tool` is right when the still-failing set is small and provably
+  unreproducible (RNG-driven frames; a constant you have already hardcoded to match), or when
+  you have attacked the same set in two or more *different* ways across evals and it will not
+  move and you have no new idea to try. A high pass rate with a couple of irreducible failures
+  is a finished run; a mid pass rate with untried failures is not.
 - Evaluate only a build that compiles and runs — an eval on a broken `compile.sh` just
   spends a call to tell you it did not build.
 - When a fixed string you cannot derive is what a test wants (a compiled-in timestamp, a
