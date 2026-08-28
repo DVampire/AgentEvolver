@@ -443,7 +443,7 @@ def _grade_once(workspace_dir: str, instance_id: str, scoring_root: str) -> dict
     try:
         collect_submission(workspace_dir, inst_dir)
     except Exception as e:  # noqa: BLE001
-        return {"error_code": "package_failed", "error_details": str(e)[:300]}
+        return {"error_code": "package_failed", "error_details": str(e)}
 
     eval_out = os.path.join(scoring_root, "eval_out")
     os.makedirs(eval_out, exist_ok=True)
@@ -457,19 +457,19 @@ def _grade_once(workspace_dir: str, instance_id: str, scoring_root: str) -> dict
     except subprocess.TimeoutExpired:
         return {"error_code": "grade_timeout", "error_details": f"grader exceeded {_GRADE_TIMEOUT_SECONDS}s"}
     except Exception as e:  # noqa: BLE001
-        return {"error_code": "grade_failed", "error_details": str(e)[:300]}
+        return {"error_code": "grade_failed", "error_details": str(e)}
 
     hits = (glob.glob(os.path.join(eval_out, "**", "*.eval.json"), recursive=True)
             or glob.glob(os.path.join(scoring_root, "**", "*.eval.json"), recursive=True))
     if not hits:
-        tail = (proc.stderr or proc.stdout or "").strip()[-300:]
+        tail = (proc.stderr or proc.stdout or "").strip()
         return {"error_code": "no_eval_json", "error_details": tail or "grader produced no eval.json"}
 
     try:
         with open(hits[0], encoding="utf-8") as handle:
             data = json.load(handle)
     except Exception as e:  # noqa: BLE001
-        return {"error_code": "eval_json_unreadable", "error_details": str(e)[:200]}
+        return {"error_code": "eval_json_unreadable", "error_details": str(e)}
 
     results = data.get("test_results") or []
     passed = sum(1 for t in results if t.get("status") == "passed")
@@ -483,7 +483,7 @@ def _grade_once(workspace_dir: str, instance_id: str, scoring_root: str) -> dict
         # A non-null top-level error_code means the whole build failed to compile/run; the
         # per-test list is then empty and this is what tells the agent to fix the build.
         "error_code": data.get("error_code"),
-        "error_details": (data.get("error_details") or "")[:300] if data.get("error_code") else None,
+        "error_details": (data.get("error_details") or None) if data.get("error_code") else None,
     }
 
 

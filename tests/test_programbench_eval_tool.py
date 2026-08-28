@@ -94,13 +94,16 @@ def test_format_result_shows_names_and_counts_only():
     assert "reference_executable" in msg
 
 
-def test_format_result_truncates_a_flood_of_failures():
+def test_format_result_never_truncates_the_failing_list():
+    # The failing names are the agent's complete to-do list — a truncated one silently drops
+    # tests it would otherwise fix, so every name must appear no matter how many there are.
     names = [f"pkg.test_{i}" for i in range(200)]
     msg = _format_result(0, 4, {"pass": 0, "fail": 200, "total": 200,
                                 "fail_names": names, "error_code": None})
-    # Exact count preserved, list capped.
     assert "FAIL=200" in msg
-    assert "and 140 more" in msg  # 200 - 60 shown
+    assert "more." not in msg  # no "… and N more" truncation marker
+    for n in names:  # every single one is present
+        assert n in msg
 
 
 def test_format_result_surfaces_a_build_error():

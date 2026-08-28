@@ -53,10 +53,6 @@ _WORKSPACE = "/workspace"
 _POLL_TIMEOUT_SECONDS = 1500
 _POLL_INTERVAL_SECONDS = 3.0
 
-#: Cap the failing-test list handed back so a badly-failing build does not flood the
-#: agent's context with hundreds of names; the count is always exact.
-_MAX_FAIL_NAMES = 60
-
 _DEFAULT_BUDGET = 4
 
 _DESCRIPTION = (
@@ -200,11 +196,11 @@ def _format_result(seq: int, budget: int, result: Dict[str, Any]) -> str:
         lines.append("No failing tests reported — your build passes the hidden suite as scored here.")
         return "\n".join(lines)
 
-    shown = fail_names[:_MAX_FAIL_NAMES]
-    lines.append(f"Failing tests (names only, {len(shown)} of {len(fail_names)} shown; NO expected outputs given):")
-    lines.extend(f"  - {n}" for n in shown)
-    if len(fail_names) > len(shown):
-        lines.append(f"  … and {len(fail_names) - len(shown)} more.")
+    # Every failing name, never truncated: this is the agent's complete to-do list, and a
+    # cut-off one silently drops tests it would otherwise fix. The names are short and cost
+    # little context even in the hundreds.
+    lines.append(f"Failing tests ({len(fail_names)}, names only; NO expected outputs given):")
+    lines.extend(f"  - {n}" for n in fail_names)
     lines.append("Each name points at a behaviour still wrong. Reproduce the correct behaviour by probing "
                  "./reference_executable (run it, compare byte-for-byte); do not infer expected output from a name.")
     return "\n".join(lines)
