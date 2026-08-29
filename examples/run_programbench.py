@@ -284,6 +284,13 @@ def parse_args():
     parser.add_argument("--end", type=int, default=None, help="End index (exclusive) into the loaded instance list")
     parser.add_argument("--out", default=None, help="Results JSON output directory")
     parser.add_argument(
+        "--concurrency", type=int, default=1,
+        help="How many instances to run at once (each in its own container). Default 1 "
+             "(sequential). Every instance is independent — its own container, session, "
+             "workspace and eval bridge — so raising this just runs more in parallel; size "
+             "it to the host's CPU/RAM and to the extra grader containers each eval spawns.",
+    )
+    parser.add_argument(
         "--instance-json", default=None,
         help="Inner mode: JSON metadata for the single instance to run. Set by the "
              "launcher when it starts this script inside a task container, where the "
@@ -1134,8 +1141,27 @@ async def run_launcher(args) -> int:
     os.makedirs(out_dir, exist_ok=True)
     results_path = os.path.join(out_dir, f"run_{make_id()}.json")
     results = []
+    results_lock = asyncio.Lock()
+    max_concurrency = max(1, int(getattr(args, "concurrency", 1) or 1))
+    sem = asyncio.Semaphore(max_concurrency)
 
-    for index, instance in enumerate(selected, start=1):
+    def _write_results():
+        # Rewritten after every instance finishes so a mid-run crash still leaves a usable
+        # file. Called under results_lock; the write itself is atomic on the asyncio loop.
+        with open(results_path, "w", encoding="utf-8") as handle:
+            json.dump({
+                "config": args.config,
+                "selection": {"task_ids": task_ids, "start": args.start, "end": args.end},
+                "concurrency": max_concurrency,
+                "records": results,
+            }, handle, ensure_ascii=False, indent=2)
+
+    # The extension tree is shared and read-only to the run — grant it to the container uid
+    # once here rather than per instance, so concurrent instances do not chown it under one
+    # another. Ownership is handed back once, after every instance finishes.
+    grant_to_container_user(os.path.join(root, "extension"))
+
+    async def _run_one_instance(index, instance):
         instance_id = instance["instance_id"]
         image_ref = f"{instance.get('image_name', '')}:{IMAGE_TAG}"
         logger.info(f"| ▶️ [{index}/{len(selected)}] {instance_id} (image={image_ref})")
@@ -1180,7 +1206,6 @@ async def run_launcher(args) -> int:
             os.chmod(bridge_dir, 0o777)
 
             grant_to_container_user(session_path)
-            grant_to_container_user(os.path.join(root, "extension"))
             logger.info(
                 f"| {'⏩' if resuming else '🌱'} [{instance_id}] Workspace "
                 f"{'reused' if resuming else 'seeded'} and mounted: {workspace_dir} "
@@ -1262,25 +1287,37 @@ async def run_launcher(args) -> int:
                 record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
-            # Both trees the run writes into, not just the output one.
-            restore_ownership(os.path.join(root, "output"))
-            restore_ownership(os.path.join(root, "extension"))
 
         record.setdefault("time_seconds", round(time.time() - started, 1))
-        results.append(record)
         logger.info(
             f"| {'✅' if record['status'] == 'done' else '❌'} [{index}/{len(selected)}] "
             f"{instance_id} → {record['status']} in {record['time_seconds']}s"
         )
+        async with results_lock:
+            results.append(record)
+            _write_results()
+        return record
 
-        # Written after every task so a mid-run crash still leaves a usable file.
-        with open(results_path, "w", encoding="utf-8") as handle:
-            json.dump({
-                "config": args.config,
-                "selection": {"task_ids": task_ids, "start": args.start, "end": args.end},
-                "records": results,
-            }, handle, ensure_ascii=False, indent=2)
+    async def _bounded(index, instance):
+        # The semaphore caps how many instances hold a container at once; a crash in one
+        # instance must not sink the batch, so failures come back as records, never raises.
+        async with sem:
+            try:
+                return await _run_one_instance(index, instance)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"| ❌ [{index}] {instance.get('instance_id')} crashed: {e}", exc_info=True)
+                rec = {"instance_id": instance.get("instance_id"), "status": "failed", "error": str(e)}
+                async with results_lock:
+                    results.append(rec)
+                    _write_results()
+                return rec
 
+    await asyncio.gather(*[_bounded(i, inst) for i, inst in enumerate(selected, start=1)])
+
+    # Ownership is handed back once, after every container is done — doing it per instance
+    # would chown the shared trees out from under instances still running concurrently.
+    restore_ownership(os.path.join(root, "output"))
+    restore_ownership(os.path.join(root, "extension"))
     await sandbox_manager.cleanup()
 
     done = sum(1 for r in results if r["status"] == "done")
