@@ -1388,9 +1388,16 @@ async def run_launcher(args) -> int:
         denied = len(((r.get("egress_audit") or {}).get("denied")) or [])
         audit = r.get("reference_audit") or {}
         rules = "" if audit.get("clean", True) else "  🚨 RULES VIOLATED — score not comparable"
+        spend = r.get("spend") or {}
+        cost = spend.get("total_cost_usd")
+        cost_str = f"~${cost:.2f}" if isinstance(cost, (int, float)) else "$ - "
         print(f"   {'✅' if r['status'] == 'done' else '❌'} {r['instance_id']:45} "
               f"steps={str(r.get('steps', '-')):>5}  submission={submission:12} "
+              f"cost={cost_str:>8}  calls={spend.get('n_llm_calls', '-')!s:>4}  "
               f"egress-denied={denied}{rules}")
+    grand = sum((r.get("spend") or {}).get("total_cost_usd") or 0.0 for r in results)
+    if grand:
+        print(f"   ── estimated total cost ≈ ${grand:.2f} (list-price estimate; tokens exact) ──")
     return 0
 
 
