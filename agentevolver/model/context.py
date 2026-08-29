@@ -576,6 +576,8 @@ class ModelContextManager:
                 supports_streaming=True, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"), max_retries=m.get("max_retries"),
+                # Per-token prices so a call this relay does not price gets a computed cost.
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -825,6 +827,30 @@ class ModelContextManager:
     # Invocation
     # ------------------------------------------------------------------
 
+    def _price_result(self, model_name: str, result: Response) -> None:
+        """Fill in a computed `cost` on a buffered result's usage when the provider gave none.
+
+        Patches both the structured `result.usage.cost` and the raw `result.data['usage']`
+        dict (what the trace records), using the model's per-token price table. A provider
+        that already returned a cost is left untouched. No-op when the model has no price
+        table or the call had no usage.
+        """
+        if not result.success:
+            return
+        config = self.models.get(model_name)
+        pricing = getattr(config, "cost", None) if config else None
+        if not pricing:
+            return
+        from agentevolver.model.types import compute_cost
+        raw = (result.data or {}).get("usage") if result.data else None
+        if isinstance(raw, dict) and raw.get("cost") is None:
+            from agentevolver.model.types import TokenUsage
+            normalised = TokenUsage.from_raw(raw)
+            if normalised is not None:
+                raw["cost"] = compute_cost(normalised.model_dump(), pricing)
+        if result.usage is not None and result.usage.cost is None:
+            result.usage.cost = compute_cost(result.usage.model_dump(), pricing)
+
     def _log_usage(self, model_name: str, result: Response) -> None:
         if not result.success:
             return
@@ -984,6 +1010,7 @@ class ModelContextManager:
                     plugins,
                     kwargs,
                 )
+                self._price_result(name, result)
                 self._log_usage(name, result)
                 if not result.success:
                     raise Exception(result.message or "Model returned success=False")
@@ -1114,6 +1141,7 @@ class ModelContextManager:
                     plugins,
                     kwargs,
                 )
+                self._price_result(fallback, result)
                 self._log_usage(fallback, result)
                 if not result.success:
                     raise Exception(result.message or "Fallback returned success=False")
@@ -1175,20 +1203,42 @@ class ModelContextManager:
         if name not in self.model_clients:
             raise ValueError(f"Model {name} not found. Available: {list(self.models.keys())}")
 
+        from agentevolver.model.types import StreamDone as _StreamDone, compute_cost as _compute_cost
+
+        def _price_event(target: str, ev: Any) -> Any:
+            """Fill a computed cost onto a StreamDone's usage when the provider gave none.
+
+            The streaming path's only usage is on StreamDone; pricing it here is what puts a
+            dollar figure on every streamed call in the trace (the agent loop reads this same
+            usage). Left untouched when the model has no price table or usage already has a
+            cost."""
+            if not isinstance(ev, _StreamDone) or not isinstance(ev.usage, dict):
+                return ev
+            if ev.usage.get("cost") is not None:
+                return ev
+            cfg = self.models.get(target)
+            pricing = getattr(cfg, "cost", None) if cfg else None
+            if pricing:
+                from agentevolver.model.types import TokenUsage
+                normalised = TokenUsage.from_raw(ev.usage)
+                if normalised is not None:
+                    ev.usage["cost"] = _compute_cost(normalised.model_dump(), pricing)
+            return ev
+
         async def _events(target: str, client: Any, effective_messages: List[Any]):
             """Canonical events for one model (true stream, or buffered→events)."""
             if hasattr(client, "stream"):
                 async for ev in client.stream(
                     messages=effective_messages, tools=tools, response_format=response_format, **kwargs
                 ):
-                    yield ev
+                    yield _price_event(target, ev)
             else:
                 # Providers without a stream(): buffer one call, re-emit as events.
                 resp = await client(
                     messages=effective_messages, tools=tools, response_format=response_format, **kwargs
                 )
                 async for ev in buffered_response_to_events(resp):
-                    yield ev
+                    yield _price_event(target, ev)
 
         model_config = self.models.get(name)
         max_retries = _resolve_max_retries(max_retries, model_config)

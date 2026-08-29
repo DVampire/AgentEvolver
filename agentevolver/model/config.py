@@ -192,6 +192,12 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # reasoning-bound rather than build-bound.
             # ChatLLMHub forwards this dict verbatim as `extra_body` (see _build_params).
             "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            # Per-token USD, from Anthropic's public Opus-5 list price ($5 / $25 per 1M in /
+            # out; cache write 1.25x input = $6.25/1M; cache read 0.1x = $0.50/1M). The relay
+            # returns no cost in usage, so calls are priced from this — an estimate the relay's
+            # actual billing may differ from, while the token counts stay exact. Matches the
+            # official ProgramBench reference agent's cost table.
+            "cost": {"input": 5e-6, "output": 2.5e-5, "cache_write": 6.25e-6, "cache_read": 5e-7},
             # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
             # the relay answers a request carrying one with "`temperature` is deprecated
             # for this model".

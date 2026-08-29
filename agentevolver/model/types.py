@@ -49,6 +49,14 @@ class ModelConfig(BaseModel):
         description="Optional output schema version when required by provider.",
     )
     timeout: Optional[float] = Field(default=None, description="Request timeout in seconds.")
+    cost: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Per-token USD prices used to price a call when the provider does not "
+        "return a `cost` in usage (llm_hub/Bedrock does not). Keys: `input`, `output`, "
+        "`cache_write`, `cache_read` — each USD per single token (e.g. Opus 5 input is "
+        "5e-6). Estimated from the model's public list price; the token counts are exact, "
+        "the dollar figure is an estimate that a relay's actual billing may differ from.",
+    )
     max_retries: Optional[int] = Field(
         default=None,
         description="Attempts before this model's call is treated as failed. Overrides the "
@@ -143,6 +151,50 @@ class TokenUsage(BaseModel):
             parts.append(f"cost=${self.cost:.6f}")
         prefix = f"[{model}] " if model else ""
         return f"{prefix}tokens: {', '.join(parts)}"
+
+
+def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, float]]) -> Optional[float]:
+    """Price a call's token counts against a per-token USD table.
+
+    ``usage`` is a TokenUsage-shaped dict (``input_tokens`` / ``output_tokens`` /
+    ``cache_write_tokens`` / ``cache_read_tokens``). ``pricing`` maps ``input`` / ``output``
+    / ``cache_write`` / ``cache_read`` to USD-per-single-token. Cache prices default to the
+    usual multiples of the input price when omitted (write 1.25x, read 0.1x). Returns None
+    when there is no pricing to apply, so the caller leaves ``cost`` untouched. Cached
+    tokens are billed at the cache rate INSTEAD of the input rate — they are not also in
+    ``input_tokens`` (from_raw normalises the provider's split), so no double counting.
+    """
+    if not pricing:
+        return None
+    p_in = float(pricing.get("input", 0.0))
+    p_out = float(pricing.get("output", 0.0))
+    p_cw = float(pricing.get("cache_write", p_in * 1.25))
+    p_cr = float(pricing.get("cache_read", p_in * 0.1))
+    return (
+        int(usage.get("input_tokens", 0) or 0) * p_in
+        + int(usage.get("output_tokens", 0) or 0) * p_out
+        + int(usage.get("cache_write_tokens", 0) or 0) * p_cw
+        + int(usage.get("cache_read_tokens", 0) or 0) * p_cr
+    )
+
+
+def price_usage_dict(raw_usage: Optional[Dict[str, Any]], pricing: Optional[Dict[str, float]]) -> Optional[Dict[str, Any]]:
+    """Return ``raw_usage`` with a computed ``cost`` when it has none and pricing exists.
+
+    Used at the two model-call chokepoints (buffered and streaming) so every recorded call
+    carries a dollar figure. If the provider already returned a ``cost`` (OpenRouter does),
+    it is kept as-is — the relay's own number beats an estimate. Normalises through
+    TokenUsage.from_raw first so the token keys are canonical before pricing.
+    """
+    if not raw_usage:
+        return raw_usage
+    normalised = TokenUsage.from_raw(raw_usage)
+    if normalised is None:
+        return raw_usage
+    priced = normalised.model_dump()
+    if priced.get("cost") is None:
+        priced["cost"] = compute_cost(priced, pricing)
+    return priced
 
 
 # ---------------------------------------------------------------------------

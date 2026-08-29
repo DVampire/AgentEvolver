@@ -550,6 +550,63 @@ async def eval_bridge_watcher(bridge_dir: str, workspace_dir: str, instance_id: 
         logger.error(f"| ❌ [{instance_id}] eval bridge watcher stopped: {e}")
 
 
+def _summarise_spend(session_root: str, instance_id: str) -> dict:
+    """Roll one task's per-call LLM spend into a single summary for result.json.
+
+    Reads the session's trace JSONL — the same log that already records every step's token
+    usage and duration — and sums it: total input / output / cache tokens, the computed cost
+    (see agentevolver.model.types.compute_cost; estimated from list price, exact token
+    counts), the number of priced LLM calls, and their wall time. Never raises: a missing or
+    unreadable trace yields zeros so the run's own result is never lost to a bookkeeping error.
+    """
+    import glob
+
+    summary = {
+        "n_llm_calls": 0, "input_tokens": 0, "output_tokens": 0,
+        "cache_read_tokens": 0, "cache_write_tokens": 0,
+        "total_cost_usd": 0.0, "cost_is_estimated": True, "llm_seconds": 0.0,
+    }
+    hits = (glob.glob(os.path.join(session_root, "**", f"{instance_id}.jsonl"), recursive=True)
+            or glob.glob(os.path.join(session_root, "**", "trace", "*.jsonl"), recursive=True))
+    if not hits:
+        return summary
+    any_cost = False
+    try:
+        with open(hits[0], encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except Exception:
+                    continue
+                usage = ev.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                summary["n_llm_calls"] += 1
+                summary["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+                summary["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+                summary["cache_read_tokens"] += int(usage.get("cache_read_tokens", 0) or 0)
+                summary["cache_write_tokens"] += int(usage.get("cache_write_tokens", 0) or 0)
+                if usage.get("cost") is not None:
+                    summary["total_cost_usd"] += float(usage["cost"])
+                    any_cost = True
+                dur = ev.get("duration_ms")
+                if dur is not None:
+                    summary["llm_seconds"] += float(dur) / 1000.0
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"| ⚠️ [{instance_id}] could not summarise spend: {e}")
+        return summary
+    summary["total_cost_usd"] = round(summary["total_cost_usd"], 6)
+    summary["llm_seconds"] = round(summary["llm_seconds"], 1)
+    # If not a single call carried a cost, there was no price table — say so rather than
+    # implying a real $0.00.
+    if not any_cost:
+        summary["total_cost_usd"] = None
+    return summary
+
+
 def _reads_the_binary_as_a_file(command: str, tools) -> bool:
     """True when an analysis tool is pointed at the reference binary itself.
 
@@ -904,6 +961,9 @@ async def run_inner(args) -> int:
         logger.error(f"| 🚨 [{instance_id}] {result['reference_audit']['verdict']}")
     result["time_seconds"] = round(time.time() - started, 1)
     result["session_path"] = str(fs_sandbox.project_root)
+    # Per-task LLM spend: tokens, cost estimate, call count, and model wall time, summed from
+    # this session's trace. Exact tokens; cost estimated from list price (see _summarise_spend).
+    result["spend"] = _summarise_spend(str(fs_sandbox.project_root), instance_id)
 
     # Written where the launcher reads it back through the mount.
     with open(os.path.join(str(fs_sandbox.project_root), "result.json"), "w", encoding="utf-8") as handle:
