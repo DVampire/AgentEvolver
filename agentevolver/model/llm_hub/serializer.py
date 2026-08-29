@@ -351,19 +351,25 @@ class LLMHubChatSerializer:
 
     @staticmethod
     def _cache_split(text: str):
-        """Split a user turn after the capability catalogs, for a cache breakpoint.
+        """Split a user turn just before the first live-state block, for a cache breakpoint.
 
-        Only the system message carried a breakpoint before, and the catalogs live in the
-        user turn — so the largest stable part of the prompt, ~63% of it in a measured
-        run, sat past the last cacheable byte and was re-read in full every step.
+        The stable prefix of a step's user turn is the capability catalog **and the task**
+        (and any inherited context) — all byte-identical on every step of a session. The
+        first thing that changes is `<constraints>` (the live budget), followed by
+        step-info / memory / plan / workspace. The breakpoint therefore goes right before
+        `<constraints>`, so the task rides inside the cached prefix rather than being re-read
+        in full every step (measured: the user turn was byte-identical for ~54% of its
+        length, but the old breakpoint at `</capability-context>` sat at ~14%, leaving the
+        whole task uncached).
 
-        The split point is the end of `<capability-context>`: everything up to it is
-        byte-identical on every step of a session, everything after it is the live agent
-        state. Returns ``None`` when the turn has no catalog, which is every turn but the
-        one carrying it — those must not be given a breakpoint of their own, since a
-        breakpoint placed after content that changes each step caches nothing and spends
-        a write to learn it.
+        Falls back to the end of `<capability-context>` — the old split — for turns that
+        render no `<constraints>` block, and returns ``None`` when neither marker is present
+        (a turn with no catalog must not get a breakpoint of its own: one placed after
+        content that changes each step caches nothing and spends a write to learn it).
         """
+        constraints = text.find("<constraints>")
+        if constraints != -1:
+            return text[:constraints], text[constraints:]
         marker = "</capability-context>"
         end = text.find(marker)
         if end == -1:
@@ -422,7 +428,17 @@ class LLMHubChatSerializer:
             assistant_result: ChatCompletionAssistantMessageParam = {'role': 'assistant'}
             # Only add content if it's not None
             if content is not None:
-                assistant_result['content'] = content
+                # Rolling cache breakpoint for `derive_context` (see ToolMessage): when this
+                # is the last frozen turn and carries text, attach the breakpoint to it. Only
+                # a content-bearing assistant turn can hold one — a tool-call-only turn (null
+                # content) is never the last frozen turn (its tool result follows it).
+                if getattr(message, "cache", False) and isinstance(content, str):
+                    assistant_result['content'] = [{
+                        'type': 'text', 'text': content,
+                        'cache_control': {'type': 'ephemeral', 'ttl': CACHE_TTL},
+                    }]
+                else:
+                    assistant_result['content'] = content
             if message.name is not None:
                 assistant_result['name'] = message.name
             if message.refusal is not None:
@@ -437,11 +453,21 @@ class LLMHubChatSerializer:
             # every serializer could reject this type and nothing noticed. With the
             # projection they are real turns, and rejecting one fails the whole step —
             # silently, since the error travelled as an empty decision.
-            return {
+            tool_result: ChatCompletionMessageParam = {
                 'role': 'tool',
                 'tool_call_id': message.tool_call_id,
                 'content': message.content,
             }
+            # `message.cache` marks the last frozen turn of a `derive_context` conversation:
+            # a rolling breakpoint here caches the whole growing history prefix, leaving only
+            # the volatile trailing turn to be re-read each step. Wrapping the string content
+            # in a text block is how a cache breakpoint attaches to a tool result.
+            if getattr(message, "cache", False) and isinstance(message.content, str):
+                tool_result['content'] = [{
+                    'type': 'text', 'text': message.content,
+                    'cache_control': {'type': 'ephemeral', 'ttl': CACHE_TTL},
+                }]
+            return tool_result
         else:
             raise ValueError(f'Unknown message type: {type(message)}')
 

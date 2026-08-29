@@ -1267,7 +1267,16 @@ class Agent(BaseModel):
             return rendered
         stable, volatile = self._split_rendered_turn(rendered)
         stable, addition = self._freeze_capabilities(stable, ctx)
-        return system + stable + derived + addition + volatile
+        # Rolling cache breakpoint: mark the last frozen turn (end of the replayed history,
+        # or of the capability-change announcement after it) so the serializer caches the
+        # whole growing prefix — system + task + every prior turn — and only the volatile
+        # trailing turn is re-read each step. Without this the appended history sits past the
+        # last breakpoint and never caches, defeating the point of the projection. `volatile`
+        # changes every step and must stay uncached, so it is deliberately left unmarked.
+        frozen = derived + addition
+        if frozen:
+            frozen[-1].cache = True
+        return system + stable + frozen + volatile
 
     @staticmethod
     def _freeze_capabilities(

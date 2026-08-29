@@ -240,4 +240,9 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
+    # Replay the log as real assistant/tool turns (append-only) instead of re-rendering a
+    # memory snapshot each step, so the growing history caches behind a rolling breakpoint.
+    # Changes what the model sees each step — must be A/B'd for quality, not just cost. Kept
+    # identical to the baseline arm (the two arms differ only in the evolution roster).
+    derive_context=True,
 )

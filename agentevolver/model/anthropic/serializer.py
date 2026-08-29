@@ -249,18 +249,20 @@ class AnthropicChatSerializer:
 
     @staticmethod
     def _cache_split(text: str):
-        """Split a user turn after the capability catalogs, for a cache breakpoint.
+        """Split a user turn just before the first live-state block, for a cache breakpoint.
 
-        Mirrors the LLM Hub and OpenRouter serializers. This provider had no
-        `cache_control` at all, so nothing it sent was ever cacheable — including the
-        capability catalogs, which are byte-identical on every step of a session and are
-        the largest single thing in the prompt.
-
-        The split point is the end of `<capability-context>`. Returns ``None`` when the
-        turn has no catalog, which is every turn but the one carrying it — those must
-        not be given a breakpoint, since one placed after content that changes each step
-        caches nothing and spends a cache write to find out.
+        Mirrors the LLM Hub and OpenRouter serializers. The stable prefix is the capability
+        catalog **and the task** (and any inherited context), byte-identical every step; the
+        first thing that changes is `<constraints>` (the live budget), so the breakpoint goes
+        right before it and the task rides inside the cached prefix instead of being re-read
+        each step. Falls back to the end of `<capability-context>` when no `<constraints>`
+        block is rendered, and returns ``None`` when neither marker is present (a turn with
+        no catalog must not get a breakpoint: one placed after content that changes each step
+        caches nothing and spends a cache write to find out).
         """
+        constraints = text.find("<constraints>")
+        if constraints != -1:
+            return text[:constraints], text[constraints:]
         marker = "</capability-context>"
         end = text.find(marker)
         if end == -1:

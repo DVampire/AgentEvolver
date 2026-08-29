@@ -13,7 +13,7 @@ off a whole surface as uncacheable with no number ever changing.
 
 import pytest
 
-from agentevolver.message.types import HumanMessage
+from agentevolver.message.types import AssistantMessage, HumanMessage, ToolMessage
 from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 from agentevolver.model.openrouter.serializer import OpenRouterChatSerializer
 from agentevolver.model.types import TokenUsage
@@ -36,6 +36,53 @@ def test_the_breakpoint_lands_after_the_catalog(serializer):
     assert blocks[0]["cache_control"]["type"] == "ephemeral"
     assert "step 7 of 40" in blocks[1]["text"]
     assert "cache_control" not in blocks[1], "the volatile half must not be a breakpoint"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_the_breakpoint_includes_the_task_before_the_first_live_block(serializer):
+    """The stable prefix is catalog + task; the breakpoint goes before <constraints>.
+
+    Measured, the user turn was byte-identical for ~54% of its length but the old breakpoint
+    at </capability-context> sat at ~14%, so the task (byte-stable every step) was re-read in
+    full. Splitting before the first live block — <constraints> — caches it.
+    """
+    turn = (
+        "<capability-context><tool-context>- bash</tool-context></capability-context>"
+        "<task>reconstruct the program</task>"
+        "<constraints>step 7 of 40</constraints><memory>...</memory>"
+    )
+    blocks = serializer.serialize_message(HumanMessage(content=turn))["content"]
+    assert "<task>reconstruct the program</task>" in blocks[0]["text"], "task must be cached"
+    assert blocks[0]["cache_control"]["type"] == "ephemeral"
+    assert blocks[1]["text"].startswith("<constraints>")
+    assert "cache_control" not in blocks[1], "the live budget onward must not be cached"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_a_frozen_history_turn_gets_a_rolling_breakpoint_when_marked(serializer):
+    """`derive_context` marks the last frozen turn with `.cache`; the serializer caches it.
+
+    Without a breakpoint on the last frozen turn the appended assistant/tool history sits past
+    the last cacheable byte and is re-read every step — the whole point of the projection is
+    lost. A tool result and an assistant turn are the two shapes the last frozen turn takes.
+    """
+    tool = serializer.serialize_message(
+        ToolMessage(tool_call_id="c1", content="the reference printed X", cache=True))
+    assert isinstance(tool["content"], list)
+    assert tool["content"][0]["cache_control"]["type"] == "ephemeral"
+
+    asst = serializer.serialize_message(AssistantMessage(content="I will rebuild the flag loop", cache=True))
+    assert isinstance(asst["content"], list)
+    assert asst["content"][0]["cache_control"]["type"] == "ephemeral"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_an_unmarked_history_turn_stays_a_plain_string(serializer):
+    # Only the LAST frozen turn is marked; the rest must not each become a breakpoint.
+    tool = serializer.serialize_message(ToolMessage(tool_call_id="c1", content="output"))
+    assert tool["content"] == "output"
+    asst = serializer.serialize_message(AssistantMessage(content="thinking"))
+    assert asst["content"] == "thinking"
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
