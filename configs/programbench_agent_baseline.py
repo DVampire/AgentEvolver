@@ -203,6 +203,14 @@ file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
     enable_evolving=False,
+    # Trim what memory re-sends UNCACHED every step. On this relay the live agent state sits
+    # past the cache breakpoint (only system + catalog + task cache), and memory was 86% of
+    # that uncached ~15k/step — dominated by big raw tool outputs (a Cargo.toml dump, a crate
+    # listing) each capped at 8000 chars. Cap an entry at 2500 (keeps a head + the spill
+    # locator) and hold 8 recent records instead of 10. Reduces per-step input cost; the
+    # tradeoff is less recent detail in front of the model, so it wants an A/B for quality.
+    record_detail_max=2500,
+    recent_fetch=8,
 )
 
 #-----------------META AGENT CONFIG-----------------

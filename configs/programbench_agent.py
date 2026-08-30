@@ -215,6 +215,12 @@ file_system_memory.update(
     # of what a benchmark run measures, so rewriting it mid-run would change the
     # measurement rather than the solution.
     enable_evolving=False,
+    # Trim what memory re-sends uncached every step — the live state sits past the cache
+    # breakpoint and memory was 86% of it, dominated by big raw tool outputs. Cap an entry at
+    # 2500 chars (keeps head + spill locator) and hold 8 recent records. Wants an A/B for
+    # quality. Kept identical to the baseline arm (the two differ only in the evolution roster).
+    record_detail_max=2500,
+    recent_fetch=8,
 )
 
 #-----------------EVOLUTION AGENT CONFIGS-----------------

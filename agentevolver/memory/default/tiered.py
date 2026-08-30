@@ -216,6 +216,13 @@ class TieredMemory(Memory):
     recent_max: int = Field(default=30, description="Compact when recent_history exceeds this.")
     recent_fetch: int = Field(default=10, description="Recent records injected by get().")
     working_max: int = Field(default=10, description="Max working-memory summaries kept.")
+    #: Per-entry detail cap. Every recent record is re-rendered into every subsequent prompt
+    #: and re-read UNCACHED each step (the live state sits past the cache breakpoint), so a
+    #: window of big raw outputs (a file dump, a long listing) is the main reducible input
+    #: cost. Lower it to trim that at the cost of detail; a truncated entry keeps a head and a
+    #: tail (the tail carries the spill locator to the full output).
+    record_detail_max: int = Field(default=_RECORD_DETAIL_MAX,
+                                   description="Max characters kept for one recent entry's detail.")
     working_fetch: int = Field(default=5, description="Working summaries injected by get().")
     compact_chunk: int = Field(default=10, description="Records consolidated per compaction.")
 
@@ -419,10 +426,10 @@ class TieredMemory(Memory):
         # Head *and* tail, because the last thing in a bounded tool result is the
         # reference to where the unbounded original was saved. Keeping only the head
         # would drop it and leave a note about missing text with no way to reach it.
-        if record.detail and len(record.detail) > _RECORD_DETAIL_MAX:
-            head = int(_RECORD_DETAIL_MAX * _RECORD_HEAD_SHARE)
-            tail = _RECORD_DETAIL_MAX - head
-            dropped = len(record.detail) - _RECORD_DETAIL_MAX
+        if record.detail and len(record.detail) > self.record_detail_max:
+            head = int(self.record_detail_max * _RECORD_HEAD_SHARE)
+            tail = self.record_detail_max - head
+            dropped = len(record.detail) - self.record_detail_max
             record = record.model_copy(update={
                 "detail": (
                     f"{record.detail[:head]}\n"
