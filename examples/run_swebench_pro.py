@@ -670,6 +670,15 @@ async def run_launcher(args) -> int:
             else:
                 record["error"] = f"the inner run left no result.json (container exit {execution.exit_code})"
             record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
+
+            # Final leaderboard-style grade of the patch the agent left behind. Counts only,
+            # exactly as the mid-run bridge would return; the oracle never crosses back.
+            logger.info(f"| ⚖️ [{instance_id}] final grade of the collected patch…")
+            final = await _grade_once(workspace_dir, row, grader_repo)
+            record["final_grade"] = final
+            record["resolved"] = bool(final.get("resolved"))
+            logger.info(f"| {'🟢 RESOLVED' if record['resolved'] else '🔴 unresolved'} "
+                        f"[{instance_id}] {final}")
         except Exception as e:  # noqa: BLE001
             logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
             record["error"] = str(e)
