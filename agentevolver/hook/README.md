@@ -30,7 +30,6 @@ Built-in hooks (`default/`):
 | `constraint_hook` | Enforces per-step resource budgets |
 | `repeat_tool_reminder_hook` | Advises, never blocks, when a whole action batch repeats verbatim |
 | `plan_mode_hook` | Refuses actions not declared free of effects until a person approves the plan |
-| `snapshot_hook` | Saves each step's rendered messages as HTML |
 | `compact` | Generic summariser for compressing record lists |
 | `registration_hook` | Installs what an evolution run generated, for all eight component types |
 

@@ -3,7 +3,6 @@ from .trace import TraceHook
 from .memory import MemoryHook
 from .constraint import ConstraintHook
 from .registration import RegistrationHook
-from .snapshot_hook import SnapshotHook
 from .trajectory_hook import TrajectoryHook
 from .repeat_tool import RepeatToolReminderHook
 from .plan_mode import PlanModeHook
@@ -14,7 +13,6 @@ __all__ = [
     "MemoryHook",
     "ConstraintHook",
     "RegistrationHook",
-    "SnapshotHook",
     "TrajectoryHook",
     "RepeatToolReminderHook",
     "PlanModeHook",

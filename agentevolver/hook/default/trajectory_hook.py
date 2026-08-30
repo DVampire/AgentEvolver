@@ -4,7 +4,7 @@ Sibling of TraceHook: where TraceHook emits a raw observability event log,
 TrajectoryHook feeds ``trajectory_manager`` a step-aggregated, reward-annotated
 view suitable for SFT / RL export. It is dispatched by name from the run loop
 (``hook_manager(name="trajectory_hook", ...)``) at ON_START / POST_ACTION /
-POST_STEP / ON_STOP, mirroring how snapshot_hook is called.
+POST_STEP / ON_STOP.
 """
 
 from __future__ import annotations

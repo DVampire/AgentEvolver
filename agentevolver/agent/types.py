@@ -1549,7 +1549,7 @@ class Agent(BaseModel):
         # DISPATCH: run this turn's batch concurrently, each call routed to its manager.
         outcome = await self._dispatch(decision, task_id, step_number, ctx)
 
-        # Per-step lifecycle: POST_STEP + snapshot + trajectory capture.
+        # Per-step lifecycle: POST_STEP + trajectory capture.
         await self._post_step(task_id, step_number, ctx, messages,
                               reasoning=decision["reasoning"],
                               assistant_text=decision.get("assistant_text", ""),
@@ -1564,7 +1564,7 @@ class Agent(BaseModel):
     async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning,
                          assistant_text="", provider_state=None, plan, step_tokens, done,
                          step_usage=None):
-        """Fire the per-step POST_STEP lifecycle (memory / trace / snapshot / trajectory)
+        """Fire the per-step POST_STEP lifecycle (memory / trace / trajectory)
         and carry token usage forward. Shared by the blocking ``_think_and_act`` path
         (BrowserAgent) and the event-driven round loop, so a step is recorded identically
         however it was driven.
@@ -1579,13 +1579,6 @@ class Agent(BaseModel):
                    "provider_state": provider_state or {},
                    "step_usage": step_usage,
                    "use_memory": self.use_memory, "memory_name": self.memory_name},
-            ctx=ctx,
-        )
-        await hook_manager(
-            name="snapshot_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number,
-                   "task_id": task_id, "workspace_root": config.workspace_root,
-                   "messages": messages, "reasoning": reasoning, "plan": plan},
             ctx=ctx,
         )
         await hook_manager(
