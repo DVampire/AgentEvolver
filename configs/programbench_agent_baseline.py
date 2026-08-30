@@ -214,11 +214,4 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
-    # Replay the log as real assistant/tool turns (append-only) instead of re-rendering a
-    # memory snapshot each step, so the growing history caches behind a rolling breakpoint —
-    # the measured cache hit rate was ~30% because only the ~10k system prompt was cached and
-    # the ~20k/step user turn was rebuilt whole. Changes what the model sees each step (real
-    # turns vs a curated snapshot), so it must be A/B'd against a baseline for quality, not
-    # just cost — kept identical to the evolving arm (the two arms differ only in evolution).
-    derive_context=True,
 )
