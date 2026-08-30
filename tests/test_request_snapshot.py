@@ -83,6 +83,15 @@ def test_compaction_protocol_parameters_are_part_of_the_snapshot_identity():
     assert compact.snapshot_id != normal.snapshot_id
 
 
+def test_snapshot_records_context_layer_without_putting_it_on_the_wire_model():
+    message = HumanMessage(content="task", context_layer="fixed")
+
+    snapshot = _snapshot(messages=[message])
+
+    assert snapshot.messages[0]["context_layer"] == "fixed"
+    assert "context_layer" not in message.model_dump()
+
+
 def test_the_snapshot_keeps_effective_values_without_credentials_or_endpoint_text():
     """Reproducibility needs route identity, not a reusable secret or deployment URL."""
     snapshot = _snapshot()

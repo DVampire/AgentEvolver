@@ -1279,7 +1279,7 @@ class Agent(BaseModel):
         projection. A short history is worse than a described one: the model would act on
         a conversation that silently lost its earlier turns.
         """
-        from agentevolver.agent.context_builder import context_builder, strip_rendered_comments
+        from agentevolver.agent.context_builder import context_builder
         from agentevolver.trace import trace_manager
         from agentevolver.trace.surface import SurfaceError
 
@@ -1290,7 +1290,7 @@ class Agent(BaseModel):
                 f"| ⚠️ [{self.name}] No retained log for session {session_id}; "
                 f"using the rendered history"
             )
-            return strip_rendered_comments(rendered)
+            return context_builder.build(rendered, [], ctx)
         try:
             return context_builder.build(rendered, events, ctx)
         except SurfaceError as error:
@@ -1298,7 +1298,7 @@ class Agent(BaseModel):
                 f"| ⚠️ [{self.name}] Log for session {session_id} cannot be projected "
                 f"({error}); using the rendered history"
             )
-            return strip_rendered_comments(rendered)
+            return context_builder.build(rendered, [], ctx)
 
     @staticmethod
     def _freeze_capabilities(

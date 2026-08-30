@@ -38,6 +38,16 @@ if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
 
 
+def _dump(value: Any) -> Dict[str, Any]:
+    """Dump SDK or relay objects without noisy union-mismatch warnings."""
+    if not hasattr(value, "model_dump"):
+        return dict(value)
+    try:
+        return value.model_dump(warnings=False)
+    except TypeError:  # small test doubles and older Pydantic versions
+        return value.model_dump()
+
+
 def _content_text(content: Any) -> str:
     """The text of one message's content, whether it is a string or content parts."""
     if isinstance(content, str):
@@ -195,7 +205,7 @@ class ResponseLLMHub(BaseModel):
         keyed `id` / `name` / `args` — because that adapter is how this client's result
         becomes a stream for the agent loop.
         """
-        payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        payload = _dump(raw)
         text_parts: List[str] = []
         reasoning_parts: List[str] = []
         reasoning_items: List[Dict[str, Any]] = []
@@ -268,7 +278,7 @@ class ResponseLLMHub(BaseModel):
             model=self.model,
             input=serialize_input(messages),
         )
-        payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        payload = _dump(raw)
         output = [dict(item) for item in payload.get("output") or []]
         if not any(item.get("type") == "compaction" for item in output):
             raise RuntimeError("Responses compaction returned no compaction item")

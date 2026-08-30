@@ -51,7 +51,14 @@ def _jsonable(value: Any) -> Any:
     recording remains observational and can never break the model call.
     """
     if isinstance(value, BaseModel):
-        return value.model_dump(mode="json", exclude_none=True)
+        payload = value.model_dump(mode="json", exclude_none=True)
+        # Context layer is deliberately excluded from Message.model_dump so no provider
+        # serializer or token estimator can mistake protocol metadata for wire content.
+        # The snapshot is the one place it belongs: exact layer attribution is evidence.
+        layer = getattr(value, "context_layer", None)
+        if layer:
+            payload["context_layer"] = str(layer)
+        return payload
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return _jsonable(dataclasses.asdict(value))
     if isinstance(value, Enum):

@@ -158,6 +158,13 @@ class Message(BaseModel):
     """Base class for all message types"""
     role: Literal['user', 'system', 'assistant', 'tool'] = Field(description="The role of the message.")  # type: ignore
     cache: bool = Field(default=False, description="Whether to cache this message. This is only applicable when using Anthropic models.")  # type: ignore
+    # Framework-only protocol metadata. Provider serializers select their wire fields
+    # explicitly, and this field is excluded from ordinary model dumps so it can never
+    # leak into an API request or distort token estimates. RequestSnapshot records it
+    # separately for exact four-layer diagnostics.
+    context_layer: Optional[Literal['fixed', 'checkpoint', 'recent', 'live']] = Field(
+        default=None, exclude=True,
+    )
  
 class HumanMessage(Message):
     """A message from a human user."""

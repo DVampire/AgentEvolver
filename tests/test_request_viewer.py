@@ -88,7 +88,7 @@ def test_request_page_preserves_roles_calls_cache_and_route_metadata(tmp_path):
     event = _event()
     page = render_request_html(event, str(tmp_path / "request.html"))
 
-    assert 'class="message-card role-system layer-stable"' in page
+    assert 'class="message-card role-system layer-fixed"' in page
     assert 'class="message-card role-assistant layer-recent"' in page
     assert 'class="message-card role-tool layer-recent"' in page
     assert "cache boundary" in page
@@ -127,6 +127,20 @@ def test_request_page_normalizes_anthropic_cache_usage(tmp_path):
 
     assert "90.0%" in page
     assert "900 read tokens" in page
+
+
+def test_llm_hub_anthropic_protocol_uses_anthropic_cache_accounting(tmp_path):
+    event = _event()
+    event.input["provider"] = "llm_hub"
+    event.input["model_type"] = "anthropic/messages"
+
+    page = render_request_html(
+        event,
+        str(tmp_path / "request.html"),
+        usage={"input_tokens": 100, "output_tokens": 10, "cache_read_tokens": 900},
+    )
+
+    assert "90.0%" in page
 
 
 def test_request_content_is_escaped_and_never_executed_as_page_markup(tmp_path):

@@ -25,8 +25,7 @@ _BACKGROUND_TASKS: set[asyncio.Task] = set()
 _LATEST_TASKS: dict[str, asyncio.Task] = {}
 _UNSAFE_PATH = re.compile(r"[^A-Za-z0-9_.-]+")
 _LAYER_LABELS = {
-    "stable": "stable prefix",
-    "task": "task anchor",
+    "fixed": "fixed prefix",
     "checkpoint": "checkpoint",
     "recent": "recent turn",
     "live": "live context",
@@ -56,19 +55,24 @@ def _tokens(value: Any) -> int:
     """Use the same conservative meter as request-pressure accounting."""
     from agentevolver.model.pressure import estimate_tokens
 
+    if isinstance(value, dict) and "context_layer" in value:
+        value = {key: item for key, item in value.items() if key != "context_layer"}
     return estimate_tokens(value)
 
 
 def _message_layer(message: dict[str, Any], index: int, total: int) -> str:
     """Classify one message in the cache-oriented context layout."""
+    explicit = str(message.get("context_layer") or "").lower()
+    if explicit in _LAYER_LABELS:
+        return explicit
     role = str(message.get("role") or "unknown").lower()
     text = _content_text(message.get("content", ""))
     if role == "system":
-        return "stable"
+        return "fixed"
     if role == "user" and index == total - 1:
         return "live"
     if role == "user" and ("<task>" in text or index <= 1):
-        return "task"
+        return "fixed"
     if "<memory-checkpoint>" in text or "<memory>" in text:
         return "checkpoint"
     return "recent"
@@ -279,7 +283,7 @@ def _body_after_prefix_tokens(messages: list[Any]) -> int:
         if not isinstance(message, dict):
             continue
         layer = _message_layer(message, index, len(messages))
-        if layer in {"task", "checkpoint"}:
+        if layer in {"fixed", "checkpoint"}:
             boundary = index
     return _tokens(messages[boundary + 1:]) if boundary + 1 < len(messages) else 0
 
@@ -296,10 +300,11 @@ def _request_diagnostics(
         index for index, message in enumerate(messages)
         if isinstance(message, dict) and message.get("cache")
     ]
-    fixed_end = next((
+    fixed_candidates = [
         index for index in cache_indices
-        if _message_layer(messages[index], index, len(messages)) == "task"
-    ), 0 if messages else -1)
+        if _message_layer(messages[index], index, len(messages)) == "fixed"
+    ]
+    fixed_end = max(fixed_candidates, default=0 if messages else -1)
     rolling_end = cache_indices[-1] if cache_indices else fixed_end
     fixed_tokens = _tokens(messages[: fixed_end + 1]) if fixed_end >= 0 else 0
     rolling_tokens = _tokens(messages[: rolling_end + 1]) if rolling_end >= 0 else 0
@@ -319,9 +324,10 @@ def _request_diagnostics(
     # Anthropic reports uncached input separately; OpenAI reports total input and a
     # cached subset. Normalize both conventions before presenting one hit ratio.
     provider = str(snapshot.get("provider") or "").lower()
+    model_type = str(snapshot.get("model_type") or "").lower()
     denominator = (
         input_tokens + cache_read + cache_write
-        if "anthropic" in provider
+        if "anthropic" in provider or "anthropic" in model_type
         else max(input_tokens, cache_read + cache_write)
     )
     cache_hit = (cache_read / denominator) if denominator else None
@@ -554,12 +560,12 @@ def render_request_html(
         '<div class="toolbar">',
         '<label class="search"><span>Search</span><input id="message-search" type="search" placeholder="role, layer, or content"></label>',
         f'<label class="role-filter"><span>Role</span><select id="role-filter"><option value="all">All roles ({len(messages)})</option>{role_options}</select></label>',
-        '<label class="layer-filter"><span>Layer</span><select id="layer-filter"><option value="all">All layers</option><option value="stable">Stable prefix</option><option value="task">Task anchor</option><option value="checkpoint">Checkpoint</option><option value="recent">Recent turns</option><option value="live">Live context</option></select></label>',
+        '<label class="layer-filter"><span>Layer</span><select id="layer-filter"><option value="all">All layers</option><option value="fixed">Fixed prefix</option><option value="checkpoint">Checkpoint</option><option value="recent">Recent turns</option><option value="live">Live context</option></select></label>',
         '<label class="cache-filter"><span>Cache</span><select id="cache-filter"><option value="all">All messages</option><option value="boundary">Cache boundary</option><option value="uncached">Uncached</option></select></label>',
         '<button id="toggle-wrap" class="quiet-button">No wrap</button>',
         '<button id="collapse-details" class="quiet-button">Collapse details</button>',
         "</div>",
-        '<div class="legend"><span><i class="stable"></i>stable prefix / task anchor</span><span><i class="rolling"></i>recent assistant + tool turns</span><span><i class="live"></i>live context</span></div>',
+        '<div class="legend"><span><i class="stable"></i>fixed system + task prefix</span><span><i class="rolling"></i>checkpoint + recent exact turns</span><span><i class="live"></i>live context</span></div>',
         _render_sequence(messages),
         f'<div id="message-list" class="message-list">{message_html}</div>',
         '<div id="no-results" class="empty-state hidden">No messages match this filter.</div>',

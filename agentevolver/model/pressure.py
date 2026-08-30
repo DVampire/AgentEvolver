@@ -291,6 +291,16 @@ def prepare_messages(
 
     after = _count({"messages": prepared, "tools": tool_list,
                     "response_format": response_format}, token_estimator)
+    context_layers: dict[str, dict[str, int]] = {}
+    for layer in ("fixed", "checkpoint", "recent", "live"):
+        layer_messages = [
+            message for message in prepared
+            if getattr(message, "context_layer", None) == layer
+        ]
+        context_layers[layer] = {
+            "messages": len(layer_messages),
+            "tokens": _count(layer_messages, token_estimator) if layer_messages else 0,
+        }
     pressure = {
         "schema_version": REQUEST_PRESSURE_VERSION,
         "estimate_method": token_estimator.method if token_estimator else ESTIMATE_METHOD,
@@ -308,6 +318,7 @@ def prepare_messages(
         "triggered": before > trigger,
         "pruned_message_indices": pruned_indices,
         "removed_chars": removed_chars,
+        "context_layers": context_layers,
         # Pruning ran and did not get back under the trigger. Observability, not a
         # verdict: a request between the trigger and the capacity is large but valid.
         "unresolved": after > trigger,

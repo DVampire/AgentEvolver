@@ -20,6 +20,13 @@ state. Trace is the source of truth; `MemoryRecord` is only a retention index an
 projection. A closed assistant turn receives an index even when it calls no tool, so
 retention never means "the last N tool results" by accident.
 
+`ContextEnvelope(fixed, checkpoint, recent, live)` makes that order structural rather
+than a list-building convention. It refuses duplicate checkpoints, messages assigned to
+two layers, system/live role drift, duplicate tool-call ids, orphan results, and incomplete
+tool batches before flattening. Layer labels are framework-only: RequestSnapshot records
+them and request-pressure accounting reports per-layer tokens, while provider serializers
+never receive them.
+
 Compaction replaces old complete turns on the Trace surface. Responses routes keep the
 opaque item returned by `/responses/compact`. Native Anthropic routes keep the assistant
 `compaction` block returned by `compact_20260112`; the block's readable content becomes
@@ -28,6 +35,10 @@ relays that do not expose Anthropic's beta use the readable checkpoint generated
 through the ordinary chat route. All three forms live on one `CompactionMessage`, so Agent
 and MetaAgent never branch on provider and provider-owned state is never flattened into
 prose when its native protocol is available.
+
+The configured `llm_hub/claude-opus-5` route does expose native Anthropic Messages and is
+therefore built with that adapter; `llm_hub/gpt-5.6-sol` uses Responses. Both use provider
+compaction while retaining their existing public model names and LLM Hub credential pool.
 
 The latest unclosed Claude tool loop is never partially compacted. Its `thinking` or
 `redacted_thinking` blocks, signatures, `tool_use`, and matching `tool_result` remain one

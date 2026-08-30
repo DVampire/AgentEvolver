@@ -706,6 +706,19 @@ class ModelContextManager:
                 f"Unsupported model type {config.model_type} for OpenRouter provider"
             )
         elif config.provider == "llm_hub":
+            if config.model_type == "anthropic/messages":
+                # Keep the public llm_hub model identity and credentials while speaking
+                # the native protocol this relay exposes. Compaction blocks cannot make a
+                # safe round trip through OpenAI chat/completions.
+                return ChatAnthropic(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
+                    reasoning=config.reasoning or None,
+                    temperature=config.temperature,
+                    max_tokens=config.max_completion_tokens or self.max_tokens,
+                    timeout=config.timeout or self.default_timeout,
+                )
             if config.model_type == "chat/completions":
                 return ChatLLMHub(
                     model=config.model_id,

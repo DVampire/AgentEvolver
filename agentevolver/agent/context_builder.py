@@ -7,7 +7,8 @@ module is the only place that combines those two sources into a request history.
 from __future__ import annotations
 
 import re
-from typing import Any, List, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Iterable, List, Tuple
 
 from agentevolver.message.types import (
     AssistantMessage,
@@ -23,6 +24,107 @@ from agentevolver.trace.types import TraceEventType
 
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 _DATA_BLOCKS = ("task", "inherited-context", "memory", "working-memory", "recent-steps")
+_LAYERS = ("fixed", "checkpoint", "recent", "live")
+
+
+class ContextProtocolError(ValueError):
+    """The model-facing context would violate the four-layer protocol."""
+
+
+class ContextMessages(list[Message]):
+    """A normal message list that retains its validated layer accounting."""
+
+    def __init__(self, messages: Iterable[Message], layer_tokens: dict[str, int]):
+        super().__init__(messages)
+        self.layer_tokens = dict(layer_tokens)
+
+
+@dataclass(frozen=True)
+class ContextEnvelope:
+    """One validated fixed → checkpoint → recent → live model context.
+
+    The envelope is provider-neutral. It is flattened only after its invariants hold,
+    so serializers cannot accidentally reorder a checkpoint, duplicate a context tier,
+    or receive a severed assistant/tool turn.
+    """
+
+    fixed: tuple[Message, ...] = field(default_factory=tuple)
+    checkpoint: tuple[CompactionMessage, ...] = field(default_factory=tuple)
+    recent: tuple[Message, ...] = field(default_factory=tuple)
+    live: tuple[Message, ...] = field(default_factory=tuple)
+
+    def validate(self) -> "ContextEnvelope":
+        if len(self.checkpoint) > 1:
+            raise ContextProtocolError("context may contain only one canonical checkpoint")
+        if any(not isinstance(message, CompactionMessage) for message in self.checkpoint):
+            raise ContextProtocolError("checkpoint layer accepts only CompactionMessage")
+        other_layers = (*self.fixed, *self.recent, *self.live)
+        if any(isinstance(message, CompactionMessage) for message in other_layers):
+            raise ContextProtocolError("CompactionMessage must live only in checkpoint")
+        if any(message.role not in {"system", "user"} for message in self.fixed):
+            raise ContextProtocolError("fixed layer accepts only system/task messages")
+        if any(message.role != "user" for message in self.live):
+            raise ContextProtocolError("live layer accepts only current user context")
+        if any(message.role == "system" for message in self.recent):
+            raise ContextProtocolError("system messages must remain in the fixed layer")
+
+        seen_user = False
+        for message in self.fixed:
+            if message.role == "user":
+                seen_user = True
+            elif seen_user:
+                raise ContextProtocolError("fixed system messages must precede the task anchor")
+
+        all_messages = (*self.fixed, *self.checkpoint, *self.recent, *self.live)
+        if len({id(message) for message in all_messages}) != len(all_messages):
+            raise ContextProtocolError("one message cannot belong to multiple context layers")
+        self._validate_tool_turns()
+        return self
+
+    def _validate_tool_turns(self) -> None:
+        pending: set[str] = set()
+        seen: set[str] = set()
+        for message in self.recent:
+            if isinstance(message, AssistantMessage):
+                if pending:
+                    raise ContextProtocolError(
+                        f"assistant turn started before tool results arrived: {sorted(pending)}"
+                    )
+                ids = [str(call.id) for call in message.tool_calls]
+                if len(ids) != len(set(ids)) or any(call_id in seen for call_id in ids):
+                    raise ContextProtocolError("tool-call ids must be unique in the exact tail")
+                pending.update(ids)
+                seen.update(ids)
+            elif isinstance(message, ToolMessage):
+                call_id = str(message.tool_call_id)
+                if call_id not in pending:
+                    raise ContextProtocolError(f"orphan tool result: {call_id}")
+                pending.remove(call_id)
+            elif pending:
+                raise ContextProtocolError(
+                    f"tool results must immediately follow their assistant turn: {sorted(pending)}"
+                )
+        if pending:
+            raise ContextProtocolError(f"tool turn is incomplete: {sorted(pending)}")
+
+    def token_counts(self) -> dict[str, int]:
+        from agentevolver.model.pressure import estimate_tokens
+
+        return {
+            layer: estimate_tokens(list(getattr(self, layer)))
+            if getattr(self, layer) else 0
+            for layer in _LAYERS
+        }
+
+    def flatten(self) -> ContextMessages:
+        self.validate()
+        messages: list[Message] = []
+        for layer in _LAYERS:
+            messages.extend(
+                message.model_copy(update={"context_layer": layer})
+                for message in getattr(self, layer)
+            )
+        return ContextMessages(messages, self.token_counts())
 
 
 def _strip_template_comments(message: Message) -> Message:
@@ -64,6 +166,11 @@ class ContextBuilder:
     TOOL_RESULT_MAX = 8_000
 
     def build(self, rendered: List[Message], events: List[Any], ctx: Any) -> List[Message]:
+        return self.build_envelope(rendered, events, ctx).flatten()
+
+    def build_envelope(
+        self, rendered: List[Message], events: List[Any], ctx: Any
+    ) -> ContextEnvelope:
         system = [
             _strip_template_comments(m)
             for m in rendered if getattr(m, "role", "") == "system"
@@ -73,7 +180,9 @@ class ContextBuilder:
         if not derived:
             if anchor:
                 anchor[-1].cache = True
-            return system + anchor + live
+            return ContextEnvelope(
+                fixed=tuple(system + anchor), live=tuple(live)
+            ).validate()
 
         task = self._task(events)
         checkpoints = self._checkpoints(events)
@@ -124,7 +233,12 @@ class ContextBuilder:
                 frozen[-1],
             )
             boundary.cache = True
-        return system + anchor + frozen + live
+        return ContextEnvelope(
+            fixed=tuple(system + anchor),
+            checkpoint=tuple(checkpoint),
+            recent=tuple(recent),
+            live=tuple(live),
+        ).validate()
 
     @staticmethod
     def _task(events: List[Any]) -> str:
@@ -234,4 +348,11 @@ class ContextBuilder:
 
 context_builder = ContextBuilder()
 
-__all__ = ["ContextBuilder", "context_builder", "strip_rendered_comments"]
+__all__ = [
+    "ContextBuilder",
+    "ContextEnvelope",
+    "ContextMessages",
+    "ContextProtocolError",
+    "context_builder",
+    "strip_rendered_comments",
+]

@@ -153,9 +153,9 @@ pre { margin: 0; tab-size: 2; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin: 22px 2px 15px; }
 .section-heading h2 { margin: 3px 0 0; font-size: 24px; }
 .section-heading p { max-width: 560px; margin: 0; color: var(--muted); }
-.layer-map { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.layer-map { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .layer-card { position: relative; overflow: hidden; padding: 15px; border: 1px solid var(--line); border-top: 2px solid var(--blue); border-radius: var(--radius); background: rgba(20, 27, 18, .92); }
-.layer-card.layer-task { border-top-color: var(--green); }
+.layer-card.layer-fixed { border-top-color: var(--green); }
 .layer-card.layer-checkpoint { border-top-color: var(--blue); }
 .layer-card.layer-recent { border-top-color: var(--violet); }
 .layer-card.layer-live { border-top-color: var(--amber); }

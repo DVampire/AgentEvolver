@@ -163,7 +163,9 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
         {
             "model_name": "llm_hub/claude-opus-5",
             "model_id": "claude-opus-5",
-            "model_type": "chat/completions",
+            # Live-probed on this relay: /v1/messages supports native tools, signed
+            # Anthropic blocks, compact_20260112, and compaction-block continuation.
+            "model_type": "anthropic/messages",
             # The relay routes this to AWS Bedrock (response ids are `msg_bdrk_*`), which
             # intermittently returns an empty completion (finish_reason null, ~3 tokens) —
             # mostly isolated single misses that one retry clears. The default of 3 attempts
@@ -175,11 +177,10 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # Confirmed against Anthropic's model page: 1M is both the default and the
             # maximum; there is no smaller context variant of Opus 5.
             "context_window": 1_000_000,
-            # Reasoning must be switched on explicitly, and only this shape works: the relay
-            # rejects `thinking.type.enabled` ("Use thinking.type.adaptive and
-            # output_config.effort") and silently ignores an OpenAI-style `reasoning_effort`
-            # (HTTP 200, no thinking). Verified live against the relay: adaptive + effort in
-            # {low,medium,high,xhigh} are all accepted and return `reasoning_content`.
+            # Reasoning must be switched on explicitly. The relay rejects
+            # `thinking.type.enabled` and silently ignores OpenAI-style
+            # `reasoning_effort`; native Messages accepts adaptive thinking plus
+            # `output_config.effort` (also verified in the tool-loop probe).
             # Without this the route ran at the model's default effort — the reference agent
             # that leads this benchmark runs Opus 5 at xhigh, and the same scaffold one
             # effort/generation down scores multiples lower, so effort is a first-order lever.
@@ -190,7 +191,7 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # override to `xhigh` per run with
             # `--cfg-options model.reasoning='{...effort: xhigh...}'` only if a task is
             # reasoning-bound rather than build-bound.
-            # ChatLLMHub forwards this dict verbatim as `extra_body` (see _build_params).
+            # ChatAnthropic forwards this dict verbatim on the native Messages surface.
             "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
             # Per-token USD, from Anthropic's public Opus-5 list price ($5 / $25 per 1M in /
             # out; cache write 1.25x input = $6.25/1M; cache read 0.1x = $0.50/1M). The relay

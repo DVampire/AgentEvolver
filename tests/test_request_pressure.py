@@ -118,6 +118,26 @@ def test_openai_native_tokenizer_is_used_without_claiming_wire_exactness():
     assert prepared.pressure["provider_wire_exact"] is False
 
 
+def test_pressure_records_validated_four_layer_token_accounting():
+    from agentevolver.agent.context_builder import ContextEnvelope
+    from agentevolver.message import AssistantMessage, HumanMessage, SystemMessage
+
+    messages = ContextEnvelope(
+        fixed=(SystemMessage(content="rules"), HumanMessage(content="task")),
+        recent=(AssistantMessage(content="worked"),),
+        live=(HumanMessage(content="continue"),),
+    ).flatten()
+
+    prepared = prepare_messages(messages, context_window=100_000)
+    layers = prepared.pressure["context_layers"]
+
+    assert list(layers) == ["fixed", "checkpoint", "recent", "live"]
+    assert layers["fixed"]["messages"] == 2
+    assert layers["checkpoint"] == {"messages": 0, "tokens": 0}
+    assert layers["recent"]["tokens"] > 0
+    assert layers["live"]["tokens"] > 0
+
+
 def test_unknown_provider_uses_documented_deterministic_fallback():
     assert resolve_request_token_estimator(provider="anthropic", model="claude") is None
 

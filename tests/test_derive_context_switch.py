@@ -139,7 +139,9 @@ def test_a_session_with_no_retained_log_falls_back(monkeypatch):
     monkeypatch.setattr(trace_server.trace_manager, "_events", {}, raising=False)
     out = _Agent()._derived_messages(_RENDERED, _ctx("absent"))
 
-    assert out == _RENDERED, "an unheld log must not read as an empty conversation"
+    assert [message.text for message in out] == [message.text for message in _RENDERED], \
+        "an unheld log must not read as an empty conversation"
+    assert [message.context_layer for message in out] == ["fixed", "live"]
 
 
 def test_a_projectable_log_replaces_the_transcript(monkeypatch):
@@ -192,7 +194,9 @@ def test_a_log_that_cannot_be_projected_falls_back(monkeypatch):
     asyncio.run(manager.emit(broken))
     monkeypatch.setattr(trace_server.trace_manager, "_events", manager._events, raising=False)
 
-    assert _Agent()._derived_messages(_RENDERED, _ctx("s3")) == _RENDERED
+    out = _Agent()._derived_messages(_RENDERED, _ctx("s3"))
+    assert [message.text for message in out] == [message.text for message in _RENDERED]
+    assert [message.context_layer for message in out] == ["fixed", "live"]
 
 
 # --------------------------------------------------------------------------- #

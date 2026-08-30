@@ -1,13 +1,21 @@
 import asyncio
+import pytest
 
-from agentevolver.agent.context_builder import ContextBuilder, strip_rendered_comments
+from agentevolver.agent.context_builder import (
+    ContextBuilder,
+    ContextEnvelope,
+    ContextProtocolError,
+    strip_rendered_comments,
+)
 from agentevolver.hook.default.trace import TraceHook
 from agentevolver.hook.types import HookContext, HookEvent
 from agentevolver.message import (
     AssistantMessage,
     CompactionMessage,
+    Function,
     HumanMessage,
     SystemMessage,
+    ToolCall,
     ToolMessage,
 )
 from agentevolver.trace.surface import replace_op
@@ -82,6 +90,60 @@ def test_builder_keeps_anchor_checkpoint_recent_turns_and_live_tail_separate():
     assert messages[4].cache is False
     assert "<constraints>10 left</constraints>" in messages[-1].text
     assert "capability-context" not in "\n".join(message.text for message in messages)
+
+
+def test_envelope_makes_the_four_layers_explicit_before_flattening():
+    events = _number([
+        agent_start_event("s", "t", "a", "task"),
+        agent_call_event("s", "t", "a", 1, assistant_text="done"),
+    ])
+    rendered = [
+        SystemMessage(content="rules"),
+        HumanMessage(content="<task>task</task><constraints>one step</constraints>"),
+    ]
+
+    envelope = ContextBuilder().build_envelope(
+        rendered, events, type("C", (), {"extra": {}})()
+    )
+    messages = envelope.flatten()
+
+    assert [message.context_layer for message in messages] == [
+        "fixed", "fixed", "recent", "live",
+    ]
+    assert set(messages.layer_tokens) == {"fixed", "checkpoint", "recent", "live"}
+    assert all(value >= 0 for value in messages.layer_tokens.values())
+    assert "context_layer" not in messages[0].model_dump(), "protocol metadata leaked"
+
+
+def test_envelope_rejects_a_duplicate_checkpoint():
+    checkpoint = CompactionMessage(content="one")
+    with pytest.raises(ContextProtocolError, match="only one canonical checkpoint"):
+        ContextEnvelope(checkpoint=(checkpoint, CompactionMessage(content="two"))).validate()
+
+
+def test_envelope_rejects_orphan_and_incomplete_tool_turns():
+    with pytest.raises(ContextProtocolError, match="orphan tool result"):
+        ContextEnvelope(recent=(ToolMessage(content="x", tool_call_id="missing"),)).validate()
+
+    assistant = AssistantMessage(content="", tool_calls=[ToolCall(
+        id="call-1", function=Function(name="bash", arguments="{}")
+    )])
+    with pytest.raises(ContextProtocolError, match="tool turn is incomplete"):
+        ContextEnvelope(recent=(assistant,)).validate()
+
+
+def test_envelope_accepts_one_complete_parallel_tool_batch():
+    assistant = AssistantMessage(content="", tool_calls=[
+        ToolCall(id="call-1", function=Function(name="a", arguments="{}")),
+        ToolCall(id="call-2", function=Function(name="b", arguments="{}")),
+    ])
+    envelope = ContextEnvelope(recent=(
+        assistant,
+        ToolMessage(content="one", tool_call_id="call-1"),
+        ToolMessage(content="two", tool_call_id="call-2"),
+    ))
+
+    assert len(envelope.validate().flatten()) == 3
 
 
 def test_private_reasoning_is_not_replayed_as_assistant_text():

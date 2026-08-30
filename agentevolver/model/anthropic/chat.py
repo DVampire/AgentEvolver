@@ -22,7 +22,13 @@ import json
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.model.types import TokenUsage, BaseChatModel
-from agentevolver.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
+from agentevolver.message.types import (
+    AssistantMessage,
+    CompactionMessage,
+    HumanMessage,
+    Message,
+    SystemMessage,
+)
 from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
 from agentevolver.model.pressure import estimate_tokens
 from typing import Type, TYPE_CHECKING
@@ -227,6 +233,15 @@ class ChatAnthropic(BaseChatModel):
         """
         # Serialize messages to Anthropic format
         system_message, anthropic_messages = AnthropicChatSerializer.serialize_messages(messages)
+        has_compaction = any(
+            isinstance(message, CompactionMessage)
+            and bool(
+                ((message.provider_state or {}).get("anthropic") or {}).get(
+                    "compaction_blocks"
+                )
+            )
+            for message in messages
+        )
         
         # Build API parameters
         params: Dict[str, Any] = {
@@ -259,17 +274,28 @@ class ChatAnthropic(BaseChatModel):
                 params['tools'] = formatted_tools
         
         # Handle response_format (Anthropic uses the beta output_format parameter)
-        use_beta_api = False
+        betas: list[str] = []
         if response_format:
             try:
                 params['output_format'] = AnthropicChatSerializer.serialize_response_format(response_format)
-                use_beta_api = True
+                betas.append('structured-outputs-2025-11-13')
             except ValueError as e:
                 logger.warning(f"Failed to serialize response_format: {e}")
 
-        # Add betas parameter if using structured outputs
-        if use_beta_api:
-            params['betas'] = ['structured-outputs-2025-11-13']
+        if has_compaction:
+            # A native block is accepted only while context management remains enabled.
+            # Keep normal generation below this high-water trigger; TieredMemory owns the
+            # earlier explicit transaction, so an inline provider fold cannot bypass Trace.
+            betas.append('compact-2026-01-12')
+            params['context_management'] = {
+                'edits': [{
+                    'type': 'compact_20260112',
+                    'trigger': {'type': 'input_tokens', 'value': 900_000},
+                }]
+            }
+        if betas:
+            params['betas'] = betas
+        use_beta_api = bool(betas)
 
         # Streaming: the stream flag is applied by _open_stream (which passes
         # stream=True explicitly), so nothing to set on params here.

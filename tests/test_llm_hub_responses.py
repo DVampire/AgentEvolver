@@ -71,6 +71,7 @@ def test_the_catalog_omits_temperature_for_opus_5():
 
     assert "temperature" not in opus
     assert opus["model_id"] == "claude-opus-5", "the relay refuses the prefixed form"
+    assert opus["model_type"] == "anthropic/messages"
 
 
 def test_the_client_sends_no_temperature_unless_given_one():
@@ -80,19 +81,33 @@ def test_the_client_sends_no_temperature_unless_given_one():
     assert ChatLLMHub(model="claude-opus-5").temperature is None
 
 
-def test_opus_5_caches_the_native_tool_catalog_only_on_its_route():
-    from agentevolver.model.llm_hub.chat import ChatLLMHub
+def test_opus_5_native_messages_route_caches_the_tool_catalog():
+    from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
 
-    async def build(model):
-        return await ChatLLMHub(model=model)._build_params(
-            [HumanMessage(content="x")], tools=[_tool()]
-        )
-
-    opus = asyncio.run(build("claude-opus-5"))["params"]["tools"][-1]
-    gpt = asyncio.run(build("gpt-5.5"))["params"]["tools"][-1]
+    opus = AnthropicChatSerializer.serialize_tools([_tool()])[-1]
 
     assert opus["cache_control"]["type"] == "ephemeral"
-    assert "cache_control" not in gpt
+
+
+@pytest.mark.asyncio
+async def test_llm_hub_builds_opus_5_with_the_native_anthropic_client():
+    from agentevolver.model.anthropic.chat import ChatAnthropic
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig
+
+    client = await ModelContextManager()._build_client(ModelConfig(
+        model_name="llm_hub/claude-opus-5",
+        model_id="claude-opus-5",
+        model_type="anthropic/messages",
+        provider="llm_hub",
+        api_key="key",
+        api_base="https://relay.invalid/v1",
+        reasoning={"thinking": {"type": "adaptive"}},
+    ))
+
+    assert isinstance(client, ChatAnthropic)
+    assert client.model == "claude-opus-5"
+    assert str(client.base_url) == "https://relay.invalid/v1"
 
 
 def test_native_anthropic_stream_keeps_the_signed_thinking_block():
@@ -160,6 +175,28 @@ def test_anthropic_native_compaction_waits_until_the_beta_minimum():
     assert ChatAnthropic.compaction_ready([
         HumanMessage(content="x" * 220_000),
     ])
+
+
+@pytest.mark.asyncio
+async def test_native_compaction_replay_keeps_context_management_enabled():
+    from agentevolver.model.anthropic.chat import ChatAnthropic
+
+    checkpoint = CompactionMessage(
+        content="portable",
+        provider_state={"anthropic": {"compaction_blocks": [{
+            "type": "compaction", "content": "canonical summary",
+        }]}},
+    )
+    built = await ChatAnthropic(model="claude-opus-5", temperature=None)._build_params([
+        HumanMessage(content="task"), checkpoint, HumanMessage(content="continue"),
+    ])
+
+    assert built["use_beta_api"] is True
+    assert "compact-2026-01-12" in built["params"]["betas"]
+    edit = built["params"]["context_management"]["edits"][0]
+    assert edit["type"] == "compact_20260112"
+    assert edit["trigger"]["value"] == 900_000
+    assert built["params"]["messages"][1]["content"][0]["type"] == "compaction"
 
 
 def test_direct_anthropic_catalog_exposes_opus_5_native_route():
