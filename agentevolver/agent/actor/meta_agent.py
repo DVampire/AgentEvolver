@@ -91,6 +91,8 @@ class MetaAgent(Agent):
                 run.ctx,
                 run.messages,
                 reasoning=decision["reasoning"],
+                assistant_text=decision.get("assistant_text", ""),
+                provider_state=decision.get("provider_state", {}),
                 plan=[],
                 step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                 done=False,

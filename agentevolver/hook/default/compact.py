@@ -28,11 +28,12 @@ from agentevolver.hook.types import HookContext, HookResult, Hook
 
 _SYSTEM_PROMPT = "You are a concise summariser for an AI agent's execution history."
 
-_DEFAULT_INSTRUCTION = (
-    "Summarise the records above in 2-4 sentences. Focus on what agents ran, "
-    "what tools/skills were called, key results, and any failures. Preserve exact "
-    "values (file paths, numbers, errors). Do not repeat the existing summary."
-)
+_DEFAULT_INSTRUCTION = """Return one compact replacement checkpoint that merges the
+existing summary (if any) with the new records. Use only these headings when they have
+content: Established facts, Decisions, Workspace mutations, Verification, Failed
+approaches, Remaining conditions, Next action. Preserve exact paths, commands, values and
+errors. Drop raw file dumps and repeated observations. The result must stand alone; do not
+refer to an 'existing summary' or 'records above'."""
 
 
 @HOOK.register_module(force=True)

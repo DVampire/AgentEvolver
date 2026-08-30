@@ -12,42 +12,25 @@
      one table, so a prompt that described them itself was describing that builder from
      memory, and several described a shape it had stopped producing. -->
 <input-rules>
-- capability-context: everything you may call, listed in full. Fixed for the whole
-  conversation and placed ahead of your state, because it does not change between steps.
-  A section appears only when you actually have that kind of capability:
-  - tool-context — the tools you may call, each with its full instruction (function /
-    guidance / parameters / example). These are resident: you already have everything you
-    need to call them. Use `inspect_tool` only for something NOT listed here,
-    or for a component's registry facts (version / enable_evolving / source path).
-  - skill-context — the skills you may invoke.
-  - connector-context — the connectors you may use.
-  - plugin-context — the plugins you may call.
-  - workflow-context — the workflows you may run.
-  - subagent-context — the sub-agents you may dispatch.
-  Use only what is listed. Do not invent names.
-- capability-context-changes: MAY APPEAR LATER in the conversation, after the history
-  rather than in this position. Components can be registered or withdrawn while you are
-  running; the catalog above is deliberately left byte-for-byte unchanged so it stays
-  reusable, and what has changed since is stated in that block instead. It supersedes the
-  catalog for the entries it names and for nothing else — anything it does not mention is
-  still exactly as listed above.
+- Callable capabilities arrive as provider-native tool definitions. Their schemas are the
+  authority; use only names present there. `inspect_tool` retrieves registry metadata or
+  detail for an unmounted capability.
+- On the legacy rendered-context path, a `capability-context-changes` block is an amendment:
+  it supersedes only entries it names and leaves every unmentioned capability unchanged.
 - environment-context: the environments you are working *in*, when you have any, with the
   actions each one offers. It is not in capability-context because you do not call an
   environment in passing — you act inside it. What each one holds right now is separate,
   under agent-context, because the roster does not change between steps and the state
   changes every step.
-- agent-context: your current state. The stable sub-modules come first (your objective and
-  plan, which rarely change between steps), then the live state that changes every step:
+- agent-context: the small live tail for the next decision:
   - task — your ultimate objective (see Task Rules).
   - inherited-context — what the caller handed down, when you were dispatched by someone.
   - plan — `plan.md` as it stands, when there is one.
   - constraints — the live resource budget (used / limit / remaining per resource) and the
     overall urgency tier (see Constraint Rules). `[No active budget.]` when none is set.
   - step-info — the current step number, the max steps, and the current date/time.
-  - working-memory — your compacted long-term summaries, carried forward across steps
-    (see Context Rules).
-  - recent-steps — the sliding window of your most recent steps, and the final result once
-    set (see Context Rules). Changes every step.
+  - memory checkpoints and prior assistant/tool turns are supplied separately as native
+    conversation history; they are not repeated inside agent-context.
   - environment-state — the live state of the environment you are acting in, refreshed
     every step. Only when you have one.
   - workspace — a live snapshot of your working directory's files.

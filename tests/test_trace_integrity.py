@@ -333,7 +333,8 @@ async def test_post_step_flushes_after_all_step_hooks():
             step_usage={"output_tokens": 3},
         )
 
-    assert hooks.await_count == 4
+    # trace_hook forwards its numbered event to memory, then snapshot and trajectory run.
+    assert hooks.await_count == 3
     checkpoint.assert_awaited_once()
     args, kwargs = checkpoint.await_args
     assert args[:2] == ("step-session", TraceCheckpointBoundary.STEP_END)

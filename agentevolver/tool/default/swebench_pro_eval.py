@@ -69,7 +69,8 @@ Ask the real grader to run the instance's hidden tests against your CURRENT edit
 - Do NOT call it after a trivial edit. Make a batch of real changes, verify what you can with the repo's OWN existing tests (run them yourself with the shell — that is free), then spend one grader eval to see which fail_to_pass are still open.
 - The tool commits your workspace before scoring, so make sure the repo is in a runnable state (no syntax errors) before calling — an eval on a broken checkout just spends a call to tell you it does not run.
 
-**It blocks** until the host finishes scoring. Treat the returned failing names as a prioritised to-do list, not as answers.
+**It blocks** until the host finishes scoring. Use the returned counts only as a progress
+signal; no failing names are exposed.
 """
 
 _EXAMPLES = [
@@ -85,7 +86,7 @@ def _git(*args: str) -> subprocess.CompletedProcess:
 
 @TOOL.register_module(force=True)
 class SWEBenchProEvalTool(Tool):
-    """Bridge the agent's request to the host-side SWE-bench Pro grader and return failing test names."""
+    """Bridge to the host-side SWE-bench Pro grader and return counts only."""
 
     name: str = "swebench_pro_eval_tool"
     description: str = _DESCRIPTION
@@ -102,7 +103,7 @@ class SWEBenchProEvalTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, focus: str = "", **kwargs) -> Response:
-        """Score the current patch with the real grader and return the failing test names.
+        """Score the current patch with the real grader and return counts only.
 
         Args:
             focus: One line — what you just changed / want to check. Recorded for the run's

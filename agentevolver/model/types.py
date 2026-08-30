@@ -338,6 +338,12 @@ class ToolCallComplete:
 
 
 @dataclass
+class ProviderState:
+    """Opaque replay data that must survive one provider's next request."""
+    data: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class StreamDone:
     stop_reason: Optional[str] = None          # canonical: tool_use | end_turn | max_tokens | ...
     usage: Optional[Dict[str, Any]] = None     # raw provider usage dict (TokenUsage.from_raw handles it)
@@ -377,6 +383,7 @@ async def accumulate_stream(events: "AsyncIterator[StreamEvent]") -> Dict[str, A
     tools: Dict[int, Dict[str, Any]] = {}
     stop_reason: Optional[str] = None
     usage: Optional[Dict[str, Any]] = None
+    provider_state: Dict[str, Any] = {}
 
     async for ev in events:
         if isinstance(ev, TextDelta):
@@ -394,6 +401,8 @@ async def accumulate_stream(events: "AsyncIterator[StreamEvent]") -> Dict[str, A
             slot["args"] = slot.get("args", "") + ev.partial_json
         elif isinstance(ev, ToolCallComplete):
             tools[ev.index] = {"id": ev.id, "name": ev.name, "input": ev.input}
+        elif isinstance(ev, ProviderState):
+            provider_state.update(ev.data)
         elif isinstance(ev, StreamDone):
             stop_reason = ev.stop_reason
             usage = ev.usage
@@ -417,6 +426,7 @@ async def accumulate_stream(events: "AsyncIterator[StreamEvent]") -> Dict[str, A
         "tool_calls": tool_calls,
         "stop_reason": stop_reason,
         "usage": usage,
+        "provider_state": provider_state,
     }
 
 
@@ -446,6 +456,7 @@ async def build_response_from_stream(
         "stop_reason": stop_reason,
         "text": acc.get("text", ""),
         "thinking": acc.get("thinking", ""),
+        "provider_state": acc.get("provider_state", {}),
     }
 
     # 0) Structured output via a synthetic schema-tool. When ``structured_tool_name``
@@ -525,6 +536,8 @@ async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEve
     reasoning = data.get("reasoning") or data.get("thinking")
     if reasoning:
         yield ThinkingDelta(str(reasoning))
+    if data.get("provider_state"):
+        yield ProviderState(dict(data["provider_state"]))
     functions = data.get("functions")
     if functions:
         for i, fn in enumerate(functions):
@@ -788,5 +801,6 @@ __all__ = [
     "TextDelta", "ThinkingDelta", "ToolCallStart", "ToolCallArgsDelta",
     "ToolCallComplete", "StreamDone", "StreamEvent",
     "normalize_stop_reason", "accumulate_stream", "build_response_from_stream",
+    "ProviderState",
     "buffered_response_to_events", "BaseChatModel",
 ]

@@ -75,6 +75,10 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
             continue
 
         if role == "assistant":
+            state = (getattr(message, "provider_state", None) or {}).get("responses") or {}
+            # Manual Responses history must replay model output items, not flatten
+            # reasoning into assistant prose. Keep the exact item returned by the API.
+            items.extend(dict(item) for item in state.get("reasoning_items") or [])
             text = _content_text(getattr(message, "content", ""))
             if text:
                 items.append({"role": "assistant", "content": text})
@@ -187,6 +191,7 @@ class ResponseLLMHub(BaseModel):
         payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
         text_parts: List[str] = []
         reasoning_parts: List[str] = []
+        reasoning_items: List[Dict[str, Any]] = []
         functions: List[Dict[str, Any]] = []
 
         for item in payload.get("output") or []:
@@ -211,6 +216,7 @@ class ResponseLLMHub(BaseModel):
                     "args": parsed,
                 })
             elif item_type == "reasoning":
+                reasoning_items.append(dict(item))
                 for part in item.get("summary") or []:
                     if part.get("text"):
                         reasoning_parts.append(part["text"])
@@ -233,6 +239,9 @@ class ResponseLLMHub(BaseModel):
                 "text": text,
                 "functions": functions,
                 "reasoning": "".join(reasoning_parts),
+                "provider_state": {
+                    "responses": {"reasoning_items": reasoning_items}
+                } if reasoning_items else {},
                 "usage": usage,
                 "finish_reason": "tool_use" if functions else "end_turn",
                 "raw_response": payload,

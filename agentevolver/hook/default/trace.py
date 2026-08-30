@@ -113,6 +113,8 @@ class TraceHook(Hook):
                 agent_name=agent_name,
                 step_number=step,
                 reasoning=inp.get("reasoning"),
+                assistant_text=inp.get("assistant_text"),
+                provider_state=inp.get("provider_state"),
                 duration_ms=elapsed,
                 usage=step_usage,
             )
@@ -179,6 +181,16 @@ class TraceHook(Hook):
 
         if event is not None:
             await trace_manager.emit(event)
+            # Memory consumes this exact object after Trace has assigned seq_no. It used
+            # to construct a second look-alike event, which made compaction unable to cite
+            # the durable log it was summarising.
+            from agentevolver.memory import memory_manager
+
+            await memory_manager.consume_trace_event(
+                event,
+                memory_name=inp.get("memory_name"),
+                enabled=bool(inp.get("use_memory", False)),
+            )
 
         return HookResult.allow()
 

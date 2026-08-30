@@ -103,7 +103,9 @@ def test_a_direct_call_and_a_delegated_one_leave_the_same_lifecycle_record(tmp_p
             )
         assert direct.success and direct.message.endswith(":ok")
         assert delegated.success and delegated.message.startswith("delegated:")
-        assert len(hooks.events) == 12  # start/stop × three hooks × two runs
+        # Memory consumes the exact seq-numbered event inside trace_hook; it is no
+        # longer called independently with a second look-alike event.
+        assert len(hooks.events) == 8  # start/stop × trace+trajectory × two runs
         assert all(event[2] == "procedural" for event in hooks.events)
         # The delegated run spawned a ref; nothing may still hold it afterwards.
         assert runtime_manager.list() == []

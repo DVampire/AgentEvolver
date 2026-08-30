@@ -99,6 +99,34 @@ def test_a_plain_or_single_block_user_message_stays_one_message(serializer):
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_an_explicitly_cached_anchor_is_cached_in_full(serializer):
+    anchor = HumanMessage(
+        content="<capability-context>tools</capability-context><session-anchor>task</session-anchor>",
+        cache=True,
+    )
+    out = serializer.serialize_messages([anchor])
+    assert len(out) == 1
+    assert "<session-anchor>task</session-anchor>" in out[0]["content"][0]["text"]
+    assert out[0]["content"][0]["cache_control"]["type"] == "ephemeral"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_a_session_anchor_caches_stable_task_before_checkpoint(serializer):
+    anchor = HumanMessage(content="<task>fix it</task>", cache=True)
+    checkpoint = HumanMessage(content=(
+        "<memory-checkpoint>latest summary</memory-checkpoint>"
+    ))
+    out = serializer.serialize_messages([anchor, checkpoint])
+
+    assert len(out) == 2
+    assert "<task>fix it</task>" in out[0]["content"][0]["text"]
+    assert "latest summary" in str(out[1]["content"])
+    assert out[0]["content"][0]["cache_control"]["type"] == "ephemeral"
+    assert "<memory-checkpoint>" in out[1]["content"]
+    assert "cache_control" not in out[1]
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
 def test_a_frozen_history_turn_gets_a_rolling_breakpoint_when_marked(serializer):
     """`derive_context` marks the last frozen turn with `.cache`; the serializer caches it.
 

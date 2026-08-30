@@ -96,6 +96,10 @@ class TraceEvent(BaseModel):
     input:    Optional[Dict[str, Any]] = Field(default=None)
     output:   Optional[Any]            = Field(default=None)
     reasoning: Optional[str]           = Field(default=None)
+    #: Model-visible assistant text. ``reasoning`` may be private provider thinking and
+    #: must not be replayed as ordinary assistant prose when this field is present.
+    assistant_text: Optional[str]      = Field(default=None)
+    provider_state: Dict[str, Any]     = Field(default_factory=dict)
     message:  Optional[str]            = Field(default=None)
     success:  Optional[bool]           = None
     error:    Optional[str]            = None
@@ -238,8 +242,10 @@ def agent_call_event(
     session_id: str, task_id: str, agent_name: str,
     step_number: int,
     reasoning: Optional[str] = None,
+    assistant_text: Optional[str] = None,
     duration_ms: Optional[float] = None,
     usage: Optional[Dict[str, Any]] = None,
+    provider_state: Optional[Dict[str, Any]] = None,
 ) -> TraceEvent:
     return TraceEvent(
         event_type=TraceEventType.AGENT_CALL,
@@ -247,10 +253,12 @@ def agent_call_event(
         step_number=step_number,
         label=f"Step {step_number}",
         reasoning=reasoning,
+        assistant_text=assistant_text,
         message=reasoning,
         success=True,
         duration_ms=duration_ms,
         usage=usage,
+        provider_state=provider_state or {},
         # On the surface: this is the assistant's turn. It was log-only while the
         # surface meant "what memory records", which covers results and not the
         # reasoning that produced them — so a compaction could hide a result while

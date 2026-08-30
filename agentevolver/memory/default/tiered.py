@@ -6,16 +6,16 @@ only in how a session is persisted (``_render`` → JSON vs HTML).
 On every TraceEvent, ``emit`` syncs into four places:
     todos          ← plan / sub-agent steps / MetaAgent subtask lifecycle
     flow_chart     ← same sources (agent call path)
-    recent_history ← raw execution log (bounded; overflow → working_memory)
+    recent_history ← raw execution log (folded under measured token pressure)
     final_result   ← root agent's end result
 
 Tiers
 -----
-recent_history : bounded queue of raw records. ``get()`` injects the last
+recent_history : queue of raw records. ``get()`` injects the last
                  ``recent_fetch`` verbatim.
-working_memory : bounded queue of LLM summaries. When recent_history overflows
-                 ``recent_max``, the oldest ``compact_chunk`` records are handed
-                 to the ``compact`` hook and the returned text is appended here.
+working_memory : bounded queue of LLM summaries. When the agent measures high
+                 request pressure, old records are handed to the ``compact`` hook
+                 and the returned text is appended here.
                  ``get()`` injects the last ``working_fetch`` summaries.
 
 Summarisation is delegated to the ``compact`` hook (list[str] → text) so the
@@ -154,6 +154,7 @@ class MemoryRecord(BaseModel):
     event: str            # short label, e.g. "tool_x result"
     detail: str = ""
     status: str = ""      # "", "running", "done", "failed"
+    step: Optional[int] = None
     #: Position of the trace event this record came from. Carried so that folding a run
     #: of records into a summary can say *which* events the summary now stands for —
     #: without it, memory's history and the durable log drift apart with nothing able to
@@ -185,6 +186,7 @@ class _SessionState:
 
         # Buffer tool/skill actions per step until POST_STEP flushes them into the flow chart.
         self._pending_step_actions: Dict[int, List[Dict[str, Any]]] = {}
+        self._pending_action_inputs: Dict[tuple[int, int], Dict[str, Any]] = {}
         # subtask_id → index, for O(1) MetaAgent status updates.
         self._subtask_todo_index: Dict[str, int] = {}
         self._subtask_flow_index: Dict[str, int] = {}
@@ -196,6 +198,7 @@ class _SessionState:
         #: compaction that never finished stays visible in the file afterwards instead
         #: of leaving a silently shortened history and no explanation.
         self.compaction: Optional[Dict[str, Any]] = None
+        self.checkpoint_seq: Optional[int] = None
         self._lock = asyncio.Lock()        # guards recent during compaction
         self._write_lock = asyncio.Lock()  # serialises file writes
 
@@ -213,7 +216,7 @@ class TieredMemory(Memory):
     model_name: str = Field(default="gpt-4.1")
     compact_hook: str = Field(default="compact", description="Hook name used to summarise overflow.")
 
-    recent_max: int = Field(default=30, description="Compact when recent_history exceeds this.")
+    recent_max: int = Field(default=30, description="Retention floor for direct/legacy compaction.")
     recent_fetch: int = Field(default=10, description="Recent records injected by get().")
     working_max: int = Field(default=10, description="Max working-memory summaries kept.")
     #: Per-entry detail cap. Every recent record is re-rendered into every subsequent prompt
@@ -268,12 +271,28 @@ class TieredMemory(Memory):
                 state.final_result = result
                 state.result_success = ok
 
+        elif ev in (TraceEventType.TOOL_START, TraceEventType.SKILL_START):
+            if event.step_number is not None:
+                state._pending_action_inputs[
+                    (event.step_number, event.action_index or 0)
+                ] = dict(event.input or {})
+            changed = False
+
         elif ev in (TraceEventType.TOOL_CALL, TraceEventType.SKILL_CALL):
             ok = event.success if event.success is not None else (event.metadata.get("success", not bool(event.error)))
             detail = event.error if not ok else _as_text(event.message)
+            action_input = state._pending_action_inputs.pop(
+                (event.step_number or 0, event.action_index or 0), None
+            )
+            if action_input:
+                detail = (
+                    f"Input: {json.dumps(action_input, ensure_ascii=False, sort_keys=True, default=str)}\n"
+                    f"Result: {detail}"
+                )
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"{event.action_name or event.action_type or 'action'} result",
-                detail=detail, status="done" if ok else "failed", seq=event.seq_no))
+                detail=detail, status="done" if ok else "failed", seq=event.seq_no,
+                step=event.step_number))
             # Buffer for the flow chart — flushed on the step's POST_STEP AGENT_CALL.
             if event.step_number is not None:
                 state._pending_step_actions.setdefault(event.step_number, []).append({
@@ -356,13 +375,12 @@ class TieredMemory(Memory):
     def _apply_agent_call(self, state: _SessionState, event: TraceEvent) -> bool:
         md = event.metadata
         changed = False
-        # Try to parse message as dict for step-level data (reasoning)
         out: Dict[str, Any] = _parse_message_dict(event.message)
 
         # ── POST_STEP: flush this step's buffered tool/skill actions ──
-        if event.step_number is not None and "reasoning" in out:
+        if event.step_number is not None:
             step = event.step_number
-            reasoning_text = (out.get("reasoning") or "").strip()
+            reasoning_text = (event.reasoning or out.get("reasoning") or "").strip()
             round_label = (reasoning_text.splitlines()[0] if reasoning_text else f"Step {step}")[:_FLOW_LABEL_MAX]
             pending = state._pending_step_actions.pop(step, [])
             for act in sorted(pending, key=lambda a: a["action_index"]):
@@ -459,16 +477,12 @@ class TieredMemory(Memory):
                 )
             })
         state.recent.append(record)
-        if len(state.recent) > self.recent_max and not state._compacting:
-            _detached(self._compact(state), "compaction")
 
     async def compact(self, session_id: str) -> bool:
-        """Fold one chunk now, without waiting for ``recent_max`` to be exceeded.
+        """Fold old closed steps after the caller measured request pressure.
 
-        The ordinary trigger counts records, which is the wrong unit when something else
-        has already measured the problem: a request that does not fit is over a token
-        budget, and thirty small records can sit under the count while three large ones
-        sit over the budget. This lets whoever measured it ask for room directly.
+        Request size, rather than record count, determines when this is called: thirty
+        small records can fit while three large ones can exceed the same token budget.
 
         Never folds below ``recent_fetch`` — that is how many records reach the prompt, so
         folding past it would buy space by removing what the next step is about to read.
@@ -479,7 +493,9 @@ class TieredMemory(Memory):
         if len(state.recent) <= self.recent_fetch:
             return False
         before = len(state.recent)
-        await self._compact(state, down_to=max(self.recent_fetch, before - self.compact_chunk))
+        # One pressure event creates one coherent checkpoint and leaves only the live
+        # tail. `_compact` still batches summarizer inputs by compact_chunk internally.
+        await self._compact(state, down_to=self.recent_fetch)
         return len(state.recent) < before
 
     async def _compact(self, state: _SessionState, *, down_to: Optional[int] = None) -> None:
@@ -524,6 +540,15 @@ class TieredMemory(Memory):
             while len(state.recent) > floor:
                 async with state._lock:
                     k = min(self.compact_chunk, len(state.recent) - floor, len(state.recent))
+                    # Never split one parallel tool batch across a checkpoint. Provider
+                    # protocols require every result to stay with its assistant tool call.
+                    records = list(state.recent)
+                    while (
+                        k < len(records)
+                        and records[k - 1].step is not None
+                        and records[k].step == records[k - 1].step
+                    ):
+                        k += 1
                     chunk = [state.recent.popleft() for _ in range(k)]
                 items = [r.as_line() for r in chunk]
                 existing = state.working[-1] if state.working else ""
@@ -547,10 +572,13 @@ class TieredMemory(Memory):
                         state.recent.extendleft(reversed(chunk))
                     outcome = "empty"
                     break
+                # Each summary is a complete replacement checkpoint, not another
+                # fragment the prompt must carry forever.
+                state.working.clear()
                 state.working.append(text)
                 chunks_done += 1
                 state.compaction = {"started_at": started_at, "chunks": chunks_done}
-                await self._record_fold(state, chunk, text)
+                await self._record_fold(state, chunk, text, existing=existing)
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -576,7 +604,9 @@ class TieredMemory(Memory):
                     f"chunk(s) for {state.session_id}"
                 )
 
-    async def _record_fold(self, state: _SessionState, chunk: list, summary: str) -> None:
+    async def _record_fold(
+        self, state: _SessionState, chunk: list, summary: str, *, existing: str = ""
+    ) -> None:
         """Tell the durable log that one summary now stands for a run of its events.
 
         Without this the two records of a session disagree after every compaction:
@@ -602,17 +632,47 @@ class TieredMemory(Memory):
         # readings are in one unit.
         from agentevolver.model.pressure import estimate_tokens
 
-        before = estimate_tokens([r.as_line() for r in chunk])
+        before = estimate_tokens([existing, *(r.as_line() for r in chunk)])
         after = estimate_tokens(summary)
         try:
             from agentevolver.trace import replace_op, trace_manager
             from agentevolver.trace.types import TraceEvent, TraceEventType
 
-            # Cite the whole span, not just these records. Memory keeps one record per
-            # *result*, while the surface also carries the assistant turn that produced
-            # it — so citing only what memory holds would under-claim, and the fold would
-            # refuse the log. The trace owns the surface; ask it what is in the range.
-            start, end = min(seqs), max(seqs)
+            # Expand result records to complete logical steps, including the AGENT_CALL
+            # that carries each step's assistant/tool-call turn.
+            steps = {record.step for record in chunk if record.step is not None}
+            candidates: List[int] = []
+            if hasattr(trace_manager, "events") and hasattr(trace_manager, "surface"):
+                by_seq = {
+                    event.seq_no: event for event in trace_manager.events(state.session_id)
+                    if event.seq_no is not None
+                }
+                candidates = [
+                    seq for seq in trace_manager.surface(state.session_id)
+                    if seq in by_seq and (
+                        seq in seqs or (
+                            by_seq[seq].step_number in steps
+                            and by_seq[seq].event_type in {
+                                TraceEventType.AGENT_CALL,
+                                TraceEventType.TOOL_CALL,
+                                TraceEventType.SKILL_CALL,
+                            }
+                        )
+                    )
+                ]
+            # Old logs and small isolated tests may not retain the live event table.
+            # Their seq range is still projectable; new live runs take the turn-aligned
+            # path above.
+            start, end = (
+                (candidates[0], candidates[-1])
+                if candidates else (min(seqs), max(seqs))
+            )
+            if (
+                state.checkpoint_seq is not None
+                and hasattr(trace_manager, "surface")
+                and state.checkpoint_seq in trace_manager.surface(state.session_id)
+            ):
+                start = state.checkpoint_seq
             shadowed = trace_manager.surface_span(state.session_id, start, end)
             if not shadowed:
                 # The surface is live state. Empty means this process did not emit these
@@ -623,7 +683,7 @@ class TieredMemory(Memory):
                 )
                 return
 
-            await trace_manager.emit(TraceEvent(
+            fold_event = TraceEvent(
                 event_type=TraceEventType.CUSTOM,
                 session_id=state.session_id,
                 label="compaction summary",
@@ -641,7 +701,9 @@ class TieredMemory(Memory):
                     # the total say compaction always helps.
                     "tokens_saved": before - after,
                 },
-            ))
+            )
+            await trace_manager.emit(fold_event)
+            state.checkpoint_seq = fold_event.seq_no
         except Exception as error:  # noqa: BLE001 — the fold itself already succeeded
             logger.warning(f"| ⚠️ {self.name}: could not record the fold in the trace ({error})")
 

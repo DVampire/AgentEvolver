@@ -155,6 +155,10 @@ class Tool(BaseModel):
         """
         return None
 
+    def will_mutate(self, arguments: Dict[str, Any]) -> Optional[bool]:
+        """Predict effects from one concrete call; argument-dependent tools override."""
+        return self.mutates
+
 class ToolConfig(BaseModel):
     """Tool configuration"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

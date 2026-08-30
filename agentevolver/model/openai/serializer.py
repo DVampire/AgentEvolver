@@ -425,5 +425,17 @@ class OpenAIResponseSerializer:
     @staticmethod
     def serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
         """Serialize a list of messages to OpenAI responses API input format."""
-        return [OpenAIResponseSerializer.serialize(m) for m in messages]
-
+        output: list[dict[str, Any]] = []
+        for message in messages:
+            if isinstance(message, AssistantMessage) and message.tool_calls:
+                if message.text:
+                    output.append(OpenAIResponseSerializer.serialize(message))
+                output.extend({
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": call.function.name,
+                    "arguments": call.function.arguments,
+                } for call in message.tool_calls)
+                continue
+            output.append(OpenAIResponseSerializer.serialize(message))
+        return output

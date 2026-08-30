@@ -286,7 +286,16 @@ class GoogleChatSerializer:
                         system_instruction += "\n" + serialized['content']
             else:
                 # Serialize user/model messages
-                gemini_contents.append(GoogleChatSerializer.serialize(message))
+                serialized = GoogleChatSerializer.serialize(message)
+                if (
+                    gemini_contents
+                    and gemini_contents[-1].get("role") == serialized.get("role")
+                    and isinstance(gemini_contents[-1].get("parts"), list)
+                    and isinstance(serialized.get("parts"), list)
+                ):
+                    gemini_contents[-1]["parts"].extend(serialized["parts"])
+                else:
+                    gemini_contents.append(serialized)
         
         return system_instruction, gemini_contents
 

@@ -1,11 +1,7 @@
 """Project a session's log into the message history a model would be sent.
 
-`Agent._derived_messages` calls this on the request path when `derive_context` is on,
-which is off by default. The switch is opt-in because turning it on changes what every
-step of every agent sees, and the first run with it on failed on every step after the
-first while reporting success: no serializer knew `ToolMessage`, this projection put each
-step's results *before* the assistant turn that produced them, and `agent_end` hardcoded
-`success=True` so nothing could contradict the measurement.
+`Agent._derived_messages` calls this on the default request path. The rendered fallback
+remains available for old configurations and for a trace that cannot be projected.
 
 What it produces is the shape the model was trained on:
 
@@ -147,9 +143,13 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
             # ("each tool_result must have a corresponding tool_use in the previous
             # message") and which failed every step after the first.
             step = getattr(event, "step_number", 0) or 0
+            visible = getattr(event, "assistant_text", None)
             messages.append(AssistantMessage(
-                content=_text(event.reasoning or event.message),
+                content=_text(
+                    visible if visible is not None else (event.reasoning or event.message)
+                ),
                 tool_calls=[_tool_call(s) for s in calls_by_step.get(step, [])],
+                provider_state=getattr(event, "provider_state", None) or {},
             ))
             flush_results()
         elif event_type == TraceEventType.AGENT_START:

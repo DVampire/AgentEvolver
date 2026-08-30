@@ -1,9 +1,8 @@
 """The derived-history switch, and what it does when the log cannot support it.
 
-`derive_context` changes what every step of every agent sees, so it is off by default
-and switched on per agent against a measurement. These tests pin the two things that
-must hold whatever the measurement says: off is exactly the old path, and on never
-silently hands the model a shorter conversation than the one that happened.
+`derive_context` changes what every step sees and is now the default. These tests pin
+both paths: disabling it is exactly the old path, and projection never silently hands
+the model a shorter conversation than the one that happened.
 """
 
 import asyncio
@@ -114,13 +113,13 @@ def _ctx(session_id="s"):
 _RENDERED = [SystemMessage(content="system"), HumanMessage(content="rendered transcript")]
 
 
-def test_it_is_off_unless_asked_for():
-    """A behavioural change to every agent is opt-in, per agent, against a measurement."""
+def test_conversation_projection_is_the_default():
+    """Agents see native assistant/tool history unless a compatibility run opts out."""
     import inspect
 
     from agentevolver.agent.types import Agent
 
-    assert inspect.signature(Agent.__init__).parameters["derive_context"].default is False
+    assert inspect.signature(Agent.__init__).parameters["derive_context"].default is True
 
 
 def test_the_projection_is_reached_only_when_the_flag_is_on():
@@ -280,10 +279,14 @@ def test_the_scaffolding_lands_after_the_history(monkeypatch):
     out = _Agent()._derived_messages(_rendered_with_scaffolding(), _ctx("s4"))
 
     assert isinstance(out[0], SystemMessage)
-    assert "<tool-context>" in out[1].text, "catalogs belong ahead of the history"
+    assert "<task>" in out[1].text, "the stable task belongs ahead of the history"
+    assert all("<tool-context>" not in message.text for message in out), (
+        "native tool definitions replace the duplicated prose catalog"
+    )
     assert "<constraints>" in out[-1].text, "per-step blocks belong after it"
+    assert "<task>\nreverse a string\n</task>" in out[1].text
     assert [type(m).__name__ for m in out[2:-1]] == [
-        "HumanMessage", "AssistantMessage", "ToolMessage",
+        "AssistantMessage", "ToolMessage",
     ]
 
 

@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.model.types import TokenUsage, BaseChatModel
+from agentevolver.model.types import CACHE_TTL, TokenUsage, BaseChatModel
 from agentevolver.message.types import Message
 from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 from agentevolver.model.llm_hub.rest import LLMHubClient
@@ -260,6 +260,14 @@ class ChatLLMHub(BaseChatModel):
         if tools:
             formatted_tools = LLMHubChatSerializer.serialize_tools(tools)
             if formatted_tools:
+                # The Claude relay accepts Anthropic cache breakpoints on its
+                # OpenAI-compatible surface. Cache the stable native tool catalog, but
+                # never send this extension to OpenAI models.
+                if "claude-opus-5" in str(self.model).lower():
+                    formatted_tools = [dict(tool) for tool in formatted_tools]
+                    formatted_tools[-1]["cache_control"] = {
+                        "type": "ephemeral", "ttl": CACHE_TTL
+                    }
                 params['tools'] = formatted_tools
         
         # Handle response_format
@@ -512,10 +520,14 @@ class ChatLLMHub(BaseChatModel):
     async def _parse_stream(self, raw):
         """Translate OpenAI-shaped chunks → canonical stream events. Unit-testable."""
         from agentevolver.model.types import (
-            TextDelta, ThinkingDelta, ToolCallStart, ToolCallArgsDelta, StreamDone, normalize_stop_reason,
+            ProviderState, TextDelta, ThinkingDelta, ToolCallStart,
+            ToolCallArgsDelta, StreamDone, normalize_stop_reason,
         )
         usage = None
         finish = None
+        reasoning_parts = []
+        reasoning_details = []
+        reasoning_signature = None
         async for chunk in raw:
             u = getattr(chunk, "usage", None)
             if u is not None:
@@ -531,7 +543,15 @@ class ChatLLMHub(BaseChatModel):
                     yield TextDelta(content)
                 rc = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
                 if rc:
+                    reasoning_parts.append(rc)
                     yield ThinkingDelta(rc)
+                extra = getattr(delta, "model_extra", None) or {}
+                details = getattr(delta, "reasoning_details", None) or extra.get("reasoning_details")
+                if details:
+                    reasoning_details.extend(details if isinstance(details, list) else [details])
+                signature = getattr(delta, "reasoning_signature", None) or extra.get("reasoning_signature")
+                if signature:
+                    reasoning_signature = signature
                 for tc in (getattr(delta, "tool_calls", None) or []):
                     idx = getattr(tc, "index", 0)
                     fn = getattr(tc, "function", None)
@@ -545,4 +565,13 @@ class ChatLLMHub(BaseChatModel):
             fr = getattr(choice, "finish_reason", None)
             if fr:
                 finish = fr
+        state = {}
+        if reasoning_parts:
+            state["reasoning_content"] = "".join(reasoning_parts)
+        if reasoning_details:
+            state["reasoning_details"] = reasoning_details
+        if reasoning_signature:
+            state["reasoning_signature"] = reasoning_signature
+        if state:
+            yield ProviderState({"llm_hub": state})
         yield StreamDone(stop_reason=normalize_stop_reason(finish), usage=usage)

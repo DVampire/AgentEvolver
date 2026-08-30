@@ -410,7 +410,11 @@ class LLMHubChatSerializer:
         """Serialize a custom message to an LLM Hub message param."""
         if isinstance(message, HumanMessage):
             _text = _splittable_text(message.content)
-            split = LLMHubChatSerializer._cache_split(_text) if _text is not None else None
+            split = (
+                (_text, "") if _text is not None and message.cache
+                else LLMHubChatSerializer._cache_split(_text) if _text is not None
+                else None
+            )
             if split is not None:
                 stable, rest = split
                 blocks: list[dict[str, Any]] = [
@@ -473,6 +477,11 @@ class LLMHubChatSerializer:
                 assistant_result['refusal'] = message.refusal
             if message.tool_calls:
                 assistant_result['tool_calls'] = [LLMHubChatSerializer._serialize_tool_call(tc) for tc in message.tool_calls]
+            # Claude-compatible relays expose signed thinking through OpenAI-shaped
+            # extension fields. Preserve whatever the relay returned on the prior turn.
+            for key, value in ((message.provider_state or {}).get("llm_hub") or {}).items():
+                if key in ("reasoning_content", "reasoning_details", "reasoning_signature"):
+                    assistant_result[key] = value
             return assistant_result
 
         elif isinstance(message, ToolMessage):

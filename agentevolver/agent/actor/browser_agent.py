@@ -226,11 +226,6 @@ class BrowserAgent(Agent):
 
         # ON_START
         await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
-            ctx=ctx,
-        )
-        await hook_manager(
             name="trace_hook",
             input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
             ctx=ctx,
@@ -274,11 +269,6 @@ class BrowserAgent(Agent):
             }
 
         # ON_STOP
-        await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
-            ctx=ctx,
-        )
         await hook_manager(
             name="trace_hook",
             input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},

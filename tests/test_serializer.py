@@ -181,6 +181,63 @@ def test_anthropic_marks_a_failed_call_rather_than_describing_it():
     assert block["is_error"] is True
 
 
+def test_anthropic_coalesces_parallel_results_and_honours_rolling_cache():
+    serializer = _serializer("anthropic", "AnthropicChatSerializer")
+    first = ToolMessage(content="one", tool_call_id="c1", name="t")
+    second = ToolMessage(content="two", tool_call_id="c2", name="t", cache=True)
+    _, messages = serializer.serialize_messages([
+        AssistantMessage(content="", tool_calls=[
+            ToolCall(id="c1", function=Function(name="t", arguments="{}")),
+            ToolCall(id="c2", function=Function(name="t", arguments="{}")),
+        ]),
+        first,
+        second,
+    ])
+    assert [message["role"] for message in messages] == ["assistant", "user"]
+    assert len(messages[1]["content"]) == 2
+    assert messages[1]["content"][-1]["cache_control"]["type"] == "ephemeral"
+
+
+def test_anthropic_replays_signed_thinking_before_tool_use():
+    serializer = _serializer("anthropic", "AnthropicChatSerializer")
+    thinking = {"type": "thinking", "thinking": "private", "signature": "signed"}
+    out = serializer.serialize(AssistantMessage(
+        content="",
+        provider_state={"anthropic": {"thinking_blocks": [thinking]}},
+        tool_calls=[ToolCall(id="c1", function=Function(name="t", arguments="{}"))],
+    ))
+
+    assert out["content"][0] == thinking
+    assert out["content"][1]["type"] == "tool_use"
+
+
+def test_llm_hub_replays_claude_reasoning_extensions():
+    serializer = _serializer("llm_hub", "LLMHubChatSerializer")
+    out = serializer.serialize_message(AssistantMessage(
+        content="",
+        provider_state={"llm_hub": {
+            "reasoning_content": "private",
+            "reasoning_signature": "signed",
+        }},
+    ))
+
+    assert out["reasoning_content"] == "private"
+    assert out["reasoning_signature"] == "signed"
+
+
+def test_responses_api_replays_assistant_function_calls_before_outputs():
+    serializer = _serializer("openai", "OpenAIResponseSerializer")
+    call = ToolCall(id="call_1", function=Function(name="write_file_tool", arguments='{"path":"a"}'))
+    out = serializer.serialize_messages([
+        AssistantMessage(content="", tool_calls=[call]), RESULT,
+    ])
+    assert out[0] == {
+        "type": "function_call", "call_id": "call_1",
+        "name": "write_file_tool", "arguments": '{"path":"a"}',
+    }
+    assert out[1]["type"] == "function_call_output"
+
+
 def test_gemini_pairs_by_name_not_by_id():
     """The reason `ToolMessage` carries a name at all.
 

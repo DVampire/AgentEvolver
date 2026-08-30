@@ -405,7 +405,11 @@ class OpenRouterChatSerializer:
         """Serialize a custom message to an OpenRouter message param."""
         if isinstance(message, HumanMessage):
             _text = _splittable_text(message.content)
-            split = OpenRouterChatSerializer._cache_split(_text) if _text is not None else None
+            split = (
+                (_text, "") if _text is not None and message.cache
+                else OpenRouterChatSerializer._cache_split(_text) if _text is not None
+                else None
+            )
             if split is not None:
                 stable, rest = split
                 blocks: list[dict[str, Any]] = [

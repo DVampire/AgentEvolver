@@ -66,12 +66,13 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`session_read_tool`](#session_read_tool) | `read_only` | no | `SessionReadTool` | `agentevolver.tool.default.session_query` |
 | [`session_search_tool`](#session_search_tool) | `read_only` | no | `SessionSearchTool` | `agentevolver.tool.default.session_query` |
 | [`session_trace_tool`](#session_trace_tool) | `read_only` | no | `SessionTraceTool` | `agentevolver.tool.default.session_query` |
+| [`swebench_pro_eval_tool`](#swebench_pro_eval_tool) | `read_only` | not declared | `SWEBenchProEvalTool` | `agentevolver.tool.default.swebench_pro_eval` |
 | [`update_goal_tool`](#update_goal_tool) | `workspace_write` | yes | `UpdateGoalTool` | `agentevolver.tool.default.goal` |
 | [`web_fetcher_tool`](#web_fetcher_tool) | `workspace_write` | no | `WebFetcherTool` | `agentevolver.tool.default.web_fetcher` |
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-42 tools.
+43 tools.
 
 ## `ask_user_question`
 
@@ -520,6 +521,16 @@ Permission mode: `read_only` · reports only
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
 | `session_id` | `str` | yes | — |
+
+## `swebench_pro_eval_tool`
+
+Run the hidden test suite on your CURRENT patch and report progress as COUNTS ONLY (how many fail_to_pass now pass, how many pass_to_pass still pass, whether resolved) — no test names, bodies, or expected outputs. A heavy, rate-limited operation.
+
+Permission mode: `read_only` · does not declare whether it changes state
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `focus` | `str` | no | `''` |
 
 ## `update_goal_tool`
 

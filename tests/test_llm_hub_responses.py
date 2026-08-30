@@ -12,6 +12,7 @@ tests pin the parts of the new client that the agent loop actually depends on.
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,6 +77,61 @@ def test_the_client_sends_no_temperature_unless_given_one():
     from agentevolver.model.llm_hub.chat import ChatLLMHub
 
     assert ChatLLMHub(model="claude-opus-5").temperature is None
+
+
+def test_opus_5_caches_the_native_tool_catalog_only_on_its_route():
+    from agentevolver.model.llm_hub.chat import ChatLLMHub
+
+    async def build(model):
+        return await ChatLLMHub(model=model)._build_params(
+            [HumanMessage(content="x")], tools=[_tool()]
+        )
+
+    opus = asyncio.run(build("claude-opus-5"))["params"]["tools"][-1]
+    gpt = asyncio.run(build("gpt-5.5"))["params"]["tools"][-1]
+
+    assert opus["cache_control"]["type"] == "ephemeral"
+    assert "cache_control" not in gpt
+
+
+def test_native_anthropic_stream_keeps_the_signed_thinking_block():
+    from agentevolver.model.anthropic.chat import ChatAnthropic
+
+    class Block(SimpleNamespace):
+        def model_dump(self, **kwargs):
+            return dict(vars(self))
+
+    async def raw():
+        yield SimpleNamespace(type="content_block_start", index=0,
+                              content_block=Block(type="thinking", thinking=""))
+        yield SimpleNamespace(type="content_block_delta", index=0,
+                              delta=SimpleNamespace(type="thinking_delta", thinking="why"))
+        yield SimpleNamespace(type="content_block_delta", index=0,
+                              delta=SimpleNamespace(type="signature_delta", signature="sig"))
+
+    acc = asyncio.run(accumulate_stream(ChatAnthropic(model="claude-opus-5")._parse_stream(raw())))
+    assert acc["thinking"] == "why"
+    assert acc["provider_state"]["anthropic"]["thinking_blocks"] == [{
+        "type": "thinking", "thinking": "why", "signature": "sig",
+    }]
+
+
+def test_llm_hub_stream_keeps_claude_reasoning_extensions():
+    from agentevolver.model.llm_hub.chat import ChatLLMHub
+
+    async def raw():
+        delta = SimpleNamespace(
+            content=None, reasoning_content="why", tool_calls=[],
+            reasoning_details=[{"type": "reasoning.text", "text": "why"}],
+            reasoning_signature="sig", model_extra={},
+        )
+        yield SimpleNamespace(usage=None, choices=[SimpleNamespace(
+            delta=delta, finish_reason="stop",
+        )])
+
+    acc = asyncio.run(accumulate_stream(ChatLLMHub(model="claude-opus-5")._parse_stream(raw())))
+    assert acc["provider_state"]["llm_hub"]["reasoning_signature"] == "sig"
+    assert acc["provider_state"]["llm_hub"]["reasoning_details"][0]["text"] == "why"
 
 
 # --------------------------------------------------------------------------- #
@@ -165,6 +221,20 @@ def test_a_function_call_is_parsed_with_its_call_id():
     assert call["name"] == "read_file_tool"
     assert call["args"] == {"path": "/tmp/a.py"}
     assert parsed.data["reasoning"] == "need to read it"
+    assert parsed.data["provider_state"]["responses"]["reasoning_items"][0]["type"] == "reasoning"
+
+
+def test_responses_reasoning_items_are_replayed_before_the_next_call():
+    parsed = _client()._parse(_RAW_TOOL_CALL)
+    state = parsed.data["provider_state"]
+    items = serialize_input([AssistantMessage(
+        content="",
+        provider_state=state,
+        tool_calls=[ToolCall(id="call_7", function=Function(
+            name="read_file_tool", arguments='{"path":"/tmp/a.py"}'))],
+    )])
+
+    assert [item["type"] for item in items] == ["reasoning", "function_call"]
 
 
 def test_malformed_arguments_are_kept_rather_than_dropped():
@@ -198,6 +268,7 @@ def test_the_result_replays_as_canonical_stream_events():
     call = acc["tool_calls"][0]
     assert (call.id, call.name, call.input) == ("call_7", "read_file_tool", {"path": "/tmp/a.py"})
     assert acc["thinking"] == "need to read it"
+    assert acc["provider_state"] == parsed.data["provider_state"]
 
 
 def test_response_format_is_refused_loudly_rather_than_reinterpreted():

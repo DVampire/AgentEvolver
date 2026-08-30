@@ -5,7 +5,7 @@ import os
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel
 
-from agentevolver.model.types import CACHE_TTL
+from agentevolver.model.types import CACHE_TTL, split_cached_prefix
 from agentevolver.message.types import (
     AssistantMessage,
     ContentPartImage,
@@ -181,7 +181,8 @@ class AnthropicChatSerializer:
         
         if isinstance(content, str):
             # Convert string to text content block
-            serialized_parts.append({"type": "text", "text": content})
+            if content:
+                serialized_parts.append({"type": "text", "text": content})
         else:
             # Process content parts
             for part in content:
@@ -207,7 +208,8 @@ class AnthropicChatSerializer:
         
         if isinstance(content, str):
             # Convert string to text content block
-            serialized_parts.append({"type": "text", "text": content})
+            if content:
+                serialized_parts.append({"type": "text", "text": content})
         else:
             # Process content parts
             for part in content:
@@ -260,22 +262,18 @@ class AnthropicChatSerializer:
         no catalog must not get a breakpoint: one placed after content that changes each step
         caches nothing and spends a cache write to find out).
         """
-        constraints = text.find("<constraints>")
-        if constraints != -1:
-            return text[:constraints], text[constraints:]
-        marker = "</capability-context>"
-        end = text.find(marker)
-        if end == -1:
-            return None
-        end += len(marker)
-        return text[:end], text[end:]
+        return split_cached_prefix(text)
 
     @staticmethod
     def serialize(message: Message) -> dict[str, Any]:
         """Serialize a custom message to an Anthropic message format."""
         if isinstance(message, HumanMessage):
-            split = (AnthropicChatSerializer._cache_split(message.content)
-                     if isinstance(message.content, str) else None)
+            text = message.content if isinstance(message.content, str) else None
+            split = (
+                (text, "") if text is not None and message.cache
+                else AnthropicChatSerializer._cache_split(text) if text is not None
+                else None
+            )
             if split is not None:
                 stable, rest = split
                 content = [{'type': 'text', 'text': stable,
@@ -307,13 +305,24 @@ class AnthropicChatSerializer:
                 return {'role': 'system', 'content': str(content)}
 
         elif isinstance(message, AssistantMessage):
-            content_parts = AnthropicChatSerializer._serialize_assistant_content(message.content)
+            # Extended-thinking blocks are provider-owned protocol state. Anthropic
+            # requires them to be passed back complete and unmodified, before the
+            # visible text/tool_use blocks from that assistant turn.
+            state = (message.provider_state or {}).get("anthropic") or {}
+            content_parts = [dict(block) for block in state.get("thinking_blocks") or []]
+            content_parts.extend(
+                AnthropicChatSerializer._serialize_assistant_content(message.content)
+            )
             result: dict[str, Any] = {'role': 'assistant'}
             
             # Add tool calls to content array
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     content_parts.append(AnthropicChatSerializer._serialize_tool_call(tool_call))
+            if message.cache and content_parts:
+                content_parts[-1]["cache_control"] = {
+                    "type": "ephemeral", "ttl": CACHE_TTL
+                }
             
             # Content is always an array (may be empty)
             result['content'] = content_parts
@@ -332,6 +341,8 @@ class AnthropicChatSerializer:
             }
             if message.is_error:
                 block["is_error"] = True
+            if message.cache:
+                block["cache_control"] = {"type": "ephemeral", "ttl": CACHE_TTL}
             return {'role': 'user', 'content': [block]}
 
         else:
@@ -361,7 +372,18 @@ class AnthropicChatSerializer:
                         system_message += "\n" + serialized['content']
             else:
                 # Serialize user/assistant messages
-                anthropic_messages.append(AnthropicChatSerializer.serialize(message))
+                serialized = AnthropicChatSerializer.serialize(message)
+                # Anthropic expresses tool results as user blocks. Coalesce adjacent
+                # turns of the same role so parallel results remain one valid reply.
+                if (
+                    anthropic_messages
+                    and anthropic_messages[-1].get("role") == serialized.get("role")
+                    and isinstance(anthropic_messages[-1].get("content"), list)
+                    and isinstance(serialized.get("content"), list)
+                ):
+                    anthropic_messages[-1]["content"].extend(serialized["content"])
+                else:
+                    anthropic_messages.append(serialized)
 
         # As a block list rather than a bare string, so it can carry a breakpoint: the
         # system prompt is fixed for a whole session and is the one part of the request
@@ -411,6 +433,13 @@ class AnthropicChatSerializer:
                 "description": function_def.get("description") or getattr(tool, "description", ""),
                 "input_schema": function_def.get("parameters") or {"type": "object", "properties": {}},
             })
+
+        # The tool catalog is stable for a run and usually large. Anthropic permits a
+        # breakpoint on a tool definition; one on the last tool caches the whole list.
+        if formatted_tools:
+            formatted_tools[-1]["cache_control"] = {
+                "type": "ephemeral", "ttl": CACHE_TTL
+            }
 
         return formatted_tools
     

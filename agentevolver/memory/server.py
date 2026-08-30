@@ -14,6 +14,7 @@ from agentevolver.logger import logger
 from agentevolver.memory.types import MemoryConfig, Memory
 from agentevolver.session import SessionContext
 from agentevolver.memory.context import MemoryContextManager
+from agentevolver.trace.types import TraceEvent
 
 class MemoryManagerServer(BaseModel):
     """Memory Manager Server for managing memory system registration and lifecycle"""
@@ -277,6 +278,27 @@ class MemoryManagerServer(BaseModel):
         if memory is None:
             return False
         return await memory.compact(session_id)
+
+    async def consume_trace_event(
+        self,
+        event: TraceEvent,
+        *,
+        memory_name: Optional[str],
+        enabled: bool = True,
+    ) -> None:
+        """Project one already-numbered Trace event into configured memory sinks."""
+        if not enabled or not memory_name:
+            return
+        names = [memory_name]
+        if memory_name != "file_system_memory":
+            names.append("file_system_memory")
+        for name in names:
+            try:
+                info = await self.get_info(name)
+                if info and info.instance is not None:
+                    await info.instance.emit(event, session_id=event.session_id or "")
+            except Exception as error:  # memory is a projection, never the fact source
+                logger.warning(f"| ⚠️ Memory projection {name!r} failed: {error}")
 
     async def clear_session(self,
                             memory_name: str,

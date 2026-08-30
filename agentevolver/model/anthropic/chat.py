@@ -240,10 +240,12 @@ class ChatAnthropic(BaseChatModel):
     async def _parse_stream(self, raw):
         """Translate Anthropic SSE events → canonical stream events. Unit-testable."""
         from agentevolver.model.types import (
-            TextDelta, ThinkingDelta, ToolCallStart, ToolCallArgsDelta, StreamDone, normalize_stop_reason,
+            ProviderState, TextDelta, ThinkingDelta, ToolCallStart,
+            ToolCallArgsDelta, StreamDone, normalize_stop_reason,
         )
         usage: Dict[str, Any] = {}
         stop = None
+        thinking_blocks: Dict[int, Dict[str, Any]] = {}
         async for ev in raw:
             t = getattr(ev, "type", None)
             if t == "message_start":
@@ -252,15 +254,24 @@ class ChatAnthropic(BaseChatModel):
                     usage.update(u.model_dump() if hasattr(u, "model_dump") else dict(u))
             elif t == "content_block_start":
                 cb = getattr(ev, "content_block", None)
-                if getattr(cb, "type", None) == "tool_use":
+                block_type = getattr(cb, "type", None)
+                if block_type == "tool_use":
                     yield ToolCallStart(index=ev.index, id=cb.id, name=cb.name)
+                elif block_type in ("thinking", "redacted_thinking"):
+                    block = cb.model_dump(exclude_none=True) if hasattr(cb, "model_dump") else dict(cb)
+                    thinking_blocks[ev.index] = block
             elif t == "content_block_delta":
                 d = ev.delta
                 dt = getattr(d, "type", None)
                 if dt == "text_delta":
                     yield TextDelta(d.text)
                 elif dt == "thinking_delta":
+                    block = thinking_blocks.setdefault(ev.index, {"type": "thinking", "thinking": ""})
+                    block["thinking"] = block.get("thinking", "") + d.thinking
                     yield ThinkingDelta(d.thinking)
+                elif dt == "signature_delta":
+                    block = thinking_blocks.setdefault(ev.index, {"type": "thinking", "thinking": ""})
+                    block["signature"] = block.get("signature", "") + d.signature
                 elif dt == "input_json_delta":
                     yield ToolCallArgsDelta(index=ev.index, partial_json=d.partial_json)
             elif t == "message_delta":
@@ -270,6 +281,12 @@ class ChatAnthropic(BaseChatModel):
                 u = getattr(ev, "usage", None)
                 if u is not None:
                     usage.update(u.model_dump() if hasattr(u, "model_dump") else dict(u))
+        if thinking_blocks:
+            yield ProviderState({
+                "anthropic": {
+                    "thinking_blocks": [thinking_blocks[i] for i in sorted(thinking_blocks)]
+                }
+            })
         yield StreamDone(stop_reason=normalize_stop_reason(stop), usage=usage or None)
 
     async def _format_response(

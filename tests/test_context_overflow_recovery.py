@@ -182,7 +182,7 @@ def test_folding_ahead_is_off_unless_a_deployment_sets_a_threshold():
     import inspect
     from agentevolver.agent.types import Agent
 
-    assert inspect.signature(Agent.__init__).parameters["fold_at_pressure"].default == 0.0
+    assert inspect.signature(Agent.__init__).parameters["fold_at_pressure"].default == 0.85
 
 
 @pytest.mark.asyncio

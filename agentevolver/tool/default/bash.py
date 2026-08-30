@@ -2,6 +2,7 @@
 import asyncio
 import datetime as _dt
 import os
+import re
 import secrets
 import signal
 import sys
@@ -310,6 +311,43 @@ class BashTool(Tool):
             return PermissionRequest(
                 op=Operation.BASH, target=str(arguments.get("command") or "")
             )
+
+    def will_mutate(self, arguments: Dict[str, Any]) -> Optional[bool]:
+        """Recognise ordinary inspection commands for the no-progress guard."""
+        command = str(arguments.get("command") or "").strip()
+        if not command:
+            return False
+        # Ignore stderr/stdout disposal; other redirection writes a file.
+        effect_text = re.sub(r"\b[012]?>\s*/dev/null\b", "", command)
+        if re.search(
+            r"(?:^|[;&|]\s*)(?:rm|mv|cp|mkdir|touch|install|patch|tee)\b|"
+            r"\bsed\s+(?:-[A-Za-z]*i\b|--in-place\b)|"
+            r"\b(?:git\s+)?(?:add|commit|apply|reset|checkout)\b|"
+            r"(?<![012])>{1,2}",
+            effect_text,
+            re.IGNORECASE,
+        ):
+            return True
+
+        read_only = {
+            "cat", "cd", "cut", "diff", "du", "env", "find", "git", "grep",
+            "head", "ls", "pwd", "rg", "sed", "sort", "stat", "tail", "test",
+            "true", "uniq", "wc", "which",
+        }
+        segments = [part.strip() for part in re.split(r"&&|\|\||[;|]", effect_text)]
+        for segment in segments:
+            if not segment:
+                continue
+            words = segment.split()
+            while words and ("=" in words[0] or words[0] in {"command", "env", "sudo"}):
+                words.pop(0)
+            if not words or os.path.basename(words[0]) not in read_only:
+                return None
+            if words[0] == "git" and len(words) > 1 and words[1] not in {
+                "branch", "diff", "log", "rev-parse", "show", "status",
+            }:
+                return None
+        return False
 
     async def __call__(
         self,

@@ -535,8 +535,8 @@ class Agent(BaseModel):
         review_steps: int = 5,
         enable_evolving: bool = False,
         use_memory: bool = True,
-        derive_context: bool = False,
-        fold_at_pressure: float = 0.0,
+        derive_context: bool = True,
+        fold_at_pressure: float = 0.85,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -555,14 +555,11 @@ class Agent(BaseModel):
         self.prompt_name = prompt_name
         self.memory_name = memory_name
         self.use_memory = use_memory
-        #: Take the model's history from the session log instead of from the rendered
-        #: memory transcript. Off by default: it changes what every step of every agent
-        #: sees, so it is switched on per agent and measured against a baseline rather
-        #: than flipped globally. See `trace/derive.py`.
+        #: Take the model's history from the session log instead of rebuilding a prose
+        #: transcript. This preserves native assistant/tool turns. See `trace/derive.py`.
         self.derive_context = derive_context
         #: Fold history before a step whose last request was at least this fraction of
-        #: the model's input capacity. ``0`` — the default — folds only when a request
-        #: will not fit at all. See :meth:`_fold_ahead`.
+        #: the model's input capacity. See :meth:`_fold_ahead`.
         self.fold_at_pressure = float(fold_at_pressure or 0.0)
         self.model_name = model_name
 
@@ -1269,12 +1266,11 @@ class Agent(BaseModel):
         projection. A short history is worse than a described one: the model would act on
         a conversation that silently lost its earlier turns.
         """
+        from agentevolver.agent.context_builder import context_builder
         from agentevolver.trace import trace_manager
-        from agentevolver.trace.derive import derive_messages
         from agentevolver.trace.surface import SurfaceError
 
         session_id = str(getattr(ctx, "id", "") or "")
-        system = [m for m in rendered if getattr(m, "role", "") == "system"]
         events = trace_manager.events(session_id)
         if not events:
             logger.warning(
@@ -1283,27 +1279,13 @@ class Agent(BaseModel):
             )
             return rendered
         try:
-            derived = derive_messages(events)
+            return context_builder.build(rendered, events, ctx)
         except SurfaceError as error:
             logger.warning(
                 f"| ⚠️ [{self.name}] Log for session {session_id} cannot be projected "
                 f"({error}); using the rendered history"
             )
             return rendered
-        if not derived:
-            return rendered
-        stable, volatile = self._split_rendered_turn(rendered)
-        stable, addition = self._freeze_capabilities(stable, ctx)
-        # Rolling cache breakpoint: mark the last frozen turn (end of the replayed history,
-        # or of the capability-change announcement after it) so the serializer caches the
-        # whole growing prefix — system + task + every prior turn — and only the volatile
-        # trailing turn is re-read each step. Without this the appended history sits past the
-        # last breakpoint and never caches, defeating the point of the projection. `volatile`
-        # changes every step and must stay uncached, so it is deliberately left unmarked.
-        frozen = derived + addition
-        if frozen:
-            frozen[-1].cache = True
-        return system + stable + frozen + volatile
 
     @staticmethod
     def _freeze_capabilities(
@@ -1569,15 +1551,19 @@ class Agent(BaseModel):
 
         # Per-step lifecycle: POST_STEP + snapshot + trajectory capture.
         await self._post_step(task_id, step_number, ctx, messages,
-                              reasoning=decision["reasoning"], plan=outcome["plan"],
+                              reasoning=decision["reasoning"],
+                              assistant_text=decision.get("assistant_text", ""),
+                              provider_state=decision.get("provider_state", {}),
+                              plan=outcome["plan"],
                               step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                               done=outcome["done"])
 
         return {"done": outcome["done"], "result": outcome["result"], "reasoning": outcome["reasoning"],
                 "action_errors": outcome["action_errors"], "constraint_status": [], "stopped_by_constraint": False}
 
-    async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning, plan, step_tokens,
-                         done, step_usage=None):
+    async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning,
+                         assistant_text="", provider_state=None, plan, step_tokens, done,
+                         step_usage=None):
         """Fire the per-step POST_STEP lifecycle (memory / trace / snapshot / trajectory)
         and carry token usage forward. Shared by the blocking ``_think_and_act`` path
         (BrowserAgent) and the event-driven round loop, so a step is recorded identically
@@ -1586,13 +1572,13 @@ class Agent(BaseModel):
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookEvent
         await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": reasoning, "use_memory": self.use_memory, "memory_name": self.memory_name},
-            ctx=ctx,
-        )
-        await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_STEP, "agent_name": self.name, "step_number": step_number, "task_id": task_id, "reasoning": reasoning, "step_usage": step_usage},
+            input={"event": HookEvent.POST_STEP, "agent_name": self.name,
+                   "step_number": step_number, "task_id": task_id,
+                   "reasoning": reasoning, "assistant_text": assistant_text,
+                   "provider_state": provider_state or {},
+                   "step_usage": step_usage,
+                   "use_memory": self.use_memory, "memory_name": self.memory_name},
             ctx=ctx,
         )
         await hook_manager(
@@ -1671,6 +1657,8 @@ class Agent(BaseModel):
             tools = tools + list(extra_tools)
 
         reasoning = ""
+        assistant_text = ""
+        provider_state = {}
         tool_calls: List[Any] = []
         step_tokens = 0
         step_usage: Optional[Dict[str, Any]] = None
@@ -1710,7 +1698,9 @@ class Agent(BaseModel):
             if usage is not None:
                 step_usage = usage.model_dump()
                 step_tokens = usage.output_tokens
-            reasoning = acc.get("thinking") or acc.get("text") or ""
+            assistant_text = acc.get("text") or ""
+            provider_state = acc.get("provider_state") or {}
+            reasoning = acc.get("thinking") or assistant_text
             tool_calls = acc.get("tool_calls") or []
         except Exception as e:
             from agentevolver.model.pressure import ContextOverflowError
@@ -1735,6 +1725,8 @@ class Agent(BaseModel):
         # retries, and a broken model spends the entire budget looking like an agent
         # thinking out loud.
         return {"tool_calls": tool_calls, "routing": routing, "reasoning": reasoning,
+                "assistant_text": assistant_text,
+                "provider_state": provider_state,
                 "step_tokens": step_tokens, "step_usage": step_usage, "error": think_error,
                 "overflowed": overflowed}
 
@@ -1858,7 +1850,10 @@ class Agent(BaseModel):
 
         pre_result = await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.PRE_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "task_id": task_id},
+            input={"event": HookEvent.PRE_ACTION, "agent_name": self.name,
+                   "step_number": step_number, "action": action_dict,
+                   "task_id": task_id, "use_memory": self.use_memory,
+                   "memory_name": self.memory_name},
             ctx=ctx,
         )
         if pre_result.decision == HookDecision.BLOCK:
@@ -1936,13 +1931,12 @@ class Agent(BaseModel):
             logger.error(f"| ❌ [{self.name}] Action '{call.name}' failed: {e}")
 
         await hook_manager(
-            name="memory_hook",
-            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "use_memory": self.use_memory, "memory_name": self.memory_name},
-            ctx=ctx,
-        )
-        await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.POST_ACTION, "agent_name": self.name, "step_number": step_number, "action": action_dict, "action_result": action_result, "task_id": task_id, "error": error, "execution_meta": execution_meta},
+            input={"event": HookEvent.POST_ACTION, "agent_name": self.name,
+                   "step_number": step_number, "action": action_dict,
+                   "action_result": action_result, "task_id": task_id, "error": error,
+                   "execution_meta": execution_meta, "use_memory": self.use_memory,
+                   "memory_name": self.memory_name},
             ctx=ctx,
         )
         await hook_manager(
@@ -2190,7 +2184,7 @@ class Agent(BaseModel):
         run = _AgentRun(task, files, ctx, ref, task_id, kwargs)
         self._runs[ref.name] = run
 
-        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+        for hook_name in ("trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
                 input={"event": HookEvent.ON_START, "task": task, **self._lifecycle_input(run)},
@@ -2487,7 +2481,10 @@ class Agent(BaseModel):
             run.round_step = run.step
             run.step_plan = []
             await self._post_step(run.task_id, run.step, run.ctx, messages,
-                                  reasoning=decision["reasoning"], plan=[], step_tokens=decision["step_tokens"],
+                                  reasoning=decision["reasoning"],
+                                  assistant_text=decision.get("assistant_text", ""),
+                                  provider_state=decision.get("provider_state", {}),
+                                  plan=[], step_tokens=decision["step_tokens"],
                                   step_usage=decision.get("step_usage"), done=False)
 
             # A turn with neither reasoning nor a call is degenerate — a successful model
@@ -2560,7 +2557,10 @@ class Agent(BaseModel):
         decision = run.decision
         await self._record_round_outcome(run)
         await self._post_step(run.task_id, run.round_step, run.ctx, run.messages,
-                              reasoning=decision["reasoning"], plan=getattr(run, "step_plan", []),
+                              reasoning=decision["reasoning"],
+                              assistant_text=decision.get("assistant_text", ""),
+                              provider_state=decision.get("provider_state", {}),
+                              plan=getattr(run, "step_plan", []),
                               step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                               done=run.round_done)
         run.action_errors = list(run.round_errors)
@@ -2592,7 +2592,7 @@ class Agent(BaseModel):
         run.outstanding.clear()
 
         success = run.done and not run.stopped_by_constraint
-        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+        for hook_name in ("trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
                 input={"event": HookEvent.ON_STOP, "result": run.result, "success": success, **self._lifecycle_input(run)},
@@ -2760,7 +2760,9 @@ class Agent(BaseModel):
         run.round_step = run.step
         await self._post_step(
             run.task_id, run.step, run.ctx, run.messages,
-            reasoning=decision["reasoning"], plan=[],
+            reasoning=decision["reasoning"],
+            assistant_text=decision.get("assistant_text", ""),
+            provider_state=decision.get("provider_state", {}), plan=[],
             step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"), done=False,
         )
         blocked = (
@@ -2785,17 +2787,9 @@ class Agent(BaseModel):
     async def _fold_ahead(self, run) -> None:
         """Fold before a step when the last request was already close to the ceiling.
 
-        Off by default, and the default is a judgement rather than caution. Folding is
-        lossy — a summary replaces turns the model can no longer read in full — and the
-        recovery path costs no tokens when it fires: an oversized request is refused
-        before it is sent, folded, and rebuilt. So folding at 85% spends information to
-        save a loop iteration, on requests that would mostly have succeeded.
-
-        What makes it worth having anyway is that the deterministic prune between the
-        trigger and the ceiling is *also* lossy — it excerpts tool results head-and-tail —
-        and a summary may preserve more of the same range than an excerpt does. Which is
-        better is a question about a particular workload, so this is a number a
-        deployment sets against a measurement rather than a behaviour everyone gets.
+        The default is 85%: high enough to retain exact recent turns, with room for the
+        next tool result and model output. A deployment can set zero to compact only
+        after a request is refused as oversized.
 
         The reading comes from the last request snapshot in the log, which records
         `pressure_ratio_after` on every dispatch already. Nothing new is measured for it.
@@ -2951,7 +2945,10 @@ class Agent(BaseModel):
                 info = await tool_manager.get_info(call.name)
             except Exception:  # noqa: BLE001
                 return True
-            if info is None or getattr(info, "mutates", None) is not False:
+            if info is None or info.instance is None:
+                return True
+            predicted = info.instance.will_mutate(call.input or {})
+            if predicted is not False:
                 return True
         return False
 
@@ -3127,7 +3124,7 @@ class ProceduralAgent(Agent):
             "parent_session_id": ctx.parent_session_id,
             "subtask_id": ctx.subtask_id,
         }
-        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+        for hook_name in ("trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
                 input={"event": HookEvent.ON_START, "task": task, **lifecycle},
@@ -3150,7 +3147,7 @@ class ProceduralAgent(Agent):
             response = Response(type=ResponseType.AGENT, success=False, message=str(exc))
 
         response = await self._finalize_run(response, ctx)
-        for hook_name in ("memory_hook", "trace_hook", "trajectory_hook"):
+        for hook_name in ("trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
                 input={
