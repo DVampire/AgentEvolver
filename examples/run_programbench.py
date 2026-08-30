@@ -583,6 +583,11 @@ def _summarise_spend(session_root: str, instance_id: str) -> dict:
                     ev = json.loads(line)
                 except Exception:
                     continue
+                # ``agent_end`` carries the cumulative run usage for reconciliation.
+                # Only ``agent_call`` represents one billable model request; summing every
+                # event with usage would count the entire run twice at shutdown.
+                if ev.get("event_type") != "agent_call":
+                    continue
                 usage = ev.get("usage")
                 if not isinstance(usage, dict):
                     continue

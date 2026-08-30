@@ -97,6 +97,8 @@ def test_summarise_spend_rolls_up_the_trace(tmp_path):
          "usage": {"input_tokens": 1000, "output_tokens": 500, "cost": 0.0175}},
         {"event_type": "agent_call", "duration_ms": 800,
          "usage": {"input_tokens": 2000, "output_tokens": 100, "cost": 0.0125}},
+        {"event_type": "agent_end", "duration_ms": 2000,
+         "usage": {"input_tokens": 3000, "output_tokens": 600, "cost": 0.03}},
         {"event_type": "tool_call"},  # no usage → not a call
     ])
     s = launcher._summarise_spend(root, "inst")
