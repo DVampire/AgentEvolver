@@ -16,8 +16,6 @@ from markitdown.converters._exiftool import exiftool_metadata
 from markitdown._stream_info import StreamInfo
 from markitdown._base_converter import DocumentConverterResult
 from markitdown._exceptions import MissingDependencyException, MISSING_DEPENDENCY_MESSAGE
-import pdfminer
-import pdfminer.high_level
 
 
 from agentevolver.model import model_manager
@@ -212,6 +210,13 @@ class PdfWithTableConverter(PdfConverter):
             )
 
         assert isinstance(file_stream, io.IOBase)  # for mypy
+
+        # Imported here rather than at module scope for the same reason as camelot
+        # above: pdfminer pulls in the ``cryptography`` Rust binding, which is linked
+        # against a newer glibc than many task images ship (e.g. Debian bullseye's
+        # 2.31). At module scope that made ``agentevolver.tool`` unimportable in those
+        # images, over a PDF text extractor such a run would never call.
+        import pdfminer.high_level
 
         tables = read_tables_from_stream(file_stream)
         num_tables = tables.n

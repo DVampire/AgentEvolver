@@ -179,7 +179,15 @@ def test_a_commented_out_capability_still_names_one_that_exists():
     )
 
 
-def test_the_two_programbench_arms_differ_only_in_evolution():
+@pytest.mark.parametrize(
+    "evolving_name,baseline_name",
+    [
+        ("programbench_agent", "programbench_agent_baseline"),
+        ("swebench_pro_agent", "swebench_pro_agent_baseline"),
+    ],
+    ids=lambda p: p,
+)
+def test_the_two_benchmark_arms_differ_only_in_evolution(evolving_name, baseline_name):
     """The comparison is only worth reading if the arms are equal in everything else.
 
     Both files say so, in the control arm's own words: "the two arms differ only in the
@@ -192,7 +200,9 @@ def test_the_two_programbench_arms_differ_only_in_evolution():
     then a measurement of the difference nobody meant to introduce.
 
     The permitted difference is exactly the evolution capability: the three
-    generate/optimize/evaluate agents, `evolution_tool`, and `self_evolving_skill`.
+    generate/optimize/evaluate agents, `evolution_tool`, and `self_evolving_skill`. This
+    holds for every benchmark whose config ships an evolution arm and a control arm
+    (ProgramBench, SWE-bench Pro).
     """
     import argparse
     import contextlib
@@ -209,13 +219,13 @@ def test_the_two_programbench_arms_differ_only_in_evolution():
                "memory_names", "connector_names", "plugin_names", "workflow_names")
 
     arms = {}
-    for name in ("programbench_agent", "programbench_agent_baseline"):
+    for name in (evolving_name, baseline_name):
         with contextlib.redirect_stdout(io.StringIO()):
             config.initialize(config_path=str(CONFIGS / f"{name}.py"), args=argparse.Namespace())
         arms[name] = {key: set(getattr(config, key, None) or []) for key in ROSTERS}
         arms[name]["model_name"] = getattr(config, "model_name", None)
 
-    evolving, baseline = arms["programbench_agent"], arms["programbench_agent_baseline"]
+    evolving, baseline = arms[evolving_name], arms[baseline_name]
 
     assert evolving["model_name"] == baseline["model_name"], (
         f"the arms run different models ({evolving['model_name']} vs "
