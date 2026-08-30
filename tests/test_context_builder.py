@@ -3,7 +3,13 @@ import asyncio
 from agentevolver.agent.context_builder import ContextBuilder, strip_rendered_comments
 from agentevolver.hook.default.trace import TraceHook
 from agentevolver.hook.types import HookContext, HookEvent
-from agentevolver.message import AssistantMessage, HumanMessage, SystemMessage, ToolMessage
+from agentevolver.message import (
+    AssistantMessage,
+    CompactionMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from agentevolver.trace.surface import replace_op
 from agentevolver.trace.types import (
     TraceEvent,
@@ -36,6 +42,13 @@ def test_builder_keeps_anchor_checkpoint_recent_turns_and_live_tail_separate():
         metadata={"type": "compaction"},
         surface_op=replace_op(0, 3),
         source_event_seqs=[0, 2, 3],
+        provider_state={
+            "responses": {
+                "compaction_items": [
+                    {"type": "compaction", "encrypted_content": "opaque"}
+                ]
+            }
+        },
     ))
     events.extend(_number([
         tool_start_event("s", "t", "a", 2, 0, "bash_tool", {"command": "git diff"}, "c2"),
@@ -56,12 +69,13 @@ def test_builder_keeps_anchor_checkpoint_recent_turns_and_live_tail_separate():
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
 
     assert [type(message) for message in messages] == [
-        SystemMessage, HumanMessage, HumanMessage, AssistantMessage, ToolMessage,
+        SystemMessage, HumanMessage, CompactionMessage, AssistantMessage, ToolMessage,
         HumanMessage,
     ]
     assert messages[1].cache is True
     assert "fix the bug" in messages[1].text
     assert "Found the faulty branch." in messages[2].text
+    assert messages[2].provider_state["responses"]["compaction_items"][0]["type"] == "compaction"
     assert "old" not in "\n".join(message.text for message in messages)
     assert messages[3].tool_calls[0].id == messages[4].tool_call_id == "c2"
     assert messages[3].cache is True

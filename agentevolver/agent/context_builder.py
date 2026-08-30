@@ -9,7 +9,13 @@ from __future__ import annotations
 import re
 from typing import Any, List, Tuple
 
-from agentevolver.message.types import AssistantMessage, HumanMessage, Message, ToolMessage
+from agentevolver.message.types import (
+    AssistantMessage,
+    CompactionMessage,
+    HumanMessage,
+    Message,
+    ToolMessage,
+)
 from agentevolver.trace.derive import _marker, derive_messages
 from agentevolver.trace.surface import fold_surface
 from agentevolver.trace.types import TraceEventType
@@ -71,8 +77,9 @@ class ContextBuilder:
 
         task = self._task(events)
         checkpoints = self._checkpoints(events)
+        checkpoint_texts = [str(event.message or "") for event in checkpoints]
         recent = self._bound_tool_results(
-            self._recent_messages(derived, task, checkpoints)
+            self._recent_messages(derived, task, checkpoint_texts)
         )
 
         if not anchor:
@@ -88,10 +95,16 @@ class ContextBuilder:
                 text = f"{task_block}\n{text}"
             anchor[-1] = anchor[-1].model_copy(update={"content": text})
         anchor[-1].cache = True
-        checkpoint = [
-            HumanMessage(content=f"<memory-checkpoint>\n{text}\n</memory-checkpoint>")
-            for text in checkpoints[-1:]
-        ]
+        checkpoint = []
+        if checkpoints:
+            event = checkpoints[-1]
+            checkpoint.append(CompactionMessage(
+                content=(
+                    f"<memory-checkpoint>\n{event.message or ''}\n"
+                    "</memory-checkpoint>"
+                ),
+                provider_state=getattr(event, "provider_state", None) or {},
+            ))
 
         frozen = checkpoint + recent
         if frozen:
@@ -114,10 +127,10 @@ class ContextBuilder:
         return ""
 
     @staticmethod
-    def _checkpoints(events: List[Any]) -> List[str]:
+    def _checkpoints(events: List[Any]) -> List[Any]:
         surface = set(fold_surface(events)["nodes"])
         return [
-            str(event.message or "")
+            event
             for event in events
             if event.seq_no in surface
             and event.event_type == TraceEventType.CUSTOM
@@ -134,6 +147,10 @@ class ContextBuilder:
         recent: List[Message] = []
         task_removed = False
         for message in messages:
+            if isinstance(message, CompactionMessage):
+                # Reinstalled once below from its Trace event, where the opaque native
+                # payload is available alongside the readable fallback checkpoint.
+                continue
             if getattr(message, "role", "") == "user":
                 text = getattr(message, "text", "") or ""
                 if not task_removed and text == task:

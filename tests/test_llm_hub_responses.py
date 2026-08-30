@@ -19,6 +19,7 @@ import pytest
 from agentevolver.agent.native_tools import _SchemaTool
 from agentevolver.message.types import (
     AssistantMessage,
+    CompactionMessage,
     Function,
     HumanMessage,
     SystemMessage,
@@ -178,6 +179,47 @@ def test_system_messages_stay_as_items():
                              HumanMessage(content="c")])
 
     assert [i["role"] for i in items] == ["system", "system", "user"]
+
+
+def test_a_native_compaction_item_is_replayed_without_flattening_to_user_text():
+    opaque = {"type": "compaction", "encrypted_content": "opaque-1"}
+    items = serialize_input([
+        CompactionMessage(
+            content="readable fallback",
+            provider_state={"responses": {"compaction_items": [opaque]}},
+        ),
+        HumanMessage(content="continue"),
+    ])
+
+    assert items == [opaque, {"role": "user", "content": "continue"}]
+
+
+@pytest.mark.asyncio
+async def test_native_compaction_keeps_later_user_items_but_not_the_task_anchor():
+    async def compact(**kwargs):
+        assert kwargs["input"][0] == {"role": "user", "content": "task"}
+        return SimpleNamespace(model_dump=lambda: {
+            "output": [
+                {"type": "message", "role": "user", "content": "task"},
+                {"type": "message", "role": "user", "content": "Error: retry"},
+                {"type": "compaction", "encrypted_content": "opaque-2"},
+            ],
+            "usage": {"input_tokens": 12},
+        })
+
+    client = _client()
+    client._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(compact=compact)
+    )
+    result = await client.compact_history([
+        HumanMessage(content="task"),
+        HumanMessage(content="Error: retry"),
+    ])
+
+    saved = result["provider_state"]["responses"]["compaction_items"]
+    assert [item["type"] for item in saved] == ["message", "compaction"]
+    assert saved[0]["content"] == "Error: retry"
+    assert result["usage"] == {"input_tokens": 12}
 
 
 def test_reasoning_is_accepted_in_either_catalog_shape():

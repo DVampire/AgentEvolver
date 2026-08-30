@@ -356,6 +356,27 @@ def test_step_retention_does_not_fold_when_only_the_exact_tail_exists():
     assert asyncio.run(memory.compact("s1", keep_steps=3)) is False
 
 
+@pytest.mark.asyncio
+async def test_an_assistant_only_turn_has_a_complete_step_retention_handle():
+    """Closed turns without tools must still age into the next checkpoint."""
+    from agentevolver.trace.types import TraceEvent, TraceEventType
+
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    event = TraceEvent(
+        event_type=TraceEventType.AGENT_CALL,
+        session_id="s1",
+        step_number=7,
+        seq_no=42,
+        assistant_text="I verified the fix.",
+    )
+
+    await memory.emit(event, "s1")
+
+    assert [(record.step, record.seq) for record in state.recent] == [(7, 42)]
+    assert state.recent[0].detail == "I verified the fix."
+
+
 def test_a_history_already_at_that_floor_reports_that_it_folded_nothing():
     """`False` is what stops the caller asking again.
 

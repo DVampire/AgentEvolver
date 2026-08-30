@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from agentevolver.message.types import (
     AssistantMessage,
+    CompactionMessage,
     Function,
     HumanMessage,
     Message,
@@ -165,7 +166,10 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
             # same reason dsh does it: only message-producing roles reach the model, and
             # a summary is context handed to the assistant, not something it said.
             flush_results()
-            messages.append(HumanMessage(content=_text(event.message)))
+            messages.append(CompactionMessage(
+                content=_text(event.message),
+                provider_state=getattr(event, "provider_state", None) or {},
+            ))
         elif event_type == TraceEventType.ERROR:
             flush_results()
             messages.append(HumanMessage(content=f"Error: {_text(event.error or event.message)}"))

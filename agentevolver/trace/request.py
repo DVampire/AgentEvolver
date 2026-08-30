@@ -27,6 +27,7 @@ REQUEST_SNAPSHOT_VERSION = 2
 # durable snapshot. Passing arbitrary kwargs through would eventually persist a vendor
 # credential, transport object, or callback that happened to ride beside the request.
 _BEHAVIOUR_PARAMETERS = (
+    "operation",
     "temperature",
     "max_tokens",
     "max_completion_tokens",

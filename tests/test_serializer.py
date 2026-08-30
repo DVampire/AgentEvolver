@@ -21,8 +21,9 @@ import pytest
 
 import agentevolver.message.types as message_types
 import agentevolver.model as model_package
-from agentevolver.message.types import (AssistantMessage, Function, HumanMessage,
-                                        Message, SystemMessage, ToolCall, ToolMessage)
+from agentevolver.message.types import (AssistantMessage, CompactionMessage, Function,
+                                        HumanMessage, Message, SystemMessage, ToolCall,
+                                        ToolMessage)
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +36,7 @@ from agentevolver.message.types import (AssistantMessage, Function, HumanMessage
 SAMPLES = {
     SystemMessage: SystemMessage(content="rules"),
     HumanMessage: HumanMessage(content="do the thing"),
+    CompactionMessage: CompactionMessage(content="checkpoint"),
     AssistantMessage: AssistantMessage(content="on it", tool_calls=[ToolCall(
         id="call_1", function=Function(name="write_file_tool", arguments='{"path": "a"}'))]),
     ToolMessage: ToolMessage(content="wrote a", tool_call_id="call_1",

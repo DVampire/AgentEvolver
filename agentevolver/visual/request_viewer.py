@@ -272,6 +272,18 @@ def _tool_argument_values(messages: list[Any]) -> list[Any]:
     return values
 
 
+def _body_after_prefix_tokens(messages: list[Any]) -> int:
+    """Estimate the mutable body after the latest task/checkpoint prefix."""
+    boundary = -1
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            continue
+        layer = _message_layer(message, index, len(messages))
+        if layer in {"task", "checkpoint"}:
+            boundary = index
+    return _tokens(messages[boundary + 1:]) if boundary + 1 < len(messages) else 0
+
+
 def _request_diagnostics(
     event: TraceEvent,
     snapshot: dict[str, Any],
@@ -297,6 +309,7 @@ def _request_diagnostics(
         if isinstance(message, dict) and message.get("provider_state")
     ]
     arguments = _tool_argument_values(messages)
+    body_tokens = _body_after_prefix_tokens(messages)
 
     usage = usage or {}
     input_tokens = int(usage.get("input_tokens") or 0)
@@ -325,6 +338,7 @@ def _request_diagnostics(
     )
 
     slope = 0.0
+    body_slope = 0.0
     if previous_event is not None:
         previous = previous_event.input or {}
         previous_pressure = previous.get("pressure") or {}
@@ -333,27 +347,41 @@ def _request_diagnostics(
             1, int(event.step_number or 0) - int(previous_event.step_number or 0)
         )
         slope = max(0.0, (current - previous_tokens) / step_delta)
+        previous_body = _body_after_prefix_tokens(previous.get("messages") or [])
+        body_slope = max(0.0, (body_tokens - previous_body) / step_delta)
 
-    def projected_steps(target: int) -> Optional[int]:
+    def projected_steps(value: int, target: int, growth: float) -> Optional[int]:
         if not target:
             return None
-        if current >= target:
+        if value >= target:
             return 0
-        if slope <= 0:
+        if growth <= 0:
             return None
-        return max(1, math.ceil((target - current) / slope))
+        return max(1, math.ceil((target - value) / growth))
 
     compaction_candidates = []
     after_steps = int(policy.get("compact_after_steps") or 0)
     if after_steps:
         compaction_candidates.append(max(0, after_steps - recent_steps))
-    token_eta = projected_steps(int(policy.get("compact_at_tokens") or 0))
+    body_eta = projected_steps(
+        body_tokens,
+        int(policy.get("compact_body_tokens") or 0),
+        body_slope,
+    )
+    if body_eta is not None:
+        compaction_candidates.append(body_eta)
+    token_eta = projected_steps(
+        current,
+        int(policy.get("compact_at_tokens") or 0),
+        slope,
+    )
     if token_eta is not None:
         compaction_candidates.append(token_eta)
 
     return {
         "fixed_prefix_tokens": fixed_tokens,
         "rolling_prefix_tokens": rolling_tokens,
+        "body_after_prefix_tokens": body_tokens,
         "provider_state_tokens": _tokens(provider_states) if provider_states else 0,
         "tool_argument_tokens": _tokens(arguments) if arguments else 0,
         "cache_read_tokens": cache_read,
@@ -363,8 +391,9 @@ def _request_diagnostics(
         "cost": usage.get("cost"),
         "cache_hit_ratio": cache_hit,
         "compaction_eta": min(compaction_candidates) if compaction_candidates else None,
-        "capacity_eta": projected_steps(capacity),
+        "capacity_eta": projected_steps(current, capacity, slope),
         "growth_tokens_per_step": slope,
+        "body_growth_tokens_per_step": body_slope,
     }
 
 
@@ -380,6 +409,7 @@ def _render_diagnostics(metrics: dict[str, Any]) -> str:
     cards = [
         ("Fixed prefix", f'≈{metrics["fixed_prefix_tokens"]:,}', "tokens"),
         ("Rolling prefix", f'≈{metrics["rolling_prefix_tokens"]:,}', "tokens cumulative"),
+        ("Body after prefix", f'≈{metrics["body_after_prefix_tokens"]:,}', "tokens"),
         ("Provider state", f'≈{metrics["provider_state_tokens"]:,}', "tokens"),
         ("Tool arguments", f'≈{metrics["tool_argument_tokens"]:,}', "tokens"),
         ("Cache hit", hit_text, f'{metrics["cache_read_tokens"]:,} read tokens'),
@@ -390,6 +420,7 @@ def _render_diagnostics(metrics: dict[str, Any]) -> str:
         ("Compaction", _eta(metrics["compaction_eta"]), "at current request"),
         ("Context capacity", _eta(metrics["capacity_eta"]), "at current growth"),
         ("Growth", f'≈{metrics["growth_tokens_per_step"]:,.0f}', "tokens / step"),
+        ("Body growth", f'≈{metrics["body_growth_tokens_per_step"]:,.0f}', "tokens / step"),
     ]
     return '<div class="diagnostic-grid">' + "".join(
         '<article class="diagnostic-card">'
@@ -460,6 +491,7 @@ def render_request_html(
     )
 
     route_rows = [
+        ("Operation", (snapshot.get("parameters") or {}).get("operation") or "generate"),
         ("Requested", snapshot.get("requested_model") or "—"),
         ("Routed", snapshot.get("routed_model") or "—"),
         ("Provider", snapshot.get("provider") or "—"),

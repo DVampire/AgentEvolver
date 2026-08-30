@@ -24,6 +24,15 @@ to callers and multi-agent orchestrators.
 Agent owns single-agent behavior. Cross-agent scheduling belongs to Runtime, Protocol, and
 Workflow rather than to an Agent subtype.
 
+## MetaAgent uses the same loop
+
+MetaAgent is not a benchmark-only implementation. It runs the same think/dispatch loop
+and receives a broader native action roster assembled from the six evolvable capability
+families: `tool`, `skill`, `connector`, `agent`, `workflow`, and `plugin`. Baseline configs
+disable promotion with `enable_evolving=False`; evolution configs change policy, not the
+conversation or dispatch architecture. This keeps checkpointing, provider-state replay,
+tool execution, and capability lineage identical in both modes.
+
 ## Agent versus Tool execution policy
 
 Agent still owns decisions that apply to every capability kind: assembling the visible

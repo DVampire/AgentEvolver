@@ -188,6 +188,18 @@ class HumanMessage(Message):
 
     def __repr__(self) -> str:
         return f'HumanMessage(content={repr(self.text)})'
+
+
+class CompactionMessage(HumanMessage):
+    """One conversation checkpoint with an optional provider-native payload.
+
+    The readable ``content`` is the portable checkpoint used by chat providers and by
+    request inspection.  ``provider_state`` may additionally carry an opaque Responses
+    ``compaction`` item.  Keeping both representations on one canonical message lets a
+    run stay portable without flattening provider-owned state into prose.
+    """
+
+    provider_state: Dict[str, Any] = Field(default_factory=dict)
     
     
 class SystemMessage(Message):

@@ -86,8 +86,11 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
-    retain_recent_steps=10,
-    compact_after_steps=30,
-    compact_at_tokens=120000,
-    compact_uncached_growth=50000,
+    # Codex-style window: token growth after the checkpoint is primary; two exact
+    # closed steps remain as a portable safety tail for non-Responses providers.
+    retain_recent_steps=2,
+    compact_after_steps=24,
+    compact_body_tokens=100000,
+    compact_at_tokens=750000,
+    compact_uncached_growth=30000,
 )

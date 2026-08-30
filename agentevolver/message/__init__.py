@@ -1,5 +1,6 @@
 from .types import (
     HumanMessage,
+    CompactionMessage,
     SystemMessage,
     AssistantMessage,
     ToolMessage,
@@ -21,6 +22,7 @@ from .types import (
 __all__ = [
     "Message",
     "HumanMessage",
+    "CompactionMessage",
     "SystemMessage",
     "AssistantMessage",
     "ToolMessage",

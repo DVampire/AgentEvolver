@@ -30,7 +30,7 @@ except ImportError:  # the provider is optional at import time
     AsyncOpenAI = None
 
 from agentevolver.logger import logger
-from agentevolver.message.types import Message
+from agentevolver.message.types import CompactionMessage, Message
 from agentevolver.model.types import TokenUsage
 from agentevolver.response.types import Response, ResponseType
 
@@ -64,6 +64,13 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
     """
     items: List[Dict[str, Any]] = []
     for message in messages:
+        if isinstance(message, CompactionMessage):
+            state = (message.provider_state or {}).get("responses") or {}
+            native = state.get("compaction_items") or []
+            if native:
+                # Opaque means opaque: replay the exact item returned by /compact.
+                items.extend(dict(item) for item in native)
+                continue
         role = getattr(message, "role", "user")
 
         if role == "tool":
@@ -248,6 +255,43 @@ class ResponseLLMHub(BaseModel):
             },
             usage=TokenUsage.from_raw(usage),
         )
+
+    async def compact_history(self, messages: List[Message]) -> Dict[str, Any]:
+        """Compact canonical history with the native Responses endpoint.
+
+        The endpoint also returns user messages. AgentEvolver keeps its task anchor on
+        the Trace surface, so that first copy is removed; later user items and the opaque
+        compaction item are replayed exactly at the replacement point.
+        """
+        client = self._client()
+        raw = await client.responses.compact(
+            model=self.model,
+            input=serialize_input(messages),
+        )
+        payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        output = [dict(item) for item in payload.get("output") or []]
+        if not any(item.get("type") == "compaction" for item in output):
+            raise RuntimeError("Responses compaction returned no compaction item")
+
+        # /compact deliberately returns user messages outside the opaque item. The
+        # first one is our task anchor, which ContextBuilder already retains as a stable
+        # cache prefix. Keep every later user item so compaction cannot erase an injected
+        # execution error or correction.
+        skipped_anchor = False
+        items = []
+        for item in output:
+            if (
+                not skipped_anchor
+                and item.get("type") == "message"
+                and item.get("role") == "user"
+            ):
+                skipped_anchor = True
+                continue
+            items.append(item)
+        return {
+            "provider_state": {"responses": {"compaction_items": items}},
+            "usage": payload.get("usage") or {},
+        }
 
     async def __call__(
         self,

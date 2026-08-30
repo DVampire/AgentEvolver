@@ -836,6 +836,92 @@ class ModelContextManager:
     def list(self) -> List[str]:
         return list(self.models.keys())
 
+    async def compact_history(
+        self,
+        name: str,
+        messages: List[Message],
+        *,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        step_number: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Return a provider-native checkpoint when the selected route supports it.
+
+        Chat providers deliberately return ``None`` and continue through the portable
+        text checkpoint path.  Native compaction is an optimization of the same logical
+        window, never a requirement for an agent to keep running.
+        """
+        config = self.models.get(name)
+        if config is None or config.model_type != "responses":
+            return None
+        client = await self._get_client(name)
+        compact = getattr(client, "compact_history", None)
+        if compact is None:
+            return None
+        snapshot_id = await _record_request_snapshot(
+            session_id=session_id,
+            requested_model=name,
+            routed_model=name,
+            model_config=config,
+            client=client,
+            messages=messages,
+            tools=None,
+            response_format=None,
+            request_input={
+                "operation": "compact",
+                "trace_context": {
+                    "task_id": task_id,
+                    "agent_name": agent_name,
+                    "step_number": step_number,
+                },
+            },
+            call_kwargs={"operation": "compact"},
+            stream=False,
+            attempt=1,
+            route_index=0,
+        )
+        result = await compact(messages)
+        answer = {
+            **(result or {}),
+            "model": name,
+            "provider": config.provider,
+        }
+        # The native endpoint has no AGENT_CALL event to refresh its page later. Attach
+        # its own usage now; this keeps compaction cost distinct from the next generation.
+        if session_id and snapshot_id and answer.get("usage"):
+            try:
+                from agentevolver.trace import trace_manager
+                from agentevolver.trace.types import TraceEventType
+                from agentevolver.visual.request_viewer import (
+                    request_log_root,
+                    schedule_request_html,
+                )
+
+                requests = [
+                    event for event in trace_manager.events(session_id)
+                    if event.event_type is TraceEventType.MODEL_REQUEST
+                    and event.agent_name == agent_name
+                ]
+                current = next((
+                    event for event in reversed(requests)
+                    if (event.metadata or {}).get("request_snapshot_id") == snapshot_id
+                ), None)
+                if current is not None and trace_manager.log_root:
+                    previous = next(
+                        (event for event in reversed(requests) if event.seq_no < current.seq_no),
+                        None,
+                    )
+                    schedule_request_html(
+                        current,
+                        request_log_root(trace_manager.log_root),
+                        usage=answer["usage"],
+                        previous_event=previous,
+                    )
+            except Exception as render_error:  # observational only
+                logger.debug(f"| native compaction HTML was not refreshed: {render_error}")
+        return answer
+
     # ------------------------------------------------------------------
     # Invocation
     # ------------------------------------------------------------------

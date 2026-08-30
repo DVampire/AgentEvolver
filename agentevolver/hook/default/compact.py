@@ -29,11 +29,14 @@ from agentevolver.hook.types import HookContext, HookResult, Hook
 _SYSTEM_PROMPT = "You are a concise summariser for an AI agent's execution history."
 
 _DEFAULT_INSTRUCTION = """Return one compact replacement checkpoint that merges the
-existing summary (if any) with the new records. Use only these headings when they have
-content: Established facts, Decisions, Workspace mutations, Verification, Failed
-approaches, Remaining conditions, Next action. Preserve exact paths, commands, values and
-errors. Drop raw file dumps and repeated observations. The result must stand alone; do not
-refer to an 'existing summary' or 'records above'."""
+existing checkpoint (if any) with the new canonical closed turns. Use only these headings
+when they have content: Current objective, Established facts, Decisions, Workspace
+mutations, Verification, Failed approaches, Remaining conditions, Next action. Preserve
+exact paths, commands, values, errors, tool outcomes, unresolved blockers, and source_seq
+references. Never invent a decision from private reasoning that is not present in the
+model-visible evidence. Drop raw dumps and repeated observations. Resolve contradictions in
+favor of the newest sourced turn. Keep the checkpoint under 2,000 words and make it stand
+alone; do not refer to an 'existing checkpoint' or 'records above'."""
 
 
 @HOOK.register_module(force=True)
@@ -68,9 +71,9 @@ class CompactHook(Hook):
         model = inp.get("model_name") or self.model_name
         instruction = inp.get("instruction") or _DEFAULT_INSTRUCTION
 
-        prior = f"Existing summary:\n{existing}\n\n" if existing else ""
+        prior = f"Existing checkpoint:\n{existing}\n\n" if existing else ""
         body = "\n".join(f"- {it}" for it in items)
-        prompt = f"{prior}New records:\n{body}\n\n{instruction}"
+        prompt = f"{prior}New canonical closed turns:\n{body}\n\n{instruction}"
 
         try:
             response = await model_manager(

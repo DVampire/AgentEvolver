@@ -535,10 +535,11 @@ class Agent(BaseModel):
         use_memory: bool = True,
         derive_context: bool = True,
         fold_at_pressure: float = 0.85,
-        retain_recent_steps: int = 10,
-        compact_after_steps: int = 30,
-        compact_at_tokens: int = 120_000,
-        compact_uncached_growth: int = 50_000,
+        retain_recent_steps: int = 2,
+        compact_after_steps: int = 24,
+        compact_body_tokens: int = 100_000,
+        compact_at_tokens: int = 750_000,
+        compact_uncached_growth: int = 30_000,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -565,6 +566,9 @@ class Agent(BaseModel):
         self.fold_at_pressure = float(fold_at_pressure or 0.0)
         self.retain_recent_steps = max(1, int(retain_recent_steps or 1))
         self.compact_after_steps = max(0, int(compact_after_steps or 0))
+        #: Primary Codex-style trigger: growth since the carried checkpoint prefix.
+        #: Unlike total request size, this resets after every successful compaction.
+        self.compact_body_tokens = max(0, int(compact_body_tokens or 0))
         self.compact_at_tokens = max(0, int(compact_at_tokens or 0))
         self.compact_uncached_growth = max(0, int(compact_uncached_growth or 0))
         self.model_name = model_name
@@ -1683,11 +1687,14 @@ class Agent(BaseModel):
                             "step_number": step_number,
                         },
                         "compaction_policy": {
-                            "retain_recent_steps": getattr(self, "retain_recent_steps", 10),
-                            "compact_after_steps": getattr(self, "compact_after_steps", 30),
-                            "compact_at_tokens": getattr(self, "compact_at_tokens", 120_000),
+                            "retain_recent_steps": getattr(self, "retain_recent_steps", 2),
+                            "compact_after_steps": getattr(self, "compact_after_steps", 24),
+                            "compact_body_tokens": getattr(
+                                self, "compact_body_tokens", 100_000,
+                            ),
+                            "compact_at_tokens": getattr(self, "compact_at_tokens", 750_000),
                             "compact_uncached_growth": getattr(
-                                self, "compact_uncached_growth", 50_000,
+                                self, "compact_uncached_growth", 30_000,
                             ),
                             "fold_at_pressure": getattr(self, "fold_at_pressure", 0.85),
                         },
@@ -2803,10 +2810,14 @@ class Agent(BaseModel):
         reasons: list[str] = []
         logical_steps = metrics["logical_steps"]
         estimated_tokens = metrics["estimated_tokens"]
+        body_tokens = metrics.get("body_after_prefix_tokens", 0)
         uncached_growth = metrics["uncached_growth"]
         ratio = metrics["pressure_ratio"]
         if self.compact_after_steps and logical_steps >= self.compact_after_steps:
             reasons.append(f"history={logical_steps} steps")
+        body_limit = getattr(self, "compact_body_tokens", 0)
+        if body_limit and body_tokens >= body_limit:
+            reasons.append(f"body-after-prefix≈{body_tokens:,} tokens")
         if self.compact_at_tokens and estimated_tokens >= self.compact_at_tokens:
             reasons.append(f"request≈{estimated_tokens:,} tokens")
         if (
@@ -2834,6 +2845,7 @@ class Agent(BaseModel):
         empty = {
             "logical_steps": 0,
             "estimated_tokens": 0,
+            "body_after_prefix_tokens": 0,
             "pressure_ratio": 0.0,
             "uncached_growth": 0,
         }
@@ -2846,12 +2858,15 @@ class Agent(BaseModel):
 
         logical_steps = sum(
             event.seq_no in surface and event.event_type is TraceEventType.AGENT_CALL
+            and (not event.agent_name or event.agent_name == self.name)
             for event in events
         )
         request = next((
             event for event in reversed(events)
             if event.event_type is TraceEventType.MODEL_REQUEST
             and (not event.agent_name or event.agent_name == self.name)
+            and ((event.input or {}).get("parameters") or {}).get("operation")
+            != "compact"
         ), None)
         pressure = ((request.input or {}).get("pressure") or {}) if request else {}
         try:
@@ -2859,6 +2874,24 @@ class Agent(BaseModel):
             pressure_ratio = float(pressure.get("pressure_ratio_after") or 0.0)
         except (TypeError, ValueError):
             estimated_tokens, pressure_ratio = 0, 0.0
+
+        # The active body is everything after the carried checkpoint.  Before the
+        # first checkpoint the task is the stable anchor, so it is excluded as well.
+        body_tokens = 0
+        try:
+            from agentevolver.message.types import CompactionMessage
+            from agentevolver.model.pressure import estimate_tokens
+            from agentevolver.trace.derive import derive_messages
+
+            projected = derive_messages(events)
+            boundary = max((
+                index for index, message in enumerate(projected)
+                if isinstance(message, CompactionMessage)
+            ), default=0)
+            body = projected[boundary + 1:]
+            body_tokens = estimate_tokens(body) if body else 0
+        except Exception as error:  # noqa: BLE001 - pressure fallback remains valid
+            logger.debug(f"| [{self.name}] cannot measure compaction body: {error}")
 
         last_fold = max((
             int(event.seq_no) for event in events
@@ -2895,6 +2928,7 @@ class Agent(BaseModel):
         return {
             "logical_steps": logical_steps,
             "estimated_tokens": estimated_tokens,
+            "body_after_prefix_tokens": body_tokens,
             "pressure_ratio": pressure_ratio,
             "uncached_growth": growth,
         }
@@ -2914,7 +2948,11 @@ class Agent(BaseModel):
             logger.debug(f"| [{self.name}] cannot read pressure from the log: {error}")
             return 0.0
         for event in reversed(events):
-            if event.event_type is TraceEventType.MODEL_REQUEST:
+            if (
+                event.event_type is TraceEventType.MODEL_REQUEST
+                and ((event.input or {}).get("parameters") or {}).get("operation")
+                != "compact"
+            ):
                 pressure = (event.input or {}).get("pressure") or {}
                 try:
                     return float(pressure.get("pressure_ratio_after") or 0.0)

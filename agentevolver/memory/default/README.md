@@ -12,10 +12,35 @@ metadata: {}
 Provides filesystem, general, and tiered memory implementations. Each system follows the
 parent Memory contracts while choosing its own persistence and retrieval strategy.
 
+## Active context is checkpoint + exact tail
+
+The model-facing conversation has four ordered layers: a stable system/task prefix, one
+canonical checkpoint, the newest complete assistant/tool turns, and the live per-step
+state. Trace is the source of truth; `MemoryRecord` is only a retention index and UI
+projection. A closed assistant turn receives an index even when it calls no tool, so
+retention never means "the last N tool results" by accident.
+
+Compaction replaces old complete turns on the Trace surface. Responses routes keep the
+opaque item returned by the provider's compaction endpoint and replay it unchanged. Chat
+routes use the readable checkpoint generated from the same source turns. Both forms live
+on one `CompactionMessage`, which prevents provider state from being flattened into prose
+while keeping the run inspectable and portable.
+
+The primary trigger is mutable token growth after the latest checkpoint. Complete-step
+count, uncached growth, total request size, and provider context pressure are independent
+safety triggers. The exact tail is deliberately small; it is a protocol-safety window,
+not the main memory store.
+
+Conversation memory remains session-scoped. Cross-session learning belongs to the
+versioned capability/evolution pipeline, so one benchmark task cannot silently leak its
+solution into another task's prompt.
+
 ## Compaction is a bracketed transaction
 
-`TieredMemory` folds overflow from `recent_history` into `working_memory` one chunk at a
-time. The run is bracketed: `state.compaction` is set and persisted **before** any record
+`TieredMemory` folds old closed turns from `recent_history` into one replacement
+`working_memory` checkpoint. Internal summarizer input may be chunked, but the latest
+summary supersedes the previous one instead of creating an ever-growing summary list.
+The run is bracketed: `state.compaction` is set and persisted **before** any record
 leaves `recent`, and cleared only after the last chunk is summarised and written.
 
 Clearing it last is the point. A snapshot still carrying the bracket says a compaction
@@ -33,7 +58,7 @@ Outcomes are distinguished rather than collapsed into one "compaction failed" li
 
 | Outcome | What happened | History |
 |---|---|---|
-| `ok` | every chunk summarised | shortened, summaries appended |
+| `ok` | every chunk summarised | shortened, latest checkpoint replaced |
 | `empty` | the summariser had nothing to say | restored untouched |
 | `summary` | the summariser raised — model unreachable, bad response | restored untouched |
 | `cancelled` | the task was cancelled | restored, and the cancellation propagates |

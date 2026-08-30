@@ -191,6 +191,8 @@ class TraceHook(Hook):
                     for candidate in trace_manager.events(str(event.session_id or ""))
                     if candidate.event_type is TraceEventType.MODEL_REQUEST
                     and candidate.agent_name == event.agent_name
+                    and ((candidate.input or {}).get("parameters") or {}).get("operation")
+                    != "compact"
                 ]
                 current = next(
                     (

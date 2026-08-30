@@ -105,6 +105,7 @@ def test_request_page_preserves_roles_calls_cache_and_route_metadata(tmp_path):
     assert 'id="message-4"' in page
     assert "Request diagnostics" in page
     assert "Fixed prefix" in page
+    assert "Body after prefix" in page
     assert "Provider state" in page
     assert "Tool arguments" in page
     assert "Compaction" in page

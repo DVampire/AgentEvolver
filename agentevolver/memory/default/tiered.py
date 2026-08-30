@@ -157,6 +157,7 @@ class MemoryRecord(BaseModel):
     detail: str = ""
     status: str = ""      # "", "running", "done", "failed"
     step: Optional[int] = None
+    agent_name: str = ""
     #: Position of the trace event this record came from. Carried so that folding a run
     #: of records into a summary can say *which* events the summary now stands for —
     #: without it, memory's history and the durable log drift apart with nothing able to
@@ -261,14 +262,16 @@ class TieredMemory(Memory):
         if ev == TraceEventType.AGENT_START:
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"Agent started: {event.agent_name or ''}",
-                detail=(event.input or {}).get("task", ""), status="running", seq=event.seq_no))
+                detail=(event.input or {}).get("task", ""), status="running", seq=event.seq_no,
+                agent_name=event.agent_name or ""))
 
         elif ev == TraceEventType.AGENT_END:
             ok = event.success if event.success is not None else (event.metadata.get("success", not bool(event.error)))
             result = event.error if not ok else _as_text(event.message)
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"Agent ended: {event.agent_name or ''}",
-                detail=result, status="done" if ok else "failed", seq=event.seq_no))
+                detail=result, status="done" if ok else "failed", seq=event.seq_no,
+                agent_name=event.agent_name or ""))
             if event.metadata.get("is_root", False):
                 state.final_result = result
                 state.result_success = ok
@@ -294,7 +297,7 @@ class TieredMemory(Memory):
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event=f"{event.action_name or event.action_type or 'action'} result",
                 detail=detail, status="done" if ok else "failed", seq=event.seq_no,
-                step=event.step_number))
+                step=event.step_number, agent_name=event.agent_name or ""))
             # Buffer for the flow chart — flushed on the step's POST_STEP AGENT_CALL.
             if event.step_number is not None:
                 state._pending_step_actions.setdefault(event.step_number, []).append({
@@ -307,10 +310,25 @@ class TieredMemory(Memory):
         elif ev == TraceEventType.ERROR:
             self._append_recent(state, MemoryRecord(
                 ts=_ts(), event="Error", detail=event.error or _as_text(event.message),
-                status="failed", seq=event.seq_no))
+                status="failed", seq=event.seq_no, agent_name=event.agent_name or ""))
 
         elif ev == TraceEventType.AGENT_CALL:
-            changed = self._apply_agent_call(state, event)
+            # Every closed assistant turn needs a retention handle, including a turn
+            # that used no capability. Otherwise keep_steps=2 really means "two recent
+            # tool-using steps" and assistant-only turns can grow forever on the Trace
+            # surface. Store only model-visible text; private reasoning remains outside
+            # memory checkpoints.
+            self._append_recent(state, MemoryRecord(
+                ts=_ts(),
+                event=f"Agent step {event.step_number or 0}",
+                detail=event.assistant_text or "",
+                status="done",
+                seq=event.seq_no,
+                step=event.step_number,
+                agent_name=event.agent_name or "",
+            ))
+            self._apply_agent_call(state, event)
+            changed = True
 
         else:
             changed = False
@@ -510,15 +528,17 @@ class TieredMemory(Memory):
             return self.recent_fetch
         keep_steps = max(1, int(keep_steps))
         records = list(state.recent)
-        ordered_steps: list[int] = []
+        ordered_steps: list[tuple[str, int]] = []
         for record in records:
-            if record.step is not None and record.step not in ordered_steps:
-                ordered_steps.append(record.step)
+            key = (record.agent_name, record.step) if record.step is not None else None
+            if key is not None and key not in ordered_steps:
+                ordered_steps.append(key)
         if len(ordered_steps) <= keep_steps:
             return None
         retained = set(ordered_steps[-keep_steps:])
         first = next(
-            index for index, record in enumerate(records) if record.step in retained
+            index for index, record in enumerate(records)
+            if (record.agent_name, record.step) in retained
         )
         return len(records) - first
 
@@ -557,9 +577,18 @@ class TieredMemory(Memory):
         # chunk, which made a shared, deliberately-cleared field load-bearing for a fact
         # that never changes and belongs to this call.
         started_at = _ts()
+        native_checkpoint: Optional[Dict[str, Any]] = None
         try:
             state.compaction = {"started_at": started_at, "chunks": 0}
             await self._persist(state)
+
+            # Codex-style native compaction is prepared once for the whole window, not
+            # once per internal summarizer chunk.  The readable checkpoint below remains
+            # the portable fallback for chat providers and inspection.
+            records = list(state.recent)
+            folding = records[: max(0, len(records) - floor)]
+            if folding:
+                native_checkpoint = await self._native_checkpoint(state, folding)
 
             while len(state.recent) > floor:
                 async with state._lock:
@@ -574,7 +603,7 @@ class TieredMemory(Memory):
                     ):
                         k += 1
                     chunk = [state.recent.popleft() for _ in range(k)]
-                items = [r.as_line() for r in chunk]
+                items = self._summary_items(state, chunk)
                 existing = state.working[-1] if state.working else ""
                 try:
                     text = await self._summarise(items, existing)
@@ -602,7 +631,14 @@ class TieredMemory(Memory):
                 state.working.append(text)
                 chunks_done += 1
                 state.compaction = {"started_at": started_at, "chunks": chunks_done}
-                await self._record_fold(state, chunk, text, existing=existing)
+                final_chunk = len(state.recent) <= floor
+                await self._record_fold(
+                    state,
+                    chunk,
+                    text,
+                    existing=existing,
+                    native=native_checkpoint if final_chunk else None,
+                )
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -628,8 +664,193 @@ class TieredMemory(Memory):
                     f"chunk(s) for {state.session_id}"
                 )
 
+    def _summary_items(self, state: _SessionState, chunk: List[MemoryRecord]) -> List[str]:
+        """Render complete closed turns from Trace for checkpoint generation.
+
+        MemoryRecord is a useful retention/UI projection, but it is not the conversation:
+        parallel calls are independent records and their call events live only in Trace.
+        Compaction is therefore sourced from the append-only Trace and grouped by logical
+        step. Private reasoning is intentionally excluded; only model-visible assistant
+        text and exact call inputs/results are summarized.
+        """
+        try:
+            from agentevolver.trace import trace_manager
+
+            events = trace_manager.events(state.session_id) or []
+        except Exception:  # pragma: no cover - the record fallback is deterministic
+            events = []
+
+        turns = {
+            (record.agent_name, record.step)
+            for record in chunk if record.step is not None
+        }
+        direct = {record.seq for record in chunk if record.seq is not None}
+        lines: List[str] = []
+
+        def clipped(value: Any) -> str:
+            text = _as_text(value)
+            if len(text) <= self.record_detail_max:
+                return text
+            head = int(self.record_detail_max * _RECORD_HEAD_SHARE)
+            tail = self.record_detail_max - head
+            return (
+                f"{text[:head]}\n[... {len(text) - self.record_detail_max:,} "
+                f"characters omitted ...]\n{text[-tail:]}"
+            )
+
+        for event in events:
+            seq = event.seq_no
+            step = event.step_number
+            if event.event_type == TraceEventType.AGENT_START and seq in direct:
+                lines.append(
+                    f"[source_seq={seq}] user task: "
+                    f"{clipped((event.input or {}).get('task', ''))}"
+                )
+            in_turn = any(
+                record_step == step and (not agent or agent == (event.agent_name or ""))
+                for agent, record_step in turns
+            )
+            if in_turn and event.event_type == TraceEventType.AGENT_CALL:
+                visible = event.assistant_text or ""
+                if visible.strip():
+                    lines.append(
+                        f"[source_seq={seq} step={step}] assistant: {clipped(visible)}"
+                    )
+            elif in_turn and event.event_type in {
+                TraceEventType.TOOL_START,
+                TraceEventType.SKILL_START,
+            }:
+                arguments = json.dumps(
+                    event.input or {}, ensure_ascii=False, sort_keys=True, default=str
+                )
+                lines.append(
+                    f"[source_seq={seq} step={step}] call {event.action_name}: "
+                    f"{clipped(arguments)}"
+                )
+            elif in_turn and event.event_type in {
+                TraceEventType.TOOL_CALL,
+                TraceEventType.SKILL_CALL,
+            }:
+                result = event.message if event.success else (event.error or event.message)
+                status = "ok" if event.success else "error"
+                lines.append(
+                    f"[source_seq={seq} step={step}] result {event.action_name} "
+                    f"({status}): {clipped(result)}"
+                )
+
+        return lines or [
+            f"[source_seq={record.seq}] {record.as_line()}" for record in chunk
+        ]
+
+    def _fold_span(
+        self, state: _SessionState, chunk: List[MemoryRecord]
+    ) -> Optional[tuple[int, int, List[int]]]:
+        """Resolve the current Trace surface range represented by ``chunk``."""
+        seqs = [record.seq for record in chunk if record.seq is not None]
+        if not seqs:
+            return None
+        from agentevolver.trace import trace_manager
+
+        turns = {
+            (record.agent_name, record.step)
+            for record in chunk if record.step is not None
+        }
+        events = (
+            trace_manager.events(state.session_id)
+            if hasattr(trace_manager, "events") else []
+        )
+        by_seq = {
+            event.seq_no: event for event in events
+            if event.seq_no is not None
+        }
+        surface = (
+            trace_manager.surface(state.session_id)
+            if hasattr(trace_manager, "surface") else []
+        )
+        candidates = [
+            seq for seq in surface
+            if seq in by_seq and (
+                seq in seqs or (
+                    any(
+                        record_step == by_seq[seq].step_number
+                        and (not agent or agent == (by_seq[seq].agent_name or ""))
+                        for agent, record_step in turns
+                    )
+                    and by_seq[seq].event_type in {
+                        TraceEventType.AGENT_CALL,
+                        TraceEventType.TOOL_CALL,
+                        TraceEventType.SKILL_CALL,
+                    }
+                )
+            )
+        ]
+        start, end = (
+            (candidates[0], candidates[-1])
+            if candidates else (min(seqs), max(seqs))
+        )
+        if (
+            state.checkpoint_seq is not None
+            and state.checkpoint_seq in surface
+        ):
+            start = state.checkpoint_seq
+        shadowed = trace_manager.surface_span(state.session_id, start, end)
+        if not shadowed:
+            return None
+        return start, end, shadowed
+
+    async def _native_checkpoint(
+        self, state: _SessionState, records: List[MemoryRecord]
+    ) -> Optional[Dict[str, Any]]:
+        """Ask a Responses model for one opaque checkpoint for this logical window."""
+        try:
+            span = self._fold_span(state, records)
+            if span is None:
+                return None
+            _, end, _ = span
+            from agentevolver.trace import trace_manager
+            from agentevolver.trace.derive import derive_messages
+
+            prefix = [
+                event for event in trace_manager.events(state.session_id)
+                if event.seq_no is not None and event.seq_no <= end
+            ]
+            messages = derive_messages(prefix)
+            source = next(
+                (event for event in reversed(prefix) if event.agent_name),
+                None,
+            )
+            result = await model_manager.compact_history(
+                self.model_name,
+                messages,
+                session_id=state.session_id,
+                task_id=getattr(source, "task_id", None),
+                agent_name=getattr(source, "agent_name", None),
+                step_number=max(
+                    (record.step for record in records if record.step is not None),
+                    default=None,
+                ),
+            )
+            if result:
+                logger.info(
+                    f"| 🗜️ {self.name}: installed native {result.get('provider')} "
+                    f"compaction for {state.session_id}"
+                )
+            return result
+        except Exception as error:  # transparent checkpoint remains authoritative fallback
+            logger.warning(
+                f"| ⚠️ {self.name}: native compaction unavailable; using text checkpoint "
+                f"({error})"
+            )
+            return None
+
     async def _record_fold(
-        self, state: _SessionState, chunk: list, summary: str, *, existing: str = ""
+        self,
+        state: _SessionState,
+        chunk: list,
+        summary: str,
+        *,
+        existing: str = "",
+        native: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Tell the durable log that one summary now stands for a run of its events.
 
@@ -645,9 +866,10 @@ class TieredMemory(Memory):
         Best-effort: a compaction that already happened must not be undone because its
         bookkeeping could not be written.
         """
-        seqs = [r.seq for r in chunk if r.seq is not None]
-        if not seqs:
-            return  # nothing to cite: these records predate sequence numbering
+        span = self._fold_span(state, chunk)
+        if span is None:
+            return
+        start, end, shadowed = span
         # What the fold bought, carried on the fold itself. Stats, a training-sample
         # budget and the UI all want this number, and a consumer that derives it has to
         # hold the replaced range to subtract from — so each would keep its own copy of
@@ -662,56 +884,13 @@ class TieredMemory(Memory):
             from agentevolver.trace import replace_op, trace_manager
             from agentevolver.trace.types import TraceEvent, TraceEventType
 
-            # Expand result records to complete logical steps, including the AGENT_CALL
-            # that carries each step's assistant/tool-call turn.
-            steps = {record.step for record in chunk if record.step is not None}
-            candidates: List[int] = []
-            if hasattr(trace_manager, "events") and hasattr(trace_manager, "surface"):
-                by_seq = {
-                    event.seq_no: event for event in trace_manager.events(state.session_id)
-                    if event.seq_no is not None
-                }
-                candidates = [
-                    seq for seq in trace_manager.surface(state.session_id)
-                    if seq in by_seq and (
-                        seq in seqs or (
-                            by_seq[seq].step_number in steps
-                            and by_seq[seq].event_type in {
-                                TraceEventType.AGENT_CALL,
-                                TraceEventType.TOOL_CALL,
-                                TraceEventType.SKILL_CALL,
-                            }
-                        )
-                    )
-                ]
-            # Old logs and small isolated tests may not retain the live event table.
-            # Their seq range is still projectable; new live runs take the turn-aligned
-            # path above.
-            start, end = (
-                (candidates[0], candidates[-1])
-                if candidates else (min(seqs), max(seqs))
-            )
-            if (
-                state.checkpoint_seq is not None
-                and hasattr(trace_manager, "surface")
-                and state.checkpoint_seq in trace_manager.surface(state.session_id)
-            ):
-                start = state.checkpoint_seq
-            shadowed = trace_manager.surface_span(state.session_id, start, end)
-            if not shadowed:
-                # The surface is live state. Empty means this process did not emit these
-                # events, so the span cannot be verified — and a replacement that cannot
-                # cite what it shadows is worse than no record of the fold at all.
-                logger.debug(
-                    f"| 🗜️ {self.name}: no live surface for {state.session_id}; fold not recorded"
-                )
-                return
-
             fold_event = TraceEvent(
                 event_type=TraceEventType.CUSTOM,
                 session_id=state.session_id,
                 label="compaction summary",
                 message=summary,
+                provider_state=(native or {}).get("provider_state") or {},
+                usage=(native or {}).get("usage") or None,
                 success=True,
                 surface_op=replace_op(start, end),
                 source_event_seqs=shadowed,
@@ -724,6 +903,8 @@ class TieredMemory(Memory):
                     # replaced is a real outcome, and recording it as a saving would make
                     # the total say compaction always helps.
                     "tokens_saved": before - after,
+                    "checkpoint_format": "native+text" if native else "text",
+                    "native_model": (native or {}).get("model"),
                 },
             )
             await trace_manager.emit(fold_event)
