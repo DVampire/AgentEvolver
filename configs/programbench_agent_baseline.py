@@ -26,7 +26,7 @@ Note that the *prompt* follows the roster automatically —
 meta_agent's `<self-evolution-rules>` block and the
 generator/optimizer/evaluator taxonomy are not rendered at all. That is a real
 difference between the arms beyond capability availability: this arm's system
-prompt is ~29% shorter. It cannot be separated from the roster change, and any
+prompt is shorter. It cannot be separated from the roster change, and any
 report comparing the two must say so.
 """
 from mmengine.config import read_base
@@ -225,4 +225,8 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
+    retain_recent_steps=10,
+    compact_after_steps=30,
+    compact_at_tokens=120000,
+    compact_uncached_growth=50000,
 )

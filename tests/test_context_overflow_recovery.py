@@ -43,6 +43,7 @@ class _Agent:
         self.name = "actor"
         self.use_memory = use_memory
         self.memory_name = memory_name
+        self.retain_recent_steps = 10
 
 
 @pytest.fixture
@@ -51,8 +52,8 @@ def folds(monkeypatch):
     calls: list = []
     answers = {"value": True}
 
-    async def compact(memory_name, session_id):
-        calls.append((memory_name, session_id))
+    async def compact(memory_name, session_id, **kwargs):
+        calls.append((memory_name, session_id, kwargs))
         return answers["value"]
 
     from agentevolver.memory import memory_manager
@@ -66,7 +67,7 @@ async def test_an_oversized_context_is_answered_by_folding(folds):
     run = _Run()
 
     assert await _Agent()._make_room(run) is True
-    assert calls == [("tiered_memory", "run-session")]
+    assert calls == [("tiered_memory", "run-session", {"keep_steps": 10})]
     assert run.rooms_made == 1
 
 
@@ -150,10 +151,14 @@ class _Ahead(_Agent):
 
     _fold_ahead = Agent._fold_ahead
     _last_pressure_ratio = Agent._last_pressure_ratio
+    _context_history_metrics = Agent._context_history_metrics
 
     def __init__(self, *, fold_at_pressure: float = 0.0, **kwargs):
         super().__init__(**kwargs)
         self.fold_at_pressure = fold_at_pressure
+        self.compact_after_steps = 0
+        self.compact_at_tokens = 0
+        self.compact_uncached_growth = 0
 
 
 @pytest.fixture
@@ -213,6 +218,35 @@ async def test_a_request_below_the_threshold_is_left_alone(folds, at_pressure):
     await _Ahead(fold_at_pressure=0.85)._fold_ahead(_Run())
 
     assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value,metric",
+    [
+        ("compact_after_steps", 30, {"logical_steps": 30}),
+        ("compact_at_tokens", 120_000, {"estimated_tokens": 120_000}),
+        ("compact_uncached_growth", 50_000, {"uncached_growth": 50_000}),
+    ],
+)
+async def test_early_compaction_triggers_before_window_pressure(
+    folds, field, value, metric
+):
+    calls, _ = folds
+    agent = _Ahead(fold_at_pressure=0.85)
+    setattr(agent, field, value)
+    measured = {
+        "logical_steps": 0,
+        "estimated_tokens": 0,
+        "pressure_ratio": 0.10,
+        "uncached_growth": 0,
+        **metric,
+    }
+    agent._context_history_metrics = lambda run: measured
+
+    await agent._fold_ahead(_Run())
+
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio

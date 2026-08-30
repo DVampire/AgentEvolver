@@ -12,6 +12,7 @@ from agentevolver.hook.types import Hook, HookContext, HookEvent, HookResult
 from agentevolver.registry import HOOK
 from agentevolver.trace.types import (
     TraceEvent,
+    TraceEventType,
     agent_start_event,
     agent_call_event,
     agent_end_event,
@@ -181,6 +182,47 @@ class TraceHook(Hook):
 
         if event is not None:
             await trace_manager.emit(event)
+            if event.event_type is TraceEventType.AGENT_CALL and event.usage and trace_manager.log_root:
+                # The request snapshot is committed before dispatch, while provider
+                # usage arrives only when the step closes. Refresh the same HTML page
+                # with the measured cache/cost data; the canonical snapshot is unchanged.
+                requests = [
+                    candidate
+                    for candidate in trace_manager.events(str(event.session_id or ""))
+                    if candidate.event_type is TraceEventType.MODEL_REQUEST
+                    and candidate.agent_name == event.agent_name
+                ]
+                current = next(
+                    (
+                        candidate for candidate in reversed(requests)
+                        if candidate.step_number == event.step_number
+                    ),
+                    None,
+                )
+                if current is not None:
+                    previous = next(
+                        (
+                            candidate for candidate in reversed(requests)
+                            if int(candidate.step_number or 0) < int(current.step_number or 0)
+                        ),
+                        None,
+                    )
+                    try:
+                        from agentevolver.visual.request_viewer import (
+                            request_log_root,
+                            schedule_request_html,
+                        )
+
+                        schedule_request_html(
+                            current,
+                            request_log_root(trace_manager.log_root),
+                            usage=event.usage,
+                            previous_event=previous,
+                        )
+                    except Exception as render_error:  # noqa: BLE001 - observational only
+                        from agentevolver.logger import logger
+
+                        logger.debug(f"| model request HTML usage refresh was not scheduled: {render_error}")
             # Memory consumes this exact object after Trace has assigned seq_no. It used
             # to construct a second look-alike event, which made compaction unable to cite
             # the durable log it was summarising.

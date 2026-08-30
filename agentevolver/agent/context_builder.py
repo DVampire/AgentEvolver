@@ -9,10 +9,47 @@ from __future__ import annotations
 import re
 from typing import Any, List, Tuple
 
-from agentevolver.message.types import HumanMessage, Message, ToolMessage
+from agentevolver.message.types import AssistantMessage, HumanMessage, Message, ToolMessage
 from agentevolver.trace.derive import _marker, derive_messages
 from agentevolver.trace.surface import fold_surface
 from agentevolver.trace.types import TraceEventType
+
+
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_DATA_BLOCKS = ("task", "inherited-context", "memory", "working-memory", "recent-steps")
+
+
+def _strip_template_comments(message: Message) -> Message:
+    """Remove author-only HTML comments from one rendered prompt message.
+
+    Trace-derived task, assistant and tool content never passes through here: comments in
+    repository files or tool output are user data and must remain exact. Only prompt
+    scaffolding rendered from our HTML templates is cleaned.
+    """
+    content = getattr(message, "content", None)
+    if not isinstance(content, str) or "<!--" not in content:
+        return message
+    if getattr(message, "role", "") == "system":
+        return message.model_copy(update={"content": _HTML_COMMENT.sub("", content)})
+
+    protected: list[str] = []
+
+    def hold(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"\x00AGENTEVOLVER_DATA_{len(protected) - 1}\x00"
+
+    names = "|".join(re.escape(name) for name in _DATA_BLOCKS)
+    cleaned = re.sub(rf"<({names})>.*?</\1>", hold, content, flags=re.S)
+    cleaned = _HTML_COMMENT.sub("", cleaned)
+    for index, value in enumerate(protected):
+        cleaned = cleaned.replace(f"\x00AGENTEVOLVER_DATA_{index}\x00", value)
+    return message.model_copy(update={"content": cleaned})
+
+
+def strip_rendered_comments(rendered: List[Message]) -> List[Message]:
+    """Strip template documentation while preserving task and memory payloads."""
+    cleaned = [_strip_template_comments(message) for message in rendered]
+    return rendered if all(a is b for a, b in zip(cleaned, rendered)) else cleaned
 
 
 class ContextBuilder:
@@ -21,12 +58,17 @@ class ContextBuilder:
     TOOL_RESULT_MAX = 8_000
 
     def build(self, rendered: List[Message], events: List[Any], ctx: Any) -> List[Message]:
-        system = [m for m in rendered if getattr(m, "role", "") == "system"]
+        system = [
+            _strip_template_comments(m)
+            for m in rendered if getattr(m, "role", "") == "system"
+        ]
+        anchor, live = self.split_rendered_turn(rendered)
         derived = derive_messages(events)
         if not derived:
-            return rendered
+            if anchor:
+                anchor[-1].cache = True
+            return system + anchor + live
 
-        anchor, live = self.split_rendered_turn(rendered)
         task = self._task(events)
         checkpoints = self._checkpoints(events)
         recent = self._bound_tool_results(
@@ -53,7 +95,15 @@ class ContextBuilder:
 
         frozen = checkpoint + recent
         if frozen:
-            frozen[-1].cache = True
+            # The Opus relay cache probe verified assistant boundaries (including an
+            # empty-text tool-call turn) but not tool-role boundaries. Cache through
+            # the newest assistant and leave its results in the live suffix.
+            boundary = next(
+                (message for message in reversed(frozen)
+                 if isinstance(message, AssistantMessage)),
+                frozen[-1],
+            )
+            boundary.cache = True
         return system + anchor + frozen + live
 
     @staticmethod
@@ -128,6 +178,11 @@ class ContextBuilder:
         for block in ("memory", "working-memory", "recent-steps"):
             text = re.sub(rf"<{block}>.*?</{block}>", "", text, flags=re.S)
 
+        # Module comments document the HTML templates for maintainers; they are not
+        # instructions. Strip them only after extracting task/inherited-context so an
+        # HTML comment supplied by the benchmark remains byte-exact in the anchor.
+        text = _HTML_COMMENT.sub("", text)
+
         def turn(body: str) -> List[Message]:
             body = body.strip()
             return [HumanMessage(content=body)] if re.sub(r"<[^>]+>", "", body).strip() else []
@@ -155,4 +210,4 @@ class ContextBuilder:
 
 context_builder = ContextBuilder()
 
-__all__ = ["ContextBuilder", "context_builder"]
+__all__ = ["ContextBuilder", "context_builder", "strip_rendered_comments"]

@@ -1,6 +1,6 @@
 import asyncio
 
-from agentevolver.agent.context_builder import ContextBuilder
+from agentevolver.agent.context_builder import ContextBuilder, strip_rendered_comments
 from agentevolver.hook.default.trace import TraceHook
 from agentevolver.hook.types import HookContext, HookEvent
 from agentevolver.message import AssistantMessage, HumanMessage, SystemMessage, ToolMessage
@@ -64,7 +64,8 @@ def test_builder_keeps_anchor_checkpoint_recent_turns_and_live_tail_separate():
     assert "Found the faulty branch." in messages[2].text
     assert "old" not in "\n".join(message.text for message in messages)
     assert messages[3].tool_calls[0].id == messages[4].tool_call_id == "c2"
-    assert messages[4].cache is True
+    assert messages[3].cache is True
+    assert messages[4].cache is False
     assert "<constraints>10 left</constraints>" in messages[-1].text
     assert "capability-context" not in "\n".join(message.text for message in messages)
 
@@ -94,6 +95,85 @@ def test_provider_replay_state_survives_trace_projection():
 
     assistant = next(message for message in messages if isinstance(message, AssistantMessage))
     assert assistant.provider_state == state
+
+
+def test_compaction_drops_old_provider_state_and_keeps_the_exact_recent_turn():
+    old = {"responses": {"reasoning_items": [{"type": "reasoning", "id": "old"}]}}
+    recent = {"responses": {"reasoning_items": [{"type": "reasoning", "id": "recent"}]}}
+    events = _number([
+        agent_start_event("s", "t", "a", "task"),
+        agent_call_event("s", "t", "a", 1, provider_state=old),
+    ])
+    events.append(TraceEvent(
+        event_type=TraceEventType.CUSTOM,
+        session_id="s",
+        seq_no=2,
+        message="Old step completed.",
+        metadata={"type": "compaction"},
+        surface_op=replace_op(0, 1),
+        source_event_seqs=[0, 1],
+    ))
+    events.append(agent_call_event("s", "t", "a", 2, provider_state=recent))
+    events[-1].seq_no = 3
+    rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
+
+    messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
+    states = [
+        message.provider_state for message in messages
+        if isinstance(message, AssistantMessage) and message.provider_state
+    ]
+
+    assert states == [recent]
+
+
+def test_template_comments_are_not_sent_but_task_comments_remain():
+    events = _number([
+        agent_start_event("s", "t", "a", "fix <!-- meaningful fixture -->"),
+    ])
+    rendered = [
+        SystemMessage(content="rules <!-- maintainer note -->"),
+        HumanMessage(content=(
+            "<!-- module documentation -->"
+            "<agent-context><task>stale</task>"
+            "<constraints>10 left</constraints></agent-context>"
+        )),
+    ]
+
+    messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
+
+    assert "maintainer note" not in messages[0].text
+    assert "module documentation" not in messages[-1].text
+    assert "<!-- meaningful fixture -->" in messages[1].text
+
+
+def test_first_request_strips_template_comments_without_losing_task_comments():
+    rendered = [
+        SystemMessage(content="rules <!-- maintainer note -->"),
+        HumanMessage(content=(
+            "<!-- module documentation -->"
+            "<agent-context><task>fix <!-- task fixture --> it</task>"
+            "<constraints>10 left</constraints></agent-context>"
+        )),
+    ]
+
+    messages = ContextBuilder().build(rendered, [], type("C", (), {"extra": {}})())
+
+    assert "maintainer note" not in messages[0].text
+    assert "module documentation" not in messages[-1].text
+    assert "<!-- task fixture -->" in messages[1].text
+    assert messages[1].cache is True
+
+
+def test_rendered_fallback_preserves_comments_inside_memory_payloads():
+    rendered = [HumanMessage(content=(
+        "<!-- template note -->"
+        "<working-memory>code has <!-- meaningful --> marker</working-memory>"
+    ))]
+
+    cleaned = strip_rendered_comments(rendered)[0].text
+
+    assert "template note" not in cleaned
+    assert "<!-- meaningful -->" in cleaned
 
 
 def test_trace_hook_hands_memory_the_same_numbered_event(monkeypatch):

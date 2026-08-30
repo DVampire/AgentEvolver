@@ -480,25 +480,47 @@ class TieredMemory(Memory):
             })
         state.recent.append(record)
 
-    async def compact(self, session_id: str) -> bool:
+    async def compact(self, session_id: str, *, keep_steps: Optional[int] = None) -> bool:
         """Fold old closed steps after the caller measured request pressure.
 
         Request size, rather than record count, determines when this is called: thirty
         small records can fit while three large ones can exceed the same token budget.
 
-        Never folds below ``recent_fetch`` — that is how many records reach the prompt, so
-        folding past it would buy space by removing what the next step is about to read.
+        With ``keep_steps``, retention is measured in complete logical steps instead of
+        raw records. A parallel tool batch therefore stays intact and old signed reasoning,
+        calls and results disappear together through the Trace surface replacement.
         """
         state = self._sessions.get(session_id)
         if state is None or state._compacting:
             return False
-        if len(state.recent) <= self.recent_fetch:
+        floor = self._retention_floor(state, keep_steps)
+        if floor is None or len(state.recent) <= floor:
             return False
         before = len(state.recent)
         # One pressure event creates one coherent checkpoint and leaves only the live
         # tail. `_compact` still batches summarizer inputs by compact_chunk internally.
-        await self._compact(state, down_to=self.recent_fetch)
+        await self._compact(state, down_to=floor)
         return len(state.recent) < before
+
+    def _retention_floor(
+        self, state: _SessionState, keep_steps: Optional[int]
+    ) -> Optional[int]:
+        """Number of trailing records that represent the requested complete steps."""
+        if keep_steps is None:
+            return self.recent_fetch
+        keep_steps = max(1, int(keep_steps))
+        records = list(state.recent)
+        ordered_steps: list[int] = []
+        for record in records:
+            if record.step is not None and record.step not in ordered_steps:
+                ordered_steps.append(record.step)
+        if len(ordered_steps) <= keep_steps:
+            return None
+        retained = set(ordered_steps[-keep_steps:])
+        first = next(
+            index for index, record in enumerate(records) if record.step in retained
+        )
+        return len(records) - first
 
     async def _compact(self, state: _SessionState, *, down_to: Optional[int] = None) -> None:
         """Fold the oldest history into summaries, as one recorded transaction.

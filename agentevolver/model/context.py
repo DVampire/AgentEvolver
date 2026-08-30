@@ -4,7 +4,6 @@ Contains all model registration, client lifecycle, and invocation logic.
 """
 
 import asyncio
-import os
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 from dotenv import load_dotenv
@@ -145,6 +144,9 @@ def _prepare_request_messages(
         ),
     )
     pressure = prepared.pressure
+    policy = request_input.get("compaction_policy")
+    if isinstance(policy, dict) and policy:
+        pressure["compaction_policy"] = dict(policy)
     if pressure.get("over_capacity"):
         raise ContextOverflowError(
             f"The request does not fit {model_name or 'this model'}: about "
@@ -274,9 +276,9 @@ async def _record_request_snapshot(
             # Observational only: render from the immutable snapshot after it entered
             # the trace queue, and keep file I/O off the provider's hot path.
             try:
-                from agentevolver.visual.request_viewer import schedule_request_html
+                from agentevolver.visual.request_viewer import request_log_root, schedule_request_html
 
-                schedule_request_html(event, os.path.dirname(trace_manager.log_root))
+                schedule_request_html(event, request_log_root(trace_manager.log_root))
             except Exception as render_error:  # noqa: BLE001 - never affect dispatch
                 logger.debug(f"| model request HTML was not scheduled: {render_error}")
     except Exception as trace_error:  # noqa: BLE001 - integrity policy settles failure

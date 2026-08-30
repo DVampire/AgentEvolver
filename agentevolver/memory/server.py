@@ -266,7 +266,13 @@ class MemoryManagerServer(BaseModel):
         """
         return await self.memory_context_manager.get_session_info(memory_name, ctx=ctx, **kwargs)
     
-    async def compact(self, memory_name: str, session_id: str) -> bool:
+    async def compact(
+        self,
+        memory_name: str,
+        session_id: str,
+        *,
+        keep_steps: Optional[int] = None,
+    ) -> bool:
         """Ask one memory to fold its oldest history now. Returns whether it folded.
 
         For a caller that has measured a context it cannot send: the memory's own trigger
@@ -277,7 +283,7 @@ class MemoryManagerServer(BaseModel):
         memory = await self.get(memory_name)
         if memory is None:
             return False
-        return await memory.compact(session_id)
+        return await memory.compact(session_id, keep_steps=keep_steps)
 
     async def consume_trace_event(
         self,

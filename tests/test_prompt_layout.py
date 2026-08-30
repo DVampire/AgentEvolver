@@ -10,6 +10,7 @@ new leaf drags the stylesheet, the renderer and the splitter into the failure wi
 """
 
 from pathlib import Path
+import asyncio
 import pytest
 import re
 
@@ -73,6 +74,42 @@ def _leaves_used_in_templates() -> set:
 
 
 LEAVES = _leaves_used_in_templates()
+
+
+def _render_meta(*, evolution_enabled: bool) -> str:
+    cfg = parse_prompt_file(str(ROOT / "agentevolver" / "prompt" / "default" / "meta_agent.html"))
+    prompt = cfg.to_prompt()
+    return asyncio.run(prompt.get_system_message({
+        "project_root": "/project",
+        "package_root": "/package",
+        "extension_root": "/extension",
+        "workspace_root": "/workspace",
+        "log_root": "/log",
+        "python_executable": "python",
+        "python_version": "3.12",
+        "python_env": "agentos",
+        "platform": "Linux",
+        "evolution_enabled": evolution_enabled,
+    }, reload=True)).text
+
+
+def test_meta_agent_remains_one_general_direct_working_orchestrator():
+    text = _render_meta(evolution_enabled=False)
+
+    for capability in ("tool", "skill", "connector", "plugin", "sub-agent", "workflow"):
+        assert capability in text
+    assert "edit code" in text and "bash_tool" in text
+    assert "not a pure router" in text
+    assert "<self-evolution-rules>" not in text
+
+
+def test_meta_agent_evolution_rules_follow_the_live_roster_flag():
+    text = _render_meta(evolution_enabled=True)
+
+    assert "<self-evolution-rules>" in text
+    assert "generate_agent" in text
+    assert "optimize_agent" in text
+    assert "evaluate_agent" in text
 
 
 def test_the_layout_was_actually_found():

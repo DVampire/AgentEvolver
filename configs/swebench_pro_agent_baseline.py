@@ -86,4 +86,8 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
+    retain_recent_steps=10,
+    compact_after_steps=30,
+    compact_at_tokens=120000,
+    compact_uncached_growth=50000,
 )

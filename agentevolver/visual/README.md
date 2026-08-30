@@ -20,9 +20,9 @@ preview only.
 | `css/task.css`, `js/task.js` | Task visualization |
 | `css/memory.css` | Memory visualization |
 | `css/plan.css` | Plan visualization |
-| `css/request.css`, `js/request.js` | Standalone canonical LLM request viewer |
+| `css/request.css`, `js/request.js` | Canonical LLM request viewer with context-layer, token-growth, cache, and compaction diagnostics |
 
-The standalone views share one dark terminal palette: `ground`, three surface
+The views share one dark terminal palette: `ground`, three surface
 levels, text tiers, semantic green/amber/red/blue/purple accents, borders, and the
 monospace stack. Layouts may differ because a prompt, plan, and long conversation
 have different information density, but their color and type vocabulary must not.

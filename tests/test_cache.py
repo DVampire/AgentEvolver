@@ -127,20 +127,29 @@ def test_a_session_anchor_caches_stable_task_before_checkpoint(serializer):
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
-def test_a_frozen_history_turn_gets_a_rolling_breakpoint_when_marked(serializer):
+def test_an_assistant_history_turn_gets_a_rolling_breakpoint_when_marked(serializer):
     """`derive_context` marks the last frozen turn with `.cache`; the serializer caches it.
 
-    Without a breakpoint on the last frozen turn the appended assistant/tool history sits past
-    the last cacheable byte and is re-read every step — the whole point of the projection is
-    lost. A tool result and an assistant turn are the two shapes the last frozen turn takes.
+    The rolling boundary lives on the assistant. This is accepted even when its visible
+    content is empty and tool results follow it.
     """
-    tool = serializer.serialize_message(
-        ToolMessage(tool_call_id="c1", content="the reference printed X", cache=True))
-    assert isinstance(tool["content"], list)
-    assert tool["content"][0]["cache_control"]["type"] == "ephemeral"
-
     asst = serializer.serialize_message(AssistantMessage(content="I will rebuild the flag loop", cache=True))
     assert isinstance(asst["content"], list)
+    assert asst["content"][0]["cache_control"]["type"] == "ephemeral"
+
+
+def test_llm_hub_does_not_put_an_unverified_breakpoint_on_tool_role():
+    tool = LLMHubChatSerializer.serialize_message(
+        ToolMessage(tool_call_id="c1", content="the reference printed X", cache=True)
+    )
+
+    assert tool["content"] == "the reference printed X"
+
+
+def test_llm_hub_can_cache_an_empty_assistant_tool_call_turn():
+    asst = LLMHubChatSerializer.serialize_message(AssistantMessage(content="", cache=True))
+
+    assert asst["content"][0]["text"] == ""
     assert asst["content"][0]["cache_control"]["type"] == "ephemeral"
 
 

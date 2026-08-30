@@ -105,12 +105,10 @@ _THINK_FAILURES_BEFORE_GIVING_UP = 3
 #: that out one empty step at a time.
 _EMPTY_TURNS_BEFORE_GIVING_UP = 5
 
-#: How many times one run may fold history to make an oversized request fit. Folding is
-#: lossy — the summary replaces turns the model can no longer read in full — so a run that
-#: needs it repeatedly is not recovering, it is shrinking toward a prompt that no longer
-#: describes its own task. Three folds is room for a long run that grew past its window;
-#: a fourth says the window is the wrong size for the work.
-_COMPACTIONS_PER_RUN = 3
+#: Hard runaway guard, not the ordinary cadence. Early compaction keeps a long run near a
+#: bounded working set, so a 400-step benchmark legitimately folds more than three times;
+#: the retained exact tail and one rolling checkpoint keep every fold structurally safe.
+_COMPACTIONS_PER_RUN = 32
 
 #: How much of a parent's conversation a forked child is shown. A history has no natural
 #: size, and this rides in the child's prompt on every step, so it is bounded here rather
@@ -537,6 +535,10 @@ class Agent(BaseModel):
         use_memory: bool = True,
         derive_context: bool = True,
         fold_at_pressure: float = 0.85,
+        retain_recent_steps: int = 10,
+        compact_after_steps: int = 30,
+        compact_at_tokens: int = 120_000,
+        compact_uncached_growth: int = 50_000,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -561,6 +563,10 @@ class Agent(BaseModel):
         #: Fold history before a step whose last request was at least this fraction of
         #: the model's input capacity. See :meth:`_fold_ahead`.
         self.fold_at_pressure = float(fold_at_pressure or 0.0)
+        self.retain_recent_steps = max(1, int(retain_recent_steps or 1))
+        self.compact_after_steps = max(0, int(compact_after_steps or 0))
+        self.compact_at_tokens = max(0, int(compact_at_tokens or 0))
+        self.compact_uncached_growth = max(0, int(compact_uncached_growth or 0))
         self.model_name = model_name
 
         # Setup steps
@@ -1080,7 +1086,7 @@ class Agent(BaseModel):
         that are not there, which is how a lean run ends up reasoning about
         capabilities it cannot reach.
 
-        Gates the `<self-evolution-rules>` block (~21% of meta_agent's template) and
+        Gates the `<self-evolution-rules>` block and
         the generator/optimizer/evaluator half of the sub-agent taxonomy.
         """
         from agentevolver.skill.server import skill_manager
@@ -1221,6 +1227,9 @@ class Agent(BaseModel):
         may be inserted there — put per-step content past ``<constraints>``.
         """
         import re as _re
+        from agentevolver.agent.context_builder import strip_rendered_comments
+
+        rendered = strip_rendered_comments(rendered)
 
         extra = getattr(ctx, "extra", None)
         if extra is None:
@@ -1266,7 +1275,7 @@ class Agent(BaseModel):
         projection. A short history is worse than a described one: the model would act on
         a conversation that silently lost its earlier turns.
         """
-        from agentevolver.agent.context_builder import context_builder
+        from agentevolver.agent.context_builder import context_builder, strip_rendered_comments
         from agentevolver.trace import trace_manager
         from agentevolver.trace.surface import SurfaceError
 
@@ -1277,7 +1286,7 @@ class Agent(BaseModel):
                 f"| ⚠️ [{self.name}] No retained log for session {session_id}; "
                 f"using the rendered history"
             )
-            return rendered
+            return strip_rendered_comments(rendered)
         try:
             return context_builder.build(rendered, events, ctx)
         except SurfaceError as error:
@@ -1285,7 +1294,7 @@ class Agent(BaseModel):
                 f"| ⚠️ [{self.name}] Log for session {session_id} cannot be projected "
                 f"({error}); using the rendered history"
             )
-            return rendered
+            return strip_rendered_comments(rendered)
 
     @staticmethod
     def _freeze_capabilities(
@@ -1672,6 +1681,15 @@ class Agent(BaseModel):
                             "task_id": task_id,
                             "agent_name": self.name,
                             "step_number": step_number,
+                        },
+                        "compaction_policy": {
+                            "retain_recent_steps": getattr(self, "retain_recent_steps", 10),
+                            "compact_after_steps": getattr(self, "compact_after_steps", 30),
+                            "compact_at_tokens": getattr(self, "compact_at_tokens", 120_000),
+                            "compact_uncached_growth": getattr(
+                                self, "compact_uncached_growth", 50_000,
+                            ),
+                            "fold_at_pressure": getattr(self, "fold_at_pressure", 0.85),
                         },
                         **({
                             "trace_integrity_profile": ctx.extra["trace_integrity_profile"],
@@ -2778,27 +2796,108 @@ class Agent(BaseModel):
         return None
 
     async def _fold_ahead(self, run) -> None:
-        """Fold before a step when the last request was already close to the ceiling.
-
-        The default is 85%: high enough to retain exact recent turns, with room for the
-        next tool result and model output. A deployment can set zero to compact only
-        after a request is refused as oversized.
-
-        The reading comes from the last request snapshot in the log, which records
-        `pressure_ratio_after` on every dispatch already. Nothing new is measured for it.
-        """
-        # The budget test here only skips a log read that `_make_room` would refuse
-        # anyway; the bound itself is enforced there, once, for both paths.
-        if self.fold_at_pressure <= 0 or run.rooms_made >= _COMPACTIONS_PER_RUN:
+        """Keep exact history bounded before cost or capacity becomes a problem."""
+        if run.rooms_made >= _COMPACTIONS_PER_RUN:
             return
-        ratio = await self._last_pressure_ratio(run)
-        if ratio < self.fold_at_pressure:
+        metrics = self._context_history_metrics(run)
+        reasons: list[str] = []
+        logical_steps = metrics["logical_steps"]
+        estimated_tokens = metrics["estimated_tokens"]
+        uncached_growth = metrics["uncached_growth"]
+        ratio = metrics["pressure_ratio"]
+        if self.compact_after_steps and logical_steps >= self.compact_after_steps:
+            reasons.append(f"history={logical_steps} steps")
+        if self.compact_at_tokens and estimated_tokens >= self.compact_at_tokens:
+            reasons.append(f"request≈{estimated_tokens:,} tokens")
+        if (
+            self.compact_uncached_growth
+            and uncached_growth >= self.compact_uncached_growth
+        ):
+            reasons.append(f"uncached growth={uncached_growth:,} tokens")
+        if self.fold_at_pressure and ratio >= self.fold_at_pressure:
+            reasons.append(f"capacity={ratio:.0%}")
+        if not reasons:
             return
         logger.info(
-            f"| 🗜️ [{self.name}] last request was at {ratio:.0%} of capacity "
-            f"(fold_at_pressure={self.fold_at_pressure:.0%}); folding before this step"
+            f"| 🗜️ [{self.name}] compacting before this step: {', '.join(reasons)}; "
+            f"retaining {self.retain_recent_steps} complete steps"
         )
         await self._make_room(run)
+
+    def _context_history_metrics(self, run) -> Dict[str, Any]:
+        """Read early-compaction signals from the retained Trace."""
+        from agentevolver.trace import trace_manager
+        from agentevolver.trace.derive import _marker
+        from agentevolver.trace.surface import fold_surface
+        from agentevolver.trace.types import TraceEventType
+
+        empty = {
+            "logical_steps": 0,
+            "estimated_tokens": 0,
+            "pressure_ratio": 0.0,
+            "uncached_growth": 0,
+        }
+        try:
+            events = trace_manager.events(str(getattr(run.ctx, "id", "") or "")) or []
+            surface = set(fold_surface(events)["nodes"])
+        except Exception as error:                                  # noqa: BLE001
+            logger.debug(f"| [{self.name}] cannot read context history: {error}")
+            return empty
+
+        logical_steps = sum(
+            event.seq_no in surface and event.event_type is TraceEventType.AGENT_CALL
+            for event in events
+        )
+        request = next((
+            event for event in reversed(events)
+            if event.event_type is TraceEventType.MODEL_REQUEST
+            and (not event.agent_name or event.agent_name == self.name)
+        ), None)
+        pressure = ((request.input or {}).get("pressure") or {}) if request else {}
+        try:
+            estimated_tokens = int(pressure.get("estimated_tokens_after") or 0)
+            pressure_ratio = float(pressure.get("pressure_ratio_after") or 0.0)
+        except (TypeError, ValueError):
+            estimated_tokens, pressure_ratio = 0, 0.0
+
+        last_fold = max((
+            int(event.seq_no) for event in events
+            if event.seq_no is not None
+            and event.event_type is TraceEventType.CUSTOM
+            and _marker(event) == "compaction"
+        ), default=-1)
+        request_provider = {
+            event.step_number: str((event.input or {}).get("provider") or "").lower()
+            for event in events
+            if event.event_type is TraceEventType.MODEL_REQUEST
+        }
+        uncached = []
+        for event in events:
+            if (
+                event.seq_no is not None and event.seq_no > last_fold
+                and event.event_type is TraceEventType.AGENT_CALL
+                and (not event.agent_name or event.agent_name == self.name)
+                and event.usage
+            ):
+                try:
+                    input_tokens = int(event.usage.get("input_tokens") or 0)
+                    cache_read = int(event.usage.get("cache_read_tokens") or 0)
+                    provider = request_provider.get(event.step_number, "")
+                    # Native Anthropic reports uncached input separately. OpenAI-shaped
+                    # relays include the cached subset in input_tokens.
+                    uncached.append(
+                        input_tokens if "anthropic" in provider
+                        else max(0, input_tokens - cache_read)
+                    )
+                except (TypeError, ValueError):
+                    pass
+        growth = max(0, uncached[-1] - uncached[0]) if len(uncached) > 1 else 0
+        return {
+            "logical_steps": logical_steps,
+            "estimated_tokens": estimated_tokens,
+            "pressure_ratio": pressure_ratio,
+            "uncached_growth": growth,
+        }
 
     async def _last_pressure_ratio(self, run) -> float:
         """How full the previous request was, read from the log rather than remembered.
@@ -2846,7 +2945,11 @@ class Agent(BaseModel):
             return False
         from agentevolver.memory import memory_manager
         try:
-            folded = await memory_manager.compact(self.memory_name, str(run.ctx.id or ""))
+            folded = await memory_manager.compact(
+                self.memory_name,
+                str(run.ctx.id or ""),
+                keep_steps=self.retain_recent_steps,
+            )
         except Exception as error:                                  # noqa: BLE001
             logger.warning(f"| ⚠️ [{self.name}] could not compact to make room: {error}")
             return False

@@ -71,7 +71,15 @@ def _event() -> TraceEvent:
                 },
             }],
             "response_format": None,
-            "pressure": {"tier": "normal"},
+            "pressure": {
+                "tier": "normal",
+                "estimated_tokens_after": 40_000,
+                "input_capacity_tokens": 200_000,
+                "compaction_policy": {
+                    "compact_after_steps": 30,
+                    "compact_at_tokens": 120_000,
+                },
+            },
         },
     )
 
@@ -95,6 +103,29 @@ def test_request_page_preserves_roles_calls_cache_and_route_metadata(tmp_path):
     assert "Endpoint fingerprint" in page
     assert 'class="sequence-node role-system cache-boundary"' in page
     assert 'id="message-4"' in page
+    assert "Request diagnostics" in page
+    assert "Fixed prefix" in page
+    assert "Provider state" in page
+    assert "Tool arguments" in page
+    assert "Compaction" in page
+    assert "Context capacity" in page
+    assert "pending" in page
+
+
+def test_request_page_normalizes_anthropic_cache_usage(tmp_path):
+    page = render_request_html(
+        _event(),
+        str(tmp_path / "request.html"),
+        usage={
+            "input_tokens": 100,
+            "output_tokens": 10,
+            "cache_read_tokens": 900,
+            "cache_write_tokens": 0,
+        },
+    )
+
+    assert "90.0%" in page
+    assert "900 read tokens" in page
 
 
 def test_request_content_is_escaped_and_never_executed_as_page_markup(tmp_path):
@@ -112,24 +143,37 @@ def test_request_filename_is_unique_for_retry_route_and_sanitizes_agent_name(tmp
     )
 
 
-def test_request_page_is_written_atomically_as_a_standalone_document(tmp_path):
+def test_request_page_is_written_atomically_and_links_shared_assets(tmp_path):
     path = write_request_html(_event(), str(tmp_path))
     page = open(path, encoding="utf-8").read()
 
     assert path.endswith(".html")
-    assert "<style>:root" in page
-    assert "<script defer>document.addEventListener" in page
-    assert '<link rel="stylesheet"' not in page
-    assert '<script defer src=' not in page
+    assert '<link rel="stylesheet" href="' in page
+    assert '<script defer src="' in page
+    assert "<style>" not in page
+    assert "<script defer>" not in page
+    css_href = re.search(r'<link rel="stylesheet" href="([^"]+)"', page).group(1)
+    js_src = re.search(r'<script defer src="([^"]+)"', page).group(1)
+    assert (Path(path).parent / css_href).resolve().name == "request.css"
+    assert (Path(path).parent / js_src).resolve().name == "request.js"
+    assert (Path(path).parent / css_href).is_file()
+    assert (Path(path).parent / js_src).is_file()
     assert not list(tmp_path.rglob("*.tmp"))
 
 
 @pytest.mark.asyncio
 async def test_background_request_page_can_be_flushed_before_shutdown(tmp_path):
-    schedule_request_html(_event(), str(tmp_path))
+    event = _event()
+    schedule_request_html(event, str(tmp_path))
+    schedule_request_html(
+        event,
+        str(tmp_path),
+        usage={"input_tokens": 100, "cache_read_tokens": 900},
+    )
 
     assert await flush_request_html()
     assert len(list(tmp_path.rglob("*.html"))) == 1
+    assert "90.0%" in next(tmp_path.rglob("*.html")).read_text(encoding="utf-8")
 
 
 def test_visual_pages_share_one_palette_and_type_system():
@@ -150,3 +194,51 @@ def test_visual_pages_share_one_palette_and_type_system():
 
     expected = values["prompt.css"]
     assert all(palette == expected for palette in values.values()), values
+
+
+@pytest.mark.asyncio
+async def test_post_step_refreshes_the_matching_request_with_provider_usage(monkeypatch):
+    from agentevolver.hook.default.trace import TraceHook
+    from agentevolver.hook.types import HookContext, HookEvent
+    from agentevolver.memory import memory_manager
+    from agentevolver.trace import trace_manager
+    import agentevolver.visual.request_viewer as viewer
+
+    request = _event()
+    retained = [request]
+    scheduled = []
+
+    async def emit(event):
+        event.seq_no = 43
+        retained.append(event)
+        return True
+
+    async def consume(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(trace_manager, "emit", emit)
+    monkeypatch.setattr(trace_manager, "events", lambda session_id: list(retained))
+    monkeypatch.setattr(trace_manager, "_log_root", "/tmp/session/log/trace")
+    monkeypatch.setattr(memory_manager, "consume_trace_event", consume)
+    monkeypatch.setattr(
+        viewer,
+        "schedule_request_html",
+        lambda event, root, **kwargs: scheduled.append((event, root, kwargs)),
+    )
+
+    usage = {"input_tokens": 100, "output_tokens": 5, "cache_read_tokens": 900}
+    await TraceHook().handle(HookContext(
+        id="session-1",
+        name="trace_hook",
+        input={
+            "event": HookEvent.POST_STEP,
+            "agent_name": "code/agent",
+            "task_id": "task-1",
+            "step_number": 7,
+            "step_usage": usage,
+            "use_memory": False,
+        },
+    ))
+
+    assert scheduled and scheduled[0][0] is request
+    assert scheduled[0][2]["usage"] == usage

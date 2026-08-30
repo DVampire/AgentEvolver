@@ -495,15 +495,10 @@ class LLMHubChatSerializer:
                 'tool_call_id': message.tool_call_id,
                 'content': message.content,
             }
-            # `message.cache` marks the last frozen turn of a `derive_context` conversation:
-            # a rolling breakpoint here caches the whole growing history prefix, leaving only
-            # the volatile trailing turn to be re-read each step. Wrapping the string content
-            # in a text block is how a cache breakpoint attaches to a tool result.
-            if getattr(message, "cache", False) and isinstance(message.content, str):
-                tool_result['content'] = [{
-                    'type': 'text', 'text': message.content,
-                    'cache_control': {'type': 'ephemeral', 'ttl': CACHE_TTL},
-                }]
+            # Do not attach a cache breakpoint to a tool-role message on this relay.
+            # A controlled Opus probe hit an assistant boundary but missed after the
+            # same prefix was advanced to a tool result. ContextBuilder therefore
+            # marks the preceding assistant turn as the rolling boundary.
             return tool_result
         else:
             raise ValueError(f'Unknown message type: {type(message)}')

@@ -328,6 +328,34 @@ def test_folding_stops_at_what_the_next_step_will_read(monkeypatch):
     assert len(state.recent) >= memory.recent_fetch
 
 
+def test_step_retention_keeps_complete_recent_steps(monkeypatch):
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    state.recent.append(MemoryRecord(ts="t", event="start", detail="task"))
+    for step, calls in ((1, 2), (2, 1), (3, 3), (4, 2)):
+        for call in range(calls):
+            state.recent.append(MemoryRecord(
+                ts="t", event=f"step {step} call {call}", detail="d", step=step,
+            ))
+
+    monkeypatch.setattr(TieredMemory, "_summarise",
+                        staticmethod(lambda items, existing: _resolved("a summary")))
+    assert asyncio.run(memory.compact("s1", keep_steps=2)) is True
+
+    assert {record.step for record in state.recent} == {3, 4}
+    assert sum(record.step == 3 for record in state.recent) == 3
+    assert sum(record.step == 4 for record in state.recent) == 2
+
+
+def test_step_retention_does_not_fold_when_only_the_exact_tail_exists():
+    memory, state = _memory(), _state()
+    memory._sessions["s1"] = state
+    for step in range(1, 4):
+        state.recent.append(MemoryRecord(ts="t", event="call", detail="d", step=step))
+
+    assert asyncio.run(memory.compact("s1", keep_steps=3)) is False
+
+
 def test_a_history_already_at_that_floor_reports_that_it_folded_nothing():
     """`False` is what stops the caller asking again.
 

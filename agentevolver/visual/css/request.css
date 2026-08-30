@@ -163,6 +163,14 @@ pre { margin: 0; tab-size: 2; }
 .layer-card strong { display: inline-block; margin-right: 6px; font-size: 28px; line-height: 1; }
 .layer-card > span:not(.layer-name) { color: var(--muted); font-size: 12px; }
 .layer-card small { display: block; margin-top: 12px; color: var(--text-mid); }
+.diagnostic-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.diagnostic-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-left: 2px solid var(--blue); border-radius: var(--radius); background: rgba(20, 27, 18, .92); }
+.diagnostic-card:nth-child(2), .diagnostic-card:nth-child(5) { border-left-color: var(--green); }
+.diagnostic-card:nth-child(3), .diagnostic-card:nth-child(6) { border-left-color: var(--violet); }
+.diagnostic-card:nth-child(4), .diagnostic-card:nth-child(7) { border-left-color: var(--amber); }
+.diagnostic-card > span { display: block; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.diagnostic-card strong { display: block; margin-top: 6px; overflow: hidden; font-size: 22px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.diagnostic-card small { display: block; margin-top: 4px; color: var(--text-mid); }
 .notice { padding: 11px 13px; border: 1px solid rgba(207,160,64,.25); border-radius: var(--radius); color: var(--amber); background: var(--amber-bg); }
 .cache-note { margin: 13px 0; }
 .canonical-json { max-height: none; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--ground); }
@@ -175,7 +183,7 @@ pre { margin: 0; tab-size: 2; }
   .snapshot-id { padding: 14px 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
   .search { grid-column: 1 / -1; }
-  .layer-map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .layer-map, .diagnostic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 560px) {
@@ -186,6 +194,6 @@ pre { margin: 0; tab-size: 2; }
   .message-head, .section-heading { align-items: flex-start; flex-direction: column; }
   .message-toggle { margin-left: 0; }
   .role-filter { flex: 1; }
-  .toolbar, .layer-map { grid-template-columns: 1fr; }
+  .toolbar, .layer-map, .diagnostic-grid { grid-template-columns: 1fr; }
   .search { grid-column: auto; }
 }

@@ -118,7 +118,7 @@ class Memory(BaseModel):
         if not self.description and self.__class__.__doc__:
             self.description = self.__class__.__doc__.strip().split('\n')[0]
     
-    async def compact(self, session_id: str) -> bool:
+    async def compact(self, session_id: str, *, keep_steps: Optional[int] = None) -> bool:
         """Fold the oldest history now, ahead of whatever this memory's own trigger is.
 
         Returns whether anything was folded, so a caller that asked for room can tell
@@ -128,6 +128,9 @@ class Memory(BaseModel):
         The default is to fold nothing. A memory that keeps no history has nothing to
         give up, and saying so is not a failure — the caller's next move is the same
         either way.
+
+        ``keep_steps`` asks a trace-backed memory to retain that many complete recent
+        logical steps. Stateless memories may ignore it and fold nothing.
         """
         return False
 
