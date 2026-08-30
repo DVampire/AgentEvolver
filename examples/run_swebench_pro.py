@@ -46,6 +46,7 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 import sys
 import time
 
@@ -198,15 +199,38 @@ def collect_patch(workspace: str, base_commit: str) -> str:
     baked-in git quirks is dropped later by ``strip_binary_hunks`` at grade time, matching the
     official harness.
     """
-    def _git(*args):
-        return subprocess.run(["git", "-c", "safe.directory=*", "-C", workspace, *args],
-                              capture_output=True, text=True, timeout=120)
+    git_dir = os.path.join(workspace, ".git")
 
-    # Stage everything so uncommitted new files show up in the diff too, then diff the whole
-    # working tree against the base commit. -N includes untracked files' additions.
-    _git("add", "-A", "-N")
-    diff = _git("diff", "--binary", base_commit)
-    return diff.stdout if diff.returncode == 0 else ""
+    def _git(*args, env=None):
+        # The seeded tree belongs to the sandbox uid, which need not match the host
+        # watcher uid.  Explicit git/work-tree paths avoid Git's ownership discovery
+        # check without weakening the user's global safe.directory configuration.
+        return subprocess.run(
+            ["git", f"--git-dir={git_dir}", f"--work-tree={workspace}", *args],
+            capture_output=True, text=True, timeout=120, env=env,
+        )
+
+    # Use a disposable index: ``add -N`` makes untracked files visible to diff, but the
+    # host watcher must never write the sandbox-owned repository index.
+    with tempfile.TemporaryDirectory(prefix="agentevolver-patch-index-") as tmp_dir:
+        env = os.environ.copy()
+        env["GIT_INDEX_FILE"] = os.path.join(tmp_dir, "index")
+        object_dir = os.path.join(tmp_dir, "objects")
+        os.makedirs(object_dir)
+        env["GIT_OBJECT_DIRECTORY"] = object_dir
+        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = os.path.join(git_dir, "objects")
+        initialized = _git("read-tree", "HEAD", env=env)
+        if initialized.returncode != 0:
+            raise RuntimeError(
+                f"git read-tree failed while collecting patch: {initialized.stderr.strip()}"
+            )
+        staged = _git("add", "-A", "-N", env=env)
+        if staged.returncode != 0:
+            raise RuntimeError(f"git add -N failed while collecting patch: {staged.stderr.strip()}")
+        diff = _git("diff", "--binary", base_commit, env=env)
+        if diff.returncode != 0:
+            raise RuntimeError(f"git diff failed while collecting patch: {diff.stderr.strip()}")
+        return diff.stdout
 
 
 def strip_binary_hunks(patch: str) -> str:
@@ -302,7 +326,10 @@ async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
     from agentevolver.sandbox import sandbox_manager
 
     instance_id = row["instance_id"]
-    patch = strip_binary_hunks(collect_patch(workspace_dir, row.get("base_commit", "")))
+    try:
+        patch = strip_binary_hunks(collect_patch(workspace_dir, row.get("base_commit", "")))
+    except Exception as e:  # noqa: BLE001
+        return {"error_code": "patch_collection_failed", "error_details": str(e)}
     if not patch.strip():
         return {"error_code": "empty_patch", "error_details": "the working tree is unchanged from base"}
     try:
