@@ -87,6 +87,12 @@ class P(str, Enum):
     #: sub-agent run it spawned, each under its own trace session id. This is the
     #: durable record cross-session retrieval reads.
     SESSION_TRACE = "session_trace"
+    #: One `.txt` per bash call, holding that command's complete output verbatim.
+    #: The tool result the model reads is still bounded (full when small, an excerpt
+    #: plus locator when large), but the whole transcript is archived here so nothing
+    #: a command printed is ever lost — the same guarantee for foreground and for
+    #: background jobs, whose in-memory ring buffer would otherwise drop the head.
+    SESSION_BASH = "session_bash"
     #: Canvas drafts belong to the session that drew them; a finished flow is
     #: promoted to the shared library under ``extension/canvas``.
     SESSION_FLOWS = "session_flows"
@@ -172,6 +178,7 @@ LAYOUT: Dict[P, str] = {
     P.SESSION_EXTENSION: "output/{owner}/sessions/{session_id}/extension",
     P.SESSION_MANIFEST: "output/{owner}/sessions/{session_id}/session.json",
     P.SESSION_TRACE: "output/{owner}/sessions/{session_id}/log/trace",
+    P.SESSION_BASH: "output/{owner}/sessions/{session_id}/log/bash",
     P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",
     P.SESSION_RUNS: "output/{owner}/sessions/{session_id}/runs",
     P.CONVERSATIONS: "output/{owner}/sessions/{session_id}/conversations",

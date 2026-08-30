@@ -1,6 +1,8 @@
 """Bash tool for executing shell commands."""
 import asyncio
+import datetime as _dt
 import os
+import secrets
 import signal
 import sys
 from typing import Any, Dict, List, Optional
@@ -10,6 +12,7 @@ from pydantic import Field
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.tool.types import OUTPUT_LIMIT, Tool
 from agentevolver.utils.terminal import (
     PTY_COLS,
@@ -31,6 +34,11 @@ _GUIDANCE = """
   observation, not a tool error (e.g. `grep` returns 1 when it finds no matches);
   read STDOUT/STDERR and the exit code to decide whether the command did what you
   intended.
+- Every command's COMPLETE output is archived to a `.txt` under the session's
+  `log/bash/` directory, and the tool result tells you the path. What you are shown
+  inline may be an excerpt for a very long command; when you need the full transcript,
+  read that file (`cat`/`grep` it) rather than re-running the command. A background job's
+  archive is named by its job id, so it pairs with `job__output(job_id=...)`.
 - One call can carry several steps, and doing so costs one model round-trip instead
   of several: `make && ./run-tests`, `a; b; echo $?`, pipelines,
   a heredoc that writes a file and then runs it. Use `&&` when a later step is
@@ -50,6 +58,62 @@ _EXAMPLES = [
     '{"name": "bash_tool", "args": {"command": "./viewer --colour red", "tty": true, "stdin": "q", "timeout": 3}}',
     '{"name": "bash_tool", "args": {"command": "python train.py", "run_in_background": true}}',
 ]
+
+
+def _bash_archive_path(stem: Optional[str] = None) -> Optional[str]:
+    """Create (if needed) the session's bash-log directory and return a `.txt` path
+    inside it — or ``None`` if the directory cannot be resolved or made.
+
+    ``stem`` names the file when the command has a handle the agent refers to it by —
+    a background job's id, so ``job__output(job_id="job_ab12cd34")`` and the file
+    ``job_ab12cd34.txt`` are visibly the same run, the way Claude Code names a task's
+    output file by the task id. A foreground call has no such handle, so it falls back
+    to a timestamp plus a short random token: the directory then lists in the order
+    commands ran, and two calls in the same microsecond still get separate files.
+    """
+    try:
+        directory = path_manager.get(P.SESSION_BASH)
+        directory.mkdir(parents=True, exist_ok=True)
+        if stem is None:
+            stem = f"{_dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}-{secrets.token_hex(3)}"
+        return str(directory / f"{stem}.txt")
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
+def _write_bash_archive(command: str, text: str, path: Optional[str] = None) -> Optional[str]:
+    """Archive one command's complete output to the session's bash log; return the path.
+
+    Archiving never fails the command: a command that ran is a command that ran, and
+    losing the ability to file its transcript must not be reported as the command
+    breaking (same rule the oversized-result spill follows). The tool result the model
+    reads is still bounded by the universal output policy; this is the durable, complete
+    copy beside it — written here for a foreground call, appended live by the background
+    drain — so nothing a command printed is lost, including the head a long-running job's
+    bounded in-memory buffer would otherwise drop.
+    """
+    if not text and path is None:
+        return None
+    try:
+        path = path or _bash_archive_path()
+        if path is None:
+            return None
+        header = f"$ {command}\n{'-' * 60}\n"
+        # 'x' (O_EXCL) rather than 'w': a pre-existing path — a planted symlink or the
+        # vanishingly unlikely token collision — is an error, never a redirect.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(header + (text or ""))
+        return path
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
+def _with_archive_note(message: str, archived: Optional[str]) -> str:
+    """Append the archive locator to a tool message, when the output was archived."""
+    if not archived:
+        return message
+    return f"{message}\n\n[📄 full output archived at {archived}]"
 
 
 def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
@@ -185,22 +249,48 @@ class BashTool(Tool):
             session_id=str(getattr(ctx, "id", "") or ""), handle=process,
         )
 
+        # Archive the full transcript to disk as it streams, named by the job id so the
+        # file and `job__output(job_id=...)` are visibly the same run. The registry keeps
+        # only a bounded tail in memory (it drops the head of a chatty job), so the file
+        # is the one complete record of what a long-running command printed.
+        archive_path = _write_bash_archive(command, "", path=_bash_archive_path(stem=job.id))
+
         async def _drain() -> None:
             loop = _asyncio.get_running_loop()
+            handle = None
+            if archive_path:
+                try:
+                    handle = open(archive_path, "a", encoding="utf-8")
+                except Exception:                                  # noqa: BLE001
+                    handle = None
             try:
                 while True:
                     line = await loop.run_in_executor(None, process.stdout.readline)
                     if not line:
                         break
                     job_manager.append_output(job.id, line)
+                    if handle is not None:
+                        try:
+                            handle.write(line)
+                            handle.flush()
+                        except Exception:                          # noqa: BLE001
+                            handle = None
                 code = await loop.run_in_executor(None, process.wait)
                 job_manager.finish(job.id, exit_code=code)
             except Exception as error:                              # noqa: BLE001
                 # A reader that dies silently leaves the job RUNNING forever, and the
                 # agent waits on something nothing will ever finish.
                 job_manager.finish(job.id, error=f"output reader failed: {error}")
+            finally:
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except Exception:                              # noqa: BLE001
+                        pass
 
         _asyncio.ensure_future(_drain())
+        archive_line = (f"\n  full output is also archived at {archive_path}"
+                        if archive_path else "")
         return Response(
             type=ResponseType.TOOL, success=True,
             message=(
@@ -210,8 +300,9 @@ class BashTool(Tool):
                 f"  job__output(job_id=\"{job.id}\")  — what it has printed so far\n"
                 f"  job__list()                      — every job and its state\n"
                 f"  job__kill(job_id=\"{job.id}\")    — stop it"
+                f"{archive_line}"
             ),
-            data={"job_id": job.id, "status": job.status.value},
+            data={"job_id": job.id, "status": job.status.value, "archived": archive_path},
         )
 
     def permission_request(self, arguments, ctx=None):
@@ -312,13 +403,15 @@ class BashTool(Tool):
                         ),
                         data={"exit_code": None, "command": command, "timed_out": True, "tty": True},
                     )
-                message = warning_prefix + (output or
-                                            f"Command completed with exit code: {exit_code}")
+                body = output or f"Command completed with exit code: {exit_code}"
                 if exit_code:
-                    message = f"{message}\n\nExit code: {exit_code}"
+                    body = f"{body}\n\nExit code: {exit_code}"
+                archived = _write_bash_archive(command, body)
+                message = _with_archive_note(warning_prefix + body, archived)
                 return Response(
                     type=ResponseType.TOOL, success=True, message=message,
-                    data={"exit_code": exit_code, "command": command, "tty": True},
+                    data={"exit_code": exit_code, "command": command, "tty": True,
+                          "archived": archived},
                 )
 
             process = await asyncio.create_subprocess_shell(
@@ -376,7 +469,9 @@ class BashTool(Tool):
             if exit_code != 0:
                 parts.append(f"Exit code: {exit_code}")
 
-            message = warning_prefix + ("\n\n".join(parts) if parts else f"Command completed with exit code: {exit_code}")
+            body = "\n\n".join(parts) if parts else f"Command completed with exit code: {exit_code}"
+            archived = _write_bash_archive(command, body)
+            message = _with_archive_note(warning_prefix + body, archived)
 
             # The bash *tool call* succeeds whenever the command actually ran to
             # completion — the shell exit code is an observation for the model to read
@@ -390,7 +485,7 @@ class BashTool(Tool):
             return Response(type=ResponseType.TOOL,
                 success=True,
                 message=message,
-                data={"exit_code": exit_code, "command": command},
+                data={"exit_code": exit_code, "command": command, "archived": archived},
             )
 
         except Exception as e:
