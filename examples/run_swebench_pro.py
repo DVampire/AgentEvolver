@@ -39,6 +39,7 @@ Modes: ``launcher`` (default, host) selects instances and runs a container each;
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import contextlib
 import json
@@ -259,7 +260,17 @@ def strip_binary_hunks(patch: str) -> str:
 def _as_list(row: dict, field: str) -> list:
     v = row.get(field, "")
     try:
-        return list(json.loads(v)) if isinstance(v, str) and v.strip() else list(v or [])
+        if not isinstance(v, str):
+            return list(v or [])
+        if not v.strip():
+            return []
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            # SWE-bench Pro follows the official evaluator's Python-literal format for
+            # a few rows whose test names are not valid JSON strings.
+            parsed = ast.literal_eval(v)
+        return list(parsed or [])
     except Exception:  # noqa: BLE001
         return []
 

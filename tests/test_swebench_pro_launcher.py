@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
-from examples.run_swebench_pro import collect_patch
+from examples.run_swebench_pro import _as_list, collect_patch
 
 
 def _git(repo, *args):
@@ -34,3 +34,10 @@ def test_collect_patch_is_read_only_and_includes_untracked_files(tmp_path):
     assert "diff --git a/new.txt b/new.txt" in patch
     assert (repo / ".git" / "index").read_bytes() == index_before
     assert _git(repo, "status", "--short").splitlines() == ["M tracked.txt", "?? new.txt"]
+
+
+def test_as_list_accepts_the_dataset_python_literal_fallback():
+    # A quote inside a test name is escaped for Python, but not sufficiently for JSON.
+    row = {"fail_to_pass": "['works with \\\'quoted\\\' input', 'second test']"}
+
+    assert _as_list(row, "fail_to_pass") == ["works with 'quoted' input", "second test"]
