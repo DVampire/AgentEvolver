@@ -215,12 +215,18 @@ file_system_memory.update(
     # of what a benchmark run measures, so rewriting it mid-run would change the
     # measurement rather than the solution.
     enable_evolving=False,
-    # Trim what memory re-sends uncached every step — the live state sits past the cache
-    # breakpoint and memory was 86% of it, dominated by big raw tool outputs. Cap an entry at
-    # 2500 chars (keeps head + spill locator) and hold 8 recent records. Wants an A/B for
-    # quality. Kept identical to the baseline arm (the two differ only in the evolution roster).
+    # Shift context off the expensive-uncached tier onto the cheap-cached one. Working Memory
+    # now rides in the cached prefix (agent_context.html groups <working-memory> ahead of
+    # <constraints>), so remembering via it is ~10x cheaper than via Recent Steps, which sits
+    # past the cache breakpoint and is re-sent uncached every step. So: cap an entry at 2500
+    # chars (keeps head + spill locator), hold fewer raw Recent Steps (6, down from 8), and
+    # carry more compacted long-term summaries (working_fetch 8, up from the default 5). Net
+    # intent: less uncached re-send, comparable total context via cached summaries. Wants an
+    # A/B for quality. Kept identical to the baseline arm (the two differ only in the evolution
+    # roster).
     record_detail_max=2500,
-    recent_fetch=8,
+    recent_fetch=6,
+    working_fetch=8,
 )
 
 #-----------------EVOLUTION AGENT CONFIGS-----------------

@@ -499,3 +499,58 @@ def test_the_second_arrival_leaves_the_first_alone(monkeypatch):
 
     assert calls == calls_solo, (
         f"two concurrent calls folded differently from one: {calls} vs {calls_solo}")
+
+
+# --------------------------------------------------------------------------- #
+# get(section=...) — the two tiers can be fetched apart, so the stable one
+# (Working Memory) can ride in the request's cache prefix while the sliding
+# Recent Steps stays out of it. Default "all" stays byte-identical.
+# --------------------------------------------------------------------------- #
+def _registered(memory, state):
+    memory._sessions[state.session_id] = state
+    return state
+
+
+def test_get_section_splits_working_from_recent():
+    memory = _memory()
+    state = _registered(memory, _state())
+    state.working.append("a compacted summary")
+    _fill(state, 2)  # two recent records
+    state.final_result = "the final result"
+
+    all_ = asyncio.run(memory.get("s1", section="all"))
+    stable = asyncio.run(memory.get("s1", section="stable"))
+    volatile = asyncio.run(memory.get("s1", section="volatile"))
+
+    # stable = only Working Memory
+    assert "## Working Memory" in stable
+    assert "a compacted summary" in stable
+    assert "## Recent Steps" not in stable
+    assert "Final Result" not in stable
+
+    # volatile = Recent Steps + Final Result, never Working Memory
+    assert "## Recent Steps" in volatile
+    assert "## Working Memory" not in volatile
+    assert "the final result" in volatile
+
+    # the two partitions together reconstruct the default "all" render
+    assert all_ == (stable + "\n\n" + volatile).strip()
+
+
+def test_get_default_all_is_unchanged():
+    """Backward-compat: the default fetch renders exactly as before the split."""
+    memory = _memory()
+    state = _registered(memory, _state())
+    state.working.append("summary one")
+    _fill(state, 2)
+    out = asyncio.run(memory.get("s1"))
+    assert out is not None
+    assert out.index("## Working Memory") < out.index("## Recent Steps")
+
+
+def test_get_stable_empty_when_no_working_memory():
+    memory = _memory()
+    state = _registered(memory, _state())
+    _fill(state, 2)  # recent only, no working summaries
+    assert asyncio.run(memory.get("s1", section="stable")) is None
+    assert "## Recent Steps" in asyncio.run(memory.get("s1", section="volatile"))

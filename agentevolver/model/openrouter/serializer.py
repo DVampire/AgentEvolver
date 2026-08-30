@@ -31,7 +31,7 @@ except ImportError:
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel
 
-from agentevolver.model.types import CACHE_TTL
+from agentevolver.model.types import CACHE_TTL, split_cached_prefix
 from agentevolver.message.types import (
     AssistantMessage,
     ContentPartAudio,
@@ -100,6 +100,22 @@ def _split_cached_user_message(sm: Dict[str, Any]) -> List[Dict[str, Any]]:
     if "name" in sm:
         stable["name"] = rest["name"] = sm["name"]
     return [stable, rest]
+
+
+def _splittable_text(content: Any) -> Optional[str]:
+    """The full turn text to run the cache split on, or None if it cannot be one string.
+
+    The prompt renderer hands the user turn as a single ``ContentPartText`` inside a list,
+    NOT a bare str, so the split has to see through that wrapping — without this the whole
+    turn (catalog, task, plan) serializes uncached and only the system message caches. A list
+    carrying an image or any non-text part is left alone: it cannot become one cached block.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content and all(
+            isinstance(p, ContentPartText) for p in content):
+        return "".join(p.text for p in content)
+    return None
 
 
 class OpenRouterChatSerializer:
@@ -375,38 +391,21 @@ class OpenRouterChatSerializer:
 
     @staticmethod
     def _cache_split(text: str):
-        """Split a user turn just before the first live-state block, for a cache breakpoint.
+        """Split a user turn at the cache breakpoint — see ``split_cached_prefix``.
 
-        The stable prefix of a step's user turn is the capability catalog **and the task**
-        (and any inherited context) — all byte-identical on every step of a session. The
-        first thing that changes is `<constraints>` (the live budget), followed by
-        step-info / memory / plan / workspace. The breakpoint therefore goes right before
-        `<constraints>`, so the task rides inside the cached prefix rather than being re-read
-        in full every step (measured: the user turn was byte-identical for ~54% of its
-        length, but the old breakpoint at `</capability-context>` sat at ~14%, leaving the
-        whole task uncached).
-
-        Falls back to the end of `<capability-context>` — the old split — for turns that
-        render no `<constraints>` block, and returns ``None`` when neither marker is present
-        (a turn with no catalog must not get a breakpoint of its own: one placed after
-        content that changes each step caches nothing and spends a write to learn it).
+        The breakpoint is located by TAG STRUCTURE (the first live-zone block inside
+        ``<agent-context>``), not by searching for a marker string, so a tag name written
+        in a comment or in prose never moves it. Kept as a thin alias so both serializers
+        share one implementation and one tier classification.
         """
-        constraints = text.find("<constraints>")
-        if constraints != -1:
-            return text[:constraints], text[constraints:]
-        marker = "</capability-context>"
-        end = text.find(marker)
-        if end == -1:
-            return None
-        end += len(marker)
-        return text[:end], text[end:]
+        return split_cached_prefix(text)
 
     @staticmethod
     def serialize_message(message: Message) -> ChatCompletionMessageParam:
         """Serialize a custom message to an OpenRouter message param."""
         if isinstance(message, HumanMessage):
-            split = (OpenRouterChatSerializer._cache_split(message.content)
-                     if isinstance(message.content, str) else None)
+            _text = _splittable_text(message.content)
+            split = OpenRouterChatSerializer._cache_split(_text) if _text is not None else None
             if split is not None:
                 stable, rest = split
                 blocks: list[dict[str, Any]] = [

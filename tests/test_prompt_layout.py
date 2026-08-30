@@ -241,11 +241,13 @@ def test_the_changes_block_is_described_as_an_amendment(path):
 def test_the_explanation_sits_before_the_cache_breakpoint(path):
     """In the system message, not beside the catalog.
 
-    The breakpoint is at `</capability-context>` in the user turn. Text placed after it
-    is re-read at full price on every step, and this text never changes.
+    The model-facing explanation of the changes-block must not sit in the user turn's live
+    zone, where it is re-read at full price every step. HTML comments are developer notes,
+    not model-facing prose, and the layout comment in agent_context.html names the block on
+    purpose — strip comments before checking, so the guard is about the rendered prose only.
     """
     config = parse_prompt_file(str(path))
-    user = config.user_template or ""
+    user = re.sub(r"<!--.*?-->", "", config.user_template or "", flags=re.S)
     tail = user[user.index("</capability-context>"):]
     assert "capability-context-changes" not in tail, (
         f"{path.name} explains the block after the breakpoint, where it is not cacheable")

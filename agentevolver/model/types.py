@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json as _json
 from abc import ABC, abstractmethod
+from html.parser import HTMLParser as _HTMLParser
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional, Type, Union, TYPE_CHECKING
 import httpx
@@ -86,6 +87,89 @@ class ModelConfig(BaseModel):
 #: The write costs 2x base against 1.25x, and reads are 0.1x either way — so a single
 #: otherwise-missed hit already pays for it, and the case this fixes missed every one.
 CACHE_TTL = "1h"
+
+
+# --- the cache breakpoint, located by tag structure -------------------------
+#
+# agent_context.html lays the agent-context out in two zones by how often each block
+# changes. The CACHED zone holds only the reliably-stable blocks (task,
+# inherited-context, plan); the LIVE zone holds everything that changes too often to
+# cache. The breakpoint goes at the boundary — right before the first live-zone block.
+#
+# We locate that boundary by parsing TAGS, not by searching for a marker string. A tag
+# name written in a comment or in prose (this very list, say) must never move the split;
+# the earlier string-search version did exactly that and cached the catalog alone. The
+# tag NAME is the tier: adding a block means classifying its tag here, nothing more.
+_LIVE_ZONE_TAGS = frozenset({
+    "constraints", "step-info", "working-memory", "recent-steps",
+    "environment-state", "workspace", "errors",
+})
+
+
+def _line_start_offsets(text: str) -> List[int]:
+    """Char offset at which each line begins (index i → line i+1), counting by '\\n'
+    the way :class:`html.parser.HTMLParser` counts lines, so ``getpos()`` maps back."""
+    starts = [0]
+    i = text.find("\n")
+    while i != -1:
+        starts.append(i + 1)
+        i = text.find("\n", i + 1)
+    return starts
+
+
+class _LiveZoneLocator(_HTMLParser):
+    """Byte offset of the first live-zone opening tag inside ``<agent-context>``.
+
+    Real opening tags only: HTMLParser routes ``<!-- ... -->`` to ``handle_comment``,
+    which we do not override, so a tag name inside a comment (or as plain text) is never
+    mistaken for the block. Gated on being inside ``<agent-context>`` so a capability
+    description that happens to contain one of these names cannot move the split either.
+    """
+
+    def __init__(self, text: str):
+        super().__init__(convert_charrefs=False)
+        self._line_starts = _line_start_offsets(text)
+        self._in_agent_context = False
+        # NOT `self.offset` — HTMLParser keeps its own `self.offset` for line/column
+        # tracking, and shadowing it breaks getpos() (and crashes updatepos).
+        self.mark: Optional[int] = None
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag == "agent-context":
+            self._in_agent_context = True
+            return
+        if (self.mark is None and self._in_agent_context
+                and tag in _LIVE_ZONE_TAGS):
+            line, col = self.getpos()               # (1-based line, 0-based col)
+            self.mark = self._line_starts[line - 1] + col
+
+
+def split_cached_prefix(text: str) -> Optional[tuple]:
+    """Split a user turn into ``(cached_prefix, live_rest)`` at the cache breakpoint.
+
+    The breakpoint is the start of the first live-zone block (see agent_context.html and
+    ``_LIVE_ZONE_TAGS``), found by parsing tags rather than searching for a marker
+    string — so the catalog, task, inherited-context, and plan ride in the cached prefix
+    while the live state (constraints, step-info, working-memory, recent-steps, …) stays
+    out of it. Falls back to the end of ``</capability-context>`` (catalog only) for a
+    turn that renders no agent-context, and returns ``None`` when there is no catalog
+    either — a turn with nothing stable must not get a breakpoint that caches nothing and
+    spends a write to learn it.
+    """
+    try:
+        locator = _LiveZoneLocator(text)
+        locator.feed(text)
+        if locator.mark is not None:
+            cut = locator.mark
+            return text[:cut], text[cut:]
+    except Exception:  # noqa: BLE001 — never fail serialization over the split
+        pass
+    marker = "</capability-context>"
+    end = text.find(marker)
+    if end == -1:
+        return None
+    end += len(marker)
+    return text[:end], text[end:]
 
 
 class TokenUsage(BaseModel):

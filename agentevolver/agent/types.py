@@ -27,6 +27,7 @@ from inspect import isawaitable
 
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
+from agentevolver.memory.default.tiered import TieredMemory
 from agentevolver.capability import MOUNTED_TYPES, mounted_type as mounted_type_entry
 from agentevolver.message import ContentPartText, HumanMessage, Message
 from agentevolver.prompt import prompt_manager
@@ -672,6 +673,11 @@ class Agent(BaseModel):
         # its deliverables at step 0 and then spent 29 steps re-reading them, because
         # every prompt told it there was nothing to remember and nothing said why.
         memory_body = "[Memory is disabled.]"
+        # Working Memory (append-only, byte-stable between compactions) is fetched
+        # apart from Recent Steps (the sliding window that changes every step) so the
+        # template can place it in the cached prefix — see agent_context.html. Backends
+        # that predate the `section` split fall back to a single combined fetch.
+        working_memory_body = ""
         if self.use_memory and self.memory_name:
             memory_body = "[Memory is unavailable — proceed from the task and the workspace.]"
             try:
@@ -683,10 +689,21 @@ class Agent(BaseModel):
                     )
                 else:
                     session_id = ctx.id if ctx else ""
-                    mem_text = await memory_info.instance.get(
-                        session_id=session_id,
-                        short_term_n=self.review_steps,
-                    )
+                    inst = memory_info.instance
+                    if isinstance(inst, TieredMemory):
+                        mem_text = await inst.get(
+                            session_id=session_id,
+                            short_term_n=self.review_steps,
+                            section="volatile",
+                        )
+                        working_memory_body = await inst.get(
+                            session_id=session_id, section="stable"
+                        ) or ""
+                    else:
+                        mem_text = await inst.get(
+                            session_id=session_id,
+                            short_term_n=self.review_steps,
+                        )
                     memory_body = mem_text if mem_text else "[No memory recorded yet.]"
             except Exception as error:  # noqa: BLE001 — a step must still run without memory
                 logger.warning(
@@ -750,6 +767,7 @@ class Agent(BaseModel):
         return {
             "step_info": step_info_body,
             "memory_context": memory_body,
+            "working_memory": working_memory_body,
             "constraint_text": constraint_text,
             "workspace": self._workspace_snapshot(ctx),
             "errors": errors_body,
@@ -1193,8 +1211,17 @@ class Agent(BaseModel):
 
         Same trade as the projection, minus the restructuring: the catalog goes out
         exactly as first rendered, and the delta is appended to the *end* of the same
-        turn. The breakpoint is at ``</capability-context>``, so text after it is outside
-        the cached prefix and costs nothing to change.
+        turn — past the whole agent-context (task, plan, working-memory, and the live
+        state). The cache breakpoint is at ``<constraints>`` (see the serializer's
+        ``_cache_split``), not at ``</capability-context>``: the frozen catalog **and**
+        the stable blocks between it and ``<constraints>`` — task, inherited-context,
+        plan — all ride in the cached prefix, while the delta, sitting after every one of
+        them at the very end, stays outside it and costs nothing to change when evolution
+        registers or withdraws a component. (working-memory and the rest of the live state
+        sit past ``<constraints>`` too — see agent_context.html for the tier rules.) The
+        consequence for anyone editing the layout: the span from ``</capability-context>``
+        to ``<constraints>`` is now cached, not live, so nothing that changes between steps
+        may be inserted there — put per-step content past ``<constraints>``.
         """
         import re as _re
 

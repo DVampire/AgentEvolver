@@ -13,7 +13,7 @@ off a whole surface as uncacheable with no number ever changing.
 
 import pytest
 
-from agentevolver.message.types import AssistantMessage, HumanMessage, ToolMessage
+from agentevolver.message.types import AssistantMessage, ContentPartText, HumanMessage, ToolMessage
 from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 from agentevolver.model.openrouter.serializer import OpenRouterChatSerializer
 from agentevolver.model.types import TokenUsage
@@ -30,29 +30,36 @@ TURN = ("<capability-context><tool-context>- bash: run</tool-context></capabilit
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
 def test_the_breakpoint_lands_after_the_catalog(serializer):
+    # TURN's first live-zone block is <step-info>, so the breakpoint lands there and the
+    # catalog (and the <agent-context> opener) ride in the cached prefix.
     blocks = serializer.serialize_message(HumanMessage(content=TURN))["content"]
 
-    assert blocks[0]["text"].endswith("</capability-context>")
+    assert "</capability-context>" in blocks[0]["text"], "the catalog must be cached"
+    assert "<step-info>" not in blocks[0]["text"], "the live step-info must not be cached"
     assert blocks[0]["cache_control"]["type"] == "ephemeral"
     assert "step 7 of 40" in blocks[1]["text"]
     assert "cache_control" not in blocks[1], "the volatile half must not be a breakpoint"
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
-def test_the_breakpoint_includes_the_task_before_the_first_live_block(serializer):
-    """The stable prefix is catalog + task; the breakpoint goes before <constraints>.
+def test_the_breakpoint_includes_the_task_and_plan_before_the_first_live_block(serializer):
+    """The stable prefix is catalog + task + plan; the breakpoint goes before <constraints>.
 
     Measured, the user turn was byte-identical for ~54% of its length but the old breakpoint
     at </capability-context> sat at ~14%, so the task (byte-stable every step) was re-read in
-    full. Splitting before the first live block — <constraints> — caches it.
+    full. Splitting before the first live block — <constraints> — caches it and the plan.
     """
     turn = (
         "<capability-context><tool-context>- bash</tool-context></capability-context>"
+        "<agent-context>"
         "<task>reconstruct the program</task>"
-        "<constraints>step 7 of 40</constraints><memory>...</memory>"
+        "<plan>build it</plan>"
+        "<constraints>step 7 of 40</constraints><recent-steps>...</recent-steps>"
+        "</agent-context>"
     )
     blocks = serializer.serialize_message(HumanMessage(content=turn))["content"]
     assert "<task>reconstruct the program</task>" in blocks[0]["text"], "task must be cached"
+    assert "<plan>build it</plan>" in blocks[0]["text"], "plan must be cached"
     assert blocks[0]["cache_control"]["type"] == "ephemeral"
     assert blocks[1]["text"].startswith("<constraints>")
     assert "cache_control" not in blocks[1], "the live budget onward must not be cached"
@@ -66,7 +73,8 @@ def test_the_cached_prefix_becomes_its_own_message(serializer):
     not one message of two blocks."""
     turn = (
         "<capability-context><tool-context>- bash</tool-context></capability-context>"
-        "<task>reconstruct</task><constraints>step 7 of 40</constraints><memory>m</memory>"
+        "<agent-context><task>reconstruct</task><constraints>step 7 of 40</constraints>"
+        "<recent-steps>m</recent-steps></agent-context>"
     )
     out = serializer.serialize_messages([HumanMessage(content=turn)])
     assert len(out) == 2, "the stable prefix and the volatile state must be separate messages"
@@ -312,3 +320,121 @@ def test_every_serializer_that_sets_a_breakpoint_uses_that_one_value():
         blocks = serializer.serialize_message(HumanMessage(content=TURN))["content"]
         assert blocks[0]["cache_control"]["ttl"] == CACHE_TTL, (
             f"{serializer.__name__} sends a TTL that is not the shared constant")
+
+
+# ---------------------------------------------------------------------------
+# The frequency tiers: what caches and what does not.
+#
+# agent_context.html sorts blocks by how often they change. The CACHED zone holds only
+# the reliably-stable blocks — catalog, task, inherited-context, plan — ordered
+# most-stable first, and the breakpoint sits just before <constraints>, the first live
+# block. Everything from <constraints> on is the LIVE zone, re-sent uncached every step:
+# step-info, WORKING-MEMORY (it churns whenever history is compacted, so it is not
+# cached), recent-steps, workspace, errors. The agent also freezes the catalog and
+# appends a <capability-context-changes> delta to the very end when evolution changes a
+# capability — kept in the live zone so evolving a capability never invalidates the
+# task/plan cache.
+# ---------------------------------------------------------------------------
+_EVOLVED_TURN = (
+    "<capability-context><tool-context>- bash: run</tool-context></capability-context>"
+    "<agent-context>"
+    "<task>reconstruct the program</task>"
+    "<plan>1. inspect 2. build</plan>"
+    "<constraints>step 7 of 40</constraints>"
+    "<step-info>step 7</step-info>"
+    "<working-memory>## Working Memory\n- decided to hardcode the magic bytes</working-memory>"
+    "<recent-steps>## Recent Steps\n- ran compile.sh</recent-steps>"
+    "<workspace>./compile.sh</workspace>"
+    "</agent-context>"
+    "\n\n<capability-context-changes>\n  <skill-context>\n    now available: reverse_elf\n"
+    "  </skill-context>\n</capability-context-changes>"
+)
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_stable_blocks_cached_and_live_zone_stays_volatile(serializer):
+    out = serializer.serialize_messages([HumanMessage(content=_EVOLVED_TURN)])
+    assert len(out) == 2, "stable prefix and volatile state must be separate messages"
+    cached = out[0]["content"][0]["text"]
+    volatile = "".join(part["text"] for part in out[1]["content"])
+
+    # only the reliably-stable blocks ride in the cached prefix — not working-memory
+    for tag in ("<capability-context>", "<task>", "<plan>"):
+        assert tag in cached, f"{tag} must be in the cached prefix"
+    assert "<working-memory>" not in cached, (
+        "working-memory churns on compaction — it must stay in the live zone, not the cache")
+    assert out[0]["content"][0]["cache_control"]["type"] == "ephemeral"
+
+    # the whole live zone — working-memory, recent-steps, and the evolution delta — is outside it
+    for tag in ("<constraints>", "<working-memory>", "<recent-steps>",
+                "<capability-context-changes>"):
+        assert tag in volatile, f"{tag} must be in the live zone"
+    assert "<capability-context-changes>" not in cached, (
+        "the evolution delta must stay on the volatile side so evolving a capability "
+        "does not invalidate the task/plan cache")
+    assert "cache_control" not in out[1], "the volatile half must not be a breakpoint"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_a_tag_name_in_a_comment_does_not_move_the_breakpoint(serializer):
+    """The breakpoint is found by parsing tags, so a live-block tag NAME written inside an
+    HTML comment (or in prose) is ignored — only the real opening tag counts.
+
+    This is the regression: the old string-search split cut at the FIRST '<constraints>'
+    substring, which the layout comment inside <agent-context> contains, so it cached the
+    catalog alone and left task + plan uncached on every step.
+    """
+    turn = (
+        "<capability-context><tool-context>- bash</tool-context></capability-context>"
+        "<agent-context>"
+        "<!-- layout note: blocks before <constraints> are cached; <working-memory> is live -->"
+        "<task>reconstruct</task>"
+        "<plan>build it</plan>"
+        "<constraints>step 7 of 40</constraints>"
+        "<recent-steps>ran x</recent-steps>"
+        "</agent-context>"
+    )
+    blocks = serializer.serialize_message(HumanMessage(content=turn))["content"]
+    cached = blocks[0]["text"]
+    # the real breakpoint is the <constraints> block, not its mention in the comment:
+    # task and plan are cached, and the live budget value is not
+    assert "<task>reconstruct</task>" in cached and "<plan>build it</plan>" in cached
+    assert "step 7 of 40" not in cached, "the live budget must be past the breakpoint"
+    assert "step 7 of 40" in blocks[1]["text"]
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_a_user_turn_wrapped_as_a_content_part_still_caches(serializer):
+    """The prompt renderer hands the user turn as a single ContentPartText in a LIST, not a
+    bare str. The split has to see through that wrapping.
+
+    This is the regression that shipped: the split only fired for `str` content, so in
+    production — where the turn is always `[ContentPartText(...)]` — the whole user turn
+    (catalog + task + plan) serialized uncached and only the system message cached. Every
+    other cache test used bare strings and so never caught it.
+    """
+    turn = (
+        "<capability-context><tool-context>- bash</tool-context></capability-context>"
+        "<agent-context><task>reconstruct</task><plan>build it</plan>"
+        "<constraints>step 7 of 40</constraints><recent-steps>m</recent-steps></agent-context>"
+    )
+    wrapped = HumanMessage(content=[ContentPartText(text=turn)])
+    out = serializer.serialize_messages([wrapped])
+    assert len(out) == 2, "the list-wrapped turn must still split into cached prefix + live rest"
+    cached = out[0]["content"][0]
+    assert cached["cache_control"]["type"] == "ephemeral"
+    assert "<task>reconstruct</task>" in cached["text"] and "<plan>build it</plan>" in cached["text"]
+    assert "step 7 of 40" not in cached["text"], "the live budget must be past the breakpoint"
+    assert "cache_control" not in out[1], "the volatile half must not be a breakpoint"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_a_turn_with_a_non_text_part_is_left_unsplit(serializer):
+    """A list carrying an image (or any non-text part) cannot become one cached text block,
+    so it passes through the ordinary multi-part path rather than being force-split."""
+    from agentevolver.message.types import ContentPartImage, ImageURL
+
+    parts = [ContentPartText(text="look at this"),
+             ContentPartImage(image_url=ImageURL(url="data:image/png;base64,AAAA"))]
+    out = serializer.serialize_messages([HumanMessage(content=parts)])
+    assert len(out) == 1, "a turn with an image is one message, not a forced split"

@@ -297,8 +297,24 @@ class TieredMemory(Memory):
         if changed:
             self._schedule_persist(state)
 
-    async def get(self, session_id: str, short_term_n: Optional[int] = None, **kwargs) -> Optional[str]:
-        """Return a markdown memory context string for prompt injection."""
+    async def get(self, session_id: str, short_term_n: Optional[int] = None,
+                  section: str = "all", **kwargs) -> Optional[str]:
+        """Return a markdown memory context string for prompt injection.
+
+        ``section`` selects which tier to render, so a caller that places the two
+        tiers in different parts of the prompt can fetch them apart:
+
+          - ``"all"``      — Working Memory + Recent Steps + Final Result (default;
+                             byte-identical to the pre-split single block).
+          - ``"stable"``   — only Working Memory (append-only compacted summaries;
+                             byte-stable between compactions, so it belongs in the
+                             cached prefix of the turn).
+          - ``"volatile"`` — Recent Steps + Final Result (the sliding window that
+                             changes every step; kept out of the cached prefix).
+
+        Splitting the two lets the stable tier ride in the request's cache breakpoint
+        instead of being re-read in full on every step.
+        """
         async with self._registry_lock:
             state = self._sessions.get(session_id)
             if state is not None:
@@ -306,24 +322,29 @@ class TieredMemory(Memory):
         if state is None:
             return None
 
+        want_stable = section in ("all", "stable")
+        want_volatile = section in ("all", "volatile")
+
         lines: list[str] = []
 
-        working = list(state.working)[-self.working_fetch:]
-        if working:
-            lines.append("## Working Memory")
-            lines += [f"- {s}" for s in working]
-            lines.append("")
+        if want_stable:
+            working = list(state.working)[-self.working_fetch:]
+            if working:
+                lines.append("## Working Memory")
+                lines += [f"- {s}" for s in working]
+                lines.append("")
 
-        n = short_term_n if short_term_n is not None else self.recent_fetch
-        recent = list(state.recent)[-n:] if n else list(state.recent)
-        if recent:
-            lines.append("## Recent Steps")
-            lines += [r.as_line() for r in recent]
-            lines.append("")
+        if want_volatile:
+            n = short_term_n if short_term_n is not None else self.recent_fetch
+            recent = list(state.recent)[-n:] if n else list(state.recent)
+            if recent:
+                lines.append("## Recent Steps")
+                lines += [r.as_line() for r in recent]
+                lines.append("")
 
-        if state.final_result:
-            lines.append("## Final Result")
-            lines.append(state.final_result)
+            if state.final_result:
+                lines.append("## Final Result")
+                lines.append(state.final_result)
 
         result = "\n".join(lines).strip()
         return result or None

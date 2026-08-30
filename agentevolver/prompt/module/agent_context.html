@@ -8,6 +8,35 @@
 </head>
 <body>
 <agent-context>
+<!-- Blocks are ordered by how often they change, because the relay caches only a
+     byte-identical PREFIX. Two zones, split by one cache breakpoint:
+
+       CACHED ZONE (this order, most-stable first) — held in the cached prefix:
+         task              fixed  — the objective, set once
+         inherited-context fixed  — handed down once at dispatch
+         plan              low    — changes only when the agent edits plan.md
+       ── breakpoint: placed just before <constraints>, the first live block ──
+       LIVE ZONE — re-sent uncached every step:
+         constraints, step-info, working-memory, recent-steps,
+         environment-state, workspace, errors
+
+     Rules, so this never re-tangles:
+       1. Order the cached zone strictly most-stable-first, so the cached prefix is
+          as long as possible.
+       2. A block whose stability is not RELIABLE stays in the live zone. Caching a
+          block that churns is a net loss — it is re-written (1.25x) every change and
+          never read back — so working-memory lives here: it is stable between
+          compactions, but under frequent compaction it churns, and we do not bet on
+          which. workspace is a live snapshot for the same reason.
+       3. The breakpoint is found by TAG STRUCTURE, not by string search: the
+          serializer (model/types.py `split_cached_prefix`, tag set `_LIVE_ZONE_TAGS`)
+          parses this turn and cuts at the first live-zone opening tag inside
+          <agent-context>. So a tag name written in this comment, or in any prose, is
+          ignored — only real tags count. To move a block between zones, reorder it
+          here AND classify its tag in `_LIVE_ZONE_TAGS`; nothing else reads this order.
+       4. Keep fixed content and its CHANGES apart: the capability catalog is frozen
+          and cacheable, while what evolution added/withdrew rides in a separate
+          <capability-context-changes> block appended after the live zone. -->
 <task>
 {{ task }}
 </task>
@@ -16,24 +45,29 @@
 {{ inherited_context }}
 </inherited-context>
 {% endif %}
+{% if plan %}
+<plan>
+{{ plan }}
+</plan>
+{% endif %}
 <constraints>
 {{ constraint_text }}
 </constraints>
 <step-info>
 {{ step_info }}
 </step-info>
-<memory>
+{% if working_memory %}
+<working-memory>
+{{ working_memory }}
+</working-memory>
+{% endif %}
+<recent-steps>
 {{ memory_context }}
-</memory>
+</recent-steps>
 {% if environment_state %}
 <environment-state>
 {{ environment_state }}
 </environment-state>
-{% endif %}
-{% if plan %}
-<plan>
-{{ plan }}
-</plan>
 {% endif %}
 <workspace>
 {{ workspace }}

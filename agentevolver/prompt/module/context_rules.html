@@ -8,11 +8,12 @@
 </head>
 <body>
 <context-rules>
-Memory is provided in the `memory` sub-module in two parts:
-- **Working Memory**: key decisions, results, or failures from earlier steps no longer in recent context.
-- **Recent Steps**: authoritative evidence of what was just done, including successful
-  writes, observed outputs, and verification results. Do not describe completed work as
-  still pending merely because the original task remains visible above it.
+Memory reaches you in two sub-modules:
+- **working-memory** (a stable sub-module, shown before the live state): key decisions,
+  results, or failures from earlier steps no longer in recent context.
+- **recent-steps** (a live sub-module): authoritative evidence of what was just done,
+  including successful writes, observed outputs, and verification results. Do not describe
+  completed work as still pending merely because the original task remains visible above it.
 
 Before choosing any action, reconcile the task with Memory, Plan, Workspace, and Errors:
 1. List only the acceptance conditions that are still unproven.

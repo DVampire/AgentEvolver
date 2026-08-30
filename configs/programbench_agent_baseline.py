@@ -203,14 +203,18 @@ file_system_memory.update(
     base_dir="memory/file_system",
     model_name=model_name,
     enable_evolving=False,
-    # Trim what memory re-sends UNCACHED every step. On this relay the live agent state sits
-    # past the cache breakpoint (only system + catalog + task cache), and memory was 86% of
-    # that uncached ~15k/step — dominated by big raw tool outputs (a Cargo.toml dump, a crate
-    # listing) each capped at 8000 chars. Cap an entry at 2500 (keeps a head + the spill
-    # locator) and hold 8 recent records instead of 10. Reduces per-step input cost; the
-    # tradeoff is less recent detail in front of the model, so it wants an A/B for quality.
+    # Shift context off the expensive-uncached tier onto the cheap-cached one. Working Memory
+    # now rides in the cached prefix (agent_context.html groups <working-memory> ahead of
+    # <constraints>), so remembering via it is ~10x cheaper than via Recent Steps, which sits
+    # past the cache breakpoint and is re-sent uncached every step. So: cap an entry at 2500
+    # chars (keeps head + spill locator), hold fewer raw Recent Steps (6, down from 8), and
+    # carry more compacted long-term summaries (working_fetch 8, up from the default 5). Net
+    # intent: less uncached re-send, comparable total context via cached summaries. Wants an
+    # A/B for quality. Kept identical to the agent arm (the two differ only in the evolution
+    # roster).
     record_detail_max=2500,
-    recent_fetch=8,
+    recent_fetch=6,
+    working_fetch=8,
 )
 
 #-----------------META AGENT CONFIG-----------------
