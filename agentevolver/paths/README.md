@@ -144,19 +144,24 @@ both answers in one process: the agent's view of its workspace, and the real
 directory the harness is about to mount there. Overrides are cleared whenever a
 new session binds, since they describe one run's environment.
 
-## `tag` is a label, not a directory
+## Config tags are direct-run namespaces
 
-Configs used to set `project_root = output/<tag>`, which put `output/meta_agent/`
-beside `output/local/` — a config tag and an owner sharing one level, so a user
-named `meta_agent` would collide. Nothing ever read `config.tag`; it was only a
-local variable used to build that path. Configs now default to `output/local`,
-and `bind_session_roots()` repoints them at the session sandbox the moment real
-work starts, so per-run isolation comes from the session (or `runs/<run_id>`)
-rather than from the tag.
+When a config omits `project_root`, `process_general()` asks PathManager for
+`P.OWNER` using this precedence:
 
-That default was `output/.runtime/unbound` for a while, which put a run's own
-pre-session logs in the machine-level tree — state that by definition belongs to
-the host and outlives every run. A run's startup window is neither. It also came
-with a `P.UNBOUND` layout entry that nothing ever resolved: the path existed only
-as a string literal repeated across two dozen configs, so the table and the
-configs agreed by coincidence rather than by construction. Both are gone.
+1. explicit `output_owner`;
+2. config `tag`;
+3. `local` as the compatibility fallback.
+
+Thus `tag = "swebench_pro_agent_baseline"` produces
+`output/swebench_pro_agent_baseline/`, and its sessions, request pages and result
+summaries stay in that namespace. Gateway calls still pass the real account owner
+explicitly, so browser sessions remain under `output/<owner>/sessions/...`.
+An explicit `project_root` remains an override for deployments that intentionally
+place output elsewhere.
+
+This distinction is deliberate: PathManager owns framework layout (sessions,
+logs, traces, checkpoints, reports and runtime state). Paths *inside* a checked-out
+task repository, an external dataset, or a system installation are input data and
+remain ordinary `Path` operations; declaring those dynamic structures in the
+global layout would make the disk contract less accurate, not more.

@@ -26,7 +26,8 @@ with read_base():
     from .memory.file_system_memory import file_system_memory
 
 tag = "swebench_pro_agent_baseline"
-project_root = "output/local"
+# ``project_root`` is derived from tag by the PathManager. This keeps the baseline's
+# sessions, request HTML and result summaries under one visible namespace.
 log_path = "agent.log"
 
 # Keep in sync with swebench_pro_agent.py — the two arms are only comparable on one model.

@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.trace.types import TRACE_FORMAT_VERSION
 
 
@@ -193,13 +194,16 @@ class ProjectionWatermarkStore:
     """Atomically persist one monotonic cursor per projection and session."""
 
     def __init__(self, trace_root: str) -> None:
-        self.root = os.path.join(str(trace_root), "projections")
+        self.trace_root = str(trace_root)
+        self.root = str(path_manager.under(trace_root, P.TRACE_PROJECTIONS))
 
     def path(self, projection: str, session_id: str) -> str:
-        return os.path.join(
-            self.root, _path_component(projection),
-            f"{_path_component(session_id)}.watermark.json",
-        )
+        return str(path_manager.under(
+            self.trace_root,
+            P.TRACE_PROJECTION_WATERMARK,
+            projection=_path_component(projection),
+            filename=f"{_path_component(session_id)}.watermark.json",
+        ))
 
     def load(
         self, projection: str, projection_version: int, session_id: str

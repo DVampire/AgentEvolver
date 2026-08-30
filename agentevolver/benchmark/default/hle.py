@@ -6,6 +6,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
+from agentevolver.paths import path_manager
 from agentevolver.utils import dedent
 from agentevolver.utils import is_same
 
@@ -109,14 +110,14 @@ class HLEBenchmark(Benchmark):
             if is_pil:
                 fmt = (image_data.format or "PNG").lower().replace("jpeg", "jpg")
                 media_type = f"image/{'jpeg' if fmt == 'jpg' else fmt}"
-                image_path = os.path.join(self.base_dir, f"{task_id}.{fmt}")
+                image_path = str(path_manager.resolve_under(self.base_dir, f"{task_id}.{fmt}"))
                 if not os.path.exists(image_path):
                     image_data.save(image_path)
             else:
                 # base64 data URI fallback
                 media_type = _extract_image_media_type(image_data)
                 ext = media_type.split("/")[-1].replace("jpeg", "jpg")
-                image_path = os.path.join(self.base_dir, f"{task_id}.{ext}")
+                image_path = str(path_manager.resolve_under(self.base_dir, f"{task_id}.{ext}"))
                 if not os.path.exists(image_path):
                     _, _, b64data = image_data.partition(",")
                     raw = base64.b64decode(b64data if b64data else image_data)
@@ -179,4 +180,3 @@ class HLEBenchmark(Benchmark):
                 "exact_match_total": len(em_tasks),
             },
         )
-

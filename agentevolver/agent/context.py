@@ -77,7 +77,9 @@ class AgentContextManager(BaseModel):
         """
         prepared = dict(instance_config or {})
         agent_name = agent_cls.model_fields["name"].default
-        prepared.setdefault("base_dir", os.path.join(self.base_dir, agent_name))
+        prepared.setdefault(
+            "base_dir", str(path_manager.resolve_under(self.base_dir, agent_name)),
+        )
         return prepared
 
     async def initialize(self, agent_names: Optional[List[str]] = None) -> None:

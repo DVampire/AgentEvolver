@@ -118,10 +118,10 @@ class KnowledgeManager(BaseModel):
         # never possible (the separator in ``../..`` is replaced), and ``.`` alone
         # would have written into the root itself.
         safe = _SAFE_NAME.sub("_", str(base or "").strip()).strip("_.") or "default"
-        return os.path.join(self.base_dir or ".", safe)
+        return str(path_manager.resolve_under(self.base_dir or ".", safe))
 
     def _read_corpus(self, base: str) -> List[Dict[str, Any]]:
-        path = os.path.join(self._base_path(base), "corpus.jsonl")
+        path = str(path_manager.resolve_under(self._base_path(base), "corpus.jsonl"))
         if not os.path.exists(path):
             return []
         docs: List[Dict[str, Any]] = []
@@ -133,7 +133,7 @@ class KnowledgeManager(BaseModel):
         return docs
 
     def _read_type(self, base: str, default: str = "bm25") -> str:
-        path = os.path.join(self._base_path(base), "manifest.json")
+        path = str(path_manager.resolve_under(self._base_path(base), "manifest.json"))
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as handle:
@@ -162,10 +162,12 @@ class KnowledgeManager(BaseModel):
         directory = self._base_path(base)
         try:
             os.makedirs(directory, exist_ok=True)
-            with open(os.path.join(directory, "corpus.jsonl"), "a", encoding="utf-8") as handle:
+            corpus_path = path_manager.resolve_under(directory, "corpus.jsonl")
+            with open(corpus_path, "a", encoding="utf-8") as handle:
                 for doc in docs:
                     handle.write(json.dumps(doc, ensure_ascii=False) + "\n")
-            with open(os.path.join(directory, "manifest.json"), "w", encoding="utf-8") as handle:
+            manifest_path = path_manager.resolve_under(directory, "manifest.json")
+            with open(manifest_path, "w", encoding="utf-8") as handle:
                 json.dump({"type": rag_type}, handle)
         except OSError as exc:
             return Response(type=ResponseType.TOOL, success=False, message=f"knowledge_ingest: write failed: {exc}")

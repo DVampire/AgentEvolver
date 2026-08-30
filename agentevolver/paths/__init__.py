@@ -16,6 +16,6 @@ inside sees only the mount point.
 """
 
 from .server import PathManagerServer, path_manager
-from .types import RELATIVE, LAYOUT, P
+from .types import FILES, RELATIVE, LAYOUT, P
 
-__all__ = ["path_manager", "PathManagerServer", "P", "LAYOUT", "RELATIVE"]
+__all__ = ["path_manager", "PathManagerServer", "P", "LAYOUT", "RELATIVE", "FILES"]

@@ -20,7 +20,10 @@ from agentevolver.visual import css_path, js_path, render_task_page
 # --------------------------------------------------------------------------- #
 # The assets the page expects to find
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("filename", ["task.css", "prompt.css", "workflow.css", "memory.css"])
+@pytest.mark.parametrize(
+    "filename",
+    ["task.css", "prompt.css", "workflow.css", "memory.css", "plan.css", "request.css"],
+)
 def test_the_referenced_stylesheets_exist(filename):
     """Every stylesheet a renderer names is a bare filename joined onto a directory.
 
@@ -31,7 +34,7 @@ def test_the_referenced_stylesheets_exist(filename):
     assert os.path.isfile(css_path(filename))
 
 
-@pytest.mark.parametrize("filename", ["task.js", "prompt.js", "workflow.js"])
+@pytest.mark.parametrize("filename", ["task.js", "prompt.js", "workflow.js", "request.js"])
 def test_the_referenced_scripts_exist(filename):
     """``task.js`` renders the Markdown inside the section tags client-side, so a
     missing script is not a missing flourish — the page shows its raw source."""

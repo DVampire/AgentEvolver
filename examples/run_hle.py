@@ -46,6 +46,7 @@ from agentevolver.connector import connector_manager
 from agentevolver.agent import agent_manager
 from agentevolver.benchmark import benchmark_manager
 from agentevolver.hook import hook_manager
+from agentevolver.paths import P, path_manager
 
 
 def parse_args():
@@ -96,10 +97,19 @@ async def _bootstrap(args):
 
 
 def _results_path(args) -> str:
-    out_dir = args.out or os.path.join(config.log_root, "results", "hle")
+    out_dir = args.out or str(path_manager.under(
+        config.log_root, P.LOG_BENCHMARK_RESULTS, benchmark="hle",
+    ))
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return os.path.join(out_dir, f"benchmark_hle_{ts}.json")
+    if args.out:
+        return str(path_manager.resolve_under(out_dir, f"benchmark_hle_{ts}.json"))
+    return str(path_manager.under(
+        config.log_root,
+        P.LOG_BENCHMARK_RESULT,
+        benchmark="hle",
+        filename=f"benchmark_hle_{ts}.json",
+    ))
 
 
 def _write_results(path: str, records: list, summary: dict):

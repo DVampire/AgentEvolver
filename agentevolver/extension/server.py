@@ -33,6 +33,7 @@ from typing import Awaitable, Callable, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import get_extension_root
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.extension.types import Manifest, ManifestComponent
@@ -109,19 +110,21 @@ class ExtensionManagerServer(BaseModel):
     # Paths
     # ------------------------------------------------------------------
     def module_dir(self, module: str) -> str:
-        return os.path.join(self.base_dir, module)
+        return str(path_manager.resolve_under(self.base_dir, module))
 
     def stage_path(self, module: str, filename: str) -> str:
         """Absolute path of the flat active file/dir a generator should write to."""
         mdir = self.module_dir(module)
         os.makedirs(mdir, exist_ok=True)
-        return os.path.join(mdir, filename)
+        return str(path_manager.resolve_under(mdir, filename))
 
     def _archive_dir(self, module: str, name: str) -> str:
-        return os.path.join(self.base_dir, _ARCHIVE, module, name)
+        archive = path_manager.resolve_under(self.base_dir, _ARCHIVE)
+        module_dir = path_manager.resolve_under(archive, module)
+        return str(path_manager.resolve_under(module_dir, name))
 
     def _manifest_path(self) -> str:
-        return os.path.join(self.base_dir, "manifest.json")
+        return str(path_manager.resolve_under(self.base_dir, "manifest.json"))
 
     # ------------------------------------------------------------------
     # Manifest
@@ -168,7 +171,7 @@ class ExtensionManagerServer(BaseModel):
         if manifest.components:
             loaded: List[ManifestComponent] = []
             for comp in manifest.components:
-                abspath = os.path.join(self.base_dir, comp.file)
+                abspath = str(path_manager.resolve_under(self.base_dir, comp.file))
                 if not os.path.exists(abspath):
                     logger.warning(f"| ⚠️ ExtensionManager: active file missing for {comp.module}:{comp.name} ({abspath}); skipping.")
                     continue
@@ -332,7 +335,7 @@ class ExtensionManagerServer(BaseModel):
         """Re-load + re-register the active set (e.g. after editing flat files)."""
         manifest = self.read_manifest()
         for comp in manifest.components:
-            abspath = os.path.join(self.base_dir, comp.file)
+            abspath = str(path_manager.resolve_under(self.base_dir, comp.file))
             if os.path.exists(abspath):
                 try:
                     await self._load_component(comp.module, abspath, comp.name, version=comp.version, config=None)
@@ -428,7 +431,7 @@ class ExtensionManagerServer(BaseModel):
         # Determine the active flat destination (reuse the manifest's file if known).
         comp = self.read_manifest().find(module, name)
         if comp:
-            dest = os.path.join(self.base_dir, comp.file)
+            dest = str(path_manager.resolve_under(self.base_dir, comp.file))
         else:
             dest = os.path.join(self.module_dir(module), f"{name}{ext}")
 

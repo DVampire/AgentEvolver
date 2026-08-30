@@ -45,7 +45,8 @@ with read_base():
     from .memory.file_system_memory import file_system_memory
 
 tag = "swebench_pro_agent"
-project_root = "output/local"
+# ``project_root`` is derived from tag by the PathManager. The two experiment arms use
+# separate output namespaces while keeping every other runtime setting comparable.
 log_path = "agent.log"
 
 # A registered model_manager name (not a litellm string). Keep in sync with

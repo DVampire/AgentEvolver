@@ -50,7 +50,11 @@ class WorkflowContextManager(BaseModel):
         self.base_dir = assemble_workspace_path(base_dir or path_manager.under(config.log_root, P.LOG_MODULE, module="workflow"))
         selected_builtin_dir = builtin_workflows_dir or builtin_dir or (Path(__file__).parent / "default")
         self.builtin_workflows_dir = str(Path(selected_builtin_dir).resolve())
-        self.evaluation_path = str(Path(evaluation_path or os.path.join(self.base_dir, "evaluations.json")))
+        self.evaluation_path = str(
+            Path(evaluation_path).expanduser().resolve()
+            if evaluation_path
+            else path_manager.resolve_under(self.base_dir, "evaluations.json")
+        )
         self._definitions: Dict[str, WorkflowDefinition] = {}
         self._workflow_history_versions: Dict[str, Dict[str, WorkflowDefinition]] = {}
         self._evaluations: Dict[str, List[WorkflowEvaluation]] = {}

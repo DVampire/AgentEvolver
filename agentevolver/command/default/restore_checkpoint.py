@@ -11,6 +11,7 @@ from agentevolver.registry import COMMAND
 from agentevolver.command.types import Command, CommandType, CommandContext
 from agentevolver.response.types import Response
 from agentevolver.command.default._helpers import get_manager
+from agentevolver.paths import P, path_manager
 
 
 @COMMAND.register_module(force=True)
@@ -27,9 +28,11 @@ class RestoreCheckpointCommand(Command):
         label = args[0]
 
         from agentevolver.config import config
-        from agentevolver.utils import assemble_workspace_path
-
-        path = assemble_workspace_path(os.path.join(config.log_root, "command", "checkpoints", f"{label}.json"))
+        path = str(path_manager.under(
+            config.log_root,
+            P.LOG_COMMAND_CHECKPOINT,
+            filename=f"{label}.json",
+        ))
         if not os.path.exists(path):
             return self.fail(f"Checkpoint '{label}' not found.")
 

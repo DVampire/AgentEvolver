@@ -9,6 +9,7 @@ from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.default.markdown.mdconvert import MarkitdownConverter
 from agentevolver.logger import logger
+from agentevolver.paths import path_manager
 from agentevolver.registry import TOOL
 
 _DESCRIPTION = "Convert various file formats to markdown text using markitdown and save to base_dir folder."
@@ -125,7 +126,7 @@ class MdifyTool(Tool):
                 # Generate output filename (replace original extension with .md)
                 base_name = os.path.splitext(file_name)[0]
                 output_filename = f"{base_name}.md"
-                saved_path = os.path.join(self.base_dir, output_filename)
+                saved_path = str(path_manager.resolve_under(self.base_dir, output_filename))
                 
                 # Save markdown content to file
                 with open(saved_path, 'w', encoding='utf-8') as f:

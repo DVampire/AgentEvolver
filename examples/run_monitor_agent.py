@@ -34,6 +34,7 @@ root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.model import model_manager
 from agentevolver.version import version_manager
@@ -141,7 +142,7 @@ async def main():
     session_id = make_id()
     ctx = SessionContext(id=session_id, name="run_monitor_agent")
 
-    task_log_root = os.path.join(config.log_root, "tasks")
+    task_log_root = str(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
     await task_manager.initialize(
         workspace_root=task_log_root,
         handler=lambda record: run_monitor(record, ctx),

@@ -4,6 +4,7 @@ Contains all model registration, client lifecycle, and invocation logic.
 """
 
 import asyncio
+import os
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 from dotenv import load_dotenv
@@ -259,7 +260,7 @@ async def _record_request_snapshot(
             pressure=pressure,
         )
         coordinates = request_input.get("trace_context") or {}
-        await trace_manager.emit(model_request_event(
+        event = model_request_event(
             session_id=session_id,
             snapshot=snapshot,
             task_id=coordinates.get("task_id"),
@@ -267,7 +268,17 @@ async def _record_request_snapshot(
             step_number=coordinates.get("step_number"),
             attempt=attempt,
             route_index=route_index,
-        ))
+        )
+        accepted = await trace_manager.emit(event)
+        if accepted and trace_manager.log_root:
+            # Observational only: render from the immutable snapshot after it entered
+            # the trace queue, and keep file I/O off the provider's hot path.
+            try:
+                from agentevolver.visual.request_viewer import schedule_request_html
+
+                schedule_request_html(event, os.path.dirname(trace_manager.log_root))
+            except Exception as render_error:  # noqa: BLE001 - never affect dispatch
+                logger.debug(f"| model request HTML was not scheduled: {render_error}")
     except Exception as trace_error:  # noqa: BLE001 - integrity policy settles failure
         from agentevolver.trace.checkpoint import (
             TraceCheckpointBoundary,

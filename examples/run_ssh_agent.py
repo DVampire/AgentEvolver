@@ -28,6 +28,7 @@ root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.model import model_manager
 from agentevolver.version import version_manager
@@ -145,7 +146,7 @@ async def main():
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
 
-    trace_log_root = os.path.join(config.log_root, "trace")
+    trace_log_root = str(path_manager.under(config.log_root, P.LOG_MODULE, module="trace"))
     await trace_manager.initialize(log_root=trace_log_root)
     await trace_manager.start()
     # `hook_manager.initialize()` registers the trajectory hook, so the manager it writes
@@ -181,7 +182,7 @@ async def main():
 
     logger.info(f"| 📋 All versions: {json.dumps(await version_manager.list(), indent=4)}")
 
-    task_log_root = os.path.join(config.log_root, "tasks")
+    task_log_root = str(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
     await task_manager.initialize(log_root=task_log_root, handler=lambda record: run_agent(record, ctx))
     await task_manager.start(num_workers=1)
 

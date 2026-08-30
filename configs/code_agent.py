@@ -23,7 +23,6 @@ tag = "code_agent"
 # directory level, so it cannot collide with an owner name. Startup logs land in
 # the owner tree beside that owner's sessions, not in the machine-level
 # `.runtime` — nothing about a run's own pre-session window belongs to the host.
-project_root = "output/local"
 log_path = "agent.log"
 
 model_name = "google/gemini-3.1-pro-preview"

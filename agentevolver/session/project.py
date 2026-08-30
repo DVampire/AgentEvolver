@@ -14,17 +14,29 @@ from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.config import config
 
 
-#: Written into a session's project root once it exists, so the session can be
-#: found again after a restart — and so a session started from a local config is
-#: as visible to the browser as one the gateway created.
-SESSION_MANIFEST = "session.json"
+#: Compatibility name for callers that display the filename. The path itself is
+#: resolved from ``P.PROJECT_MANIFEST`` below.
+SESSION_MANIFEST = path_manager.under(".", P.PROJECT_MANIFEST).name
+
+
+def configured_session_owner(config_obj: Any = None) -> str:
+    """Namespace direct-run sessions by explicit owner, then by config tag."""
+    selected = config_obj or config
+    getter = getattr(selected, "get", None)
+    if callable(getter):
+        return str(getter("output_owner") or getter("tag") or "local")
+    return str(
+        getattr(selected, "output_owner", None)
+        or getattr(selected, "tag", None)
+        or "local"
+    )
 
 
 def write_session_manifest(
     sandbox: ProjectSandbox,
     *,
     session_id: str,
-    owner: str = "local",
+    owner: str | None = None,
     name: str = "interactive",
     created_at: str | None = None,
     source_workspace: str | None = None,
@@ -40,7 +52,8 @@ def write_session_manifest(
     log is a bounded in-memory ring, so a restored transcript would be a partial
     one pretending to be complete.
     """
-    path = Path(sandbox.project_root) / SESSION_MANIFEST
+    owner = owner or configured_session_owner()
+    path = path_manager.under(sandbox.project_root, P.PROJECT_MANIFEST)
     now = datetime.now(timezone.utc).isoformat()
     payload = {
         "session_id": session_id,
@@ -64,7 +77,7 @@ def write_session_manifest(
 def ensure_session_sandbox(
     ctx: Any,
     *,
-    owner: str = "local",
+    owner: str | None = None,
     shared_extension_root: str | Path | None = None,
 ) -> ProjectSandbox | None:
     """Bind the path manager to ``ctx``'s session, and return that session's sandbox.
@@ -84,6 +97,7 @@ def ensure_session_sandbox(
     invocation so a directly-constructed context still gets a sandbox, and re-binding the
     same session on a nested call would rewrite the manifest for no reason.
     """
+    owner = owner or configured_session_owner()
     session_id = str(getattr(ctx, "id", "") or "direct")
     if path_manager.session == (owner, session_id):
         return None
@@ -156,7 +170,7 @@ def stage_input_files(ctx: Any, input: Dict[str, Any]) -> Dict[str, Any]:
         return prepared
 
     workspace = Path(config.workspace_root).resolve()
-    inputs_dir = Path(config.log_root).resolve() / "inputs"
+    inputs_dir = path_manager.under(Path(config.log_root).resolve(), P.LOG_INPUTS)
     staged: list[str] = []
     for index, value in enumerate(files):
         source = Path(str(value)).expanduser().resolve()
@@ -192,7 +206,7 @@ def read_session_manifest(project_root: str | Path) -> Optional[Dict[str, Any]]:
     not parse is one, and a caller scanning a tree cannot tell them apart from the return
     value.
     """
-    path = Path(project_root) / SESSION_MANIFEST
+    path = path_manager.under(project_root, P.PROJECT_MANIFEST)
     if not path.is_file():
         return None
     try:

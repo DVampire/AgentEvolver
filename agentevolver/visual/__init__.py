@@ -3,15 +3,17 @@
 import os
 from html import escape
 
+from agentevolver.paths import path_manager
+
 
 def css_path(filename: str) -> str:
     """Return the absolute path to a CSS file in agentevolver/visual/css/."""
-    return os.path.join(os.path.dirname(__file__), "css", filename)
+    return str(path_manager.package_resource("visual", "css", filename))
 
 
 def js_path(filename: str) -> str:
     """Return the absolute path to a JS file in agentevolver/visual/js/."""
-    return os.path.join(os.path.dirname(__file__), "js", filename)
+    return str(path_manager.package_resource("visual", "js", filename))
 
 
 def render_task_page(html_body: str, out_path: str, title: str = "Task") -> str:

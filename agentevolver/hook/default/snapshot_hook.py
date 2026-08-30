@@ -15,6 +15,7 @@ from html import escape as _he
 
 from agentevolver.hook.types import Hook, HookContext, HookEvent, HookResult
 from agentevolver.registry import HOOK
+from agentevolver.paths import P, path_manager
 from agentevolver.visual import css_path, js_path
 from agentevolver.logger import logger
 
@@ -66,9 +67,13 @@ class SnapshotHook(Hook):
         try:
             from agentevolver.config import config
             base_dir = str(getattr(config, "log_root", None) or inp.get("workspace_root") or ".")
-            out_dir = os.path.join(base_dir, "messages", agent_name)
-            os.makedirs(out_dir, exist_ok=True)
-            file_path = os.path.join(out_dir, f"{step_number + 1:04d}.html")
+            file_path = str(path_manager.under(
+                base_dir,
+                P.LOG_MESSAGE_SNAPSHOT,
+                agent_name=agent_name,
+                filename=f"{step_number + 1:04d}.html",
+                create=True,
+            ))
 
             html = self._render(file_path, agent_name, step_number, messages)
             with open(file_path, "w", encoding="utf-8") as f:

@@ -255,7 +255,7 @@ class AgentGateway:
         await extension_manager.initialize()
         extension_manager.subscribe(self._on_extension_change)
 
-        task_dir = os.path.join(config.log_root, "gateway", "tasks")
+        task_dir = str(path_manager.under(config.log_root, P.LOG_GATEWAY_TASKS))
         await task_manager.initialize(log_root=task_dir, handler=self._run_task)
         await task_manager.start(num_workers=1)
         # Bring back sessions that already have work on disk, so a restart does
@@ -424,7 +424,11 @@ class AgentGateway:
         session = self._sessions.get(session_id)
         if session is None:
             return
-        legacy = path_manager.get(P.SESSION, owner=session.owner, session_id=session_id) / "events.jsonl"
+        legacy = path_manager.get(
+            P.SESSION_LEGACY_EVENTS,
+            owner=session.owner,
+            session_id=session_id,
+        )
         if not legacy.is_file():
             return
         if conversation_manager.list(session.owner, session_id):

@@ -47,7 +47,9 @@ class PromptContextManager(BaseModel):
         # Built-in prompts live in the default/ dir; extension prompts are managed
         # externally (loaded by ExtensionManager into the active version).
         self.default_prompt_dir = default_prompt_dir or str(_src_dir / "default")
-        self.extension_prompt_dir = extension_prompt_dir or assemble_workspace_path(os.path.join("extension", "prompt"))
+        self.extension_prompt_dir = extension_prompt_dir or str(path_manager.get(
+            P.EXTENSION_MODULE, module="prompt",
+        ))
 
         logger.info(f"| 📁 Prompt context manager base_dir={self.base_dir}")
 

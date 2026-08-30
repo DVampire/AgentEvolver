@@ -319,7 +319,7 @@ async def test_a_fan_out_flow_runs_its_items_concurrently_and_checkpoints_outsid
     assert peak == 3
     saved = json.loads(Path(run.checkpoint_path).read_text())
     # Bookkeeping lives in the layout, never inside the agent's workspace.
-    assert Path(run.checkpoint_path).parent == path_manager.get(P.CHECKPOINTS)
+    assert Path(run.checkpoint_path) == path_manager.get(P.CHECKPOINT, run_id=run.id)
     assert saved["state"] == "succeeded"
 
 

@@ -56,7 +56,6 @@ from examples.run_programbench import (  # noqa: E402
     CONTAINER_EVAL_BRIDGE,
     CONTAINER_USER,
     CONTAINER_WORKSPACE,
-    SESSION_OWNER,
     _LANDING_MARGIN_SECONDS,
     _summarise_spend,
     bind_task_workspace,
@@ -69,6 +68,7 @@ from examples.run_programbench import (  # noqa: E402
 
 from agentevolver.config import config
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 
 root = host_repo_root()
 
@@ -174,7 +174,11 @@ def build_task_content(instance_full: dict, task_file=None, task_log_root=None):
         html_body = doc.html_body
         for key, value in slots.items():
             html_body = html_body.replace(key, value)
-        view_path = os.path.join(task_log_root, f"task_view_{safe.get('instance_id', 'task')}.html")
+        view_path = str(path_manager.under(
+            task_log_root,
+            P.LOG_TASK_VIEW,
+            filename=f"task_view_{safe.get('instance_id', 'task')}.html",
+        ))
         os.makedirs(task_log_root, exist_ok=True)
         render_task_page(html_body, view_path, title=doc.title)
         metadata["task_view"] = view_path
@@ -438,7 +442,11 @@ async def run_inner(args) -> int:
     from agentevolver.memory import memory_manager
     from agentevolver.model import model_manager
     from agentevolver.prompt import prompt_manager
-    from agentevolver.session.project import bind_session_roots, ensure_session_sandbox
+    from agentevolver.session.project import (
+        bind_session_roots,
+        configured_session_owner,
+        ensure_session_sandbox,
+    )
     from agentevolver.session.types import SessionContext
     from agentevolver.skill import skill_manager
     from agentevolver.task import TaskCategory, TaskPriority, TaskStatus, task_manager
@@ -453,7 +461,10 @@ async def run_inner(args) -> int:
     shared_extension_root = config.extension_root
     ctx = SessionContext(id=instance_id, name=f"swebench_pro_{instance_id}")
     fs_sandbox = ensure_session_sandbox(
-        ctx, owner=SESSION_OWNER, shared_extension_root=shared_extension_root)
+        ctx,
+        owner=configured_session_owner(config),
+        shared_extension_root=shared_extension_root,
+    )
     bind_session_roots(config, fs_sandbox)
     bind_task_workspace(ctx, fs_sandbox)
 
@@ -481,7 +492,7 @@ async def run_inner(args) -> int:
     manifest = await extension_manager.initialize()
     logger.info(f"| ✅ Extensions: {[f'{c.module}:{c.name}' for c in manifest.components]}")
 
-    task_log_root = os.path.join(config.log_root, "tasks")
+    task_log_root = str(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
     await task_manager.initialize(log_root=task_log_root, handler=None)
     await task_manager.start(num_workers=1)
 
@@ -531,7 +542,7 @@ async def run_inner(args) -> int:
     # attempt still has edits worth grading.
     try:
         patch = collect_patch(CONTAINER_WORKSPACE, instance.get("base_commit", ""))
-        patch_path = os.path.join(str(fs_sandbox.project_root), "agent.patch")
+        patch_path = str(path_manager.under(fs_sandbox.project_root, P.PROJECT_PATCH))
         with open(patch_path, "w", encoding="utf-8") as handle:
             handle.write(patch)
         result["patch_path"] = patch_path
@@ -545,7 +556,8 @@ async def run_inner(args) -> int:
     result["session_path"] = str(fs_sandbox.project_root)
     result["spend"] = _summarise_spend(str(fs_sandbox.project_root), instance_id)
 
-    with open(os.path.join(str(fs_sandbox.project_root), "result.json"), "w", encoding="utf-8") as handle:
+    result_path = path_manager.under(fs_sandbox.project_root, P.PROJECT_RESULT)
+    with open(result_path, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
 
     for label, step in (("task manager", task_manager.stop), ("trace manager", trace_manager.stop)):
@@ -580,7 +592,6 @@ def inner_command(row: dict, args) -> str:
 # Launcher (host) — one container per instance
 # --------------------------------------------------------------------------- #
 async def run_launcher(args) -> int:
-    from agentevolver.paths import P, path_manager
     from agentevolver.sandbox import sandbox_manager
 
     check_shared_roots_readable()
@@ -607,15 +618,20 @@ async def run_launcher(args) -> int:
     # ``/AgentEvolver/extension``; the inner run writes its manifest there as the
     # container user. Grant it once here (not per instance — concurrent instances
     # would chown it under one another); ``restore_ownership`` below hands it back.
-    grant_to_container_user(os.path.join(root, "extension"))
+    grant_to_container_user(str(path_manager.get(P.EXTENSION)))
 
     results: list = []
     results_lock = asyncio.Lock()
-    out_dir = args.out or os.path.join("output", "swebench_pro_runs", time.strftime("run_%Y%m%d_%H%M%S"))
+    out_dir = args.out or str(path_manager.under(
+        config.project_root,
+        P.PROJECT_RESULT_RUN,
+        run_id=time.strftime("run_%Y%m%d_%H%M%S"),
+    ))
     os.makedirs(out_dir, exist_ok=True)
 
     def _write_results():
-        with open(os.path.join(out_dir, "results.json"), "w", encoding="utf-8") as handle:
+        results_path = path_manager.resolve_under(out_dir, "results.json")
+        with open(results_path, "w", encoding="utf-8") as handle:
             json.dump(results, handle, ensure_ascii=False, indent=2)
 
     async def _run_one_instance(index, row):
@@ -628,11 +644,16 @@ async def run_launcher(args) -> int:
         watcher_task = None
         eval_counter = {"count": 0}
         try:
-            workspace_dir = str(path_manager.get(P.SESSION_WORKSPACE, owner=SESSION_OWNER, session_id=instance_id))
-            session_path = str(path_manager.get(P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
+            owner = str(config.get("output_owner") or config.tag)
+            workspace_dir = str(path_manager.get(
+                P.SESSION_WORKSPACE, owner=owner, session_id=instance_id,
+            ))
+            session_path = str(path_manager.get(
+                P.SESSION, owner=owner, session_id=instance_id,
+            ))
             seed_workspace(ref, row.get("base_commit", ""), workspace_dir)
 
-            bridge_dir = os.path.join(session_path, "eval_bridge")
+            bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
             os.makedirs(bridge_dir, exist_ok=True)
             os.chmod(bridge_dir, 0o777)
             grant_to_container_user(session_path)
@@ -663,7 +684,7 @@ async def run_launcher(args) -> int:
             if execution.stderr:
                 print(execution.stderr, file=sys.stderr)
 
-            inner_result = os.path.join(session_path, "result.json")
+            inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
             if os.path.isfile(inner_result):
                 with open(inner_result, encoding="utf-8") as handle:
                     record.update(json.load(handle))

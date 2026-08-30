@@ -116,7 +116,7 @@ class DataManager(BaseModel):
         # through the character class intact and resolved a level above the datasets
         # root; ``.`` alone would have written into the root itself.
         safe = _SAFE_NAME.sub("_", str(repo or "").strip()).strip("_.") or "dataset"
-        return os.path.join(self.base_dir or ".", safe)
+        return str(path_manager.resolve_under(self.base_dir or ".", safe))
 
     async def __call__(self, name: str, input: Dict[str, Any], ctx: Any = None, **kwargs) -> Response:
         """Dispatch a data operation (dataset_save / dataset_load)."""

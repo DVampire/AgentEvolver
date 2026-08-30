@@ -1,4 +1,3 @@
-import os
 from typing import Dict, Any, Optional, List, Tuple, Type
 from pydantic import BaseModel, Field, PrivateAttr, ConfigDict
 import inflection
@@ -6,6 +5,7 @@ import inflection
 from agentevolver.logger import logger
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.config import config
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import assemble_workspace_path, dedent, is_same
 
 
@@ -76,9 +76,9 @@ class Benchmark(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_workspace_path(base_dir)
         else:
-            self.base_dir = assemble_workspace_path(
-                os.path.join(config.log_root, "benchmark", self.name)
-            )
+            self.base_dir = str(path_manager.under(
+                config.log_root, P.LOG_BENCHMARK, benchmark=self.name,
+            ))
 
     def _apply_slice(self, records: list) -> list:
         """Slice records according to start/end fields."""

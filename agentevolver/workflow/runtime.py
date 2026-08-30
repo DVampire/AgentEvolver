@@ -1232,7 +1232,7 @@ class WorkflowRuntime:
         Returns:
             ``output/.runtime/checkpoints/<run_id>.json``.
         """
-        return path_manager.get(P.CHECKPOINTS, create=True) / f"{run.id}.json"
+        return path_manager.get(P.CHECKPOINT, run_id=run.id, create=True)
 
     @staticmethod
     def _write_checkpoint(run):

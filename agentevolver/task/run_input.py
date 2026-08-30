@@ -10,10 +10,10 @@ default text.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentevolver.task.loader import load_task_document
+from agentevolver.paths import P, path_manager
 from agentevolver.visual import render_task_page
 
 
@@ -54,7 +54,9 @@ def resolve_task(
     task_file = getattr(args, "task_file", None)
     if task_file:
         doc = load_task_document(task_file)
-        view_path = os.path.join(task_log_root, "task_view.html")
+        view_path = str(path_manager.under(
+            task_log_root, P.LOG_TASK_VIEW, filename="task_view.html",
+        ))
         render_task_page(doc.html_body, view_path, title=doc.title)
         meta = {"task_doc": doc.source_path, "task_view": view_path, "task_kind": doc.type}
         return doc.content, [doc.source_path, *attachments], meta

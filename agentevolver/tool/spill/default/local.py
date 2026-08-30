@@ -59,7 +59,7 @@ class LocalSpillStore(SpillStore):
         suggested_name: str = "output.txt",
     ) -> SpillRef:
         digest = hashlib.sha256((session_key or "shared").encode("utf-8")).hexdigest()[:16]
-        directory = path_manager.get(P.SPILL) / f"session-{digest}"
+        directory = path_manager.get(P.SPILL_SESSION, digest=digest)
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         path = directory / f"{secrets.token_hex(4)}-{_safe_segment(suggested_name)}"

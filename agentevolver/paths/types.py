@@ -24,12 +24,34 @@ class P(str, Enum):
     LOG_TASKS = "log_tasks"
     LOG_TASKS_ARCHIVE = "log_tasks_archive"
     LOG_TRACE_INDEX = "log_trace_index"
+    LOG_INPUTS = "log_inputs"
+    LOG_MODEL_REQUEST = "log_model_request"
+    LOG_MESSAGE_SNAPSHOT = "log_message_snapshot"
+    LOG_COMMAND_CHECKPOINTS = "log_command_checkpoints"
+    LOG_COMMAND_CHECKPOINT = "log_command_checkpoint"
+    LOG_GATEWAY_TASKS = "log_gateway_tasks"
+    LOG_TASK_VIEW = "log_task_view"
+    LOG_BENCHMARK = "log_benchmark"
+    LOG_BENCHMARK_RESULTS = "log_benchmark_results"
+    LOG_BENCHMARK_RESULT = "log_benchmark_result"
+    TRACE_EVENT_LOG = "trace_event_log"
+    TRACE_SQLITE = "trace_sqlite"
+    TRACE_INTEGRITY = "trace_integrity"
+    TRACE_PROJECTIONS = "trace_projections"
+    TRACE_PROJECTION_WATERMARK = "trace_projection_watermark"
     #: The three directories a project root is made of. `ProjectSandbox` builds
     #: these for a root it is handed, which may be any directory, so it cannot ask
     #: for a session key — but the leaf names still belong to the table.
     PROJECT_WORKSPACE = "project_workspace"
     PROJECT_LOG = "project_log"
     PROJECT_EXTENSION = "project_extension"
+    PROJECT_MANIFEST = "project_manifest"
+    PROJECT_RESULT = "project_result"
+    PROJECT_PATCH = "project_patch"
+    PROJECT_SUBMISSION = "project_submission"
+    PROJECT_SUBMISSION_VIEW = "project_submission_view"
+    PROJECT_EVAL_BRIDGE = "project_eval_bridge"
+    PROJECT_RESULT_RUN = "project_result_run"
 
     # --- the two buckets -------------------------------------------------
     OUTPUT = "output"
@@ -46,13 +68,13 @@ class P(str, Enum):
     LEDGER = "ledger"
     SSH_HOSTS = "ssh_hosts"
     DEPLOY = "deploy"
-    CHECKPOINTS = "checkpoints"
-    STAGING = "staging"
+    CHECKPOINT = "checkpoint"
+    STAGING_MANIFEST = "staging_manifest"
     #: Where an oversized tool result is parked so the agent keeps a way back to
     #: it. Machine-level rather than per session: the store hashes the session
     #: into a subdirectory itself, so a caller holding only a tool context — which
     #: carries no owner or session id — can still resolve the root.
-    SPILL = "spill"
+    SPILL_SESSION = "spill_session"
     #: Where the bytes of an image the agent read are pinned, content-addressed, so
     #: the model's view of it cannot change when the source file does. Machine-level
     #: for the same reason as SPILL: a tool context carries neither owner nor session.
@@ -62,12 +84,8 @@ class P(str, Enum):
     OWNER = "owner"
     OWNER_STATE = "owner_state"
     OWNER_FILES = "owner_files"
-    OWNER_IDE = "owner_ide"
     IDE_EXTENSIONS = "ide_extensions"
     IDE_HOME = "ide_home"
-    #: $HOME for the Science workstation: pip installs, wandb logins and
-    #: Jupyter settings, kept per owner so they outlive a reaped container.
-    SCIENCE_HOME = "science_home"
 
     # --- per session / per run (disposable) ------------------------------
     SESSIONS = "sessions"
@@ -81,7 +99,6 @@ class P(str, Enum):
     SESSION_WORKSPACE = "session_workspace"
     SESSION_LOG = "session_log"
     SESSION_EXTENSION = "session_extension"
-    SESSION_MANIFEST = "session_manifest"
     #: Where trace writes one JSONL file per run, plus its `index.json`. A session
     #: directory holds several: the run the session was opened for and every
     #: sub-agent run it spawned, each under its own trace session id. This is the
@@ -106,6 +123,7 @@ class P(str, Enum):
     CONVERSATION_META = "conversation_meta"
     #: All conversations of one project.
     CONVERSATIONS = "conversations"
+    SESSION_LEGACY_EVENTS = "session_legacy_events"
     #: The session's goals — what a human asked for and where it stands. Beside
     #: the session manifest rather than in the workspace: a goal outlives the
     #: process and must not be reachable by the file tools the agent uses on its
@@ -119,7 +137,6 @@ class P(str, Enum):
     #: bash and code_interpreter — which start in the workspace — can open the
     #: same files the notebook wrote, and the files pane lists them.
     SESSION_NOTEBOOKS = "session_notebooks"
-    RUN = "run"
 
 
 #: The complete tree, relative to the project directory. Two roots only:
@@ -131,9 +148,34 @@ class P(str, Enum):
 #: leaf name or a `{module}` slot — so they have no home of their own and the rule
 #: that every declared path stays inside the two writable roots is enforced on the
 #: root they are joined to, not on them.
-RELATIVE: frozenset = frozenset({P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE,
-                                 P.LOG_TRACE_INDEX, P.PROJECT_WORKSPACE,
-                                 P.PROJECT_LOG, P.PROJECT_EXTENSION})
+RELATIVE: frozenset = frozenset({
+    P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
+    P.LOG_INPUTS, P.LOG_MODEL_REQUEST, P.LOG_MESSAGE_SNAPSHOT,
+    P.LOG_COMMAND_CHECKPOINTS, P.LOG_COMMAND_CHECKPOINT, P.LOG_GATEWAY_TASKS,
+    P.LOG_TASK_VIEW, P.LOG_BENCHMARK, P.LOG_BENCHMARK_RESULTS,
+    P.LOG_BENCHMARK_RESULT, P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
+    P.TRACE_PROJECTIONS, P.TRACE_PROJECTION_WATERMARK,
+    P.PROJECT_WORKSPACE, P.PROJECT_LOG,
+    P.PROJECT_EXTENSION, P.PROJECT_MANIFEST, P.PROJECT_RESULT,
+    P.PROJECT_PATCH, P.PROJECT_SUBMISSION, P.PROJECT_SUBMISSION_VIEW,
+    P.PROJECT_EVAL_BRIDGE,
+    P.PROJECT_RESULT_RUN,
+})
+
+#: Layout entries that name files rather than directories. Creation must use this
+#: declaration, not a suffix heuristic: a directory can contain a dot and a file can
+#: intentionally have no suffix.
+FILES: frozenset = frozenset({
+    P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
+    P.LOG_MODEL_REQUEST, P.LOG_MESSAGE_SNAPSHOT, P.LOG_COMMAND_CHECKPOINT,
+    P.LOG_TASK_VIEW, P.LOG_BENCHMARK_RESULT,
+    P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
+    P.TRACE_PROJECTION_WATERMARK,
+    P.PROJECT_MANIFEST, P.PROJECT_RESULT, P.PROJECT_PATCH, P.PROJECT_SUBMISSION,
+    P.PORTS, P.LEDGER, P.SSH_HOSTS, P.CHECKPOINT, P.STAGING_MANIFEST,
+    P.CONVERSATION_EVENTS, P.CONVERSATION_META, P.SESSION_LEGACY_EVENTS,
+    P.SESSION_GOALS, P.SESSION_PLAN,
+})
 
 LAYOUT: Dict[P, str] = {
     #: A manager's own working directory under whichever log root the run is bound
@@ -145,9 +187,31 @@ LAYOUT: Dict[P, str] = {
     P.LOG_TASKS: "tasks.json",
     P.LOG_TASKS_ARCHIVE: "tasks_archive.json",
     P.LOG_TRACE_INDEX: "index.json",
+    P.LOG_INPUTS: "inputs",
+    P.LOG_MODEL_REQUEST: "model_requests/{agent_name}/{filename}",
+    P.LOG_MESSAGE_SNAPSHOT: "messages/{agent_name}/{filename}",
+    P.LOG_COMMAND_CHECKPOINTS: "command/checkpoints",
+    P.LOG_COMMAND_CHECKPOINT: "command/checkpoints/{filename}",
+    P.LOG_GATEWAY_TASKS: "gateway/tasks",
+    P.LOG_TASK_VIEW: "{filename}",
+    P.LOG_BENCHMARK: "benchmark/{benchmark}",
+    P.LOG_BENCHMARK_RESULTS: "results/{benchmark}",
+    P.LOG_BENCHMARK_RESULT: "results/{benchmark}/{filename}",
+    P.TRACE_EVENT_LOG: "{session_id}.jsonl",
+    P.TRACE_SQLITE: "trace.sqlite3",
+    P.TRACE_INTEGRITY: "integrity/{digest}.json",
+    P.TRACE_PROJECTIONS: "projections",
+    P.TRACE_PROJECTION_WATERMARK: "projections/{projection}/{filename}",
     P.PROJECT_WORKSPACE: "workspace",
     P.PROJECT_LOG: "log",
     P.PROJECT_EXTENSION: "extension",
+    P.PROJECT_MANIFEST: "session.json",
+    P.PROJECT_RESULT: "result.json",
+    P.PROJECT_PATCH: "agent.patch",
+    P.PROJECT_SUBMISSION: "submission.tar.gz",
+    P.PROJECT_SUBMISSION_VIEW: "submission",
+    P.PROJECT_EVAL_BRIDGE: "eval_bridge",
+    P.PROJECT_RESULT_RUN: "results/{run_id}",
 
     P.OUTPUT: "output",
     P.EXTENSION: "extension",
@@ -158,30 +222,28 @@ LAYOUT: Dict[P, str] = {
     P.LEDGER: "output/.runtime/sandbox_ledger.json",
     P.SSH_HOSTS: "output/.runtime/ssh_hosts.json",
     P.DEPLOY: "output/.runtime/deploy",
-    P.CHECKPOINTS: "output/.runtime/checkpoints",
-    P.STAGING: "output/.runtime/staging/{project_key}",
-    P.SPILL: "output/.runtime/spill",
+    P.CHECKPOINT: "output/.runtime/checkpoints/{run_id}.json",
+    P.STAGING_MANIFEST: "output/.runtime/staging/{project_key}/extension-staging.json",
+    P.SPILL_SESSION: "output/.runtime/spill/session-{digest}",
     P.ATTACHMENTS: "output/.runtime/attachments",
 
     P.OWNER: "output/{owner}",
     P.OWNER_STATE: "output/{owner}/state",
     P.OWNER_FILES: "output/{owner}/state/files",
-    P.OWNER_IDE: "output/{owner}/state/ide",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
     P.IDE_HOME: "output/{owner}/state/ide/home",
-    P.SCIENCE_HOME: "output/{owner}/state/science/home",
 
     P.SESSIONS: "output/{owner}/sessions",
     P.SESSION: "output/{owner}/sessions/{session_id}",
     P.SESSION_WORKSPACE: "output/{owner}/sessions/{session_id}/workspace",
     P.SESSION_LOG: "output/{owner}/sessions/{session_id}/log",
     P.SESSION_EXTENSION: "output/{owner}/sessions/{session_id}/extension",
-    P.SESSION_MANIFEST: "output/{owner}/sessions/{session_id}/session.json",
     P.SESSION_TRACE: "output/{owner}/sessions/{session_id}/log/trace",
     P.SESSION_BASH: "output/{owner}/sessions/{session_id}/log/bash",
     P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",
     P.SESSION_RUNS: "output/{owner}/sessions/{session_id}/runs",
     P.CONVERSATIONS: "output/{owner}/sessions/{session_id}/conversations",
+    P.SESSION_LEGACY_EVENTS: "output/{owner}/sessions/{session_id}/events.jsonl",
     P.CONVERSATION_EVENTS: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.jsonl",
     P.CONVERSATION_META: "output/{owner}/sessions/{session_id}/conversations/{conversation_id}.json",
     P.SESSION_GOALS: "output/{owner}/sessions/{session_id}/goals.json",
@@ -198,7 +260,6 @@ LAYOUT: Dict[P, str] = {
     P.SESSION_PLAN: "output/{owner}/sessions/{session_id}/workspace/plan.md",
     P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
     P.SESSION_NOTEBOOKS: "output/{owner}/sessions/{session_id}/workspace/notebooks",
-    P.RUN: "output/{owner}/runs/{run_id}",
 }
 
-__all__ = ["P", "LAYOUT"]
+__all__ = ["P", "LAYOUT", "RELATIVE", "FILES"]

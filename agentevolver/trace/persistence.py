@@ -15,6 +15,7 @@ import sqlite3
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import TraceEvent
 
@@ -51,7 +52,7 @@ class SQLiteTracePersistence:
 
     @property
     def database_path(self) -> str:
-        return os.path.join(self._log_root, "trace.sqlite3")
+        return str(path_manager.under(self._log_root, P.TRACE_SQLITE))
 
     def _connect(self) -> sqlite3.Connection:
         if self._connection is None:

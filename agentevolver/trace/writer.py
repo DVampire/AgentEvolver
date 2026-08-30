@@ -128,7 +128,9 @@ class TraceWriter:
 
     def _session_path(self, session_id: str) -> str:
         safe = session_id.replace("/", "_").replace("\\", "_")
-        return os.path.join(self._log_root, f"{safe}.jsonl")
+        return str(path_manager.under(
+            self._log_root, P.TRACE_EVENT_LOG, session_id=safe,
+        ))
 
     def _get_handle(self, session_id: str):
         if session_id not in self._handles:

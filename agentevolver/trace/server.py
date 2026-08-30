@@ -182,6 +182,13 @@ class TraceManager(metaclass=Singleton):
         if self._writer:
             await self._writer.stop()
 
+        # Request pages are an observational side channel scheduled off the model
+        # hot path. Give pages already in flight a bounded chance to land before a
+        # short-lived direct runner exits.
+        from agentevolver.visual.request_viewer import flush_request_html
+
+        await flush_request_html()
+
         logger.info("| ⏹️  TraceManager stopped")
 
     # ------------------------------------------------------------------
@@ -267,7 +274,9 @@ class TraceManager(metaclass=Singleton):
         if not self._log_root:
             return None
         digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
-        return os.path.join(self._log_root, "integrity", f"{digest}.json")
+        return str(path_manager.under(
+            self._log_root, P.TRACE_INTEGRITY, digest=digest,
+        ))
 
     def _persist_integrity_issue(self, session_id: str, issue: str) -> None:
         """Seal the first known data gap so a process restart cannot forget it."""

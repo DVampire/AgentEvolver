@@ -76,11 +76,9 @@ class DeploymentManagerServer(BaseModel):
         # registry lives at ``output/.runtime/deploy`` (``P.DEPLOY``) rather
         # than a per-session log root — this keeps every session and every restart
         # looking at the same set of sites.
-        from agentevolver.utils.path_utils import home_dir
-
         base = workspace_root or str(path_manager.get(P.DEPLOY, create=True))
         os.makedirs(base, exist_ok=True)
-        self._registry_path = os.path.join(base, "sites.json")
+        self._registry_path = str(path_manager.resolve_under(base, "sites.json"))
         self._load()
         # After a restart the in-process sandbox handles are gone; re-probe each
         # recorded site so ones still serving are reattached as RUNNING and the
@@ -133,8 +131,14 @@ class DeploymentManagerServer(BaseModel):
         return "opensandbox" if self._container_runtime_available() else "host"
 
     def _host_site_dir(self, site_id: str) -> str:
-        base = os.path.dirname(self._registry_path) if self._registry_path else os.path.join("workspace_root", "run", "deploy")
-        return os.path.join(base, "sites", site_id, "app")
+        base = (
+            os.path.dirname(self._registry_path)
+            if self._registry_path
+            else str(path_manager.get(P.DEPLOY))
+        )
+        sites = path_manager.resolve_under(base, "sites")
+        site = path_manager.resolve_under(sites, site_id)
+        return str(path_manager.resolve_under(site, "app"))
 
     @staticmethod
     def _reserve_host_port(site_id: str, preferred: int) -> int:
@@ -220,7 +224,9 @@ class DeploymentManagerServer(BaseModel):
         # and write the server log beside it (containers keep a per-container /tmp log).
         if backend == "host":
             spec.workspace_root = self._host_site_dir(request.site_id)
-            log_path = os.path.join(os.path.dirname(spec.workspace_root), "server.log")
+            log_path = str(path_manager.resolve_under(
+                os.path.dirname(spec.workspace_root), "server.log",
+            ))
             # Host sites share the machine's ports: if the requested one is taken, move to
             # a free port and reflect it in the start command (literal port) and PORT env.
             free = self._reserve_host_port(request.site_id, spec.port)

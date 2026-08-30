@@ -128,7 +128,7 @@ class ProjectSandbox:
         # promotes anything leaves no empty ``staging/`` tree behind (the dir is
         # created lazily by :meth:`_write_manifest`).
         project_key = hashlib.sha256(str(self.project_root).encode("utf-8")).hexdigest()[:16]
-        return path_manager.get(P.STAGING, project_key=project_key) / "extension-staging.json"
+        return path_manager.get(P.STAGING_MANIFEST, project_key=project_key)
 
     def describe(self) -> Dict[str, str]:
         """Return the host paths that map into a session sandbox."""

@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from agentevolver.registry import COMMAND
 from agentevolver.command.types import Command, CommandType, CommandContext
+from agentevolver.paths import P, path_manager
 from agentevolver.response.types import Response
 
 
@@ -19,9 +20,7 @@ class CheckpointsCommand(Command):
 
     async def __call__(self, args: List[str], ctx: Optional[CommandContext] = None) -> Response:
         from agentevolver.config import config
-        from agentevolver.utils import assemble_workspace_path
-
-        ckpt_dir = assemble_workspace_path(os.path.join(config.log_root, "command", "checkpoints"))
+        ckpt_dir = str(path_manager.under(config.log_root, P.LOG_COMMAND_CHECKPOINTS))
         files = sorted(glob.glob(os.path.join(ckpt_dir, "*.json")))
         if not files:
             return self.ok("No checkpoints saved yet.")

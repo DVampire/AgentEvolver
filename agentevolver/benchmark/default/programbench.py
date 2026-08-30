@@ -10,6 +10,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import dedent
 
 SYSTEM_PROMPT = dedent("""
@@ -131,10 +132,11 @@ class ProgramBenchmark(Benchmark):
             logger.warning(f"[{self.name}] submission path does not exist for task {task_id}: {src_path!r}")
             return None
 
-        log_root = os.path.join(self.base_dir, "eval_runs", task_id)
-        inst_dir = os.path.join(log_root, task_id)
+        eval_runs = path_manager.resolve_under(self.base_dir, "eval_runs")
+        log_root = path_manager.resolve_under(eval_runs, task_id)
+        inst_dir = path_manager.resolve_under(log_root, task_id)
         os.makedirs(inst_dir, exist_ok=True)
-        submission = os.path.join(inst_dir, "submission.tar.gz")
+        submission = path_manager.under(inst_dir, P.PROJECT_SUBMISSION)
 
         if os.path.isdir(src_path):
             # Tar the source tree (members relative to the tree root).
@@ -201,9 +203,9 @@ class ProgramBenchmark(Benchmark):
             return task
 
         # Score the produced eval.json with the same ignore-aware logic as `programbench info`.
-        import pathlib
         from programbench.submission import score_instance, test_results_map
-        eval_json = pathlib.Path(log_root) / task_id / f"{task_id}.eval.json"
+        inst_dir = path_manager.resolve_under(log_root, task_id)
+        eval_json = path_manager.resolve_under(inst_dir, f"{task_id}.eval.json")
         if not eval_json.exists():
             logger.warning(f"[{self.name}] no eval.json produced for {task_id}.")
             self._tasks.append(task)

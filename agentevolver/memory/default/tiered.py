@@ -33,6 +33,8 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional
 
+from agentevolver.paths import path_manager
+
 from pydantic import BaseModel, Field
 
 from agentevolver.logger import logger
@@ -777,7 +779,9 @@ class TieredMemory(Memory):
                     stem = f"{agent_name}_{session_id}"
                 else:
                     stem = session_id
-                file_path = os.path.join(self.base_dir, f"{stem}.{self.file_ext}") if self.base_dir else ""
+                file_path = str(path_manager.resolve_under(
+                    self.base_dir, f"{stem}.{self.file_ext}",
+                )) if self.base_dir else ""
                 self._sessions[session_id] = _SessionState(
                     session_id=session_id, task=task, file_path=file_path,
                     working_max=self.working_max)

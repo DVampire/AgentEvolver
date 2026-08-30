@@ -3,25 +3,28 @@ from mmengine import Config as MMConfig
 from argparse import Namespace
 from typing import Union
 
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import assemble_resource_path, assemble_workspace_path, project_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
     """Resolve and validate the per-run output directory hierarchy.
 
-    Only ``project_root`` need be declared by a config; the ``log_root`` and
-    ``workspace_root`` sub-roots default to ``<project_root>/log`` and
-    ``<project_root>/workspace`` when a config does not set them.  These are just
-    templates — a session rebinds them to ``<project_root>/<session-id>/…`` at
-    runtime (direct scripts via ``bind_session_roots``; Gateway/CLI via a
-    per-session ``ProjectSandbox`` plus ctx-driven log routing).
+    ``project_root`` is optional. When omitted, PathManager derives it from
+    ``output_owner``, then ``tag``, and finally ``local``. ``log_root`` and
+    ``workspace_root`` default to the corresponding project subdirectories.
+    These are startup templates: a session rebinds them to its managed sandbox
+    before work begins.
     """
     if "project_root" not in config:
-        raise ValueError("Configuration is missing required output root: project_root")
+        namespace = str(config.get("output_owner") or config.get("tag") or "local")
+        config.project_root = str(path_manager.get(P.OWNER, owner=namespace))
     # Derive the sub-roots from project_root when a config omits them.
     if "log_root" not in config:
-        config.log_root = f"{config.project_root}/log"
+        config.log_root = str(path_manager.under(config.project_root, P.PROJECT_LOG))
     if "workspace_root" not in config:
-        config.workspace_root = f"{config.project_root}/workspace"
+        config.workspace_root = str(path_manager.under(
+            config.project_root, P.PROJECT_WORKSPACE,
+        ))
 
     # Runtime output is project-owned: these resolve against the project the
     # layout hangs off, so a config-started run lands in the same tree the
@@ -34,8 +37,6 @@ def process_general(config: MMConfig) -> MMConfig:
     # An explicit config value still wins; otherwise the layout decides, so a
     # config-started run and a browser-started one agree on where shared
     # components live.
-    from agentevolver.paths import P, path_manager
-
     configured = config.get("extension_root")
     extension_root = os.path.realpath(
         project_path(configured) if configured else str(path_manager.get(P.EXTENSION)))
@@ -59,8 +60,7 @@ def process_general(config: MMConfig) -> MMConfig:
     # needs). Only the durable extension root is materialized eagerly.
     os.makedirs(extension_root, exist_ok=True)
 
-    log_path = os.path.join(log_root, config.log_path)
-    config.log_path = log_path
+    config.log_path = str(path_manager.resolve_under(log_root, config.log_path))
 
     return config
 
@@ -71,7 +71,9 @@ def process_tools(config: MMConfig) -> MMConfig:
         if "tool" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
                 # Tool state belongs to the run's log root.
-                base_dir = str(assemble_workspace_path(os.path.join(config.log_root, config[key]["base_dir"])))
+                base_dir = str(path_manager.resolve_under(
+                    config.log_root, config[key]["base_dir"],
+                ))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -83,7 +85,9 @@ def process_environments(config: MMConfig) -> MMConfig:
         # "environment" but they are agents — handled by process_agent.
         if "environment" in key and not key.endswith("_agent"):
             if "base_dir" in config[key]:
-                base_dir = str(assemble_workspace_path(os.path.join(config.log_root, config[key]["base_dir"])))
+                base_dir = str(path_manager.resolve_under(
+                    config.log_root, config[key]["base_dir"],
+                ))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))
@@ -93,7 +97,9 @@ def process_memory(config: MMConfig)->MMConfig:
     for key in config:
         if "memory" in key:
             if "base_dir" in config[key]:
-                base_dir = str(assemble_workspace_path(os.path.join(config.log_root, config[key]["base_dir"])))
+                base_dir = str(path_manager.resolve_under(
+                    config.log_root, config[key]["base_dir"],
+                ))
                 config[key].update(dict(
                     base_dir = base_dir
                 ))

@@ -472,7 +472,7 @@ class TrajectoryManagerServer:
         for name in sorted(os.listdir(root)):
             if not name.endswith(".jsonl"):
                 continue
-            trajectory = self.load(os.path.join(root, name))
+            trajectory = self.load(str(path_manager.resolve_under(root, name)))
             if trajectory is not None:
                 loaded.append(trajectory)
         return loaded
@@ -485,7 +485,10 @@ class TrajectoryManagerServer:
         base = self.base_dir or self._default_base_dir()
         session_key = self._label_key(label.session_id)
         task_key = self._label_key(label.task_id)
-        return os.path.join(base, "labels", f"{session_key}__{task_key}.jsonl")
+        labels = path_manager.resolve_under(base, "labels")
+        return str(path_manager.resolve_under(
+            labels, f"{session_key}__{task_key}.jsonl",
+        ))
 
     @staticmethod
     def _label_key(value: str) -> str:
@@ -512,7 +515,7 @@ class TrajectoryManagerServer:
     def load_reward_labels(self, task_id: str) -> List[RewardLabel]:
         """All readable labels for a task, preserving append order across its files."""
         base = self.base_dir or self._default_base_dir()
-        directory = os.path.join(base, "labels")
+        directory = str(path_manager.resolve_under(base, "labels"))
         if not os.path.isdir(directory):
             return []
         task_key = self._label_key(task_id)
@@ -520,7 +523,7 @@ class TrajectoryManagerServer:
         for name in sorted(os.listdir(directory)):
             if not name.endswith(f"__{task_key}.jsonl"):
                 continue
-            path = os.path.join(directory, name)
+            path = str(path_manager.resolve_under(directory, name))
             try:
                 with open(path, "r", encoding="utf-8") as handle:
                     lines = handle.read().splitlines()
@@ -560,7 +563,7 @@ class TrajectoryManagerServer:
         # written from it. The default now resolves the same way `initialize()` does.
         base = self.base_dir or self._default_base_dir()
         safe = traj.task_id.replace("/", "_").replace("\\", "_")
-        return os.path.join(base, f"{safe}.jsonl")
+        return str(path_manager.resolve_under(base, f"{safe}.jsonl"))
 
     @staticmethod
     def _default_base_dir() -> str:

@@ -36,7 +36,7 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
-from agentevolver.paths.types import LAYOUT, P
+from agentevolver.paths.types import FILES, LAYOUT, P
 
 #: Placeholders in a layout template: ``{owner}``, ``{session_id}``, ``{module}``, …
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
@@ -102,6 +102,15 @@ class PathManagerServer:
         """
         return Path(__file__).resolve().parents[1]
 
+    @classmethod
+    def package_resource(cls, *parts: str) -> Path:
+        """Resolve a shipped read-only resource and keep it inside the package."""
+        root = cls.package_dir()
+        path = root.joinpath(*parts).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"package resource escapes package root: {parts!r}")
+        return path
+
     def writable_roots(self) -> Tuple[Path, Path]:
         """The only two directories the framework may write to.
 
@@ -125,9 +134,11 @@ class PathManagerServer:
         Rebinding is normal and clears any override, because an override describes one
         run's environment and must not outlive it.
         """
+        owner, session_id = str(owner), str(session_id)
+        self._validate_components({"owner": owner, "session_id": session_id})
         if (owner, session_id) != (self._owner, self._session_id):
             self._overrides.clear()
-        self._owner, self._session_id = str(owner), str(session_id)
+        self._owner, self._session_id = owner, session_id
         self._announce()
 
     def _listener_list(self) -> List[Callable[[], None]]:
@@ -285,13 +296,16 @@ class PathManagerServer:
         # the bound session's value with nothing — so two modules grew their own
         # `owner or bound_owner` to undo it. Dropped here, and neither needs to.
         params = {name: value for name, value in params.items() if value not in ("", None)}
+        self._validate_components(params)
 
         if self._names_the_bound_session(params):
             if key in self._overrides:
-                return self._materialize(self._overrides[key], create=create)
+                return self._materialize(
+                    self._overrides[key], create=create, is_file=key in FILES,
+                )
             nested = self._under_an_override(key, template)
             if nested is not None:
-                return self._materialize(nested, create=create)
+                return self._materialize(nested, create=create, is_file=key in FILES)
 
         required = set(_PLACEHOLDER.findall(template))
         params = {**self._session_params(required), **params}
@@ -301,7 +315,7 @@ class PathManagerServer:
 
         root, template = self._rebase(template)
         path = (root / template.format(**params)) if template else root
-        return self._materialize(path, create=create)
+        return self._materialize(path, create=create, is_file=key in FILES)
 
     def _names_the_bound_session(self, params: Dict[str, str]) -> bool:
         """Whether this call is about the run that is bound, however it was spelled.
@@ -379,14 +393,38 @@ class PathManagerServer:
             **params: Values for the template's placeholders, e.g. ``module``.
         """
         template = self._layout[key]
+        self._validate_components(params)
         required = set(_PLACEHOLDER.findall(template))
         missing = required - params.keys()
         if missing:
             raise ValueError(f"{key.value} needs {sorted(missing)}; got {sorted(params)}")
         path = Path(root).expanduser() / template.format(**params)
-        if create:
-            path.mkdir(parents=True, exist_ok=True)
-        return path
+        return self._materialize(path, create=create, is_file=key in FILES)
+
+    def resolve_under(
+        self, root: str | Path, relative: str | Path, *, create: bool = False,
+    ) -> Path:
+        """Resolve a config/user-supplied relative path without letting it escape ``root``.
+
+        Layout-owned names belong in :data:`LAYOUT` and use :meth:`under`. This method is
+        only for the remaining dynamic suffix supplied by configuration (for example a
+        plugin's ``base_dir``); centralising it keeps absolute paths and ``..`` from
+        silently bypassing the configured run root.
+        """
+        base = Path(root).expanduser().resolve()
+        value = Path(relative).expanduser()
+        candidate = value.resolve() if value.is_absolute() else (base / value).resolve()
+        if not candidate.is_relative_to(base):
+            raise ValueError(f"path {str(relative)!r} escapes managed root {base}")
+        return self._materialize(candidate, create=create, is_file=False)
+
+    @staticmethod
+    def _validate_components(params: Dict[str, str]) -> None:
+        """Reject placeholder values that turn one declared component into a path."""
+        for name, raw in params.items():
+            value = str(raw)
+            if value in {".", ".."} or "/" in value or "\\" in value or "\x00" in value:
+                raise ValueError(f"path parameter {name} must be one component, got {value!r}")
 
     def _session_params(self, required: Set[str]) -> Dict[str, str]:
         """What the bound session contributes to a template's placeholders.
@@ -418,14 +456,14 @@ class PathManagerServer:
         return cls.project_dir(), template
 
     @staticmethod
-    def _materialize(path: Path, *, create: bool) -> Path:
-        """Create ``path`` when asked, treating a key with a suffix as a file.
+    def _materialize(path: Path, *, create: bool, is_file: bool) -> Path:
+        """Create a declared directory or a declared file's parent when asked.
 
         A file key's *parent* is what wants creating; making the file itself a directory
         is the kind of error that surfaces much later, as an unreadable JSON document.
         """
         if create:
-            (path.parent if path.suffix else path).mkdir(parents=True, exist_ok=True)
+            (path.parent if is_file else path).mkdir(parents=True, exist_ok=True)
         return path
 
     # ================================================================== #

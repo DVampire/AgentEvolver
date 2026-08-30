@@ -124,10 +124,7 @@ class CanvasManagerServer:
 
     @staticmethod
     def _library_dir() -> Path:
-        from agentevolver.utils.path_utils import get_extension_root
-        directory = Path(get_extension_root()) / "canvas"
-        directory.mkdir(parents=True, exist_ok=True)
-        return directory
+        return path_manager.get(P.EXTENSION_MODULE, module="canvas", create=True)
 
     def list_library(self) -> List[Dict[str, Any]]:
         """Summaries of every saved canvas library flow."""
@@ -236,7 +233,7 @@ class CanvasManagerServer:
         run = workflow_manager.get_run(run_id)
         if run is not None:
             return run.model_dump(mode="json")
-        checkpoint = path_manager.get(P.CHECKPOINTS) / f"{run_id}.json"
+        checkpoint = path_manager.get(P.CHECKPOINT, run_id=run_id)
         if checkpoint.is_file():
             try:
                 return json.loads(checkpoint.read_text(encoding="utf-8"))

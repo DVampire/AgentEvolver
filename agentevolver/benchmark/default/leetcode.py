@@ -111,7 +111,9 @@ class CodeSubmitter:
 
     def _setup_output_file(self, base_dir: Optional[str] = None):
         """设置输出文件路径（不依赖浏览器初始化）"""
-        self.output_dir = base_dir or os.path.join(os.getcwd(), "results")
+        self.output_dir = base_dir or str(path_manager.under(
+            path_manager.get(P.OUTPUT), P.LOG_BENCHMARK_RESULTS, benchmark="leetcode",
+        ))
 
         try:
             os.makedirs(self.output_dir, exist_ok=True)
@@ -119,7 +121,7 @@ class CodeSubmitter:
             logger.warning(f"| ⚠️ Failed to create output directory: {e}")
             self.output_dir = "."
 
-        self.output_file = os.path.join(self.output_dir, "results.jsonl")
+        self.output_file = str(path_manager.resolve_under(self.output_dir, "results.jsonl"))
 
     async def initialize(self):
         logger.info("| 🚀 Initializing LeetCode Benchmark Submitter...")
@@ -183,7 +185,7 @@ class CodeSubmitter:
         logger.info("| 🔍 Cloning git repository...")
         
         repo_name = self.repo_slug.split('/')[-1]
-        self.repo_path = os.path.join(self.base_dir, repo_name)
+        self.repo_path = str(path_manager.resolve_under(self.base_dir, repo_name))
         
         # Convert to SSH format: git@github.com:username/repo.git
         ssh_url = f"git@github.com:{self.repo_slug}.git"

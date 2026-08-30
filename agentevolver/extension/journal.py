@@ -22,6 +22,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from agentevolver.logger import logger
+from agentevolver.paths import path_manager
 from agentevolver.utils import get_extension_root
 
 _JOURNAL = ".journal"
@@ -61,9 +62,10 @@ class Journal:
         self.base_dir = os.path.abspath(base_dir) if base_dir else get_extension_root()
 
     def _path(self, module: str, name: str) -> str:
-        d = os.path.join(self.base_dir, _JOURNAL, module)
+        journal = path_manager.resolve_under(self.base_dir, _JOURNAL)
+        d = path_manager.resolve_under(journal, module)
         os.makedirs(d, exist_ok=True)
-        return os.path.join(d, f"{name}.md")
+        return str(path_manager.resolve_under(d, f"{name}.md"))
 
     def read(self, module: str, name: str) -> List[JournalRound]:
         path = self._path(module, name)

@@ -158,8 +158,6 @@ CONTAINER_USER = "1000:1000"
 #: passed explicitly rather than left to a default in another module — the launcher seeds
 #: the workspace the inner run then works in, and disagreeing about the owner would look
 #: like a run that produced nothing.
-SESSION_OWNER = "local"
-
 #: The task document. Lives under examples/tasks/ like every other run script's task, so
 #: the instructions are readable and diffable on their own, render as a styled page
 #: through resolve_task()'s view, and can be swapped per run with --task-file without
@@ -259,7 +257,11 @@ def build_task_content(instance, task_file=None, task_log_root=None):
         html_body = doc.html_body
         for key, value in slots.items():
             html_body = html_body.replace(key, value)
-        view_path = os.path.join(task_log_root, f"task_view_{instance.get('instance_id', 'task')}.html")
+        view_path = str(path_manager.under(
+            task_log_root,
+            P.LOG_TASK_VIEW,
+            filename=f"task_view_{instance.get('instance_id', 'task')}.html",
+        ))
         os.makedirs(task_log_root, exist_ok=True)
         render_task_page(html_body, view_path, title=doc.title)
         metadata["task_view"] = view_path
@@ -344,7 +346,7 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
     import tarfile
 
     os.makedirs(dest_dir, exist_ok=True)
-    tarball = os.path.join(dest_dir, "submission.tar.gz")
+    tarball = str(path_manager.under(dest_dir, P.PROJECT_SUBMISSION))
 
     def _git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -419,7 +421,7 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
 
     # Unpack a browsable copy beside the tarball so the reconstruction can be read
     # without untarring it by hand. The scorer still consumes submission.tar.gz.
-    extract_dir = os.path.join(dest_dir, "submission")
+    extract_dir = str(path_manager.under(dest_dir, P.PROJECT_SUBMISSION_VIEW))
     with tarfile.open(tarball, "r:gz") as handle:
         handle.extractall(extract_dir)
 
@@ -656,7 +658,7 @@ def audit_reference_binary(log_root: str) -> dict:
     """
     tools = ("objdump", "readelf", "strings", "nm ", "xxd", "hexdump", "gdb", "ltrace", "strace")
     hits: list = []
-    trace_dir = Path(log_root) / "trace"
+    trace_dir = path_manager.under(log_root, P.LOG_MODULE, module="trace")
     for path in sorted(trace_dir.glob("*.jsonl")) if trace_dir.is_dir() else []:
         rows = []
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -821,7 +823,11 @@ async def run_inner(args) -> int:
     from agentevolver.memory import memory_manager
     from agentevolver.model import model_manager
     from agentevolver.prompt import prompt_manager
-    from agentevolver.session.project import bind_session_roots, ensure_session_sandbox
+    from agentevolver.session.project import (
+        bind_session_roots,
+        configured_session_owner,
+        ensure_session_sandbox,
+    )
     from agentevolver.session.types import SessionContext
     from agentevolver.skill import skill_manager
     from agentevolver.task import TaskCategory, TaskPriority, TaskStatus, task_manager
@@ -840,7 +846,10 @@ async def run_inner(args) -> int:
     # submission — copy anything worth keeping out first.
     ctx = SessionContext(id=instance_id, name=f"programbench_{instance_id}")
     fs_sandbox = ensure_session_sandbox(
-        ctx, owner=SESSION_OWNER, shared_extension_root=shared_extension_root)
+        ctx,
+        owner=configured_session_owner(config),
+        shared_extension_root=shared_extension_root,
+    )
     bind_session_roots(config, fs_sandbox)
     bind_task_workspace(ctx, fs_sandbox)
 
@@ -868,7 +877,7 @@ async def run_inner(args) -> int:
     manifest = await extension_manager.initialize()
     logger.info(f"| ✅ Extensions: {[f'{c.module}:{c.name}' for c in manifest.components]}")
 
-    task_log_root = os.path.join(config.log_root, "tasks")
+    task_log_root = str(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
     await task_manager.initialize(log_root=task_log_root, handler=None)
     await task_manager.start(num_workers=1)
 
@@ -966,7 +975,8 @@ async def run_inner(args) -> int:
     result["spend"] = _summarise_spend(str(fs_sandbox.project_root), instance_id)
 
     # Written where the launcher reads it back through the mount.
-    with open(os.path.join(str(fs_sandbox.project_root), "result.json"), "w", encoding="utf-8") as handle:
+    result_path = path_manager.under(fs_sandbox.project_root, P.PROJECT_RESULT)
+    with open(result_path, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
 
     for label, step in (("task manager", task_manager.stop), ("trace manager", trace_manager.stop)):
@@ -1197,9 +1207,13 @@ async def run_launcher(args) -> int:
     forwarded = {key: os.environ[key] for key in _FORWARDED_ENV if os.environ.get(key)}
     wall_clock = int(config.get("WALL_CLOCK", 21600))
 
-    out_dir = args.out or os.path.join(root, "output", "results", "programbench")
+    out_dir = args.out or str(path_manager.under(
+        config.project_root,
+        P.PROJECT_RESULT_RUN,
+        run_id="programbench",
+    ))
     os.makedirs(out_dir, exist_ok=True)
-    results_path = os.path.join(out_dir, f"run_{make_id()}.json")
+    results_path = str(path_manager.resolve_under(out_dir, f"run_{make_id()}.json"))
     results = []
     results_lock = asyncio.Lock()
     max_concurrency = max(1, int(getattr(args, "concurrency", 1) or 1))
@@ -1237,9 +1251,15 @@ async def run_launcher(args) -> int:
             # only after its tarball lands, and the deliverable is collected from a
             # directory that is simply there — no reaching into a container for it.
             workspace_dir = str(path_manager.get(
-                P.SESSION_WORKSPACE, owner=SESSION_OWNER, session_id=instance_id))
+                P.SESSION_WORKSPACE,
+                owner=str(config.get("output_owner") or config.tag),
+                session_id=instance_id,
+            ))
             session_path = str(path_manager.get(
-                P.SESSION, owner=SESSION_OWNER, session_id=instance_id))
+                P.SESSION,
+                owner=str(config.get("output_owner") or config.tag),
+                session_id=instance_id,
+            ))
             resuming = bool(getattr(args, "resume", False)) and has_resumable_work(workspace_dir)
             if resuming:
                 logger.info(
@@ -1261,7 +1281,7 @@ async def run_launcher(args) -> int:
             # that chown (chown does not touch the mode), so both the container (owner) and
             # this host launcher (other) can still write — the container drops requests, the
             # host writes responses.
-            bridge_dir = os.path.join(session_path, "eval_bridge")
+            bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
             os.makedirs(bridge_dir, exist_ok=True)
             os.chmod(bridge_dir, 0o777)
 
@@ -1320,8 +1340,12 @@ async def run_launcher(args) -> int:
             if execution.stderr:
                 print(execution.stderr, file=sys.stderr)
 
-            inner_result = os.path.join(str(path_manager.get(
-                P.SESSION, owner=SESSION_OWNER, session_id=instance_id)), "result.json")
+            inner_session = path_manager.get(
+                P.SESSION,
+                owner=str(config.get("output_owner") or config.tag),
+                session_id=instance_id,
+            )
+            inner_result = str(path_manager.under(inner_session, P.PROJECT_RESULT))
             if os.path.isfile(inner_result):
                 with open(inner_result, encoding="utf-8") as handle:
                     record.update(json.load(handle))
@@ -1376,8 +1400,8 @@ async def run_launcher(args) -> int:
 
     # Ownership is handed back once, after every container is done — doing it per instance
     # would chown the shared trees out from under instances still running concurrently.
-    restore_ownership(os.path.join(root, "output"))
-    restore_ownership(os.path.join(root, "extension"))
+    restore_ownership(str(path_manager.get(P.OUTPUT)))
+    restore_ownership(str(path_manager.get(P.EXTENSION)))
     await sandbox_manager.cleanup()
 
     done = sum(1 for r in results if r["status"] == "done")

@@ -16,7 +16,7 @@ import pytest
 from mmengine import Config as MMConfig
 
 from agentevolver.config.config import process_general
-from agentevolver.paths import RELATIVE, P, path_manager
+from agentevolver.paths import FILES, RELATIVE, P, path_manager
 from agentevolver.utils.path_utils import data_path, extension_root, home_dir, project_path
 
 
@@ -92,7 +92,8 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
     monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
     output, extension = path_manager.writable_roots()
     sample = {"owner": "someone", "session_id": "sid", "run_id": "rid",
-              "project_key": "key", "module": "skill", "conversation_id": "cid"}
+              "project_key": "key", "module": "skill", "conversation_id": "cid",
+              "digest": "digest"}
 
     for key in P:
         if key in RELATIVE:
@@ -123,6 +124,37 @@ def test_a_relative_key_cannot_escape_the_root_it_is_joined_to() -> None:
         assert resolved.is_relative_to("/somewhere"), f"{key.value} escaped: {resolved}"
 
 
+def test_file_keys_create_their_parent_and_directory_keys_create_themselves(tmp_path) -> None:
+    target = path_manager.under(
+        tmp_path, P.LOG_TASK_VIEW, filename="request.with.dots", create=True,
+    )
+    directory = path_manager.under(
+        tmp_path, P.LOG_MODULE, module="directory.with.dots", create=True,
+    )
+
+    assert P.LOG_TASK_VIEW in FILES
+    assert target.parent.is_dir() and not target.exists()
+    assert directory.is_dir()
+
+
+def test_every_layout_key_has_a_framework_caller() -> None:
+    """Dead entries are misleading promises about directories the framework owns."""
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    sources = [
+        path.read_text(encoding="utf-8")
+        for tree in (root / "agentevolver", root / "examples")
+        for path in tree.rglob("*.py")
+        if path != root / "agentevolver" / "paths" / "types.py"
+    ]
+    unused = [
+        key.name for key in P
+        if not any(re.search(rf"\bP\.{key.name}\b", source) for source in sources)
+    ]
+    assert not unused, f"layout keys with no framework caller: {unused}"
+
+
 def test_missing_placeholder_is_rejected_rather_than_written_literally(monkeypatch, tmp_path: Path) -> None:
     """A forgotten parameter must fail loudly, not create a dir named '{session_id}'.
 
@@ -133,6 +165,16 @@ def test_missing_placeholder_is_rejected_rather_than_written_literally(monkeypat
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
     with pytest.raises(ValueError, match="session_id"):
         path_manager.get(P.SESSION_WORKSPACE, owner="local")
+
+
+def test_placeholder_values_cannot_escape_the_declared_layout(tmp_path: Path) -> None:
+    """A tag/owner is a name, not a second unvalidated path language."""
+    with pytest.raises(ValueError, match="one component"):
+        path_manager.get(P.OWNER, owner="../outside")
+    with pytest.raises(ValueError, match="one component"):
+        path_manager.under(tmp_path, P.LOG_MODULE, module="trace/../../outside")
+    with pytest.raises(ValueError, match="one component"):
+        path_manager.bind_session("../outside", "session")
 
 
 def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path: Path) -> None:
@@ -162,6 +204,49 @@ def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path
     assert Path(config.project_root) == path_manager.get(P.OUTPUT) / "demo"
     assert not Path(config.workspace_root).exists()
     assert not Path(config.log_root).exists()
+
+
+def test_tag_is_the_default_output_namespace_when_project_root_is_omitted(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    """A direct-run tag must not silently fall back to the unrelated ``local`` tree."""
+    monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+    resolved = process_general(MMConfig(dict(tag="swebench_pro_agent_baseline",
+                                             log_path="agent.log")))
+
+    expected = path_manager.get(P.OWNER, owner="swebench_pro_agent_baseline")
+    assert Path(resolved.project_root) == expected
+    assert Path(resolved.workspace_root) == path_manager.under(
+        expected, P.PROJECT_WORKSPACE,
+    )
+    assert Path(resolved.log_root) == path_manager.under(expected, P.PROJECT_LOG)
+
+
+def test_shipped_entry_configs_do_not_override_the_tag_namespace() -> None:
+    """One hard-coded project_root would recreate the local/tag split."""
+    root = Path(__file__).resolve().parents[1] / "configs"
+    offenders = []
+    for source in sorted(root.glob("*.py")):
+        if source.name == "__init__.py":
+            continue
+        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+            if line.strip().startswith("project_root"):
+                offenders.append(f"{source.name}:{number}: {line.strip()}")
+    assert not offenders, (
+        "shipped configs must let PathManager derive output from output_owner/tag:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_swebench_launcher_has_no_local_session_owner_literal() -> None:
+    """Host and inner launch paths both derive the namespace from the loaded config."""
+    root = Path(__file__).resolve().parents[1]
+    programbench = (root / "examples" / "run_programbench.py").read_text(encoding="utf-8")
+    swebench = (root / "examples" / "run_swebench_pro.py").read_text(encoding="utf-8")
+
+    assert 'SESSION_OWNER = "local"' not in programbench
+    assert "SESSION_OWNER" not in swebench
+    assert 'os.path.join("output", "swebench_pro_runs"' not in swebench
 
 
 def test_the_sandbox_names_its_roots_the_same_way_the_table_does(monkeypatch, tmp_path: Path) -> None:
@@ -225,14 +310,16 @@ def test_no_module_joins_its_own_directory_onto_a_root() -> None:
     """
     import re
 
-    root = Path(__file__).resolve().parents[1] / "agentevolver"
+    project = Path(__file__).resolve().parents[1]
     pattern = re.compile(
         r'os\.path\.join\(\s*(?:config\.)?(?:log_root|workspace_root|base_root|project_root)\s*,'
         r'\s*["\'][\w.]+["\']\s*\)'
         r'|(?:log_root|workspace_root|base_root|project_root)\s*/\s*["\'][\w.]+["\']'
     )
     offenders = []
-    for path in sorted(root.rglob("*.py")):
+    sources = sorted((project / "agentevolver").rglob("*.py")) + \
+              sorted((project / "examples").rglob("*.py"))
+    for path in sources:
         if "__pycache__" in str(path) or "/skill/" in str(path):
             continue          # bundled skill scripts are documents, not framework code
         if path.parent.name == "paths":
@@ -241,7 +328,7 @@ def test_no_module_joins_its_own_directory_onto_a_root() -> None:
             if line.lstrip().startswith("#") or "path_manager" in line:
                 continue
             if pattern.search(line):
-                offenders.append(f"{path.relative_to(root.parent)}:{number}: {line.strip()[:90]}")
+                offenders.append(f"{path.relative_to(project)}:{number}: {line.strip()[:90]}")
     assert not offenders, (
         "these join a directory onto a root themselves; declare it in the layout table "
         "and resolve it with `path_manager.under`:\n" + "\n".join(offenders))
