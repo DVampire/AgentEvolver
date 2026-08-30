@@ -250,6 +250,92 @@ def test_a_host_site_gets_its_own_directory_under_the_registry(manager, tmp_path
 
 
 # --------------------------------------------------------------------------- #
+# The lightweight path: inline content instead of a source tree
+# --------------------------------------------------------------------------- #
+def test_inline_content_defaults_to_the_host_backend(manager, monkeypatch):
+    """A page shipped in the request is the lightweight case, and spinning an isolated
+    container per page defeats the point. With nothing forcing a backend, inline
+    content/files deploy on the host — instant, and reachable at a real localhost port."""
+    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
+    assert manager._backend_kind(DeployRequest(site_id="s", content="<h1>hi</h1>")) == "host"
+    assert manager._backend_kind(DeployRequest(site_id="s", files={"index.html": "x"})) == "host"
+
+
+def test_a_source_dir_still_defaults_to_a_container(manager, monkeypatch):
+    """The inline-⇒-host rule must not leak onto real project trees: a source_dir is a
+    heavier deploy that still wants isolation when Docker is around."""
+    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
+    assert manager._backend_kind(DeployRequest(site_id="s", source_dir="/tmp/x")) == "opensandbox"
+
+
+def test_an_explicit_backend_beats_the_inline_host_default(manager, monkeypatch):
+    """Lightweight-by-default, not lightweight-only: a caller who wants a page isolated in
+    a container says so with ``backend``, and that choice wins over the inline default."""
+    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    assert manager._backend_kind(
+        DeployRequest(site_id="s", content="<h1>hi</h1>", backend="opensandbox")) == "opensandbox"
+
+
+def test_the_request_backend_beats_the_env(manager, monkeypatch):
+    """A per-deploy choice is more specific than a machine-wide env default, so it wins."""
+    monkeypatch.setenv("DEPLOY_BACKEND", "host")
+    assert manager._backend_kind(DeployRequest(site_id="s", backend="opensandbox")) == "opensandbox"
+
+
+def test_inline_content_is_materialized_as_the_named_file(manager):
+    """``content`` becomes a real file the normal upload path can serve; the default name
+    is ``index.html`` so a bare page is browsable at the site root."""
+    req = DeployRequest(site_id="s", content="<h1>hi</h1>")
+    staging = manager._materialize_inline(req)
+    with open(os.path.join(staging, "index.html")) as fh:
+        assert fh.read() == "<h1>hi</h1>"
+
+
+def test_inline_files_are_materialized_preserving_relative_paths(manager):
+    """A multi-file artifact keeps its layout — ``app.js`` next to ``index.html`` — or the
+    page's own relative script/style references break once served."""
+    req = DeployRequest(site_id="s", files={"index.html": "<b>a</b>", "js/app.js": "x=1"})
+    staging = manager._materialize_inline(req)
+    assert os.path.isfile(os.path.join(staging, "index.html"))
+    assert os.path.isfile(os.path.join(staging, "js", "app.js"))
+
+
+def test_inline_content_fills_in_a_missing_file_in_the_files_map(manager):
+    """``content`` + ``files`` together is a page plus its assets: content supplies the
+    entry file only when the map didn't already, so an explicit index is never clobbered."""
+    req = DeployRequest(site_id="s", content="<h1>entry</h1>", files={"style.css": "b{}"})
+    staging = manager._materialize_inline(req)
+    with open(os.path.join(staging, "index.html")) as fh:
+        assert fh.read() == "<h1>entry</h1>"
+    assert os.path.isfile(os.path.join(staging, "style.css"))
+
+
+def test_a_redeploy_does_not_serve_stale_inline_files(manager):
+    """The staging dir is reused per site_id, so a file dropped from a redeploy must not
+    linger from the previous materialization and keep being served."""
+    manager._materialize_inline(DeployRequest(site_id="s", files={"old.html": "gone"}))
+    staging = manager._materialize_inline(DeployRequest(site_id="s", files={"new.html": "here"}))
+    assert not os.path.exists(os.path.join(staging, "old.html"))
+    assert os.path.isfile(os.path.join(staging, "new.html"))
+
+
+def test_inline_file_paths_cannot_escape_the_staging_dir(manager):
+    """The relpath keys come from a model; a ``../`` in one would write outside the site's
+    own directory — over another site's files or anything else the process can reach."""
+    with pytest.raises(ValueError, match="unsafe inline file path"):
+        manager._materialize_inline(DeployRequest(site_id="s", files={"../evil.sh": "rm -rf /"}))
+
+
+def test_inline_with_no_content_is_rejected(manager):
+    """An inline deploy that carries neither content nor files has nothing to serve, and
+    an empty site published as "running" is worse than a clear error."""
+    with pytest.raises(ValueError, match="non-empty content or files"):
+        manager._materialize_inline(DeployRequest(site_id="s", files={}))
+
+
+# --------------------------------------------------------------------------- #
 # The registry as the only thing that outlives the process
 # --------------------------------------------------------------------------- #
 def test_the_registry_survives_a_restart(manager, tmp_path):

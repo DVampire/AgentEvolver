@@ -116,14 +116,27 @@ class DeploymentManagerServer(BaseModel):
             return True
         return os.path.exists("/var/run/docker.sock")
 
-    def _backend_kind(self) -> str:
+    def _backend_kind(self, request: Optional[DeployRequest] = None) -> str:
         """Pick the sandbox backend.
 
-        ``DEPLOY_BACKEND`` env overrides: ``sandbox`` (opensandbox), ``host`` (local, no
-        isolation), or ``auto`` (default): use opensandbox when a container runtime is
-        available, else fall back to the host backend so deploys still work.
+        Precedence: the request's own ``backend`` (a per-deploy choice), then the
+        ``DEPLOY_BACKEND`` env, then ``auto``. ``host`` = local, no container
+        (lightweight/instant); ``opensandbox`` = isolated Docker container (heavy);
+        ``auto`` = opensandbox when a container runtime is available, else host.
+
+        One default rides on this: an inline artifact (``content``/``files`` with no
+        source_dir/git_url) is meant to be lightweight, so when nothing forces a
+        backend it deploys on the host rather than spinning a container per page.
         """
-        choice = (os.environ.get("DEPLOY_BACKEND") or "auto").lower().strip()
+        choice = ""
+        if request is not None and request.backend:
+            choice = request.backend.lower().strip()
+        if not choice:
+            choice = (os.environ.get("DEPLOY_BACKEND") or "").lower().strip()
+        if not choice:
+            inline = request is not None and (request.content or request.files) \
+                and not (request.source_dir or request.git_url)
+            choice = "host" if inline else "auto"
         if choice in ("host", "local"):
             return "host"
         if choice in ("sandbox", "opensandbox", "docker"):
@@ -213,13 +226,55 @@ class DeploymentManagerServer(BaseModel):
             spec.env = {**spec.env, **request.env}
         return spec
 
+    def _materialize_inline(self, request: DeployRequest) -> str:
+        """Write inline ``content`` / ``files`` to a host staging dir and return it.
+
+        This is the lightweight path: the caller ships the page/app in the request
+        instead of pointing at a host tree, and we turn it into a normal source dir so
+        the rest of the deploy flow (upload → build → start) is unchanged. ``files``
+        (a {relpath: text} map) wins over ``content`` (a single ``filename``); giving
+        both merges them, with ``content`` filling in ``filename`` if absent.
+        """
+        base = (os.path.dirname(self._registry_path) if self._registry_path
+                else str(path_manager.get(P.DEPLOY, create=True)))
+        staging = str(path_manager.resolve_under(path_manager.resolve_under(base, "staging"), request.site_id))
+        # A redeploy must not serve stale files from a previous materialization.
+        if os.path.isdir(staging):
+            import shutil
+            shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(staging, exist_ok=True)
+
+        files = dict(request.files or {})
+        if request.content is not None and request.filename not in files:
+            files[request.filename] = request.content
+        if not files:
+            raise ValueError("inline deploy needs non-empty content or files")
+        for rel, text in files.items():
+            # Keep writes inside the staging dir — reject path escapes from a relpath.
+            dest = os.path.normpath(os.path.join(staging, rel))
+            if os.path.commonpath((staging, dest)) != staging:
+                raise ValueError(f"unsafe inline file path: {rel!r}")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "w", encoding="utf-8") as fh:
+                fh.write(text if isinstance(text, str) else str(text))
+        return staging
+
     # --------------------------------------------------------------- deploy
     async def deploy(self, request: DeployRequest) -> SiteRecord:
         """Build and start a site in a fresh container, bind it to a URL, and record it."""
         await self._ensure_initialized()
+
+        # Decide the backend *before* materializing inline content — materialization sets
+        # source_dir, which would otherwise mask the "inline ⇒ host by default" rule.
+        backend = self._backend_kind(request)
+
+        # Lightweight path: turn inline content/files into a source_dir the normal flow
+        # can upload. git_url and an explicit source_dir take precedence and skip this.
+        if (request.content or request.files) and not (request.source_dir or request.git_url):
+            request.source_dir = self._materialize_inline(request)
+
         spec = self._resolve_spec(request)  # raises on bad profile / missing custom.start
 
-        backend = self._backend_kind()
         # The host backend has no container filesystem, so run in a real host directory
         # and write the server log beside it (containers keep a per-container /tmp log).
         if backend == "host":

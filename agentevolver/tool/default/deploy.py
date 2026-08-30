@@ -16,32 +16,40 @@ from agentevolver.deploy import deployment_manager, DeployRequest
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
 
-_DESCRIPTION = "Deploy and manage web services (static/SPA/API) in isolated sandboxes, each bound to its own URL."
+_DESCRIPTION = "Deploy and manage web apps — from a one-call inline HTML page to a full frontend/backend project — each bound to a URL."
 
 _GUIDANCE = """
-Deploy a web service into an isolated sandbox container and bind it to a reachable URL, and manage deployed sites. Each site is one container keyed by `site_id`; deploy many and each gets its own URL.
+Deploy a web app and bind it to a reachable URL, then manage deployed sites. Each site is keyed by `site_id`; deploy many and each gets its own URL. Spans lightweight (a single inline HTML page served locally, instantly) to heavy (a full frontend build or backend service in an isolated container).
 
 ### Actions (pass `action`)
-- `deploy`: build + start a site, return its URL. Args:
+- `deploy`: start a site, return its URL. Args:
   - `site_id` (str, required): stable id / reuse key for the site.
-  - `runtime` (str): one of `static` (plain HTML/CSS/JS or a pre-built SPA), `node` (build a React/Vue/Vite app and serve it), `python` (FastAPI/Flask/ASGI via uvicorn), `custom` (you supply image/build/start in `overrides`), `llm` (NOT implemented yet). Default `static`.
-  - `source_dir` (str, optional): host directory uploaded into the container.
-  - `git_url` (str, optional): repo cloned inside the container instead of uploading.
-  - `port` (int, optional): override the profile's default port.
+  - `runtime` (str): `static` (plain HTML/CSS/JS or a pre-built SPA — the frontend/artifact default), `node` (build a React/Vue/Vite app and serve it), `python` (FastAPI/Flask/ASGI backend via uvicorn), `custom` (you supply image/build/start in `overrides`), `llm` (NOT implemented yet). Default `static`.
+  - App source — give exactly one:
+    - `content` (str): inline single-file content (e.g. an HTML page) — the lightweight path, no files on disk needed. Served as `filename` (default `index.html`).
+    - `files` (dict): inline `{relative_path: text}` map for a small multi-file app (e.g. `{"index.html": "...", "app.js": "..."}`, or a tiny backend `{"app.py": "...", "requirements.txt": "..."}`).
+    - `source_dir` (str): host directory uploaded as the app.
+    - `git_url` (str): repo cloned inside the container (needs network).
+  - `filename` (str, optional): filename for `content` (default `index.html`).
+  - `backend` (str, optional): `host` (local, no container — lightweight/instant), `opensandbox` (isolated Docker container — heavy/isolated), or `auto`. Inline `content`/`files` default to `host`; a `source_dir`/`git_url` defaults to `auto`.
+  - `port` (int, optional): override the profile's default port. On the host backend the port is allocated/de-conflicted through the central port registry.
   - `env` (dict, optional): environment variables.
   - `overrides` (dict, optional): field-level spec overrides — `image`, `build` (list of shell cmds), `start` (server cmd, MUST bind 0.0.0.0:$PORT), `workspace_root`, `health` ({type: http|command|none, path, command, timeout_s}). `custom` runtime REQUIRES `overrides.start`.
 - `list`: list all sites with status + URL. No args.
 - `get`: one site's full record. Args: `site_id`.
-- `stop`: stop a site's container. Args: `site_id`.
+- `stop`: stop a site. Args: `site_id`.
 - `redeploy`: tear down and rebuild a site from its stored request (URL may change). Args: `site_id`.
 
+- Fastest path — publish a page: `deploy` with just `site_id` + `content` (the HTML). It serves on the host at `http://localhost:<port>` right away.
 - The service MUST listen on `0.0.0.0` (not `127.0.0.1`) or the URL won't be reachable.
-- `static` serves the uploaded directory; for `node`, put a buildable project (has package.json) as source; for `python`, default entrypoint is `app:app` — override `start` for a different one (e.g. `uvicorn main:app --host 0.0.0.0 --port 8000`).
-- Backend is automatic: uses the isolated opensandbox (Docker) sandbox when a container runtime is available, else falls back to running on the host directly (no isolation). Force it with the `DEPLOY_BACKEND` env var (`sandbox` | `host` | `auto`). On the host backend, run distinct sites on distinct ports.
+- `static` serves the files as-is; `node` needs a buildable project (has package.json); `python` defaults to the `app:app` entrypoint — override `start` for another (e.g. `uvicorn main:app --host 0.0.0.0 --port 8000`).
+- Backend: inline content/files run on the host by default (instant, no isolation); source_dir/git_url use the isolated container when Docker is available, else the host. Force per-deploy with `backend`, or globally with the `DEPLOY_BACKEND` env var. On the host backend, distinct sites get distinct ports automatically.
 """
 
 _EXAMPLES = [
+    '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "hello", "content": "<h1>Hello</h1>"}}',
     '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "coffee-shop", "runtime": "static", "source_dir": "/abs/path/to/site"}}',
+    '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "api", "runtime": "python", "files": {"app.py": "from fastapi import FastAPI\\napp=FastAPI()\\n@app.get(\'/\')\\ndef r(): return {\'ok\': True}", "requirements.txt": "fastapi"}}}',
 ]
 
 
@@ -86,6 +94,10 @@ class DeployTool(Tool):
                     runtime=kwargs.get("runtime", "static"),
                     source_dir=kwargs.get("source_dir"),
                     git_url=kwargs.get("git_url"),
+                    content=kwargs.get("content"),
+                    files=kwargs.get("files"),
+                    filename=kwargs.get("filename", "index.html"),
+                    backend=kwargs.get("backend"),
                     port=kwargs.get("port"),
                     env=kwargs.get("env") or {},
                     overrides=kwargs.get("overrides") or {},

@@ -86,7 +86,14 @@ class DeploymentSpec(BaseModel):
 
 
 class DeployRequest(BaseModel):
-    """High-level deploy intent from the caller (the deploy_tool / an agent)."""
+    """High-level deploy intent from the caller (the deploy_tool / an agent).
+
+    Source of the app, in precedence order: ``git_url`` (clone), then ``source_dir``
+    (upload a host tree), then inline ``content`` / ``files`` (the lightweight path —
+    the caller ships the page/app content in the request itself, no host tree needed).
+    Inline content is what makes a one-call "publish this HTML" possible; a source_dir
+    or git_url is for a real project tree.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -94,6 +101,23 @@ class DeployRequest(BaseModel):
     runtime: str = Field(default="static", description="Deployer profile: static | node | python | custom | llm.")
     source_dir: Optional[str] = Field(default=None, description="Host directory uploaded into the container.")
     git_url: Optional[str] = Field(default=None, description="Git repo cloned inside the container (needs network).")
+    content: Optional[str] = Field(
+        default=None,
+        description="Inline single-file content (e.g. an HTML page), materialized as ``filename`` and served. "
+        "The lightweight artifact path — no source_dir needed.",
+    )
+    files: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Inline multi-file map {relative_path: text_content}, materialized into the app dir. "
+        "For a small multi-file artifact (index.html + app.js + style.css) or a tiny backend (app.py + requirements.txt).",
+    )
+    filename: str = Field(default="index.html", description="Filename for ``content`` when no ``files`` map is given.")
+    backend: Optional[str] = Field(
+        default=None,
+        description="Force the sandbox backend: 'host' (local, no container — lightweight/instant), "
+        "'opensandbox' (isolated Docker container — heavy/isolated), or 'auto'/None. "
+        "Inline content/files default to 'host' when unset; a source_dir/git_url defaults to 'auto'.",
+    )
     port: Optional[int] = Field(default=None, description="Override the profile's default port.")
     env: Dict[str, str] = Field(default_factory=dict, description="Extra env vars merged into the spec.")
     overrides: Dict[str, Any] = Field(
