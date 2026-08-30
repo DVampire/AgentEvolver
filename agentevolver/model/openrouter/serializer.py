@@ -78,6 +78,30 @@ def _strict_incompatible(o: Any) -> bool:
     return False
 
 
+def _split_cached_user_message(sm: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Split a user turn whose stable prefix carries a cache breakpoint into two messages.
+
+    Verified live against the Bedrock-backed relay: a `cache_control` breakpoint is only
+    honoured when its text block is a whole message's content — a stable block followed by the
+    live-state block in the same user message caches nothing (the message key includes the
+    volatile bytes). Sent as its own user message the stable prefix caches. See the llm_hub
+    serializer for the measured probe. Any other shape passes through unchanged.
+    """
+    if sm.get("role") != "user":
+        return [sm]
+    content = sm.get("content")
+    if not (isinstance(content, list) and len(content) >= 2):
+        return [sm]
+    first = content[0]
+    if not (isinstance(first, dict) and first.get("cache_control")):
+        return [sm]
+    stable: Dict[str, Any] = {"role": "user", "content": [first]}
+    rest: Dict[str, Any] = {"role": "user", "content": content[1:]}
+    if "name" in sm:
+        stable["name"] = rest["name"] = sm["name"]
+    return [stable, rest]
+
+
 class OpenRouterChatSerializer:
     """
     Serializer for converting between custom message types and OpenRouter chat completions API message param types.
@@ -469,7 +493,10 @@ class OpenRouterChatSerializer:
 
     @staticmethod
     def serialize_messages(messages: list[Message]) -> list[ChatCompletionMessageParam]:
-        return [OpenRouterChatSerializer.serialize_message(m) for m in messages]
+        out: list[ChatCompletionMessageParam] = []
+        for m in messages:
+            out.extend(_split_cached_user_message(OpenRouterChatSerializer.serialize_message(m)))
+        return out
 
     @staticmethod
     def serialize_tool(tool: "Tool") -> Dict[str, Any]:

@@ -78,6 +78,34 @@ def _strict_incompatible(o: Any) -> bool:
     return False
 
 
+def _split_cached_user_message(sm: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Split a user turn whose stable prefix carries a cache breakpoint into two messages.
+
+    Verified live against this relay: a `cache_control` breakpoint on a text block is only
+    honoured when that block is a whole message's content — a stable block followed by the
+    live-state block IN THE SAME user message caches nothing (the message's key includes the
+    volatile bytes, so every step is a fresh write and a miss). The same stable prefix sent as
+    its own user message caches and is read back on the next step (measured: 0 vs ~6.9k cached
+    tokens on a controlled probe). So when `serialize_message` produced a `[stable(cache), rest]`
+    user turn, emit the stable block as its own message and the rest as a second — two
+    consecutive user messages, which the relay accepts. A message that is not this shape (a
+    plain string, a single cached block, a non-user role) passes through unchanged.
+    """
+    if sm.get("role") != "user":
+        return [sm]
+    content = sm.get("content")
+    if not (isinstance(content, list) and len(content) >= 2):
+        return [sm]
+    first = content[0]
+    if not (isinstance(first, dict) and first.get("cache_control")):
+        return [sm]
+    stable: Dict[str, Any] = {"role": "user", "content": [first]}
+    rest: Dict[str, Any] = {"role": "user", "content": content[1:]}
+    if "name" in sm:
+        stable["name"] = rest["name"] = sm["name"]
+    return [stable, rest]
+
+
 class LLMHubChatSerializer:
     """
     Serializer for converting between custom message types and LLM Hub chat completions API message param types.
@@ -473,7 +501,10 @@ class LLMHubChatSerializer:
 
     @staticmethod
     def serialize_messages(messages: list[Message]) -> list[ChatCompletionMessageParam]:
-        return [LLMHubChatSerializer.serialize_message(m) for m in messages]
+        out: list[ChatCompletionMessageParam] = []
+        for m in messages:
+            out.extend(_split_cached_user_message(LLMHubChatSerializer.serialize_message(m)))
+        return out
 
     @staticmethod
     def serialize_tool(tool: "Tool") -> Dict[str, Any]:

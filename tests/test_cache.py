@@ -59,6 +59,38 @@ def test_the_breakpoint_includes_the_task_before_the_first_live_block(serializer
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_the_cached_prefix_becomes_its_own_message(serializer):
+    """The relay caches per message, not per block: a stable block sharing a user message with
+    volatile content caches nothing (measured 0 vs ~6.9k cached on a controlled probe). So the
+    serialized turn must be TWO user messages — the cached stable prefix alone, then the rest —
+    not one message of two blocks."""
+    turn = (
+        "<capability-context><tool-context>- bash</tool-context></capability-context>"
+        "<task>reconstruct</task><constraints>step 7 of 40</constraints><memory>m</memory>"
+    )
+    out = serializer.serialize_messages([HumanMessage(content=turn)])
+    assert len(out) == 2, "the stable prefix and the volatile state must be separate messages"
+    assert out[0]["role"] == "user" and out[1]["role"] == "user"
+    # message 0 is the cached stable prefix (catalog + task), and it is a single cached block
+    assert len(out[0]["content"]) == 1
+    assert out[0]["content"][0]["cache_control"]["type"] == "ephemeral"
+    assert "<task>reconstruct</task>" in out[0]["content"][0]["text"]
+    # message 1 is the live state, uncached
+    assert "cache_control" not in out[1]["content"][0]
+    assert out[1]["content"][0]["text"].startswith("<constraints>")
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_a_plain_or_single_block_user_message_stays_one_message(serializer):
+    # No split marker → one message; a catalog with nothing after it → one cached block, one message.
+    plain = serializer.serialize_messages([HumanMessage(content="the file did not exist")])
+    assert len(plain) == 1
+    only = "<capability-context><tool-context>- bash</tool-context></capability-context>\n"
+    one = serializer.serialize_messages([HumanMessage(content=only)])
+    assert len(one) == 1 and one[0]["content"][0]["cache_control"]["type"] == "ephemeral"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
 def test_a_frozen_history_turn_gets_a_rolling_breakpoint_when_marked(serializer):
     """`derive_context` marks the last frozen turn with `.cache`; the serializer caches it.
 
