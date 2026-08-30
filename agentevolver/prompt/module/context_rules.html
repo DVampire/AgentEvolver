@@ -8,50 +8,32 @@
 </head>
 <body>
 <context-rules>
-Memory reaches you in two sub-modules:
-- **working-memory** (a stable sub-module, shown before the live state): key decisions,
-  results, or failures from earlier steps no longer in recent context.
-- **recent-steps** (a live sub-module): authoritative evidence of what was just done,
-  including successful writes, observed outputs, and verification results. Do not describe
-  completed work as still pending merely because the original task remains visible above it.
+Memory is conversation state, not an HTML transcript:
+- A memory checkpoint summarizes older completed turns after compaction.
+- Recent assistant/tool turns preserve the newest actions and provider-native protocol state.
+- `agent-context` contains only the live decision inputs: task, plan, constraints, step info,
+  environment state, workspace, and last-step errors. Do not expect old actions to be copied
+  into the current user message.
 
-Before choosing any action, reconcile the task with Memory, Plan, Workspace, and Errors:
-1. List only the acceptance conditions that are still unproven.
-2. Choose an action only when it proves or advances one of those remaining conditions.
-3. Treat a successful tool result as valid until a later edit, error, or external state
-   change invalidates it. Never repeat a successful read, test, inspection, or command
-   just to confirm the same unchanged fact.
-4. Detect repeated success as well as repeated failure. If an action produced no new
-   evidence or state change, do not call it again; change strategy, escalate, or finish.
-5. If no acceptance condition remains, call `done_tool` immediately. Do not perform an
-   extra read, listing, test, review, or summary action first.
+Reconcile the task with that history and the live state before acting. A successful result
+remains valid until a later edit, error, or external change invalidates it. Do not repeat an
+unchanged read, test, inspection, or command merely to see the same fact again. If an action
+adds neither evidence nor state change, change strategy, escalate, or finish.
 
-How to spend effort — the same discipline whatever the task:
-6. Progress is the deliverable moving toward done — a check that now passes, a feature that
-   now works, a difference that is now gone — not evidence gathered, a file re-read, or a
-   measurement retaken. Gathering and measuring earn their place only by changing what you
-   produce; once you have what you need to act, act. No amount of looking finishes a task,
-   and re-reading something you already captured is the easiest way to feel busy while the
-   deliverable stands still.
-7. Cover the whole before perfecting a part. Bring every piece of the deliverable to a
-   working first approximation, then deepen where it pays. Breadth beats depth-on-one-piece:
-   something that handles many cases roughly scores and ships better than one case perfected
-   while the rest is a stub, and getting the whole to run is the earliest proof the shape is
-   right. Never carve the work into a gather-everything-first phase that produces nothing —
-   interleave producing with learning.
-8. Match effort to the task. A simple task finishes in a few actions; a hard or high-stakes
-   one earns more probing and verification. Read difficulty, stakes, and remaining budget,
-   and spend rigor where they are — not uniformly, and never all of it on one preparatory
-   phase or one stubborn detail while the rest goes untouched.
+Callable tools, skills, connector/plugin actions, workflows, sub-agents, and environment
+actions arrive through provider-native tool definitions. Their exact names and schemas are
+authoritative; call them directly and do not invent an action or JSON wrapper. The rendered
+`capability-context` is a compact catalog, and a later `capability-context-changes` block is
+an amendment: named entries change while unmentioned entries remain available.
 
-Tools, skills, and connectors:
-- Use only what capability_context lists. Each kind has its own block — tool-context, skill-context, connector-context, plugin-context, workflow-context, subagent-context — and a kind you have none of is absent rather than empty. Do not invent names.
-- If a capability_context_changes block appears later in the conversation, read it as an amendment to that catalog, not as a replacement: an entry it lists as now available may be called, one it lists as withdrawn may not, and everything it does not mention stands exactly as the catalog says. The catalog is left unchanged rather than rewritten so it stays reusable, which is why the amendment arrives separately.
-- tool-context lists each resident tool with its description and its guidance — what it is for and what to watch for. The arguments are not repeated there because you are already sent each tool's call schema, which is what your arguments are checked against; call them directly. Use `inspect_tool` (capability_type="tool") when you want a tool's worked examples, or to look up a tool that is NOT in tool-context (any other registered tool, by name).
-- When a task matches a skill, invoke it via a `skill` action (`"type": "skill"`, `"name"`: the skill name) — the system returns the skill's full instructions with runnable absolute paths and its resource/script/reference list, ready to execute. Only `read` the SKILL.md or reference files directly when you need extra detail those returned instructions did not cover.
-- Each connector action is its own callable, but its arguments are not in the schema you are sent — an MCP server states them and this framework does not yet carry them across. They are in that connector's CONNECTOR.md: call `inspect_tool` (capability_type="connector") to read it, or open the path listed in connector-context. Then emit the action.
-- plan is `plan.md` as it stands right now, read off disk each step. It is a document you own: write it with `write_file_tool` and revise it with `edit_file_tool` as what you learn changes it. The person watching this run reads the same file, so it is where the two of you stay agreed on where this is going — keep it current rather than writing it once. In plan mode you cannot write it yourself; the plan you pass to `exit_plan_mode` becomes it when they approve.
-- If no tools, skills, or connectors are loaded, ignore the respective context.
+Use `inspect_tool` only when the compact catalog is insufficient or a registered capability
+is not mounted. Invoke a matching skill by its native name and follow the returned method.
+Call connector and environment actions by the exact `<owner>__<action>` names supplied by
+their schemas. If a capability kind is absent, continue with the mounted capabilities rather
+than inventing it.
+
+Keep `plan.md` current when a plan is useful. It is shared execution state, not a narrative:
+record the remaining work and revise it when evidence changes the route.
 </context-rules>
 </body>
 </html>

@@ -65,24 +65,39 @@ Copy `html_prompt_template.html` to `{extension_root}/prompt/{name}.html`, set `
 
 **Structure (do not break it):**
 - **system**: `profile`, `language-settings`, `project`, `input-rules`, `constraint-rules`, `task-rules`, `context-rules`, `response-protocol`.
-- **user**: two containers, in this order — a `<capability-context>` holding `<tool-context>` / `<skill-context>` / `<connector-context>` (and `<workflow-context>` where the agent has workflows), then an `<agent-context>` holding `task` / `constraints` / `step-info` / `memory` / (`todo`) / `workspace` / (`errors`). The CSS/renderer depends on this layout.
-  - **The order is not cosmetic.** The capability catalogs are byte-identical on every step; the agent state is not. A prompt cache keeps a *prefix*, so anything that changes each step invalidates everything after it — putting the catalogs last meant the largest stable part of the prompt (≈63% of it) was re-read in full every step. Catalogs first, live state last.
+- **user**: stable-to-live ordering — `<capability-context>` (tools, skills, connectors,
+  plugins, workflows, sub-agents), optional `<environment-context>`, then `<agent-context>`
+  (task, inherited context, plan, constraints, step info, environment state, workspace,
+  errors). The CSS, renderer, context builder, and prompt cache depend on this layout.
+  - **The order is not cosmetic.** Stable catalogs precede live state so a changing step does
+    not invalidate the reusable prefix. The ContextBuilder then sends callable catalogs as
+    provider-native tool definitions, keeps task/inherited context as the first user anchor,
+    carries old work in one memory checkpoint, and preserves recent assistant/tool turns.
 
 **What each block is for** (fill the agent-specific ones; keep the shared ones roughly as the template has them):
 - `profile` *(agent-specific)* — who the agent is and its core behavior; explain the WHY, not just rules.
 - `language-settings` *(shared)* — working language and "reply in the request's language".
 - `project` *(agent-specific)* — the paths this agent may read/write and its permission posture (read-only vs edit). This is a real guardrail — say exactly where it may write.
-- `input-rules` *(agent-specific)* — what each context sub-module means and which `inspect_*` tool this agent uses.
+- `input-rules` *(shared with small agent-specific additions)* — native capability schemas are
+  authoritative; explain the stable catalogs, live state, and separate native history.
 - `constraint-rules` *(shared)* — the resource-budget / urgency-tier contract (NORMAL / TIGHT / CRITICAL).
 - `task-rules` *(agent-specific)* — the agent's objective and when to call `done_tool`.
-- `context-rules` *(shared)* — how memory is presented, and that it must use only the listed tools/skills/connectors (ignoring any not loaded).
+- `context-rules` *(shared)* — how checkpoints plus recent native turns carry history, and that
+  the agent calls only mounted native capabilities.
 - `response-protocol` *(shared)* — that it acts by **calling tools natively** (not by emitting a JSON plan), and signals completion only via `done_tool`.
-- `capability-context` + `agent-context` *(shared frame)* — the capability and live-state slots; only the template variables below go here.
+- `capability-context` + `environment-context` + `agent-context` *(shared frame)* — the
+  stable catalogs and live-state slots; only the template variables below go here.
 
 > **Shared blocks & modules.** The built-in default agents in `agentevolver/prompt/default/` factor the shared blocks (`language-settings`, `constraint-rules`, `context-rules`, `response-protocol`, `agent-context`) into `agentevolver/prompt/module/*.html`, referenced with `<module src="../module/NAME.html"></module>` (the server inlines them into the message; `prompt.js` inlines them for browser viewing). **Generated agents keep these blocks inline** — do NOT use `<module src>` in an `{extension_root}/prompt/` file: module `src` is resolved relative to the prompt file, so `../module/...` only exists under `agentevolver/prompt/default/` and would fail to load from `{extension_root}/prompt/`.
 
-**Template-variable contract** — use only the variables the base context builder provides, spelled exactly:
-`{{ task }}`, `{{ constraint_text }}`, `{{ step_info }}`, `{{ memory_context }}`, `{{ workspace }}`, `{{ errors }}`, `{{ todo }}`, `{{ available_tools }}`, `{{ available_skills }}`, `{{ available_connectors }}`, plus the system-side `{{ extension_root }}`, `{{ workspace_root }}`. Inventing a variable leaves an empty slot; misspelling one silently drops that context.
+**Template-variable contract** — use only variables the base context builder provides,
+spelled exactly: `{{ task }}`, `{{ inherited_context }}`, `{{ plan }}`,
+`{{ constraint_text }}`, `{{ step_info }}`, `{{ environment_state }}`,
+`{{ workspace }}`, `{{ errors }}`, `{{ available_tools }}`, `{{ available_skills }}`,
+`{{ available_connectors }}`, `{{ available_plugins }}`, `{{ available_workflows }}`,
+`{{ available_agents }}`, `{{ environment_context }}`, plus system-side path/runtime
+variables shown in the template. Memory is injected as native conversation history; do not
+invent a new `<memory>` slot. An unknown or misspelled variable silently drops context.
 
 **Response contract — native tool calls (NOT a JSON plan)**: the base loop turns the agent's capabilities into native tools and reads the model's `tool_calls` each step; it does NOT parse a JSON `plan`/`output-schema` from the text. So `response-protocol` must tell the agent to **act by calling tools** and to finish only by calling `done_tool`. (Older prompts used a `plan`/`output-schema` JSON contract — that is obsolete; do not reintroduce it.)
 

@@ -112,6 +112,52 @@ def test_meta_agent_evolution_rules_follow_the_live_roster_flag():
     assert "evaluate_agent" in text
 
 
+def test_default_agents_share_the_stable_to_live_user_layout():
+    """Specialized roles may differ, but their cache-sensitive frame may not."""
+    for path in sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*_agent.html")):
+        text = path.read_text(encoding="utf-8")
+        capability = '<module src="../module/capability_context.html"></module>'
+        environment = '<module src="../module/environment_context.html"></module>'
+        state = '<module src="../module/agent_context.html"></module>'
+        assert capability in text, f"{path.name} has no capability catalog"
+        assert environment in text, f"{path.name} has no environment catalog"
+        assert state in text, f"{path.name} has no live agent state"
+        assert text.index(capability) < text.index(environment) < text.index(state), (
+            f"{path.name} must render capability -> environment -> agent context"
+        )
+
+
+def test_agent_prompts_use_the_native_calling_protocol():
+    """Old JSON actions, `finish`, and synthetic env prefixes break native calls."""
+    paths = list((ROOT / "agentevolver" / "prompt" / "default").glob("*_agent.html"))
+    paths += [
+        ROOT / "agentevolver" / "prompt" / "module" / "response_protocol.html",
+        ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill"
+        / "references" / "agent" / "html_prompt_template.html",
+    ]
+    forbidden = ("env__", "`finish`", '"type": "text"', '"name": "text"')
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        stale = [marker for marker in forbidden if marker in text]
+        assert not stale, f"{path.name} still documents obsolete protocol: {stale}"
+
+
+def test_generated_agent_template_matches_the_default_capability_frame():
+    path = (
+        ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill"
+        / "references" / "agent" / "html_prompt_template.html"
+    )
+    text = path.read_text(encoding="utf-8")
+    for tag in (
+        "tool-context", "skill-context", "connector-context", "plugin-context",
+        "workflow-context", "subagent-context",
+    ):
+        assert f"<{tag}>" in text
+    assert text.index("<capability-context>") < text.index("<environment-context>")
+    assert text.index("<environment-context>") < text.index("<agent-context>")
+    assert "<memory>" not in text, "history belongs in native turns, not the live user tail"
+
+
 def test_the_layout_was_actually_found():
     """The parametrized tests below are vacuous if the glob found nothing.
 

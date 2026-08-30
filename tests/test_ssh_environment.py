@@ -847,7 +847,7 @@ class TestConfig:
 
         prompt = Path("agentevolver/prompt/default/ssh_agent.html").read_text()
         assert "{{ workspace_root }}" in prompt
-        assert "env__download" in prompt
+        assert "remote_host__download" in prompt
 
     def test_the_task_document_ships_with_the_runner(self) -> None:
         """The runner's default task must exist, or a bare `run_ssh_agent.py` fails."""

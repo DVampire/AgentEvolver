@@ -14,13 +14,9 @@
 <!--
 TEMPLATE — HTML prompt for a tool-calling agent. Copy to {extension_root}/prompt/{name}.html,
 set <meta name="name"> to the agent's name (must match the class's prompt_name), and
-fill each <profile>/rules block. Keep the <div class="user"> structure below: a
-<capability-context> CONTAINER holding <tool-context> / <skill-context> /
-<connector-context>, placed FIRST, then an <agent-context> CONTAINER holding the
-state sub-modules. The order matters: the capability catalogs are identical on every
-step and the agent state is not, so the catalogs go ahead of it — a prompt cache keeps
-a prefix, and anything that changes each step invalidates everything after it. Only use the template
-variables the base context builder provides (listed in the user block below).
+fill each <profile>/rules block. Keep the user structure below: capability catalog first,
+optional environment catalog second, live agent state last. That stable-to-live order keeps
+the reusable prefix cacheable. Only use variables supplied by the base context builder.
 -->
 
 <div class="system">
@@ -43,17 +39,14 @@ You are [role]. You receive [input], then you [core behavior] using tools/skills
 </project>
 
 <input-rules>
-- agent_context: your current internal state, with these sub-modules:
-  - task — your ultimate objective (see Task Rules).
-  - constraints — the live resource budget (used / limit / remaining) and urgency tier (see Constraint Rules). `[No active budget.]` when none is set.
-  - step-info — the current step number, the max steps, and the current date/time.
-  - memory — working memory and recent steps (see Context Rules).
-  - plan — `plan.md`, which you write and revise with the file tools.
-  - workspace — a live snapshot of your working directory's files.
-  - errors — errors from the last step, shown only when the previous step failed.
-- tool_context: available tools with their names and short descriptions. Use only these. Call `inspect_tool` (capability_type="tool") for a tool's worked examples when unsure.
-- skill_context: available skills. When a task matches a skill, invoke it via a `skill` action to get its full instructions.
-- connector_context: available connectors (external MCP servers). Read a connector's CONNECTOR.md before calling it.
+- Callable capabilities arrive through provider-native tool definitions. Their exact names
+  and schemas are authoritative; `inspect_tool` supplies detail for an unmounted capability.
+- `capability-context-changes` is an amendment: named entries change and unmentioned entries
+  remain available.
+- environment-context is the stable roster of environments and their actions.
+- agent-context is the live tail: task, inherited context, plan, budget, step info, environment
+  state, workspace, and last-step errors. Memory checkpoints and recent assistant/tool turns
+  are separate native conversation history; they are not copied into this user message.
 </input-rules>
 
 <constraint-rules>
@@ -73,16 +66,22 @@ Factor the remaining budget into every plan: prefer fewer, more certain actions 
 </task-rules>
 
 <context-rules>
-Memory is provided in the `memory` sub-module: Working Memory (key past decisions/results) and Recent Steps (what was just done — detect stuck patterns; if the same action failed twice, try a different approach).
-- Use only tools/skills/connectors listed in their contexts. Do not invent names.
-- If no tools, skills, or connectors are loaded, ignore the respective context.
+Reconcile the task with the memory checkpoint, recent assistant/tool turns, plan, workspace,
+and errors before acting. A successful result remains valid until later evidence invalidates
+it; do not repeat an unchanged action merely to observe the same fact.
+- Use only mounted native capabilities. Invoke a matching skill by its own name; call connector
+  and environment actions by their exact `<owner>__<action>` names.
+- If a capability kind is absent, continue with what is mounted rather than inventing it.
 </context-rules>
 
 <response-protocol>
-To act, CALL a tool. Your capabilities — tools, skills, connectors, and environment actions — are provided to you directly as native tools. Do NOT describe a call in prose and do NOT emit a JSON plan.
+To act, CALL a native capability. Tools, skills, connector/plugin actions, workflows,
+sub-agents, and environment actions are supplied directly through the model's tool interface.
+Do NOT describe a call in prose and do NOT emit a JSON plan.
 - Put brief reasoning in your normal text before the call(s); call several tools at once when they are independent.
 - Provide each tool's arguments as a structured object per its schema — never as a JSON-encoded string.
-- Skills are called by their own name (e.g. `self_evolving_skill`), connector actions as `<connector>__<action>`, environment actions as `env__<name>` — use the exact names from the context above.
+- Skills are called by their own name; connector and environment actions use
+  `<owner>__<action>`. Always use the exact native name and schema supplied to you.
 - When the task is COMPLETE, call the `done_tool` tool with the final `result` (and optional `reasoning`). Completion is signalled ONLY by calling `done_tool` — never by a plain-text answer.
 </response-protocol>
 
@@ -94,45 +93,53 @@ To act, CALL a tool. Your capabilities — tools, skills, connectors, and enviro
 
 <div class="user">
 <capability-context>
-  <tool-context>
-  {{ available_tools }}
-  </tool-context>
-
-  <skill-context>
-  {{ available_skills }}
-  </skill-context>
-
-  <connector-context>
-  {{ available_connectors }}
-  </connector-context>
+{% if available_tools %}<tool-context>
+{{ available_tools }}
+</tool-context>{% endif %}
+{% if available_skills %}<skill-context>
+{{ available_skills }}
+</skill-context>{% endif %}
+{% if available_connectors %}<connector-context>
+{{ available_connectors }}
+</connector-context>{% endif %}
+{% if available_plugins %}<plugin-context>
+{{ available_plugins }}
+</plugin-context>{% endif %}
+{% if available_workflows %}<workflow-context>
+{{ available_workflows }}
+</workflow-context>{% endif %}
+{% if available_agents %}<subagent-context>
+{{ available_agents }}
+</subagent-context>{% endif %}
 </capability-context>
-
+{% if environment_context %}<environment-context>
+{{ environment_context }}
+</environment-context>{% endif %}
 <agent-context>
 <task>
 {{ task }}
 </task>
+{% if inherited_context %}<inherited-context>
+{{ inherited_context }}
+</inherited-context>{% endif %}
+{% if plan %}<plan>
+{{ plan }}
+</plan>{% endif %}
 <constraints>
 {{ constraint_text }}
 </constraints>
 <step-info>
 {{ step_info }}
 </step-info>
-<memory>
-{{ memory_context }}
-</memory>
-{% if plan %}
-<plan>
-{{ plan }}
-</plan>
-{% endif %}
+{% if environment_state %}<environment-state>
+{{ environment_state }}
+</environment-state>{% endif %}
 <workspace>
 {{ workspace }}
 </workspace>
-{% if errors %}
-<errors>
+{% if errors %}<errors>
 {{ errors }}
-</errors>
-{% endif %}</agent-context>
+</errors>{% endif %}</agent-context>
 </div>
 
 </body>
