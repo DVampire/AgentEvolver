@@ -69,6 +69,20 @@ def test_changing_the_tool_schema_changes_the_snapshot_identity():
     assert first.snapshot_id != second.snapshot_id
 
 
+def test_compaction_protocol_parameters_are_part_of_the_snapshot_identity():
+    normal = _snapshot()
+    compact = _snapshot(request_input={
+        "operation": "compact",
+        "betas": ["compact-2026-01-12"],
+        "context_management": {"edits": [{"type": "compact_20260112"}]},
+    })
+
+    assert compact.parameters["operation"] == "compact"
+    assert compact.parameters["betas"] == ["compact-2026-01-12"]
+    assert compact.parameters["context_management"]["edits"][0]["type"] == "compact_20260112"
+    assert compact.snapshot_id != normal.snapshot_id
+
+
 def test_the_snapshot_keeps_effective_values_without_credentials_or_endpoint_text():
     """Reproducibility needs route identity, not a reusable secret or deployment URL."""
     snapshot = _snapshot()
@@ -181,6 +195,44 @@ async def test_the_model_manager_records_before_it_calls_the_provider():
         )
 
     assert result.success is True
+    assert order == ["snapshot", "provider"]
+
+
+@pytest.mark.asyncio
+async def test_compaction_is_discovered_by_capability_not_provider_name():
+    order = []
+
+    class Client:
+        @staticmethod
+        def compaction_ready(_messages):
+            return True
+
+        @staticmethod
+        def compaction_options():
+            return {"betas": ["compact-2026-01-12"]}
+
+        async def compact_history(self, _messages):
+            order.append("provider")
+            return {
+                "summary": "checkpoint",
+                "usage": {"input_tokens": 10, "output_tokens": 2},
+            }
+
+    async def record(**kwargs):
+        order.append("snapshot")
+        assert kwargs["request_input"]["betas"] == ["compact-2026-01-12"]
+        return "snapshot-id"
+
+    manager = ModelContextManager()
+    manager.models["main"] = _config(provider="anthropic")
+    manager.model_clients["main"] = Client()
+    with patch("agentevolver.model.context._record_request_snapshot", side_effect=record):
+        result = await manager.compact_history(
+            "main", [HumanMessage(content="history")]
+        )
+
+    assert result["summary"] == "checkpoint"
+    assert result["provider"] == "anthropic"
     assert order == ["snapshot", "provider"]
 
 

@@ -79,6 +79,7 @@ class CompactHook(Hook):
             response = await model_manager(
                 name=model,
                 input={
+                    "operation": "compact",
                     "messages": [
                         SystemMessage(content=_SYSTEM_PROMPT),
                         HumanMessage(content=prompt),

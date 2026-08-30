@@ -635,6 +635,7 @@ class ModelContextManager:
                 key_pool_name="anthropic",
                 api_base=api_base,
                 api_key=api_key,
+                reasoning=m.get("reasoning") or None,
                 temperature=m.get("temperature"),
                 max_completion_tokens=m.get("max_completion_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
@@ -644,6 +645,7 @@ class ModelContextManager:
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -848,17 +850,22 @@ class ModelContextManager:
     ) -> Optional[Dict[str, Any]]:
         """Return a provider-native checkpoint when the selected route supports it.
 
-        Chat providers deliberately return ``None`` and continue through the portable
-        text checkpoint path.  Native compaction is an optimization of the same logical
-        window, never a requirement for an agent to keep running.
+        The manager discovers this capability on the client, so agent and memory code
+        never branch on provider names. Unsupported routes return ``None`` and continue
+        through the portable text checkpoint path.
         """
         config = self.models.get(name)
-        if config is None or config.model_type != "responses":
+        if config is None:
             return None
         client = await self._get_client(name)
         compact = getattr(client, "compact_history", None)
         if compact is None:
             return None
+        ready = getattr(client, "compaction_ready", None)
+        if callable(ready) and not ready(messages):
+            return None
+        options = getattr(client, "compaction_options", None)
+        compact_options = options() if callable(options) else {}
         snapshot_id = await _record_request_snapshot(
             session_id=session_id,
             requested_model=name,
@@ -870,23 +877,32 @@ class ModelContextManager:
             response_format=None,
             request_input={
                 "operation": "compact",
+                **compact_options,
                 "trace_context": {
                     "task_id": task_id,
                     "agent_name": agent_name,
                     "step_number": step_number,
                 },
             },
-            call_kwargs={"operation": "compact"},
+            call_kwargs={"operation": "compact", **compact_options},
             stream=False,
             attempt=1,
             route_index=0,
         )
         result = await compact(messages)
+        if not result:
+            return None
         answer = {
-            **(result or {}),
+            **result,
             "model": name,
             "provider": config.provider,
         }
+        if answer.get("usage"):
+            from agentevolver.model.types import price_usage_dict
+
+            answer["usage"] = price_usage_dict(
+                answer["usage"], getattr(config, "cost", None)
+            ) or answer["usage"]
         # The native endpoint has no AGENT_CALL event to refresh its page later. Attach
         # its own usage now; this keeps compaction cost distinct from the next generation.
         if session_id and snapshot_id and answer.get("usage"):

@@ -24,6 +24,7 @@ from agentevolver.response.types import Response, ResponseType
 from agentevolver.model.types import TokenUsage, BaseChatModel
 from agentevolver.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
+from agentevolver.model.pressure import estimate_tokens
 from typing import Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -129,6 +130,74 @@ class ChatAnthropic(BaseChatModel):
             return response.usage.model_dump()
         else:
             return None
+
+    @staticmethod
+    def compaction_ready(messages: List[Message]) -> bool:
+        """Claude's beta rejects triggers below 50k; avoid a request that cannot fold."""
+        return estimate_tokens(messages) >= 50_000
+
+    def compaction_options(self) -> Dict[str, Any]:
+        """Provider parameters recorded in the RequestSnapshot and sent verbatim."""
+        return {
+            "max_tokens": self.max_tokens or 16_384,
+            "betas": ["compact-2026-01-12"],
+            "context_management": {
+                "edits": [{
+                    "type": "compact_20260112",
+                    "trigger": {"type": "input_tokens", "value": 50_000},
+                    "pause_after_compaction": True,
+                }],
+            },
+        }
+
+    async def compact_history(self, messages: List[Message]) -> Optional[Dict[str, Any]]:
+        """Create one native Claude ``compaction`` block and pause before generation.
+
+        This is the Messages-API counterpart of ``/responses/compact``. The block is
+        readable rather than encrypted, but it is still provider-owned state: subsequent
+        requests must round-trip it as an assistant content block.
+        """
+        if not self.compaction_ready(messages):
+            return None
+        system, history = AnthropicChatSerializer.serialize_messages(messages)
+        params: Dict[str, Any] = {
+            "model": self.model,
+            "messages": history,
+            **self.compaction_options(),
+        }
+        if system:
+            params["system"] = system
+        raw = await self.get_client().beta.messages.create(**params)
+        payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        blocks = [
+            dict(block) for block in payload.get("content") or []
+            if block.get("type") == "compaction"
+        ]
+        if payload.get("stop_reason") != "compaction" or not blocks:
+            raise RuntimeError("Anthropic compaction returned no compaction block")
+
+        usage = payload.get("usage") or {}
+        iterations = usage.get("iterations") or []
+        if iterations:
+            total = TokenUsage()
+            for iteration in iterations:
+                item = TokenUsage.from_raw(iteration)
+                if item is not None:
+                    total.input_tokens += item.input_tokens
+                    total.output_tokens += item.output_tokens
+                    total.cache_write_tokens += item.cache_write_tokens
+                    total.cache_read_tokens += item.cache_read_tokens
+            usage = total.model_dump()
+        summary = "\n\n".join(
+            str(block.get("content") or "") for block in blocks
+        ).strip()
+        return {
+            "provider_state": {"anthropic": {"compaction_blocks": blocks}},
+            "summary": summary,
+            "usage": usage,
+            "format": "anthropic.compact_20260112",
+            "native": True,
+        }
 
     async def _build_params(
         self,

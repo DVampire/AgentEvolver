@@ -98,13 +98,20 @@ class ContextBuilder:
         checkpoint = []
         if checkpoints:
             event = checkpoints[-1]
-            checkpoint.append(CompactionMessage(
+            checkpoint_message = CompactionMessage(
                 content=(
                     f"<memory-checkpoint>\n{event.message or ''}\n"
                     "</memory-checkpoint>"
                 ),
                 provider_state=getattr(event, "provider_state", None) or {},
-            ))
+            )
+            # Claude ignores everything before a native compaction block. Cache that
+            # block, not the now-inactive task copy; the summary itself carries the task.
+            anthropic = (checkpoint_message.provider_state or {}).get("anthropic") or {}
+            if anthropic.get("compaction_blocks"):
+                anchor[-1].cache = False
+                checkpoint_message.cache = True
+            checkpoint.append(checkpoint_message)
 
         frozen = checkpoint + recent
         if frozen:

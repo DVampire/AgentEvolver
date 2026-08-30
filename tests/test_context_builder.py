@@ -97,6 +97,33 @@ def test_private_reasoning_is_not_replayed_as_assistant_text():
     assert all("hidden chain" not in message.text for message in messages)
 
 
+def test_native_claude_checkpoint_becomes_the_cache_anchor():
+    events = _number([
+        agent_start_event("s", "t", "a", "task"),
+        agent_call_event("s", "t", "a", 1, assistant_text="done"),
+    ])
+    events.append(TraceEvent(
+        event_type=TraceEventType.CUSTOM,
+        session_id="s",
+        seq_no=2,
+        message="canonical summary",
+        metadata={"type": "compaction"},
+        surface_op=replace_op(0, 1),
+        source_event_seqs=[0, 1],
+        provider_state={"anthropic": {"compaction_blocks": [
+            {"type": "compaction", "content": "canonical summary"}
+        ]}},
+    ))
+    rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
+
+    messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
+
+    anchor = next(message for message in messages if type(message) is HumanMessage)
+    checkpoint = next(message for message in messages if isinstance(message, CompactionMessage))
+    assert anchor.cache is False
+    assert checkpoint.cache is True
+
+
 def test_provider_replay_state_survives_trace_projection():
     state = {"responses": {"reasoning_items": [{"type": "reasoning", "id": "r1"}]}}
     events = _number([

@@ -590,7 +590,30 @@ class TieredMemory(Memory):
             if folding:
                 native_checkpoint = await self._native_checkpoint(state, folding)
 
-            while len(state.recent) > floor:
+            # Claude's server-side block already contains the provider's canonical
+            # summary for the entire fold window. Install it in one atomic replacement;
+            # asking a second model to summarize that summary would add latency and drift.
+            native_summary = str((native_checkpoint or {}).get("summary") or "").strip()
+            if native_summary:
+                async with state._lock:
+                    chunk = [
+                        state.recent.popleft()
+                        for _ in range(max(0, len(state.recent) - floor))
+                    ]
+                existing = state.working[-1] if state.working else ""
+                state.working.clear()
+                state.working.append(native_summary)
+                chunks_done = 1
+                state.compaction = {"started_at": started_at, "chunks": chunks_done}
+                await self._record_fold(
+                    state,
+                    chunk,
+                    native_summary,
+                    existing=existing,
+                    native=native_checkpoint,
+                )
+
+            while not native_summary and len(state.recent) > floor:
                 async with state._lock:
                     k = min(self.compact_chunk, len(state.recent) - floor, len(state.recent))
                     # Never split one parallel tool batch across a checkpoint. Provider
@@ -889,7 +912,11 @@ class TieredMemory(Memory):
                 session_id=state.session_id,
                 label="compaction summary",
                 message=summary,
-                provider_state=(native or {}).get("provider_state") or {},
+                provider_state=(native or {}).get("provider_state") or {
+                    "portable": {
+                        "checkpoint": {"format": "portable.text.v1"}
+                    }
+                },
                 usage=(native or {}).get("usage") or None,
                 success=True,
                 surface_op=replace_op(start, end),
@@ -903,7 +930,11 @@ class TieredMemory(Memory):
                     # replaced is a real outcome, and recording it as a saving would make
                     # the total say compaction always helps.
                     "tokens_saved": before - after,
-                    "checkpoint_format": "native+text" if native else "text",
+                    "checkpoint_format": (
+                        (native or {}).get("format")
+                        or ("native+text" if native else "portable.text.v1")
+                    ),
+                    "checkpoint_native": bool((native or {}).get("native")),
                     "native_model": (native or {}).get("model"),
                 },
             )

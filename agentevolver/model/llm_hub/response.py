@@ -291,6 +291,8 @@ class ResponseLLMHub(BaseModel):
         return {
             "provider_state": {"responses": {"compaction_items": items}},
             "usage": payload.get("usage") or {},
+            "format": "openai.responses.compaction",
+            "native": True,
         }
 
     async def __call__(

@@ -28,6 +28,8 @@ REQUEST_SNAPSHOT_VERSION = 2
 # credential, transport object, or callback that happened to ride beside the request.
 _BEHAVIOUR_PARAMETERS = (
     "operation",
+    "betas",
+    "context_management",
     "temperature",
     "max_tokens",
     "max_completion_tokens",
@@ -147,6 +149,8 @@ class RequestSnapshot(BaseModel):
                     value = getattr(model_config, name, None)
             elif name in call_kwargs:
                 value = call_kwargs[name]
+            elif name in request_input:
+                value = request_input[name]
             else:
                 value = getattr(model_config, name, None) if model_config is not None else None
                 if value is None and client is not None:

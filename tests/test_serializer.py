@@ -213,6 +213,30 @@ def test_anthropic_replays_signed_thinking_before_tool_use():
     assert out["content"][1]["type"] == "tool_use"
 
 
+def test_anthropic_replays_a_native_compaction_block_as_assistant_state():
+    serializer = _serializer("anthropic", "AnthropicChatSerializer")
+    block = {"type": "compaction", "content": "canonical summary"}
+    out = serializer.serialize(CompactionMessage(
+        content="portable fallback",
+        cache=True,
+        provider_state={"anthropic": {"compaction_blocks": [block]}},
+    ))
+
+    assert out["role"] == "assistant"
+    assert out["content"][0]["type"] == "compaction"
+    assert out["content"][0]["content"] == "canonical summary"
+    assert out["content"][0]["cache_control"]["type"] == "ephemeral"
+    assert "cache_control" not in block, "serializer mutated provider-owned state"
+
+
+def test_anthropic_uses_the_portable_checkpoint_when_no_native_block_exists():
+    serializer = _serializer("anthropic", "AnthropicChatSerializer")
+    out = serializer.serialize(CompactionMessage(content="portable checkpoint"))
+
+    assert out["role"] == "user"
+    assert out["content"][0]["text"] == "portable checkpoint"
+
+
 def test_llm_hub_replays_claude_reasoning_extensions():
     serializer = _serializer("llm_hub", "LLMHubChatSerializer")
     out = serializer.serialize_message(AssistantMessage(

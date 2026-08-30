@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from agentevolver.model.types import CACHE_TTL, split_cached_prefix
 from agentevolver.message.types import (
     AssistantMessage,
+    CompactionMessage,
     ContentPartImage,
     ContentPartRefusal,
     ContentPartText,
@@ -267,6 +268,20 @@ class AnthropicChatSerializer:
     @staticmethod
     def serialize(message: Message) -> dict[str, Any]:
         """Serialize a custom message to an Anthropic message format."""
+        if isinstance(message, CompactionMessage):
+            state = (message.provider_state or {}).get("anthropic") or {}
+            blocks = [dict(block) for block in state.get("compaction_blocks") or []]
+            if blocks:
+                # A Claude compaction block is assistant protocol state. Replaying it as
+                # user prose would lose the API's rule that everything before the block
+                # is ignored. Keep the returned block intact and only add the supported
+                # cache annotation on our copy.
+                if message.cache:
+                    blocks[-1]["cache_control"] = {
+                        "type": "ephemeral", "ttl": CACHE_TTL
+                    }
+                return {"role": "assistant", "content": blocks}
+
         if isinstance(message, HumanMessage):
             text = message.content if isinstance(message.content, str) else None
             split = (

@@ -199,11 +199,13 @@ class TokenUsage(BaseModel):
         prompt_details = raw.get("prompt_tokens_details") or {}
         input_details = raw.get("input_tokens_details") or {}
         cache_read = (
+            raw.get("cache_read_tokens") or
             raw.get("cache_read_input_tokens") or
             prompt_details.get("cached_tokens") or
             input_details.get("cached_tokens") or 0
         )
         cache_write = (
+            raw.get("cache_write_tokens") or
             raw.get("cache_creation_input_tokens") or
             prompt_details.get("cache_write_tokens") or
             input_details.get("cache_write_tokens") or 0

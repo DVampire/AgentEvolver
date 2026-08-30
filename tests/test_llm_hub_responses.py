@@ -117,6 +117,69 @@ def test_native_anthropic_stream_keeps_the_signed_thinking_block():
     }]
 
 
+@pytest.mark.asyncio
+async def test_native_anthropic_compaction_returns_a_round_trippable_block(monkeypatch):
+    from agentevolver.model.anthropic.chat import ChatAnthropic
+
+    captured = {}
+
+    async def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(model_dump=lambda: {
+            "stop_reason": "compaction",
+            "content": [{"type": "compaction", "content": "summary"}],
+            "usage": {"iterations": [
+                {"type": "compaction", "input_tokens": 50_000, "output_tokens": 800},
+            ]},
+        })
+
+    fake = SimpleNamespace(beta=SimpleNamespace(
+        messages=SimpleNamespace(create=create)
+    ))
+    monkeypatch.setattr(ChatAnthropic, "get_client", lambda self: fake)
+    client = ChatAnthropic(model="claude-opus-5")
+
+    result = await client.compact_history([
+        HumanMessage(content="task" + ("x" * 220_000)),
+    ])
+
+    edit = captured["context_management"]["edits"][0]
+    assert captured["betas"] == ["compact-2026-01-12"]
+    assert edit["type"] == "compact_20260112"
+    assert edit["pause_after_compaction"] is True
+    assert result["summary"] == "summary"
+    assert result["provider_state"]["anthropic"]["compaction_blocks"][0]["type"] == "compaction"
+    assert result["usage"]["input_tokens"] == 50_000
+    assert result["usage"]["output_tokens"] == 800
+
+
+def test_anthropic_native_compaction_waits_until_the_beta_minimum():
+    from agentevolver.model.anthropic.chat import ChatAnthropic
+
+    assert not ChatAnthropic.compaction_ready([HumanMessage(content="short")])
+    assert ChatAnthropic.compaction_ready([
+        HumanMessage(content="x" * 220_000),
+    ])
+
+
+def test_direct_anthropic_catalog_exposes_opus_5_native_route():
+    from agentevolver.model.config import anthropic_models
+
+    models = anthropic_models(
+        max_tokens=16_384,
+        default_temperature=0.7,
+        default_timeout=600,
+        default_plugins=[],
+        default_reasoning={},
+    )["chat"]
+    opus = next(model for model in models if model["model_name"] == "anthropic/claude-opus-5")
+
+    assert opus["model_id"] == "claude-opus-5"
+    assert opus["context_window"] == 1_000_000
+    assert opus["reasoning"]["thinking"]["type"] == "adaptive"
+    assert "temperature" not in opus
+
+
 def test_llm_hub_stream_keeps_claude_reasoning_extensions():
     from agentevolver.model.llm_hub.chat import ChatLLMHub
 
@@ -390,3 +453,24 @@ def test_the_responses_surface_reports_its_cache_counts_under_a_different_name()
     })
     assert usage.cache_read_tokens == 40
     assert usage.cache_write_tokens == 17
+
+
+def test_canonical_usage_can_be_repriced_without_losing_cache_counts():
+    from agentevolver.model.types import TokenUsage, price_usage_dict
+
+    canonical = TokenUsage(
+        input_tokens=10,
+        output_tokens=5,
+        cache_write_tokens=7,
+        cache_read_tokens=11,
+    ).model_dump()
+    priced = price_usage_dict(canonical, {
+        "input": 1.0,
+        "output": 1.0,
+        "cache_write": 1.0,
+        "cache_read": 1.0,
+    })
+
+    assert priced["cache_write_tokens"] == 7
+    assert priced["cache_read_tokens"] == 11
+    assert priced["cost"] == 33.0

@@ -113,6 +113,40 @@ def test_an_empty_summary_also_puts_its_records_back():
     assert [r.event for r in state.recent] == before
 
 
+@pytest.mark.asyncio
+async def test_a_native_claude_summary_replaces_the_window_without_resummarising(monkeypatch):
+    memory, state = _memory(), _state()
+    _fill(state, 9)
+
+    async def native(*args, **kwargs):
+        return {
+            "summary": "claude checkpoint",
+            "provider_state": {"anthropic": {"compaction_blocks": [
+                {"type": "compaction", "content": "claude checkpoint"}
+            ]}},
+            "format": "anthropic.compact_20260112",
+            "native": True,
+        }
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("native summary was summarized a second time")
+
+    recorded = []
+
+    async def record(*args, **kwargs):
+        recorded.append(kwargs.get("native"))
+
+    monkeypatch.setattr(memory, "_native_checkpoint", native)
+    monkeypatch.setattr(memory, "_summarise", must_not_run)
+    monkeypatch.setattr(memory, "_record_fold", record)
+
+    await memory._compact(state, down_to=2)
+
+    assert list(state.working) == ["claude checkpoint"]
+    assert len(state.recent) == 2
+    assert recorded[0]["format"] == "anthropic.compact_20260112"
+
+
 def test_a_partial_run_keeps_what_it_finished():
     """A failure on the second chunk must not undo the first."""
     memory, state = _memory(), _state()
