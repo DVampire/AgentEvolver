@@ -264,7 +264,7 @@ STYLE:
         
         self.verbose = verbose
         self._last_error = None
-        self.base_url = "https://openrouter.ai/api/v1"
+        self.base_url = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")  # route via project relay
         # Nano Banana Pro for image generation. The slug must be an image-output
         # model; a text-only chat model is rejected with "No endpoints found that
         # support the requested output modalities".

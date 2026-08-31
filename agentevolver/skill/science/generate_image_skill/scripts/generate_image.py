@@ -31,7 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-API_BASE = "https://openrouter.ai/api/v1"
+API_BASE = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")  # route via project relay
 IMAGES_URL = f"{API_BASE}/images"
 MODELS_URL = f"{API_BASE}/images/models"
 

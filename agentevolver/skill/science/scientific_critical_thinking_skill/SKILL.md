@@ -18,6 +18,15 @@ metadata:
 ---
 # Scientific Critical Thinking
 
+## Environment (AgentEvolver)
+
+This skill's LLM/image steps go through **this project's OpenRouter relay**. Put
+`OPENROUTER_API_KEY` and `OPENROUTER_API_BASE` in the project `.env` (the same pair the
+framework's `openrouter` backend uses); the generation scripts read the base URL from
+`OPENROUTER_API_BASE` and route through the relay instead of the public endpoint. The named
+models must be reachable on the relay — check `/v1/models` if a call returns "no available channel".
+
+
 ## Overview
 
 Critical thinking is a systematic process for evaluating scientific rigor. Assess methodology, experimental design, statistical validity, biases, confounding, and evidence quality using GRADE and Cochrane ROB frameworks. Apply this skill for critical analysis of scientific claims.

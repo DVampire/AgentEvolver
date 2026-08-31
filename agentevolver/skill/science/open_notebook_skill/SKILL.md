@@ -28,6 +28,13 @@ metadata:
 ---
 # Open Notebook
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 ## Overview
 
 Open Notebook is an open-source, self-hosted alternative to Google's NotebookLM that enables researchers to organize materials, generate AI-powered insights, create podcasts, and have context-aware conversations with their documents — all while maintaining complete data privacy.

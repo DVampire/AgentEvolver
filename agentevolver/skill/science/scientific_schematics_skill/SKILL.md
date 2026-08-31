@@ -22,6 +22,15 @@ metadata:
 ---
 # Scientific Schematics and Diagrams
 
+## Environment (AgentEvolver)
+
+This skill's LLM/image steps go through **this project's OpenRouter relay**. Put
+`OPENROUTER_API_KEY` and `OPENROUTER_API_BASE` in the project `.env` (the same pair the
+framework's `openrouter` backend uses); the generation scripts read the base URL from
+`OPENROUTER_API_BASE` and route through the relay instead of the public endpoint. The named
+models must be reachable on the relay — check `/v1/models` if a call returns "no available channel".
+
+
 ## Overview
 
 Scientific schematics and diagrams transform complex concepts into clear visual representations for publication. **This skill uses Nano Banana 2 AI for diagram generation with Gemini 3.6 Flash quality review.**

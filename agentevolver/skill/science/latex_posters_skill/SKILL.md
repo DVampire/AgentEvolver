@@ -22,6 +22,15 @@ metadata:
 ---
 # LaTeX Research Posters
 
+## Environment (AgentEvolver)
+
+This skill's LLM/image steps go through **this project's OpenRouter relay**. Put
+`OPENROUTER_API_KEY` and `OPENROUTER_API_BASE` in the project `.env` (the same pair the
+framework's `openrouter` backend uses); the generation scripts read the base URL from
+`OPENROUTER_API_BASE` and route through the relay instead of the public endpoint. The named
+models must be reachable on the relay — check `/v1/models` if a call returns "no available channel".
+
+
 ## Overview
 
 Research posters are a critical medium for scientific communication at conferences, symposia, and academic events. This skill provides comprehensive guidance for creating professional, visually appealing research posters using LaTeX packages. Generate publication-quality posters with proper layout, typography, color schemes, and visual hierarchy.

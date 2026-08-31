@@ -32,6 +32,13 @@ metadata:
 ---
 # Paperclip CLI
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 Paperclip exposes roughly 11M full-text papers, 217K+ regulatory documents, 110K+ clinical trial
 protocols, and 574K+ protein entries as a **read-only virtual filesystem** navigated with Unix
 commands, backed by server-side semantic search and LLM readers.

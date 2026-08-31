@@ -38,6 +38,13 @@ metadata:
 ---
 # OMERO Integration
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 Use current OME documentation and the smallest explicit data scope. OMERO data
 may contain unpublished images, identifiers, annotations, original files, and
 derived measurements.

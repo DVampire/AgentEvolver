@@ -31,6 +31,13 @@ metadata:
 ---
 # Pyzotero
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 Pyzotero is a Python wrapper for the [Zotero API v3](https://www.zotero.org/support/dev/web_api/v3/start). Use it to programmatically manage Zotero libraries: read items and collections, create and update references, upload attachments, manage tags, and export citations.
 
 **Current upstream:** pyzotero 1.13.0 (PyPI, May 2026). Docs: [pyzotero.readthedocs.io](https://pyzotero.readthedocs.io/en/latest/).

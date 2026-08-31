@@ -28,6 +28,13 @@ metadata:
 ---
 # Research Lookup
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 Compile the external evidence needed to plan and write a high-quality scientific
 manuscript. The default academic workflow targets **60 verified, unique references**
 and produces a manuscript-ready research packet rather than a loose list of links.

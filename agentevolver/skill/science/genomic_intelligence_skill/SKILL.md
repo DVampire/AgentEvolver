@@ -32,6 +32,13 @@ metadata:
 ---
 # Genomic Intelligence — DNA Sequence Models
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 Genomic Intelligence (GI) serves transformer DNA language models over six
 sequence-analysis tasks on managed GPUs. Give it a **gene symbol**, a **genomic
 region**, or a **DNA/FASTA sequence**; it returns structured predictions —

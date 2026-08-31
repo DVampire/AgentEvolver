@@ -33,6 +33,13 @@ metadata:
 ---
 # Tamarind Bio
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 Tamarind Bio is a cloud platform that runs computational biology tools — structure prediction, protein and antibody design, docking, binding-affinity, MSA generation, and molecular dynamics — on managed GPUs. Users submit sequences or structures and get back predicted structures, designs, and biophysical scores, without provisioning their own hardware. It exposes hundreds of tools (AlphaFold, Boltz-2, Chai-1, RFdiffusion, ProteinMPNN, BoltzGen, ESMFold2, DiffDock, Autodock Vina, and many more) through one uniform job API.
 
 **Official docs:** [app.tamarind.bio/api-docs](https://app.tamarind.bio/api-docs) · platform UI at [app.tamarind.bio](https://app.tamarind.bio)

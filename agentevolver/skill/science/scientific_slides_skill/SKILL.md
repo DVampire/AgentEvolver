@@ -22,6 +22,15 @@ metadata:
 ---
 # Scientific Slides
 
+## Environment (AgentEvolver)
+
+This skill's LLM/image steps go through **this project's OpenRouter relay**. Put
+`OPENROUTER_API_KEY` and `OPENROUTER_API_BASE` in the project `.env` (the same pair the
+framework's `openrouter` backend uses); the generation scripts read the base URL from
+`OPENROUTER_API_BASE` and route through the relay instead of the public endpoint. The named
+models must be reachable on the relay — check `/v1/models` if a call returns "no available channel".
+
+
 ## Overview
 
 Scientific presentations are a critical medium for communicating research, sharing findings, and engaging with academic and professional audiences. This skill provides comprehensive guidance for creating effective scientific presentations, from structure and content development to visual design and delivery preparation.

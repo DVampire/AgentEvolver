@@ -22,6 +22,15 @@ metadata:
 ---
 # Neuropixels Data Analysis
 
+## Environment (AgentEvolver)
+
+The optional AI-curation steps use the Anthropic SDK with `ANTHROPIC_API_KEY`. Put your key in
+the project `.env`; to route through a relay instead of api.anthropic.com, also set
+`ANTHROPIC_BASE_URL` there (note this project's OpenRouter relay blocks Claude models by ToS —
+use an Anthropic-capable endpoint or your own Anthropic key). These steps are optional; the
+rest of the skill works without a key.
+
+
 ## Overview
 
 Toolkit for analyzing Neuropixels high-density neural recordings using current best

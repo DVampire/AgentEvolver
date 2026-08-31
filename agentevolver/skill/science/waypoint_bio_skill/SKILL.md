@@ -29,6 +29,13 @@ metadata:
 ---
 # Waypoint: Outpost Bio's Open Microbiome Foundation Models
 
+## Environment (AgentEvolver)
+
+This skill talks to an external service with its **own credential** (not routed through any
+relay). Put the required key(s) — see this skill's own setup section / its `openclaw` metadata
+for the exact variable names — in the project `.env`; the scripts read them from the environment.
+
+
 ## Overview
 
 Outpost Bio open-sourced three artefacts under Apache 2.0, described in

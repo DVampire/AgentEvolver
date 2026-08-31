@@ -17,6 +17,15 @@ metadata:
 ---
 # Research Grant Writing
 
+## Environment (AgentEvolver)
+
+This skill's LLM/image steps go through **this project's OpenRouter relay**. Put
+`OPENROUTER_API_KEY` and `OPENROUTER_API_BASE` in the project `.env` (the same pair the
+framework's `openrouter` backend uses); the generation scripts read the base URL from
+`OPENROUTER_API_BASE` and route through the relay instead of the public endpoint. The named
+models must be reachable on the relay — check `/v1/models` if a call returns "no available channel".
+
+
 ## Overview
 
 Research grant writing is the process of developing competitive funding proposals for federal agencies and foundations. Master agency-specific requirements, review criteria, narrative structure, budget preparation, and compliance for NSF (National Science Foundation), NIH (National Institutes of Health), DOE (Department of Energy), DARPA (Defense Advanced Research Projects Agency), and Taiwan's NSTC (National Science and Technology Council) submissions.
