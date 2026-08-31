@@ -31,6 +31,25 @@ class HookEvent(str, Enum):
     ON_ESCALATE = "on_escalate"  # agent is blocked and requests Meta guidance
     ON_CALL = "on_call"
 
+    # Provider-neutral host lifecycle.  Names deliberately align with the public
+    # concepts exposed by Claude Code/Codex while remaining independent of either.
+    SESSION_START = "session_start"
+    SESSION_END = "session_end"
+    USER_PROMPT_SUBMIT = "user_prompt_submit"
+    PRE_TOOL_USE = "pre_tool_use"
+    PERMISSION_REQUEST = "permission_request"
+    POST_TOOL_USE = "post_tool_use"
+    POST_TOOL_USE_FAILURE = "post_tool_use_failure"
+    SUBAGENT_START = "subagent_start"
+    SUBAGENT_STOP = "subagent_stop"
+    PRE_COMPACT = "pre_compact"
+    POST_COMPACT = "post_compact"
+    NOTIFICATION = "notification"
+    TASK_COMPLETED = "task_completed"
+    WORKTREE_CREATE = "worktree_create"
+    WORKTREE_REMOVE = "worktree_remove"
+    CONFIG_CHANGE = "config_change"
+
 
 class HookContext(BaseContext):
     """Context passed into hook manager and individual hook handlers.
@@ -162,6 +181,9 @@ def _merge_results(results: List[HookResult]) -> HookResult:
     final_messages = None
     final_action = None
     context_parts: List[str] = []
+    output = None
+    constraint_status = None
+    repeat_chain = None
 
     for r in results:
         if r.decision == HookDecision.BLOCK:
@@ -177,6 +199,12 @@ def _merge_results(results: List[HookResult]) -> HookResult:
 
         if r.additional_context:
             context_parts.append(r.additional_context)
+        if r.output is not None:
+            output = r.output
+        if r.constraint_status is not None:
+            constraint_status = r.constraint_status
+        if r.repeat_chain is not None:
+            repeat_chain = r.repeat_chain
 
     return HookResult(
         decision=final_decision,
@@ -184,6 +212,9 @@ def _merge_results(results: List[HookResult]) -> HookResult:
         modified_messages=final_messages,
         modified_action=final_action,
         additional_context="\n\n".join(context_parts) if context_parts else None,
+        output=output,
+        constraint_status=constraint_status,
+        repeat_chain=repeat_chain,
     )
 
 
@@ -200,6 +231,10 @@ class Hook(BaseModel):
     fail_closed: bool = Field(default=False)
     # Execution priority — lower number runs first.
     priority: int = Field(default=100)
+    events: List[HookEvent | str] = Field(
+        default_factory=list,
+        description="Lifecycle events to receive; empty keeps legacy named-only dispatch.",
+    )
 
     async def handle(self, ctx: HookContext) -> HookResult:
         """Override this method to implement hook logic."""

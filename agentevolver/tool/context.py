@@ -1,37 +1,36 @@
 """Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
-import os
+import asyncio
 import inspect
 import re
-import asyncio
-from asyncio_atexit import register as async_atexit_register
-from typing import Any, Dict, List, Type, Optional
+from typing import Any, Dict, List, Optional, Type
+
 import inflection
-import json
+from asyncio_atexit import register as async_atexit_register
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-
-from agentevolver.paths import P, path_manager
-from agentevolver.logger import logger
 from agentevolver.config import config
-from agentevolver.utils import (assemble_workspace_path,
-                       gather_with_concurrency,
-                       file_lock,
-                       render_capability_card,
-                       )
-from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext, clip_output
+from agentevolver.dynamic import dynamic_manager
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.permission import PermissionMode, permission_manager
+from agentevolver.registry import TOOL
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.session import isolated_workspace_root
 from agentevolver.tool.execution import (
     ToolErrorCode,
     ToolExecution,
     ToolExecutionPipeline,
     ToolPolicyDecision,
 )
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.tool.spill import SpillSource, save_text as spill_text
+from agentevolver.tool.spill import SpillSource
+from agentevolver.tool.spill import save_text as spill_text
+from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext, clip_output
+from agentevolver.utils import (
+    assemble_workspace_path,
+    gather_with_concurrency,
+    render_capability_card,
+)
 from agentevolver.version import version_manager
-from agentevolver.dynamic import dynamic_manager
-from agentevolver.registry import TOOL
-from agentevolver.permission import permission_manager, PermissionMode
-from agentevolver.session import isolated_workspace_root
 
 _UNSET = object()  # sentinel: get_instruction cache is empty / invalidated
 
@@ -141,7 +140,7 @@ class ToolContextManager(BaseModel):
         else:
             self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="tool"))
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
-        logger.info(f"| 📁 Tool context manager.")
+        logger.info("| 📁 Tool context manager.")
 
         self._tool_configs: Dict[str, ToolConfig] = {}  # Current active configs (latest version)
         # Tool version history, e.g., {"tool_name": {"1.0.0": ToolConfig, "1.0.1": ToolConfig}}
@@ -229,7 +228,7 @@ class ToolContextManager(BaseModel):
         async_atexit_register(self.cleanup)
         self._cleanup_registered = True
         
-        logger.info(f"| ✅ Tools initialization completed")
+        logger.info("| ✅ Tools initialization completed")
         
     async def _load_from_registry(self):
         """Load tools from TOOL registry."""
@@ -519,6 +518,12 @@ class ToolContextManager(BaseModel):
             ToolConfig: Tool info or None if not found
         """
         return self._tool_configs.get(tool_name)
+
+    async def get_version_info(
+        self, tool_name: str, version: str,
+    ) -> Optional[ToolConfig]:
+        """Return an immutable version snapshot without changing the live registry."""
+        return self._tool_history_versions.get(tool_name, {}).get(str(version))
     
     async def list(self) -> List[str]:
         """Get list of registered tools
@@ -903,6 +908,31 @@ class ToolContextManager(BaseModel):
             Response: Tool result
         """
         tool_info = await self.get_info(name)
+        return await self.invoke_config(
+            name,
+            tool_info,
+            input,
+            ctx=ctx,
+            execution_context=execution_context,
+            **kwargs,
+        )
+
+    async def invoke_config(
+        self,
+        name: str,
+        tool_info: Optional[ToolConfig],
+        input: Dict[str, Any],
+        ctx: ToolContext = None,
+        execution_context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Response:
+        """Run an explicit version snapshot through the normal execution pipeline.
+
+        Rollout traffic must not replace the process-global registry to call a canary:
+        another request could observe that temporary replacement.  This entry point
+        keeps the selected ``ToolConfig`` call-local while retaining argument checks,
+        permission guards, checkpoints, timeouts, output bounds, and trace receipts.
+        """
         version = str(getattr(tool_info, "version", "") or "")
         effective_execution_context = dict(execution_context or {})
         execution = ToolExecution.create(

@@ -22,7 +22,6 @@ from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.utils import make_id
 
-
 TOOL_EXECUTION_SCHEMA_VERSION = 2
 
 
@@ -279,6 +278,21 @@ class ToolExecutionPipeline:
         """
         started = time.monotonic()
 
+        lifecycle = await self._emit_lifecycle(
+            "pre_tool_use",
+            execution,
+            {"arguments": execution.arguments},
+        )
+        if lifecycle is not None and getattr(lifecycle, "decision", None) == "block":
+            return await self._finish(
+                execution,
+                self._failure(getattr(lifecycle, "reason", None) or "Blocked by pre-tool hook."),
+                started,
+                timeout,
+                ToolExecutionStage.GUARD,
+                ToolErrorCode.POLICY_DENIED,
+            )
+
         if preflight_error is not None:
             code, message = preflight_error
             stage = (ToolExecutionStage.RESOLVE if code == ToolErrorCode.NOT_FOUND
@@ -426,6 +440,16 @@ class ToolExecutionPipeline:
                 continue
             if decision.type == ToolPolicyType.DENY:
                 return ToolErrorCode.POLICY_DENIED, decision.reason or "Tool call denied."
+            lifecycle = await self._emit_lifecycle(
+                "permission_request",
+                execution,
+                {"reason": decision.reason},
+            )
+            if lifecycle is not None and getattr(lifecycle, "decision", None) == "block":
+                return (
+                    ToolErrorCode.APPROVAL_DENIED,
+                    getattr(lifecycle, "reason", None) or "Approval request blocked by hook.",
+                )
             if self._approval_resolver is None:
                 return (
                     ToolErrorCode.APPROVAL_UNAVAILABLE,
@@ -503,7 +527,33 @@ class ToolExecutionPipeline:
                 logger.warning(
                     f"| ⚠️ Tool result observer failed for {execution.tool_name}: {error}"
                 )
+        await self._emit_lifecycle(
+            "post_tool_use" if settled.success else "post_tool_use_failure",
+            execution,
+            {
+                "response": settled.model_dump(mode="json"),
+                "outcome": outcome.to_dict(),
+            },
+        )
         return settled
+
+    @staticmethod
+    async def _emit_lifecycle(event: str, execution: ToolExecution, payload: Dict[str, Any]):
+        """Publish optional host hooks without making the tool kernel depend on them."""
+        try:
+            from agentevolver.hook import hook_manager
+            from agentevolver.session import SessionContext
+
+            return await hook_manager.emit(
+                event,
+                {"execution": execution.identity_dict(), **payload},
+                ctx=SessionContext(id=execution.session_id or execution.project_id),
+            )
+        except Exception as error:  # lifecycle observation cannot silently break tools
+            logger.warning(
+                f"| ⚠️ Lifecycle hook {event!r} failed for {execution.tool_name}: {error}"
+            )
+            return None
 
     @staticmethod
     def _failure(message: str) -> Response:

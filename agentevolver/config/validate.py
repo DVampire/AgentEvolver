@@ -69,6 +69,12 @@ def validate_assembly(config: Any, *, strict: bool = False) -> List[str]:
             f"(got {approval_timeout!r})"
         )
 
+    if not isinstance(getattr(config, "otel_enabled", False), bool):
+        problems.append("otel_enabled must be true or false")
+    for key in ("otel_service_name", "otel_endpoint"):
+        if not isinstance(getattr(config, key, ""), str):
+            problems.append(f"{key} must be a string")
+
     if problems and strict:
         raise ValueError("Config assembly validation failed:\n  - " + "\n  - ".join(problems))
     return problems

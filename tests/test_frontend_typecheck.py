@@ -35,13 +35,7 @@ _ERROR = re.compile(r"^(?P<file>[^(]+)\((?P<line>\d+),\d+\): error (?P<code>TS\d
 #:
 #: Entries may only leave. A registered error that stops occurring fails too, so a fix
 #: cannot quietly leave a stale excuse behind that would cover the next one.
-KNOWN: dict[tuple[str, str], str] = {
-    (
-        "src/vnc/VncView.tsx",
-        "TS2339",
-    ): "@types/novnc-core omits resizeSession/qualityLevel/compressionLevel, which the "
-    "runtime RFB does have; the alternative is casting away the type entirely",
-}
+KNOWN: dict[tuple[str, str], str] = {}
 
 
 def _node() -> Path | None:
@@ -119,3 +113,28 @@ def test_the_generated_contract_is_reachable_as_a_value_and_not_only_a_type():
             "gateway.ts uses PROTOCOL_VERSION as a value but only re-exports it; a "
             "re-export forwards a name without binding it locally"
         )
+
+
+def test_crash_reconciliation_is_available_in_browser_and_terminal():
+    """Both clients expose both outcomes and share one defensive checkpoint parser."""
+    browser = (FRONTEND / "src" / "ReconciliationDialog.tsx").read_text(encoding="utf-8")
+    app = (FRONTEND / "src" / "App.tsx").read_text(encoding="utf-8")
+    terminal = (FRONTEND / "src" / "cli" / "App.tsx").read_text(encoding="utf-8")
+    parser = (FRONTEND / "src" / "reconciliation.ts").read_text(encoding="utf-8")
+
+    assert "Already happened" in browser and "Did not happen" in browser
+    assert "onClose" not in browser
+    assert "execution.reconcile" in app and "execution.reconcile" in terminal
+    assert "reconciliationFromCheckpoint" in terminal
+    assert "Array.isArray(checkpoint.unsettled_calls)" in parser
+    assert "if (!calls.length) return undefined" in parser
+
+
+def test_terminal_replays_the_durable_conversation_before_connecting():
+    """A restart must redisplay a recovery decision instead of hiding it in a new session."""
+    app = (FRONTEND / "src" / "cli" / "App.tsx").read_text(encoding="utf-8")
+
+    assert "session.list" in app
+    assert "conversation.list" in app
+    assert "conversation.events" in app
+    assert app.index("conversation.events") < app.index("type: 'connection', value: 'connected'")

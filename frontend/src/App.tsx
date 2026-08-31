@@ -8,6 +8,12 @@ import { Blocks, Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
 import { type ConnectionStatus, type GatewayEvent, GatewaySocket } from './controllers/gateway';
+import { ReconciliationDialog, type ReconciliationOutcome } from './ReconciliationDialog';
+import {
+  reconciliationFromCheckpoint,
+  reconciliationFromEvent,
+  type ReconciliationState,
+} from './reconciliation';
 import useAlertStore from './stores/alertStore';
 
 type CapabilityKind = 'agents' | 'tools' | 'skills' | 'connectors' | 'environments' | 'workflows' | 'plugins' | 'commands' | 'canvas';
@@ -27,7 +33,18 @@ interface ModelEditorState { originalName?: string; configuration: Record<string
 interface Message { id: string; type: MessageType; title: string; content?: string; detail?: string; attachments?: string[]; timestamp: string; }
 interface ActivityStep { id: string; title: string; content?: string; detail?: string; trace?: Record<string, unknown>; timestamp: string; running?: boolean; }
 interface ActivityGroup { id: string; taskId?: string; title: string; timestamp: string; status: ActivityStatus; steps: ActivityStep[]; }
-interface AgentState { name: string; status: 'running' | 'completed' | 'failed'; }
+interface AgentState {
+  name: string;
+  status: 'running' | 'completed' | 'failed';
+  jobId?: string;
+  task?: string;
+  label?: string;
+  outputTail?: string;
+  busy?: boolean;
+  paused?: boolean;
+  continuable?: boolean;
+  turns?: number;
+}
 interface SessionSummary { session_id: string; name: string; workspace: string; source_workspace?: string | null; created_at?: string; updated_at?: string; has_work?: boolean; task_ids: string[]; }
 interface UploadedAttachment { id: string; name: string; path?: string; size: number; mimeType: string; status: 'uploading' | 'ready' | 'error'; progress: number; error?: string; }
 interface ExtensionStage { valid: boolean; components: unknown[]; error?: string; }
@@ -181,10 +198,12 @@ export function App() {
   // Restored on refresh so the same Gateway session is reused instead of a fresh one.
   const [sessionId, setSessionId] = useState<string | undefined>(() => localStorage.getItem(SESSION_KEY) ?? undefined);
   const [activeTaskId, setActiveTaskId] = useState<string>();
+  const [reconciliation, setReconciliation] = useState<ReconciliationState>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [activities, setActivities] = useState<ActivityGroup[]>([]);
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(new Set());
   const [agents, setAgents] = useState<AgentState[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>();
   const [catalog, setCatalog] = useState<CapabilityCatalog>(EMPTY_CAPABILITIES);
   const [selection, setSelection] = useState<CapabilitySelection>(EMPTY_SELECTION);
   const [draft, setDraft] = useState('');
@@ -282,6 +301,45 @@ export function App() {
     if (!response.ok || !Array.isArray(response.result.providers)) throw new Error('Could not load model providers');
     setProviders(response.result.providers.filter(isProviderSummary));
   }, []);
+
+  const loadLiveAgents = useCallback(async () => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId) return;
+    const response = await socket.request('agent.live.list', { session_id: currentSessionId });
+    if (!response.ok || !Array.isArray(response.result.agents)) return;
+    const live = response.result.agents.flatMap((value): AgentState[] => {
+      if (!isRecord(value) || typeof value.job_id !== 'string' || typeof value.agent_name !== 'string') return [];
+      const runtimeStatus = String(value.status ?? '');
+      const jobStatus = String(value.job_status ?? '');
+      const mappedStatus: AgentState['status'] = runtimeStatus === 'running'
+        ? 'running'
+        : jobStatus === 'failed' || jobStatus === 'killed' ? 'failed' : 'completed';
+      return [{
+        name: value.agent_name,
+        status: mappedStatus,
+        jobId: value.job_id,
+        task: typeof value.task === 'string' ? value.task : '',
+        label: typeof value.label === 'string' ? value.label : '',
+        outputTail: typeof value.output_tail === 'string' ? value.output_tail : '',
+        busy: value.busy === true,
+        paused: value.paused === true,
+        continuable: value.continuable === true,
+        turns: typeof value.turns === 'number' ? value.turns : 0,
+      }];
+    });
+    setAgents((current) => [
+      ...current.filter((agent) => !agent.jobId && agent.status === 'running'),
+      ...live,
+    ]);
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'connected' || !sessionId) return undefined;
+    void loadLiveAgents();
+    const timer = window.setInterval(() => void loadLiveAgents(), activeTaskId ? 1_000 : 4_000);
+    return () => window.clearInterval(timer);
+  }, [activeTaskId, loadLiveAgents, sessionId, status]);
 
   // Deployments are project-global (not per session), so this needs no session id.
   // Remote machines. Unlike every other capability this is a *working set* — which
@@ -388,6 +446,37 @@ export function App() {
       setEnvOpening('');
     }
   }, []);
+
+  const controlLiveAgent = useCallback(async (jobId: string, action: string) => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId) return;
+    const response = await socket.request('agent.live.control', {
+      session_id: currentSessionId,
+      job_id: jobId,
+      action,
+    });
+    if (!response.ok) setNotice(response.error?.message ?? `Could not ${action} agent`);
+    await loadLiveAgents();
+  }, [loadLiveAgents, setNotice]);
+
+  const messageLiveAgent = useCallback(async (jobId: string, message: string) => {
+    const socket = socketRef.current;
+    const currentSessionId = sessionRef.current;
+    if (!socket || !currentSessionId) return false;
+    const response = await socket.request('agent.live.message', {
+      session_id: currentSessionId,
+      job_id: jobId,
+      message,
+    });
+    if (!response.ok || response.result.success === false) {
+      setNotice(response.error?.message ?? String(response.result.message ?? 'Message was not delivered'));
+      return false;
+    }
+    setNotice('Message delivered to the agent thread.');
+    await loadLiveAgents();
+    return true;
+  }, [loadLiveAgents, setNotice]);
 
   const loadDeploys = useCallback(async (socket: GatewaySocket) => {
     const response = await socket.request('deploy.list');
@@ -588,6 +677,20 @@ export function App() {
       setNotice(`${humanize(String(event.payload.model && typeof event.payload.model === 'object' ? (event.payload.model as { name?: unknown }).name ?? 'Model' : 'Model'))} configuration was updated.`);
       return;
     }
+    if (event.type === 'task.reconciliation.required') {
+      const required = reconciliationFromEvent(event);
+      if (required) {
+        setReconciliation(required);
+        setActiveTaskId(required.taskId);
+        setNotice('Task recovery is waiting for confirmation of an interrupted action.');
+      }
+      return;
+    }
+    if (event.type === 'task.reconciliation.completed') {
+      setReconciliation(undefined);
+      setNotice('Interrupted actions were reconciled. The task is resuming.');
+      return;
+    }
     if (event.type === 'task.submitted') {
         const files = Array.isArray(event.payload.files) ? event.payload.files.filter((file): file is string => typeof file === 'string').map(fileName) : [];
         setMessages((items) => [...items, { id: `${event.task_id}:user`, type: 'user', title: 'You', content: String(event.payload.content ?? ''), attachments: files, timestamp: event.timestamp }]);
@@ -632,6 +735,7 @@ export function App() {
       return;
     }
     if (event.type === 'task.completed') {
+      setReconciliation(undefined);
       setActiveTaskId(undefined);
       finishActivity(event.task_id, 'completed');
       setMessages((items) => [...items, finalMessage(event, 'assistant')]);
@@ -640,11 +744,13 @@ export function App() {
       if (socketRef.current) void loadDeploys(socketRef.current);
     }
     if (event.type === 'task.failed') {
+      setReconciliation(undefined);
       setActiveTaskId(undefined);
       finishActivity(event.task_id, 'failed');
       setMessages((items) => [...items, finalMessage(event, 'error')]);
     }
     if (event.type === 'task.cancelled') {
+      setReconciliation(undefined);
       setActiveTaskId(undefined);
       finishActivity(event.task_id, 'cancelled');
       setMessages((items) => [...items, finalMessage(event, 'system')]);
@@ -660,6 +766,7 @@ export function App() {
     setActivities([]);
     setAgents([]);
     setActiveTaskId(undefined);
+    setReconciliation(undefined);
     setAttachments([]);
     setNotice('');
     localStorage.setItem('agentevolver.gateway.endpoint', endpoint);
@@ -1021,6 +1128,39 @@ export function App() {
     }
   };
 
+  const reconcileInterruptedCall = async (callId: string, outcome: ReconciliationOutcome) => {
+    const current = reconciliation;
+    const socket = socketRef.current;
+    if (!current || !socket || current.busyCallId) return;
+    setReconciliation({ ...current, busyCallId: callId, error: undefined });
+    try {
+      const response = await socket.request('execution.reconcile', {
+        session_id: current.sessionId ?? sessionRef.current,
+        task_id: current.taskId,
+        call_id: callId,
+        outcome,
+      });
+      if (!response.ok) throw new Error(response.error?.message ?? 'Could not record recovery decision');
+      if (response.result.resumed === true) {
+        setReconciliation(undefined);
+        setNotice('Interrupted actions were reconciled. The task is resuming.');
+        return;
+      }
+      const updated = reconciliationFromCheckpoint(
+        response.result.checkpoint,
+        current.taskId,
+        current.sessionId,
+      );
+      if (!updated) throw new Error('Gateway returned an invalid recovery checkpoint');
+      setReconciliation(updated);
+    } catch (error) {
+      setReconciliation({
+        ...current,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   const statusText = useMemo(() => status === 'connected' ? 'Connected' : status[0].toUpperCase() + status.slice(1), [status]);
   const capabilityItems = catalog[activeCapability].filter((item) => item.name.toLowerCase().includes(capabilitySearch.trim().toLowerCase()));
   // Grouped by recency, not by workspace. The workspace grouping was a level
@@ -1048,6 +1188,7 @@ export function App() {
     ...messages.map((message) => ({ id: message.id, timestamp: message.timestamp, type: 'message' as const, value: message })),
     ...activities.map((activity) => ({ id: activity.id, timestamp: activity.timestamp, type: 'activity' as const, value: activity })),
   ].sort((left, right) => left.timestamp.localeCompare(right.timestamp)), [messages, activities]);
+  const selectedAgent = agents.find((agent) => agent.jobId === selectedAgentId);
 
   const startColumnDrag = (column: 'sidebar' | 'inspector') => (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1119,7 +1260,7 @@ export function App() {
         <div className="sidebar-section model-nav"><p className="eyebrow">Models</p><button onClick={() => void openModels()}><span><Boxes size={16} strokeWidth={1.9} /></span><strong>Providers</strong><em>{providers.reduce((count, provider) => count + provider.models.length, 0)}</em></button></div>
         <div className="sidebar-section agents-section">
           <p className="eyebrow">Active agents</p>
-          {agents.length ? agents.map((agent) => <div className="agent-row" key={agent.name}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span></div>) : <p className="empty">Agents appear while a task runs.</p>}
+          {agents.length ? agents.map((agent) => <button type="button" className="agent-row" key={agent.jobId ?? agent.name} disabled={!agent.jobId} onClick={() => setSelectedAgentId(agent.jobId)} title={agent.label ?? agent.task}><span className={`agent-state ${agent.status}`} /><span>{agent.name}</span>{agent.jobId ? <small>{agent.busy ? 'working' : `turn ${agent.turns ?? 0}`}</small> : null}</button>) : <p className="empty">Agents appear while a task runs.</p>}
         </div>
         <div className="sidebar-section hosts-section machines-local">
           <p className="eyebrow">Local machines</p>
@@ -1363,7 +1504,9 @@ export function App() {
       {editingCapability ? <CapabilityConfigDialog detail={editingCapability} onSave={configureCapability} onClose={() => setEditingCapability(undefined)} /> : null}
       {modelsOpen ? <ModelsDialog providers={providers} onAdd={() => void openModelEditor()} onEdit={(name) => void openModelEditor(name)} onClose={() => setModelsOpen(false)} /> : null}
       {editingModel ? <ModelConfigDialog editor={editingModel} onSave={configureModel} onClose={() => setEditingModel(undefined)} /> : null}
+      {selectedAgent?.jobId ? <LiveAgentDialog agent={selectedAgent} onMessage={messageLiveAgent} onControl={controlLiveAgent} onClose={() => setSelectedAgentId(undefined)} /> : null}
       {settingsOpen ? <ConnectionDialog endpoint={endpoint} token={token} onEndpoint={setEndpoint} onToken={setToken} onClose={() => setSettingsOpen(false)} onConnect={() => { setSettingsOpen(false); connect(); }} /> : null}
+      {reconciliation ? <ReconciliationDialog state={reconciliation} onResolve={(callId, outcome) => void reconcileInterruptedCall(callId, outcome)} /> : null}
       {mobileNavOpen ? <MobileNavigation projects={projects} sessionId={sessionId} selection={selection} agents={agents} status={status} theme={theme} onClose={() => setMobileNavOpen(false)} onCreateSession={createNewSession} onSelectSession={selectSession} onOpenCapabilities={(kind) => { setActiveCapability(kind); setCapabilitySearch(''); setCapabilitiesOpen(true); }} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} onOpenConnection={() => setSettingsOpen(true)} /> : null}
     </main>
     </TooltipProvider>
@@ -1661,6 +1804,26 @@ function WorkflowDocument({ detail }: { detail: CapabilityDetail }) {
 
 function ConnectionDialog({ endpoint, token, onEndpoint, onToken, onClose, onConnect }: { endpoint: string; token: string; onEndpoint: (value: string) => void; onToken: (value: string) => void; onClose: () => void; onConnect: () => void }) {
   return <div className="modal-backdrop"><section className="modal"><div className="modal-title"><h2>Gateway connection</h2><button onClick={onClose}>×</button></div><label>WebSocket endpoint<input value={endpoint} onChange={(event) => onEndpoint(event.target.value)} placeholder={DEFAULT_ENDPOINT} /></label><label>Token <span>(optional)</span><input value={token} onChange={(event) => onToken(event.target.value)} type="password" /></label><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button onClick={onConnect}>Connect</button></div></section></div>;
+}
+
+function LiveAgentDialog({ agent, onMessage, onControl, onClose }: {
+  agent: AgentState;
+  onMessage: (jobId: string, message: string) => Promise<boolean>;
+  onControl: (jobId: string, action: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    if (!agent.jobId || !message.trim()) return;
+    setSending(true);
+    try {
+      if (await onMessage(agent.jobId, message.trim())) setMessage('');
+    } finally {
+      setSending(false);
+    }
+  };
+  return <div className="modal-backdrop agent-thread-backdrop" onClick={onClose}><section className="modal agent-thread-dialog" onClick={(event) => event.stopPropagation()}><div className="modal-title"><div><p className="eyebrow">Live Agent thread</p><h2>{agent.name}</h2></div><button onClick={onClose}>×</button></div><p className="agent-thread-task">{agent.task || agent.label || 'Delegated work'}</p><div className="agent-thread-meta"><span className={`agent-state ${agent.status}`} />{agent.paused ? 'Paused' : agent.busy ? 'Working now' : `Idle after ${agent.turns ?? 0} turn${agent.turns === 1 ? '' : 's'}`}{agent.continuable ? ' · continuable' : ' · one-shot'}</div><pre className="agent-thread-output">{agent.outputTail || 'No output reported yet.'}</pre>{agent.continuable && agent.status === 'running' ? <label>Continue this thread<textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Give this Agent a follow-up task…" rows={3} /></label> : null}<div className="modal-actions agent-thread-actions">{agent.status === 'running' ? <><button className="secondary" onClick={() => void onControl(agent.jobId!, agent.paused ? 'resume' : 'pause')}>{agent.paused ? 'Resume' : 'Pause'}</button><button className="secondary" onClick={() => void onControl(agent.jobId!, 'cancel')}>Cancel</button><button className="secondary" onClick={() => void onControl(agent.jobId!, 'kill')}>Force stop</button></> : null}{agent.continuable && agent.status === 'running' ? <button onClick={() => void send()} disabled={sending || !message.trim()}>{sending ? 'Sending…' : 'Send message'}</button> : null}</div></section></div>;
 }
 
 // Available capabilities: each entry may be an enriched object ({type, name,

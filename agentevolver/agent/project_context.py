@@ -72,7 +72,10 @@ def _scoped_directories(root: Path, active_paths: Optional[Iterable[str]]) -> Li
 
 
 def load_project_context(
-    workspace_root: str, active_paths: Optional[Iterable[str]] = None,
+    workspace_root: str,
+    active_paths: Optional[Iterable[str]] = None,
+    *,
+    source_workspace: Optional[str] = None,
 ) -> str:
     """Load root memory plus root/path-scoped project instructions.
 
@@ -98,6 +101,17 @@ def load_project_context(
     # Durable project knowledge is deliberately separate from path rules.
     append(root, "CLAUDE.md")
     append(root, "MEMORY.md")
+    try:
+        from agentevolver.memory.project import ProjectMemoryStore
+
+        automatic = ProjectMemoryStore(
+            str(root), source_workspace=source_workspace,
+        ).render()
+        if automatic:
+            append(root, "AUTO_MEMORY.md", automatic)
+    except Exception:
+        # Project-owned instructions remain available if optional auto-memory is corrupt.
+        pass
     for directory in _scoped_directories(root, active_paths):
         override = _read_direct_file(
             directory, "AGENTS.override.md", MAX_PROJECT_CONTEXT_CHARS,

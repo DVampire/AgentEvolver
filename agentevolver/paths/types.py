@@ -84,6 +84,7 @@ class P(str, Enum):
     OWNER = "owner"
     OWNER_STATE = "owner_state"
     OWNER_FILES = "owner_files"
+    OWNER_PROJECT_MEMORY = "owner_project_memory"
     IDE_EXTENSIONS = "ide_extensions"
     IDE_HOME = "ide_home"
 
@@ -176,6 +177,7 @@ FILES: frozenset = frozenset({
     P.PORTS, P.LEDGER, P.SSH_HOSTS, P.CHECKPOINT, P.STAGING_MANIFEST,
     P.CONVERSATION_EVENTS, P.CONVERSATION_META, P.SESSION_LEGACY_EVENTS,
     P.SESSION_GOALS, P.SESSION_PLAN,
+    P.OWNER_PROJECT_MEMORY,
 })
 
 LAYOUT: Dict[P, str] = {
@@ -231,6 +233,7 @@ LAYOUT: Dict[P, str] = {
     P.OWNER: "output/{owner}",
     P.OWNER_STATE: "output/{owner}/state",
     P.OWNER_FILES: "output/{owner}/state/files",
+    P.OWNER_PROJECT_MEMORY: "output/{owner}/state/projects/{project_key}/memory.json",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
     P.IDE_HOME: "output/{owner}/state/ide/home",
 

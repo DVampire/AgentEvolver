@@ -18,6 +18,7 @@ Until the coverage lane was introduced, no test executed a line of this file.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,24 @@ def test_several_rounds_in_one_file_stay_separate_and_ordered(journal: Journal):
     assert [r.round for r in rounds] == [1, 2, 3]
     assert [r.hypothesis_id for r in rounds] == ["h-1", "h-2", "h-3"]
     assert [r.note for r in rounds] == ["note 1", "note 2", "note 3"]
+
+
+def test_parallel_writers_assign_distinct_rounds(tmp_path: Path):
+    """Two evolvers sharing one extension root must not overwrite hypotheses."""
+
+    def append(index: int) -> None:
+        Journal(base_dir=str(tmp_path)).append_round(
+            "tool", "search", hypothesis_id=f"parallel-{index}",
+        )
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(append, range(6)))
+
+    rounds = Journal(base_dir=str(tmp_path)).read("tool", "search")
+    assert [item.round for item in rounds] == list(range(1, 7))
+    assert {item.hypothesis_id for item in rounds} == {
+        f"parallel-{index}" for index in range(6)
+    }
 
 
 def test_a_component_with_no_journal_yet_reads_as_empty_not_as_an_error(journal: Journal):

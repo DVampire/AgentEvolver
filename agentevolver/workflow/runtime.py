@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,14 +12,21 @@ from typing import Any, Dict, Optional
 
 from jsonschema import Draft202012Validator
 
-from agentevolver.config import config
 from agentevolver.paths import P, path_manager
 from agentevolver.response import Response
 from agentevolver.utils import make_id
+from agentevolver.utils.file_utils import atomic_write_text
 
 from .types import (
-    ExecutionFrame, ExecutionState, InvocationAttempt, InvocationRun,
-    InvocationState, StepType, WorkflowDefinition, WorkflowRun, WorkflowState,
+    ExecutionFrame,
+    ExecutionState,
+    InvocationAttempt,
+    InvocationRun,
+    InvocationState,
+    StepType,
+    WorkflowDefinition,
+    WorkflowRun,
+    WorkflowState,
 )
 
 _EXPR = re.compile(r"\$\{([^{}]+)\}")
@@ -1003,8 +1008,8 @@ class WorkflowRuntime:
         from agentevolver.agent import agent_manager
         from agentevolver.benchmark import benchmark_manager
         from agentevolver.connector import connector_manager
-        from agentevolver.environment import environment_manager
         from agentevolver.data import data_manager
+        from agentevolver.environment import environment_manager
         from agentevolver.knowledge import knowledge_manager
         from agentevolver.plugins import plugin_manager
         from agentevolver.process import process_manager
@@ -1242,17 +1247,10 @@ class WorkflowRuntime:
         """
         if not run.checkpoint_path:
             return
-        path = Path(run.checkpoint_path)
-        fd, temporary = tempfile.mkstemp(prefix=f".{run.id}-", suffix=".tmp", dir=path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(run.model_dump(mode="json"), stream, ensure_ascii=False, indent=2)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        atomic_write_text(
+            Path(run.checkpoint_path),
+            json.dumps(run.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        )
 
     @staticmethod
     async def _emit(

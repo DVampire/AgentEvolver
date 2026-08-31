@@ -80,6 +80,7 @@ class JobEnvironment(Environment):
     # ------------------------------------------------------------------ actions
     @environment_manager.action(
         name="list",
+        read_only=True,
         description=(
             "Every background job this session started, newest first, with its state and "
             "how long it has been running.\n\n"
@@ -107,6 +108,7 @@ class JobEnvironment(Environment):
 
     @environment_manager.action(
         name="output",
+        read_only=True,
         description=(
             "Collect a background job's output.\n\n"
             "Safe to call repeatedly — reading does not consume, so an early check still "
@@ -145,6 +147,7 @@ class JobEnvironment(Environment):
 
     @environment_manager.action(
         name="kill",
+        destructive=True,
         description=(
             "Stop a background job you no longer need, or one that is not going to "
             "finish.\n\n"

@@ -1,3 +1,5 @@
+"""Base AgentEvolver runtime configuration."""
+
 #---------------GENERAL CONFIG-------------
 tag = "base"
 # Pre-binding default only: bind_session_roots() repoints this at the
@@ -30,6 +32,12 @@ trace_integrity_profile = "interactive"
 # A Tool policy ASK is a one-shot human decision, never an unbounded suspension.
 # The Gateway keeps it listable across client reconnects and rejects it after this bound.
 approval_timeout_seconds = 300.0
+
+# Optional OpenTelemetry export. Trace JSONL/SQLite remains authoritative; OTLP is a
+# best-effort operational mirror enabled either here or by an OTEL exporter endpoint env.
+otel_enabled = False
+otel_service_name = "agentevolver"
+otel_endpoint = ""
 
 #---------------SANDBOX EGRESS CONFIG---------------
 # What every sandbox this run acquires may and may not reach. `sandbox_deny_hosts` always

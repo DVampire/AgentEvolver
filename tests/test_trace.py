@@ -19,6 +19,7 @@ import os
 
 import pytest
 
+from agentevolver.telemetry import OpenTelemetryTraceBridge
 from agentevolver.trace.types import (
     EventConfidence,
     EventProvenance,
@@ -469,3 +470,60 @@ async def test_subscribers_receive_events_and_a_broken_one_is_survived(tmp_path)
     await manager.emit(an_event(label="e2"))
     assert ("async", "e2") not in seen
     await manager.stop()
+
+
+def test_opentelemetry_bridge_pairs_trace_boundaries_without_a_collector():
+    """Trace events remain authoritative; the bridge only mirrors paired spans."""
+    spans = []
+
+    class Span:
+        def __init__(self, attributes):
+            self.attributes = dict(attributes or {})
+            self.ended = False
+            self.status = None
+
+        def set_attribute(self, name, value):
+            self.attributes[name] = value
+
+        def set_status(self, status):
+            self.status = status
+
+        def record_exception(self, _error):
+            return None
+
+        def end(self, **_kwargs):
+            self.ended = True
+
+    class Tracer:
+        def start_span(self, _name, **kwargs):
+            span = Span(kwargs.get("attributes"))
+            spans.append(span)
+            return span
+
+    bridge = OpenTelemetryTraceBridge()
+    bridge._tracer = Tracer()
+    bridge._status = lambda code, description=None: (code, description)
+    bridge._status_code = type("StatusCode", (), {"OK": "ok", "ERROR": "error"})
+    start = TraceEvent(
+        event_type=TraceEventType.TOOL_START,
+        session_id=SESSION,
+        task_id=TASK,
+        action_name="bash_tool",
+        metadata={"call_id": "call-1"},
+    )
+    end = TraceEvent(
+        event_type=TraceEventType.TOOL_CALL,
+        session_id=SESSION,
+        task_id=TASK,
+        action_name="bash_tool",
+        success=True,
+        metadata={"call_id": "call-1"},
+    )
+
+    bridge.submit(start)
+    bridge.submit(end)
+
+    assert len(spans) == 1
+    assert spans[0].ended
+    assert spans[0].status == ("ok", None)
+    assert spans[0].attributes["agentevolver.event.type"] == "tool_call"

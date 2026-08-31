@@ -21,13 +21,16 @@ import asyncio
 import base64
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from agentevolver.canvas.types import FlowGraph, GraphNode
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.gateway.types import PROTOCOL_VERSION, GatewayCommand
+from agentevolver.job import job_manager
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
+from agentevolver.runtime import runtime_manager
+from agentevolver.runtime.types import AgentRef
 
 
 # --------------------------------------------------------------------------- #
@@ -99,6 +102,170 @@ def test_events_are_numbered_in_order_and_replay_from_where_a_client_left_off() 
     agent misbehaving rather than the transport.
     """
     asyncio.run(_events_are_numbered_and_replayable())
+
+
+def test_reconciliation_command_records_the_fact_before_resuming_the_task() -> None:
+    """The client-facing recovery command preserves the backend's fail-closed order.
+
+    A task may resume only after the human outcome reached durable Trace storage. If the
+    queue transition happened first, a fast worker could repeat the uncertain action
+    before the receipt survived another crash.
+    """
+    from agentevolver.task.server import TaskRecord, task_manager
+    from agentevolver.task.types import Task, TaskStatus
+    from agentevolver.trace import trace_manager
+    from agentevolver.trace.execution_checkpoint import (
+        ExecutionCheckpoint,
+        UnsettledCall,
+    )
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        created = await gateway.handle(
+            GatewayCommand(id="create", method="session.create", params={})
+        )
+        session_id = str(created.result["session_id"])
+        task_id = "recovered-task"
+        conversation_id = "recovered-conversation"
+        record = TaskRecord(
+            task=Task(
+                id=task_id,
+                content="deploy",
+                session_id=session_id,
+                status=TaskStatus.WAITING_CONFIRMATION,
+                metadata={"conversation_id": conversation_id},
+            )
+        )
+        initial = ExecutionCheckpoint(
+            session_id=conversation_id,
+            task_id=task_id,
+            state="needs_confirmation",
+            unsettled_calls=[
+                UnsettledCall(
+                    call_id="call-1",
+                    action_type="tool",
+                    action_name="deploy_tool",
+                    arguments={"target": "production"},
+                )
+            ],
+        )
+        settled = initial.model_copy(
+            update={"state": "resumable", "unsettled_calls": []}
+        )
+        get_record = AsyncMock(return_value=record)
+        emit = AsyncMock(return_value=True)
+        flush = AsyncMock(return_value=True)
+        resume = AsyncMock(return_value=True)
+
+        with (
+            patch.object(task_manager, "get", get_record),
+            patch.object(task_manager, "resume_waiting", resume),
+            patch.object(trace_manager, "emit", emit),
+            patch.object(trace_manager, "flush", flush),
+            patch.object(
+                trace_manager,
+                "execution_checkpoint",
+                side_effect=[initial, settled],
+            ),
+        ):
+            response = await gateway.handle(
+                GatewayCommand(
+                    id="reconcile",
+                    method="execution.reconcile",
+                    params={
+                        "session_id": session_id,
+                        "task_id": task_id,
+                        "call_id": "call-1",
+                        "outcome": "applied",
+                    },
+                )
+            )
+
+        assert response.ok
+        assert response.result["resumed"] is True
+        emitted = emit.await_args.args[0]
+        assert emitted.metadata["reconciliation"]["outcome"] == "applied"
+        assert flush.await_count == 1
+        assert resume.await_count == 1
+
+    asyncio.run(run())
+
+
+def test_live_agent_threads_are_visible_only_to_their_gateway_project() -> None:
+    """Conversation-scoped workers remain controllable from their owning project UI."""
+
+    async def run() -> None:
+        gateway = AgentGateway()
+        first = await gateway.handle(
+            GatewayCommand(id="first", method="session.create", params={})
+        )
+        second = await gateway.handle(
+            GatewayCommand(id="second", method="session.create", params={})
+        )
+        first_id = str(first.result["session_id"])
+        second_id = str(second.result["session_id"])
+        job = job_manager.register(
+            type="agent", label="worker", session_id="conversation-a",
+        )
+        ref = AgentRef(
+            name="worker-ref",
+            agent_name="worker",
+            job_id=job.id,
+            task="inspect the build",
+            parent_session_id="conversation-a",
+            root_session_id="conversation-a",
+            project_id=first_id,
+            session_id="worker-session",
+            continuable=True,
+        )
+        runtime_manager._delegated[job.id] = ref
+        try:
+            visible = await gateway.handle(
+                GatewayCommand(
+                    id="visible",
+                    method="agent.live.list",
+                    params={"session_id": first_id},
+                )
+            )
+            hidden = await gateway.handle(
+                GatewayCommand(
+                    id="hidden",
+                    method="agent.live.list",
+                    params={"session_id": second_id},
+                )
+            )
+            delivered = await gateway.handle(
+                GatewayCommand(
+                    id="message",
+                    method="agent.live.message",
+                    params={
+                        "session_id": first_id,
+                        "job_id": job.id,
+                        "message": "check the failing target",
+                    },
+                )
+            )
+            refused = await gateway.handle(
+                GatewayCommand(
+                    id="foreign",
+                    method="agent.live.control",
+                    params={
+                        "session_id": second_id,
+                        "job_id": job.id,
+                        "action": "pause",
+                    },
+                )
+            )
+
+            assert [item["job_id"] for item in visible.result["agents"]] == [job.id]
+            assert hidden.result["agents"] == []
+            assert delivered.ok and delivered.result["success"]
+            assert not refused.ok
+        finally:
+            runtime_manager._delegated.pop(job.id, None)
+            job_manager.forget("conversation-a")
+
+    asyncio.run(run())
 
 
 # --------------------------------------------------------------------------- #

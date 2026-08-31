@@ -13,6 +13,7 @@ from agentevolver.extension.rollout import (
     RolloutPhase,
     RolloutPolicy,
 )
+from agentevolver.extension.server import ExtensionManagerServer
 
 
 @pytest.mark.asyncio
@@ -172,3 +173,17 @@ async def test_canary_failure_uses_baseline_threshold_and_reverts():
     rollout = await controller.record_canary("skill:x", RolloutObservation(success=False))
     assert rollout.phase is RolloutPhase.REVERTED
     assert reasons and "canary" in reasons[0]
+
+
+@pytest.mark.asyncio
+async def test_non_tool_candidate_is_not_stranded_in_an_unobservable_shadow(tmp_path):
+    """Only Tool currently has a call-local candidate execution boundary.
+
+    Rolling another component back after smoke validation would leave the candidate
+    unreachable, so it could never collect the observations needed for promotion.
+    """
+    manager = ExtensionManagerServer(base_dir=str(tmp_path))
+
+    await manager._begin_rollout("skill", "review", "1", "2")
+
+    assert manager.rollout_status("skill", "review") is None

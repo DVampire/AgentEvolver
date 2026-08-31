@@ -10,7 +10,6 @@ from __future__ import annotations
 import inspect
 import json
 import os
-import uuid
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.model.types import TokenUsage
 from agentevolver.trace.projection import ProjectionWatermarkError, ProjectionWatermarkStore
 from agentevolver.trace.types import TraceEvent, TraceEventType, parse_trace_event
+from agentevolver.utils.file_utils import atomic_json_update
 
 PROJECTOR_VERSION = 1
 PROJECTION_NAME = "stats"
@@ -114,28 +114,22 @@ class TraceStatsProjector:
             raise ProjectionWatermarkError("stats projection state identity mismatch")
         return state
 
-    def _save_state(self, state: TraceStats) -> None:
+    def _save_state(self, state: TraceStats) -> TraceStats:
         path = self._state_path(state.session_id)
-        directory = os.path.dirname(path)
-        os.makedirs(directory, exist_ok=True)
-        temporary = path + f".tmp-{os.getpid()}-{uuid.uuid4().hex}"
-        try:
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(
-                    state.model_dump(mode="json"), handle,
-                    ensure_ascii=False, sort_keys=True, indent=2,
-                )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            directory_fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        finally:
-            if os.path.exists(temporary):
-                os.remove(temporary)
+
+        def keep_most_advanced(current: Any) -> Dict[str, Any]:
+            if current:
+                existing = TraceStats.model_validate(current)
+                if existing.session_id != state.session_id:
+                    raise ProjectionWatermarkError("stats projection state identity mismatch")
+                if existing.source_last_seq > state.source_last_seq:
+                    return existing.model_dump(mode="json")
+            return state.model_dump(mode="json")
+
+        stored = atomic_json_update(
+            path, keep_most_advanced, default=None, recover_corrupt=False,
+        )
+        return TraceStats.model_validate(stored)
 
     def _read_from(self, session_id: str, after_seq: int, limit: int) -> list[Any]:
         parameters = inspect.signature(self.trace_reader.read_from).parameters.values()
@@ -299,11 +293,11 @@ class TraceStatsProjector:
                 if event is not None:
                     self._reduce(state, event)
             state.source_last_seq = batch_end
-            self._save_state(state)
+            state = self._save_state(state)
             self.watermarks.advance(
-                PROJECTION_NAME, PROJECTOR_VERSION, session_id, batch_end,
+                PROJECTION_NAME, PROJECTOR_VERSION, session_id, state.source_last_seq,
             )
-            cursor = batch_end
+            cursor = state.source_last_seq
             if len(batch) < limit:
                 break
         return state.model_copy(deep=True)

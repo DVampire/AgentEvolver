@@ -13,10 +13,9 @@ send / ask / suspend-resume (rendezvous) / publish-subscribe (fan-out).
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set
 
 from agentevolver.logger import logger
-from agentevolver.utils import Singleton, make_id
 from agentevolver.runtime.pump import _pump
 from agentevolver.runtime.types import (
     AgentDeadError,
@@ -26,6 +25,7 @@ from agentevolver.runtime.types import (
     StopMessage,
     TaskMessage,
 )
+from agentevolver.utils import Singleton, make_id
 
 if TYPE_CHECKING:
     from agentevolver.agent.types import Agent
@@ -206,10 +206,13 @@ class RuntimeManager(metaclass=Singleton):
         *,
         name: Optional[str] = None,
         timeout: Optional[float] = None,
+        on_spawn: Optional[Callable[[AgentRef], None]] = None,
         **task_kwargs: Any,
     ) -> Any:
         """One-shot: spawn + ask(TaskMessage) + stop.  Returns agent's result."""
         ref = await self.spawn(agent, name=name)
+        if on_spawn is not None:
+            on_spawn(ref)
         try:
             task = task_kwargs.pop("task", None)
             msg  = TaskMessage(task=task, kwargs=task_kwargs)
@@ -243,6 +246,16 @@ class RuntimeManager(metaclass=Singleton):
 
         text, ctx = self._brief(child, task, brief)
         job = self._register(child, task, ctx, brief.get("parent_ctx"))
+        await self._emit_subagent("subagent_start", child, job, ctx, task=task)
+        bound_ref: Optional[AgentRef] = None
+
+        def bind_ref(ref: AgentRef) -> None:
+            nonlocal bound_ref
+            bound_ref = ref
+            self._bind_delegated_ref(ref, job, task, ctx, continuable=False)
+            # A blocking delegate has no long-lived turn driver; the current invoke
+            # task is still the exact handle whose cancellation unwinds the child pump.
+            ref._driver = asyncio.current_task()
 
         # Run through a task rather than awaiting directly, so the job's handle is
         # something `job__kill` can actually signal. Without it the registry would
@@ -250,17 +263,33 @@ class RuntimeManager(metaclass=Singleton):
         # the job registry exists to prevent.
         inner = asyncio.ensure_future(protocol_manager.delegate(
             child, text, files=brief.get("files"),
-            parent_ref=brief.get("parent_ref"), ctx=ctx,
+            parent_ref=brief.get("parent_ref"), ctx=ctx, on_spawn=bind_ref,
         ))
         job.handle = inner
         try:
             response = await inner
         except asyncio.CancelledError:
             job_manager.finish(job.id, error="stopped before it finished")
+            await self._emit_subagent(
+                "subagent_stop", child, job, ctx, success=False, reason="cancelled",
+            )
             raise
         except Exception as error:                                  # noqa: BLE001
             job_manager.finish(job.id, error=str(error))
+            await self._emit_subagent(
+                "subagent_stop", child, job, ctx, success=False, reason=str(error),
+            )
             raise
+        finally:
+            # ``invoke`` has already stopped the pump by the time it returns or raises.
+            # Keep the finished ref for the Live Agent history, but release the live-only
+            # state so it cannot look busy forever or retain a whole session context.
+            if bound_ref is not None:
+                bound_ref.busy = False
+                bound_ref.paused = False
+                bound_ref._ctx = None
+                bound_ref._driver = None
+                self._relabel(bound_ref)
 
         # Read before the result is appended, so this is exactly what the child said on
         # its own initiative. A blocked parent never gets to poll the job, so anything it
@@ -268,6 +297,10 @@ class RuntimeManager(metaclass=Singleton):
         reported = job_manager.output(job.id) or ""
         job_manager.append_output(job.id, f"{getattr(response, 'message', '') or ''}\n")
         job_manager.finish(job.id, exit_code=0 if getattr(response, "success", False) else 1)
+        await self._emit_subagent(
+            "subagent_stop", child, job, ctx,
+            success=bool(getattr(response, "success", False)),
+        )
         if reported.strip():
             return response.model_copy(update={
                 "message": f"{response.message}\n\nWhat it reported along the way:\n{reported.strip()}"
@@ -282,19 +315,14 @@ class RuntimeManager(metaclass=Singleton):
         the caller's next decision must not be gated on the child's first model call,
         which is the slowest part of starting one.
         """
-        from agentevolver.job import job_manager
         from agentevolver.response import Response, ResponseType
 
         text, ctx = self._brief(child, task, brief)
         job = self._register(child, task, ctx, brief.get("parent_ctx"))
+        await self._emit_subagent("subagent_start", child, job, ctx, task=task)
 
         ref = await self.spawn(child)
-        ref.job_id, ref.task = job.id, task
-        ref.parent_session_id = job.session_id
-        ref.session_id = str(getattr(ctx, "id", "") or "")
-        ref.continuable, ref.busy = continuable, True
-        ref._ctx = ctx
-        self._delegated[job.id] = ref
+        self._bind_delegated_ref(ref, job, task, ctx, continuable=continuable)
 
         await ref._tasks.put(TaskMessage(task=text, kwargs={
             "ctx": ctx, "files": self._existing(brief.get("files")),
@@ -318,6 +346,28 @@ class RuntimeManager(metaclass=Singleton):
         return Response(type=ResponseType.AGENT, success=True,
                         message=self._handoff(ref), data={"job_id": job.id})
 
+    def _bind_delegated_ref(
+        self,
+        ref: AgentRef,
+        job: Any,
+        task: str,
+        ctx: Any,
+        *,
+        continuable: bool,
+    ) -> None:
+        """Attach one spawned ref to its task-tree and Gateway ownership records."""
+        ref.job_id, ref.task = job.id, task
+        ref.parent_session_id = job.session_id
+        ref.session_id = str(getattr(ctx, "id", "") or "")
+        extra = getattr(ctx, "extra", None) or {}
+        ref.root_session_id = str(
+            extra.get("root_session_id") or ref.parent_session_id or ""
+        )
+        ref.project_id = str(extra.get("project_id") or "")
+        ref.continuable, ref.busy = continuable, True
+        ref._ctx = ctx
+        self._delegated[job.id] = ref
+
     @staticmethod
     def _handoff(ref: AgentRef) -> str:
         """What the caller is told at the moment it backgrounds a child.
@@ -330,7 +380,7 @@ class RuntimeManager(metaclass=Singleton):
             f"Started {ref.agent_name} in the background as {ref.job_id}. "
             f"It does not block you; keep working.",
             f'  job__output(job_id="{ref.job_id}")  — what it has reported and returned',
-            f"  job__list()                      — every job and its state",
+            "  job__list()                      — every job and its state",
             f'  job__kill(job_id="{ref.job_id}")    — stop it',
         ]
         if ref.continuable:
@@ -359,7 +409,8 @@ class RuntimeManager(metaclass=Singleton):
             known = [r.job_id for r in self.children(session_id) if r.alive]
             return refused(f"No background sub-agent {job_id!r}. Live ones: "
                            f"{', '.join(known) if known else '(none)'}")
-        if session_id and ref.parent_session_id and ref.parent_session_id != session_id:
+        owner_session = ref.root_session_id or ref.parent_session_id
+        if session_id and owner_session and owner_session != session_id:
             return refused(f"{job_id} is not your sub-agent; it belongs to another session.")
         if not ref.continuable:
             return refused(
@@ -392,9 +443,14 @@ class RuntimeManager(metaclass=Singleton):
         return self._delegated.get(job_id)
 
     def children(self, session_id: str = "") -> List[AgentRef]:
-        """Background children delegated by one session; all of them when none is given."""
+        """Background descendants in one task tree; all of them when none is given."""
         return [r for r in self._delegated.values()
-                if not session_id or r.parent_session_id == session_id]
+                if not session_id
+                or (r.root_session_id or r.parent_session_id) == session_id]
+
+    def project_children(self, project_id: str) -> List[AgentRef]:
+        """Delegated Agents visible to one Gateway project, across conversations."""
+        return [r for r in self._delegated.values() if r.project_id == project_id]
 
     def forget(self, session_id: str) -> None:
         """Stop and drop every background child a finished session delegated.
@@ -474,6 +530,32 @@ class RuntimeManager(metaclass=Singleton):
         except Exception as error:                                  # noqa: BLE001
             logger.warning(f"| ⚠️ Could not stop sub-agent {ref.job_id}: {error}")
         job_manager.finish(ref.job_id, exit_code=0)
+        job = job_manager.get(ref.job_id)
+        if job is not None:
+            await self._emit_subagent(
+                "subagent_stop", None, job, None,
+                success=not bool(getattr(job, "error", None)),
+            )
+
+    @staticmethod
+    async def _emit_subagent(event: str, child: Any, job: Any, ctx: Any, **payload: Any) -> None:
+        """Publish delegation lifecycle without coupling the runtime to hook classes."""
+        try:
+            from agentevolver.hook import hook_manager
+            from agentevolver.session import SessionContext
+
+            session_id = str(getattr(job, "session_id", "") or getattr(ctx, "id", "") or "")
+            await hook_manager.emit(
+                event,
+                {
+                    "job_id": getattr(job, "id", ""),
+                    "agent_name": getattr(child, "name", None),
+                    **payload,
+                },
+                ctx=SessionContext(id=session_id),
+            )
+        except Exception as error:  # lifecycle hooks are observational here
+            logger.warning(f"| ⚠️ Sub-agent lifecycle hook {event!r} failed: {error}")
 
     @staticmethod
     def _brief(child: "Agent", task: str, brief: Dict[str, Any]):

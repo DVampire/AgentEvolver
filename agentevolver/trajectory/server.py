@@ -17,8 +17,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.trajectory.labels import (
     REWARD_LABEL_SCHEMA_VERSION,
     RewardLabel,
@@ -31,6 +31,7 @@ from agentevolver.trajectory.types import (
     TrajectoryContext,
     TrajectoryStep,
 )
+from agentevolver.utils.file_utils import append_jsonl, atomic_write_text
 
 
 class TrajectoryManagerServer:
@@ -134,7 +135,6 @@ class TrajectoryManagerServer:
             "result": _stringify(inp.get("action_result")),
             "error": inp.get("error"),
         })
-        execution = inp.get("execution_meta") or {}
 
     def close_step(self, ctx: TrajectoryContext) -> None:
         """POST_STEP — attach the effective prompt + decision + tokens, then commit."""
@@ -504,9 +504,7 @@ class TrajectoryManagerServer:
         """
         try:
             path = self._label_path(label)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(label.to_dict(), ensure_ascii=False) + "\n")
+            append_jsonl(path, label.to_dict())
         except Exception as error:  # noqa: BLE001 — scoring cannot break benchmark output
             logger.warning(
                 f"| ⚠️ Reward label persist failed (task_id={label.task_id}): {error}"
@@ -579,13 +577,13 @@ class TrajectoryManagerServer:
     def _persist(self, traj: Trajectory) -> None:
         try:
             path = self._path(traj)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
             d = traj.to_dict()
             steps = d.pop("steps")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(json.dumps({"__header__": True, **d}, ensure_ascii=False) + "\n")
-                for step in steps:
-                    f.write(json.dumps(step, ensure_ascii=False) + "\n")
+            lines = [
+                json.dumps({"__header__": True, **d}, ensure_ascii=False),
+                *(json.dumps(step, ensure_ascii=False) for step in steps),
+            ]
+            atomic_write_text(path, "\n".join(lines) + "\n")
         except Exception as e:
             logger.warning(f"| ⚠️ Trajectory persist failed (task_id={traj.task_id}): {e}")
 

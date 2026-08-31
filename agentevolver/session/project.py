@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import json
-from datetime import datetime, timezone
+from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.project import ProjectSandbox
-from agentevolver.config import config
-
+from agentevolver.utils.file_utils import atomic_write_text
 
 #: Compatibility name for callers that display the filename. The path itself is
 #: resolved from ``P.PROJECT_MANIFEST`` below.
@@ -68,8 +68,7 @@ def write_session_manifest(
         "source_workspace": source_workspace,
     }
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False))
     except OSError as exc:  # noqa: BLE001 — never fail a run over bookkeeping
         logger.warning(f"| ⚠️ Could not write session manifest for {session_id}: {exc}")
 

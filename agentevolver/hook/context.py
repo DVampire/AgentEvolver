@@ -19,6 +19,7 @@ from agentevolver.hook.types import (
     HookDecision,
     HookEvent,
     HookResult,
+    _merge_results,
     check_message_contract,
 )
 from agentevolver.logger import logger
@@ -49,6 +50,7 @@ class HookConfig(BaseModel):
     description: str = Field(default="", description="What this hook does.")
     enabled: bool = Field(default=True)
     priority: int = Field(default=100, description="Execution priority — lower runs first.")
+    events: List[HookEvent | str] = Field(default_factory=list)
 
     cls: Optional[Any] = Field(default=None, description="Hook class.")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Init config dict.")
@@ -128,12 +130,17 @@ class HookContextManager:
                 default_desc     = fields["description"].default if "description" in fields else ""
                 default_priority = fields["priority"].default  if "priority" in fields else 100
                 default_enabled  = fields["enabled"].default   if "enabled"  in fields else True
+                default_events = (
+                    fields["events"].get_default(call_default_factory=True)
+                    if "events" in fields else []
+                )
 
                 hook_config = HookConfig(
                     name=hook_cfg_dict.get("name", default_name),
                     description=hook_cfg_dict.get("description", default_desc),
                     enabled=hook_cfg_dict.get("enabled", default_enabled),
                     priority=hook_cfg_dict.get("priority", default_priority),
+                    events=hook_cfg_dict.get("events", default_events or []),
                     cls=hook_cls,
                     config=hook_cfg_dict,
                     instance=None,
@@ -167,6 +174,7 @@ class HookContextManager:
             raise
 
         hook_config.instance = instance
+        hook_config.events = list(instance.events)
         self._hook_configs[hook_config.name] = hook_config
         logger.info(f"| 🔧 Hook '{hook_config.name}' created (priority={instance.priority})")
         return hook_config
@@ -194,6 +202,7 @@ class HookContextManager:
             description=instance.description,
             enabled=instance.enabled,
             priority=instance.priority,
+            events=list(instance.events),
             cls=hook_cls,
             config=cfg,
             instance=instance,
@@ -230,6 +239,35 @@ class HookContextManager:
             )
         ]
 
+    async def emit(
+        self,
+        event: HookEvent | str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        ctx=None,
+    ) -> HookResult:
+        """Dispatch one lifecycle event to every subscriber in priority order."""
+        value = event.value if isinstance(event, HookEvent) else str(event)
+        results: List[HookResult] = []
+        for name in self.list():
+            config = self._hook_configs[name]
+            subscriptions = {
+                item.value if isinstance(item, HookEvent) else str(item)
+                for item in (config.events or [])
+            }
+            # Existing hooks are called explicitly by name at the agent boundaries.
+            # Treating their historical empty ``events`` field as a wildcard would run
+            # registration/compaction hooks on every tool call and can block unrelated
+            # work. Lifecycle broadcast is therefore explicit opt-in.
+            if not subscriptions or value not in subscriptions:
+                continue
+            results.append(await self(
+                name,
+                {"event": event, **dict(payload or {})},
+                ctx=ctx,
+            ))
+        return _merge_results(results)
+
     # ------------------------------------------------------------------
     # Dispatch — parallel to AgentContextManager.__call__
     # ------------------------------------------------------------------
@@ -261,6 +299,7 @@ class HookContextManager:
             id=session_id,
             name=name,
             input=input,
+            extra=dict(getattr(ctx, "extra", {}) or {}),
         )
 
         hook_config = self._hook_configs.get(name)
@@ -291,7 +330,7 @@ class HookContextManager:
             )
 
         # ON_STOP: let the hook release its own per-session resources
-        if event == HookEvent.ON_STOP:
+        if event in (HookEvent.ON_STOP, HookEvent.SESSION_END):
             try:
                 await hook_instance.cleanup(hook_ctx.id)
             except Exception as e:

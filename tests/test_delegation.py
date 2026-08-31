@@ -71,9 +71,11 @@ class _Child:
 class _Parent:
     """The dispatching agent's context: an id to scope the registry by, plus ambient roots."""
 
-    def __init__(self, id=SESSION):
+    def __init__(self, id=SESSION, *, project_id=""):
         self.id = id
         self.extra = {"workspace_root": "/ws"}
+        if project_id:
+            self.extra["project_id"] = project_id
 
 
 @pytest.fixture(autouse=True)
@@ -160,6 +162,26 @@ async def test_backgrounding_returns_before_the_child_has_answered():
 
 
 @pytest.mark.asyncio
+async def test_blocking_delegate_is_visible_as_a_live_agent_thread():
+    """A child does not disappear from the control surface because its parent awaits it."""
+    pending = asyncio.create_task(
+        runtime_manager.delegate(
+            _Child(delay=0.1), "blocking work", parent_ctx=_Parent(project_id="project-a"),
+        )
+    )
+    assert await _until(lambda: bool(job_manager.list(SESSION)))
+    job = job_manager.list(SESSION)[0]
+    ref = runtime_manager.child(job.id)
+
+    assert ref is not None
+    assert ref.project_id == "project-a"
+    assert ref.busy and not ref.continuable
+
+    await pending
+    assert not ref.alive
+
+
+@pytest.mark.asyncio
 async def test_what_the_child_returns_is_collectable_afterwards():
     """A background child's answer reaches its parent by being read, not by being pushed.
 
@@ -233,6 +255,35 @@ async def test_a_message_becomes_the_continuable_child_s_next_turn():
     assert await _until(lambda: sub.turns == 2)
     assert [task for task, _ in child.turns] == ["first task", "second task"]
     assert "answer 2" in job_manager.output(sub.job_id)
+
+
+@pytest.mark.asyncio
+async def test_descendants_share_the_root_tree_messaging_authority():
+    """A grandchild belongs to the same task tree even though its direct parent differs."""
+    parent = _Parent(project_id="project-a")
+    first = await _start(
+        _Child(delay=5.0), "first level", continuable=True, parent_ctx=parent,
+    )
+    grandchild = await _start(
+        _Child(),
+        "second level",
+        continuable=True,
+        parent_ctx=first._ctx,
+        parent_ref=first,
+    )
+    assert grandchild.parent_session_id == first.session_id
+    assert grandchild.root_session_id == SESSION
+    assert grandchild.project_id == "project-a"
+
+    delivered = await runtime_manager.send_to_child(
+        grandchild.job_id, "follow-up", session_id=SESSION,
+    )
+
+    assert delivered.success
+    drivers = [ref._driver for ref in (first, grandchild) if ref._driver is not None]
+    runtime_manager.forget(SESSION)
+    await asyncio.gather(*drivers, return_exceptions=True)
+    job_manager.forget(first.session_id)
 
 
 @pytest.mark.asyncio

@@ -18,9 +18,9 @@
 <header class="page">
   <div class="wrap">
     <span class="eyebrow" data-i18n="hdr_pill">Module reference</span>
-    <h1 data-i18n="hdr_title_html">Fifty-five modules, <span class="grad">seven families</span></h1>
-    <p class="lede" data-i18n="hdr_lede">A searchable source map of all 55 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.</p>
-    <div class="page-meta"><span data-i18n="meta_1">55 source modules</span><span data-i18n="meta_2">7 responsibility families</span><span data-i18n="meta_3">Open any card for its contract</span></div>
+    <h1 data-i18n="hdr_title_html">Forty-nine modules, <span class="grad">seven families</span></h1>
+    <p class="lede" data-i18n="hdr_lede">A searchable source map of all 49 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.</p>
+    <div class="page-meta"><span data-i18n="meta_1">49 source modules</span><span data-i18n="meta_2">7 responsibility families</span><span data-i18n="meta_3">Open any card for its contract</span></div>
   </div>
 </header>
 
@@ -60,6 +60,7 @@
       <div class="mod"><div class="mod-h"><b>prompt</b><span>738</span></div><p data-i18n="m_prompt">Loads, versions, and renders HTML-native prompts and reusable prompt modules.</p></div>
       <div class="mod"><div class="mod-h"><b>memory</b><span>2,304</span></div><p data-i18n="m_memory">Stores and retrieves durable context derived from agent execution history.</p></div>
       <div class="mod"><div class="mod-h"><b>trace</b><span>1,158</span></div><p data-i18n="m_trace">Captures structured lifecycle events, persists them, and fans them out to subscribers.</p></div>
+      <div class="mod"><div class="mod-h"><b>telemetry</b><span>197</span></div><p data-i18n="m_telemetry">Projects authoritative Trace events to optional observability backends without changing execution.</p></div>
       <div class="mod"><div class="mod-h"><b>trajectory</b><span>576</span></div><p data-i18n="m_trajectory">Projects agent runs into reward-annotated, step-level training records and exports formats used by supervised fine-tuning or reinforcement learning pipelines.</p></div>
     </div>
   </section>
@@ -168,6 +169,7 @@ window.I18N = {
  "m_prompt": "Loads, versions, and renders HTML-native prompts and reusable prompt modules.",
  "m_memory": "Stores and retrieves durable context derived from agent execution history.",
  "m_trace": "Captures structured lifecycle events, persists them, and fans them out to subscribers.",
+ "m_telemetry": "Projects authoritative Trace events to optional observability backends without changing execution.",
  "m_trajectory": "Projects agent runs into reward-annotated, step-level training records and exports formats used by supervised fine-tuning or reinforcement learning pipelines.",
  "g_capability": "Capabilities",
  "gb_capability": "The families of thing a model can be given. Each is a registry with the same shape.",
@@ -224,9 +226,9 @@ window.I18N = {
  "nav_dev": "Development",
  "nav_ui": "Web UI",
  "hdr_pill": "Module reference",
- "hdr_title_html": "Fifty-five modules, <span class=\"grad\">seven families</span>",
- "hdr_lede": "A searchable source map of all 55 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.",
- "meta_1": "55 source modules", "meta_2": "7 responsibility families", "meta_3": "Open any card for its contract",
+ "hdr_title_html": "Forty-nine modules, <span class=\"grad\">seven families</span>",
+ "hdr_lede": "A searchable source map of all 49 top-level modules. Open any card to see its runtime placement, responsibility boundary, public surface, and source directory.",
+ "meta_1": "49 source modules", "meta_2": "7 responsibility families", "meta_3": "Open any card for its contract",
  "side_a": "Families",
  "shape_h": "The shape they share",
  "shape_p": "Reading one module tells you how to read the rest. Four files, and the manager always spells removal the same way — <code>unregister(name)</code> — which is what lets one scope own registrations across several of them and take them all back out.",
@@ -247,6 +249,7 @@ window.I18N = {
  "m_prompt": "加载、版本化并渲染 HTML 原生的提示词与可复用提示模块。",
  "m_memory": "存储并取回从 agent 执行历史中提炼的持久上下文。",
  "m_trace": "捕获结构化的生命周期事件，持久化，并分发给订阅者。",
+ "m_telemetry": "把权威 Trace 事件投影到可选的可观测后端，同时不改变执行语义。",
  "m_trajectory": "把 agent 运行投影成带奖励标注的、步级的训练记录，并导出可用格式。",
  "g_capability": "能力",
  "gb_capability": "可以交给模型的几类东西。每一类都是一个形状相同的注册表。",
@@ -303,9 +306,9 @@ window.I18N = {
  "nav_dev": "开发文档",
  "nav_ui": "Web 界面",
  "hdr_pill": "模块参考",
- "hdr_title_html": "五十五个模块，<span class=\"grad\">七个族</span>",
- "hdr_lede": "全部 55 个顶层模块的可搜索源码地图。展开任意卡片，即可查看它在运行中的位置、职责边界、主要公共接口与源码目录。",
- "meta_1": "55 个源码模块", "meta_2": "7 个职责族", "meta_3": "展开任意卡片查看完整契约",
+ "hdr_title_html": "四十九个模块，<span class=\"grad\">七个族</span>",
+ "hdr_lede": "全部 49 个顶层模块的可搜索源码地图。展开任意卡片，即可查看它在运行中的位置、职责边界、主要公共接口与源码目录。",
+ "meta_1": "49 个源码模块", "meta_2": "7 个职责族", "meta_3": "展开任意卡片查看完整契约",
  "side_a": "分族",
  "shape_h": "它们共享的形状",
  "shape_p": "读懂一个模块，就知道怎么读其余的。四个文件，而且 manager 卸载的写法永远一样——<code>unregister(name)</code>——正因如此，一个作用域才能同时持有跨多个模块的注册并把它们一起取回。",

@@ -24,6 +24,8 @@ It is deliberately thin: loading is delegated to `dynamic_manager`, registration
 each `*_manager`, and per-component version numbering to `version_manager`.
 """
 
+import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -32,23 +34,22 @@ from typing import Awaitable, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from agentevolver.logger import logger
-from agentevolver.paths import P, path_manager
-from agentevolver.utils import get_extension_root
-from agentevolver.utils.file_utils import file_lock
-from agentevolver.extension.types import Manifest, ManifestComponent
-from agentevolver.extension.rollout import (
-    RolloutController,
-    RolloutObservation,
-    RolloutPolicy,
-)
-
 # Six tables describing the same nine module types stood here, written out by hand. They
 # are the capability table's own fields now, because a seventh copy elsewhere had already
 # gone wrong in a way none of these did: `ProjectSandbox`'s list of promotable modules
 # stopped at six, so a generated workflow, plugin or memory could be registered and never
 # promoted. Restating a fact is how the copies drift; deriving it is how they cannot.
 from agentevolver.capability.types import COMPONENT_TYPES, STORED_TYPES
+from agentevolver.extension.rollout import (
+    RolloutController,
+    RolloutObservation,
+    RolloutPolicy,
+)
+from agentevolver.extension.types import Manifest, ManifestComponent
+from agentevolver.logger import logger
+from agentevolver.paths import path_manager
+from agentevolver.utils import get_extension_root
+from agentevolver.utils.file_utils import atomic_json_update, file_lock
 
 # All modules the extension tree may carry — the eight components plus `prompt`.
 _MODULES = [entry.type for entry in STORED_TYPES]
@@ -77,6 +78,7 @@ class ExtensionManagerServer(BaseModel):
     base_dir: str = Field(default="", description="Root directory of the extension tree")
     _change_listeners: set[ExtensionChangeListener] = PrivateAttr(default_factory=set)
     _rollouts: RolloutController = PrivateAttr(default_factory=RolloutController)
+    _rollout_configs: Dict[str, object] = PrivateAttr(default_factory=dict)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
@@ -87,6 +89,8 @@ class ExtensionManagerServer(BaseModel):
         """Select the configured project's durable extension directory."""
         self.base_dir = os.path.abspath(base_dir)
         os.makedirs(self.base_dir, exist_ok=True)
+        self._rollouts = RolloutController()
+        self._rollout_configs.clear()
 
     def subscribe(self, listener: ExtensionChangeListener) -> None:
         """Receive hot-extension lifecycle changes after a component is live."""
@@ -131,6 +135,9 @@ class ExtensionManagerServer(BaseModel):
 
     def _manifest_path(self) -> str:
         return str(path_manager.resolve_under(self.base_dir, "manifest.json"))
+
+    def _rollout_path(self) -> str:
+        return str(path_manager.resolve_under(self.base_dir, ".rollouts.json"))
 
     # ------------------------------------------------------------------
     # Manifest
@@ -190,10 +197,13 @@ class ExtensionManagerServer(BaseModel):
             manifest.components = loaded
             self._write_manifest(manifest)
             logger.info(f"| ✅ ExtensionManager: loaded {len(loaded)} active extension components.")
+            await self._restore_rollouts()
             return manifest
 
         # Fresh install: scan flat dirs and register whatever is present.
-        return await self._scan_and_load()
+        manifest = await self._scan_and_load()
+        await self._restore_rollouts()
+        return manifest
 
     async def _scan_and_load(self) -> Manifest:
         manifest = Manifest()
@@ -305,6 +315,15 @@ class ExtensionManagerServer(BaseModel):
     async def _begin_rollout(
         self, module: str, name: str, baseline_version: str, candidate_version: str,
     ) -> None:
+        # Only Tool has a call-local version execution path today. Rolling another
+        # component back into shadow would make its validated candidate permanently
+        # unreachable because no invocation boundary could collect evidence for it.
+        if module != "tool":
+            logger.info(
+                f"| ✅ ExtensionManager: {module}:{name} v{candidate_version} stays "
+                "active after smoke validation (measured rollout is currently tool-only)"
+            )
+            return
         key = self._rollout_key(module, name)
 
         # Smoke validation runs against the newly loaded candidate. Shadow/canary must
@@ -313,6 +332,24 @@ class ExtensionManagerServer(BaseModel):
         # safety contract. The candidate remains archived and can be promoted atomically.
         await self.rollback(module, name, baseline_version)
 
+        revert, activate = self._rollout_callbacks(
+            module, name, baseline_version, candidate_version,
+        )
+
+        self._rollouts.begin(
+            key, baseline_version, candidate_version, revert, self._rollout_policy(),
+            activate=activate,
+        )
+        await self._persist_rollouts()
+        logger.info(
+            f"| 🌓 ExtensionManager: rollout {key} v{baseline_version} → "
+            f"v{candidate_version} entered shadow"
+        )
+
+    def _rollout_callbacks(
+        self, module: str, name: str, baseline_version: str, candidate_version: str,
+    ):
+        """Bind durable rollout state to this process's activation operations."""
         async def revert(reason: str) -> None:
             await self.rollback(module, name, baseline_version)
             try:
@@ -335,14 +372,93 @@ class ExtensionManagerServer(BaseModel):
             except Exception as error:  # observational only
                 logger.error(f"| ⚠️ Could not journal rollout promotion: {error}")
 
-        self._rollouts.begin(
-            key, baseline_version, candidate_version, revert, self._rollout_policy(),
-            activate=activate,
+        return revert, activate
+
+    async def _persist_rollouts(self) -> None:
+        """Merge this process's rollout snapshots into the project state atomically."""
+        snapshots = self._rollouts.dump()
+        path = self._rollout_path()
+
+        def merge(current):
+            durable = dict(current or {})
+            durable.update(snapshots)
+            return durable
+
+        await asyncio.to_thread(atomic_json_update, path, merge, default={})
+
+    async def _restore_rollouts(self) -> None:
+        """Recover non-ephemeral rollout metrics and rebind activation callbacks."""
+        path = self._rollout_path()
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                states = json.load(stream)
+        except (OSError, ValueError):
+            return
+        for key, raw in dict(states or {}).items():
+            try:
+                module, name = str(key).split(":", 1)
+                state = dict(raw or {})
+                baseline = str(state["baseline_version"])
+                candidate = str(state["candidate_version"])
+                revert, activate = self._rollout_callbacks(
+                    module, name, baseline, candidate,
+                )
+                self._rollouts.restore(state, rollback=revert, activate=activate)
+            except Exception as error:
+                logger.warning(f"| ⚠️ Could not restore rollout {key}: {error}")
+
+    async def rollout_tool_config(self, name: str, version: str):
+        """Return a call-local ToolConfig for an archived version.
+
+        Version history is the fast path in a live process.  After a restart only the
+        active baseline is registered, so the candidate class is reconstructed from
+        ``.versions`` and paired with a copy of the baseline's runtime configuration.
+        Neither path mutates the global registry.
+        """
+        key = f"tool:{name}:{version}"
+        cached = self._rollout_configs.get(key)
+        if cached is not None:
+            return cached
+
+        from agentevolver.tool.server import tool_manager
+
+        context = tool_manager._ensure_context_manager()
+        historical = await context.get_version_info(name, version)
+        if historical is not None and historical.instance is not None:
+            self._rollout_configs[key] = historical
+            return historical
+
+        current = await tool_manager.get_info(name)
+        if current is None:
+            raise LookupError(f"No active tool config for rollout candidate {name!r}")
+        archived = os.path.join(self._archive_dir("tool", name), f"{version}{_EXT['tool']}")
+        if not os.path.isfile(archived):
+            raise FileNotFoundError(archived)
+
+        from agentevolver.dynamic import dynamic_manager
+
+        cls = dynamic_manager.load_class_from_path(
+            archived,
+            base_class=self._base_class("tool"),
+            context="tool",
+            module_name=f"ext.rollout.tool.{name}_{str(version).replace('.', '_')}",
         )
-        logger.info(
-            f"| 🌓 ExtensionManager: rollout {key} v{baseline_version} → "
-            f"v{candidate_version} entered shadow"
-        )
+        cls.__source_file__ = archived
+        instance = cls(**dict(getattr(current, "config", {}) or {}))
+        if hasattr(instance, "initialize"):
+            result = instance.initialize()
+            if isawaitable(result):
+                await result
+        candidate = current.model_copy(deep=False)
+        candidate.version = str(version)
+        candidate.cls = cls
+        candidate.instance = instance
+        candidate.path = archived
+        candidate.permission_mode = instance.permission_mode
+        candidate.mutates = instance.mutates
+        candidate.call_timeout_seconds = instance.call_timeout_seconds
+        self._rollout_configs[key] = candidate
+        return candidate
 
     def rollout_status(self, module: str, name: str) -> Optional[Dict[str, object]]:
         rollout = self._rollouts.get(self._rollout_key(module, name))
@@ -368,6 +484,7 @@ class ExtensionManagerServer(BaseModel):
             baseline if isinstance(baseline, RolloutObservation) else RolloutObservation.model_validate(baseline),
             candidate if isinstance(candidate, RolloutObservation) else RolloutObservation.model_validate(candidate),
         )
+        await self._persist_rollouts()
         return rollout.status()
 
     async def record_canary_observation(
@@ -380,6 +497,7 @@ class ExtensionManagerServer(BaseModel):
             self._rollout_key(module, name),
             candidate if isinstance(candidate, RolloutObservation) else RolloutObservation.model_validate(candidate),
         )
+        await self._persist_rollouts()
         return rollout.status()
 
     def _smoke_enabled(self, run_smoke: Optional[bool]) -> bool:
@@ -395,8 +513,8 @@ class ExtensionManagerServer(BaseModel):
 
     async def _smoke_gate_or_revert(self, module: str, name: str, prev_version: Optional[str]) -> None:
         """Run the replay smoke gate; on failure revert (rollback or unload) and raise."""
-        from agentevolver.extension.smoke_gate import replay_smoke, EvolutionRejected
         from agentevolver.extension.journal import journal
+        from agentevolver.extension.smoke_gate import EvolutionRejected, replay_smoke
 
         report = await replay_smoke(module, name)
         if report.ok:
@@ -688,6 +806,7 @@ class ExtensionManagerServer(BaseModel):
     def _dir_component_name(abspath: str, md_name: str, default: str) -> str:
         """Read the `name:` from a dir component's SKILL.md/CONNECTOR.md frontmatter."""
         import re as _re
+
         import yaml as _yaml
         try:
             raw = open(os.path.join(abspath, md_name), encoding="utf-8").read()

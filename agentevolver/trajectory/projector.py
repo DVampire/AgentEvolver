@@ -6,8 +6,8 @@ if deleting that cache changes the training record, the trace contract is incomp
 
 from __future__ import annotations
 
-import json
 import inspect
+import json
 import os
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -22,7 +22,7 @@ from agentevolver.trace.types import (
 )
 from agentevolver.trajectory.labels import RewardLabel
 from agentevolver.trajectory.types import Trajectory, TrajectoryStep
-
+from agentevolver.utils.file_utils import append_text, atomic_write_text
 
 PROJECTOR_VERSION = 1
 PROJECTION_NAME = "trajectory"
@@ -119,10 +119,7 @@ class IncrementalTrajectoryProjector:
                     # Remove the torn bytes now. Otherwise a later append would put a
                     # valid batch after them, turning an understood torn tail into
                     # apparent middle-of-file corruption on the next restart.
-                    with open(path, "w", encoding="utf-8") as handle:
-                        handle.writelines(raw_lines[:offset])
-                        handle.flush()
-                        os.fsync(handle.fileno())
+                    atomic_write_text(path, "".join(raw_lines[:offset]))
                     break
                 raise ProjectionWatermarkError(
                     f"trajectory projection state line {index} is corrupt"
@@ -153,17 +150,13 @@ class IncrementalTrajectoryProjector:
     ) -> None:
         """Append facts followed by a commit marker; a torn batch is ignored on load."""
         path = self._state_path(session_id)
-        directory = os.path.dirname(path)
-        os.makedirs(directory, exist_ok=True)
-        created = not os.path.exists(path)
+        header = {
+            "type": "trajectory_projection_state",
+            "schema_version": PROJECTION_STATE_VERSION,
+            "projector_version": PROJECTOR_VERSION,
+            "session_id": session_id,
+        }
         records = []
-        if created:
-            records.append({
-                "type": "trajectory_projection_state",
-                "schema_version": PROJECTION_STATE_VERSION,
-                "projector_version": PROJECTOR_VERSION,
-                "session_id": session_id,
-            })
         records.extend({"type": "event", "event": event} for event in events)
         records.append({"type": "batch", "source_last_seq": int(source_last_seq)})
         payload = "".join(
@@ -171,16 +164,10 @@ class IncrementalTrajectoryProjector:
             + "\n"
             for record in records
         )
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if created:
-            directory_fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+        header_text = json.dumps(
+            header, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ) + "\n"
+        append_text(path, payload, prefix_if_empty=header_text)
 
     def _read_from(self, session_id: str, after_seq: int, limit: int) -> list[Any]:
         parameters = inspect.signature(self.trace_reader.read_from).parameters.values()

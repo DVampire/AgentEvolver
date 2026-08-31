@@ -1,17 +1,18 @@
-from .types import (
-    HookEvent,
-    HookContext,
-    HookResult,
-    HookDecision,
-    Hook,
-)
-from .context import HookContextManager, HookConfig
-from .server import hook_manager
+from .context import HookConfig, HookContextManager
 from .default import (
     CompactHook,
-    TraceHook,
+    ProjectMemoryHook,
     RegistrationHook,
     RepeatToolReminderHook,
+    TraceHook,
+)
+from .server import hook_manager
+from .types import (
+    Hook,
+    HookContext,
+    HookDecision,
+    HookEvent,
+    HookResult,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "TraceHook",
     "RegistrationHook",
     "RepeatToolReminderHook",
+    "ProjectMemoryHook",
 ]

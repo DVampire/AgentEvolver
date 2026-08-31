@@ -19,11 +19,13 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from agentevolver.capability import MOUNTED_TYPES, mounted_type as capability_type_entry
+from agentevolver.capability import MOUNTED_TYPES
+from agentevolver.capability import mounted_type as capability_type_entry
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.plan.types import PlanMode, PlanState, _now
 from agentevolver.utils import Singleton
+from agentevolver.utils.file_utils import atomic_write_text
 
 #: What the model is told when the gate turns an action away. Carries the way out,
 #: because a refusal that does not say how to stop being refused produces an agent
@@ -139,8 +141,7 @@ def write_plan(text: str, session_id: str = "", *, owner: str = "") -> bool:
     """
     try:
         path = plan_path(session_id, owner=owner)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        atomic_write_text(path, text)
         return True
     except (OSError, ValueError) as error:                            # noqa: BLE001
         logger.warning(f"| ⚠️ Could not write plan.md: {error}")

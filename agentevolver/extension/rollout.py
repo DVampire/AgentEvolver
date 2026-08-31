@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, Iterable, Optional
 
 from pydantic import BaseModel, Field
 
@@ -56,15 +56,42 @@ class _Metrics:
     def snapshot(self) -> Dict[str, Optional[float] | int]:
         return {
             "samples": self.samples,
+            "failures": self.failures,
             "failure_rate": self.failures / self.samples if self.samples else 0.0,
+            "score_samples": self.score_samples,
             "mean_score": (
                 self.score_total / self.score_samples if self.score_samples else None
             ),
+            "latency_samples": self.latency_samples,
             "mean_latency_ms": (
                 self.latency_total / self.latency_samples
                 if self.latency_samples else None
             ),
         }
+
+    @classmethod
+    def restore(cls, value: Dict[str, object]) -> "_Metrics":
+        """Rebuild accumulator totals from a durable aggregate snapshot."""
+        samples = int(value.get("samples", 0) or 0)
+        failures = int(
+            value.get("failures")
+            if value.get("failures") is not None
+            else round(float(value.get("failure_rate", 0.0) or 0.0) * samples)
+        )
+        score = value.get("mean_score")
+        latency = value.get("mean_latency_ms")
+        score_samples = int(value.get("score_samples", samples if score is not None else 0) or 0)
+        latency_samples = int(
+            value.get("latency_samples", samples if latency is not None else 0) or 0
+        )
+        return cls(
+            samples=samples,
+            failures=failures,
+            score_total=float(score) * score_samples if score is not None else 0.0,
+            score_samples=score_samples,
+            latency_total=float(latency) * latency_samples if latency is not None else 0.0,
+            latency_samples=latency_samples,
+        )
 
 
 Rollback = Callable[[str], Awaitable[None]]
@@ -128,6 +155,38 @@ class RolloutController:
 
     def get(self, key: str) -> Optional[Rollout]:
         return self._rollouts.get(key)
+
+    def values(self) -> Iterable[Rollout]:
+        return tuple(self._rollouts.values())
+
+    def dump(self) -> Dict[str, Dict[str, object]]:
+        """Return JSON-serializable state for crash recovery."""
+        return {rollout.key: rollout.status() for rollout in self._rollouts.values()}
+
+    def restore(
+        self,
+        state: Dict[str, object],
+        *,
+        rollback: Rollback,
+        activate: Optional[Activate],
+    ) -> Rollout:
+        """Restore one rollout while rebinding process-local callbacks."""
+        key = str(state["key"])
+        rollout = Rollout(
+            key=key,
+            baseline_version=str(state["baseline_version"]),
+            candidate_version=str(state["candidate_version"]),
+            rollback=rollback,
+            activate=activate,
+            policy=RolloutPolicy.model_validate(state.get("policy") or {}),
+            phase=RolloutPhase(str(state.get("phase") or RolloutPhase.SHADOW.value)),
+            reason=str(state.get("reason") or ""),
+            baseline=_Metrics.restore(dict(state.get("baseline") or {})),
+            candidate=_Metrics.restore(dict(state.get("candidate_shadow") or {})),
+            canary=_Metrics.restore(dict(state.get("candidate_canary") or {})),
+        )
+        self._rollouts[key] = rollout
+        return rollout
 
     def select_version(self, key: str, traffic_key: str) -> Optional[str]:
         rollout = self._rollouts.get(key)

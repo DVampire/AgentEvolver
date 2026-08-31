@@ -1,29 +1,31 @@
 """Connector Context Manager for loading, managing, and serving connectors (MCP servers)."""
 
-import os
-import sys
 import json
+import os
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
+from agentevolver.capability import roster, roster_card
+from agentevolver.config import config
+from agentevolver.connector.types import ConnectorConfig
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
-from agentevolver.config import config
-from agentevolver.connector.types import ConnectorConfig, ConnectorContext
+from agentevolver.permission import EffectContract, PermissionMode, permission_manager
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import SessionContext
-from agentevolver.capability import roster, roster_card
+from agentevolver.tool.execution import (
+    ToolExecution,
+    ToolExecutionPipeline,
+    ToolPolicyDecision,
+)
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.version import version_manager
-from agentevolver.permission import permission_manager, PermissionMode
-from agentevolver.tool.execution import (
-    ToolExecution, ToolExecutionPipeline, ToolPolicyDecision,
-)
 
 
 class ConnectorContextManager(BaseModel):
@@ -755,29 +757,29 @@ class ConnectorContextManager(BaseModel):
             name=f"{name}__{action}", version=connector_config.version,
             arguments=args, ctx=ctx,
         )
+        call_args = execution.arguments
         annotations = dict(
             (connector_config.action_annotations or {}).get(action) or {}
         )
+        effect = EffectContract.from_annotations(annotations)
 
         def effect_guard(_execution):
-            read_only = annotations.get("readOnlyHint")
-            destructive = annotations.get("destructiveHint")
-            if read_only is True and destructive is not True:
-                return None
-            if destructive is True:
-                return ToolPolicyDecision.ask(
-                    f"MCP action {name}__{action} declares destructiveHint=true."
-                )
-            return ToolPolicyDecision.ask(
-                f"MCP action {name}__{action} has no verified readOnlyHint; "
-                "its external effects require approval."
+            decision = effect.policy_decision(
+                mode=connector_config.permission_mode,
+                label=f"MCP action {name}__{action}",
             )
+            if not decision.allowed:
+                return ToolPolicyDecision.deny(decision.reason or "Connector call denied.")
+            if decision.requires_approval:
+                return ToolPolicyDecision.ask(decision.warning or "Connector approval required.")
+            return None
 
         async def checkpoint_effect() -> None:
-            if annotations.get("readOnlyHint") is True:
+            if effect.read_only is True:
                 return
             from agentevolver.trace.checkpoint import (
-                TraceCheckpointBoundary, checkpoint_trace,
+                TraceCheckpointBoundary,
+                checkpoint_trace,
             )
             await checkpoint_trace(
                 execution.session_id,
@@ -788,7 +790,7 @@ class ConnectorContextManager(BaseModel):
 
         return await self._execution_pipeline.execute(
             execution,
-            lambda: self._invoke_mcp(connector_config, action, args),
+            lambda: self._invoke_mcp(connector_config, action, call_args),
             timeout=None,
             call_guards=[effect_guard],
             before_invoke=checkpoint_effect,

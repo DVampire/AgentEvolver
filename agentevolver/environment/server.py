@@ -2,27 +2,29 @@
 
 Server implementation for the Environment Context Protocol with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Tuple, Type, Callable
-
-import os
-from pydantic import BaseModel, ConfigDict, Field
-
 import json
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from agentevolver.paths import P, path_manager
-from agentevolver.logger import logger
-from agentevolver.response.types import Response, ResponseType
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 from agentevolver.config import config
 from agentevolver.environment.context import EnvironmentContextManager
 from agentevolver.environment.types import Environment, EnvironmentConfig, EnvironmentContext
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.permission import EffectContract, Operation, PermissionRequest, permission_manager
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.tool.execution import ToolExecution, ToolExecutionPipeline, ToolPolicyDecision
 from agentevolver.utils import assemble_workspace_path
-from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
+
 
 class EnvironmentManagerServer(BaseModel):
     """ECP Server for managing environment registration and execution with lazy loading."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
+    _execution_pipeline: ToolExecutionPipeline = PrivateAttr()
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the ECP Server."""
@@ -33,6 +35,7 @@ class EnvironmentManagerServer(BaseModel):
         self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
         # (session_id, env_name) -> last announced live-view URL, to dedupe announcements.
         self._announced_views: Dict[tuple, str] = {}
+        self._execution_pipeline = ToolExecutionPipeline()
 
     def _ensure_context_manager(self) -> EnvironmentContextManager:
         """Lazily create the context manager so methods work before initialize().
@@ -73,7 +76,14 @@ class EnvironmentManagerServer(BaseModel):
     def action(self, 
                name: str = None, 
                description: str = "",
-               metadata: Optional[Dict[str, Any]] = None):
+               metadata: Optional[Dict[str, Any]] = None,
+               *,
+               read_only: Optional[bool] = None,
+               destructive: Optional[bool] = None,
+               idempotent: Optional[bool] = None,
+               open_world: Optional[bool] = None,
+               permission_op: Optional[str] = None,
+               permission_target: Optional[str] = None):
         """Decorator to register an action (tool) for an environment
         
         Actions will be registered to the environment instance's actions dictionary during instantiation.
@@ -89,7 +99,20 @@ class EnvironmentManagerServer(BaseModel):
             func._action_name = action_name
             func._action_description = description
             func._action_function = func
-            func._action_metadata = metadata if metadata is not None else {}
+            effect = dict(metadata or {})
+            if read_only is not None:
+                effect.setdefault("read_only", read_only)
+            if destructive is not None:
+                effect.setdefault("destructive", destructive)
+            if open_world is not None:
+                effect.setdefault("open_world", open_world)
+            if idempotent is not None:
+                effect.setdefault("idempotent", idempotent)
+            if permission_op:
+                effect["permission_op"] = permission_op
+            if permission_target:
+                effect["permission_target"] = permission_target
+            func._action_metadata = effect
             
             return func
         return decorator
@@ -368,12 +391,92 @@ class EnvironmentManagerServer(BaseModel):
         elif not isinstance(ctx, EnvironmentContext):
             # Accept a caller's context (e.g. AgentContext) — carry over its id/workspace_root
             ctx = EnvironmentContext.from_context(ctx)
-        result = await self.environment_context_manager(name, action, input, ctx, **kwargs)
-        # After every action, let the environment advertise a live view (e.g. the
-        # headful browser's noVNC socket) so the frontend can watch it. Generic:
-        # any environment that implements live_view() streams with no manager change.
-        await self._announce_live_view(name, ctx)
+        manager = self._ensure_context_manager()
+        get_info = getattr(manager, "get_info", None)
+        env_info = await get_info(name) if get_info is not None else None
+        # Test doubles and compatibility adapters may provide only the callable surface.
+        # They retain the old normalization path; registered environments take the
+        # authoritative execution funnel below.
+        if env_info is None:
+            result = await manager(name, action, input, ctx, **kwargs)
+            await self._announce_live_view(name, ctx)
+            return self._normalize_response(name, action, result)
 
+        action_info = env_info.actions.get(action)
+        if action_info is None:
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=f"Action {action!r} not found in environment {name!r}.",
+            )
+        execution = ToolExecution.create(
+            name=f"{name}__{action}",
+            version=env_info.version,
+            arguments=input or {},
+            ctx=ctx,
+        )
+        call_input = execution.arguments
+        ctx.input = dict(call_input)
+        metadata = dict(action_info.metadata or {})
+        effect = EffectContract.from_annotations(metadata)
+
+        def effect_guard(_execution):
+            op = metadata.get("permission_op")
+            target_arg = metadata.get("permission_target")
+            if op and target_arg:
+                target = str(call_input.get(str(target_arg), "") or "")
+                checked = permission_manager.check(
+                    name,
+                    PermissionRequest(op=Operation(str(op)), target=target),
+                )
+                if not checked.allowed:
+                    return ToolPolicyDecision.deny(
+                        checked.reason or "Environment operation denied."
+                    )
+                if checked.requires_approval:
+                    return ToolPolicyDecision.ask(
+                        checked.warning or "Environment operation requires approval."
+                    )
+            decision = effect.policy_decision(
+                mode=env_info.permission_mode,
+                label=f"Environment action {name}__{action}",
+            )
+            if not decision.allowed:
+                return ToolPolicyDecision.deny(decision.reason or "Environment action denied.")
+            if decision.requires_approval:
+                return ToolPolicyDecision.ask(
+                    decision.warning or "Environment action requires approval."
+                )
+            return None
+
+        async def checkpoint_effect() -> None:
+            if effect.read_only is True:
+                return
+            from agentevolver.trace.checkpoint import TraceCheckpointBoundary, checkpoint_trace
+
+            await checkpoint_trace(
+                execution.session_id,
+                TraceCheckpointBoundary.EXTERNAL_EFFECT,
+                ctx=ctx,
+                metadata={"environment": name, "action": action},
+            )
+
+        async def invoke() -> Response:
+            result = await manager(name, action, call_input, ctx, **kwargs)
+            await self._announce_live_view(name, ctx)
+            return self._normalize_response(name, action, result)
+
+        return await self._execution_pipeline.execute(
+            execution,
+            invoke,
+            timeout=None,
+            call_guards=[effect_guard],
+            before_invoke=checkpoint_effect,
+        )
+
+    @staticmethod
+    def _normalize_response(name: str, action: str, result: Any) -> Response:
+        """Normalize the convenient environment result shapes at one boundary."""
         # One return type, the same one tool / skill / connector give back. Actions may
         # return a plain dict because that is convenient to write — the SSH helpers are
         # literally `{"success": True, **payload}` — and converting it here is what keeps
@@ -405,6 +508,10 @@ class EnvironmentManagerServer(BaseModel):
                 message = "(no output)" if success else f"{name}.{action} failed"
         return Response(type=ResponseType.ENVIRONMENT, success=success,
                         message=message, data=payload or None)
+
+    def set_approval_resolver(self, resolver):
+        """Install the same one-shot approval channel used by tools/connectors."""
+        return self._execution_pipeline.set_approval_resolver(resolver)
 
     async def _announce_live_view(self, name: str, ctx: EnvironmentContext) -> None:
         """Announce this environment's live-view endpoint on change (idempotent)."""

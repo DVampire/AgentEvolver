@@ -19,11 +19,11 @@ from agentevolver.model.llm_hub.response import ResponseLLMHub
 from agentevolver.model.types import ModelConfig
 
 
-def _route():
+def _route(model_id="provider/model-v1"):
     return CapabilityRoute.capture(
         ModelConfig(
             model_name="main",
-            model_id="provider/model-v1",
+            model_id=model_id,
             model_type="responses",
             provider="relay",
             api_base="https://relay.invalid/v1",
@@ -71,6 +71,26 @@ def test_capability_observations_survive_registry_restart(tmp_path):
     assert restored.snapshot(route, ["multi_agent"])["multi_agent"]["attempts"] == 1
     payload = path.read_text(encoding="utf-8")
     assert "relay.invalid" not in payload
+
+
+def test_stale_registry_instances_merge_observations_instead_of_clobbering(tmp_path):
+    """Each Gateway may have loaded the cache before another process records a probe."""
+    path = tmp_path / "provider-capabilities.json"
+    first = ProviderCapabilityRegistry(persist_path=str(path))
+    stale_second = ProviderCapabilityRegistry(persist_path=str(path))
+
+    first.observe(_route("provider/model-a"), "multi_agent", CapabilityState.VERIFIED)
+    stale_second.observe(
+        _route("provider/model-b"), "compaction", CapabilityState.REJECTED,
+    )
+
+    restored = ProviderCapabilityRegistry(persist_path=str(path))
+    assert restored.state(
+        _route("provider/model-a"), "multi_agent",
+    ) is CapabilityState.VERIFIED
+    assert restored.state(
+        _route("provider/model-b"), "compaction",
+    ) is CapabilityState.REJECTED
 
 
 def test_expired_persisted_observations_are_not_restored(tmp_path):

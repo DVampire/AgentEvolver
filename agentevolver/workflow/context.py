@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentevolver.paths import P, path_manager
+from agentevolver.capability import CapabilitySchema, SchemaSource
 from agentevolver.config import config
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import assemble_workspace_path
+from agentevolver.utils.file_utils import atomic_json_update
 from agentevolver.version import version_manager
-from agentevolver.capability import CapabilitySchema, SchemaSource
 
 from .compiler import workflow_compiler
 from .types import WorkflowDefinition, WorkflowEvaluation, WorkflowStatus
@@ -387,20 +386,37 @@ class WorkflowContextManager(BaseModel):
             self._evaluations = {}
 
     def _save_evaluations(self) -> None:
-        """Atomically write all evaluation evidence to disk via a temp-file replace."""
+        """Merge evaluation evidence without losing another process's records."""
         path = Path(self.evaluation_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
         payload = {name: [item.model_dump() for item in items] for name, items in self._evaluations.items()}
-        fd, temporary = tempfile.mkstemp(prefix=".evaluations-", suffix=".json", dir=path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(payload, stream, indent=2, ensure_ascii=False)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+
+        def identity(item: Dict[str, Any]) -> tuple[str, ...]:
+            run_id = str(item.get("run_id") or "")
+            if run_id:
+                return ("run", run_id)
+            return (
+                "static",
+                str(item.get("case_id") or ""),
+                str(item.get("recorded_at") or ""),
+            )
+
+        def merge(current: Any) -> Dict[str, Any]:
+            durable = dict(current or {})
+            for name, additions in payload.items():
+                combined = {
+                    identity(item): item
+                    for item in durable.get(name, [])
+                    if isinstance(item, dict)
+                }
+                combined.update({identity(item): item for item in additions})
+                durable[name] = [combined[key] for key in sorted(combined)]
+            return durable
+
+        stored = atomic_json_update(path, merge, default={})
+        self._evaluations = {
+            name: [WorkflowEvaluation.model_validate(item) for item in items]
+            for name, items in stored.items()
+        }
 
     async def cleanup(self) -> None:
         """Release active registry state while retaining persisted evidence on disk."""

@@ -25,6 +25,7 @@ the real manager by name via the routing table.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Dict, List, Tuple
 
 from agentevolver.capability import MOUNTED_TYPES
@@ -95,6 +96,102 @@ def _projection_kwargs(capability_type: str, agent: Any) -> Dict[str, Any]:
     return {}
 
 
+async def _resolved(value):
+    return await value if inspect.isawaitable(value) else value
+
+
+async def _metadata_catalog(
+    agent: Any, extra: Dict[str, Any], include_agents: bool,
+) -> List[Dict[str, Any]]:
+    """Enumerate names/descriptions/routes without constructing argument schemas."""
+    catalog: List[Dict[str, Any]] = []
+    for entry in MOUNTED_TYPES:
+        if not _projects(entry.type, agent, extra, include_agents):
+            continue
+        manager = entry.manager()
+        allowlist = extra.get(f"{entry.type}_allowlist")
+        try:
+            names = list(allowlist) if allowlist is not None else list(
+                await _resolved(manager.list())
+            )
+            filters = _projection_kwargs(entry.type, agent)
+            for name in names:
+                if entry.type == "agent" and name == filters.get("exclude"):
+                    continue
+                info = await _resolved(manager.get_info(name))
+                if info is None:
+                    continue
+                types = set(filters.get("types") or [])
+                declared_type = getattr(info, "type", None)
+                if types and declared_type:
+                    available = (
+                        {declared_type} if isinstance(declared_type, str)
+                        else set(declared_type)
+                    )
+                    if not (types & available):
+                        continue
+
+                if entry.type == "connector":
+                    for action in getattr(info, "actions", None) or []:
+                        description = (
+                            (getattr(info, "action_descriptions", None) or {}).get(action)
+                            or getattr(info, "description", "")
+                            or action
+                        )
+                        catalog.append({
+                            "name": f"{name}__{action}",
+                            "description": description,
+                            "route": (entry.type, name, action),
+                        })
+                elif entry.type == "environment":
+                    for action, action_info in (getattr(info, "actions", None) or {}).items():
+                        catalog.append({
+                            "name": f"{name}__{action}",
+                            "description": getattr(action_info, "description", "") or action,
+                            "route": (entry.type, name, action),
+                        })
+                elif entry.type == "plugin":
+                    plugin_type = getattr(getattr(info, "instance", None), "type", None)
+                    if types and plugin_type and plugin_type not in types:
+                        continue
+                    for tool in (getattr(info, "tools", None) or {}).values():
+                        if not getattr(tool, "implemented", False):
+                            continue
+                        catalog.append({
+                            "name": f"{name}__{tool.name}",
+                            "description": tool.description or tool.display_name or tool.name,
+                            "route": (entry.type, name, tool.name),
+                        })
+                else:
+                    catalog.append({
+                        "name": str(name),
+                        "description": getattr(info, "description", "") or str(name),
+                        "route": (entry.type, name),
+                    })
+        except Exception as error:  # one source cannot poison the whole index
+            # Third-party/legacy managers may expose only the older schema-first API.
+            # Keep them callable while first-party managers stay metadata-only here.
+            try:
+                discovered = await manager.function_callings(
+                    allowlist, **_projection_kwargs(entry.type, agent),
+                )
+                for schema, route in discovered:
+                    function = schema.get("function", {}) if isinstance(schema, dict) else {}
+                    if function.get("name"):
+                        catalog.append({
+                            "name": function["name"],
+                            "description": function.get("description", ""),
+                            "route": tuple(route),
+                            "schema": schema,
+                        })
+            except Exception:
+                logger.warning(
+                    f"| ⚠️ Capability metadata discovery failed for {entry.type}: {error}; "
+                    "the remaining capability types stay available"
+                )
+    return catalog
+
+
 async def assemble_native_tools(
     agent: Any, ctx: Any, *, include_agents: bool = False
 ) -> Tuple[List[_SchemaTool], Dict[str, Route]]:
@@ -113,44 +210,49 @@ async def assemble_native_tools(
     agent_name = getattr(agent, "name", "agent")
     from agentevolver.agent.capability_index import catalog, remember_catalog, select
 
-    pairs: List[Tuple[Dict[str, Any], Route]] = catalog(ctx, agent_name)
-    if not pairs:
-        # Freeze discovery for the lifetime of one run. Connector/plugin schema
-        # projection can be expensive, and asking every manager again on every model
-        # step defeats deferred schema loading even though the catalog did not change.
-        for entry in MOUNTED_TYPES:
-            if not _projects(entry.type, agent, extra, include_agents):
-                continue
-            try:
-                discovered = await entry.manager().function_callings(
-                    extra.get(f"{entry.type}_allowlist"),
-                    **_projection_kwargs(entry.type, agent),
-                )
-                pairs.extend(
-                    (schema, route)
-                    for schema, route in discovered
-                    if isinstance(schema, dict)
-                    and isinstance(schema.get("function"), dict)
-                    and schema["function"].get("name")
-                )
-            except Exception as error:  # noqa: BLE001 - isolate one catalog source
-                logger.warning(
-                    f"| ⚠️ Capability schema discovery failed for {entry.type}: "
-                    f"{error}; the remaining capability types stay available"
-                )
-        remember_catalog(ctx, agent_name, pairs)
+    metadata = catalog(ctx, agent_name)
+    if not metadata:
+        # Freeze the lightweight index for one run. Full JSON schemas are built only
+        # for the stable core and names the session has selected.
+        metadata = await _metadata_catalog(agent, extra, include_agents)
+        remember_catalog(ctx, agent_name, metadata)
 
-    all_pairs = list(pairs)
-
-    pairs, deferred = select(
-        pairs,
+    selected, _deferred = select(
+        metadata,
         ctx=ctx,
         agent_name=agent_name,
         threshold=int(getattr(agent, "defer_capabilities_after", 40) or 0),
     )
-    # Dispatch needs the full index for a search call, but only `pairs` is serialized.
-    if deferred:
-        remember_catalog(ctx, agent_name, all_pairs)
+
+    managers = {entry.type: entry.manager() for entry in MOUNTED_TYPES}
+    pairs: List[Tuple[Dict[str, Any], Route]] = []
+    for item in selected:
+        if not isinstance(item, dict):
+            # Backward compatibility for a catalog remembered by an older in-process
+            # caller during a hot reload.
+            schema, route = item
+            pairs.append((schema, tuple(route)))
+            continue
+        route = tuple(item.get("route") or ())
+        schema = item.get("schema")
+        if schema is None and route:
+            try:
+                schema = await _resolved(managers[route[0]].get_schema(
+                    route[1],
+                    action=route[2] if len(route) > 2 else None,
+                    format="json",
+                ))
+            except Exception as error:
+                logger.warning(
+                    f"| ⚠️ Capability schema load failed for {item.get('name')}: {error}"
+                )
+                continue
+        if (
+            isinstance(schema, dict)
+            and isinstance(schema.get("function"), dict)
+            and schema["function"].get("name")
+        ):
+            pairs.append((schema, route))
 
     tools: List[_SchemaTool] = []
     for fc, route in pairs:

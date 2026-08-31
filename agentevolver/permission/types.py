@@ -8,13 +8,12 @@ import fnmatch
 import os
 import re
 import shlex
-from pathlib import Path
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ---------------------------------------------------------------------------
 # Core enums
@@ -67,6 +66,58 @@ class PermissionRequest(BaseModel):
         default=False,
         description="Whether a dedicated binary reader may consume binary file bytes.",
     )
+
+
+class EffectContract(BaseModel):
+    """Provider-neutral declaration of a capability action's observable effects.
+
+    MCP annotations, local environment actions, plugins, and future remote tools all
+    reduce to this shape before policy runs. ``None`` means unknown; unknown is never
+    silently treated as read-only.
+    """
+
+    read_only: Optional[bool] = None
+    destructive: Optional[bool] = None
+    idempotent: Optional[bool] = None
+    open_world: Optional[bool] = None
+
+    @classmethod
+    def from_annotations(cls, value: Optional[Dict[str, Any]]) -> "EffectContract":
+        raw = dict(value or {})
+
+        def first(*names: str) -> Optional[bool]:
+            for name in names:
+                if name in raw and raw[name] is not None:
+                    return bool(raw[name])
+            return None
+
+        return cls(
+            read_only=first("readOnlyHint", "read_only", "read_only_hint"),
+            destructive=first("destructiveHint", "destructive", "destructive_hint"),
+            idempotent=first("idempotentHint", "idempotent", "idempotent_hint"),
+            open_world=first("openWorldHint", "open_world", "open_world_hint"),
+        )
+
+    def policy_decision(
+        self, *, mode: PermissionMode | str, label: str,
+    ) -> ValidationResult:
+        """Apply the sandbox mode and approval boundary without widening either."""
+        declared_mode = PermissionMode(mode)
+        if declared_mode is PermissionMode.READ_ONLY and self.read_only is not True:
+            return ValidationResult.block(
+                f"{label} is not verified read-only and is blocked in read_only mode."
+            )
+        if self.destructive is True:
+            return ValidationResult.ask(f"{label} declares a destructive effect.")
+        if self.open_world is True and self.read_only is not True:
+            return ValidationResult.ask(
+                f"{label} may change state outside the isolated workspace."
+            )
+        if self.read_only is None:
+            return ValidationResult.ask(
+                f"{label} has no verified effect declaration; approval is required."
+            )
+        return ValidationResult.allow()
 
 
 # ---------------------------------------------------------------------------
@@ -677,6 +728,7 @@ __all__ = [
     "Operation",
     "CommandIntent",
     "PermissionRequest",
+    "EffectContract",
     "ValidationResult",
     "PolicyCondition", "GlobCondition", "AndCondition", "OrCondition", "NotCondition",
     "PermissionRule",

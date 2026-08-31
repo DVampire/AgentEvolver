@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, List, Sequence, Tuple
 
 SEARCH_NAME = "search_capabilities"
 CORE_NAMES = frozenset({
@@ -34,12 +34,12 @@ SEARCH_SCHEMA = {
 }
 
 _MAX_CATALOGS = 512
-_CATALOGS: "OrderedDict[Tuple[str, str], List[Tuple[Dict[str, Any], Tuple[Any, ...]]]]" = OrderedDict()
+_CATALOGS: "OrderedDict[Tuple[str, str], List[Any]]" = OrderedDict()
 
 
 def remember_catalog(
     ctx: Any, agent_name: str,
-    pairs: Sequence[Tuple[Dict[str, Any], Tuple[Any, ...]]],
+    pairs: Sequence[Any],
 ) -> None:
     key = (str(getattr(ctx, "id", "") or ""), agent_name)
     _CATALOGS[key] = list(pairs)
@@ -71,27 +71,45 @@ def _loaded(ctx: Any, agent_name: str) -> List[str]:
     return stores.setdefault(agent_name, [])
 
 
+def _metadata(item: Any) -> Tuple[str, str, Tuple[Any, ...]]:
+    """Read either a metadata entry or the legacy ``(schema, route)`` pair."""
+    if isinstance(item, dict) and "route" in item:
+        return (
+            str(item.get("name") or ""),
+            str(item.get("description") or ""),
+            tuple(item.get("route") or ()),
+        )
+    fc, route = item
+    fn = fc.get("function", {})
+    return str(fn.get("name") or ""), str(fn.get("description") or ""), tuple(route)
+
+
 def select(
-    pairs: Sequence[Tuple[Dict[str, Any], Tuple[Any, ...]]],
+    pairs: Sequence[Any],
     *,
     ctx: Any,
     agent_name: str,
     threshold: int,
-) -> Tuple[List[Tuple[Dict[str, Any], Tuple[Any, ...]]], bool]:
+) -> Tuple[List[Any], bool]:
     """Return the stable core + session-loaded schemas when a catalog is large."""
     if threshold <= 0 or len(pairs) <= threshold:
         return list(pairs), False
     loaded = set(_loaded(ctx, agent_name))
-    chosen = [
-        pair for pair in pairs
-        if pair[0].get("function", {}).get("name") in CORE_NAMES | loaded
-    ]
-    chosen.append((SEARCH_SCHEMA, ("capability_search",)))
+    chosen = [pair for pair in pairs if _metadata(pair)[0] in CORE_NAMES | loaded]
+    if pairs and isinstance(pairs[0], dict):
+        chosen.append({
+            "name": SEARCH_NAME,
+            "description": SEARCH_SCHEMA["function"]["description"],
+            "route": ("capability_search",),
+            "schema": SEARCH_SCHEMA,
+        })
+    else:
+        chosen.append((SEARCH_SCHEMA, ("capability_search",)))
     return chosen, True
 
 
 def search(
-    pairs: Sequence[Tuple[Dict[str, Any], Tuple[Any, ...]]],
+    pairs: Sequence[Any],
     *,
     ctx: Any,
     agent_name: str,
@@ -103,10 +121,8 @@ def search(
         return "Capability search requires a non-empty query; no schemas were loaded."
     query_tokens = _tokens(query)
     ranked = []
-    for fc, route in pairs:
-        fn = fc.get("function", {})
-        name = str(fn.get("name") or "")
-        description = str(fn.get("description") or "")
+    for item in pairs:
+        name, description, route = _metadata(item)
         haystack = _tokens(f"{name} {description} {' '.join(map(str, route))}")
         overlap = len(query_tokens & haystack)
         substring = int(str(query).lower() in f"{name} {description}".lower())

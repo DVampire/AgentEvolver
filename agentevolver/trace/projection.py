@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import RLock
@@ -21,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.paths import P, path_manager
 from agentevolver.trace.types import TRACE_FORMAT_VERSION
-
+from agentevolver.utils.file_utils import atomic_json_update
 
 PROJECTION_WATERMARK_VERSION = 1
 
@@ -154,12 +153,20 @@ def get_default_projection_registry() -> ProjectionRegistry:
             # not create a package-level cycle merely to participate in discovery.
             from agentevolver.trace.stats import (
                 PROJECTION_NAME as STATS_NAME,
+            )
+            from agentevolver.trace.stats import (
                 PROJECTOR_VERSION as STATS_VERSION,
+            )
+            from agentevolver.trace.stats import (
                 TraceStatsProjector,
             )
             from agentevolver.trajectory.projector import (
                 PROJECTION_NAME as TRAJECTORY_NAME,
+            )
+            from agentevolver.trajectory.projector import (
                 PROJECTOR_VERSION as TRAJECTORY_VERSION,
+            )
+            from agentevolver.trajectory.projector import (
                 IncrementalTrajectoryProjector,
             )
 
@@ -243,11 +250,6 @@ class ProjectionWatermarkStore:
         last_seq: int,
     ) -> ProjectionWatermark:
         """Commit ``last_seq`` atomically, refusing regressions and version drift."""
-        current = self.load(projection, projection_version, session_id)
-        if current is not None and int(last_seq) < current.last_seq:
-            raise ProjectionWatermarkError(
-                f"watermark regression {current.last_seq} -> {last_seq} is not allowed"
-            )
         watermark = ProjectionWatermark(
             projection=projection,
             projection_version=int(projection_version),
@@ -255,28 +257,33 @@ class ProjectionWatermarkStore:
             last_seq=int(last_seq),
         )
         path = self.path(projection, session_id)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        temporary = path + f".tmp-{os.getpid()}-{uuid.uuid4().hex}"
-        try:
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(
-                    watermark.model_dump(mode="json"), handle,
-                    ensure_ascii=False, sort_keys=True, indent=2,
-                )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            # fsync the directory as well as the file. Without it, the renamed file is
-            # atomic to readers but may disappear after a power loss on some filesystems.
-            directory_fd = os.open(os.path.dirname(path), os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        finally:
-            if os.path.exists(temporary):
-                os.remove(temporary)
-        return watermark
+
+        def advance(current: Any) -> Dict[str, Any]:
+            if current:
+                try:
+                    existing = ProjectionWatermark.model_validate(current)
+                except Exception as exc:
+                    raise ProjectionWatermarkError(
+                        f"cannot read projection watermark {path}: {exc}"
+                    ) from exc
+                if (
+                    existing.projection != projection
+                    or existing.session_id != session_id
+                    or existing.projection_version != int(projection_version)
+                ):
+                    raise ProjectionVersionMismatch(
+                        "projection watermark identity or version changed while advancing"
+                    )
+                if int(last_seq) < existing.last_seq:
+                    raise ProjectionWatermarkError(
+                        f"watermark regression {existing.last_seq} -> {last_seq} is not allowed"
+                    )
+            return watermark.model_dump(mode="json")
+
+        stored = atomic_json_update(
+            path, advance, default=None, recover_corrupt=False,
+        )
+        return ProjectionWatermark.model_validate(stored)
 
     def after_seq(self, projection: str, projection_version: int, session_id: str) -> int:
         watermark = self.load(projection, projection_version, session_id)

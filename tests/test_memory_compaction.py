@@ -16,6 +16,7 @@ import json
 
 import pytest
 
+from agentevolver.memory.checkpoint import PortableCheckpoint
 from agentevolver.memory.default.tiered import (
     _RECORD_DETAIL_MAX,
     MemoryRecord,
@@ -38,6 +39,39 @@ def _memory(**kwargs):
 def _fill(state, n):
     for i in range(n):
         state.recent.append(MemoryRecord(ts="t", event=f"event {i}", detail="d"))
+
+
+def test_portable_checkpoint_normalizes_sections_and_retains_trace_sources():
+    """The readable checkpoint and its machine companion must describe one state."""
+    checkpoint = PortableCheckpoint.from_text(
+        """### Current objective
+Ship recovery [source_seq=4]
+
+### Acceptance conditions
+- Ruff passes [source_seq=8]
+- Recovery asks before replay [source_seq=9, 11]
+
+### Next action
+Run the final checks [source_seq=12]
+"""
+    )
+
+    assert checkpoint.objective is not None
+    assert checkpoint.objective.source_seqs == [4]
+    assert checkpoint.acceptance_conditions[1].source_seqs == [9, 11]
+    assert checkpoint.next_action is not None
+    assert checkpoint.next_action.source_seqs == [12]
+    rendered = checkpoint.render()
+    assert rendered.count("### Current objective") == 1
+    assert "### Acceptance conditions" in rendered
+
+
+def test_unstructured_legacy_checkpoint_remains_portable():
+    """Old summaries stay readable after the schema is introduced."""
+    checkpoint = PortableCheckpoint.from_text("legacy fact [source_seq=3]")
+
+    assert checkpoint.established_facts[0].source_seqs == [3]
+    assert "legacy fact" in checkpoint.render()
 
 
 # --------------------------------------------------------------------------- #

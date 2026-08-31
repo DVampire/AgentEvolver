@@ -3,9 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 // out of the main bundle until a live VNC view actually appears.
 import RFB from '@novnc/novnc';
 
-// noVNC's RFB exposes focus() at runtime, but the bundled types omit it.
-type FocusableRFB = RFB & { focus?: () => void };
-const focusRfb = (rfb: RFB | null | undefined) => { try { (rfb as FocusableRFB | null)?.focus?.(); } catch { /* canvas not ready */ } };
+// noVNC exposes these documented properties at runtime, but its bundled declarations
+// currently omit them. Keep the compatibility cast local to this adapter.
+type BrowserRFB = RFB & {
+  focus?: () => void;
+  resizeSession: boolean;
+  qualityLevel: number;
+  compressionLevel: number;
+};
+const focusRfb = (rfb: RFB | null | undefined) => {
+  try { (rfb as BrowserRFB | null)?.focus?.(); } catch { /* canvas not ready */ }
+};
 
 /**
  * Render a live VNC stream (RFB over WebSocket) onto a canvas noVNC manages.
@@ -43,15 +51,16 @@ export default function VncView({ url, password, interactive = false, onStatus }
       // upscaled by nearly two, and every glyph goes soft. With RANDR on the X server and
       // a client that requests it, the remote reshapes to the viewport and the pixels are
       // 1:1. `scaleViewport` stays on as the fallback for servers that refuse.
-      rfb.resizeSession = true;
+      const browserRfb = rfb as BrowserRFB;
+      browserRfb.resizeSession = true;
       rfb.scaleViewport = true;
       rfb.clipViewport = false;
       // Tight encoding's JPEG quality (0-9, default 6) and how hard it compresses. This
       // is a container on the same host reached over loopback, so the bandwidth those
       // defaults protect is not scarce — spending it on a legible screen is the trade
       // worth making here.
-      rfb.qualityLevel = 9;
-      rfb.compressionLevel = 2;
+      browserRfb.qualityLevel = 9;
+      browserRfb.compressionLevel = 2;
       rfb.viewOnly = !interactive;   // start read-only unless the user took over
       rfb.addEventListener('connect', () => setStatus('connected'));
       rfb.addEventListener('disconnect', () => setStatus('disconnected'));

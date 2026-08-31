@@ -3,11 +3,11 @@
 Core type definitions for the Environment Context Protocol.
 """
 
-import json
 import uuid
 from enum import Enum
-from typing import Any, Dict, Optional, Union, Type, Callable
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Callable, Dict, Optional, Type, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.session import BaseContext
@@ -88,7 +88,7 @@ class Environment(BaseModel):
                         name=action_name,
                         description=getattr(attr, '_action_description', ''),
                         function=attr,
-                        metadata=getattr(attr, '_metadata', {})
+                        metadata=getattr(attr, '_action_metadata', {})
                     )
                     # function_calling, text, and args_schema are computed on-demand via properties
                     self.actions[action_name] = action_config
@@ -297,7 +297,7 @@ class EnvironmentConfig(BaseModel):
                         base_class=Environment,
                         context="environment"
                     )
-                except Exception as e:
+                except Exception:
                     cls_ = None
             else:
                 cls_ = None

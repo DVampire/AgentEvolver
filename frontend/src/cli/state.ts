@@ -1,4 +1,8 @@
 import type { GatewayEvent } from './protocol.js';
+import {
+  reconciliationFromEvent,
+  type ReconciliationState,
+} from '../reconciliation.js';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 export type TimelineType = 'user' | 'agent' | 'tool' | 'system' | 'error';
@@ -24,6 +28,7 @@ export interface AppState {
   activeTaskId?: string;
   entries: TimelineEntry[];
   approval?: ApprovalState;
+  reconciliation?: ReconciliationState;
   notice?: string;
 }
 
@@ -32,6 +37,8 @@ export type AppAction =
   | { type: 'session'; sessionId: string }
   | { type: 'task'; taskId?: string }
   | { type: 'approval.clear' }
+  | { type: 'reconciliation.update'; value: ReconciliationState }
+  | { type: 'reconciliation.clear' }
   | { type: 'notice'; value?: string }
   | { type: 'event'; event: GatewayEvent };
 
@@ -45,6 +52,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
   if (action.type === 'session') return { ...state, sessionId: action.sessionId };
   if (action.type === 'task') return { ...state, activeTaskId: action.taskId };
   if (action.type === 'approval.clear') return { ...state, approval: undefined };
+  if (action.type === 'reconciliation.update') return { ...state, reconciliation: action.value };
+  if (action.type === 'reconciliation.clear') return { ...state, reconciliation: undefined };
   if (action.type === 'notice') return { ...state, notice: action.value };
 
   const event = action.event;
@@ -68,12 +77,35 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       ? { ...state, approval: undefined }
       : state;
   }
+  if (event.type === 'task.reconciliation.required') {
+    const reconciliation = reconciliationFromEvent(event);
+    const entry = eventToEntry(event);
+    return reconciliation
+      ? {
+          ...state,
+          activeTaskId: reconciliation.taskId,
+          reconciliation,
+          entries: entry ? [...state.entries.slice(-500), entry] : state.entries,
+        }
+      : state;
+  }
+  if (event.type === 'task.reconciliation.completed') {
+    const entry = eventToEntry(event);
+    return {
+      ...state,
+      reconciliation: undefined,
+      entries: entry ? [...state.entries.slice(-500), entry] : state.entries,
+    };
+  }
   const entry = eventToEntry(event);
   if (!entry) return state;
   const activeTaskId = ['task.completed', 'task.failed', 'task.cancelled'].includes(event.type)
     ? undefined
     : state.activeTaskId;
-  return { ...state, activeTaskId, entries: [...state.entries.slice(-500), entry] };
+  const reconciliation = ['task.completed', 'task.failed', 'task.cancelled'].includes(event.type)
+    ? undefined
+    : state.reconciliation;
+  return { ...state, activeTaskId, reconciliation, entries: [...state.entries.slice(-500), entry] };
 }
 
 function eventToEntry(event: GatewayEvent): TimelineEntry | undefined {
@@ -88,6 +120,12 @@ function eventToEntry(event: GatewayEvent): TimelineEntry | undefined {
     return { ...base, type: 'error', title: 'Task failed', body: String(event.payload.error ?? 'Unknown error') };
   }
   if (event.type === 'task.cancelled') return { ...base, type: 'system', title: 'Task cancelled' };
+  if (event.type === 'task.reconciliation.required') {
+    return { ...base, type: 'system', title: 'Crash recovery needs confirmation', body: String(event.payload.unsettled ?? '') };
+  }
+  if (event.type === 'task.reconciliation.completed') {
+    return { ...base, type: 'system', title: 'Recovery confirmed', body: 'The interrupted task is resuming.' };
+  }
   if (event.type === 'gateway.log') return { ...base, type: 'system', title: 'Gateway', body: String(event.payload.message ?? '') };
   if (event.type !== 'trace.event') return undefined;
 

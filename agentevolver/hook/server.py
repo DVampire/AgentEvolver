@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type  # Dict/Any kept for register() signature
 
+from agentevolver.hook.context import HookConfig, HookContextManager
+from agentevolver.hook.types import Hook, HookEvent, HookResult
 from agentevolver.logger import logger
-from agentevolver.hook.types import Hook, HookContext, HookResult
-from agentevolver.hook.context import HookContextManager, HookConfig
 
 
 class HookManagerServer:
@@ -120,6 +120,18 @@ class HookManagerServer:
             # Graceful no-op before initialization (e.g. during tests)
             return HookResult.allow()
         return await self.hook_context_manager(name, input, ctx=ctx, **kwargs)
+
+    async def emit(
+        self,
+        event: HookEvent | str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        ctx=None,
+    ) -> HookResult:
+        """Broadcast a lifecycle event to subscribed hooks in priority order."""
+        if self.hook_context_manager is None:
+            return HookResult.allow()
+        return await self.hook_context_manager.emit(event, payload, ctx=ctx)
 
 
 # Global singleton — import this everywhere

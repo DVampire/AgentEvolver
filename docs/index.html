@@ -436,7 +436,7 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <div class="eyebrow" data-i18n="feat_eyebrow">Design choices</div>
-      <h2 data-i18n="feat_h">Ten decisions that shape the system</h2>
+      <h2 data-i18n="feat_h">Fourteen decisions that shape the system</h2>
       <p data-i18n="feat_p">The value is not a large capability count. It is the way orchestration, evaluation, inspectability, and rollback fit together.</p>
     </div>
     <div class="features">
@@ -450,6 +450,10 @@
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-cpu"/></svg></div><h3 data-i18n="f8_h">Code mode: one program, one turn</h3><p data-i18n="f8_p">The model can write a program instead of emitting one tool call per turn. Its calls return through a guarded dispatch, and the program runs in its own interpreter — no framework object is one <code>import</code> away from model-written code.</p></div>
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-scale"/></svg></div><h3 data-i18n="f9_h">Nothing changes until a person says go</h3><p data-i18n="f9_p">In plan mode a run may read, search and reason, and nothing else. The gate reads what a capability declared about itself — <code>mutates: false</code>, or a read-only permission mode — never its name. One that declared neither is refused, <code>bash_tool</code> included.</p></div>
       <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-layers"/></svg></div><h3 data-i18n="f10_h">A prompt prefix a cache can keep</h3><p data-i18n="f10_p">The capability catalogs are frozen at their first render and sent ahead of the volatile agent state, with a cache breakpoint after them. Measured on one run: 72,647 of about 98,800 input tokens per step served from cache, against none before.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-loop"/></svg></div><h3 data-i18n="f11_h">Interrupted work is recoverable</h3><p data-i18n="f11_p">Portable checkpoints are persisted atomically. Browser and CLI clients surface recovered work and ask whether to resume or restart whenever automatic continuation cannot be proven safe.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-scale"/></svg></div><h3 data-i18n="f12_h">One approval and lifecycle surface</h3><p data-i18n="f12_p">Tools, connectors and environment actions share side-effect policy and approval semantics; unknown effects fail closed. A typed Hook bus carries lifecycle events without embedding cross-cutting logic in agents.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-flow"/></svg></div><h3 data-i18n="f13_h">Memory and agent threads outlive one turn</h3><p data-i18n="f13_p">Project memory crosses session boundaries, while delegated agents remain addressable for messages, progress, control and follow-up work. Finished blocking calls release runtime resources immediately.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="ic ic-lg"><use href="#i-gauge"/></svg></div><h3 data-i18n="f14_h">Roll out gradually, observe externally</h3><p data-i18n="f14_p">Extensions progress through shadow and canary health gates with persisted evidence and automatic rollback. Trace stays authoritative and can optionally project spans to OpenTelemetry.</p></div>
     </div>
   </div>
 </section>
@@ -1002,7 +1006,7 @@ const I18N = {
     def_not_label:"What it is not", def_not_h:"Uncontrolled mutation—or a finished trainer",
     def_not_p:"Evolution is constrained and evaluated. The current release captures training-oriented SFT/RL records but does not yet update weights, manage checkpoints, and feed a trained model back into serving inside one run.",
     def_not_1:"Tasks already produce reward-annotated SFT/RL trajectories", def_not_2:"In-system training and model feedback are the next-stage roadmap", def_not_3:"Tests, benchmarks, and human approval remain part of the loop",
-    feat_eyebrow:"Design choices", feat_h:"Ten decisions that shape the system",
+    feat_eyebrow:"Design choices", feat_h:"Fourteen decisions that shape the system",
     feat_p:"The value is not a large capability count. It is the way orchestration, evaluation, inspectability, and rollback fit together.",
     f1_h:"Evidence before evolution", f1_p:"A failed check, recurring structural defect, or measured quality ceiling must establish the need. The normal response to a first fixable error is still to fix it.",
     f2_h:"Everything is HTML you can open", f2_p:"Prompts, workflows, task documents, memory reports and per-step snapshots are complete HTML documents — executable by the runtime <em>and</em> browsable, diffable, reviewable by a human.",
@@ -1014,6 +1018,10 @@ const I18N = {
     f8_h:"Code mode: one program, one turn", f8_p:"The model can write a program instead of emitting one tool call per turn. Its calls return through a guarded dispatch, and the program runs in its own interpreter — no framework object is one <code>import</code> away from model-written code.",
     f9_h:"Nothing changes until a person says go", f9_p:"In plan mode a run may read, search and reason, and nothing else. The gate reads what a capability declared about itself — <code>mutates: false</code>, or a read-only permission mode — never its name. One that declared neither is refused, <code>bash_tool</code> included.",
     f10_h:"A prompt prefix a cache can keep", f10_p:"The capability catalogs are frozen at their first render and sent ahead of the volatile agent state, with a cache breakpoint after them. Measured on one run: 72,647 of about 98,800 input tokens per step served from cache, against none before.",
+    f11_h:"Interrupted work is recoverable", f11_p:"Portable checkpoints are persisted atomically. Browser and CLI clients surface recovered work and ask whether to resume or restart whenever automatic continuation cannot be proven safe.",
+    f12_h:"One approval and lifecycle surface", f12_p:"Tools, connectors and environment actions share side-effect policy and approval semantics; unknown effects fail closed. A typed Hook bus carries lifecycle events without embedding cross-cutting logic in agents.",
+    f13_h:"Memory and agent threads outlive one turn", f13_p:"Project memory crosses session boundaries, while delegated agents remain addressable for messages, progress, control and follow-up work. Finished blocking calls release runtime resources immediately.",
+    f14_h:"Roll out gradually, observe externally", f14_p:"Extensions progress through shadow and canary health gates with persisted evidence and automatic rollback. Trace stays authoritative and can optionally project spans to OpenTelemetry.",
     fit_eyebrow:"Fit & trade-offs", fit_h:"Powerful when the task justifies the machinery",
     fit_p:"AgentEvolver is designed for work where reusable methods, specialist coordination, and auditability matter more than minimum latency.",
     fit_yes_h:"A good fit", fit_yes_1:"Long-running engineering, data, or scientific tasks with several specialist roles", fit_yes_2:"Teams that want task-specific methods to become reusable capabilities", fit_yes_3:"Research on agent runtimes, SFT/RL data flywheels, evaluation loops, and human oversight", fit_yes_4:"Projects that need detailed artifacts, visual control, and reversible extension changes",
@@ -1137,7 +1145,7 @@ const I18N = {
     def_not_label:"它尚未是什么", def_not_h:"不是无约束改写；训练执行闭环仍在建设",
     def_not_p:"进化受到组件边界和评估约束。当前版本已经产生面向训练的 SFT/RL 记录，但还没有在同一次系统闭环内完成权重更新、checkpoint 管理和训练后模型回流。",
     def_not_1:"任务已经产出带奖励的 SFT/RL trajectory", def_not_2:"系统内训练和模型回流是下一阶段路线图", def_not_3:"测试、基准与人工审批仍然属于闭环的一部分",
-    feat_eyebrow:"设计取向", feat_h:"塑造系统的十个关键决定",
+    feat_eyebrow:"设计取向", feat_h:"塑造系统的十四个关键决定",
     feat_p:"价值不在于堆出庞大的能力数量，而在于让编排、评估、可审查性与回滚真正形成闭环。",
     f1_h:"先有证据，再谈进化", f1_p:"必须由失败的检查、重复的结构性缺陷或经测量的质量上限证明需求。第一次可修复的错误，默认动作仍然是直接修好。",
     f2_h:"一切都是可直接打开的 HTML", f2_p:"提示词、工作流、任务文档、记忆报告和每一步快照，都是完整的 HTML 文档——既能被运行时执行，<em>也能</em>被人打开、diff、评审。",
@@ -1149,6 +1157,10 @@ const I18N = {
     f8_h:"代码模式：一段程序，一轮调用", f8_p:"模型可以直接写一段程序，而不是一轮只发一次工具调用。程序里的调用经受控派发返回，程序本身跑在自己的解释器里——模型写的代码与框架对象之间，隔着的不是一个 <code>import</code>。",
     f9_h:"没有人点头，就什么都不会被改动", f9_p:"计划模式下，一次运行只能读、搜和推理，别的都不行。闸门看的是能力自己声明过什么——<code>mutates: false</code>，或者只读的权限模式——而不是它叫什么名字。两样都没声明的一律拦下，<code>bash_tool</code> 也不例外。",
     f10_h:"能被缓存留住的提示词前缀", f10_p:"能力目录在首次渲染后冻结，放在易变的 agent 状态之前，缓存断点落在它们之后。实测的一次运行：每一步约 98,800 个输入 token 里有 72,647 个来自缓存，而在此之前是零。",
+    f11_h:"中断的工作可以恢复", f11_p:"可移植 checkpoint 以原子方式持久化。浏览器和 CLI 都会展示恢复出的工作；无法证明自动续跑安全时，必须明确选择继续或重新开始。",
+    f12_h:"统一审批与生命周期入口", f12_p:"工具、连接器和环境动作共用副作用策略与审批语义，未知副作用默认收紧。类型化 Hook 总线承载生命周期事件，避免把横切逻辑写进 Agent。",
+    f13_h:"记忆和 Agent 线程不止活一轮", f13_p:"项目记忆跨 session 延续；被委派 Agent 仍可接收消息、上报进度、接受控制和后续任务。阻塞调用完成后立即释放运行时资源。",
+    f14_h:"渐进发布，外部观测", f14_p:"扩展经过 shadow 与 canary 健康门禁，证据持久化并支持自动回滚。Trace 保持权威，同时可选地把 span 投影到 OpenTelemetry。",
     fit_eyebrow:"适用性与取舍", fit_h:"任务足够复杂时，这套机制才值得",
     fit_p:"AgentEvolver 面向重视方法复用、专精协作与过程可审查性的工作，而不是追求最低延迟的每一个场景。",
     fit_yes_h:"适合", fit_yes_1:"包含多个专精角色的长链路工程、数据或科研任务", fit_yes_2:"希望把任务方法沉淀为可复用能力的团队", fit_yes_3:"研究 Agent 运行时、SFT/RL 数据飞轮、评估闭环和人类监督", fit_yes_4:"需要详细产物、可视化控制和可逆扩展变更的项目",

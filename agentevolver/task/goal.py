@@ -14,7 +14,6 @@ accepts a human request. A model that could name its own authority would have it
 from __future__ import annotations
 
 import json
-import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +33,7 @@ from agentevolver.task.types import (
     TaskPriority,
 )
 from agentevolver.utils import Singleton
+from agentevolver.utils.file_utils import atomic_json_update
 
 #: Context key carrying the host's attestation that this run serves a request a
 #: human actually made. Written by whoever accepted that request (the gateway
@@ -152,18 +152,25 @@ class GoalStore(metaclass=Singleton):
             raise GoalStateError("A goal needs an objective; the text was empty.")
 
         with self._lock:
-            goals = self._load(owner, session_id)
-            open_goal = next((g for g in goals if g.phase.is_open), None)
-            if open_goal is not None:
-                raise GoalStateError(
-                    f"{open_goal.id} is still {open_goal.phase.value}: "
-                    f"{open_goal.objective[:80]!r}. Complete it before creating another."
+            def create_goal(goals: List[Goal]) -> Goal:
+                open_goal = next((g for g in goals if g.phase.is_open), None)
+                if open_goal is not None:
+                    raise GoalStateError(
+                        f"{open_goal.id} is still {open_goal.phase.value}: "
+                        f"{open_goal.objective[:80]!r}. Complete it before creating another."
+                    )
+                now = self.clock()
+                created = Goal(
+                    session_id=session_id,
+                    objective=text,
+                    priority=priority,
+                    created_at=now,
+                    updated_at=now,
                 )
-            now = self.clock()
-            goal = Goal(session_id=session_id, objective=text, priority=priority,
-                        created_at=now, updated_at=now)
-            goals.append(goal)
-            self._save(owner, session_id, goals)
+                goals.append(created)
+                return created
+
+            goal = self._mutate(owner, session_id, create_goal)
         logger.info(f"| 🎯 Goal {goal.id} created in {session_id}: {text[:80]}")
         return goal
 
@@ -188,25 +195,34 @@ class GoalStore(metaclass=Singleton):
             )
 
         with self._lock:
-            goals = self._load(owner, session_id)
-            index = next((i for i, g in enumerate(goals) if g.id == goal_id), None)
-            if index is None:
-                known = ", ".join(g.id for g in goals) or "(none)"
-                raise GoalStateError(f"No goal {goal_id!r} in this session. Known: {known}")
+            def update_goal(goals: List[Goal]) -> Goal:
+                index = next((i for i, g in enumerate(goals) if g.id == goal_id), None)
+                if index is None:
+                    known = ", ".join(g.id for g in goals) or "(none)"
+                    raise GoalStateError(
+                        f"No goal {goal_id!r} in this session. Known: {known}"
+                    )
 
-            goal = goals[index]
-            if goal.revision != revision:
-                raise GoalRevisionError(
-                    f"{goal_id} is at revision {goal.revision}, not {revision}. Read it "
-                    f"again — it changed since you looked, and the change may be the answer."
+                goal = goals[index]
+                if goal.revision != revision:
+                    raise GoalRevisionError(
+                        f"{goal_id} is at revision {goal.revision}, not {revision}. Read it "
+                        "again — it changed since you looked, and the change may be the answer."
+                    )
+
+                changed = self._apply(
+                    goal,
+                    action,
+                    objective=objective,
+                    blocked_reason=blocked_reason,
+                    priority=priority,
                 )
+                changed.revision = goal.revision + 1
+                changed.updated_at = self.clock()
+                goals[index] = changed
+                return changed
 
-            updated = self._apply(goal, action, objective=objective,
-                                  blocked_reason=blocked_reason, priority=priority)
-            updated.revision = goal.revision + 1
-            updated.updated_at = self.clock()
-            goals[index] = updated
-            self._save(owner, session_id, goals)
+            updated = self._mutate(owner, session_id, update_goal)
         logger.info(f"| 🎯 Goal {goal_id} {action.value} by {authority.value} "
                     f"→ {updated.phase.value} (rev {updated.revision})")
         return updated
@@ -274,15 +290,29 @@ class GoalStore(metaclass=Singleton):
             logger.error(f"| ❌ Unreadable goal file {path}: {error}")
             return []
 
-    def _save(self, owner: str, session_id: str, goals: List[Goal]) -> None:
+    def _mutate(
+        self,
+        owner: str,
+        session_id: str,
+        mutate: Callable[[List[Goal]], Goal],
+    ) -> Goal:
+        """Apply one mutation while holding the file lock across read and replace."""
         path = self._path(owner, session_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"goals": [json.loads(g.model_dump_json()) for g in goals]}
-        # Written beside and renamed: a crash mid-write leaves the previous file
-        # whole rather than a truncated one that reads as no goal at all.
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(temporary, path)
+        result: List[Goal] = []
+
+        def update(payload: Any) -> Dict[str, Any]:
+            document = dict(payload or {})
+            goals = [Goal.model_validate(item) for item in document.get("goals", [])]
+            result.append(mutate(goals))
+            return {"goals": [goal.model_dump(mode="json") for goal in goals]}
+
+        atomic_json_update(
+            path,
+            update,
+            default={"goals": []},
+            recover_corrupt=False,
+        )
+        return result[0]
 
 
 goal_manager = GoalStore()

@@ -17,7 +17,6 @@ becomes an agent workflow and is never registered/callable by an agent.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,6 +27,7 @@ from agentevolver.canvas.types import FlowGraph, NodeSpec, workflow_name_for
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.utils import make_id
+from agentevolver.utils.file_utils import append_jsonl, atomic_write_text
 
 PUBLISHED_PREFIX = "wf:"
 
@@ -95,11 +95,11 @@ class CanvasManagerServer:
             graph.created_at = now
         graph.created_at = graph.created_at or now
         graph.updated_at = now
-        flows_dir.mkdir(parents=True, exist_ok=True)
         path = self._flow_path(flows_dir, graph.id)
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(graph.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(temporary, path)
+        atomic_write_text(
+            path,
+            json.dumps(graph.model_dump(mode="json"), indent=2, ensure_ascii=False),
+        )
         return graph
 
     async def delete_flow(self, flow_id: str, flows_dir: Path) -> bool:
@@ -150,10 +150,12 @@ class CanvasManagerServer:
         library_graph = graph.model_copy(deep=True)
         library_graph.id = ""  # a library copy is standalone, unbound from any session
         path = self.library_path(name)
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(library_graph.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(temporary, path)
+        atomic_write_text(
+            path,
+            json.dumps(
+                library_graph.model_dump(mode="json"), indent=2, ensure_ascii=False,
+            ),
+        )
         logger.info(f"| 🎨 Canvas: exported '{name}' to the reuse library")
         return {"name": name, "artifact": str(path), "in_library": True}
 
@@ -257,10 +259,8 @@ class CanvasManagerServer:
         """Note that ``flow_id`` produced ``run_id``. Appended when the run starts."""
         if not flow_id:
             return
-        runs_dir.mkdir(parents=True, exist_ok=True)
         entry = {"run_id": run_id, "started_at": datetime.now(timezone.utc).isoformat()}
-        with self._runs_path(runs_dir, flow_id).open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        append_jsonl(self._runs_path(runs_dir, flow_id), entry)
 
     def list_runs(self, flow_id: str, runs_dir: Path, limit: int = 50) -> List[Dict[str, Any]]:
         """This flow's runs, newest first, each with its current state.

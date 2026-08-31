@@ -6,6 +6,7 @@ instructions remain compatible inputs alongside AGENTS files.
 """
 
 from agentevolver.agent.project_context import load_project_context
+from agentevolver.memory.project import ProjectMemoryStore
 
 
 def test_project_context_prefers_agents_override_and_reads_memory(tmp_path):
@@ -83,3 +84,30 @@ def test_project_context_budget_preserves_the_closest_scope(tmp_path):
     assert "closest-api-rule" in context
     assert "generic-root-rule" in context
     assert context.index("generic-root-rule") < context.index("closest-api-rule")
+
+
+def test_project_memory_keeps_evidence_deduplicated_and_refuses_secrets(tmp_path):
+    """Automatic memory is durable evidence, not an unrestricted scratchpad."""
+    store = ProjectMemoryStore(str(tmp_path))
+    store.path = tmp_path / "automatic-memory.json"
+
+    assert store.remember(
+        "verified_commands",
+        "python -m pytest tests/test_project_context.py",
+        source="trace:session:12",
+    )
+    assert not store.remember(
+        "verified_commands",
+        "python -m pytest tests/test_project_context.py",
+        source="trace:session:13",
+    )
+    assert not store.remember(
+        "credentials",
+        "api_key=do-not-store",
+        source="trace:session:14",
+    )
+
+    rendered = store.render()
+    assert rendered.count("python -m pytest") == 1
+    assert "trace:session:12" in rendered
+    assert "do-not-store" not in rendered

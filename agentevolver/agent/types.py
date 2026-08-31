@@ -15,37 +15,34 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from functools import lru_cache
-from typing import Any, ClassVar, Dict, List, Optional, Type, Tuple
-
+from inspect import isawaitable
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.capability import MOUNTED_TYPES
+from agentevolver.capability import mounted_type as mounted_type_entry
 from agentevolver.code import BATCH_CALL_TOOL, GuardedDispatch
 from agentevolver.config import config
-from agentevolver.dynamic import dynamic_manager
-from inspect import isawaitable
-
-from agentevolver.logger import logger
-from agentevolver.memory import memory_manager
-from agentevolver.memory.default.tiered import TieredMemory
-from agentevolver.capability import MOUNTED_TYPES, mounted_type as mounted_type_entry
-from agentevolver.message import ContentPartText, HumanMessage, Message
-from agentevolver.prompt import prompt_manager
-from agentevolver.tool import tool_manager
-from agentevolver.skill import skill_manager
 from agentevolver.connector import connector_manager
-from agentevolver.environment import environment_manager
 from agentevolver.constraint import (
-    constraint_manager,
-    render_status_text,
+    Constraint,
     StepConstraint,
     TokenConstraint,
     WallTimeConstraint,
+    constraint_manager,
+    render_status_text,
 )
-from agentevolver.session import BaseContext, resolve_workspace_root
-from agentevolver.constraint import Constraint
+from agentevolver.dynamic import dynamic_manager
+from agentevolver.logger import logger
+from agentevolver.memory import memory_manager
+from agentevolver.memory.default.tiered import TieredMemory
+from agentevolver.message import ContentPartText, HumanMessage, Message
+from agentevolver.prompt import prompt_manager
 from agentevolver.registry import CONSTRAINT
 from agentevolver.response import Response
+from agentevolver.session import BaseContext, resolve_workspace_root
+from agentevolver.tool import tool_manager
 from agentevolver.utils import (
     assemble_workspace_path,
     get_extension_root,
@@ -443,8 +440,9 @@ class AgentConfig(BaseModel):
 # escalates to its parent via the escalation channel → the parent's inbox → on_event — which
 # works precisely because every agent (parent included) runs this same event-driven loop.
 
-from agentevolver.runtime.types import BaseMessage as _BaseMessage
-from agentevolver.protocol.types import ControlMessage as _ControlMessage, QueryMessage as _QueryMessage
+from agentevolver.protocol.types import ControlMessage as _ControlMessage  # noqa: E402
+from agentevolver.protocol.types import QueryMessage as _QueryMessage  # noqa: E402
+from agentevolver.runtime.types import BaseMessage as _BaseMessage  # noqa: E402
 
 
 class _ActionDone(_BaseMessage):
@@ -1046,7 +1044,9 @@ class Agent(BaseModel):
             str(roots["workspace"] if roots else getattr(config, "workspace_root", "") or ""),
         )
         project_context = load_project_context(
-            workspace, active_paths=extra.get("task_files") or (),
+            workspace,
+            active_paths=extra.get("task_files") or (),
+            source_workspace=extra.get("source_workspace"),
         )
         parent_session = str(extra.get("forked_from") or "")
         if not parent_session:
@@ -1170,9 +1170,9 @@ class Agent(BaseModel):
         Gates the `<self-evolution-rules>` block and
         the generator/optimizer/evaluator half of the sub-agent taxonomy.
         """
+        from agentevolver.agent.server import agent_manager
         from agentevolver.skill.server import skill_manager
         from agentevolver.tool.server import tool_manager
-        from agentevolver.agent.server import agent_manager
 
         # Any one of these is enough: the roster is assembled per run, and a
         # partially-wired evolution setup should still get the rules rather than
@@ -1206,7 +1206,7 @@ class Agent(BaseModel):
         # been copied — and where `extension_root` named the session's staging tree while
         # the identically-spelled `config.extension_root` named the shared library. An
         # agent told the wrong one writes where promotion will refuse to look.
-        from agentevolver.paths import P, path_manager
+        from agentevolver.paths import path_manager
         roots = path_manager.session_roots()
         extension_root = str(roots["extension"] if roots else get_extension_root())
         package_root = str(roots["package"] if roots else get_package_root())
@@ -1308,6 +1308,7 @@ class Agent(BaseModel):
         may be inserted there — put per-step content past ``<constraints>``.
         """
         import re as _re
+
         from agentevolver.agent.context_builder import strip_rendered_comments
 
         rendered = strip_rendered_comments(rendered)
@@ -1448,15 +1449,26 @@ class Agent(BaseModel):
             before = old_blocks.get(capability_type, "").splitlines()
             after = new_blocks.get(capability_type, "").splitlines()
             diff = list(difflib.unified_diff(before, after, n=0, lineterm=""))
-            added = [l[1:].strip() for l in diff if l.startswith("+") and not l.startswith("+++")]
-            removed = [l[1:].strip() for l in diff if l.startswith("-") and not l.startswith("---")]
-            added = [l for l in added if l]
-            removed = [l for l in removed if l]
+            added = [
+                line[1:].strip()
+                for line in diff
+                if line.startswith("+") and not line.startswith("+++")
+            ]
+            removed = [
+                line[1:].strip()
+                for line in diff
+                if line.startswith("-") and not line.startswith("---")
+            ]
+            added = [line for line in added if line]
+            removed = [line for line in removed if line]
             if not added and not removed:
                 continue
             body = [f"  <{capability_type}>"]
-            body += [f"    now available: {l}" for l in added]
-            body += [f"    no longer available, do not call: {l}" for l in removed]
+            body += [f"    now available: {line}" for line in added]
+            body += [
+                f"    no longer available, do not call: {line}"
+                for line in removed
+            ]
             body.append(f"  </{capability_type}>")
             sections.append("\n".join(body))
 
@@ -1723,11 +1735,11 @@ class Agent(BaseModel):
         into the roster; ``extra_tools`` appends any extra schema-only tools. Returns
         ``{tool_calls, routing, reasoning, step_tokens, error}``.
         """
+        from agentevolver.agent.native_tools import assemble_native_tools
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookEvent
         from agentevolver.model import model_manager
         from agentevolver.model.types import accumulate_stream
-        from agentevolver.agent.native_tools import assemble_native_tools
 
         await hook_manager(
             name="trace_hook",
@@ -1942,6 +1954,7 @@ class Agent(BaseModel):
         parent to escalate to. Returns ``{name, done, result, reasoning, error}``.
         """
         import json as _json
+
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookDecision, HookEvent
 
@@ -2443,6 +2456,19 @@ class Agent(BaseModel):
             run.extra_kwargs["resume_source_seq"] = checkpoint.source_last_seq
         self._runs[ref.name] = run
 
+        emit = getattr(hook_manager, "emit", None)
+        if emit is not None:
+            await emit(
+                HookEvent.USER_PROMPT_SUBMIT,
+                {"task": task, **self._lifecycle_input(run)},
+                ctx=ctx,
+            )
+            await emit(
+                HookEvent.SESSION_START,
+                {"task": task, **self._lifecycle_input(run)},
+                ctx=ctx,
+            )
+
         for hook_name in ("trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
@@ -2889,6 +2915,18 @@ class Agent(BaseModel):
                 input={"event": HookEvent.ON_STOP, "result": run.result, "success": success, **self._lifecycle_input(run)},
                 ctx=run.ctx,
             )
+        emit = getattr(hook_manager, "emit", None)
+        if emit is not None:
+            await emit(
+                HookEvent.TASK_COMPLETED,
+                {"result": run.result, "success": success, **self._lifecycle_input(run)},
+                ctx=run.ctx,
+            )
+            await emit(
+                HookEvent.SESSION_END,
+                {"result": run.result, "success": success, **self._lifecycle_input(run)},
+                ctx=run.ctx,
+            )
         self._release_session_resources(run)
 
         # "✅ completed" for a force-stop reads as success in the logs and hides the
@@ -3319,7 +3357,6 @@ class Agent(BaseModel):
         if len(calls) < 2:
             return False
         from agentevolver.tool import tool_manager
-        from agentevolver.connector import connector_manager
 
         routed = [routing.get(call.name) or ("tool", call.name) for call in calls]
         if any(route[0] == "agent" for route in routed):
@@ -3558,6 +3595,18 @@ class ProceduralAgent(Agent):
             "parent_session_id": ctx.parent_session_id,
             "subtask_id": ctx.subtask_id,
         }
+        emit = getattr(hook_manager, "emit", None)
+        if emit is not None:
+            await emit(
+                HookEvent.USER_PROMPT_SUBMIT,
+                {"task": task, **lifecycle},
+                ctx=ctx,
+            )
+            await emit(
+                HookEvent.SESSION_START,
+                {"task": task, **lifecycle},
+                ctx=ctx,
+            )
         for hook_name in ("trace_hook", "trajectory_hook"):
             await hook_manager(
                 name=hook_name,
@@ -3590,6 +3639,17 @@ class ProceduralAgent(Agent):
                     "success": response.success,
                     **lifecycle,
                 },
+                ctx=ctx,
+            )
+        if emit is not None:
+            await emit(
+                HookEvent.TASK_COMPLETED,
+                {"result": response.message, "success": response.success, **lifecycle},
+                ctx=ctx,
+            )
+            await emit(
+                HookEvent.SESSION_END,
+                {"result": response.message, "success": response.success, **lifecycle},
                 ctx=ctx,
             )
         return response

@@ -72,6 +72,10 @@ class AgentRef(BaseModel):
     job_id:            str  = ""
     task:              str  = ""
     parent_session_id: str  = ""
+    #: Root conversation/task-tree identity used for sibling and descendant messaging.
+    root_session_id:   str  = ""
+    #: Gateway project identity used only for human visibility/authorization.
+    project_id:        str  = ""
     #: The child's OWN session, stable across turns so a continuable child keeps one memory.
     session_id:        str  = ""
     continuable:       bool = False
@@ -81,6 +85,9 @@ class AgentRef(BaseModel):
     #: context and can be sent more work — so collapsing the two would report either a
     #: live child as collectable or a finished one as still running.
     busy:              bool = False
+    #: Last control state accepted by the protocol. Kept on the ref so a human-facing
+    #: Agent view can distinguish an intentionally paused worker from an idle one.
+    paused:            bool = False
 
     _inbox:         asyncio.Queue            = PrivateAttr(default_factory=asyncio.Queue)
     _pump_task:     Optional[asyncio.Task]   = PrivateAttr(default=None)
@@ -111,6 +118,8 @@ class AgentRef(BaseModel):
         """
         if not self.alive:
             doing = "gone"
+        elif self.paused:
+            doing = f"paused (turn {self.turns + 1})"
         elif self.busy:
             doing = f"working (turn {self.turns + 1})"
         else:

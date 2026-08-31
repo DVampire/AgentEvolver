@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from agentevolver.logger import logger
 from agentevolver.paths import path_manager
 from agentevolver.utils import get_extension_root
+from agentevolver.utils.file_utils import atomic_text_update
 
 _JOURNAL = ".journal"
 _LEVERS = ("configuration", "control", "action", "instruction")
@@ -71,7 +72,13 @@ class Journal:
         path = self._path(module, name)
         if not os.path.exists(path):
             return []
-        text = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as stream:
+            text = stream.read()
+        return self._parse(text, path)
+
+    @staticmethod
+    def _parse(text: str, path: str) -> List[JournalRound]:
+        """Parse all valid rounds from one locked journal snapshot."""
         rounds: List[JournalRound] = []
         for m in _ROUND_RE.finditer(text):
             try:
@@ -89,11 +96,10 @@ class Journal:
                 logger.warning(f"| ⚠️ Journal: skipping malformed round in {path}: {e}")
         return sorted(rounds, key=lambda r: r.round)
 
-    def _write(self, module: str, name: str, rounds: List[JournalRound]) -> None:
-        path = self._path(module, name)
+    @staticmethod
+    def _render(module: str, name: str, rounds: List[JournalRound]) -> str:
         body = "\n".join(r.render() for r in sorted(rounds, key=lambda r: r.round))
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# Evolution journal — {module}:{name}\n\n{body}\n")
+        return f"# Evolution journal — {module}:{name}\n\n{body}\n"
 
     def next_round_number(self, module: str, name: str) -> int:
         rounds = self.read(module, name)
@@ -104,37 +110,54 @@ class Journal:
         """Record a new hypothesis for this round (gating_outcome starts 'pending')."""
         if lever not in _LEVERS:
             logger.warning(f"| ⚠️ Journal: unknown lever {lever!r}; expected one of {_LEVERS}")
-        rounds = self.read(module, name)
-        rnd = JournalRound(
-            round=self.next_round_number(module, name),
-            hypothesis_id=hypothesis_id,
-            lever=lever,
-            predicted_flip=predicted_flip or [],
-            note=note,
-        )
-        rounds.append(rnd)
-        self._write(module, name, rounds)
+        path = self._path(module, name)
+        created: List[JournalRound] = []
+
+        def append(text: str) -> str:
+            rounds = self._parse(text, path)
+            rnd = JournalRound(
+                round=max((item.round for item in rounds), default=0) + 1,
+                hypothesis_id=hypothesis_id,
+                lever=lever,
+                predicted_flip=predicted_flip or [],
+                note=note,
+            )
+            rounds.append(rnd)
+            created.append(rnd)
+            return self._render(module, name, rounds)
+
+        atomic_text_update(path, append)
+        rnd = created[0]
         logger.info(f"| 📓 Journal: {module}:{name} round {rnd.round} hypothesis '{hypothesis_id}' ({lever})")
         return rnd
 
     def fill_gating(self, module: str, name: str, outcome: str,
                     attribution: Optional[Dict[str, bool]] = None, round_no: Optional[int] = None) -> Optional[JournalRound]:
         """Backfill the actual outcome/attribution for a round (defaults to the latest pending one)."""
-        rounds = self.read(module, name)
-        if not rounds:
+        path = self._path(module, name)
+        changed: List[JournalRound] = []
+
+        def fill(text: str) -> str:
+            rounds = self._parse(text, path)
+            if round_no is not None:
+                target = next((item for item in rounds if item.round == round_no), None)
+            else:
+                target = next(
+                    (item for item in reversed(rounds) if item.gating_outcome == "pending"),
+                    None,
+                )
+            if target is None:
+                return text
+            target.gating_outcome = outcome
+            if attribution:
+                target.gating_attribution = attribution
+            changed.append(target.model_copy(deep=True))
+            return self._render(module, name, rounds)
+
+        atomic_text_update(path, fill)
+        if not changed:
             return None
-        target = None
-        if round_no is not None:
-            target = next((r for r in rounds if r.round == round_no), None)
-        else:
-            # latest pending round
-            target = next((r for r in reversed(rounds) if r.gating_outcome == "pending"), None)
-        if target is None:
-            return None
-        target.gating_outcome = outcome
-        if attribution:
-            target.gating_attribution = attribution
-        self._write(module, name, rounds)
+        target = changed[0]
         logger.info(f"| 📓 Journal: {module}:{name} round {target.round} gated '{outcome}'")
         return target
 

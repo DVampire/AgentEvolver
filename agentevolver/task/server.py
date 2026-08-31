@@ -26,7 +26,8 @@ from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.response.types import Response
 from agentevolver.task.types import Task, TaskPriority, TaskStatus
-from agentevolver.utils import Singleton, file_lock, make_id
+from agentevolver.utils import Singleton, make_id
+from agentevolver.utils.file_utils import atomic_json_update
 
 # ---------------------------------------------------------------------------
 # Extended task metadata
@@ -614,34 +615,43 @@ class TaskManager(metaclass=Singleton):
                     buckets["done"][tid] = payload
 
             for (persist_path, archive_path), buckets in grouped.items():
-                data = {
-                    "saved_at": datetime.now(timezone.utc).isoformat(),
-                    "active": buckets["active"],
-                }
-                os.makedirs(os.path.dirname(persist_path), exist_ok=True)
-                async with file_lock(persist_path):
-                    with open(persist_path, "w", encoding="utf-8") as f:
-                        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+                known_ids = set(buckets["active"]) | set(buckets["done"])
+
+                def merge_active(current):
+                    active = dict(dict(current or {}).get("active") or {})
+                    for task_id in known_ids:
+                        active.pop(task_id, None)
+                    active.update(buckets["active"])
+                    return {
+                        "saved_at": datetime.now(timezone.utc).isoformat(),
+                        "active": active,
+                    }
+
+                await asyncio.to_thread(
+                    atomic_json_update,
+                    persist_path,
+                    merge_active,
+                    default={},
+                )
 
                 # Append completed tasks to their owning session archive.
                 done = buckets["done"]
                 if not done:
                     continue
-                existing: Dict[str, Any] = {}
-                if os.path.exists(archive_path):
-                    try:
-                        with open(archive_path, "r", encoding="utf-8") as f:
-                            existing = json.load(f).get("tasks", {})
-                    except Exception:
-                        pass
-                existing.update(done)
-                archive_data = {
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "tasks": existing,
-                }
-                async with file_lock(archive_path):
-                    with open(archive_path, "w", encoding="utf-8") as f:
-                        json.dump(archive_data, f, indent=2, ensure_ascii=False, default=str)
+                def merge_archive(current):
+                    existing = dict(dict(current or {}).get("tasks") or {})
+                    existing.update(done)
+                    return {
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "tasks": existing,
+                    }
+
+                await asyncio.to_thread(
+                    atomic_json_update,
+                    archive_path,
+                    merge_archive,
+                    default={},
+                )
         except Exception as e:
             logger.warning(f"| ⚠️  TaskManager persist failed: {e}")
 

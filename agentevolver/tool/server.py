@@ -2,19 +2,20 @@
 
 Server implementation for tool management with lazy loading support.
 """
+import time
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
-import os
+
 from pydantic import BaseModel, ConfigDict, Field
 
-
-from agentevolver.paths import P, path_manager
-from agentevolver.logger import logger
+from agentevolver.capability import CapabilitySchema, SchemaSource
 from agentevolver.config import config
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.response.types import Response
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolConfig, ToolContext
-from agentevolver.response.types import Response
 from agentevolver.utils import assemble_workspace_path
-from agentevolver.capability import CapabilitySchema, SchemaSource
+
 
 class ToolManagerServer(BaseModel):
     """tool manager Server for managing tool registration and execution with lazy loading."""
@@ -290,9 +291,127 @@ class ToolManagerServer(BaseModel):
         ctx = ToolContext.from_context(ctx) if ctx else ToolContext(name=name, input=input)
         ctx.name = name
         ctx.input = dict(input or {})
-        return await self._ensure_context_manager()(
+        manager = self._ensure_context_manager()
+
+        # Rollouts are consulted at the last common boundary before execution.  The
+        # extension manager is imported lazily to keep normal tools independent of the
+        # extension package and to avoid an import cycle during startup.
+        try:
+            from agentevolver.extension import extension_manager
+
+            status = extension_manager.rollout_status("tool", name)
+        except Exception:  # no extension host / startup path
+            status = None
+        if not status or status.get("phase") in {"active", "reverted"}:
+            return await manager(
+                name, input, ctx=ctx, execution_context=execution_context, **kwargs
+            )
+
+        traffic_key = str(
+            (execution_context or {}).get("session_id")
+            or (execution_context or {}).get("root_call_id")
+            or ctx.id
+            or "anonymous"
+        )
+        phase = str(status.get("phase"))
+        candidate_version = str(status.get("candidate_version"))
+
+        if phase == "canary":
+            selected = extension_manager.select_rollout_version(
+                "tool", name, traffic_key,
+            )
+            if selected == candidate_version:
+                started = time.perf_counter()
+                try:
+                    candidate = await extension_manager.rollout_tool_config(
+                        name, candidate_version,
+                    )
+                    result = await manager.invoke_config(
+                        name,
+                        candidate,
+                        input,
+                        ctx=ctx,
+                        execution_context={
+                            **dict(execution_context or {}),
+                            "rollout_role": "canary",
+                        },
+                        **kwargs,
+                    )
+                    observation = self._rollout_observation(result, started)
+                except Exception as error:  # loading must fail safely to baseline
+                    logger.error(
+                        f"| ❌ Canary {name}@{candidate_version} unavailable: {error}"
+                    )
+                    observation = {
+                        "success": False,
+                        "latency_ms": (time.perf_counter() - started) * 1000,
+                    }
+                    result = await manager(
+                        name, input, ctx=ctx, execution_context=execution_context, **kwargs
+                    )
+                await extension_manager.record_canary_observation(
+                    "tool", name, observation,
+                )
+                return result
+
+        baseline_started = time.perf_counter()
+        result = await manager(
             name, input, ctx=ctx, execution_context=execution_context, **kwargs
         )
+        if phase != "shadow":
+            return result
+
+        # Shadowing is intentionally restricted to implementations that explicitly
+        # declare themselves read-only.  Unknown or mutating effects are never doubled.
+        baseline_info = await manager.get_info(name)
+        if getattr(baseline_info, "mutates", None) is not False:
+            return result
+        baseline_observation = self._rollout_observation(result, baseline_started)
+        candidate_started = time.perf_counter()
+        try:
+            candidate = await extension_manager.rollout_tool_config(
+                name, candidate_version,
+            )
+            if getattr(candidate, "mutates", None) is not False:
+                return result
+            candidate_result = await manager.invoke_config(
+                name,
+                candidate,
+                input,
+                ctx=ctx,
+                execution_context={
+                    **dict(execution_context or {}),
+                    "rollout_role": "shadow",
+                },
+                **kwargs,
+            )
+            candidate_observation = self._rollout_observation(
+                candidate_result, candidate_started,
+            )
+        except Exception as error:
+            logger.error(f"| ❌ Shadow {name}@{candidate_version} failed: {error}")
+            candidate_observation = {
+                "success": False,
+                "latency_ms": (time.perf_counter() - candidate_started) * 1000,
+            }
+        await extension_manager.record_shadow_observation(
+            "tool", name, baseline_observation, candidate_observation,
+        )
+        return result
+
+    @staticmethod
+    def _rollout_observation(result: Response, started: float) -> Dict[str, Any]:
+        """Normalize a capability response into rollout evidence."""
+        score = None
+        for payload in (getattr(result, "extra", None), getattr(result, "data", None)):
+            if isinstance(payload, dict) and isinstance(payload.get("score"), (int, float)):
+                score = float(payload["score"])
+                break
+        return {
+            "success": bool(getattr(result, "success", False)),
+            "score": score,
+            "latency_ms": (time.perf_counter() - started) * 1000,
+        }
 
     def guard(self, guard):
         """Register a monotonic Tool guard and return its exact disposer."""

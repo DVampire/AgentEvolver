@@ -52,6 +52,7 @@ from agentevolver.gateway.types import (
 )
 from agentevolver.hook import hook_manager
 from agentevolver.ide import ide_manager
+from agentevolver.job import job_manager
 from agentevolver.kernel import compute as kernel_compute
 from agentevolver.kernel import kernel_manager
 from agentevolver.kernel import notebooks as kernel_notebooks
@@ -65,6 +66,8 @@ from agentevolver.plan import PlanMode, plan_manager
 from agentevolver.plugins import plugin_manager
 from agentevolver.process import process_manager
 from agentevolver.prompt import prompt_manager
+from agentevolver.protocol import protocol_manager
+from agentevolver.runtime import runtime_manager
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.session import project as session_project
 from agentevolver.session.project import bind_session_roots
@@ -83,6 +86,7 @@ from agentevolver.tool import tool_manager
 from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
 from agentevolver.utils import make_id
+from agentevolver.utils.file_utils import append_jsonl, atomic_json_update, atomic_write_text
 from agentevolver.version import version_manager
 from agentevolver.workflow import workflow_manager
 
@@ -185,6 +189,7 @@ class AgentGateway:
         self._approvals = GatewayApprovalRendezvous(self._publish_approval_event)
         self._approval_disposer: Optional[Callable[[], None]] = None
         self._connector_approval_disposer: Optional[Callable[[], None]] = None
+        self._environment_approval_disposer: Optional[Callable[[], None]] = None
         self._initialized = False
         self._stopping = False
         self._workspace_source = (
@@ -248,6 +253,9 @@ class AgentGateway:
         env_names = getattr(config, "env_names", None)
         if env_names:
             await environment_manager.initialize(env_names=env_names)
+            self._environment_approval_disposer = environment_manager.set_approval_resolver(
+                self._approvals.request
+            )
             # A failed environment is silently absent from the registry; surface
             # it loudly so an empty capability list is never a mystery.
             registered_envs = await environment_manager.list()
@@ -287,6 +295,9 @@ class AgentGateway:
         if self._connector_approval_disposer is not None:
             self._connector_approval_disposer()
             self._connector_approval_disposer = None
+        if self._environment_approval_disposer is not None:
+            self._environment_approval_disposer()
+            self._environment_approval_disposer = None
         await self._approvals.cancel_all("gateway_stopped")
         for task in tuple(self._active_agent_tasks.values()):
             task.cancel()
@@ -455,7 +466,7 @@ class AgentGateway:
         target = path_manager.get(P.CONVERSATION_EVENTS, owner=session.owner,
                                   session_id=session_id, conversation_id=conversation.id)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+        atomic_write_text(target, legacy.read_text(encoding="utf-8"))
         legacy.rename(legacy.with_suffix(".jsonl.migrated"))
         logger.info(f"| ♻️ Adopted the pre-conversation transcript of {session_id} as {conversation.id}")
 
@@ -888,6 +899,77 @@ class AgentGateway:
         return {
             "events": [event.model_dump(mode="json") for event in self._events[session_id] if event.seq_no > after_seq]
         }
+
+    def _owned_live_agent(self, params: Dict[str, Any]):
+        """Resolve one delegated Agent without allowing cross-session control."""
+        session_id = self._require_session_id(params)
+        job_id = str(params.get("job_id") or "")
+        if not job_id:
+            raise ValueError("job_id is required")
+        ref = runtime_manager.child(job_id)
+        if ref is None:
+            raise ValueError(f"Unknown delegated agent: {job_id}")
+        if ref.project_id != session_id:
+            raise ValueError(f"Delegated agent {job_id} belongs to another session")
+        return ref
+
+    async def _command_agent_live_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Human-facing thread view for every child delegated by this session."""
+        session_id = self._require_session_id(params)
+        agents = []
+        for ref in runtime_manager.project_children(session_id):
+            job = job_manager.get(ref.job_id)
+            agents.append({
+                "job_id": ref.job_id,
+                "ref_name": ref.name,
+                "agent_name": ref.agent_name,
+                "task": ref.task,
+                "status": ref.status.value,
+                "busy": ref.busy,
+                "paused": ref.paused,
+                "continuable": ref.continuable,
+                "turns": ref.turns,
+                "session_id": ref.session_id,
+                "job_status": job.status.value if job is not None else None,
+                "elapsed": job.elapsed if job is not None else None,
+                "label": ref.label(),
+                "output_tail": (job.output[-4_000:] if job is not None else ""),
+            })
+        return {"agents": agents}
+
+    async def _command_agent_live_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Steer an idle/working continuable Agent from the human control surface."""
+        ref = self._owned_live_agent(params)
+        message = str(params.get("message") or "").strip()
+        if not message:
+            raise ValueError("message is required")
+        response = await runtime_manager.send_to_child(
+            ref.job_id,
+            message,
+            session_id=ref.root_session_id or ref.parent_session_id,
+        )
+        return {
+            "success": bool(response.success),
+            "message": response.message,
+            "data": response.data,
+        }
+
+    async def _command_agent_live_control(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Pause, resume, cancel gracefully, or force-stop one visible Agent thread."""
+        ref = self._owned_live_agent(params)
+        action = str(params.get("action") or "")
+        if action == "pause":
+            await protocol_manager.pause(ref)
+        elif action == "resume":
+            await protocol_manager.resume(ref)
+        elif action == "cancel":
+            await protocol_manager.cancel(ref, reason=str(params.get("reason") or "human"))
+        elif action == "kill":
+            if not job_manager.kill(ref.job_id):
+                raise ValueError(f"Delegated agent {ref.job_id} is already stopped")
+        else:
+            raise ValueError("action must be pause, resume, cancel, or kill")
+        return {"job_id": ref.job_id, "action": action, "accepted": True}
 
     async def _command_task_submit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)
@@ -1474,22 +1556,26 @@ class AgentGateway:
         entry: Dict[str, Any] = {"role": role, "content": params.get("content"), "ts": now}
         if params.get("tab"):
             entry["tab"] = params["tab"]
-        with (rec_dir / "chat.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        append_jsonl(rec_dir / "chat.jsonl", entry)
         meta_path = rec_dir / "meta.json"
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
-        except Exception:  # noqa: BLE001
-            meta = {}
-        meta.setdefault("session_id", session_id)
-        meta.setdefault("created_at", now)
-        if params.get("flow_id"):
-            meta["flow_id"] = params["flow_id"]
-        if not meta.get("title") and role == "user" and isinstance(entry["content"], str):
-            meta["title"] = entry["content"].strip()[:60] or None
-        meta["updated_at"] = now
-        meta["message_count"] = int(meta.get("message_count", 0)) + 1
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        def update_meta(current: Any) -> Dict[str, Any]:
+            meta = dict(current or {})
+            meta.setdefault("session_id", session_id)
+            meta.setdefault("created_at", now)
+            if params.get("flow_id"):
+                meta["flow_id"] = params["flow_id"]
+            if (
+                not meta.get("title")
+                and role == "user"
+                and isinstance(entry["content"], str)
+            ):
+                meta["title"] = entry["content"].strip()[:60] or None
+            meta["updated_at"] = now
+            meta["message_count"] = int(meta.get("message_count", 0)) + 1
+            return meta
+
+        atomic_json_update(meta_path, update_meta, default={})
         return {"ok": True}
 
     async def _command_chat_sessions_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1546,8 +1632,7 @@ class AgentGateway:
             "value": params.get("value"),
             "ts": datetime.now(timezone.utc).isoformat(),
         }
-        with (rec_dir / "feedback.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        append_jsonl(rec_dir / "feedback.jsonl", entry)
         return {"ok": True}
 
     async def _command_canvas_flow_list(self, params: Dict[str, Any]) -> Dict[str, Any]:

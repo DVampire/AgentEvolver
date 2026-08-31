@@ -12,12 +12,12 @@ the Gateway running.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Optional
 
 from agentevolver.conversation.types import Conversation, title_from
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
+from agentevolver.utils.file_utils import append_jsonl, atomic_json_update, atomic_write_text
 
 
 class ConversationManagerServer:
@@ -47,11 +47,10 @@ class ConversationManagerServer:
     def save(self, owner: str, conversation: Conversation) -> Conversation:
         """Persist a conversation's identity (not its transcript)."""
         path = self._meta_path(owner, conversation.session_id, conversation.id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(conversation.model_dump(mode="json"), indent=2,
-                                        ensure_ascii=False), encoding="utf-8")
-        os.replace(temporary, path)
+        atomic_write_text(
+            path,
+            json.dumps(conversation.model_dump(mode="json"), indent=2, ensure_ascii=False),
+        )
         return conversation
 
     def get(self, owner: str, session_id: str, conversation_id: str) -> Optional[Conversation]:
@@ -78,12 +77,20 @@ class ConversationManagerServer:
         return out
 
     def rename(self, owner: str, session_id: str, conversation_id: str, title: str) -> Optional[Conversation]:
-        conversation = self.get(owner, session_id, conversation_id)
-        if conversation is None:
+        path = self._meta_path(owner, session_id, conversation_id)
+        if not path.is_file():
             return None
-        conversation.title = title
-        conversation.touch()
-        return self.save(owner, conversation)
+        changed: List[Conversation] = []
+
+        def rename_record(current: Any) -> Dict[str, Any]:
+            conversation = Conversation.model_validate(current)
+            conversation.title = title
+            conversation.touch()
+            changed.append(conversation)
+            return conversation.model_dump(mode="json")
+
+        atomic_json_update(path, rename_record, recover_corrupt=False)
+        return changed[0]
 
     def delete(self, owner: str, session_id: str, conversation_id: str) -> bool:
         """Remove a conversation and its transcript. True if one was there."""
@@ -106,8 +113,7 @@ class ConversationManagerServer:
         if not path.parent.is_dir():
             return  # the project has not materialized yet; nothing to record against
         try:
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+            append_jsonl(path, event)
         except Exception as exc:  # noqa: BLE001 — recording must never break the run
             logger.warning(f"| ⚠️ Could not append to conversation {conversation_id}: {exc}")
 
@@ -129,15 +135,23 @@ class ConversationManagerServer:
     def note_task(self, owner: str, session_id: str, conversation_id: str,
                   task_id: str, content: str) -> Optional[Conversation]:
         """Record a submission against its conversation, titling it if new."""
-        conversation = self.get(owner, session_id, conversation_id)
-        if conversation is None:
+        path = self._meta_path(owner, session_id, conversation_id)
+        if not path.is_file():
             return None
-        if task_id not in conversation.task_ids:
-            conversation.task_ids.append(task_id)
-        if not conversation.title:
-            conversation.title = title_from(content)
-        conversation.touch()
-        return self.save(owner, conversation)
+        changed: List[Conversation] = []
+
+        def record_task(current: Any) -> Dict[str, Any]:
+            conversation = Conversation.model_validate(current)
+            if task_id not in conversation.task_ids:
+                conversation.task_ids.append(task_id)
+            if not conversation.title:
+                conversation.title = title_from(content)
+            conversation.touch()
+            changed.append(conversation)
+            return conversation.model_dump(mode="json")
+
+        atomic_json_update(path, record_task, recover_corrupt=False)
+        return changed[0]
 
 
 # Global conversation manager instance

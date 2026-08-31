@@ -28,7 +28,6 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
-import os
 import re
 import time
 import uuid
@@ -44,6 +43,7 @@ from agentevolver.model import model_manager
 from agentevolver.paths import path_manager
 from agentevolver.trace.types import TraceEvent, TraceEventType
 from agentevolver.utils import assemble_workspace_path
+from agentevolver.utils.file_utils import atomic_write_text
 
 _FLOW_LABEL_MAX = 80
 
@@ -74,9 +74,7 @@ def _ts() -> str:
 
 
 def _write_sync(file_path: str, content: str) -> None:
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "w", encoding="utf-8") as fh:
-        fh.write(content)
+    atomic_write_text(file_path, content)
 
 
 def _as_text(value: Any) -> str:
@@ -589,6 +587,14 @@ class TieredMemory(Memory):
         native_checkpoint: Optional[Dict[str, Any]] = None
         transaction_id: Optional[str] = None
         try:
+            from agentevolver.hook import HookEvent, hook_manager
+            from agentevolver.session import SessionContext
+
+            await hook_manager.emit(
+                HookEvent.PRE_COMPACT,
+                {"memory": self.name, "recent_records": len(state.recent)},
+                ctx=SessionContext(id=state.session_id),
+            )
             state.compaction = {"started_at": started_at, "chunks": 0}
             await self._persist(state)
 
@@ -677,6 +683,21 @@ class TieredMemory(Memory):
                 await self._persist(state)
             except Exception as error:  # noqa: BLE001 — the compaction itself already happened
                 logger.warning(f"| ⚠️ {self.name}: could not persist after compaction ({error})")
+            try:
+                from agentevolver.hook import HookEvent, hook_manager
+                from agentevolver.session import SessionContext
+
+                await hook_manager.emit(
+                    HookEvent.POST_COMPACT,
+                    {
+                        "memory": self.name,
+                        "outcome": outcome,
+                        "chunks": chunks_done,
+                    },
+                    ctx=SessionContext(id=state.session_id),
+                )
+            except Exception as error:  # observational hook; compaction is already settled
+                logger.warning(f"| ⚠️ Post-compaction hook failed: {error}")
             if outcome == "ok":
                 logger.info(
                     f"| 🗜️ {self.name}: compacted {chunks_done} chunk(s) for {state.session_id}"
@@ -1005,6 +1026,9 @@ class TieredMemory(Memory):
 
         before = estimate_tokens([existing, *(source_items or [r.as_line() for r in chunk])])
         after = estimate_tokens(summary)
+        from agentevolver.memory.checkpoint import PortableCheckpoint
+
+        checkpoint = PortableCheckpoint.from_text(summary)
         try:
             from agentevolver.trace import replace_op, trace_manager
             from agentevolver.trace.types import TraceEvent, TraceEventType
@@ -1044,6 +1068,8 @@ class TieredMemory(Memory):
                         len(item) for item in (source_items or [])
                     ),
                     "checkpoint_characters": len(summary),
+                    "checkpoint_schema_version": checkpoint.schema_version,
+                    "checkpoint": checkpoint.model_dump(mode="json"),
                     "savings_ratio": (
                         (before - after) / before if before else 0.0
                     ),

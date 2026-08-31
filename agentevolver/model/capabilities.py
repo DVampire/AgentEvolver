@@ -9,7 +9,6 @@ should be used, temporarily downgraded, or probed again after its TTL.
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from agentevolver.trace.request import endpoint_fingerprint
+from agentevolver.utils.file_utils import atomic_json_update
 
 
 class CapabilityState(str, Enum):
@@ -138,9 +138,7 @@ class ProviderCapabilityRegistry:
         path = self._persist_path
         if path is None:
             return
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
             observations = []
             for (route, feature), value in sorted(
                 self._entries.items(),
@@ -163,21 +161,37 @@ class ProviderCapabilityRegistry:
                     "last_error": value.last_error,
                     "attempts": value.attempts,
                 })
-            with temporary.open("w", encoding="utf-8") as handle:
-                json.dump(
-                    {"schema_version": 1, "observations": observations},
-                    handle,
-                    sort_keys=True,
+            now = self._clock()
+
+            def identity(item: Dict[str, Any]) -> tuple[str, ...]:
+                route = dict(item.get("route") or {})
+                return (
+                    str(route.get("provider") or ""),
+                    str(route.get("endpoint_fingerprint") or ""),
+                    str(route.get("model") or ""),
+                    str(route.get("api_version") or ""),
+                    str(item.get("feature") or ""),
                 )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        except OSError:
+
+            def merge(current: Any) -> Dict[str, Any]:
+                durable = dict(current or {})
+                existing = durable.get("observations") if durable.get("schema_version") == 1 else []
+                combined = {
+                    identity(item): item
+                    for item in (existing or [])
+                    if isinstance(item, dict)
+                    and float(item.get("expires_at") or 0) > now
+                }
+                combined.update({identity(item): item for item in observations})
+                return {
+                    "schema_version": 1,
+                    "observations": [combined[key] for key in sorted(combined)],
+                }
+
+            atomic_json_update(path, merge, default={})
+        except (OSError, TypeError, ValueError):
             # Probe state must never make a model call fail.
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
+            return
 
     def _current(
         self, route: CapabilityRoute, feature: str,

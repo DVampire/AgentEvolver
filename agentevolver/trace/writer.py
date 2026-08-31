@@ -16,10 +16,11 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
-from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
-from agentevolver.utils import AsyncQueue
+from agentevolver.paths import P, path_manager
 from agentevolver.trace.types import TraceEvent
+from agentevolver.utils import AsyncQueue
+from agentevolver.utils.file_utils import append_jsonl, atomic_json_update
 
 
 class TraceWriter:
@@ -29,8 +30,6 @@ class TraceWriter:
         self._log_root = log_root
         self._queue = queue
 
-        # session_id → open file handle for fast append
-        self._handles: Dict[str, object] = {}
         # session_id → summary dict for the index
         self._session_meta: Dict[str, Dict] = {}
 
@@ -45,12 +44,11 @@ class TraceWriter:
     def rebind(self, log_root: str) -> None:
         """Point the writer at a new trace root (called when a session is bound).
 
-        Open handles are closed so subsequent events are appended under the new
-        root, and the index follows it — each session keeps its own index.
+        Subsequent events are appended under the new root, and the index follows
+        it — each session keeps its own index.
         """
         if log_root == self._log_root:
             return
-        self._close_all_handles()
         self._log_root = log_root
         self._index_path = str(path_manager.under(log_root, P.LOG_TRACE_INDEX))
         self._session_meta.clear()
@@ -65,7 +63,6 @@ class TraceWriter:
                 await asyncio.wait_for(self._task, timeout=5.0)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 self._task.cancel()
-        self._close_all_handles()
         await self._flush_index()
 
     # ------------------------------------------------------------------
@@ -97,11 +94,10 @@ class TraceWriter:
 
     async def _write_event(self, event: TraceEvent) -> None:
         session_id = event.session_id or "no_session"
-        fh = self._get_handle(session_id)
-
-        line = json.dumps(event.to_dict(), ensure_ascii=False) + "\n"
-        fh.write(line)  # type: ignore[attr-defined]
-        fh.flush()      # type: ignore[attr-defined]
+        # One locked append is the durability boundary. Long-lived TextIO handles are
+        # fast in a single process but can interleave buffered writes when two gateways
+        # share a trace root.
+        append_jsonl(self._session_path(session_id), event.to_dict())
 
         # Update session metadata
         meta = self._session_meta.setdefault(session_id, {
@@ -132,38 +128,75 @@ class TraceWriter:
             self._log_root, P.TRACE_EVENT_LOG, session_id=safe,
         ))
 
-    def _get_handle(self, session_id: str):
-        if session_id not in self._handles:
-            path = self._session_path(session_id)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            self._handles[session_id] = open(path, "a", encoding="utf-8", buffering=1)
-        return self._handles[session_id]
-
-    def _close_all_handles(self) -> None:
-        for fh in self._handles.values():
-            try:
-                fh.close()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        self._handles.clear()
-
     # ------------------------------------------------------------------
     # Index
     # ------------------------------------------------------------------
 
     async def _flush_index(self) -> None:
         try:
-            data = {
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "sessions": list(self._session_meta.values()),
+            snapshots = {
+                session_id: self._rebuild_meta(session_id, fallback=meta)
+                for session_id, meta in self._session_meta.items()
             }
-            os.makedirs(os.path.dirname(self._index_path), exist_ok=True)
-            tmp = self._index_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            os.replace(tmp, self._index_path)
+
+            def merge(current):
+                durable = {
+                    str(item.get("session_id")): dict(item)
+                    for item in dict(current or {}).get("sessions", [])
+                    if isinstance(item, dict) and item.get("session_id")
+                }
+                for session_id, candidate in snapshots.items():
+                    previous = durable.get(session_id)
+                    if previous is None:
+                        durable[session_id] = candidate
+                        continue
+                    # A process may have scanned just before waiting for the index lock.
+                    # Never let that stale snapshot move the derived index backwards.
+                    candidate_key = (
+                        int(candidate.get("last_seq_no", -1)),
+                        int(candidate.get("event_count", 0)),
+                    )
+                    previous_key = (
+                        int(previous.get("last_seq_no", -1)),
+                        int(previous.get("event_count", 0)),
+                    )
+                    if candidate_key >= previous_key:
+                        durable[session_id] = candidate
+                return {
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "sessions": [durable[key] for key in sorted(durable)],
+                }
+
+            data = atomic_json_update(self._index_path, merge, default={})
+            self._session_meta = {
+                item["session_id"]: item for item in data.get("sessions", [])
+            }
         except Exception as e:
             logger.warning(f"| ⚠️  TraceWriter index flush failed: {e}")
+
+    def _rebuild_meta(self, session_id: str, *, fallback: Dict) -> Dict:
+        """Derive index facts from the append log instead of process-local counters."""
+        events = self.read_session(session_id)
+        if not events:
+            return dict(fallback)
+        timestamps = [str(item.get("timestamp") or "") for item in events]
+        sequences = [
+            int(item["seq_no"]) for item in events if item.get("seq_no") is not None
+        ]
+        return {
+            "session_id": session_id,
+            "file": self._session_path(session_id),
+            "event_count": len(events),
+            "first_event_at": next((value for value in timestamps if value), ""),
+            "last_event_at": next((value for value in reversed(timestamps) if value), ""),
+            "last_seq_no": max(sequences) if sequences else len(events) - 1,
+            "agent_names": sorted({
+                str(item["agent_name"]) for item in events if item.get("agent_name")
+            }),
+            "task_ids": sorted({
+                str(item["task_id"]) for item in events if item.get("task_id")
+            }),
+        }
 
     async def _load_index(self) -> None:
         if not os.path.exists(self._index_path):

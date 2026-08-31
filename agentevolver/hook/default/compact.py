@@ -20,18 +20,18 @@ output:
 
 from __future__ import annotations
 
-from agentevolver.registry import HOOK
+from agentevolver.hook.types import Hook, HookContext, HookResult
 from agentevolver.logger import logger
-from agentevolver.message import SystemMessage, HumanMessage
+from agentevolver.memory.checkpoint import PortableCheckpoint
+from agentevolver.message import HumanMessage, SystemMessage
 from agentevolver.model import model_manager
-from agentevolver.hook.types import HookContext, HookResult, Hook
-
+from agentevolver.registry import HOOK
 
 _SYSTEM_PROMPT = "You are a concise summariser for an AI agent's execution history."
 
 _DEFAULT_INSTRUCTION = """Return one compact replacement checkpoint that merges the
 existing checkpoint (if any) with the new canonical closed turns. Use only these headings
-when they have content: Current objective, Established facts, Decisions, Workspace
+when they have content: Current objective, Acceptance conditions, Established facts, Decisions, Workspace
 mutations, Verification, Failed approaches, Remaining conditions, Next action. Preserve
 exact paths, commands, values, errors, tool outcomes, unresolved blockers, and source_seq
 references. Never invent a decision from private reasoning that is not present in the
@@ -91,6 +91,8 @@ class CompactHook(Hook):
                 },
             )
             text = response.message.strip() if response.success else ""
+            if text:
+                text = PortableCheckpoint.from_text(text).render()
             logger.debug(f"| 🗜️ CompactHook: {len(items)} records → {len(text)} chars")
         except Exception as e:
             logger.warning(f"| ⚠️ CompactHook failed: {e}")

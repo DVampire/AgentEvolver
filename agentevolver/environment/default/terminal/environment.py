@@ -113,6 +113,8 @@ class TerminalEnvironment(Environment):
     # ------------------------------------------------------------------ actions
     @environment_manager.action(
         name="open",
+        permission_op="bash",
+        permission_target="command",
         description=(
             "Open a terminal that stays alive between calls, and return its id.\n\n"
             "Unlike `bash_tool`, which runs each command in a new process, everything this "
@@ -150,6 +152,8 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="send",
+        permission_op="bash",
+        permission_target="text",
         description=(
             "Type text into a terminal, wait for it to go quiet, and return what appeared "
             "because of it — not the whole screen, only what changed.\n\n"
@@ -244,6 +248,7 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="read",
+        read_only=True,
         description=(
             "Show what a terminal holds — the screen and the lines that have scrolled off "
             "it — without sending anything.\n\n"
@@ -264,6 +269,7 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="signal",
+        destructive=True,
         description=(
             "Send a signal to the command currently running in a terminal — what ctrl-C "
             "does.\n\n"
@@ -292,6 +298,7 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="close",
+        destructive=True,
         description=(
             "End a terminal you are finished with, along with anything it started.\n\n"
             "Its state — the directory, the environment, the REPL — is gone, so close it "
@@ -310,6 +317,7 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="list",
+        read_only=True,
         description=(
             "Every terminal you opened, oldest first, with its label, whether it is still "
             "alive, and how long it has been there. Use it to recover an id you did not "

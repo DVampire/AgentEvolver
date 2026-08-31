@@ -16,13 +16,18 @@ general; this file is just their typed conversations.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agentevolver.logger import logger
+from agentevolver.protocol.types import (
+    ControlMessage,
+    EscalationMessage,
+    MonitorProgressMessage,
+    QueryMessage,
+)
 from agentevolver.response.types import Response
 from agentevolver.runtime import runtime_manager
 from agentevolver.utils import Singleton, make_id
-from agentevolver.protocol.types import EscalationMessage, MonitorProgressMessage, ControlMessage, QueryMessage
 
 _ESCALATION_TIMEOUT_S = 300.0
 
@@ -52,6 +57,11 @@ _AMBIENT_CONTEXT_KEYS = (
     # copies only this allowlisted metadata into it.
     "task_contract",
     "child_reasoning_effort",
+    # Host-minted ownership metadata. Descendants need the project id for the Gateway's
+    # human control surface and the source workspace for stable project-memory identity.
+    "project_id",
+    "source_workspace",
+    "owner",
 )
 
 
@@ -121,7 +131,9 @@ class ProtocolManager(metaclass=Singleton):
         evolution target's allowlists come from are each a one-word mistake away from a
         child working in the wrong place or holding a scope granted to its sibling.
         """
-        from agentevolver.agent.types import AgentContext  # local: agent → protocol.server would cycle at import time
+        from agentevolver.agent.types import (
+            AgentContext,  # local: agent → protocol.server would cycle at import time
+        )
 
         if target_name:
             task = f"Target capability: {target_name}\n\n{task}"
@@ -130,6 +142,16 @@ class ProtocolManager(metaclass=Singleton):
             parent_session_id=(parent_ref.name if parent_ref is not None else None),
             extra=_inherited_ambient(parent_ctx),
         )
+        # Every descendant in one delegation tree carries the root session identity.
+        # It lets siblings address one another by job id without weakening the existing
+        # cross-session ownership check in ``RuntimeManager.send_to_child``.
+        if parent_ctx is not None:
+            parent_extra = getattr(parent_ctx, "extra", None) or {}
+            root_session_id = parent_extra.get("root_session_id") or getattr(
+                parent_ctx, "id", None,
+            )
+            if root_session_id:
+                ctx.extra["root_session_id"] = str(root_session_id)
         if target_name:
             ctx.extra["target_name"] = target_name
         # Which kind of thing the target is. Beside `target_name` because the two are one
@@ -159,6 +181,7 @@ class ProtocolManager(metaclass=Singleton):
         allowlists: Optional[Dict[str, Any]] = None, parent_ref: Any = None,
         workspace_root: Optional[str] = None, parent_ctx: Any = None,
         ctx: Any = None, fork: bool = False,
+        on_spawn: Optional[Callable[[Any], None]] = None,
     ) -> Response:
         """Run ``child`` on ``task`` as a sub-agent of the caller and return its Response.
         ``parent_ref`` links the child back for escalation; ``allowlists`` optionally
@@ -177,7 +200,14 @@ class ProtocolManager(metaclass=Singleton):
                                          allowlists=allowlists, parent_ref=parent_ref,
                                          parent_ctx=parent_ctx, fork=fork)
         existing = [f for f in (files or []) if os.path.exists(f)]
-        return await runtime_manager.invoke(child, task=task, files=existing or None, ctx=ctx, parent_ref=parent_ref)
+        return await runtime_manager.invoke(
+            child,
+            task=task,
+            files=existing or None,
+            ctx=ctx,
+            parent_ref=parent_ref,
+            on_spawn=on_spawn,
+        )
 
     # ------------------------------------------------------------------
     # progress — tell: stream status to the parent (runtime.send)
@@ -199,10 +229,14 @@ class ProtocolManager(metaclass=Singleton):
     async def pause(self, ref: Any) -> None:
         """Ask a running agent to stop advancing after its current round (until resumed)."""
         await runtime_manager.send(ref, ControlMessage(action="pause"))
+        if hasattr(ref, "paused"):
+            ref.paused = True
 
     async def resume(self, ref: Any) -> None:
         """Let a paused agent continue."""
         await runtime_manager.send(ref, ControlMessage(action="resume"))
+        if hasattr(ref, "paused"):
+            ref.paused = False
 
     # ------------------------------------------------------------------
     # query — ask: request a running agent's status snapshot (runtime.ask)

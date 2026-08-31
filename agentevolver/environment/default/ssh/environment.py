@@ -274,6 +274,8 @@ class SSHEnvironment(Environment):
     # ------------------------------------------------------------------ execute
     @environment_manager.action(
         name="run",
+        permission_op="bash",
+        permission_target="command",
         description="Run a shell command on the remote host, from the workspace root. "
                     "For anything that may run longer than a minute — training, large "
                     "downloads, data processing — use `launch` instead: this waits, and "
@@ -320,6 +322,7 @@ class SSHEnvironment(Environment):
     # ------------------------------------------------------------------ files
     @environment_manager.action(
         name="read",
+        read_only=True,
         description="Read a text file on the remote host. Use offset/limit for large "
                     "files rather than pulling the whole thing back.",
     )
@@ -357,6 +360,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="write",
+        open_world=True,
         description="Write a text file on the remote host, creating parent directories. "
                     "Replaces the whole file; use `edit` to change part of one.",
     )
@@ -384,6 +388,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="edit",
+        open_world=True,
         description="Replace an exact string in a remote file. Fails unless the string "
                     "occurs exactly once, so a near-miss cannot silently change the wrong "
                     "line.",
@@ -413,6 +418,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="list",
+        read_only=True,
         description="List a remote directory. Depth 1 by default; a deep listing of a "
                     "results tree is thousands of lines that say nothing.",
     )
@@ -445,6 +451,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="grep",
+        read_only=True,
         description="Search remote file contents with a regex. Do this rather than "
                     "reading files back to search them locally.",
     )
@@ -475,6 +482,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="glob",
+        read_only=True,
         description="Find remote files by name pattern, newest first.",
     )
     async def glob(
@@ -499,6 +507,8 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="remove",
+        destructive=True,
+        open_world=True,
         description="Delete a remote file or directory inside the workspace.",
     )
     async def remove(
@@ -521,6 +531,7 @@ class SSHEnvironment(Environment):
     # ------------------------------------------------------------------ transfer
     @environment_manager.action(
         name="upload",
+        open_world=True,
         description="Copy a local file or directory to the remote workspace.",
     )
     async def upload(
@@ -578,6 +589,8 @@ class SSHEnvironment(Environment):
     # ------------------------------------------------------------------ jobs
     @environment_manager.action(
         name="launch",
+        permission_op="bash",
+        permission_target="command",
         description="Start a long-running command that survives this turn — training, a "
                     "large download, data processing. Returns immediately with a job "
                     "name; follow it with `logs` and stop it with `signal`.",
@@ -634,6 +647,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="jobs",
+        read_only=True,
         description="List this session's long-running jobs, running and finished. A "
                     "finished job keeps its log — read it with `logs`.",
     )
@@ -690,6 +704,7 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="logs",
+        read_only=True,
         description="Read the tail of a launched job's log.",
     )
     async def logs(
@@ -710,6 +725,8 @@ class SSHEnvironment(Environment):
 
     @environment_manager.action(
         name="signal",
+        destructive=True,
+        open_world=True,
         description="Stop a job this session launched.",
     )
     async def signal(self, job: str, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
@@ -763,6 +780,7 @@ class SSHEnvironment(Environment):
     # ------------------------------------------------------------------ machines
     @environment_manager.action(
         name="hosts",
+        read_only=True,
         description="List the machines you can reach, and which one your actions land on "
                     "by default. Every other action takes an optional `host` to act on a "
                     "different one for that call.",
@@ -804,6 +822,7 @@ class SSHEnvironment(Environment):
     # ------------------------------------------------------------------ state
     @environment_manager.action(
         name="get_state",
+        read_only=True,
         description="What the remote workspace looks like right now: files, git status, "
                     "GPU occupancy, running jobs, and the last command's exit code.",
     )
@@ -857,6 +876,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
 
     @environment_manager.action(
         name="gpu",
+        read_only=True,
         description="Full GPU detail on the remote host — who is using what.",
     )
     async def gpu(self, host: str = "", ctx=None, **kwargs: Any) -> Dict[str, Any]:
@@ -1024,10 +1044,16 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
         # whose command exits disappears with it, presence here means ttyd is actually up.
         server_session = f"{session_name}-srv"
         attach = f"tmux attach {'' if writable else '-r '}-t {session_name}".replace("  ", " ")
+        write_flag = "-W " if writable else ""
+        base_flag = f"-b {base_path} " if base_path else ""
+        ttyd_command = (
+            f"{ttyd_path} -i 127.0.0.1 {write_flag}{base_flag}"
+            f"-p {remote_port} {attach}"
+        )
         await service.run_raw(
             f'tmux has-session -t {shlex.quote(server_session)} 2>/dev/null || '
             f'tmux new-session -d -s {shlex.quote(server_session)} '
-            f'{shlex.quote(f"{ttyd_path} -i 127.0.0.1 {"-W " if writable else ""}"f"{f"-b {base_path} " if base_path else ""}-p {remote_port} {attach}")}',
+            f"{shlex.quote(ttyd_command)}",
             timeout=30,
         )
         # ttyd needs a moment to bind before the tunnel is worth opening.

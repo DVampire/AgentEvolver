@@ -25,12 +25,12 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
-from agentevolver.utils import AsyncQueue
-from agentevolver.trace.types import TraceEvent, parse_trace_event
+from agentevolver.paths import P, path_manager
 from agentevolver.trace.persistence import TracePersistence, create_trace_persistence
-from agentevolver.utils import Singleton
+from agentevolver.trace.types import TraceEvent, parse_trace_event
+from agentevolver.utils import AsyncQueue, Singleton
+from agentevolver.utils.file_utils import atomic_json_update
 
 
 class TraceManager(metaclass=Singleton):
@@ -68,6 +68,7 @@ class TraceManager(metaclass=Singleton):
         #: Neither condition can be repaired by a later flush.
         self._dropped_events: dict[str, dict[str, object]] = {}
         self._reported_integrity_gaps: set[tuple[str, str, str]] = set()
+        self._otel = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -135,7 +136,33 @@ class TraceManager(metaclass=Singleton):
             return
 
         self._writer.start()
+        self._start_telemetry()
         self._running = True
+
+    def _start_telemetry(self) -> None:
+        """Enable optional OTLP export without making it part of Trace durability."""
+        if self._otel is not None:
+            return
+        from agentevolver.config import config
+
+        endpoint = str(
+            getattr(config, "otel_endpoint", "")
+            or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+            or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        )
+        if not bool(getattr(config, "otel_enabled", False) or endpoint):
+            return
+        from agentevolver.telemetry import OpenTelemetryTraceBridge
+
+        try:
+            bridge = OpenTelemetryTraceBridge(
+                service_name=str(getattr(config, "otel_service_name", "agentevolver")),
+                endpoint=endpoint,
+            )
+            if bridge.start():
+                self._otel = bridge
+        except Exception as error:  # observability can never change execution
+            logger.warning(f"| ⚠️ OpenTelemetry bridge could not start: {error}")
 
     #: How long :meth:`flush` waits before giving up and letting the caller proceed.
     FLUSH_TIMEOUT_SECONDS = 5.0
@@ -181,6 +208,9 @@ class TraceManager(metaclass=Singleton):
 
         if self._writer:
             await self._writer.stop()
+        if self._otel is not None:
+            self._otel.close()
+            self._otel = None
 
         # Request pages are an observational side channel scheduled off the model
         # hot path. Give pages already in flight a bounded chance to land before a
@@ -235,6 +265,8 @@ class TraceManager(metaclass=Singleton):
             )
             self._persist_integrity_issue(session, self._format_dropped_issue(gap))
         if accepted:
+            if self._otel is not None:
+                self._otel.submit(event)
             for subscriber in tuple(self._subscribers):
                 try:
                     result = subscriber(event)
@@ -288,10 +320,8 @@ class TraceManager(metaclass=Singleton):
     def _persist_integrity_issue(self, session_id: str, issue: str) -> None:
         """Seal the first known data gap so a process restart cannot forget it."""
         path = self._integrity_marker_path(session_id)
-        if path is None or os.path.exists(path):
+        if path is None:
             return
-        directory = os.path.dirname(path)
-        temporary = f"{path}.{os.getpid()}.tmp"
         payload = {
             "schema_version": 1,
             "session_id": session_id,
@@ -299,24 +329,14 @@ class TraceManager(metaclass=Singleton):
             "detected_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            os.makedirs(directory, exist_ok=True)
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            directory_fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            atomic_json_update(
+                path,
+                lambda current: current or payload,
+                default=None,
+                recover_corrupt=False,
+            )
         except Exception as exc:  # noqa: BLE001 - preserve the in-memory fail-closed flag
             logger.error(f"| ❌ Could not persist Trace integrity marker: {exc}")
-            try:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
-            except OSError:
-                pass
 
     def _read_integrity_issue(self, session_id: str) -> Optional[str]:
         path = self._integrity_marker_path(session_id)

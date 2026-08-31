@@ -73,7 +73,8 @@ class SendMessageTool(Tool):
         from agentevolver.runtime import runtime_manager
 
         ctx = kwargs.get("ctx")
-        session_id = str(getattr(ctx, "id", "") or "")
+        extra = getattr(ctx, "extra", None) or {}
+        session_id = str(extra.get("root_session_id") or getattr(ctx, "id", "") or "")
         try:
             # An undelivered message comes back as an unsuccessful Response, not as an
             # exception: the model must not be able to read "not delivered" as an
