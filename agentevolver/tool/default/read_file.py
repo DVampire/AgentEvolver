@@ -79,9 +79,10 @@ class ReadFileTool(Tool):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
 
             # Permission + guard check (size, binary)
-            result = permission_manager.check(
+            result = permission_manager.check_declared(
                 self.name,
                 PermissionRequest(op=Operation.READ, target=path),
+                mode=self.permission_mode,
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

@@ -23,6 +23,7 @@ from agentevolver.tool.execution import (
     ToolErrorCode,
     ToolExecution,
     ToolExecutionPipeline,
+    ToolPolicyDecision,
 )
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.spill import SpillSource, save_text as spill_text
@@ -963,6 +964,13 @@ class ToolContextManager(BaseModel):
 
         timeout = self._call_timeout(tool_instance)
         permission_guard = self._permission_guard(tool_instance, ctx)
+        checkpoint: Dict[str, Any] = {}
+
+        async def before_invoke() -> None:
+            checkpoint.update(await self._checkpoint_before_invoke(
+                execution, tool_instance, ctx,
+            ))
+
         return await self._execution_pipeline.execute(
             execution,
             lambda: tool_instance(**call_input, **tool_kwargs),
@@ -970,19 +978,19 @@ class ToolContextManager(BaseModel):
             preflight_error=validation_error,
             initial_denials=list((execution_context or {}).get("guard_denials") or []),
             call_guards=[permission_guard],
-            before_invoke=lambda: self._checkpoint_before_invoke(
-                execution, tool_instance, ctx,
+            before_invoke=before_invoke,
+            finalize=lambda response: self._bound_output(
+                response, name=name, ctx=ctx, checkpoint=checkpoint,
             ),
-            finalize=lambda response: self._bound_output(response, name=name, ctx=ctx),
         )
 
     @staticmethod
     async def _checkpoint_before_invoke(
         execution: ToolExecution, tool_instance: Tool, ctx: ToolContext,
-    ) -> None:
+    ) -> Dict[str, Any]:
         """Commit policy/approval evidence after guards and before a possible effect."""
         if getattr(tool_instance, "mutates", None) is False:
-            return
+            return {}
         from agentevolver.trace.checkpoint import (
             TraceCheckpointBoundary,
             checkpoint_trace,
@@ -998,6 +1006,25 @@ class ToolContextManager(BaseModel):
                 "root_call_id": execution.root_call_id,
             },
         )
+        request = tool_instance.permission_request(execution.arguments, ctx)
+        if request is None or request.op.value != "write":
+            return {}
+        from agentevolver.tool.workspace_checkpoint import capture_file_checkpoint
+        try:
+            return await asyncio.to_thread(
+                capture_file_checkpoint, execution, request,
+            )
+        except RuntimeError as error:
+            # A standalone interactive manager may have a workspace but no bound Session
+            # log tree. It cannot offer rollback metadata, while strict training/high-risk
+            # runs must never proceed without it.
+            from agentevolver.trace.checkpoint import resolve_integrity_profile
+            if resolve_integrity_profile(ctx=ctx).required:
+                raise
+            logger.warning(
+                f"| ⚠️ Tool '{execution.tool_name}' has no workspace checkpoint: {error}"
+            )
+            return {}
 
     @staticmethod
     def _permission_guard(tool_instance: Tool, ctx: ToolContext):
@@ -1015,9 +1042,15 @@ class ToolContextManager(BaseModel):
                 tool_instance.name,
                 request,
             )
-            return None if result.allowed else (
-                f"Permission denied: {result.reason or 'operation is not allowed'}"
-            )
+            if not result.allowed:
+                return ToolPolicyDecision.deny(
+                    f"Permission denied: {result.reason or 'operation is not allowed'}"
+                )
+            if result.requires_approval:
+                return ToolPolicyDecision.ask(
+                    result.warning or "This operation requires approval."
+                )
+            return None
 
         return guard
 
@@ -1066,7 +1099,10 @@ class ToolContextManager(BaseModel):
             return self.default_timeout
         return float(declared)
 
-    async def _bound_output(self, response: Response, *, name: str, ctx: ToolContext) -> Response:
+    async def _bound_output(
+        self, response: Response, *, name: str, ctx: ToolContext,
+        checkpoint: Optional[Dict[str, Any]] = None,
+    ) -> Response:
         """Keep an oversized result out of the prompt without destroying it.
 
         Every tool call funnels through here, so the size policy is stated once
@@ -1079,6 +1115,12 @@ class ToolContextManager(BaseModel):
         ran, and reporting it as failed because its transcript could not be filed
         would lose more than the transcript did.
         """
+        if checkpoint:
+            response = response.model_copy(deep=True)
+            response.extra = {
+                **dict(response.extra or {}),
+                "workspace_checkpoint": dict(checkpoint),
+            }
         message = response.message
         if not isinstance(message, str) or len(message) <= OUTPUT_LIMIT:
             return response

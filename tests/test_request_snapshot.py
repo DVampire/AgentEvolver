@@ -293,6 +293,43 @@ async def test_a_client_method_does_not_opt_an_unverified_model_into_native_comp
 
 
 @pytest.mark.asyncio
+async def test_malformed_compaction_request_does_not_disable_the_route():
+    class BadRequest(RuntimeError):
+        status_code = 400
+
+    class Client:
+        async def compact_history(self, _messages):
+            raise BadRequest("invalid message role at input[2]")
+
+    manager = ModelContextManager()
+    manager.models["main"] = _config(native_compaction=True)
+    manager.model_clients["main"] = Client()
+
+    with pytest.raises(BadRequest):
+        await manager.compact_history("main", [HumanMessage(content="history")])
+    assert "compaction" not in manager._disabled_route_features.get("main", set())
+
+
+@pytest.mark.asyncio
+async def test_explicit_compaction_rejection_disables_only_that_route_feature():
+    class Unsupported(RuntimeError):
+        status_code = 400
+
+    class Client:
+        async def compact_history(self, _messages):
+            raise Unsupported("context_management compaction is not supported")
+
+    manager = ModelContextManager()
+    manager.models["main"] = _config(native_compaction=True)
+    manager.model_clients["main"] = Client()
+
+    assert await manager.compact_history(
+        "main", [HumanMessage(content="history")],
+    ) is None
+    assert manager._disabled_route_features["main"] == {"compaction"}
+
+
+@pytest.mark.asyncio
 async def test_the_streaming_path_records_before_the_first_provider_event():
     """Agents use ``stream``; testing only the buffered path would leave real runs bare."""
     order = []

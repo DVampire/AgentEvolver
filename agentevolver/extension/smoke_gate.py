@@ -24,6 +24,7 @@ It is enabled by default. Administrative restore/import paths may explicitly pas
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Awaitable, Callable, Optional
 
 from pydantic import BaseModel, Field
@@ -70,7 +71,10 @@ async def _default_probe(module: str, name: str, model_role: str, timeout_s: flo
     probe_model = _resolve_probe_model(model_role)
 
     # Pick a lightweight built-in probe agent. general_agent is the simplest actor.
-    probe_agent_name = "general_agent"
+    # An evolved Agent can be exercised directly. Other component types first pass the
+    # registry/schema preflight below, then use the stable general agent to verify that
+    # the rebuilt native catalog and loop still serialize and run.
+    probe_agent_name = name if module == "agent" else "general_agent"
     try:
         agent = await agent_manager.get(probe_agent_name)
     except Exception as e:
@@ -105,6 +109,33 @@ async def _default_probe(module: str, name: str, model_role: str, timeout_s: flo
     )
 
 
+async def _preflight_component(module: str, name: str) -> Optional[str]:
+    """Verify the candidate is reachable and its model-facing schema is serializable."""
+    try:
+        from agentevolver.capability.types import stored_type
+
+        entry = stored_type(module)
+        if entry is None:
+            return f"unknown stored component type: {module}"
+        manager = entry.manager()
+        getter = getattr(manager, "get_info", None) or getattr(manager, "get", None)
+        if getter is None:
+            return f"{module} manager exposes no component lookup"
+        info = await getter(name)
+        if info is None:
+            return f"candidate is not registered after load: {module}:{name}"
+
+        project = getattr(manager, "function_callings", None)
+        if callable(project) and module != "memory":
+            pairs = await project([name])
+            # Strict JSON encoding catches evolved schemas containing Python objects that
+            # would otherwise fail only on the next real provider request.
+            json.dumps([schema for schema, _route in pairs], ensure_ascii=False)
+        return None
+    except Exception as error:  # a preflight failure is a candidate rejection
+        return f"component contract preflight failed: {type(error).__name__}: {error}"
+
+
 def _resolve_probe_model(model_role: str) -> Optional[str]:
     """Resolve a model name from a named role via config.model_roles, else None."""
     try:
@@ -126,6 +157,15 @@ async def replay_smoke(
     timeout_s: float = 60.0,
 ) -> ReplayReport:
     """Run the smoke gate for a component. Returns a ReplayReport (never raises)."""
+    if probe is None:
+        reason = await _preflight_component(module, name)
+        if reason:
+            report = ReplayReport(
+                ok=False, reason=reason, exit_reason="preflight",
+                module=module, name=name,
+            )
+            logger.warning(f"| 🩺 Replay smoke FAILED: {module}:{name} — {reason}")
+            return report
     runner = probe or _default_probe
     try:
         report = await runner(module, name, model_role, timeout_s)
@@ -138,4 +178,6 @@ async def replay_smoke(
     return report
 
 
-__all__ = ["ReplayReport", "EvolutionRejected", "replay_smoke"]
+__all__ = [
+    "ReplayReport", "EvolutionRejected", "replay_smoke", "_preflight_component",
+]

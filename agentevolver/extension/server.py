@@ -292,11 +292,16 @@ class ExtensionManagerServer(BaseModel):
     async def _smoke_gate_or_revert(self, module: str, name: str, prev_version: Optional[str]) -> None:
         """Run the replay smoke gate; on failure revert (rollback or unload) and raise."""
         from agentevolver.extension.smoke_gate import replay_smoke, EvolutionRejected
+        from agentevolver.extension.journal import journal
 
         report = await replay_smoke(module, name)
         if report.ok:
+            self._record_smoke_result(
+                journal, module, name, "accepted", report.exit_reason or "done", True,
+            )
             return
         # Revert: roll back to the prior version, or unload a brand-new component.
+        revert_error = None
         try:
             if prev_version is not None:
                 await self.rollback(module, name, prev_version)
@@ -305,8 +310,39 @@ class ExtensionManagerServer(BaseModel):
                 await self.unload(module, name)
                 logger.warning(f"| 🧹 ExtensionManager: {module}:{name} unloaded (smoke gate, no prior version).")
         except Exception as e:
+            revert_error = e
             logger.error(f"| ❌ ExtensionManager: revert after failed smoke gate errored: {e}")
-        raise EvolutionRejected(f"{module}:{name} rejected by replay smoke gate: {report.reason}")
+        self._record_smoke_result(
+            journal,
+            module,
+            name,
+            "reverted" if revert_error is None else "revert_failed",
+            report.exit_reason or "error",
+            False,
+        )
+        message = f"{module}:{name} rejected by replay smoke gate: {report.reason}"
+        if revert_error is not None:
+            message += f"; CRITICAL: rollback also failed: {revert_error}"
+        raise EvolutionRejected(message) from revert_error
+
+    @staticmethod
+    def _record_smoke_result(journal, module: str, name: str, result: str,
+                             reason: str, accepted: bool) -> None:
+        """Record smoke attribution without making telemetry part of the commit.
+
+        The manifest plus live registry are the authoritative evolution transaction.
+        A journal I/O failure after a successful gate must not turn that transaction
+        into a reported failure while leaving the accepted component active.
+        """
+        try:
+            journal.fill_gating(
+                module, name, result, attribution={f"smoke:{reason}": accepted},
+            )
+        except Exception as exc:  # noqa: BLE001 - observational sink, logged explicitly
+            logger.error(
+                f"| ⚠️ Evolution journal could not record {module}:{name} "
+                f"smoke result {result}: {exc}"
+            )
 
     async def unload(self, module: str, name: str) -> bool:
         """Unregister an active component and drop it from the manifest (archive kept)."""

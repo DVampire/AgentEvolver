@@ -127,9 +127,7 @@ class Terminal:
         rc files because whatever a user's profile prints would land in the screen the
         agent reads, and would differ from machine to machine.
         """
-        env = {**os.environ}
-        if not env.get("TERM"):
-            env["TERM"] = PTY_DEFAULT_TERM
+        env = {**os.environ, "TERM": PTY_DEFAULT_TERM}
 
         master, slave = open_pty()
         try:

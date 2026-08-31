@@ -18,15 +18,14 @@ is wrong — which it has been, repeatedly, in ways that were only visible on re
 #: was run.
 PTY_ROWS, PTY_COLS = 24, 80
 
-#: TERM given to a `tty: true` command when the environment does not set one. A terminal
-#: device alone is not enough for anything built on curses: it also looks TERM up in the
-#: terminfo database, and with no TERM it reports "Error opening terminal: unknown" and
-#: exits — the same refusal as having no terminal at all, which is the thing `tty` exists
-#: to get past. `xterm` because it is present in essentially every image.
+#: TERM given to a program attached to the emulated terminal. A terminal device alone is
+#: not enough for anything built on curses: it also looks TERM up in the terminfo database.
+#: The parent process may itself have ``TERM=dumb`` (common for services and test runners),
+#: but that does not describe this PTY and would suppress controls the emulator supports.
+#: `xterm` is present in essentially every image.
 #:
-#: Overridable, and deliberately: how a program behaves under a different TERM — `dumb`,
-#: `vt100`, one that does not exist — is itself a behaviour worth comparing. Prefix the
-#: command with `TERM=… ` to choose.
+#: A program can still opt into another terminal with ``TERM=… command`` or an in-session
+#: ``export TERM=…``.
 PTY_DEFAULT_TERM = "xterm"
 
 #: The sequences that make content disappear: erase-display in its several forms, and

@@ -29,6 +29,7 @@ from agentevolver.extension.smoke_gate import (
     ReplayReport,
     _default_probe,
     _resolve_probe_model,
+    _preflight_component,
     replay_smoke,
 )
 
@@ -91,6 +92,54 @@ def test_the_rejection_exception_exists_for_callers_that_want_to_stop():
     """`replay_smoke` never raises it; the caller does. Asserted so that a later change
     which starts raising from inside has to change this test and say why."""
     assert issubclass(EvolutionRejected, Exception)
+
+
+def test_component_preflight_rejects_a_candidate_missing_from_its_registry():
+    class Entry:
+        @staticmethod
+        def manager():
+            class Manager:
+                async def get_info(self, name):
+                    return None
+            return Manager()
+
+    with patch("agentevolver.capability.types.stored_type", return_value=Entry()):
+        reason = asyncio.run(_preflight_component("tool", "missing"))
+
+    assert "not registered after load" in reason
+
+
+def test_component_preflight_rejects_a_nonserializable_native_schema():
+    class Entry:
+        @staticmethod
+        def manager():
+            class Manager:
+                async def get_info(self, name):
+                    return object()
+
+                async def function_callings(self, allowlist):
+                    return [({"bad": object()}, ("tool", "bad"))]
+            return Manager()
+
+    with patch("agentevolver.capability.types.stored_type", return_value=Entry()):
+        reason = asyncio.run(_preflight_component("tool", "bad"))
+
+    assert "not JSON serializable" in reason
+
+
+def test_component_preflight_accepts_a_registered_prompt_without_tool_schema():
+    class Entry:
+        @staticmethod
+        def manager():
+            class Manager:
+                async def get_info(self, name):
+                    return object()
+            return Manager()
+
+    with patch("agentevolver.capability.types.stored_type", return_value=Entry()):
+        reason = asyncio.run(_preflight_component("prompt", "meta_agent"))
+
+    assert reason is None
 
 
 # --------------------------------------------------------------------------- #

@@ -382,6 +382,7 @@ class ModelContextManager:
         self.model_clients: Dict[str, Any] = {}
         self._key_pool = ApiKeyPool()
         self._current_caller: Optional[str] = None
+        self._disabled_route_features: Dict[str, set[str]] = {}
 
         # Defaults
         self.max_tokens: int = 32768
@@ -908,16 +909,22 @@ class ModelContextManager:
         stable framework implementation remains authoritative.
         """
         config = self.models.get(model)
+        disabled_route = self._disabled_route_features.get(model, set())
         requested = requested or {}
         modes: Dict[str, Any] = {
             "persisted_reasoning": (
                 "native" if config and config.persisted_reasoning else "message_replay"
             ),
             "compaction": (
-                "native" if config and config.native_compaction else "portable_checkpoint"
+                "native" if config and config.native_compaction
+                and "compaction" not in disabled_route else "portable_checkpoint"
             ),
             "programmatic_tool_calling": "direct_tools",
             "multi_agent": "local_meta_agent",
+            "prompt_cache": (
+                "automatic" if config and config.model_type == "responses"
+                else "provider_prefix"
+            ),
         }
         if (
             requested.get("programmatic_tool_calling") and config
@@ -958,8 +965,33 @@ class ModelContextManager:
         if "multi_agent" in disabled:
             resolved["multi_agent"] = "local_meta_agent"
             resolved.pop("max_concurrent_subagents", None)
+        if "prompt_cache" in disabled:
+            resolved["prompt_cache"] = "disabled"
         snapshot_kwargs = {**call_kwargs, "runtime_features": resolved}
         wire_kwargs = dict(call_kwargs)
+        if (
+            getattr(self.models.get(model), "model_type", None) == "responses"
+            and "prompt_cache" not in disabled
+        ):
+            import hashlib
+
+            trace_context = request_input.get("trace_context") or {}
+            cache_key = request_input.get("prompt_cache_key")
+            if cache_key is None:
+                bucket = (
+                    f"{model}:{trace_context.get('agent_name') or 'agent'}"
+                )
+                cache_key = hashlib.sha256(bucket.encode()).hexdigest()[:32]
+            if cache_key:
+                cache_key = str(cache_key)[:64]
+                wire_kwargs["prompt_cache_key"] = cache_key
+                snapshot_kwargs["prompt_cache_key"] = cache_key
+            if request_input.get("prompt_cache_options"):
+                options = dict(
+                    request_input["prompt_cache_options"]
+                )
+                wire_kwargs["prompt_cache_options"] = options
+                snapshot_kwargs["prompt_cache_options"] = options
         # Only the Responses adapter owns this framework option. Sending it through a
         # generic chat adapter would leak an unknown field into provider JSON.
         if isinstance(client, ResponseLLMHub):
@@ -971,16 +1003,11 @@ class ModelContextManager:
         config: Optional[ModelConfig], requested: Dict[str, Any], tools: Any,
     ) -> bool:
         """Whether one extra attempt is needed to guarantee a native→fallback retry."""
-        programmatic_tool = any(
-            bool((getattr(tool, "metadata", None) or {}).get("programmatic"))
-            for tool in (tools or [])
-        )
-        return bool(config and config.model_type == "responses" and (
-            (requested.get("programmatic_tool_calling")
-             and config.supports_functions
-             and config.native_programmatic_tool_calling and programmatic_tool)
-            or (requested.get("multi_agent") and config.native_multi_agent)
-        ))
+        # Every Responses request attempts automatic prompt caching; some additionally
+        # attempt hosted programs or multi-agent execution. Reserving a slot does not
+        # create an ordinary retry: the loop unlocks it only after the adapter reports
+        # NativeFeatureUnavailable.
+        return bool(config and config.model_type == "responses")
 
     async def compact_history(
         self,
@@ -1001,7 +1028,10 @@ class ModelContextManager:
         text checkpoint path.
         """
         config = self.models.get(name)
-        if config is None or not config.native_compaction:
+        if (
+            config is None or not config.native_compaction
+            or "compaction" in self._disabled_route_features.get(name, set())
+        ):
             return None
         client = await self._get_client(name)
         compact = getattr(client, "compact_history", None)
@@ -1035,7 +1065,33 @@ class ModelContextManager:
             attempt=1,
             route_index=0,
         )
-        result = await compact(messages)
+        try:
+            result = await compact(messages)
+        except Exception as error:
+            status = getattr(error, "status_code", None)
+            text = str(error).lower()
+            names_compaction = any(marker in text for marker in (
+                "compact", "compaction", "context_management",
+            ))
+            names_rejection = any(marker in text for marker in (
+                "unsupported", "not supported", "unavailable", "unknown",
+                "not enabled",
+            ))
+            # A generic 400 may be malformed history, auth policy, or a bad model
+            # name.  Permanently downgrading native compaction on that evidence would
+            # hide the real error for the rest of the process.  Endpoint-level status
+            # or an error that actually names the feature is conclusive.
+            rejected = status in (404, 405, 501) or (
+                status in (400, 409, 422) and names_compaction and names_rejection
+            )
+            if rejected:
+                self._disabled_route_features.setdefault(name, set()).add("compaction")
+                logger.warning(
+                    f"| ⚠️ {name}: native compaction probe rejected; portable "
+                    "checkpoint will be used for this process"
+                )
+                return None
+            raise
         if not result:
             return None
         answer = {
@@ -1221,6 +1277,17 @@ class ModelContextManager:
             )
 
         model_config = self.models.get(name)
+        per_call_output = input.get("max_output_tokens")
+        if per_call_output is not None:
+            per_call_output = max(1, int(per_call_output))
+            if model_config and model_config.model_type == "responses":
+                kwargs.setdefault("max_output_tokens", per_call_output)
+            elif model_config and model_config.provider == "anthropic":
+                kwargs.setdefault("max_tokens", per_call_output)
+            elif model_config and model_config.provider == "google":
+                kwargs.setdefault("max_output_tokens", per_call_output)
+            else:
+                kwargs.setdefault("max_completion_tokens", per_call_output)
         max_retries = _resolve_max_retries(max_retries, model_config)
         last_exc: Exception = None
         try:

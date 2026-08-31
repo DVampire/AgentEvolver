@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
@@ -21,6 +21,9 @@ from agentevolver.capability import roster, roster_card
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.version import version_manager
 from agentevolver.permission import permission_manager, PermissionMode
+from agentevolver.tool.execution import (
+    ToolExecution, ToolExecutionPipeline, ToolPolicyDecision,
+)
 
 
 class ConnectorContextManager(BaseModel):
@@ -40,6 +43,7 @@ class ConnectorContextManager(BaseModel):
 
     _connector_configs: Dict[str, ConnectorConfig] = {}
     _connector_history_versions: Dict[str, Dict[str, ConnectorConfig]] = {}
+    _execution_pipeline: ToolExecutionPipeline = PrivateAttr()
 
     def __init__(
         self,
@@ -67,6 +71,7 @@ class ConnectorContextManager(BaseModel):
         self._connector_configs: Dict[str, ConnectorConfig] = {}
         self._connector_history_versions: Dict[str, Dict[str, ConnectorConfig]] = {}
         self._instr_cache: Dict[Any, str] = {}
+        self._execution_pipeline = ToolExecutionPipeline()
 
         logger.info(f"| 📁 Connector context manager base directory: {self.base_dir}")
 
@@ -218,11 +223,16 @@ class ConnectorContextManager(BaseModel):
         actions = list(frontmatter.get("actions", []) or [])
         action_schemas = frontmatter.get("action_schemas", {}) or {}
         action_descriptions = frontmatter.get("action_descriptions", {}) or {}
+        action_annotations = {
+            action: self._normalise_annotations(value)
+            for action, value in (frontmatter.get("action_annotations", {}) or {}).items()
+        }
 
         reserved = {
             "name", "description", "version", "enable_evolving", "type",
             "permission_mode", "connection", "actions", "action_schemas",
             "action_descriptions",
+            "action_annotations",
         }
         metadata = {k: v for k, v in frontmatter.items() if k not in reserved}
 
@@ -240,6 +250,7 @@ class ConnectorContextManager(BaseModel):
             actions=actions,
             action_schemas=action_schemas,
             action_descriptions=action_descriptions,
+            action_annotations=action_annotations,
         )
 
     @staticmethod
@@ -502,7 +513,27 @@ class ConnectorContextManager(BaseModel):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _contract_from_tools(tools: List[Any]) -> Tuple[List[str], Dict[str, Any], Dict[str, str]]:
+    def _normalise_annotations(value: Any) -> Dict[str, Any]:
+        """Normalize MCP SDK aliases into the protocol's camel-case field names."""
+        if hasattr(value, "model_dump"):
+            try:
+                value = value.model_dump(exclude_none=True, by_alias=True)
+            except TypeError:
+                value = value.model_dump(exclude_none=True)
+        if not isinstance(value, dict):
+            return {}
+        aliases = {
+            "read_only_hint": "readOnlyHint",
+            "destructive_hint": "destructiveHint",
+            "idempotent_hint": "idempotentHint",
+            "open_world_hint": "openWorldHint",
+        }
+        return {aliases.get(str(key), str(key)): item for key, item in value.items()}
+
+    @staticmethod
+    def _contract_from_tools(
+        tools: List[Any],
+    ) -> Tuple[List[str], Dict[str, Any], Dict[str, str], Dict[str, Dict[str, Any]]]:
         """Read the names, argument schemas and descriptions off loaded MCP tools.
 
         An MCP server declares an ``inputSchema`` for every tool it exposes, and
@@ -520,6 +551,7 @@ class ConnectorContextManager(BaseModel):
         names: List[str] = []
         schemas: Dict[str, Any] = {}
         descriptions: Dict[str, str] = {}
+        annotations: Dict[str, Dict[str, Any]] = {}
         for tool in tools:
             action = getattr(tool, "name", None)
             if not action:
@@ -536,17 +568,27 @@ class ConnectorContextManager(BaseModel):
                     schemas[action] = schema.model_json_schema()
                 except Exception:  # noqa: BLE001 — an unrenderable schema is no schema
                     pass
-        return names, schemas, descriptions
+            raw_annotations = getattr(tool, "annotations", None)
+            if raw_annotations is None:
+                raw_annotations = (getattr(tool, "metadata", None) or {}).get(
+                    "annotations"
+                )
+            normalized = ConnectorContextManager._normalise_annotations(raw_annotations)
+            if normalized:
+                annotations[action] = normalized
+        return names, schemas, descriptions, annotations
 
     def _absorb_contract(self, cfg: "ConnectorConfig", tools: List[Any]) -> List[str]:
         """Fold what a live server just told us into the registered connector."""
-        names, schemas, descriptions = self._contract_from_tools(tools)
+        names, schemas, descriptions, annotations = self._contract_from_tools(tools)
         if names:
             cfg.actions = names
         if schemas:
             cfg.action_schemas = {**cfg.action_schemas, **schemas}
         if descriptions:
             cfg.action_descriptions = {**cfg.action_descriptions, **descriptions}
+        if annotations:
+            cfg.action_annotations = {**cfg.action_annotations, **annotations}
         self._invalidate_instruction()
         return names
 
@@ -709,7 +751,51 @@ class ConnectorContextManager(BaseModel):
             )
 
         logger.info(f"| 🎯 Executing connector '{name}' action '{action}' with args: {args}")
-        return await self._invoke_mcp(connector_config, action, args)
+        execution = ToolExecution.create(
+            name=f"{name}__{action}", version=connector_config.version,
+            arguments=args, ctx=ctx,
+        )
+        annotations = dict(
+            (connector_config.action_annotations or {}).get(action) or {}
+        )
+
+        def effect_guard(_execution):
+            read_only = annotations.get("readOnlyHint")
+            destructive = annotations.get("destructiveHint")
+            if read_only is True and destructive is not True:
+                return None
+            if destructive is True:
+                return ToolPolicyDecision.ask(
+                    f"MCP action {name}__{action} declares destructiveHint=true."
+                )
+            return ToolPolicyDecision.ask(
+                f"MCP action {name}__{action} has no verified readOnlyHint; "
+                "its external effects require approval."
+            )
+
+        async def checkpoint_effect() -> None:
+            if annotations.get("readOnlyHint") is True:
+                return
+            from agentevolver.trace.checkpoint import (
+                TraceCheckpointBoundary, checkpoint_trace,
+            )
+            await checkpoint_trace(
+                execution.session_id,
+                TraceCheckpointBoundary.EXTERNAL_EFFECT,
+                ctx=ctx,
+                metadata={"connector": name, "action": action},
+            )
+
+        return await self._execution_pipeline.execute(
+            execution,
+            lambda: self._invoke_mcp(connector_config, action, args),
+            timeout=None,
+            call_guards=[effect_guard],
+            before_invoke=checkpoint_effect,
+        )
+
+    def set_approval_resolver(self, resolver):
+        return self._execution_pipeline.set_approval_resolver(resolver)
 
     async def _invoke_mcp(self, connector_config: ConnectorConfig, action: str, args: Dict[str, Any]) -> Response:
         """Open a session to the MCP server and invoke a single action."""

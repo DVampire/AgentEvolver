@@ -135,6 +135,38 @@ async def test_tool_owned_permission_intent_is_checked_before_the_body(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_destructive_permission_warning_routes_through_approval(tmp_path):
+    called = False
+
+    class ShellLike(EchoTool):
+        permission_mode: str = "danger_full_access"
+
+        def permission_request(self, arguments, ctx=None):
+            return PermissionRequest(
+                op=Operation.BASH, target=str(arguments.get("value") or ""),
+            )
+
+        async def __call__(self, value: str, **kwargs):
+            nonlocal called
+            called = True
+            return await super().__call__(value, **kwargs)
+
+    permission_manager.register("echo_tool", mode=PermissionMode.DANGER_FULL_ACCESS)
+    try:
+        manager = manager_for(tmp_path, ShellLike())
+        denied = await manager(name="echo_tool", input={"value": "rm -rf cache"})
+        manager.set_approval_resolver(lambda execution, reason: True)
+        approved = await manager(name="echo_tool", input={"value": "rm -rf cache"})
+    finally:
+        permission_manager.unregister("echo_tool")
+
+    assert denied.success is False
+    assert denied.extra["execution"]["error_code"] == "approval_unavailable"
+    assert approved.success is True
+    assert called is True
+
+
+@pytest.mark.asyncio
 async def test_broken_permission_intent_fails_closed_as_a_guard_error(tmp_path):
     class BrokenPolicy(EchoTool):
         def permission_request(self, arguments, ctx=None):
@@ -252,6 +284,32 @@ async def test_guard_disposer_and_result_observer_have_exact_lifetimes(tmp_path)
         ("echo_tool", False, "temporary denial"),
         ("echo_tool", True, "second"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_before_invoke_failure_is_classified_and_never_runs_the_effect():
+    from agentevolver.tool.execution import ToolExecution, ToolExecutionPipeline
+
+    pipeline = ToolExecutionPipeline()
+    ran = False
+
+    async def invoke():
+        nonlocal ran
+        ran = True
+
+    async def prepare():
+        raise OSError("checkpoint disk is unavailable")
+
+    response = await pipeline.execute(
+        ToolExecution.create(name="write", version="1", arguments={}),
+        invoke,
+        timeout=None,
+        before_invoke=prepare,
+    )
+
+    assert not response.success and not ran
+    assert response.extra["execution"]["stage"] == "prepare"
+    assert response.extra["execution"]["error_code"] == "preparation_error"
 
 
 @pytest.mark.asyncio

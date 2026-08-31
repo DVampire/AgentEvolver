@@ -49,18 +49,45 @@ class NativeFeatureUnavailable(RuntimeError):
         )
 
 
-def _feature_rejected(error: Exception) -> bool:
-    """Whether the provider rejected the feature contract, not the request transport."""
+def _rejected_features(error: Exception, active: List[str]) -> List[str]:
+    """Identify only the native feature the provider explicitly rejected.
+
+    Several optimizations can share one request. A generic HTTP 400 is not evidence that
+    all of them are unsupported, so multi-feature requests downgrade only when the error
+    names the rejected parameter. A lone optimization may use the status code itself.
+    """
     status = getattr(error, "status_code", None)
-    if status is not None:
-        return status in (400, 404, 409, 422)
     text = str(error).lower()
-    markers = (
-        "unsupported", "not supported", "unavailable", "unknown tool type",
-        "allowed_callers", "programmatic_tool_calling", "responses_multi_agent",
-        "beta header", "multi-agent execution requires",
+    markers = {
+        "programmatic_tool_calling": (
+            "programmatic_tool_calling", "allowed_callers", "unknown tool type",
+            "programmatic tool",
+        ),
+        "multi_agent": (
+            "multi_agent", "multi-agent", "responses_multi_agent", "beta header",
+        ),
+        "prompt_cache": (
+            "prompt_cache", "prompt cache", "cache key", "cache_options",
+        ),
+    }
+    named = [
+        feature for feature in active
+        if any(marker in text for marker in markers.get(feature, (feature,)))
+    ]
+    if named:
+        return named
+    # Only multi-agent switches from `/responses` to the beta surface. An endpoint-level
+    # rejection therefore identifies that feature even when programs/cache share the
+    # same request and the relay returns no useful parameter name.
+    if status in (404, 405, 501) and "multi_agent" in active:
+        return ["multi_agent"]
+    rejected_status = status in (400, 404, 405, 409, 422, 501)
+    generic_rejection = any(
+        marker in text for marker in ("unsupported", "not supported", "unavailable")
     )
-    return any(marker in text for marker in markers)
+    if len(active) == 1 and (rejected_status or generic_rejection):
+        return list(active)
+    return []
 
 
 def _dump(value: Any) -> Dict[str, Any]:
@@ -235,6 +262,9 @@ class ResponseLLMHub(BaseModel):
         tools: Optional[List["Tool"]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        if "prompt_cache" in self._disabled_features:
+            kwargs.pop("prompt_cache_key", None)
+            kwargs.pop("prompt_cache_options", None)
         params: Dict[str, Any] = {
             "model": self.model,
             "input": serialize_input(messages),
@@ -396,6 +426,36 @@ class ResponseLLMHub(BaseModel):
             "native": True,
         }
 
+    async def _create(self, client: Any, params: Dict[str, Any]) -> Any:
+        """Create one Responses segment and attribute native feature rejection."""
+        try:
+            surface = client.beta.responses if params.get("multi_agent") else client.responses
+            return await surface.create(**params)
+        except Exception as error:
+            active = []
+            if any(
+                tool.get("type") == "programmatic_tool_calling"
+                for tool in params.get("tools") or []
+            ):
+                active.append("programmatic_tool_calling")
+            if params.get("multi_agent"):
+                active.append("multi_agent")
+            if params.get("prompt_cache_key"):
+                active.append("prompt_cache")
+            rejected = _rejected_features(error, active)
+            if rejected:
+                self._disabled_features.update(rejected)
+                logger.warning(
+                    f"| ⚠️ {self.model}: native {', '.join(rejected)} unavailable; "
+                    "retrying with provider-neutral fallback"
+                )
+                raise NativeFeatureUnavailable(rejected, error) from error
+            logger.error(
+                f"| 🔴 {self.provider_name} responses error (model={self.model}): "
+                f"{type(error).__name__}: {error}"
+            )
+            raise
+
     async def __call__(
         self,
         messages: List[Message],
@@ -408,45 +468,48 @@ class ResponseLLMHub(BaseModel):
         Args:
             messages: The conversation so far.
             tools: Tools the model may call.
-            response_format: Accepted and ignored — structured output is a separate
-                Responses feature, and quietly reinterpreting it as a text instruction
-                would produce output that looks schema-conformant without being checked.
+            response_format: Optional native JSON-schema response contract; Pydantic
+                contracts are validated again after the final continuation segment.
 
         Returns:
             The buffered `Response`; `data.functions` carries any tool calls.
         """
-        if response_format is not None:
-            logger.warning(
-                f"| ⚠️ {self.model}: response_format is not supported on the Responses "
-                f"client and was ignored"
-            )
         params = self._build_params(messages, tools=tools, **kwargs)
-        client = self._client()
-        try:
-            surface = client.beta.responses if params.get("multi_agent") else client.responses
-            raw = await surface.create(**params)
-        except Exception as error:
-            active = []
-            if any(tool.get("type") == "programmatic_tool_calling" for tool in params.get("tools") or []):
-                active.append("programmatic_tool_calling")
-            if params.get("multi_agent"):
-                active.append("multi_agent")
-            if active and _feature_rejected(error):
-                # A relay/model catalog can drift. Disable only a definitively rejected
-                # native optimization. The manager records the failed request, then an
-                # immediate retry with direct tools/local orchestration.
-                self._disabled_features.update(active)
-                logger.warning(
-                    f"| ⚠️ {self.model}: native {', '.join(active)} unavailable; "
-                    "retrying with provider-neutral fallback"
+        if response_format is not None:
+            from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
+            if (
+                isinstance(response_format, type)
+                and issubclass(response_format, BaseModel)
+            ) or isinstance(response_format, BaseModel):
+                model_class = (
+                    response_format if isinstance(response_format, type)
+                    else type(response_format)
                 )
-                raise NativeFeatureUnavailable(active, error) from error
+                serialized = LLMHubChatSerializer.serialize_response_format(
+                    response_format, model_name=self.model,
+                )
+                schema = serialized.get("json_schema", {})
+                params["text"] = {"format": {
+                    "type": "json_schema",
+                    "name": model_class.__name__,
+                    "strict": schema.get("strict", True),
+                    "schema": schema.get("schema", {}),
+                }}
+            elif isinstance(response_format, dict):
+                value = response_format.get("text", response_format)
+                params["text"] = value if "format" in value else {"format": value}
             else:
-                logger.error(f"| 🔴 llm_hub responses error (model={self.model}): "
-                             f"{type(error).__name__}: {error}")
-                raise
+                raise RuntimeError(
+                    f"unsupported Responses response_format: {response_format!r}"
+                )
+        client = self._client()
+        raw = await self._create(client, params)
         response = self._parse(raw)
         usages = [response.usage] if response.usage is not None else []
+        all_output_items = list(
+            (((response.data or {}).get("provider_state") or {}).get("responses") or {})
+            .get("output_items") or []
+        )
         # A hosted program may finish in one response and emit the root message in the
         # next. Continue internally when there is no client-owned call to dispatch.
         continuation_input = serialize_input(messages)
@@ -460,15 +523,31 @@ class ResponseLLMHub(BaseModel):
             continuation_input.extend(dict(item) for item in output)
             next_params = dict(params)
             next_params["input"] = list(continuation_input)
-            surface = client.beta.responses if next_params.get("multi_agent") else client.responses
-            raw = await surface.create(**next_params)
+            raw = await self._create(client, next_params)
             response = self._parse(raw)
+            segment_state = (
+                ((response.data or {}).get("provider_state") or {}).get("responses") or {}
+            )
+            all_output_items.extend(segment_state.get("output_items") or [])
             if response.usage is not None:
                 usages.append(response.usage)
+        if all_output_items:
+            response.data["provider_state"] = {
+                "responses": {
+                    "output_items": all_output_items,
+                    "reasoning_items": [
+                        item for item in all_output_items
+                        if item.get("type") == "reasoning"
+                    ],
+                }
+            }
         if len(usages) > 1:
             costs = [usage.cost for usage in usages if usage.cost is not None]
             combined = TokenUsage(
                 input_tokens=sum(usage.input_tokens for usage in usages),
+                context_input_tokens=sum(
+                    usage.context_input_tokens for usage in usages
+                ),
                 output_tokens=sum(usage.output_tokens for usage in usages),
                 cache_write_tokens=sum(usage.cache_write_tokens for usage in usages),
                 cache_read_tokens=sum(usage.cache_read_tokens for usage in usages),
@@ -476,6 +555,27 @@ class ResponseLLMHub(BaseModel):
             )
             response.usage = combined
             response.data["usage"] = combined.model_dump()
+        if response_format is not None and response.message:
+            try:
+                if (
+                    isinstance(response_format, type)
+                    and issubclass(response_format, BaseModel)
+                ):
+                    response.parsed_model = response_format.model_validate_json(
+                        response.message
+                    )
+                elif isinstance(response_format, BaseModel):
+                    response.parsed_model = type(response_format).model_validate_json(
+                        response.message
+                    )
+            except Exception as error:
+                return Response(
+                    type=ResponseType.LLM,
+                    success=False,
+                    message=f"Structured response validation failed: {error}",
+                    data=response.data,
+                    usage=response.usage,
+                )
         return response
 
 

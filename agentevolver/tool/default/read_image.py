@@ -67,7 +67,8 @@ class ReadImageTool(Tool):
 
     def permission_request(self, arguments, ctx=None):
         return PermissionRequest(
-            op=Operation.READ, target=str(arguments.get("path") or "")
+            op=Operation.READ, target=str(arguments.get("path") or ""),
+            allow_binary=True,
         )
 
     async def __call__(self, path: str, **kwargs) -> Response:
@@ -115,9 +116,10 @@ class ReadImageTool(Tool):
             if not os.path.isfile(path):
                 return Response(type=ResponseType.TOOL, success=False, message=f"Error: Path is not a file: {path}")
 
-            result = permission_manager.check(
+            result = permission_manager.check_declared(
                 self.name,
-                PermissionRequest(op=Operation.READ, target=path),
+                PermissionRequest(op=Operation.READ, target=path, allow_binary=True),
+                mode=self.permission_mode,
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

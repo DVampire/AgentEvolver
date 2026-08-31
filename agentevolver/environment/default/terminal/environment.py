@@ -104,8 +104,9 @@ class TerminalEnvironment(Environment):
         """Anything typed at a terminal is a command; it goes through the same check."""
         if not command:
             return None
-        allowed = permission_manager.check(
+        allowed = permission_manager.check_declared(
             self.name, PermissionRequest(op=Operation.BASH, target=command),
+            mode=self.permission_mode,
         )
         return None if allowed.allowed else _fail(f"Permission denied: {allowed.reason}")
 

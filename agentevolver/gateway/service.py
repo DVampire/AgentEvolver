@@ -175,6 +175,7 @@ class AgentGateway:
         # the Tool suspended on an event that disappeared with its socket.
         self._approvals = GatewayApprovalRendezvous(self._publish_approval_event)
         self._approval_disposer: Optional[Callable[[], None]] = None
+        self._connector_approval_disposer: Optional[Callable[[], None]] = None
         self._initialized = False
         self._stopping = False
         self._workspace_source = (
@@ -222,6 +223,9 @@ class AgentGateway:
         )
         await skill_manager.initialize(skill_names=getattr(config, "skill_names", None))
         await connector_manager.initialize(connector_names=getattr(config, "connector_names", None))
+        self._connector_approval_disposer = connector_manager.set_approval_resolver(
+            self._approvals.request
+        )
         await plugin_manager.initialize(plugin_names=getattr(config, "plugin_names", None))
         await process_manager.initialize(process_names=getattr(config, "process_names", None))
         await data_manager.initialize()
@@ -271,6 +275,9 @@ class AgentGateway:
         if self._approval_disposer is not None:
             self._approval_disposer()
             self._approval_disposer = None
+        if self._connector_approval_disposer is not None:
+            self._connector_approval_disposer()
+            self._connector_approval_disposer = None
         await self._approvals.cancel_all("gateway_stopped")
         for task in tuple(self._active_agent_tasks.values()):
             task.cancel()

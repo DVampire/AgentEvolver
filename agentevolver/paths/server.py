@@ -418,6 +418,14 @@ class PathManagerServer:
             raise ValueError(f"path {str(relative)!r} escapes managed root {base}")
         return self._materialize(candidate, create=create, is_file=False)
 
+    def entry_under(self, root: str | Path, relative: str | Path) -> Path:
+        """Return an unfollowed direct child for safe ``lstat``/symlink checks."""
+        base = Path(root).expanduser().resolve()
+        value = Path(relative)
+        if value.is_absolute() or len(value.parts) != 1 or value.name in ("", ".", ".."):
+            raise ValueError(f"path {str(relative)!r} is not one managed child of {base}")
+        return base / value.name
+
     @staticmethod
     def _validate_components(params: Dict[str, str]) -> None:
         """Reject placeholder values that turn one declared component into a path."""

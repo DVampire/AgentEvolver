@@ -24,6 +24,7 @@ from agentevolver.environment.types import Environment, EnvironmentConfig, Actio
 from agentevolver.sandbox import SandboxServerManager
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import ENVIRONMENT
+from agentevolver.permission import permission_manager, PermissionMode
 
 class EnvironmentContextManager(BaseModel):
     """Global context manager for all environments with lazy loading support."""
@@ -212,6 +213,10 @@ class EnvironmentContextManager(BaseModel):
 
                 env_description = env_cls.model_fields['description'].default
                 env_metadata = env_cls.model_fields['metadata'].default
+                env_permission_mode = env_config_dict.get(
+                    "permission_mode",
+                    env_cls.model_fields["permission_mode"].default,
+                )
 
                 # Rules + docs come from the ENVIRONMENT.md beside the class (not get_rules()).
                 env_rules = ""
@@ -274,6 +279,7 @@ class EnvironmentContextManager(BaseModel):
                     metadata=env_metadata,
                     version=env_version,
                     enable_evolving=env_enable_evolving,
+                    permission_mode=env_permission_mode,
                     cls=env_cls,
                     config=env_config_dict,
                     instance=None,
@@ -342,6 +348,10 @@ class EnvironmentContextManager(BaseModel):
                 await env_instance.initialize()
                 
             env_config.instance = env_instance
+            permission_manager.register(
+                entity_name=env_instance.name,
+                mode=PermissionMode(env_config.permission_mode),
+            )
 
             # Rules come from ENVIRONMENT.md (loaded at registration) — no code-generated fallback.
             if not env_config.rules:
@@ -401,6 +411,7 @@ class EnvironmentContextManager(BaseModel):
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
             env_enable_evolving = getattr(env_instance, 'enable_evolving', False)
+            env_permission_mode = getattr(env_instance, 'permission_mode', 'workspace_write')
             
             if not env_name:
                 raise ValueError("Environment.name cannot be empty.")
@@ -466,12 +477,17 @@ class EnvironmentContextManager(BaseModel):
                 manifest_path=env_manifest_path,
                 version=env_version,
                 enable_evolving=env_enable_evolving,
+                permission_mode=env_permission_mode,
                 actions=actions,
                 cls=env_cls,
                 config=env_config_dict or {},
                 instance=env_instance,
                 metadata=env_metadata,
                 code=env_code
+            )
+            permission_manager.register(
+                entity_name=env_name,
+                mode=PermissionMode(env_permission_mode),
             )
             
             # --- Persist current config and history ---
@@ -924,6 +940,7 @@ class EnvironmentContextManager(BaseModel):
                         await env_config.instance.cleanup()
                     except Exception as e:
                         logger.warning(f"| ⚠️ Error cleaning up environment {env_name} instance: {e}")
+                permission_manager.unregister(env_name)
             
             # Clear all environment configs and version history
             self._environment_configs.clear()

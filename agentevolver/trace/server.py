@@ -211,10 +211,16 @@ class TraceManager(metaclass=Singleton):
         session = event.session_id or "no_session"
         if event.seq_no is None:
             event.seq_no = self._claim_seq(session)
-        self._apply_surface(session, event)
-        self._retain(session, event)
-        accepted = self._queue.emit(event)
-        if not accepted:
+        # AsyncQueue returns a boolean. A few embedders use a minimal queue whose emit
+        # method returns None after accepting, so only an explicit False means rejection.
+        accepted = self._queue.emit(event) is not False
+        if accepted:
+            # A surface is the in-process view of the canonical log. Never let an event
+            # rejected by the persistence queue alter that view or reach subscribers as
+            # if it existed durably.
+            self._apply_surface(session, event)
+            self._retain(session, event)
+        else:
             gap = self._dropped_events.setdefault(session, {
                 "count": 0,
                 "first_seq": event.seq_no,
@@ -228,13 +234,14 @@ class TraceManager(metaclass=Singleton):
                 f"for session {session} at seq {event.seq_no}"
             )
             self._persist_integrity_issue(session, self._format_dropped_issue(gap))
-        for subscriber in tuple(self._subscribers):
-            try:
-                result = subscriber(event)
-                if inspect.isawaitable(result):
-                    await result
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"| ⚠️  Trace subscriber failed: {exc}")
+        if accepted:
+            for subscriber in tuple(self._subscribers):
+                try:
+                    result = subscriber(event)
+                    if inspect.isawaitable(result):
+                        await result
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"| ⚠️  Trace subscriber failed: {exc}")
         return accepted
 
     @property
@@ -406,6 +413,52 @@ class TraceManager(metaclass=Singleton):
         must not treat the result as a complete history.
         """
         return list(self._events.get(session_id) or [])
+
+    def rehydrate(self, session_id: str) -> list[TraceEvent]:
+        """Restore retained events and the folded surface from durable Trace.
+
+        Events already emitted by the new process are merged by sequence/id, which
+        covers the normal ordering where the first resumed event reaches subscribers
+        before memory asks for history. A malformed replacement fails closed through
+        ``fold_surface`` instead of silently reconstructing a different conversation.
+        """
+        from agentevolver.trace.surface import fold_surface
+
+        live = self.events(session_id)
+        durable = self.read_from(session_id, after_seq=-1, durable=True)
+        by_seq: dict[int, TraceEvent] = {}
+        ids: set[str] = set()
+        for event in [*durable, *live]:
+            if event.seq_no is None:
+                continue
+            seq = int(event.seq_no)
+            previous = by_seq.get(seq)
+            if previous is not None and previous.id != event.id:
+                raise ValueError(
+                    f"Trace session {session_id} has conflicting events at seq {seq}"
+                )
+            if event.id in ids and previous is None:
+                raise ValueError(
+                    f"Trace session {session_id} repeats event id {event.id}"
+                )
+            by_seq[seq] = event
+            ids.add(event.id)
+        events = [by_seq[seq] for seq in sorted(by_seq)]
+        if len(events) > self._max_retained:
+            self._events[session_id] = None
+            self._surface.pop(session_id, None)
+            raise RuntimeError(
+                f"Trace session {session_id} has {len(events):,} durable events, "
+                f"exceeding the rehydrate limit {self._max_retained:,}"
+            )
+        folded = fold_surface(events)
+        self._events[session_id] = events
+        self._surface[session_id] = list(folded["nodes"])
+        if events:
+            self._next_seq[session_id] = max(
+                self._next_seq.get(session_id, 0), int(events[-1].seq_no) + 1,
+            )
+        return list(events)
 
     def read_from(
         self,

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .context import PermissionContextManager
 from .types import (
+    PermissionEnforcer,
     PermissionMode,
     PermissionPolicy,
     PermissionRequest,
@@ -83,6 +84,35 @@ class PermissionManagerServer(BaseModel):
                 return Response(type=ResponseType.TOOL, success=False, message=result.reason)
         """
         return self._ctx.check(name=name, input=input, **kwargs)
+
+    def check_declared(
+        self,
+        name: str,
+        input: PermissionRequest,
+        *,
+        mode: PermissionMode | str,
+        workspace: str = "",
+    ) -> ValidationResult:
+        """Check a directly-instantiated entity against its own declared mode.
+
+        Registry execution always uses :meth:`check` and remains fail-closed for an
+        unknown name. This seam exists for built-in tools/environments that deliberately
+        support direct Python invocation in tests and small scripts. Outside a bound run
+        there is no workspace boundary to infer, so ``workspace_write`` retains its
+        historical standalone meaning while all command/destructive/size checks remain.
+        """
+        declared = PermissionMode(mode)
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        if declared is PermissionMode.WORKSPACE_WRITE and not workspace:
+            if roots:
+                workspace = str(roots["workspace"])
+            else:
+                declared = PermissionMode.DANGER_FULL_ACCESS
+        return PermissionEnforcer(
+            entity_name=name, mode=declared, workspace=workspace,
+        ).check(input, workspace=workspace)
 
 
 # Global singleton

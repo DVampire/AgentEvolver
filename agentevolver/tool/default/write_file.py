@@ -43,11 +43,11 @@ class WriteFileTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     def permission_request(self, arguments, ctx=None):
-            return PermissionRequest(
-                op=Operation.WRITE,
-                target=str(arguments.get("path") or ""),
-                content=str(arguments.get("content") or ""),
-            )
+        return PermissionRequest(
+            op=Operation.WRITE,
+            target=str(arguments.get("path") or ""),
+            content=str(arguments.get("content") or ""),
+        )
 
     async def __call__(
         self,
@@ -67,9 +67,10 @@ class WriteFileTool(Tool):
                 return Response(type=ResponseType.TOOL, success=False, message=denial)
 
             # Permission + size check.
-            result = permission_manager.check(
+            result = permission_manager.check_declared(
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=content),
+                mode=self.permission_mode,
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

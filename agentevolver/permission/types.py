@@ -63,6 +63,10 @@ class PermissionRequest(BaseModel):
     op: Operation = Field(description="Operation type: bash / read / write")
     target: str = Field(description="Command string (bash) or file path (read/write)")
     content: str = Field(default="", description="File content — only used for write ops")
+    allow_binary: bool = Field(
+        default=False,
+        description="Whether a dedicated binary reader may consume binary file bytes.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +79,7 @@ class ValidationResult:
     allowed: bool
     warning: Optional[str] = None
     reason: Optional[str] = None      # set when allowed=False
+    requires_approval: bool = False
 
     @staticmethod
     def allow(warning: Optional[str] = None) -> "ValidationResult":
@@ -87,6 +92,12 @@ class ValidationResult:
     @staticmethod
     def warn(message: str) -> "ValidationResult":
         return ValidationResult(allowed=True, warning=message)
+
+    @staticmethod
+    def ask(message: str) -> "ValidationResult":
+        return ValidationResult(
+            allowed=True, warning=message, requires_approval=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -314,29 +325,54 @@ def _validate_sed(command: str, mode: PermissionMode) -> Optional[ValidationResu
 def _check_destructive(command: str) -> Optional[ValidationResult]:
     warnings = []
     try:
-        tokens = shlex.split(command)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
     except ValueError:
         return None
 
-    prog = os.path.basename(tokens[0]) if tokens else ""
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token and all(char in ";&|" for char in token):
+            if segments[-1]:
+                segments.append([])
+            continue
+        segments[-1].append(token)
 
-    if prog == "rm":
-        flags = " ".join(t for t in tokens if t.startswith("-"))
-        if any(t in ("/*", "/") for t in tokens[1:]):
+    for segment in segments:
+        while segment and ("=" in segment[0] and not segment[0].startswith("=")):
+            segment = segment[1:]
+        if segment and os.path.basename(segment[0]) in {"sudo", "command", "env"}:
+            dangerous = next((
+                index for index, token in enumerate(segment[1:], 1)
+                if os.path.basename(token) in {"rm", "dd", "mkfs", "kill"}
+                or os.path.basename(token).startswith("mkfs.")
+            ), None)
+            segment = segment[dangerous:] if dangerous is not None else segment[1:]
+        prog = os.path.basename(segment[0]) if segment else ""
+        flag_tokens = [token for token in segment[1:] if token.startswith("-")]
+        short_flags = "".join(
+            token[1:] for token in flag_tokens
+            if token.startswith("-") and not token.startswith("--")
+        )
+        if prog == "rm" and any(t in ("/*", "/") for t in segment[1:]):
             return ValidationResult.block("Refusing to run rm on root path.")
-        if "-r" in flags or "--recursive" in flags:
-            if "-f" in flags or "--force" in flags:
+        if prog == "rm" and (
+            "r" in short_flags or "R" in short_flags or "--recursive" in flag_tokens
+        ):
+            if "f" in short_flags or "--force" in flag_tokens:
                 warnings.append("'rm -rf' is irreversible — double-check the target path.")
             else:
                 warnings.append("Recursive rm detected.")
 
-    if prog in ("dd", "mkfs"):
-        warnings.append(f"'{prog}' can destroy data — verify arguments carefully.")
+        if prog == "dd" or prog == "mkfs" or prog.startswith("mkfs."):
+            warnings.append(f"'{prog}' can destroy data — verify arguments carefully.")
 
-    if prog == "kill" and "-9" in tokens:
-        warnings.append("SIGKILL (-9) cannot be caught — the process will not clean up.")
+        if prog == "kill" and "-9" in segment:
+            warnings.append("SIGKILL (-9) cannot be caught — the process will not clean up.")
 
-    return ValidationResult.warn(" ".join(warnings)) if warnings else None
+    return ValidationResult.ask(" ".join(dict.fromkeys(warnings))) if warnings else None
 
 
 def validate_command(command: str, mode: PermissionMode, workspace: str = "") -> ValidationResult:
@@ -345,6 +381,7 @@ def validate_command(command: str, mode: PermissionMode, workspace: str = "") ->
     All checks run; first block wins, all warnings are collected and joined.
     """
     warnings = []
+    requires_approval = False
     for check in (
         lambda: _validate_mode(command, mode),
         lambda: _validate_sed(command, mode),
@@ -358,8 +395,15 @@ def validate_command(command: str, mode: PermissionMode, workspace: str = "") ->
             return result
         if result.warning:
             warnings.append(result.warning)
+        requires_approval = requires_approval or result.requires_approval
 
-    return ValidationResult.warn("; ".join(warnings)) if warnings else ValidationResult.allow()
+    if warnings:
+        return ValidationResult(
+            allowed=True,
+            warning="; ".join(warnings),
+            requires_approval=requires_approval,
+        )
+    return ValidationResult.allow()
 
 
 # ---------------------------------------------------------------------------
@@ -423,17 +467,21 @@ def _fence(workspace: str) -> str:
         return ""
 
 
-def check_file_read(path: str, mode: PermissionMode, workspace: str = "") -> ValidationResult:
+def check_file_read(
+    path: str, mode: PermissionMode, workspace: str = "", *, allow_binary: bool = False,
+) -> ValidationResult:
     try:
         size = os.path.getsize(path)
     except OSError:
+        # Permission checks should not hide the tool's useful "not found"/I/O
+        # diagnostic.  A failed stat cannot itself make a read mutate state.
         return ValidationResult.allow()
 
     if size > MAX_READ_SIZE:
         return ValidationResult.block(
             f"File too large to read: {size / 1024 / 1024:.1f} MB (limit 10 MB)."
         )
-    if is_binary_file(path):
+    if not allow_binary and is_binary_file(path):
         return ValidationResult.block("Binary file detected — use a dedicated binary tool instead.")
     return ValidationResult.allow()
 
@@ -606,7 +654,9 @@ class PermissionEnforcer:
             return result  # may carry a warning
 
         if input.op == Operation.READ:
-            return check_file_read(input.target, self.mode, workspace)
+            return check_file_read(
+                input.target, self.mode, workspace, allow_binary=input.allow_binary,
+            )
 
         if input.op == Operation.WRITE:
             result = check_file_write(input.target, input.content, self.mode, workspace)
@@ -617,7 +667,9 @@ class PermissionEnforcer:
                 return policy_result
             return result
 
-        return ValidationResult.allow()
+        return ValidationResult.block(
+            f"Unsupported permission operation: {input.op!r}"
+        )
 
 
 __all__ = [

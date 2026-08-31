@@ -225,7 +225,7 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
-    retain_recent_steps=2,
+    retain_recent_steps=4,
     compact_after_steps=24,
     compact_body_tokens=100000,
 )

@@ -86,9 +86,9 @@ meta_agent.update(
     max_step=META_MAX_STEP,
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
-    # Codex-style window: token growth after the checkpoint is primary; two exact
-    # closed steps remain as a portable safety tail for non-Responses providers.
-    retain_recent_steps=2,
+    # Codex-style window: token growth after the checkpoint is primary; four exact
+    # closed steps preserve enough local causality for portable provider fallbacks.
+    retain_recent_steps=4,
     compact_after_steps=24,
     compact_body_tokens=100000,
 )

@@ -57,6 +57,11 @@ class EnvironmentManagerServer(BaseModel):
         self.base_dir = assemble_workspace_path(path_manager.under(base_root, P.LOG_MODULE, module="environment"))
         logger.info(f"| 📁 ECP Server base directory: {self.base_dir}")
 
+        # Re-initialization changes the mounted environment set. Release live browser,
+        # SSH and sandbox resources owned by the previous set before replacing it.
+        if self.environment_context_manager is not None:
+            await self.environment_context_manager.cleanup()
+
         # Initialize environment context manager
         self.environment_context_manager = EnvironmentContextManager(
             base_dir=self.base_dir,

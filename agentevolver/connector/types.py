@@ -48,6 +48,10 @@ class ConnectorConfig(BaseModel):
     #: connector is described to the model by the *connector's* one-line description,
     #: which is the same sentence twenty times over.
     action_descriptions: Dict[str, str] = Field(default_factory=dict, description="Per-action descriptions")
+    action_annotations: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Per-action MCP effect annotations (readOnly/destructive/idempotent/openWorld).",
+    )
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         return {
@@ -64,6 +68,7 @@ class ConnectorConfig(BaseModel):
             "actions": self.actions,
             "action_schemas": self.action_schemas,
             "action_descriptions": self.action_descriptions,
+            "action_annotations": self.action_annotations,
         }
 
 

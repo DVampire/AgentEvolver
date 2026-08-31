@@ -28,6 +28,7 @@ class P(str, Enum):
     LOG_MODEL_REQUEST = "log_model_request"
     LOG_COMMAND_CHECKPOINTS = "log_command_checkpoints"
     LOG_COMMAND_CHECKPOINT = "log_command_checkpoint"
+    LOG_WORKSPACE_CHECKPOINT = "log_workspace_checkpoint"
     LOG_GATEWAY_TASKS = "log_gateway_tasks"
     LOG_TASK_VIEW = "log_task_view"
     LOG_BENCHMARK = "log_benchmark"
@@ -150,7 +151,8 @@ class P(str, Enum):
 RELATIVE: frozenset = frozenset({
     P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
     P.LOG_INPUTS, P.LOG_MODEL_REQUEST,
-    P.LOG_COMMAND_CHECKPOINTS, P.LOG_COMMAND_CHECKPOINT, P.LOG_GATEWAY_TASKS,
+    P.LOG_COMMAND_CHECKPOINTS, P.LOG_COMMAND_CHECKPOINT,
+    P.LOG_WORKSPACE_CHECKPOINT, P.LOG_GATEWAY_TASKS,
     P.LOG_TASK_VIEW, P.LOG_BENCHMARK, P.LOG_BENCHMARK_RESULTS,
     P.LOG_BENCHMARK_RESULT, P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
     P.TRACE_PROJECTIONS, P.TRACE_PROJECTION_WATERMARK,
@@ -166,7 +168,7 @@ RELATIVE: frozenset = frozenset({
 #: intentionally have no suffix.
 FILES: frozenset = frozenset({
     P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
-    P.LOG_MODEL_REQUEST, P.LOG_COMMAND_CHECKPOINT,
+    P.LOG_MODEL_REQUEST, P.LOG_COMMAND_CHECKPOINT, P.LOG_WORKSPACE_CHECKPOINT,
     P.LOG_TASK_VIEW, P.LOG_BENCHMARK_RESULT,
     P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
     P.TRACE_PROJECTION_WATERMARK,
@@ -190,6 +192,7 @@ LAYOUT: Dict[P, str] = {
     P.LOG_MODEL_REQUEST: "model_requests/{agent_name}/{filename}",
     P.LOG_COMMAND_CHECKPOINTS: "command/checkpoints",
     P.LOG_COMMAND_CHECKPOINT: "command/checkpoints/{filename}",
+    P.LOG_WORKSPACE_CHECKPOINT: "workspace/checkpoints/{filename}",
     P.LOG_GATEWAY_TASKS: "gateway/tasks",
     P.LOG_TASK_VIEW: "{filename}",
     P.LOG_BENCHMARK: "benchmark/{benchmark}",

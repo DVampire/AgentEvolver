@@ -238,6 +238,22 @@ def test_claude_relay_request_stays_within_four_cache_breakpoints():
     assert count(built) == 4
 
 
+def test_non_claude_relay_never_receives_anthropic_cache_extensions():
+    """DeepSeek/GPT routes must not be probed with another provider's vocabulary."""
+    from agentevolver.model.llm_hub.chat import ChatLLMHub
+
+    messages = [
+        SystemMessage(content="stable system", context_layer="fixed"),
+        HumanMessage(content="stable task", cache=True, context_layer="fixed"),
+        HumanMessage(content="live", context_layer="live"),
+    ]
+    built = asyncio.run(ChatLLMHub(
+        model="deepseek-v4-flash", reasoning={},
+    )._build_params(messages, stream=True))
+
+    assert "cache_control" not in str(built)
+
+
 @pytest.mark.parametrize("serializer", SERIALIZERS)
 def test_a_catalog_with_nothing_after_it_is_one_block(serializer):
     """The derived path sends the catalog as its own message; an empty tail adds nothing."""
@@ -308,23 +324,25 @@ OBSERVED = {
     "anthropic-native": (
         {"input_tokens": 100, "output_tokens": 5,
          "cache_read_input_tokens": 80, "cache_creation_input_tokens": 20},
-        {"input_tokens": 100, "output_tokens": 5,
+        {"input_tokens": 100, "context_input_tokens": 200, "output_tokens": 5,
          "cache_read_tokens": 80, "cache_write_tokens": 20}),
     "chat-completions": (
         {"prompt_tokens": 100, "completion_tokens": 5,
          "prompt_tokens_details": {"cached_tokens": 80}},
-        {"input_tokens": 100, "output_tokens": 5, "cache_read_tokens": 80}),
+        {"input_tokens": 20, "context_input_tokens": 100,
+         "output_tokens": 5, "cache_read_tokens": 80}),
     "responses": (
         {"input_tokens": 57, "output_tokens": 29,
          "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 17}},
-        {"input_tokens": 57, "output_tokens": 29,
+        {"input_tokens": 0, "context_input_tokens": 57, "output_tokens": 29,
          "cache_read_tokens": 40, "cache_write_tokens": 17}),
     "gemini": (
         # As the google provider normalizes it — the protobuf field is mapped there
         # because `from_raw` never sees a protobuf.
         {"prompt_token_count": 100, "candidates_token_count": 5,
          "cache_read_input_tokens": 85},
-        {"input_tokens": 100, "output_tokens": 5, "cache_read_tokens": 85}),
+        {"input_tokens": 15, "context_input_tokens": 100,
+         "output_tokens": 5, "cache_read_tokens": 85}),
     "openrouter-with-cost": (
         {"prompt_tokens": 10, "completion_tokens": 2, "cost": 0.0042},
         {"input_tokens": 10, "output_tokens": 2, "cost": 0.0042}),

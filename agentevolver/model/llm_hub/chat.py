@@ -37,6 +37,18 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
 
+
+def _without_cache_controls(value: Any) -> Any:
+    """Remove Anthropic-only cache annotations for other relay backends."""
+    if isinstance(value, dict):
+        return {
+            key: _without_cache_controls(item)
+            for key, item in value.items() if key != "cache_control"
+        }
+    if isinstance(value, list):
+        return [_without_cache_controls(item) for item in value]
+    return value
+
 class ChatLLMHub(BaseChatModel):
     """
     A wrapper around AsyncOpenAI that provides a unified interface for LLM Hub chat completions.
@@ -232,6 +244,12 @@ class ChatLLMHub(BaseChatModel):
         """
         # Serialize messages to LLM Hub format
         serialized_messages = LLMHubChatSerializer.serialize_messages(messages)
+        is_claude = "claude-" in str(self.model).lower()
+        if not is_claude:
+            # GPT/DeepSeek relay routes either cache stable prefixes automatically or
+            # do not offer prompt caching. Anthropic's explicit extension is invalid
+            # vocabulary there and must not be used as a capability probe per call.
+            serialized_messages = _without_cache_controls(serialized_messages)
         
         # Build API parameters
         params: Dict[str, Any] = {}
@@ -263,7 +281,7 @@ class ChatLLMHub(BaseChatModel):
                 # The Claude relay accepts Anthropic cache breakpoints on its
                 # OpenAI-compatible surface. Cache the stable native tool catalog, but
                 # never send this extension to OpenAI models.
-                if "claude-opus-5" in str(self.model).lower():
+                if is_claude:
                     formatted_tools = [dict(tool) for tool in formatted_tools]
                     formatted_tools[-1]["cache_control"] = {
                         "type": "ephemeral", "ttl": CACHE_TTL

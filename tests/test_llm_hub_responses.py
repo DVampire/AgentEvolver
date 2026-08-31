@@ -447,9 +447,74 @@ def test_feature_resolution_has_a_named_fallback_for_every_optimization():
     assert resolved == {
         "persisted_reasoning": "message_replay",
         "compaction": "portable_checkpoint",
-        "programmatic_tool_calling": "direct_tools",
-        "multi_agent": "local_meta_agent",
-    }
+            "programmatic_tool_calling": "direct_tools",
+            "multi_agent": "local_meta_agent",
+            "prompt_cache": "provider_prefix",
+        }
+
+
+def test_responses_client_serializes_structured_output():
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        value: int
+
+    client = _client()
+    captured = {}
+
+    async def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(model_dump=lambda **_kwargs: {
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"text": '{"value":1}'}]}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    response = asyncio.run(client([HumanMessage(content="x")], response_format=Answer))
+
+    assert captured["text"]["format"]["type"] == "json_schema"
+    assert captured["text"]["format"]["name"] == "Answer"
+    assert response.parsed_model.value == 1
+
+
+def test_rejected_prompt_cache_is_removed_on_fallback():
+    client = _client()
+    client._disabled_features.add("prompt_cache")
+    params = client._build_params(
+        [HumanMessage(content="x")], prompt_cache_key="stable",
+        prompt_cache_options={"ttl": "30m"},
+    )
+    assert "prompt_cache_key" not in params
+    assert "prompt_cache_options" not in params
+
+
+def test_manager_records_the_same_automatic_cache_contract_it_sends():
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig
+
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
+        provider="llm_hub", supports_functions=True,
+    )
+    client = _client()
+    wire, snapshot = manager._runtime_call_kwargs(
+        "main", client,
+        {"trace_context": {"agent_name": "meta_agent"}}, {},
+    )
+
+    assert wire["prompt_cache_key"] == snapshot["prompt_cache_key"]
+    assert len(wire["prompt_cache_key"]) == 32
+    assert snapshot["runtime_features"]["prompt_cache"] == "automatic"
+
+    client._disabled_features.add("prompt_cache")
+    wire, snapshot = manager._runtime_call_kwargs(
+        "main", client,
+        {"trace_context": {"agent_name": "meta_agent"}}, {},
+    )
+    assert "prompt_cache_key" not in wire and "prompt_cache_key" not in snapshot
+    assert snapshot["runtime_features"]["prompt_cache"] == "disabled"
 
 
 def test_a_reasoning_toggle_with_no_effort_is_not_sent():
@@ -524,6 +589,46 @@ def test_complete_response_output_is_replayed_without_reconstruction():
     ]
 
 
+@pytest.mark.asyncio
+async def test_hosted_continuation_preserves_every_native_output_item():
+    requests = []
+    replies = [
+        {
+            "status": "completed",
+            "output": [{"type": "program", "call_id": "prog_1", "code": "text('ok')"}],
+            "usage": {"input_tokens": 10, "output_tokens": 2},
+        },
+        {
+            "status": "completed",
+            "output": [
+                {"type": "reasoning", "id": "reason_2", "summary": []},
+                {"type": "message", "content": [{"text": "done"}]},
+            ],
+            "usage": {"input_tokens": 12, "output_tokens": 3},
+        },
+    ]
+
+    async def create(**params):
+        requests.append(params)
+        payload = replies.pop(0)
+        return SimpleNamespace(model_dump=lambda **_kwargs: payload)
+
+    client = _client()
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+
+    response = await client([HumanMessage(content="run the program")])
+
+    assert response.success and response.message == "done"
+    state = response.data["provider_state"]["responses"]
+    assert [item["type"] for item in state["output_items"]] == [
+        "program", "reasoning", "message",
+    ]
+    assert state["reasoning_items"][0]["id"] == "reason_2"
+    assert requests[1]["input"][-1]["type"] == "program"
+    assert response.usage.input_tokens == 22
+    assert response.usage.output_tokens == 5
+
+
 def test_multi_agent_parser_exposes_only_the_root_final_answer():
     parsed = _client()._parse({"status": "completed", "output": [
         {"type": "message", "agent": {"agent_name": "/root/a"},
@@ -563,6 +668,41 @@ async def test_rejected_native_feature_is_disabled_for_the_route():
         tool.get("type") == "programmatic_tool_calling"
         for tool in fallback["tools"]
     )
+
+
+@pytest.mark.asyncio
+async def test_rejection_disables_only_the_named_feature_on_a_shared_request():
+    async def create(**kwargs):
+        raise RuntimeError("unsupported tool type programmatic_tool_calling")
+
+    client = _client(native_programmatic_tool_calling=True)
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    client._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=create), beta=SimpleNamespace(),
+    )
+
+    with pytest.raises(NativeFeatureUnavailable) as caught:
+        await client(
+            messages=[HumanMessage(content="inspect")], tools=[read],
+            runtime_features={"programmatic_tool_calling": "native"},
+            prompt_cache_key="stable-prefix",
+        )
+
+    assert caught.value.features == ["programmatic_tool_calling"]
+    assert client._disabled_features == {"programmatic_tool_calling"}
+
+
+def test_missing_beta_endpoint_disables_only_multi_agent():
+    class MissingEndpoint(RuntimeError):
+        status_code = 404
+
+    from agentevolver.model.llm_hub.response import _rejected_features
+
+    assert _rejected_features(
+        MissingEndpoint("not found"),
+        ["programmatic_tool_calling", "multi_agent", "prompt_cache"],
+    ) == ["multi_agent"]
 
 
 @pytest.mark.asyncio
@@ -750,6 +890,51 @@ async def test_native_declaration_does_not_add_an_ordinary_retry(monkeypatch):
 
     assert not result.success
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_prompt_cache_rejection_gets_one_reserved_fallback_attempt(monkeypatch):
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig, ModelContext
+
+    calls = []
+
+    class UnsupportedCache(RuntimeError):
+        status_code = 400
+
+    async def create(**params):
+        calls.append(dict(params))
+        if params.get("prompt_cache_key"):
+            raise UnsupportedCache("unknown parameter prompt_cache_key")
+        return SimpleNamespace(model_dump=lambda **_kwargs: {
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"text": "ok"}]}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    client = _client()
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
+        provider="llm_hub", supports_functions=True,
+    )
+    manager.model_clients["main"] = client
+    monkeypatch.setattr(
+        "agentevolver.model.context._record_request_snapshot",
+        lambda **_kwargs: asyncio.sleep(0),
+    )
+
+    result = await manager(
+        name="main",
+        input={"messages": [HumanMessage(content="inspect")], "max_retries": 1},
+        ctx=ModelContext(id="session"),
+    )
+
+    assert result.success and result.message == "ok"
+    assert len(calls) == 2
+    assert "prompt_cache_key" in calls[0]
+    assert "prompt_cache_key" not in calls[1]
 
 
 def test_malformed_arguments_are_kept_rather_than_dropped():

@@ -190,6 +190,7 @@ class ChatAnthropic(BaseChatModel):
                 item = TokenUsage.from_raw(iteration)
                 if item is not None:
                     total.input_tokens += item.input_tokens
+                    total.context_input_tokens += item.context_input_tokens
                     total.output_tokens += item.output_tokens
                     total.cache_write_tokens += item.cache_write_tokens
                     total.cache_read_tokens += item.cache_read_tokens

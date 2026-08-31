@@ -41,6 +41,10 @@ _BEHAVIOUR_PARAMETERS = (
     "max_retries",
     "runtime_features",
     "store",
+    "prompt_cache_key",
+    "prompt_cache_options",
+    "previous_response_id",
+    "background",
 )
 
 

@@ -191,8 +191,13 @@ def split_cached_prefix(text: str) -> Optional[tuple]:
 
 
 class TokenUsage(BaseModel):
-    """Structured token usage from a single LLM API call."""
+    """Provider-neutral usage for one call.
+
+    ``input_tokens`` is uncached, normally-priced input. ``context_input_tokens``
+    is the complete provider input (cached + uncached) used for context growth.
+    """
     input_tokens: int = 0
+    context_input_tokens: int = 0
     output_tokens: int = 0
     cache_write_tokens: int = 0
     cache_read_tokens: int = 0
@@ -200,7 +205,19 @@ class TokenUsage(BaseModel):
 
     @property
     def total(self) -> int:
-        return self.input_tokens + self.output_tokens + self.cache_write_tokens + self.cache_read_tokens
+        context = self.context_input_tokens or (
+            self.input_tokens + self.cache_write_tokens + self.cache_read_tokens
+        )
+        return context + self.output_tokens
+
+    @property
+    def cache_hit_ratio(self) -> Optional[float]:
+        context = self.context_input_tokens or (
+            self.input_tokens + self.cache_write_tokens + self.cache_read_tokens
+        )
+        return (
+            self.cache_read_tokens / context if context else None
+        )
 
     @classmethod
     def from_raw(cls, raw: Optional[Dict[str, Any]]) -> Optional["TokenUsage"]:
@@ -214,6 +231,18 @@ class TokenUsage(BaseModel):
         # chat/completions nests `prompt_tokens_details`; the Responses API nests
         # `input_tokens_details` with a differently spelled write count; Gemini's
         # `cached_content_token_count` is mapped at the provider.
+        # Pricing and Trace can both read the same dictionary. Trust an explicit
+        # context total so normalisation is idempotent.
+        if "context_input_tokens" in raw:
+            return cls(
+                input_tokens=int(raw.get("input_tokens") or 0),
+                context_input_tokens=int(raw.get("context_input_tokens") or 0),
+                output_tokens=int(raw.get("output_tokens") or 0),
+                cache_write_tokens=int(raw.get("cache_write_tokens") or 0),
+                cache_read_tokens=int(raw.get("cache_read_tokens") or 0),
+                cost=float(raw["cost"]) if raw.get("cost") is not None else None,
+            )
+
         prompt_details = raw.get("prompt_tokens_details") or {}
         input_details = raw.get("input_tokens_details") or {}
         cache_read = (
@@ -231,11 +260,26 @@ class TokenUsage(BaseModel):
         # cost: OpenRouter returns top-level cost field
         cost_raw = raw.get("cost")
         cost = float(cost_raw) if cost_raw is not None else None
+        raw_input = int(
+            raw.get("prompt_tokens") or raw.get("input_tokens") or
+            raw.get("prompt_token_count") or 0
+        )
+        # OpenAI-compatible Chat/Responses and Gemini report a total prompt with a
+        # cached subset. Anthropic reports uncached input plus separate cache buckets.
+        inclusive_input = bool(
+            prompt_details or input_details or "prompt_token_count" in raw
+        )
+        uncached_input = (
+            max(0, raw_input - int(cache_read) - int(cache_write))
+            if inclusive_input else raw_input
+        )
+        context_input = (
+            raw_input if inclusive_input
+            else raw_input + int(cache_read) + int(cache_write)
+        )
         return cls(
-            input_tokens=(
-                raw.get("prompt_tokens") or raw.get("input_tokens") or
-                raw.get("prompt_token_count") or 0
-            ),
+            input_tokens=uncached_input,
+            context_input_tokens=context_input,
             output_tokens=(
                 raw.get("completion_tokens") or raw.get("output_tokens") or
                 raw.get("candidates_token_count") or 0
@@ -246,7 +290,10 @@ class TokenUsage(BaseModel):
         )
 
     def summary_line(self, model: str = "") -> str:
-        parts = [f"in={self.input_tokens}", f"out={self.output_tokens}"]
+        parts = [
+            f"in={self.input_tokens}", f"context_in={self.context_input_tokens}",
+            f"out={self.output_tokens}",
+        ]
         if self.cache_write_tokens:
             parts.append(f"cache_write={self.cache_write_tokens}")
         if self.cache_read_tokens:
@@ -265,8 +312,8 @@ def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, float]]) -> 
     / ``cache_write`` / ``cache_read`` to USD-per-single-token. Cache prices default to the
     usual multiples of the input price when omitted (write 1.25x, read 0.1x). Returns None
     when there is no pricing to apply, so the caller leaves ``cost`` untouched. Cached
-    tokens are billed at the cache rate INSTEAD of the input rate — they are not also in
-    ``input_tokens`` (from_raw normalises the provider's split), so no double counting.
+    tokens are billed at the cache rate INSTEAD of the input rate. The observational
+    ``context_input_tokens`` total is never billed directly, so there is no double count.
     """
     if not pricing:
         return None

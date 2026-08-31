@@ -162,6 +162,7 @@ async def test_queue_overflow_permanently_marks_the_session_incomplete(
         event_type=TraceEventType.CUSTOM, session_id="s1", label="dropped",
     ))
     assert first is True and second is False
+    assert [event.label for event in isolated_trace_manager.events("s1")] == ["first"]
     assert "dropped 1 event" in isolated_trace_manager.integrity_issue("s1")
 
     with patch.object(isolated_trace_manager, "flush", AsyncMock(return_value=True)):
@@ -333,8 +334,8 @@ async def test_post_step_flushes_after_all_step_hooks():
             step_usage={"output_tokens": 3},
         )
 
-    # trace_hook forwards its numbered event to memory, then snapshot and trajectory run.
-    assert hooks.await_count == 3
+    # trace_hook forwards its numbered event to memory; trajectory runs after it.
+    assert hooks.await_count == 2
     checkpoint.assert_awaited_once()
     args, kwargs = checkpoint.await_args
     assert args[:2] == ("step-session", TraceCheckpointBoundary.STEP_END)

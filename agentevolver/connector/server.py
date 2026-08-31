@@ -302,6 +302,10 @@ class ConnectorManagerServer(BaseModel):
             **kwargs,
         )
 
+    def set_approval_resolver(self, resolver):
+        """Install the same one-shot approval seam used by local tools."""
+        return self._ensure_context_manager().set_approval_resolver(resolver)
+
 
 # Global connector manager instance
 connector_manager = ConnectorManagerServer()

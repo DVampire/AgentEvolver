@@ -315,21 +315,30 @@ def _request_diagnostics(
     ]
     arguments = _tool_argument_values(messages)
     body_tokens = _body_after_prefix_tokens(messages)
+    layer_tokens = {
+        layer: _tokens([
+            message for index, message in enumerate(messages)
+            if _message_layer(message, index, len(messages)) == layer
+        ])
+        for layer in ("fixed", "checkpoint", "recent", "live")
+    }
 
     usage = usage or {}
     input_tokens = int(usage.get("input_tokens") or 0)
+    context_input = int(usage.get("context_input_tokens") or 0)
     output_tokens = int(usage.get("output_tokens") or 0)
     cache_read = int(usage.get("cache_read_tokens") or 0)
     cache_write = int(usage.get("cache_write_tokens") or 0)
-    # Anthropic reports uncached input separately; OpenAI reports total input and a
-    # cached subset. Normalize both conventions before presenting one hit ratio.
+    # New traces carry the canonical total. Provider-aware fallback keeps old snapshots
+    # readable without reintroducing ambiguity into newly normalised usage.
     provider = str(snapshot.get("provider") or "").lower()
     model_type = str(snapshot.get("model_type") or "").lower()
-    denominator = (
+    legacy_context = (
         input_tokens + cache_read + cache_write
         if "anthropic" in provider or "anthropic" in model_type
         else max(input_tokens, cache_read + cache_write)
     )
+    denominator = context_input or legacy_context
     cache_hit = (cache_read / denominator) if denominator else None
 
     pressure = snapshot.get("pressure") or {}
@@ -385,6 +394,7 @@ def _request_diagnostics(
         "cache_read_tokens": cache_read,
         "cache_write_tokens": cache_write,
         "input_tokens": input_tokens,
+        "context_input_tokens": denominator,
         "output_tokens": output_tokens,
         "cost": usage.get("cost"),
         "cache_hit_ratio": cache_hit,
@@ -392,6 +402,10 @@ def _request_diagnostics(
         "capacity_eta": projected_steps(current, capacity, slope),
         "growth_tokens_per_step": slope,
         "body_growth_tokens_per_step": body_slope,
+        "layer_tokens": layer_tokens,
+        "runtime_features": (
+            (snapshot.get("parameters") or {}).get("runtime_features") or {}
+        ),
     }
 
 
@@ -404,6 +418,12 @@ def _eta(value: Optional[int]) -> str:
 def _render_diagnostics(metrics: dict[str, Any]) -> str:
     hit = metrics["cache_hit_ratio"]
     hit_text = "pending" if hit is None else f"{hit:.1%}"
+    layers = metrics["layer_tokens"]
+    features = metrics["runtime_features"]
+    feature_text = ", ".join(
+        f"{name}={mode}" for name, mode in sorted(features.items())
+        if not isinstance(mode, (dict, list))
+    ) or "provider defaults"
     cards = [
         ("Fixed prefix", f'≈{metrics["fixed_prefix_tokens"]:,}', "tokens"),
         ("Rolling prefix", f'≈{metrics["rolling_prefix_tokens"]:,}', "tokens cumulative"),
@@ -411,8 +431,11 @@ def _render_diagnostics(metrics: dict[str, Any]) -> str:
         ("Provider state", f'≈{metrics["provider_state_tokens"]:,}', "tokens"),
         ("Tool arguments", f'≈{metrics["tool_argument_tokens"]:,}', "tokens"),
         ("Cache hit", hit_text, f'{metrics["cache_read_tokens"]:,} read tokens'),
-        ("Provider input", f'{metrics["input_tokens"]:,}',
-         f'{metrics["cache_write_tokens"]:,} cache-write tokens'),
+        ("Context / uncached", f'{metrics["context_input_tokens"]:,}',
+         f'{metrics["input_tokens"]:,} uncached; {metrics["cache_write_tokens"]:,} written'),
+        ("Four layers", f'{layers["fixed"]:,} / {layers["checkpoint"]:,}',
+         f'fixed/checkpoint; {layers["recent"]:,}/{layers["live"]:,} recent/live'),
+        ("Feature route", feature_text, "native modes and fallbacks"),
         ("Output / cost", f'{metrics["output_tokens"]:,} tokens',
          "pending" if metrics["cost"] is None else f'${float(metrics["cost"]):.6f}'),
         ("Compaction", _eta(metrics["compaction_eta"]), "at current request"),

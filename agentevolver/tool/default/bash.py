@@ -380,8 +380,8 @@ class BashTool(Tool):
 
         # Permission check
         req = PermissionRequest(op=Operation.BASH, target=command)
-        result = permission_manager.check(
-            self.name, req
+        result = permission_manager.check_declared(
+            self.name, req, mode=self.permission_mode,
         )
         if not result.allowed:
             return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

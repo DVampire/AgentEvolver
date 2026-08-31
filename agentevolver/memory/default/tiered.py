@@ -29,7 +29,9 @@ import asyncio
 import ast
 import json
 import os
+import re
 import time
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional
@@ -234,7 +236,14 @@ class TieredMemory(Memory):
     record_detail_max: int = Field(default=_RECORD_DETAIL_MAX,
                                    description="Max characters kept for one recent entry's detail.")
     working_fetch: int = Field(default=5, description="Working summaries injected by get().")
-    compact_chunk: int = Field(default=10, description="Records consolidated per compaction.")
+    compact_input_tokens: int = Field(
+        default=60_000,
+        description="Maximum estimated source tokens sent to one portable compaction call.",
+    )
+    compact_output_tokens: int = Field(
+        default=2_048,
+        description="Hard output ceiling for one portable checkpoint.",
+    )
 
     persist_debounce: float = Field(default=0.2, description="Seconds to coalesce a burst of events into a single file write per session.")
     max_sessions: int = Field(default=256, description="Max in-memory sessions kept; least-recently-used ones are evicted beyond this.")
@@ -246,10 +255,6 @@ class TieredMemory(Memory):
             base_dir=str(assemble_workspace_path(base_dir)) if base_dir else "",
             **kwargs,
         )
-        # A fetch window must always be fully backed by raw records.
-        assert self.compact_chunk <= self.recent_max, "compact_chunk must be <= recent_max"
-        assert self.recent_fetch <= self.recent_max - self.compact_chunk, \
-            "recent_fetch must be <= recent_max - compact_chunk"
         self._sessions: Dict[str, _SessionState] = {}
         self._registry_lock = asyncio.Lock()
 
@@ -333,6 +338,17 @@ class TieredMemory(Memory):
             ))
             self._apply_agent_call(state, event)
             changed = True
+
+        elif (
+            ev == TraceEventType.CUSTOM
+            and (event.metadata or {}).get("type") == "compaction"
+        ):
+            checkpoint = _as_text(event.message).strip()
+            if checkpoint:
+                state.working.clear()
+                state.working.append(checkpoint)
+                state.checkpoint_seq = event.seq_no
+                changed = True
 
         else:
             changed = False
@@ -520,7 +536,7 @@ class TieredMemory(Memory):
             return False
         before = len(state.recent)
         # One pressure event creates one coherent checkpoint and leaves only the live
-        # tail. `_compact` still batches summarizer inputs by compact_chunk internally.
+        # tail. One pressure event performs at most one bounded summary call.
         await self._compact(state, down_to=floor)
         return len(state.recent) < before
 
@@ -547,22 +563,13 @@ class TieredMemory(Memory):
         return len(records) - first
 
     async def _compact(self, state: _SessionState, *, down_to: Optional[int] = None) -> None:
-        """Fold the oldest history into summaries, as one recorded transaction.
- 
-        The bracket is what makes a crash legible. ``state.compaction`` is set and
-        persisted *before* any records leave ``recent``, and cleared only after the last
-        chunk has been summarised and the result written. A memory artifact carrying an
-        open bracket therefore says exactly one thing: a compaction started and never
-        finished, so the history below it may be short by whatever that run had claimed.
-        Clearing the marker last is the whole point — clearing it first would make a
-        crashed compaction indistinguishable from a completed one.
+        """Atomically replace one closed-history window with one bounded checkpoint.
 
-        This is a diagnostic, not a recovery: these files are written, never read back,
-        so nothing resumes an interrupted compaction. What the bracket buys is that the
-        gap stops being silent, for whoever — operator or agent — reads the memory next.
-
-        Each chunk is summarised before the next is taken, and a chunk whose summary
-        fails is put back, so a partial run leaves history shorter but never holed.
+        The candidate is generated while the canonical records remain untouched.  Only
+        a non-empty, bounded checkpoint that is smaller than the material it replaces is
+        installed.  A provider error, cancellation, oversized answer, or concurrent
+        history change therefore leaves both ``recent`` and ``working`` exactly as they
+        were.  One pressure event can make at most one portable summariser call.
         """
         # The callers check this flag too, but they check it and then hand the work to a
         # detached task — and between those two the loop can run, append another record,
@@ -575,97 +582,82 @@ class TieredMemory(Memory):
             return
         state._compacting = True
         floor = self.recent_max if down_to is None else max(0, int(down_to))
-        outcome = "ok"
+        outcome = "noop"
         chunks_done = 0
         # This run's own start time. It was read back out of `state.compaction` on every
         # chunk, which made a shared, deliberately-cleared field load-bearing for a fact
         # that never changes and belongs to this call.
         started_at = _ts()
         native_checkpoint: Optional[Dict[str, Any]] = None
+        transaction_id: Optional[str] = None
         try:
             state.compaction = {"started_at": started_at, "chunks": 0}
             await self._persist(state)
 
-            # Codex-style native compaction is prepared once for the whole window, not
-            # once per internal summarizer chunk.  The readable checkpoint below remains
-            # the portable fallback for chat providers and inspection.
             records = list(state.recent)
             folding = records[: max(0, len(records) - floor)]
-            if folding:
-                native_checkpoint = await self._native_checkpoint(state, folding)
+            if not folding:
+                return
+            transaction_id = uuid.uuid4().hex
+            await self._record_compaction_transaction(
+                state, transaction_id, "started", records=folding,
+            )
 
-            # Claude's server-side block already contains the provider's canonical
-            # summary for the entire fold window. Install it in one atomic replacement;
-            # asking a second model to summarize that summary would add latency and drift.
-            native_summary = str((native_checkpoint or {}).get("summary") or "").strip()
-            if native_summary:
-                async with state._lock:
-                    chunk = [
-                        state.recent.popleft()
-                        for _ in range(max(0, len(state.recent) - floor))
-                    ]
-                existing = state.working[-1] if state.working else ""
-                state.working.clear()
-                state.working.append(native_summary)
-                chunks_done = 1
-                state.compaction = {"started_at": started_at, "chunks": chunks_done}
-                await self._record_fold(
-                    state,
-                    chunk,
-                    native_summary,
-                    existing=existing,
-                    native=native_checkpoint,
-                )
-
-            while not native_summary and len(state.recent) > floor:
-                async with state._lock:
-                    k = min(self.compact_chunk, len(state.recent) - floor, len(state.recent))
-                    # Never split one parallel tool batch across a checkpoint. Provider
-                    # protocols require every result to stay with its assistant tool call.
-                    records = list(state.recent)
-                    while (
-                        k < len(records)
-                        and records[k - 1].step is not None
-                        and records[k].step == records[k - 1].step
-                    ):
-                        k += 1
-                    chunk = [state.recent.popleft() for _ in range(k)]
-                items = self._summary_items(state, chunk)
-                existing = state.working[-1] if state.working else ""
+            existing = state.working[-1] if state.working else ""
+            native_checkpoint = await self._native_checkpoint(state, folding)
+            text = str((native_checkpoint or {}).get("summary") or "").strip()
+            source_items = self._summary_items(state, folding)
+            portable_call = not bool(text)
+            if not text:
+                items = self._pack_summary_items(source_items)
                 try:
                     text = await self._summarise(items, existing)
                 except asyncio.CancelledError:
-                    async with state._lock:
-                        state.recent.extendleft(reversed(chunk))
                     raise
                 except Exception as error:
-                    # The summariser reaching the model and failing is not the same as
-                    # it returning nothing, and saying so is the difference between
-                    # "the model is unreachable" and "there was nothing worth saying".
-                    async with state._lock:
-                        state.recent.extendleft(reversed(chunk))
-                    outcome = "summary"
+                    outcome = "summary-error"
                     logger.warning(f"| ⚠️ {self.name}: summariser failed ({error})")
-                    break
-                if not text:
-                    async with state._lock:  # lossless: restore and stop
-                        state.recent.extendleft(reversed(chunk))
-                    outcome = "empty"
-                    break
-                # Each summary is a complete replacement checkpoint, not another
-                # fragment the prompt must carry forever.
+                    return
+
+            valid, reason = self._valid_checkpoint(text, source_items, existing)
+            if not valid:
+                outcome = reason
+                logger.warning(
+                    f"| ⚠️ {self.name}: rejected compaction checkpoint ({reason})"
+                )
+                return
+
+            # Commit only if the exact prefix we summarized is still present. Appends to
+            # the live tail are fine; replacement or another fold is not.
+            async with state._lock:
+                current = list(state.recent)
+                if len(current) < len(folding) or current[:len(folding)] != folding:
+                    outcome = "history-changed"
+                    return
+                for _ in folding:
+                    state.recent.popleft()
                 state.working.clear()
                 state.working.append(text)
-                chunks_done += 1
-                state.compaction = {"started_at": started_at, "chunks": chunks_done}
-                final_chunk = len(state.recent) <= floor
-                await self._record_fold(
-                    state,
-                    chunk,
-                    text,
-                    existing=existing,
-                    native=native_checkpoint if final_chunk else None,
-                )
+
+            chunks_done = 1
+            outcome = "ok"
+            state.compaction = {"started_at": started_at, "chunks": 1}
+            recorded = await self._record_fold(
+                state, folding, text, existing=existing, native=native_checkpoint,
+                source_items=source_items, portable_call=portable_call,
+                transaction_id=transaction_id,
+            )
+            if recorded is False:
+                # The append-only fold is the durable commit record. If it could not
+                # enter Trace, restore the exact pre-commit memory projection and leave
+                # the originals on Trace's unchanged surface.
+                async with state._lock:
+                    state.recent.extendleft(reversed(folding))
+                    state.working.clear()
+                    if existing:
+                        state.working.append(existing)
+                chunks_done = 0
+                outcome = "trace-fold-rejected"
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -673,6 +665,12 @@ class TieredMemory(Memory):
             outcome = "failed"
             logger.warning(f"| ⚠️ {self.name}: compaction failed ({error})")
         finally:
+            if transaction_id:
+                await self._record_compaction_transaction(
+                    state, transaction_id,
+                    "committed" if outcome == "ok" else "aborted",
+                    outcome=outcome,
+                )
             # Released last, and persisted with the release, so the bracket on disk
             # closes only once the work behind it is durable.
             state.compaction = None
@@ -690,6 +688,89 @@ class TieredMemory(Memory):
                     f"| 🗜️ {self.name}: compaction stopped ({outcome}) after {chunks_done} "
                     f"chunk(s) for {state.session_id}"
                 )
+
+    async def _record_compaction_transaction(
+        self,
+        state: _SessionState,
+        transaction_id: str,
+        phase: str,
+        *,
+        records: Optional[List[MemoryRecord]] = None,
+        outcome: Optional[str] = None,
+    ) -> None:
+        """Durably bracket a fold so restart can distinguish rollback from commit."""
+        try:
+            from agentevolver.trace import trace_manager
+            from agentevolver.trace.types import TraceEvent, TraceEventType
+
+            accepted = await trace_manager.emit(TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id=state.session_id,
+                label=f"compaction {phase}",
+                success=phase != "aborted",
+                ignorable=True,
+                source_event_seqs=[
+                    int(record.seq) for record in (records or [])
+                    if record.seq is not None
+                ] or None,
+                metadata={
+                    "type": "compaction_transaction",
+                    "transaction_id": transaction_id,
+                    "phase": phase,
+                    "outcome": outcome,
+                },
+            ))
+            if phase == "started":
+                running = bool(getattr(trace_manager, "running", False))
+                if running and not accepted:
+                    raise RuntimeError("compaction start marker was rejected by Trace")
+                if running and accepted and not await trace_manager.flush():
+                    raise RuntimeError("compaction start marker was not durably flushed")
+        except Exception as error:
+            if phase == "started":
+                raise
+            logger.warning(
+                f"| ⚠️ {self.name}: could not record compaction {phase} ({error})"
+            )
+
+    def _pack_summary_items(self, items: List[str]) -> List[str]:
+        """Bound one summariser input while retaining evidence from every source item."""
+        if not items:
+            return []
+        # Four characters/token is intentionally conservative for code-heavy traces.
+        budget = max(4_096, int(self.compact_input_tokens) * 4)
+        joined = "\n".join(items)
+        if len(joined) <= budget:
+            return items
+        per_item = max(256, (budget - len(items)) // len(items))
+        packed: List[str] = []
+        for item in items:
+            if len(item) <= per_item:
+                packed.append(item)
+                continue
+            source = re.search(r"\[source_seq=[^\]]+\]", item)
+            marker = source.group(0) if source else "[source excerpt]"
+            notice = f"\n{marker} [... source clipped for compaction ...]\n"
+            room = max(64, per_item - len(notice))
+            head = int(room * 0.65)
+            packed.append(item[:head] + notice + item[-(room - head):])
+        return packed
+
+    def _valid_checkpoint(
+        self, text: str, source_items: List[str], existing: str,
+    ) -> tuple[bool, str]:
+        """Reject output expansion before it can replace canonical history."""
+        from agentevolver.model.pressure import estimate_tokens
+
+        if not text.strip():
+            return False, "empty"
+        output_tokens = estimate_tokens(text)
+        if output_tokens > int(self.compact_output_tokens):
+            return False, f"output-limit:{output_tokens}>{self.compact_output_tokens}"
+        before = estimate_tokens([existing, *source_items])
+        if output_tokens >= before:
+            return False, f"no-token-saving:{before}->{output_tokens}"
+        return True, "ok"
 
     def _summary_items(self, state: _SessionState, chunk: List[MemoryRecord]) -> List[str]:
         """Render complete closed turns from Trace for checkpoint generation.
@@ -878,7 +959,10 @@ class TieredMemory(Memory):
         *,
         existing: str = "",
         native: Optional[Dict[str, Any]] = None,
-    ) -> None:
+        source_items: Optional[List[str]] = None,
+        portable_call: bool = False,
+        transaction_id: Optional[str] = None,
+    ) -> Optional[bool]:
         """Tell the durable log that one summary now stands for a run of its events.
 
         Without this the two records of a session disagree after every compaction:
@@ -890,12 +974,17 @@ class TieredMemory(Memory):
         log untouched, so the folded records remain readable — the summary shadows them
         rather than deleting them, and cites every seq it shadowed.
 
-        Best-effort: a compaction that already happened must not be undone because its
-        bookkeeping could not be written.
+        Returns ``False`` only when a running Trace rejected the fold. The caller then
+        restores its pre-commit memory state. ``None`` means Trace was not active and the
+        local memory-only mode remains available for isolated uses.
         """
         span = self._fold_span(state, chunk)
         if span is None:
-            return
+            try:
+                from agentevolver.trace import trace_manager
+                return False if trace_manager.running else None
+            except Exception:
+                return None
         start, end, shadowed = span
         # What the fold bought, carried on the fold itself. Stats, a training-sample
         # budget and the UI all want this number, and a consumer that derives it has to
@@ -905,7 +994,7 @@ class TieredMemory(Memory):
         # readings are in one unit.
         from agentevolver.model.pressure import estimate_tokens
 
-        before = estimate_tokens([existing, *(r.as_line() for r in chunk)])
+        before = estimate_tokens([existing, *(source_items or [r.as_line() for r in chunk])])
         after = estimate_tokens(summary)
         try:
             from agentevolver.trace import replace_op, trace_manager
@@ -927,6 +1016,7 @@ class TieredMemory(Memory):
                 source_event_seqs=shadowed,
                 metadata={
                     "type": "compaction",
+                    "transaction_id": transaction_id,
                     "records": len(chunk),
                     "tokens_before": before,
                     "tokens_after": after,
@@ -940,18 +1030,30 @@ class TieredMemory(Memory):
                     ),
                     "checkpoint_native": bool((native or {}).get("native")),
                     "native_model": (native or {}).get("model"),
+                    "model_calls": 0 if (native or {}).get("summary") else int(portable_call),
+                    "source_characters": sum(
+                        len(item) for item in (source_items or [])
+                    ),
+                    "checkpoint_characters": len(summary),
+                    "savings_ratio": (
+                        (before - after) / before if before else 0.0
+                    ),
                 },
             )
-            await trace_manager.emit(fold_event)
-            state.checkpoint_seq = fold_event.seq_no
-        except Exception as error:  # noqa: BLE001 — the fold itself already succeeded
+            accepted = await trace_manager.emit(fold_event)
+            if accepted:
+                state.checkpoint_seq = fold_event.seq_no
+            return accepted
+        except Exception as error:  # noqa: BLE001 — caller restores the candidate
             logger.warning(f"| ⚠️ {self.name}: could not record the fold in the trace ({error})")
+            return False
 
     async def _summarise(self, items: list[str], existing: str) -> str:
         from agentevolver.hook import hook_manager, HookEvent
         res = await hook_manager(name=self.compact_hook, input={
             "event": HookEvent.ON_CALL, "items": items,
             "existing_summary": existing, "model_name": self.model_name,
+            "max_output_tokens": self.compact_output_tokens,
         })
         return (res.output or "").strip()
 
@@ -1002,8 +1104,10 @@ class TieredMemory(Memory):
 
     async def _get_or_create(self, session_id: str, event: TraceEvent) -> _SessionState:
         victims: List[_SessionState] = []
+        created = False
         async with self._registry_lock:
             if session_id not in self._sessions:
+                created = True
                 task = ""
                 if event.event_type == TraceEventType.AGENT_START:
                     task = (event.input or {}).get("task", "")
@@ -1038,7 +1142,92 @@ class TieredMemory(Memory):
                     victims.append(self._sessions.pop(sid))
         for st in victims:
             await self._evict(st)
+        if created:
+            await self._rehydrate_state(state, current_event=event)
         return state
+
+    async def _rehydrate_state(
+        self, state: _SessionState, *, current_event: TraceEvent,
+    ) -> None:
+        """Rebuild the memory projection from Trace's authoritative surface."""
+        try:
+            from agentevolver.trace import trace_manager
+
+            events = trace_manager.rehydrate(state.session_id)
+            surface = set(trace_manager.surface(state.session_id))
+        except Exception as error:
+            # Existing durable history that cannot be interpreted is not equivalent to
+            # an empty session. Fail closed rather than quietly forgetting it.
+            from agentevolver.trace import trace_manager
+
+            if trace_manager.read_from(state.session_id, durable=True):
+                raise RuntimeError(
+                    f"cannot restore memory for {state.session_id}: {error}"
+                ) from error
+            return
+
+        checkpoints = [
+            candidate for candidate in events
+            if candidate.seq_no in surface
+            and candidate.event_type == TraceEventType.CUSTOM
+            and (candidate.metadata or {}).get("type") == "compaction"
+        ]
+        boundary = max(
+            (
+                max(candidate.source_event_seqs or [-1])
+                for candidate in checkpoints
+            ),
+            default=-1,
+        )
+        replay = [
+            candidate for candidate in events
+            if candidate.id != current_event.id and (
+                candidate.seq_no in surface
+                or (
+                    candidate.event_type in {
+                        TraceEventType.TOOL_START, TraceEventType.SKILL_START,
+                    }
+                    and int(candidate.seq_no or -1) > boundary
+                )
+            )
+        ]
+        for candidate in replay:
+            await self.emit(candidate, state.session_id)
+        transactions: Dict[str, set[str]] = {}
+        for candidate in events:
+            metadata = candidate.metadata or {}
+            if metadata.get("type") != "compaction_transaction":
+                continue
+            transaction = str(metadata.get("transaction_id") or "")
+            if transaction:
+                transactions.setdefault(transaction, set()).add(
+                    str(metadata.get("phase") or "")
+                )
+        folded_transactions = {
+            str((candidate.metadata or {}).get("transaction_id") or "")
+            for candidate in events
+            if (candidate.metadata or {}).get("type") == "compaction"
+        }
+        interrupted = [
+            transaction for transaction, phases in transactions.items()
+            if "started" in phases and not ({"committed", "aborted"} & phases)
+            and transaction not in folded_transactions
+        ]
+        if interrupted:
+            self._append_recent(state, MemoryRecord(
+                ts=_ts(),
+                event="Interrupted compaction recovered",
+                detail=(
+                    "Trace contained an unclosed compaction transaction; canonical "
+                    "events were retained and the candidate checkpoint was rolled back."
+                ),
+                status="done",
+            ))
+        if replay:
+            logger.info(
+                f"| 🔄 {self.name}: restored {len(replay)} event(s) for "
+                f"{state.session_id} from Trace"
+            )
 
     async def _evict(self, state: _SessionState) -> None:
         """Flush a session's final state to disk, then drop its coalescing writer.

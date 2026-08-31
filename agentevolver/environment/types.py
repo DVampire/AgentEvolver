@@ -54,6 +54,10 @@ class Environment(BaseModel):
     description: str = Field(description="The description of the environment.")
     metadata: Dict[str, Any] = Field(description="The metadata of the environment.")
     enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
+    permission_mode: str = Field(
+        default="workspace_write",
+        description="Permission mode for environment actions with host-side effects.",
+    )
     
     model_config = ConfigDict(
         arbitrary_types_allowed=True, 
@@ -71,12 +75,12 @@ class Environment(BaseModel):
         self.actions: Dict[str, ActionConfig] = {}
         
         # Register all actions marked with @environment_manager.action decorator
-        from agentevolver.environment.server import environment_manager
-        for attr_name in dir(self):
+        for attr_name in dir(type(self)):
             if attr_name.startswith('_'):
                 continue
-            attr = getattr(self, attr_name)
-            if callable(attr) and hasattr(attr, '_action_name'):
+            declared = getattr(type(self), attr_name)
+            if callable(declared) and hasattr(declared, '_action_name'):
+                attr = getattr(self, attr_name)
                 action_name = attr._action_name
                 if action_name not in self.actions:
                     action_config = ActionConfig(
@@ -238,6 +242,7 @@ class EnvironmentConfig(BaseModel):
     manifest_path: str = Field(default="", description="Absolute path to ENVIRONMENT.md")
     version: str = Field(default="1.0.0", description="Version of the environment")
     enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
+    permission_mode: str = Field(default="workspace_write")
     
     cls: Optional[Type[Environment]] = Field(default=None, description="The class of the environment")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the environment")
@@ -256,6 +261,7 @@ class EnvironmentConfig(BaseModel):
             "manifest_path": self.manifest_path,
             "version": self.version,
             "enable_evolving": self.enable_evolving,
+            "permission_mode": self.permission_mode,
             
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
@@ -277,6 +283,7 @@ class EnvironmentConfig(BaseModel):
         rules = data.get("rules")
         version = data.get("version")
         enable_evolving = data.get("enable_evolving", False)
+        permission_mode = data.get("permission_mode", "workspace_write")
         
         cls_ = None
         code = data.get("code")
@@ -318,6 +325,7 @@ class EnvironmentConfig(BaseModel):
             rules=rules,
             version=version,
             enable_evolving=enable_evolving,
+            permission_mode=permission_mode,
             cls=cls_,
             config=config,
             instance=instance,

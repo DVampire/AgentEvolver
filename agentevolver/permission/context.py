@@ -81,7 +81,9 @@ class PermissionContextManager:
         """
         enforcer = self._enforcers.get(name)
         if enforcer is None:
-            return ValidationResult.allow()
+            return ValidationResult.block(
+                f"Permission entity {name!r} is not registered; refusing by default."
+            )
         return enforcer.check(input, **kwargs)
 
 

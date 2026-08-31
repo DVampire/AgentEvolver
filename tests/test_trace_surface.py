@@ -298,8 +298,8 @@ def test_compaction_records_its_fold_in_the_log():
     """
     from agentevolver.memory.default.tiered import MemoryRecord, TieredMemory, _SessionState
 
-    # recent_max=4 with 9 records and compact_chunk=2 guarantees compaction actually runs.
-    memory = TieredMemory(base_dir="", recent_max=4, compact_chunk=2, recent_fetch=2)
+    # recent_max=4 with 9 records guarantees compaction actually runs.
+    memory = TieredMemory(base_dir="", recent_max=4, recent_fetch=2)
     state = _SessionState(session_id="s1", task="t", file_path="", working_max=10)
     for i in range(9):
         state.recent.append(MemoryRecord(ts="t", event=f"e{i}", detail="d", seq=i))
@@ -333,9 +333,12 @@ def test_compaction_records_its_fold_in_the_log():
         trace_pkg.trace_manager = real
 
     assert emitted, "the fold was not recorded"
-    first = emitted[0]
-    assert first.surface_op == {"op": "replace", "start": 0, "end": 1}
-    assert first.source_event_seqs == [0, 1]
+    first = next(
+        event for event in emitted
+        if (event.metadata or {}).get("type") == "compaction"
+    )
+    assert first.surface_op == {"op": "replace", "start": 0, "end": 4}
+    assert first.source_event_seqs == [0, 1, 2, 3, 4]
     assert first.message == "a summary"
 
 
@@ -348,7 +351,7 @@ def test_records_without_a_position_are_not_cited():
     """
     from agentevolver.memory.default.tiered import MemoryRecord, TieredMemory, _SessionState
 
-    memory = TieredMemory(base_dir="", recent_max=4, compact_chunk=2, recent_fetch=2)
+    memory = TieredMemory(base_dir="", recent_max=4, recent_fetch=2)
     state = _SessionState(session_id="s1", task="t", file_path="", working_max=10)
     for i in range(9):
         state.recent.append(MemoryRecord(ts="t", event=f"e{i}", detail="d"))   # no seq
@@ -375,7 +378,9 @@ def test_records_without_a_position_are_not_cited():
     finally:
         trace_pkg.trace_manager = real
 
-    assert emitted == []
+    assert not any(
+        (event.metadata or {}).get("type") == "compaction" for event in emitted
+    )
 
 
 # --------------------------------------------------------------------------- #

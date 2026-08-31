@@ -32,6 +32,7 @@ class ToolExecutionStage(str, Enum):
     RESOLVE = "resolve"
     VALIDATE = "validate"
     GUARD = "guard"
+    PREPARE = "prepare"
     EXECUTE = "execute"
     POST_EXECUTE = "post_execute"
     FINALIZE = "finalize"
@@ -46,6 +47,7 @@ class ToolErrorCode(str, Enum):
     APPROVAL_UNAVAILABLE = "approval_unavailable"
     APPROVAL_DENIED = "approval_denied"
     GUARD_ERROR = "guard_error"
+    PREPARATION_ERROR = "preparation_error"
     TIMEOUT = "timeout"
     EXECUTION_ERROR = "execution_error"
     TOOL_REPORTED_ERROR = "tool_reported_error"
@@ -304,9 +306,25 @@ class ToolExecutionPipeline:
         # callers put the final durability checkpoint: after the consent fact exists,
         # immediately before the only line that may enter the Tool body.
         if before_invoke is not None:
-            prepared = before_invoke()
-            if inspect.isawaitable(prepared):
-                await prepared
+            try:
+                prepared = before_invoke()
+                if inspect.isawaitable(prepared):
+                    await prepared
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # checkpoint/persistence failure is fail-closed
+                from agentevolver.trace.checkpoint import TraceIntegrityError
+                if isinstance(error, TraceIntegrityError):
+                    raise
+                message = (
+                    f"Tool '{execution.tool_name}' could not prepare a safe execution: "
+                    f"{type(error).__name__}: {error}"
+                )
+                logger.error(f"| ❌ {message}")
+                return await self._finish(
+                    execution, self._failure(message), started, timeout,
+                    ToolExecutionStage.PREPARE, ToolErrorCode.PREPARATION_ERROR,
+                )
 
         try:
             candidate = (

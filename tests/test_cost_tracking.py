@@ -73,6 +73,41 @@ def test_cached_tokens_are_not_billed_twice_as_input():
     assert priced["cost"] == 100 * 5e-6 + 10000 * 5e-7  # input at full, cache read at 0.1x
 
 
+def test_openai_total_input_is_split_from_its_cached_subset():
+    priced = price_usage_dict(
+        {
+            "prompt_tokens": 10_000,
+            "completion_tokens": 50,
+            "prompt_tokens_details": {"cached_tokens": 8_000},
+        },
+        OPUS_PRICE,
+    )
+    assert priced["context_input_tokens"] == 10_000
+    assert priced["input_tokens"] == 2_000
+    assert priced["cache_read_tokens"] == 8_000
+    assert priced["cost"] == 2_000 * 5e-6 + 8_000 * 5e-7 + 50 * 2.5e-5
+
+
+def test_anthropic_uncached_input_is_added_to_cache_for_context_size():
+    usage = TokenUsage.from_raw({
+        "input_tokens": 2_000,
+        "output_tokens": 50,
+        "cache_read_input_tokens": 8_000,
+    })
+    assert usage.input_tokens == 2_000
+    assert usage.context_input_tokens == 10_000
+    assert usage.total == 10_050
+
+
+def test_normalising_canonical_usage_is_idempotent():
+    once = TokenUsage.from_raw({
+        "prompt_tokens": 10_000,
+        "prompt_tokens_details": {"cached_tokens": 8_000},
+    })
+    twice = TokenUsage.from_raw(once.model_dump())
+    assert twice == once
+
+
 def test_opus_catalog_carries_the_price_table():
     opus = next(m for m in llm_hub_models(max_tokens=8000, default_temperature=None, default_timeout=600)["chat"]
                 if m["model_id"] == "claude-opus-5")

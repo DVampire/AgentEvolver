@@ -119,6 +119,19 @@ async def assemble_native_tools(
             **_projection_kwargs(entry.type, agent),
         )
 
+    all_pairs = list(pairs)
+    from agentevolver.agent.capability_index import remember_catalog, select
+
+    pairs, deferred = select(
+        pairs,
+        ctx=ctx,
+        agent_name=getattr(agent, "name", "agent"),
+        threshold=int(getattr(agent, "defer_capabilities_after", 40) or 0),
+    )
+    # Dispatch needs the full index for a search call, but only `pairs` is serialized.
+    if deferred:
+        remember_catalog(ctx, getattr(agent, "name", "agent"), all_pairs)
+
     tools: List[_SchemaTool] = []
     for fc, route in pairs:
         # Hosted programs are deliberately narrower than direct calls. A Tool must be

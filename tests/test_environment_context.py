@@ -46,7 +46,8 @@ async def probe():
 
     with contextlib.redirect_stdout(io.StringIO()):
         await environment_manager.initialize()
-    return _Probe(base_dir=".")
+    yield _Probe(base_dir=".")
+    await environment_manager.cleanup()
 
 
 def _ctx(*environments: str) -> AgentContext:

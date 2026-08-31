@@ -32,7 +32,7 @@ def _state(**kwargs):
 
 
 def _memory(**kwargs):
-    return TieredMemory(base_dir="", recent_max=4, compact_chunk=2, recent_fetch=2, **kwargs)
+    return TieredMemory(base_dir="", recent_max=4, recent_fetch=2, **kwargs)
 
 
 def _fill(state, n):
@@ -498,7 +498,8 @@ def _folded(monkeypatch, records: int = 4, summary: str = "a short summary"):
     monkeypatch.setattr(trace_manager, "surface_span", lambda *a, **k: [0, 1])
 
     async def emit(event, *a, **k):
-        emitted.append(event)
+        if (event.metadata or {}).get("type") == "compaction":
+            emitted.append(event)
 
     monkeypatch.setattr(trace_manager, "emit", emit)
     for position, record in enumerate(state.recent):
@@ -514,18 +515,31 @@ def test_a_fold_records_what_it_cost(monkeypatch):
     metadata = event.metadata
     assert metadata["tokens_before"] > metadata["tokens_after"]
     assert metadata["tokens_saved"] == metadata["tokens_before"] - metadata["tokens_after"]
+    assert metadata["model_calls"] == 1
+    assert 0 < metadata["savings_ratio"] <= 1
 
 
-def test_a_summary_longer_than_what_it_replaced_is_recorded_as_a_loss(monkeypatch):
-    """Recording it as a saving would make the total say compaction always helps.
-
-    It does not: three short records can fold into a summary that is longer than they
-    were, and a reader deciding whether compaction is worth its model call needs the
-    negative in the sum.
-    """
+def test_a_summary_longer_than_what_it_replaced_is_rejected(monkeypatch):
+    """Compaction must not pay for a model call and then expand future requests."""
     event = _folded(monkeypatch, records=3, summary="x" * 4_000)
 
-    assert event.metadata["tokens_saved"] < 0
+    assert event is None
+
+
+def test_one_pressure_event_makes_one_portable_summary_call():
+    memory, state = _memory(), _state()
+    _fill(state, 40)
+    calls = []
+
+    async def _summary(items, existing):
+        calls.append((items, existing))
+        return "one checkpoint"
+
+    memory._summarise = _summary
+    asyncio.run(memory._compact(state, down_to=2))
+
+    assert len(calls) == 1
+    assert len(state.recent) == 2
 
 
 def test_the_stats_projection_totals_folds_without_recomputing_them(monkeypatch):

@@ -22,10 +22,10 @@ from agentevolver.trace.types import TraceEvent, TraceEventType, parse_trace_eve
 
 PROJECTOR_VERSION = 1
 PROJECTION_NAME = "stats"
-#: 2 adds `compactions` / `compaction_tokens_saved`. Bumped rather than defaulted: an
-#: old state file would load with both at zero while its watermark said it was caught up,
-#: so the totals would be short by every fold before the upgrade and nothing would say so.
-STATS_SCHEMA_VERSION = 2
+#: 3 adds compaction attempts/rejections/model calls and canonical context-input usage.
+#: Bumped rather than defaulted: an old state file could otherwise look caught up while
+#: silently missing every new metric before its watermark.
+STATS_SCHEMA_VERSION = 3
 
 
 class TraceStats(BaseModel):
@@ -57,6 +57,9 @@ class TraceStats(BaseModel):
     #: Folds recorded in this session, and what they cost. `tokens_saved` may be negative
     #: for one fold; the sum is the honest total either way.
     compactions: int = 0
+    compaction_attempts: int = 0
+    compaction_rejections: int = 0
+    compaction_model_calls: int = 0
     compaction_tokens_saved: int = 0
     usage: TokenUsage = Field(default_factory=TokenUsage)
     reported_run_usage: Optional[TokenUsage] = None
@@ -163,6 +166,9 @@ class TraceStatsProjector:
             return total
         return TokenUsage(
             input_tokens=total.input_tokens + usage.input_tokens,
+            context_input_tokens=(
+                total.context_input_tokens + usage.context_input_tokens
+            ),
             output_tokens=total.output_tokens + usage.output_tokens,
             cache_write_tokens=total.cache_write_tokens + usage.cache_write_tokens,
             cache_read_tokens=total.cache_read_tokens + usage.cache_read_tokens,
@@ -195,6 +201,16 @@ class TraceStatsProjector:
                 and (event.metadata or {}).get("type") == "compaction"):
             state.compactions += 1
             state.compaction_tokens_saved += int((event.metadata or {}).get("tokens_saved") or 0)
+            state.compaction_model_calls += int(
+                (event.metadata or {}).get("model_calls") or 0
+            )
+        elif (event.event_type == TraceEventType.CUSTOM
+              and (event.metadata or {}).get("type") == "compaction_transaction"):
+            phase = (event.metadata or {}).get("phase")
+            if phase == "started":
+                state.compaction_attempts += 1
+            elif phase == "aborted":
+                state.compaction_rejections += 1
 
         if event.event_type == TraceEventType.MODEL_REQUEST:
             snapshot = event.input or {}

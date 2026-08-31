@@ -535,12 +535,13 @@ class Agent(BaseModel):
         use_memory: bool = True,
         derive_context: bool = True,
         fold_at_pressure: float = 0.85,
-        retain_recent_steps: int = 2,
+        retain_recent_steps: int = 4,
         compact_after_steps: int = 24,
         compact_body_tokens: int = 100_000,
         prefer_native_programmatic_tools: bool = True,
         prefer_native_multi_agent: bool = False,
         native_max_concurrent_subagents: int = 3,
+        defer_capabilities_after: int = 40,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -577,6 +578,7 @@ class Agent(BaseModel):
         self.native_max_concurrent_subagents = max(
             1, int(native_max_concurrent_subagents or 3)
         )
+        self.defer_capabilities_after = max(0, int(defer_capabilities_after or 0))
         self.model_name = model_name
 
         # Setup steps
@@ -980,9 +982,18 @@ class Agent(BaseModel):
         turns are the ones its decision rested on.
         """
         extra = getattr(ctx, "extra", None) or {}
+        from agentevolver.agent.project_context import load_project_context
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        workspace = str(
+            roots["workspace"] if roots
+            else getattr(config, "workspace_root", "") or ""
+        )
+        project_context = load_project_context(workspace)
         parent_session = str(extra.get("forked_from") or "")
         if not parent_session:
-            return {}
+            return ({"inherited_context": project_context} if project_context else {})
         from agentevolver.trace import trace_manager
         from agentevolver.trace.derive import derive_messages
         from agentevolver.trace.surface import SurfaceError
@@ -997,7 +1008,7 @@ class Agent(BaseModel):
             )
             return {}
         if not derived:
-            return {}
+            return ({"inherited_context": project_context} if project_context else {})
 
         lines = [f"{getattr(m, 'role', '?')}: {getattr(m, 'text', '') or ''}".strip()
                  for m in derived]
@@ -1006,10 +1017,13 @@ class Agent(BaseModel):
             kept = body[-_INHERITED_CONTEXT_MAX:]
             body = (f"[earlier turns omitted: {len(body) - _INHERITED_CONTEXT_MAX:,} "
                     f"characters]\n\n{kept}")
-        return {"inherited_context": (
+        inherited = (
             "This is what the agent that dispatched you had already done, for context. "
             "It is not your own history and you did not take these actions.\n\n" + body
-        )}
+        )
+        if project_context:
+            inherited = f"{project_context}\n\n### Parent execution context\n{inherited}"
+        return {"inherited_context": inherited}
 
 
     async def _code_mode_section(self, allowlist: Optional[List[str]]) -> str:
@@ -1693,7 +1707,7 @@ class Agent(BaseModel):
                             "step_number": step_number,
                         },
                         "compaction_policy": {
-                            "retain_recent_steps": getattr(self, "retain_recent_steps", 2),
+                            "retain_recent_steps": getattr(self, "retain_recent_steps", 4),
                             "compact_after_steps": getattr(self, "compact_after_steps", 24),
                             "compact_body_tokens": getattr(
                                 self, "compact_body_tokens", 100_000,
@@ -1824,10 +1838,17 @@ class Agent(BaseModel):
             logger.warning(f"| ⚠️ [{self.name}] No tool call — nudging to act or call done.")
             return {"done": False, "result": None, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
 
-        outcomes = await asyncio.gather(*[
-            self._run_one(call, i, routing, task_id, step_number, ctx)
-            for i, call in enumerate(tool_calls)
-        ])
+        if await self._batch_requires_serial(tool_calls, routing):
+            outcomes = []
+            for i, call in enumerate(tool_calls):
+                outcomes.append(await self._run_one(
+                    call, i, routing, task_id, step_number, ctx,
+                ))
+        else:
+            outcomes = await asyncio.gather(*[
+                self._run_one(call, i, routing, task_id, step_number, ctx)
+                for i, call in enumerate(tool_calls)
+            ])
 
         done = False
         result = None
@@ -2062,6 +2083,17 @@ class Agent(BaseModel):
         agent spends its own steps waiting.
         """
         capability_type = route[0]
+        if capability_type == "capability_search":
+            from agentevolver.agent.capability_index import catalog, search
+
+            output = search(
+                catalog(ctx, self.name),
+                ctx=ctx,
+                agent_name=self.name,
+                query=str((call.input or {}).get("query") or ""),
+                limit=int((call.input or {}).get("limit") or 6),
+            )
+            return output, False, None, None, None, None
         if capability_type == "agent":
             from agentevolver.agent.server import agent_manager
             from agentevolver.runtime import runtime_manager
@@ -2386,6 +2418,14 @@ class Agent(BaseModel):
             except Exception as error:                              # noqa: BLE001
                 logger.warning(f"| ⚠️ [{self.name}] could not release {label} for "
                                f"{session_id}: {error}")
+        try:
+            from agentevolver.agent.capability_index import forget
+            forget(run.ctx, self.name)
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(
+                f"| ⚠️ [{self.name}] could not release capability catalog for "
+                f"{session_id}: {error}"
+            )
 
     @staticmethod
     def _forget_attachments(session_id: str) -> None:
@@ -2548,6 +2588,9 @@ class Agent(BaseModel):
                 "or if the task is COMPLETE call `done_tool` with the result now."]
             run.step += 1
             return True
+        decision["serialize_batch"] = await self._batch_requires_serial(
+            calls, decision["routing"]
+        )
         self._dispatch_round(run, calls, decision["routing"])
         return False
 
@@ -2566,10 +2609,27 @@ class Agent(BaseModel):
         run.step_plan = [
             {"id": c.id, "description": "", "type": (routing.get(c.name) or ("tool",))[0],
              "name": c.name, "args": _json.dumps(c.input, ensure_ascii=False)} for c in calls]
+        previous = None
         for i, call in enumerate(calls):
             run.outstanding.add(call.id)
-            run.round_tasks[call.id] = asyncio.create_task(
-                self._run_one_bg(run, call, i, routing), name=f"action-{call.id}")
+            task = asyncio.create_task(
+                self._run_one_bg_ordered(run, call, i, routing, previous),
+                name=f"action-{call.id}",
+            )
+            run.round_tasks[call.id] = task
+            if (run.decision or {}).get("serialize_batch"):
+                previous = task
+
+    async def _run_one_bg_ordered(
+        self, run: "_AgentRun", call: Any, index: int,
+        routing: Dict[str, Any], previous: Optional[asyncio.Task],
+    ) -> None:
+        if previous is not None:
+            try:
+                await previous
+            except Exception:
+                pass
+        await self._run_one_bg(run, call, index, routing)
 
     async def _run_one_bg(self, run: "_AgentRun", call: Any, index: int, routing: Dict[str, Any]) -> None:
         """Run one action, then post an _ActionDone back to this agent's inbox."""
@@ -3052,6 +3112,44 @@ class Agent(BaseModel):
                 return True
             predicted = info.instance.will_mutate(call.input or {})
             if predicted is not False:
+                return True
+        return False
+
+    async def _batch_requires_serial(
+        self, calls: List[Any], routing: Dict[str, Any],
+    ) -> bool:
+        """Parallelize only a batch whose every effect is explicitly read-only."""
+        if len(calls) < 2:
+            return False
+        from agentevolver.tool import tool_manager
+        from agentevolver.connector import connector_manager
+
+        for call in calls:
+            route = routing.get(call.name) or ("tool", call.name)
+            if route[0] == "capability_search":
+                continue
+            try:
+                if route[0] == "tool":
+                    info = await tool_manager.get_info(route[1])
+                    if info is None or info.instance is None:
+                        return True
+                    if info.instance.will_mutate(call.input or {}) is not False:
+                        return True
+                    continue
+                if route[0] == "connector" and len(route) > 2:
+                    info = await connector_manager.get_info(route[1])
+                    annotations = (
+                        (getattr(info, "action_annotations", None) or {}).get(route[2])
+                        if info is not None else None
+                    ) or {}
+                    if annotations.get("readOnlyHint") is True:
+                        continue
+                return True
+            except Exception as error:  # registry/effect uncertainty => serialize
+                logger.warning(
+                    f"| ⚠️ [{self.name}] could not classify {call.name} for "
+                    f"parallel execution ({error}); serializing the batch"
+                )
                 return True
         return False
 

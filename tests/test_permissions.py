@@ -77,6 +77,60 @@ def test_a_write_hidden_behind_shell_syntax_is_still_a_write() -> None:
     assert not validate_command("ls && rm -rf elsewhere", PermissionMode.READ_ONLY).allowed
 
 
+def test_destructive_commands_require_approval_even_with_full_access() -> None:
+    result = validate_command("rm -rf build-cache", PermissionMode.DANGER_FULL_ACCESS)
+    assert result.allowed
+    assert result.requires_approval
+    assert "irreversible" in (result.warning or "")
+
+
+@pytest.mark.parametrize("command", [
+    "echo ready && rm -rf build-cache",
+    "sudo rm -rf build-cache",
+    "VALUE=1 rm -rf build-cache",
+])
+def test_nested_destructive_commands_still_require_approval(command: str) -> None:
+    assert validate_command(
+        command, PermissionMode.DANGER_FULL_ACCESS,
+    ).requires_approval
+
+
+def test_unknown_permission_entities_fail_closed() -> None:
+    from agentevolver.permission.context import PermissionContextManager
+    from agentevolver.permission.types import Operation, PermissionRequest
+
+    result = PermissionContextManager().check(
+        "not-registered",
+        PermissionRequest(op=Operation.READ, target="README.md"),
+    )
+    assert not result.allowed
+    assert "not registered" in (result.reason or "")
+
+
+def test_direct_declared_workspace_mode_uses_the_bound_session_root(tmp_path) -> None:
+    from agentevolver.paths import P, path_manager
+    from agentevolver.permission import permission_manager
+    from agentevolver.permission.types import Operation, PermissionRequest
+
+    owner, session = path_manager._owner, path_manager._session_id
+    overrides = dict(path_manager._overrides)
+    try:
+        path_manager.bind_session("permission-test", "session")
+        path_manager.override(P.SESSION_WORKSPACE, tmp_path / "workspace")
+        outside = tmp_path / "outside.txt"
+        result = permission_manager.check_declared(
+            "direct-tool",
+            PermissionRequest(op=Operation.WRITE, target=str(outside), content="x"),
+            mode=PermissionMode.WORKSPACE_WRITE,
+        )
+    finally:
+        path_manager._owner, path_manager._session_id = owner, session
+        path_manager._overrides = overrides
+
+    assert not result.allowed
+    assert "outside" in (result.reason or "")
+
+
 # --------------------------------------------------------------------------- #
 # The unrestricted mode still has to work
 # --------------------------------------------------------------------------- #
@@ -91,8 +145,13 @@ def test_full_access_runs_the_command_here_rather_than_reaching_for_a_sandbox(tm
     config.workspace_root = str(tmp_path)
     tool = BashTool(permission_mode="danger_full_access")
     ctx = SimpleNamespace(extra={})
+    from agentevolver.permission import permission_manager
 
-    response = asyncio.run(tool(command="echo hello-sandbox", ctx=ctx))
+    permission_manager.register(tool.name, PermissionMode.DANGER_FULL_ACCESS)
+    try:
+        response = asyncio.run(tool(command="echo hello-sandbox", ctx=ctx))
+    finally:
+        permission_manager.unregister(tool.name)
 
     assert response.success
     assert "hello-sandbox" in response.message

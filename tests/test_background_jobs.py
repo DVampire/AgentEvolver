@@ -23,10 +23,15 @@ class _Ctx:
 @pytest.fixture
 def workspace(tmp_path):
     from agentevolver.config import config
+    from agentevolver.permission import PermissionMode, permission_manager
     previous = getattr(config, "workspace_root", None)
     config.workspace_root = str(tmp_path)
+    permission_manager.register(
+        "bash_tool", mode=PermissionMode.WORKSPACE_WRITE, workspace=str(tmp_path),
+    )
     yield tmp_path
     job_manager.forget(_Ctx.id)
+    permission_manager.unregister("bash_tool")
     config.workspace_root = previous
 
 
