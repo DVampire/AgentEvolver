@@ -10,7 +10,14 @@ import importlib.util
 import json
 import os
 
-from agentevolver.model.config import llm_hub_models
+from agentevolver.model.config import (
+    anthropic_models,
+    google_models,
+    llm_hub_models,
+    openai_models,
+    openrouter_models,
+)
+from agentevolver.model.pricing import PRICING_AS_OF
 from agentevolver.model.types import TokenUsage, compute_cost, price_usage_dict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -54,6 +61,30 @@ def test_cache_prices_default_to_multiples_of_input():
         {"input": 1e-5, "output": 1e-5},  # no cache prices → write 1.25x, read 0.1x
     )
     assert cost == 1000 * (1e-5 * 1.25) + 1000 * (1e-5 * 0.1)
+
+
+def test_compute_cost_switches_to_long_context_tier():
+    pricing = {
+        "input": 1e-6,
+        "output": 2e-6,
+        "cache_read": 0.1e-6,
+        "cache_write": 0.0,
+        "long_context_threshold": 200_000,
+        "long_context": {
+            "input": 2e-6,
+            "output": 3e-6,
+            "cache_read": 0.2e-6,
+            "cache_write": 0.0,
+        },
+    }
+    usage = {
+        "context_input_tokens": 200_001,
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "cache_read_tokens": 200,
+    }
+
+    assert compute_cost(usage, pricing) == 100 * 2e-6 + 10 * 3e-6 + 200 * 0.2e-6
 
 
 def test_no_pricing_means_no_cost():
@@ -163,6 +194,57 @@ def test_opus_catalog_carries_the_price_table():
         if m["model_id"] == "claude-opus-5"
     )
     assert opus.get("cost") == OPUS_PRICE
+
+
+def test_every_registered_model_has_central_pricing():
+    common = {
+        "max_tokens": 8000,
+        "default_temperature": None,
+        "default_timeout": 600,
+        "default_plugins": [],
+        "default_reasoning": {},
+    }
+    catalogs = [
+        openai_models(
+            max_tokens=common["max_tokens"],
+            default_temperature=common["default_temperature"],
+            default_reasoning=common["default_reasoning"],
+        ),
+        llm_hub_models(
+            max_tokens=common["max_tokens"],
+            default_temperature=common["default_temperature"],
+            default_timeout=common["default_timeout"],
+        ),
+        anthropic_models(**common),
+        openrouter_models(**common),
+        google_models(**common),
+    ]
+    models = [model for catalog in catalogs for group in catalog.values() for model in group]
+
+    assert PRICING_AS_OF == "2026-08-31"
+    assert len(models) == 67
+    assert all(model.get("cost") for model in models)
+    assert all(
+        set(("input", "output", "cache_read", "cache_write")) <= set(model["cost"])
+        for model in models
+    )
+
+
+def test_deepseek_v4_flash_uses_llm_hub_official_channel_rate():
+    model = next(
+        m
+        for m in llm_hub_models(max_tokens=8000, default_temperature=None, default_timeout=600)[
+            "chat"
+        ]
+        if m["model_id"] == "deepseek-v4-flash"
+    )
+
+    assert model["cost"] == {
+        "input": 0.14e-6,
+        "output": 0.28e-6,
+        "cache_read": 0.0028e-6,
+        "cache_write": 0.0,
+    }
 
 
 # --------------------------------------------------------------------------- per-task rollup

@@ -69,7 +69,7 @@ class ModelConfig(BaseModel):
         description="Optional output schema version when required by provider.",
     )
     timeout: Optional[float] = Field(default=None, description="Request timeout in seconds.")
-    cost: Optional[Dict[str, float]] = Field(
+    cost: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Per-token USD prices used to price a call when the provider does not "
         "return a `cost` in usage (llm_hub/Bedrock does not). Keys: `input`, `output`, "
@@ -336,7 +336,7 @@ class TokenUsage(BaseModel):
         return f"{prefix}tokens: {', '.join(parts)}"
 
 
-def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, float]]) -> Optional[float]:
+def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, Any]]) -> Optional[float]:
     """Price a call's token counts against a per-token USD table.
 
     ``usage`` is a TokenUsage-shaped dict (``input_tokens`` / ``output_tokens`` /
@@ -349,10 +349,24 @@ def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, float]]) -> 
     """
     if not pricing:
         return None
-    p_in = float(pricing.get("input", 0.0))
-    p_out = float(pricing.get("output", 0.0))
-    p_cw = float(pricing.get("cache_write", p_in * 1.25))
-    p_cr = float(pricing.get("cache_read", p_in * 0.1))
+    selected = pricing
+    threshold = pricing.get("long_context_threshold")
+    long_context = pricing.get("long_context")
+    context_tokens = int(
+        usage.get("context_input_tokens")
+        or (
+            int(usage.get("input_tokens", 0) or 0)
+            + int(usage.get("cache_write_tokens", 0) or 0)
+            + int(usage.get("cache_read_tokens", 0) or 0)
+        )
+    )
+    if threshold is not None and context_tokens > int(threshold) and isinstance(long_context, dict):
+        selected = {**pricing, **long_context}
+
+    p_in = float(selected.get("input", 0.0))
+    p_out = float(selected.get("output", 0.0))
+    p_cw = float(selected.get("cache_write", p_in * 1.25))
+    p_cr = float(selected.get("cache_read", p_in * 0.1))
     return (
         int(usage.get("input_tokens", 0) or 0) * p_in
         + int(usage.get("output_tokens", 0) or 0) * p_out
@@ -361,7 +375,7 @@ def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, float]]) -> 
     )
 
 
-def price_usage_dict(raw_usage: Optional[Dict[str, Any]], pricing: Optional[Dict[str, float]]) -> Optional[Dict[str, Any]]:
+def price_usage_dict(raw_usage: Optional[Dict[str, Any]], pricing: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Return ``raw_usage`` with a computed ``cost`` when it has none and pricing exists.
 
     Used at the two model-call chokepoints (buffered and streaming) so every recorded call

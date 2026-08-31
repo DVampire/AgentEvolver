@@ -14,6 +14,8 @@ loops in ``context.py`` consume via ``m.get(...)``.
 """
 from typing import Any, Dict, List
 
+from agentevolver.model.pricing import apply_pricing
+
 
 def _r(enabled: bool = True) -> Dict[str, Any]:
     """OpenRouter-style reasoning toggle shared by several specs."""
@@ -156,12 +158,12 @@ def openai_models(
             "fallback_model": "openai/text-embedding-3-large",
         },
     ]
-    return {
+    return apply_pricing({
         "chat": chat_models,
         "response": response_models,
         "transcribe": transcribe_models,
         "embedding": embedding_models,
-    }
+    })
 
 
 def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
@@ -212,12 +214,6 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # reasoning-bound rather than build-bound.
             # ChatAnthropic forwards this dict verbatim on the native Messages surface.
             "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
-            # Per-token USD, from Anthropic's public Opus-5 list price ($5 / $25 per 1M in /
-            # out; cache write 1.25x input = $6.25/1M; cache read 0.1x = $0.50/1M). The relay
-            # returns no cost in usage, so calls are priced from this — an estimate the relay's
-            # actual billing may differ from, while the token counts stay exact. Matches the
-            # official ProgramBench reference agent's cost table.
-            "cost": {"input": 5e-6, "output": 2.5e-5, "cache_write": 6.25e-6, "cache_read": 5e-7},
             # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
             # the relay answers a request carrying one with "`temperature` is deprecated
             # for this model".
@@ -280,7 +276,7 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "timeout": default_timeout,
         },
     ]
-    return {"chat": chat_models, "response": response_models}
+    return apply_pricing({"chat": chat_models, "response": response_models})
 
 
 def anthropic_models(*, max_tokens, default_temperature, default_timeout, default_plugins, default_reasoning):
@@ -304,12 +300,6 @@ def anthropic_models(*, max_tokens, default_temperature, default_timeout, defaul
             },
             "max_completion_tokens": max_tokens,
             "context_window": 1_000_000,
-            "cost": {
-                "input": 5e-6,
-                "output": 2.5e-5,
-                "cache_write": 6.25e-6,
-                "cache_read": 5e-7,
-            },
             "fallback_model": "anthropic/claude-opus-4.8",
         },
         # opus-4.8 and fable-5 reject `temperature` ("deprecated for this model"),
@@ -337,7 +327,7 @@ def anthropic_models(*, max_tokens, default_temperature, default_timeout, defaul
             "fallback_model": "anthropic/claude-sonnet-4.5",
         },
     ]
-    return {"chat": chat_models}
+    return apply_pricing({"chat": chat_models})
 
 
 def openrouter_models(*, max_tokens, default_temperature, default_timeout, default_plugins, default_reasoning):
@@ -699,7 +689,7 @@ def openrouter_models(*, max_tokens, default_temperature, default_timeout, defau
             "fallback_model": "openrouter/gemini-3.5-flash",
         },
     ]
-    return {"chat": chat_models}
+    return apply_pricing({"chat": chat_models})
 
 
 def google_models(*, max_tokens, default_temperature, default_timeout, default_plugins, default_reasoning):
@@ -769,4 +759,4 @@ def google_models(*, max_tokens, default_temperature, default_timeout, default_p
             "fallback_model": "openrouter/gemini-3.5-flash",
         },
     ]
-    return {"chat": chat_models}
+    return apply_pricing({"chat": chat_models})

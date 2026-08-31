@@ -551,6 +551,7 @@ class ModelContextManager:
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
                 native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
                 native_multi_agent=bool(m.get("native_multi_agent", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -577,6 +578,7 @@ class ModelContextManager:
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
                 native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
                 native_multi_agent=bool(m.get("native_multi_agent", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -601,6 +603,7 @@ class ModelContextManager:
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
                 native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
                 native_multi_agent=bool(m.get("native_multi_agent", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -623,6 +626,7 @@ class ModelContextManager:
                 context_window=m.get("context_window"),
                 native_compaction=bool(m.get("native_compaction", False)),
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -663,6 +667,7 @@ class ModelContextManager:
                 context_window=m.get("context_window"),
                 native_compaction=bool(m.get("native_compaction", False)),
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -723,6 +728,7 @@ class ModelContextManager:
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
                 native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
                 native_multi_agent=bool(m.get("native_multi_agent", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -797,6 +803,7 @@ class ModelContextManager:
                 context_window=m.get("context_window"),
                 native_compaction=bool(m.get("native_compaction", False)),
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)

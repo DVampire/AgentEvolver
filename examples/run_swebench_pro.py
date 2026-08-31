@@ -439,17 +439,32 @@ def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> No
     Done by a throwaway root container so modes/ownership copy exactly, then handed to the
     container uid so the agent can edit it. A pre-existing dir is emptied first (root-owned).
 
-    The setup mirrors the official grader's entryscript exactly — ``git reset --hard`` then
-    ``git checkout`` at base_commit, and *no* ``git clean`` — so the agent works from the same
-    tree the grader will reset to. ``git clean -fdx`` is deliberately avoided: these images
-    carry a baked-in index quirk where a tracked, present file (e.g. ``test/files/toobig.jpg``)
-    reads as deleted, and clean would wrongly remove it. Any binary noise that still lands in
-    the diff is dropped by ``strip_binary_hunks`` at grade time, again matching the official
-    harness (swe_bench_pro_eval.py: assemble_workspace_files).
+    The setup mirrors the official grader's tree — ``git reset --hard`` then ``git checkout``
+    at base_commit, and *no* ``git clean``. It additionally removes every ref except a fresh
+    benchmark-base branch and prunes unreachable objects. Some published instance images
+    retain later upstream commits, including the gold fix; leaving those objects addressable
+    lets an agent recover answer metadata or the complete patch with ``git show``. Keeping the
+    base commit and its ancestors preserves normal repository history without exposing future
+    commits. Remotes are removed as a second line of defence behind the network policy.
+
+    ``git clean -fdx`` is deliberately avoided: these images carry a baked-in index quirk
+    where a tracked, present file (e.g. ``test/files/toobig.jpg``) reads as deleted, and clean
+    would wrongly remove it. Any binary noise that still lands in the diff is dropped by
+    ``strip_binary_hunks`` at grade time, again matching the official harness
+    (swe_bench_pro_eval.py: assemble_workspace_files).
     """
     os.makedirs(destination, exist_ok=True)
-    reset = (f"git reset --hard {shlex.quote(base_commit)} && "
-             f"git checkout {shlex.quote(base_commit)}; ") if base_commit else ""
+    if not base_commit:
+        raise ValueError("base_commit is required to seed a GT-safe SWE-bench Pro workspace")
+    quoted_base = shlex.quote(base_commit)
+    reset = (
+        f"git reset --hard {quoted_base} && "
+        f"git checkout -B benchmark-base {quoted_base} && "
+        "git remote | while IFS= read -r remote; do git remote remove \"$remote\"; done && "
+        "git for-each-ref --format='%(refname)' | while IFS= read -r ref; do "
+        "[ \"$ref\" = refs/heads/benchmark-base ] || git update-ref -d \"$ref\"; done && "
+        "git reflog expire --expire=now --all && git gc --prune=now; "
+    )
     script = (
         'rm -rf /seed/..?* /seed/.[!.]* /seed/* 2>/dev/null; '
         'cp -a /app/. /seed/ && cd /seed && '
@@ -640,6 +655,18 @@ async def run_launcher(args) -> int:
     from agentevolver.sandbox import sandbox_manager
 
     check_shared_roots_readable()
+
+    # A benchmark instance may be run repeatedly with different models. Session state
+    # includes memory, trajectories, prompts and grader counters, so keying it only by
+    # instance_id can leak an earlier model's work into a later run. Give every launcher
+    # invocation its own owner namespace unless the caller deliberately supplied one.
+    overrides = dict(getattr(args, "user_cfg_options", None) or {})
+    if not overrides.get("output_owner"):
+        run_namespace = f"{config.get('tag') or 'swebench_pro'}_{time.strftime('%Y%m%d_%H%M%S')}"
+        overrides["output_owner"] = run_namespace
+        args.user_cfg_options = overrides
+        setattr(config, "output_owner", run_namespace)
+        logger.info(f"| 🧰 Isolated run namespace: {run_namespace}")
 
     grader_repo = os.path.abspath(args.grader_repo)
     if not os.path.isfile(os.path.join(grader_repo, "swe_bench_pro_eval.py")):
