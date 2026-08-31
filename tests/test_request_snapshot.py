@@ -13,6 +13,7 @@ import pytest
 
 from agentevolver.message import HumanMessage
 from agentevolver.model.context import ModelContextManager, _record_request_snapshot
+from agentevolver.model.server import ModelManagerServer
 from agentevolver.model.types import ModelConfig, ModelContext
 from agentevolver.response import Response, ResponseType
 from agentevolver.trace.request import REQUEST_SNAPSHOT_VERSION, RequestSnapshot
@@ -243,6 +244,34 @@ async def test_compaction_requires_declared_route_capability_and_client_support(
     assert result["summary"] == "checkpoint"
     assert result["provider"] == "anthropic"
     assert order == ["snapshot", "provider"]
+
+
+@pytest.mark.asyncio
+async def test_model_server_exposes_native_compaction(monkeypatch):
+    manager = ModelManagerServer()
+    expected = {"summary": "checkpoint", "native": True}
+    compact = AsyncMock(return_value=expected)
+    monkeypatch.setattr(manager.model_context_manager, "compact_history", compact)
+    messages = [HumanMessage(content="history")]
+
+    result = await manager.compact_history(
+        "main",
+        messages,
+        session_id="session-1",
+        task_id="task-1",
+        agent_name="meta_agent",
+        step_number=23,
+    )
+
+    assert result is expected
+    compact.assert_awaited_once_with(
+        "main",
+        messages,
+        session_id="session-1",
+        task_id="task-1",
+        agent_name="meta_agent",
+        step_number=23,
+    )
 
 
 @pytest.mark.asyncio

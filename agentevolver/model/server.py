@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.message.types import Message
 from agentevolver.model.context import ModelContextManager
 from agentevolver.model.types import ModelContext, ModelConfig
 from agentevolver.response.types import Response, ResponseType
@@ -59,6 +60,26 @@ class ModelManagerServer(BaseModel):
     ) -> Dict[str, Any]:
         """Return native/fallback modes for one exact registered model route."""
         return self.model_context_manager.resolve_runtime_features(model, requested)
+
+    async def compact_history(
+        self,
+        name: str,
+        messages: List[Message],
+        *,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        step_number: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Delegate provider-native compaction through the public model facade."""
+        return await self.model_context_manager.compact_history(
+            name,
+            messages,
+            session_id=session_id,
+            task_id=task_id,
+            agent_name=agent_name,
+            step_number=step_number,
+        )
 
     # ------------------------------------------------------------------
     # Invocation

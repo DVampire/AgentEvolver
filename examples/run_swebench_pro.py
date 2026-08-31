@@ -468,6 +468,13 @@ def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> No
         )
 
 
+async def seed_workspace_async(
+    image_ref_str: str, base_commit: str, destination: str,
+) -> None:
+    """Seed without blocking concurrent agents on the launcher's event loop."""
+    await asyncio.to_thread(seed_workspace, image_ref_str, base_commit, destination)
+
+
 # --------------------------------------------------------------------------- #
 # Inner run (inside the container)
 # --------------------------------------------------------------------------- #
@@ -689,7 +696,7 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=owner, session_id=instance_id,
             ))
-            seed_workspace(ref, row.get("base_commit", ""), workspace_dir)
+            await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
 
             bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
             os.makedirs(bridge_dir, exist_ok=True)

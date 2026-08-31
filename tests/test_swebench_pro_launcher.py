@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
+import threading
 
+import pytest
+
+import examples.run_swebench_pro as swebench_pro
 from examples.run_swebench_pro import _as_list, collect_patch
 
 
@@ -41,3 +46,26 @@ def test_as_list_accepts_the_dataset_python_literal_fallback():
     row = {"fail_to_pass": "['works with \\\'quoted\\\' input', 'second test']"}
 
     assert _as_list(row, "fail_to_pass") == ["works with 'quoted' input", "second test"]
+
+
+@pytest.mark.asyncio
+async def test_workspace_seeding_does_not_block_the_event_loop(monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking_seed(*_args):
+        started.set()
+        assert release.wait(timeout=2)
+
+    monkeypatch.setattr(swebench_pro, "seed_workspace", blocking_seed)
+    task = asyncio.create_task(
+        swebench_pro.seed_workspace_async("image", "commit", "/workspace")
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+
+    # This coroutine can still run while the synchronous Docker copy is in its thread.
+    await asyncio.sleep(0)
+    assert not task.done()
+
+    release.set()
+    await task
