@@ -17,6 +17,7 @@ from .journal import JournalTool
 from .escalate import EscalateTool
 from .programbench_eval import ProgramBenchEvalTool
 from .swebench_pro_eval import SWEBenchProEvalTool
+from .swebench_verified_eval import SWEBenchVerifiedEvalTool
 from .code_mode import BatchCallTool
 from .ask_user import AskUserTool
 from .exit_plan_mode import ExitPlanModeTool
@@ -56,6 +57,7 @@ __all__ = [
     "EscalateTool",
     "ProgramBenchEvalTool",
     "SWEBenchProEvalTool",
+    "SWEBenchVerifiedEvalTool",
     "MediaSearchTool",
     "SendMessageTool",
     "ReportTool",

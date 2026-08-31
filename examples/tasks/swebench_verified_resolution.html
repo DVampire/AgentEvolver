@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="swebench_verified_resolution">
+  <meta name="description" content="Resolve a real GitHub issue in a Python codebase by editing it into a patch">
+  <meta name="version" content="1.0.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+
+<objective>
+Resolve a real software-engineering issue in the Python project `{repository}`.
+
+You are given a checkout of the repository at a specific base commit and the text of an
+issue. Edit the code IN PLACE so the issue is fixed. Your deliverable is not a file you
+write out — it is the change itself: whatever you edit in the repository is collected as a
+git patch and scored by a hidden test suite. Make the smallest correct change that resolves
+the issue and does not break existing behaviour.
+</objective>
+
+<the-issue>
+{problem_statement}
+</the-issue>
+
+<environment>
+- The repository is at `/testbed`: it is checked out at the base commit, and its package is
+  installed **editable** into the active conda env (`testbed`), so edits you make under
+  `/testbed` take effect when you run Python or the test suite. Always `cd /testbed` first —
+  the bash tool may start in a different directory.
+- Edit files directly with the shell (`sed`, a heredoc, `patch`, an editor). There is no
+  separate file tool — `bash_tool` is how you read, search, and change the code.
+- **The network is off** by design. You cannot fetch the upstream fix, browse the issue
+  online, clone another copy, or install new packages — everything you need is already in
+  the image. Attempting it is both futile and against the rules.
+- **You do NOT have the tests that score you.** The hidden target tests, the test changes
+  that define resolution, and the reference fix are deliberately absent from this
+  environment. Do not go looking for them. Reason about the fix from the issue text and the
+  existing code — that is the whole task.
+- The repository's OWN existing tests are yours to run, as often as you like, for free —
+  use `git log`, `grep`, and `python -m pytest <path>` to understand the code and check your
+  change locally before spending a grader eval. Because the install is editable, a local
+  `pytest` reflects your edits.
+</environment>
+
+<how-to-work>
+- Read first. Find the code the issue is about (`grep`, `git log`, read the files named in
+  the issue). Understand the current behaviour before changing it.
+- Make a focused change that resolves the issue. Prefer editing existing code over adding
+  new files; match the codebase's style (this is Django/sympy/sphinx/matplotlib/… — follow
+  the surrounding conventions).
+- Run the repository's own tests locally (free) to catch regressions early.
+- Commit as you go (`git add -A && git commit`) — your committed and uncommitted edits are
+  both collected, but committing keeps your work legible.
+- Do NOT rewrite unrelated code, reformat the whole file, or change behaviour the issue did
+  not ask about — a change that breaks a previously-passing test costs you.
+</how-to-work>
+
+<checking-with-the-real-grader>
+`swebench_verified_eval_tool` runs the hidden suite against your CURRENT edits and returns a
+COUNTS-ONLY progress report:
+- `fail_to_pass resolved: X/N` — how many of the hidden target tests your patch now passes.
+- `pass_to_pass preserved: Y/M` — how many previously-passing tests still pass (a drop means
+  your change broke something — find and undo the regression).
+- `fully resolved: yes/no`.
+
+You get NO test names, NO test bodies, NO expected outputs — only these counts. It is a
+progress signal to tell you whether your last batch of changes helped and whether it broke
+anything; it is not a to-do list and it cannot hand you the answer.
+
+It is heavy and rate-limited (a handful of calls per run). So: make a real batch of changes,
+check them against the repo's own tests yourself (free), THEN spend one grader eval to see
+whether `fail_to_pass` moved. Do not call it after a trivial edit, and make sure the repo
+actually imports (no syntax errors) before calling.
+
+Finish (`done_tool`) when the grader reports `fully resolved: yes`, or when your eval budget
+is spent and you have made your best, locally-verified change.
+</checking-with-the-real-grader>
+
+</div>
+</body>
+</html>
